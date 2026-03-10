@@ -12,11 +12,18 @@ The translation harness lives in [UW-HARVEST/harvest](https://github.com/UW-HARV
 
 ```
 <battery>_<model>/
-├── results.csv          # build/test outcomes per test case
+├── progress.csv                 # translation progress tracker
 ├── <test_case>/
-│   └── test_case/       # translated Rust project (Cargo.toml + src/)
-└── ...
+│   ├── translated_rust/         # translated Rust project (Cargo.toml + src/)
+│   │   ├── Cargo.toml
+│   │   ├── src/
+│   │   └── c_src/               # original C source (for reference)
+│   └── test_vectors/            # copied from Test-Corpus
+└── logs_<timestamp>/
+    └── <test_case>.log          # full kiro-cli session log
 ```
+
+Each run stores both the translated code and the complete kiro-cli logs, so we can analyze the agent's reasoning and debug failures.
 
 ## Validating results
 
@@ -24,7 +31,7 @@ The translation harness lives in [UW-HARVEST/harvest](https://github.com/UW-HARV
 cd ~/Git/Test-Corpus
 PYTHONPATH=deployment/scripts/github-actions:$PYTHONPATH \
   python3 -m runtests.rust \
-  --root <results_dir> \
-  --subset <results_dir> \
+  --root <results_dir>/<battery> \
+  --subset <results_dir>/<battery> \
   --keep-going
 ```
