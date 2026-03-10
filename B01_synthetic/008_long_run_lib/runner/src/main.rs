@@ -1,0 +1,17 @@
+#![cfg_attr(fuzzing, no_main)]
+
+use cando2::*;
+
+harness! {
+    state: {
+        seed: c_uint,
+    },
+    library: "long",
+    symbol: "long_exec",
+    signature: unsafe extern "C" fn(c_uint),
+
+    fn run(&mut self) {
+        unsafe { (*SYMBOL)(self.seed) };
+    }
+}
+
