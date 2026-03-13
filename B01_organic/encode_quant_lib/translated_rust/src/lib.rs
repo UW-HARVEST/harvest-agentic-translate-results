@@ -1,4 +1,4 @@
-use std::ffi::c_int;
+use std::os::raw::c_int;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn encode_quant(
@@ -62,9 +62,11 @@ pub extern "C" fn encode_quant(
     let mut d3 = tgt2 - p0;
     d3 = d3 ^ (d3 >> 31);
     d0 += d3 >> 5;
+
     d3 = tgt2 - p1;
     d3 = d3 ^ (d3 >> 31);
     d1 += d3 >> 5;
+
     d3 = tgt2 - p2;
     d3 = d3 ^ (d3 >> 31);
     d2 += d3 >> 5;

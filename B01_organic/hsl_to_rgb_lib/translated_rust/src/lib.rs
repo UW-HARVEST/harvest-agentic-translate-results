@@ -1,3 +1,6 @@
+/// Reproduces the exact C behavior of hsl_to_rgb, including the bug
+/// where the third branch checks `h < 120.0 && h < 180.0` instead of
+/// `h >= 120.0 && h < 180.0`.
 #[unsafe(no_mangle)]
 pub extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32) {
     unsafe {
@@ -14,7 +17,7 @@ pub extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32) {
 
         let c = (1.0f32 - (2.0f32 * l - 1.0f32).abs()) * s;
         let m = 1.0f32 * (l - 0.5f32 * c);
-        let x = c * (1.0f32 - ((h / 60.0f32) % 2.0 - 1.0f32).abs());
+        let x = c * (1.0f32 - ((h / 60.0f32).rem_euclid(2.0) - 1.0f32).abs());
 
         if h >= 0.0 && h < 60.0 {
             *dest = c + m;
@@ -25,7 +28,7 @@ pub extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32) {
             *dest.add(1) = c + m;
             *dest.add(2) = m;
         } else if h < 120.0 && h < 180.0 {
-            // Bug preserved: should be h >= 120.0
+            // Bug preserved from C: should be h >= 120.0
             *dest = m;
             *dest.add(1) = c + m;
             *dest.add(2) = x + m;

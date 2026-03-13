@@ -7,7 +7,7 @@ pub struct tflac_md5 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn md5_digest(m: *const tflac_md5, out: *mut u8) {
+pub unsafe extern "C" fn md5_digest(m: *const tflac_md5, out: *mut u8) {
     let m = unsafe { &*m };
     let out = unsafe { core::slice::from_raw_parts_mut(out, 16) };
     out[0..4].copy_from_slice(&m.a.to_le_bytes());

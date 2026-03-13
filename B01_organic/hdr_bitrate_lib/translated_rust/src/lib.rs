@@ -13,14 +13,16 @@ static HALFRATE: [[[u8; 15]; 3]; 2] = [
     ],
 ];
 
+/// # Safety
+/// `h` must point to at least 3 readable bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn hdr_bitrate(h: *const u8) -> c_uint {
-    unsafe {
-        let h1 = *h.add(1);
-        let h2 = *h.add(2);
-        let i0 = if (h1 & 0x8) != 0 { 1usize } else { 0usize };
-        let i1 = (((h1 >> 1) & 3) - 1) as usize;
-        let i2 = (h2 >> 4) as usize;
-        2 * HALFRATE[i0][i1][i2] as c_uint
-    }
+pub unsafe extern "C" fn hdr_bitrate(h: *const u8) -> c_uint {
+    let h1 = unsafe { *h.add(1) };
+    let h2 = unsafe { *h.add(2) };
+    let i0 = if h1 & 0x8 != 0 { 1usize } else { 0 };
+    let i1 = (((h1 >> 1) & 3) as usize).wrapping_sub(1);
+    let i2 = (h2 >> 4) as usize;
+    let row = &*HALFRATE.as_ptr().add(i0);
+    let col = &*row.as_ptr().add(i1);
+    2 * (*col.as_ptr().add(i2)) as c_uint
 }

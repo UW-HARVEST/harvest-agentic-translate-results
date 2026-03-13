@@ -19,7 +19,7 @@ pub extern "C" fn next_double(rnd: *mut cn_rnd_t) -> f64 {
     let rnd = unsafe { &mut *rnd };
     let value = cn_rnd_next(rnd);
     let exponent: u64 = 1023;
-    let mantissa = value >> 12;
-    let result = (exponent << 52) | mantissa;
+    let mantissa: u64 = value >> 12;
+    let result: u64 = (exponent << 52) | mantissa;
     f64::from_bits(result) - 1.0
 }

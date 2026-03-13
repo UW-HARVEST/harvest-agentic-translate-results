@@ -1,11 +1,10 @@
-use std::os::raw::{c_int, c_void};
+use std::os::raw::c_int;
 
 type ImaU8 = u8;
 type ImaU16 = u16;
 type ImaU32 = u32;
 type ImaU64 = u64;
 type ImaF64 = f64;
-type ImaS32 = i32;
 type ImaS64 = i64;
 
 #[repr(C)]
@@ -51,8 +50,8 @@ struct CafAudioDescription {
 struct CafPacketTable {
     packet_count: ImaS64,
     frame_count: ImaS64,
-    priming_frames: ImaS32,
-    remainder_frames: ImaS32,
+    priming_frames: i32,
+    remainder_frames: i32,
 }
 
 #[repr(C)]
@@ -97,63 +96,72 @@ fn ima_btoh64(v: ImaU64) -> ImaU64 {
     ima_bswap64(v)
 }
 
-/// Macro to build a little-endian 4-char code from bytes, matching the C pattern.
-macro_rules! fourcc {
-    ($a:expr, $b:expr, $c:expr, $d:expr) => {
-        (($a as ImaU32)
-            | (($b as ImaU32) << 8)
-            | (($c as ImaU32) << 16)
-            | (($d as ImaU32) << 24))
-    };
+const fn make_tag(a: u8, b: u8, c: u8, d: u8) -> ImaU32 {
+    (a as ImaU32) | ((b as ImaU32) << 8) | ((c as ImaU32) << 16) | ((d as ImaU32) << 24)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ima_parse(info: *mut ImaInfo, data: *const c_void) -> c_int {
+pub unsafe extern "C" fn ima_parse(info: *mut ImaInfo, data: *const u8) -> c_int {
     let header = data as *const CafHeader;
-    let mut chunk = header.add(1) as *const CafChunk;
-    let mut desc: *const CafAudioDescription = std::ptr::null();
-    let mut pakt: *const CafPacketTable = std::ptr::null();
+    let mut chunk = unsafe { header.add(1) } as *const CafChunk;
+    let desc: *const CafAudioDescription;
+    let pakt: *const CafPacketTable;
     let blocks: *const ImaBlock;
     let chunk_size: ImaS64;
 
-    if ima_btoh32((*header).type_) != fourcc!(b'f', b'f', b'a', b'c') {
+    // Check 'caff' magic (built as little-endian u32 from chars: 'f','f','a','c')
+    if ima_btoh32(unsafe { (*header).type_ }) != make_tag(b'f', b'f', b'a', b'c') {
         return -1;
     }
-    if ima_btoh16((*header).version) != 1 {
+    if ima_btoh16(unsafe { (*header).version }) != 1 {
         return -2;
     }
 
-    loop {
-        let chunk_type = ima_btoh32((*chunk).type_);
-        let cs = ima_btoh64((*chunk).size as ImaU64) as ImaS64;
+    let mut found_desc: *const CafAudioDescription = std::ptr::null();
+    let mut found_pakt: *const CafPacketTable = std::ptr::null();
 
-        if chunk_type == fourcc!(b'c', b's', b'e', b'd') {
-            desc = chunk.add(1) as *const CafAudioDescription;
-        } else if chunk_type == fourcc!(b't', b'k', b'a', b'p') {
-            pakt = chunk.add(1) as *const CafPacketTable;
-        } else if chunk_type == fourcc!(b'a', b't', b'a', b'd') {
-            let caf_data = chunk.add(1) as *const CafData;
-            blocks = caf_data.add(1) as *const ImaBlock;
+    loop {
+        let chunk_type = ima_btoh32(unsafe { (*chunk).type_ });
+        let cs = ima_btoh64(unsafe { (*chunk).size } as ImaU64);
+        let cs = cs as ImaS64;
+
+        if chunk_type == make_tag(b'c', b's', b'e', b'd') {
+            // 'desc' chunk
+            found_desc = unsafe { chunk.add(1) } as *const CafAudioDescription;
+        } else if chunk_type == make_tag(b't', b'k', b'a', b'p') {
+            // 'pakt' chunk
+            found_pakt = unsafe { chunk.add(1) } as *const CafPacketTable;
+        } else if chunk_type == make_tag(b'a', b't', b'a', b'd') {
+            // 'data' chunk
+            let caf_data = unsafe { chunk.add(1) } as *const CafData;
+            blocks = unsafe { caf_data.add(1) } as *const ImaBlock;
             chunk_size = cs;
-            break;
+
+            // Check format_id == 'ima4'
+            desc = found_desc;
+            pakt = found_pakt;
+            if ima_btoh32(unsafe { (*desc).format_id }) != make_tag(b'4', b'a', b'm', b'i') {
+                return -3;
+            }
+
+            unsafe {
+                (*info).blocks = blocks;
+                (*info).size = chunk_size as ImaU64;
+                (*info).frame_count = ima_btoh64((*pakt).frame_count as ImaU64);
+                (*info).channel_count = ima_btoh32((*desc).channels_per_frame);
+
+                // Union punning for sample_rate: read f64 bits as u64, bswap, reinterpret as f64
+                let sr_bits = *(&(*desc).sample_rate as *const ImaF64 as *const ImaU64);
+                let sr_bits = ima_btoh64(sr_bits);
+                (*info).sample_rate = f64::from_bits(sr_bits);
+            }
+
+            return 0;
         }
 
-        chunk = ((chunk.add(1) as *const ImaU8).add(cs as usize)) as *const CafChunk;
+        // Advance to next chunk: skip past chunk header + chunk_size bytes
+        chunk = unsafe {
+            (chunk.add(1) as *const ImaU8).add(cs as usize) as *const CafChunk
+        };
     }
-
-    if ima_btoh32((*desc).format_id) != fourcc!(b'4', b'a', b'm', b'i') {
-        return -3;
-    }
-
-    (*info).blocks = blocks;
-    (*info).size = chunk_size as ImaU64;
-    (*info).frame_count = ima_btoh64((*pakt).frame_count as ImaU64);
-    (*info).channel_count = ima_btoh32((*desc).channels_per_frame);
-
-    // Replicate the C union-based byte-swap of the f64 sample_rate
-    let sr_bits = (*desc).sample_rate.to_bits();
-    let swapped = ima_btoh64(sr_bits);
-    (*info).sample_rate = f64::from_bits(swapped);
-
-    0
 }

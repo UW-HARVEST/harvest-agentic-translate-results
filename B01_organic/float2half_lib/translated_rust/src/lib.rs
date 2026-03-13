@@ -106,7 +106,7 @@ static M_SHIFT: [u8; 512] = [
 
 #[unsafe(no_mangle)]
 pub extern "C" fn float2half(flt: f32) -> u16 {
-    let n: u32 = flt.to_bits();
+    let n = flt.to_bits();
     let j = ((n >> 23) & 0x1ff) as usize;
     (M_BASE[j] as u32).wrapping_add((n & 0x007fffff) >> M_SHIFT[j]) as u16
 }

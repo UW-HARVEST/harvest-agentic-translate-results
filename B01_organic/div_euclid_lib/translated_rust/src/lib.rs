@@ -1,16 +1,14 @@
-use std::os::raw::c_int;
+use std::ffi::c_int;
+
+const INT_MIN: c_int = -0x7fffffff - 1;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn div_euclid(v1: c_int, v2: c_int) -> c_int {
-    const INT_MIN: c_int = -0x7fffffff - 1;
-
     if v2 == 0 {
         return 0;
     }
-
     let q: c_int;
     let r: c_int;
-
     if v1 >= 0 {
         if v2 >= 0 {
             return v1 / v2;
@@ -42,7 +40,6 @@ pub extern "C" fn div_euclid(v1: c_int, v2: c_int) -> c_int {
         q = 1;
         r = 0;
     }
-
     if r >= 0 {
         q
     } else {

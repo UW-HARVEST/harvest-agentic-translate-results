@@ -1,6 +1,4 @@
-use std::os::raw::c_int;
-
-type Mp3dSampleT = i16;
+use std::ffi::c_int;
 
 fn mp3d_scale_pcm(sample: f32) -> i16 {
     if sample >= 32766.5 {
@@ -9,13 +7,13 @@ fn mp3d_scale_pcm(sample: f32) -> i16 {
     if sample <= -32767.5 {
         return -32768_i16;
     }
-    let mut s = (sample + 0.5_f32) as i16;
+    let mut s = (sample + 0.5) as i16;
     s -= (s < 0) as i16;
     s
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn synth_pair(pcm: *mut Mp3dSampleT, nch: c_int, z: *const f32) {
+pub extern "C" fn synth_pair(pcm: *mut i16, nch: c_int, z: *const f32) {
     unsafe {
         let mut a: f32;
         a = (*z.add(14 * 64) - *z) * 29.0;

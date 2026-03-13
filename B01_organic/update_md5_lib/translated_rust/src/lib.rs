@@ -6,16 +6,16 @@ type TflacUint = TflacU64;
 
 #[repr(C)]
 pub struct TflacMd5 {
-    pos: TflacU32,
-    total: TflacU64,
-    buffer: [TflacU8; 64 + 8],
+    pub pos: TflacU32,
+    pub total: TflacU64,
+    pub buffer: [TflacU8; 64 + 8],
 }
 
 #[repr(C)]
 pub struct Tflac {
-    md5_ctx: TflacMd5,
-    cur_blocksize: TflacU32,
-    channels: TflacU32,
+    pub md5_ctx: TflacMd5,
+    pub cur_blocksize: TflacU32,
+    pub channels: TflacU32,
 }
 
 fn tflac_pack_u64le(d: &mut [TflacU8], n: TflacU64) {
@@ -46,16 +46,19 @@ fn tflac_md5_addsample(m: &mut TflacMd5, bits: TflacU32, val: TflacUint) {
 }
 
 /// # Safety
-/// `t` must point to a valid `Tflac`. `samples` must point to enough readable `tflac_s32` values.
+/// `t` must point to a valid `Tflac`. `samples` must point to a buffer
+/// large enough for the access pattern (5 iterations × 32-element stride).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn update_md5(t: *mut Tflac, samples: *const TflacS32) -> TflacU32 {
     let t = unsafe { &mut *t };
     let mut b = t.cur_blocksize.wrapping_mul(t.channels);
     let step = std::mem::size_of::<TflacUint>() as TflacU32;
     let mut ptr = samples;
+
     for _i in 0..=4 {
         let s = unsafe { std::slice::from_raw_parts(ptr, 8) };
-        let mut v: TflacUint = ((s[0] as TflacUint) & 0xFF) << 0;
+        let mut v: TflacUint = 0;
+        v |= ((s[0] as TflacUint) & 0xFF) << 0;
         v |= ((s[1] as TflacUint) & 0xFF) << 8;
         v |= ((s[2] as TflacUint) & 0xFF) << 16;
         v |= ((s[3] as TflacUint) & 0xFF) << 24;
@@ -69,7 +72,7 @@ pub unsafe extern "C" fn update_md5(t: *mut Tflac, samples: *const TflacS32) -> 
             v,
         );
         b = b.wrapping_sub(step);
-        // C: samples += (8 * sizeof(tflac_s32)) — pointer arithmetic in units of tflac_s32
+        // C: samples += (8 * sizeof(tflac_s32))  =>  advance by 8*4 = 32 elements
         ptr = unsafe { ptr.add(8 * std::mem::size_of::<TflacS32>()) };
     }
     b

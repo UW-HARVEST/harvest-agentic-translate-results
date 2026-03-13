@@ -1,5 +1,5 @@
 #[repr(C)]
-pub struct Tflac {
+pub struct tflac {
     pub samplerate: u32,
     pub channels: u32,
     pub bitdepth: u32,
@@ -9,7 +9,7 @@ pub struct Tflac {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn update_frame_header(t: *mut Tflac) {
+pub extern "C" fn update_frame_header(t: *mut tflac) {
     let t = unsafe { &mut *t };
 
     t.frame_header = 0xFFF8u32 << 16;
@@ -56,8 +56,10 @@ pub extern "C" fn update_frame_header(t: *mut Tflac) {
                 }
             } else if t.samplerate < 65536 {
                 t.frame_header |= 0x0Du32 << 8;
-            } else if t.samplerate % 10 == 0 && t.samplerate / 10 < 65536 {
-                t.frame_header |= 0x0Eu32 << 8;
+            } else if t.samplerate % 10 == 0 {
+                if t.samplerate / 10 < 65536 {
+                    t.frame_header |= 0x0Eu32 << 8;
+                }
             }
         }
     }

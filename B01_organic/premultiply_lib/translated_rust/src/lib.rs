@@ -22,7 +22,8 @@ pub unsafe extern "C" fn premultiply(img: *mut cp_image_t) {
     let stride = w as usize * std::mem::size_of::<cp_pixel_t>();
     let data = unsafe { (*img).pix as *mut u8 };
     let mut i: usize = 0;
-    while i < stride * h as usize {
+    let end = stride * h as usize;
+    while i < end {
         let a = unsafe { *data.add(i + 3) } as f32 / 255.0;
         let r = unsafe { *data.add(i) } as f32 / 255.0;
         let g = unsafe { *data.add(i + 1) } as f32 / 255.0;

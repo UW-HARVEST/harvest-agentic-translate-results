@@ -17,13 +17,15 @@ pub struct Tflac {
     pub cur_blocksize: TflacU32,
 }
 
+const TFLAC_CHANNEL_INDEPENDENT: u8 = 0;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tflac_size_memory(blocksize: TflacU32) -> TflacU32 {
-    15u32.wrapping_add(5u32.wrapping_mul((15u32.wrapping_add(blocksize.wrapping_mul(4u32))) & 0xFFFFFFF0u32))
+    15u32.wrapping_add(5u32.wrapping_mul(15u32.wrapping_add(blocksize.wrapping_mul(4)) & 0xFFFFFFF0u32))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn flac_validate(t: *mut Tflac) -> c_int {
+pub unsafe extern "C" fn flac_validate(t: *mut Tflac) -> c_int {
     let t = unsafe { &mut *t };
 
     if t.blocksize < 16 { return -1; }
@@ -35,9 +37,9 @@ pub extern "C" fn flac_validate(t: *mut Tflac) -> c_int {
     if t.bitdepth == 0 { return -1; }
     if t.bitdepth > 32 { return -1; }
 
-    if t.channel_mode != 0 {
+    if t.channel_mode != TFLAC_CHANNEL_INDEPENDENT {
         if t.channels != 2 || t.bitdepth == 32 {
-            t.channel_mode = 0;
+            t.channel_mode = TFLAC_CHANNEL_INDEPENDENT;
         }
     }
 
