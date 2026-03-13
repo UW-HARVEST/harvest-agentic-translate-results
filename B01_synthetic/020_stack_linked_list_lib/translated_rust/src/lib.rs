@@ -10,8 +10,8 @@ pub struct ListNode {
 pub extern "C" fn smallestValue(head: *mut ListNode) -> c_int {
     unsafe {
         if !head.is_null() {
-            let mut smallest = (*head).value;
             let mut current = head;
+            let mut smallest = (*current).value;
             while !(*current).next.is_null() {
                 current = (*current).next;
                 if (*current).value < smallest {

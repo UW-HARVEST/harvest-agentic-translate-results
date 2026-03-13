@@ -1,4 +1,4 @@
-use std::os::raw::c_float;
+use std::ffi::c_float;
 
 fn print_hex(p: &[u8]) {
     for &b in p {

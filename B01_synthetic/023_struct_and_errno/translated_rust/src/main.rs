@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use std::io::{self, BufRead};
 
 struct House {
     floors: i32,
@@ -21,45 +21,43 @@ fn print_house(house: &House) {
     );
 }
 
-fn run(the_house: &mut House, extra_bedrooms: i32) {
-    print_house(the_house);
-    add_floor(the_house);
-    print_house(the_house);
-    the_house.bathrooms += 1.0;
-    print_house(the_house);
-    add_bedrooms(the_house, extra_bedrooms);
-    print_house(the_house);
+fn run(house: &mut House, extra_bedrooms: i32) {
+    print_house(house);
+    add_floor(house);
+    print_house(house);
+    house.bathrooms += 1.0;
+    print_house(house);
+    add_bedrooms(house, extra_bedrooms);
+    print_house(house);
 }
 
+/// Mimics C parse_val: strtol with endp != str, errno == 0, INT_MIN..=INT_MAX
 fn parse_val(s: &str) -> Option<i32> {
-    let trimmed = s.trim_end_matches('\n');
-    // Match strtol behavior: skip leading whitespace, parse digits
-    let trimmed = trimmed.trim_start();
+    let s = s.trim_end_matches('\n');
+    // strtol skips leading whitespace, then parses digits
+    let trimmed = s.trim_start();
     if trimmed.is_empty() {
         return None;
     }
-    // Find the numeric prefix (optional sign + digits), matching strtol
-    let mut end = 0;
-    let bytes = trimmed.as_bytes();
-    if end < bytes.len() && (bytes[end] == b'+' || bytes[end] == b'-') {
-        end += 1;
+    // Find the numeric prefix that strtol would consume
+    let mut chars = trimmed.chars();
+    let first = chars.next().unwrap();
+    let start = if first == '+' || first == '-' { 1 } else { 0 };
+    let rest = &trimmed[start..];
+    if rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_digit()) {
+        return None; // endp == str equivalent (no digits consumed)
     }
-    while end < bytes.len() && bytes[end].is_ascii_digit() {
-        end += 1;
-    }
-    if end == 0 || (end == 1 && (bytes[0] == b'+' || bytes[0] == b'-')) {
-        return None; // endp == str equivalent
-    }
+    let end = start + rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
     let num_str = &trimmed[..end];
-    // strtol returns long; check parse and i32 range
+    // Parse as i64 to check range like C's long -> int
     match num_str.parse::<i64>() {
-        Ok(tmp) if tmp >= i32::MIN as i64 && tmp <= i32::MAX as i64 => Some(tmp as i32),
+        Ok(v) if v >= i32::MIN as i64 && v <= i32::MAX as i64 => Some(v as i32),
         _ => None,
     }
 }
 
 fn main() {
-    let stdin = std::io::stdin();
+    let stdin = io::stdin();
     let mut line = String::new();
     let _ = stdin.lock().read_line(&mut line);
     if let Some(x) = parse_val(&line) {

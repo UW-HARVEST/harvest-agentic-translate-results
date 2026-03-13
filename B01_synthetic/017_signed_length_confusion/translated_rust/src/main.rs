@@ -1,61 +1,93 @@
-use std::io::{self, BufRead, Write, BufWriter};
+use std::io::{self, Read, Write, BufWriter};
 
-fn c_atoi(s: &str) -> i32 {
-    let bytes = s.as_bytes();
+fn c_atoi(s: &[u8]) -> i32 {
     let mut i = 0;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) {
         i += 1;
     }
-    let neg = if i < bytes.len() && bytes[i] == b'-' {
+    let neg = if i < s.len() && s[i] == b'-' {
         i += 1;
         true
     } else {
-        if i < bytes.len() && bytes[i] == b'+' {
+        if i < s.len() && s[i] == b'+' {
             i += 1;
         }
         false
     };
-    let mut val: i32 = 0;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        val = val.wrapping_mul(10).wrapping_add((bytes[i] - b'0') as i32);
+    let mut result: i32 = 0;
+    while i < s.len() && s[i].is_ascii_digit() {
+        result = result.wrapping_mul(10).wrapping_add((s[i] - b'0') as i32);
         i += 1;
     }
-    if neg { val.wrapping_neg() } else { val }
+    if neg { result.wrapping_neg() } else { result }
+}
+
+fn c_fgets(buf: &mut Vec<u8>, max_size: usize) -> bool {
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
+    let max_chars = max_size - 1;
+    let mut byte = [0u8; 1];
+    loop {
+        if buf.len() >= max_chars {
+            break;
+        }
+        match handle.read(&mut byte) {
+            Ok(0) => break,
+            Ok(_) => {
+                buf.push(byte[0]);
+                if byte[0] == b'\n' {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    !buf.is_empty()
 }
 
 fn main() {
-    // Use BufWriter to match C's fully-buffered stdout behavior when piped
+    // Use a BufWriter so output is buffered like C's fully-buffered stdout on pipes.
+    // This means if we abort(), unflushed output is lost — matching C behavior.
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
 
     let mut data: i32 = -1;
 
-    let stdin = io::stdin();
-    let mut input_buffer = String::new();
-    if stdin.lock().read_line(&mut input_buffer).unwrap_or(0) > 0 {
-        data = c_atoi(&input_buffer);
-    } else {
-        writeln!(out, "fgets() failed.").unwrap();
-    }
-
-    let mut source = [b'A'; 100];
-    source[99] = 0;
-    let mut dest = [0u8; 100];
-
-    if data < 100 {
-        let n = data as usize;
-        let src_len = source.iter().position(|&b| b == 0).unwrap_or(source.len());
-        let copy_len = src_len.min(n).min(dest.len());
-        dest[..copy_len].copy_from_slice(&source[..copy_len]);
-
-        // dest[data] = '\0' — negative index is UB in C (segfault)
-        if data < 0 || data as usize >= dest.len() {
-            std::process::abort();
+    {
+        let mut input_buffer = Vec::new();
+        if c_fgets(&mut input_buffer, 14) {
+            data = c_atoi(&input_buffer);
+        } else {
+            let _ = writeln!(out, "fgets() failed.");
         }
-        dest[data as usize] = 0;
     }
 
-    let end = dest.iter().position(|&b| b == 0).unwrap_or(dest.len());
-    writeln!(out, "{}", std::str::from_utf8(&dest[..end]).unwrap_or("")).unwrap();
-    out.flush().unwrap();
+    {
+        let mut source = [0u8; 100];
+        let mut dest = [0u8; 100];
+        for i in 0..99 {
+            source[i] = b'A';
+        }
+        source[99] = 0;
+
+        if data < 100 {
+            if data < 0 {
+                // C: strncpy with wrapped huge size + dest[negative] = UB -> segfault.
+                // Buffered output is lost. Abort to match.
+                std::process::abort();
+            }
+            let n = data as usize;
+            let src_null = source.iter().position(|&b| b == 0).unwrap_or(source.len());
+            for i in 0..n {
+                dest[i] = if i < src_null { source[i] } else { 0 };
+            }
+            dest[n] = 0;
+        }
+
+        let end = dest.iter().position(|&b| b == 0).unwrap_or(dest.len());
+        let s = std::str::from_utf8(&dest[..end]).unwrap_or("");
+        let _ = writeln!(out, "{}", s);
+    }
+
+    let _ = out.flush();
 }

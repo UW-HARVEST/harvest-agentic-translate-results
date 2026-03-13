@@ -1,32 +1,52 @@
-use std::ffi::c_int;
+use std::ffi::{c_char, c_int, CStr};
+use std::alloc::{alloc, Layout};
 
-fn print_int_line(int_number: c_int) {
+#[unsafe(no_mangle)]
+pub extern "C" fn printLine(line: *const c_char) {
+    if !line.is_null() {
+        unsafe {
+            let s = CStr::from_ptr(line);
+            println!("{}", s.to_str().unwrap_or(""));
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn printIntLine(int_number: c_int) {
     println!("{}", int_number);
 }
 
+/// Reproduces the C bug: allocates only 10 bytes (not 10*sizeof(int)),
+/// then writes 10 ints through that pointer — a buffer overflow.
 fn bad() {
-    // alloca(10) — only 10 bytes, not enough for 10 ints (reproducing the bug)
-    let mut buf = [0u8; 10];
-    let data: *mut c_int = buf.as_mut_ptr() as *mut c_int;
-    let source: [c_int; 10] = [0; 10];
     unsafe {
+        // alloca(10) — only 10 bytes, not enough for 10 ints
+        let layout = Layout::from_size_align(10, std::mem::align_of::<c_int>()).unwrap();
+        let data = alloc(layout) as *mut c_int;
+
+        let source: [c_int; 10] = [0; 10];
         for i in 0..10 {
             *data.add(i) = source[i];
         }
-        print_int_line(*data);
+        printIntLine(*data);
     }
 }
 
 fn good() {
-    // alloca(10 * sizeof(int)) — correct allocation
-    let mut buf = [0u8; 10 * std::mem::size_of::<c_int>()];
-    let data: *mut c_int = buf.as_mut_ptr() as *mut c_int;
-    let source: [c_int; 10] = [0; 10];
     unsafe {
+        // alloca(10*sizeof(int)) — correct size
+        let layout = Layout::from_size_align(
+            10 * std::mem::size_of::<c_int>(),
+            std::mem::align_of::<c_int>(),
+        )
+        .unwrap();
+        let data = alloc(layout) as *mut c_int;
+
+        let source: [c_int; 10] = [0; 10];
         for i in 0..10 {
             *data.add(i) = source[i];
         }
-        print_int_line(*data);
+        printIntLine(*data);
     }
 }
 

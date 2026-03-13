@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::CString;
 use std::process;
 
 extern "C" {
@@ -17,52 +18,52 @@ fn get_errno() -> i32 {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
-        eprint!("Usage: {} base exponent\n", args[0]);
+        eprintln!("Usage: {} base exponent", args[0]);
         process::exit(1);
     }
 
     // Convert base
-    let base: f64;
-    {
-        let cstr = std::ffi::CString::new(args[1].as_str()).unwrap();
+    let base = {
+        let cstr = CString::new(args[1].as_str()).unwrap();
         let mut endptr: *mut libc::c_char = std::ptr::null_mut();
         set_errno(0);
-        base = unsafe { strtod(cstr.as_ptr(), &mut endptr) };
+        let val = unsafe { strtod(cstr.as_ptr(), &mut endptr) };
         if get_errno() == libc::ERANGE {
-            eprint!("Range error while converting base '{}'\n", args[1]);
+            eprintln!("Range error while converting base '{}'", args[1]);
             process::exit(1);
         } else if unsafe { *endptr } != 0 {
-            eprint!("Invalid numeric input for base: '{}'\n", args[1]);
+            eprintln!("Invalid numeric input for base: '{}'", args[1]);
             process::exit(1);
         }
-    }
+        val
+    };
 
     // Convert exponent
-    let exponent: f64;
-    {
-        let cstr = std::ffi::CString::new(args[2].as_str()).unwrap();
+    let exponent = {
+        let cstr = CString::new(args[2].as_str()).unwrap();
         let mut endptr: *mut libc::c_char = std::ptr::null_mut();
         set_errno(0);
-        exponent = unsafe { strtod(cstr.as_ptr(), &mut endptr) };
+        let val = unsafe { strtod(cstr.as_ptr(), &mut endptr) };
         if get_errno() == libc::ERANGE {
-            eprint!("Range error while converting exponent '{}'\n", args[2]);
+            eprintln!("Range error while converting exponent '{}'", args[2]);
             process::exit(1);
         } else if unsafe { *endptr } != 0 {
-            eprint!("Invalid numeric input for exponent: '{}'\n", args[2]);
+            eprintln!("Invalid numeric input for exponent: '{}'", args[2]);
             process::exit(1);
         }
-    }
+        val
+    };
 
     // Calculate power
     set_errno(0);
     let result = unsafe { pow(base, exponent) };
     if get_errno() == libc::EDOM {
-        eprint!("Domain error: pow({:.2}, {:.2}) is undefined in the real number domain.\n", base, exponent);
+        eprintln!("Domain error: pow({:.2}, {:.2}) is undefined in the real number domain.", base, exponent);
         process::exit(1);
     } else if get_errno() == libc::ERANGE {
-        eprint!("Range error: pow({:.2}, {:.2}) caused overflow or underflow.\n", base, exponent);
+        eprintln!("Range error: pow({:.2}, {:.2}) caused overflow or underflow.", base, exponent);
         process::exit(1);
     }
 
-    print!("Result: {:.2}\n", result);
+    println!("Result: {:.2}", result);
 }

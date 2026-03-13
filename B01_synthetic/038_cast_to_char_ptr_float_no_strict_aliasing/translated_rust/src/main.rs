@@ -8,12 +8,18 @@ fn print_hex(bytes: &[u8]) {
 }
 
 fn driver(x: f32) {
-    print_hex(&x.to_ne_bytes());
+    let raw = x.to_ne_bytes();
+    print_hex(&raw);
 }
 
 fn main() {
     let mut input = String::new();
-    io::stdin().read_to_string(&mut input).unwrap();
-    let x: f32 = input.trim().parse().unwrap_or(0.0);
+    let _ = io::stdin().read_to_string(&mut input);
+    let mut x: f32 = 0.0;
+    if let Some(token) = input.split_whitespace().next() {
+        if let Ok(v) = token.parse::<f32>() {
+            x = v;
+        }
+    }
     driver(x);
 }

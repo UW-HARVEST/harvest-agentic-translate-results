@@ -1,11 +1,8 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(s1: *const c_char, s2: *const c_char) {
     unsafe {
-        let s1 = CStr::from_ptr(s1).to_bytes();
-        let s2 = CStr::from_ptr(s2).to_bytes();
-        let n = s1.iter().take_while(|b| !s2.contains(b)).count();
-        println!("{n}");
+        libc::printf(b"%zu\n\0".as_ptr() as *const c_char, libc::strcspn(s1, s2));
     }
 }

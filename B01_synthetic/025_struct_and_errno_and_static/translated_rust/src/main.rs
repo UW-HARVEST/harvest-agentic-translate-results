@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use std::io::BufRead;
 
 struct House {
     floors: i32,
@@ -16,12 +16,14 @@ fn add_floor(house: &mut House) {
     house.floors += 1;
 }
 
-fn add_bedrooms(house: &mut House, extra: i32) {
-    house.bedrooms += extra;
+fn add_bedrooms(house: &mut House, extra_bedrooms: i32) {
+    house.bedrooms += extra_bedrooms;
 }
 
 fn add_floor_to_the_house() {
-    unsafe { add_floor(&mut THE_HOUSE) };
+    unsafe {
+        add_floor(&mut THE_HOUSE);
+    }
 }
 
 fn print_the_house() {
@@ -37,47 +39,55 @@ fn run(extra_bedrooms: i32) {
     print_the_house();
     add_floor_to_the_house();
     print_the_house();
-    unsafe { THE_HOUSE.bathrooms += 1.0 };
+    unsafe {
+        THE_HOUSE.bathrooms += 1.0;
+    }
     print_the_house();
-    unsafe { add_bedrooms(&mut THE_HOUSE, extra_bedrooms) };
+    unsafe {
+        add_bedrooms(&mut THE_HOUSE, extra_bedrooms);
+    }
     print_the_house();
 }
 
+/// Mimics C strtol parse_val: trims leading whitespace, parses an integer,
+/// returns true if at least one digit was consumed and value fits in i32.
 fn parse_val(s: &str) -> Option<i32> {
     let trimmed = s.trim_start();
     if trimmed.is_empty() {
         return None;
     }
-    // Match strtol behavior: optional sign then digits
-    let mut chars = trimmed.chars().peekable();
-    let mut num_str = String::new();
-    if matches!(chars.peek(), Some('+') | Some('-')) {
-        num_str.push(chars.next().unwrap());
-    }
-    let had_digit = chars.peek().map_or(false, |c| c.is_ascii_digit());
-    if !had_digit {
+    // Determine sign and digit start
+    let (rest, negative) = if trimmed.starts_with('-') {
+        (&trimmed[1..], true)
+    } else if trimmed.starts_with('+') {
+        (&trimmed[1..], false)
+    } else {
+        (trimmed, false)
+    };
+    // Must have at least one digit (strtol: endp != str check)
+    if rest.is_empty() || !rest.as_bytes()[0].is_ascii_digit() {
         return None;
     }
-    while let Some(&c) = chars.peek() {
-        if c.is_ascii_digit() {
-            num_str.push(chars.next().unwrap());
-        } else {
-            break;
-        }
-    }
-    // strtol returns long; C code checks INT_MIN..INT_MAX and errno==0
-    let val: i64 = num_str.parse().ok()?;
-    if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
-        Some(val as i32)
+    // Collect digits
+    let digit_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let digits = &rest[..digit_end];
+    // Parse as i64 to check overflow like strtol with long->int range check
+    let magnitude: i64 = digits.parse().ok()?;
+    let value: i64 = if negative { -magnitude } else { magnitude };
+    if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
+        Some(value as i32)
     } else {
         None
     }
 }
 
 fn main() {
-    let mut input = String::new();
-    let _ = io::stdin().lock().read_line(&mut input);
-    if let Some(x) = parse_val(&input) {
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    // fgets reads one line
+    let _ = stdin.lock().read_line(&mut line);
+    // Remove trailing newline to match strtol stopping at non-digit
+    if let Some(x) = parse_val(&line) {
         run(x);
         run(x);
     } else {

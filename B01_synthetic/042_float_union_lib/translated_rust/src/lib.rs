@@ -1,9 +1,13 @@
 use std::ffi::c_double;
 
+extern "C" {
+    fn printf(fmt: *const std::ffi::c_char, ...) -> std::ffi::c_int;
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(f: c_double) {
-    let x = f.to_bits();
+    let u: u64 = f.to_bits();
     unsafe {
-        libc::printf(b"%llx %a %.4f\n\0".as_ptr() as *const libc::c_char, x, f, f);
+        printf(b"%llx %a %.4f\n\0".as_ptr().cast(), u, f, f);
     }
 }

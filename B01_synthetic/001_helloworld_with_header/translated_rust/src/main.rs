@@ -1,8 +1,5 @@
-fn helloworld() -> i32 {
-    print!("Hello World!\n");
-    0
-}
+mod sillymain;
 
 fn main() {
-    std::process::exit(helloworld());
+    std::process::exit(sillymain::helloworld());
 }

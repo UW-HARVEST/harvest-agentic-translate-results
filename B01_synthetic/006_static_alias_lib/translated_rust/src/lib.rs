@@ -17,12 +17,12 @@ pub extern "C" fn static_alias(outer: *mut c_int) -> *mut c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(initial_value: c_int, iterations: c_int) {
-    let mut running_sum = initial_value;
-    let mut ptr: *mut c_int = &mut running_sum;
-    for _ in 0..iterations {
-        ptr = static_alias(ptr);
-        unsafe {
-            libc::printf(b"%d\n\0".as_ptr() as *const libc::c_char, *ptr);
+    unsafe {
+        let mut val = initial_value;
+        let mut running_sum: *mut c_int = &mut val;
+        for _ in 0..iterations {
+            running_sum = static_alias(running_sum);
+            libc::printf(b"%d\n\0".as_ptr() as *const libc::c_char, *running_sum);
         }
     }
 }

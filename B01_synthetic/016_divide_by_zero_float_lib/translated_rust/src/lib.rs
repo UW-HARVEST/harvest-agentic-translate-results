@@ -1,8 +1,7 @@
-use std::ffi::c_float;
-use std::os::raw::{c_char, c_int};
+use std::ffi::{c_char, c_float, c_int};
 
-unsafe extern "C" {
-    fn printf(format: *const c_char, ...) -> c_int;
+extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
     fn fabs(x: f64) -> f64;
 }
 
@@ -16,7 +15,8 @@ fn print_int_line(int_number: c_int) {
     unsafe { printf(b"%d\n\0".as_ptr() as *const c_char, int_number) };
 }
 
-fn bad(data: c_float) {
+#[unsafe(no_mangle)]
+pub extern "C" fn bad(data: c_float) {
     let result = (100.0f64 / data as f64) as c_int;
     print_int_line(result);
 }
@@ -32,11 +32,14 @@ fn good_b2g(data: c_float) {
         let result = (100.0f64 / data as f64) as c_int;
         print_int_line(result);
     } else {
-        unsafe { print_line(b"This would result in a divide by zero\0".as_ptr() as *const c_char) };
+        unsafe {
+            print_line(b"This would result in a divide by zero\0".as_ptr() as *const c_char);
+        }
     }
 }
 
-fn good(data: c_float) {
+#[unsafe(no_mangle)]
+pub extern "C" fn good(data: c_float) {
     good_g2b();
     good_b2g(data);
 }

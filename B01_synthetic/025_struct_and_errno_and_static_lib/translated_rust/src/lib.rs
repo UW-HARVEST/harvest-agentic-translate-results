@@ -1,5 +1,5 @@
 use std::ffi::{c_char, c_int, CStr};
-use std::sync::Mutex;
+use std::ptr::addr_of_mut;
 
 struct House {
     floors: c_int,
@@ -7,11 +7,11 @@ struct House {
     bathrooms: f64,
 }
 
-static THE_HOUSE: Mutex<House> = Mutex::new(House {
+static mut THE_HOUSE: House = House {
     floors: 2,
     bedrooms: 5,
     bathrooms: 2.5,
-});
+};
 
 fn add_floor(house: &mut House) {
     house.floors += 1;
@@ -22,15 +22,19 @@ fn add_bedrooms(house: &mut House, extra_bedrooms: c_int) {
 }
 
 fn add_floor_to_the_house() {
-    add_floor(&mut THE_HOUSE.lock().unwrap());
+    unsafe {
+        add_floor(&mut *addr_of_mut!(THE_HOUSE));
+    }
 }
 
 fn print_the_house() {
-    let h = THE_HOUSE.lock().unwrap();
-    println!(
-        "The house has {} floors, {} bedrooms, and {:.1} bathrooms",
-        h.floors, h.bedrooms, h.bathrooms
-    );
+    unsafe {
+        let h = &*addr_of_mut!(THE_HOUSE);
+        print!(
+            "The house has {} floors, {} bedrooms, and {:.1} bathrooms\n",
+            h.floors, h.bedrooms, h.bathrooms
+        );
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -38,52 +42,67 @@ pub extern "C" fn run(extra_bedrooms: c_int) {
     print_the_house();
     add_floor_to_the_house();
     print_the_house();
-    THE_HOUSE.lock().unwrap().bathrooms += 1.0;
+    unsafe {
+        (*addr_of_mut!(THE_HOUSE)).bathrooms += 1.0;
+    }
     print_the_house();
-    add_bedrooms(&mut THE_HOUSE.lock().unwrap(), extra_bedrooms);
+    unsafe {
+        add_bedrooms(&mut *addr_of_mut!(THE_HOUSE), extra_bedrooms);
+    }
     print_the_house();
 }
 
 fn parse_val(s: &[u8]) -> Option<c_int> {
-    // Skip leading whitespace to match strtol behavior
-    let s = match std::str::from_utf8(s.split(|&b| b == 0).next().unwrap_or(s)) {
-        Ok(s) => s.trim_start(),
-        Err(_) => return None,
-    };
-    if s.is_empty() {
+    let mut i = 0;
+    while i < s.len() && s[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i >= s.len() {
         return None;
     }
-    // strtol parses as long; we check endp != str (i.e. something was parsed),
-    // errno == 0 (no overflow), and INT_MIN <= tmp <= INT_MAX
-    match s.parse::<i64>() {
-        Ok(tmp) if tmp >= c_int::MIN as i64 && tmp <= c_int::MAX as i64 => Some(tmp as c_int),
-        _ => {
-            // Try parsing just the leading numeric portion (strtol stops at first non-digit)
-            let end = if s.starts_with('-') || s.starts_with('+') {
-                1 + s[1..].find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len() - 1)
-            } else {
-                s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len())
-            };
-            if end == 0 || (end == 1 && (s.starts_with('-') || s.starts_with('+'))) {
-                return None; // endp == str
-            }
-            match s[..end].parse::<i64>() {
-                Ok(tmp) if tmp >= c_int::MIN as i64 && tmp <= c_int::MAX as i64 => {
-                    Some(tmp as c_int)
-                }
-                _ => None,
-            }
+    let negative = if s[i] == b'-' {
+        i += 1;
+        true
+    } else {
+        if s[i] == b'+' {
+            i += 1;
         }
+        false
+    };
+    let start = i;
+    let mut val: i64 = 0;
+    let mut overflow = false;
+    while i < s.len() && s[i].is_ascii_digit() {
+        val = match val.checked_mul(10).and_then(|v| v.checked_add((s[i] - b'0') as i64)) {
+            Some(v) => v,
+            None => {
+                overflow = true;
+                break;
+            }
+        };
+        i += 1;
     }
+    if i == start || overflow {
+        return None;
+    }
+    let val = if negative { -val } else { val };
+    if val < c_int::MIN as i64 || val > c_int::MAX as i64 {
+        return None;
+    }
+    Some(val as c_int)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(input: *const c_char) {
     let cstr = unsafe { CStr::from_ptr(input) };
-    if let Some(x) = parse_val(cstr.to_bytes_with_nul()) {
-        run(x);
-        run(x);
-    } else {
-        println!("An error occurred");
+    let bytes = cstr.to_bytes();
+    match parse_val(bytes) {
+        Some(x) => {
+            run(x);
+            run(x);
+        }
+        None => {
+            print!("An error occurred\n");
+        }
     }
 }

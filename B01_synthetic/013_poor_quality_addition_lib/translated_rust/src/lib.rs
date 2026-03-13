@@ -1,36 +1,45 @@
-use std::ffi::c_int;
-use std::ffi::c_char;
+use std::ffi::{c_char, c_int, CStr};
 
-unsafe fn print_line(line: *const c_char) {
+#[unsafe(no_mangle)]
+pub extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
-        unsafe { libc::printf(b"%s\n\0".as_ptr() as *const c_char, line) };
+        let s = unsafe { CStr::from_ptr(line) };
+        println!("{}", s.to_str().unwrap_or(""));
     }
 }
 
-fn print_int_line(int_number: c_int) {
-    unsafe { libc::printf(b"%d\n\0".as_ptr() as *const c_char, int_number) };
+#[unsafe(no_mangle)]
+pub extern "C" fn printIntLine(int_number: c_int) {
+    println!("{}", int_number);
 }
 
-fn bad() {
+#[unsafe(no_mangle)]
+pub extern "C" fn bad() {
+    let int_one: c_int = 1;
+    let int_two: c_int = 1;
     let int_sum: c_int = 0;
-    print_int_line(int_sum);
-    // Original C: intOne + intTwo; (result discarded, intSum unchanged)
-    print_int_line(int_sum);
+    printIntLine(int_sum);
+    // Bug preserved: result of addition is discarded
+    let _ = int_one + int_two;
+    printIntLine(int_sum);
 }
 
-fn good() {
+#[unsafe(no_mangle)]
+pub extern "C" fn good() {
+    let int_one: c_int = 1;
+    let int_two: c_int = 1;
     let mut int_sum: c_int = 0;
-    print_int_line(int_sum);
-    int_sum = 1 + 1;
-    print_int_line(int_sum);
+    printIntLine(int_sum);
+    int_sum = int_one + int_two;
+    printIntLine(int_sum);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver() {
-    unsafe { print_line(b"Calling good()...\0".as_ptr() as *const c_char) };
+    printLine(c"Calling good()...".as_ptr());
     good();
-    unsafe { print_line(b"Finished good()\0".as_ptr() as *const c_char) };
-    unsafe { print_line(b"Calling bad()...\0".as_ptr() as *const c_char) };
+    printLine(c"Finished good()".as_ptr());
+    printLine(c"Calling bad()...".as_ptr());
     bad();
-    unsafe { print_line(b"Finished bad()\0".as_ptr() as *const c_char) };
+    printLine(c"Finished bad()".as_ptr());
 }

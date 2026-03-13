@@ -1,45 +1,43 @@
-use std::ffi::{c_char, c_int, CStr};
+#![allow(non_snake_case, static_mut_refs)]
 
-unsafe fn print_line(line: *const c_char) {
+use std::ffi::{c_char, c_int};
+
+#[unsafe(no_mangle)]
+pub extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
         unsafe {
-            let s = CStr::from_ptr(line);
-            if let Ok(rs) = s.to_str() {
-                println!("{}", rs);
-            }
+            libc::printf(b"%s\n\0".as_ptr() as *const c_char, line);
         }
     }
 }
 
-unsafe fn helper_bad() -> *const c_char {
+/// Intentionally returns a dangling pointer to a stack-local buffer,
+/// reproducing the C undefined behavior exactly.
+unsafe fn helper_bad() -> *mut c_char {
     let char_string: [u8; 17] = *b"helperBad string\0";
-    char_string.as_ptr() as *const c_char
+    char_string.as_ptr() as *mut c_char
 }
 
-fn helper_good1() -> *const c_char {
-    static CHAR_STRING: &[u8; 19] = b"helperGood1 string\0";
-    CHAR_STRING.as_ptr() as *const c_char
-}
-
-unsafe fn bad() {
-    unsafe {
-        print_line(helper_bad());
-    }
-}
-
-fn good() {
-    unsafe {
-        print_line(helper_good1());
-    }
+fn helper_good1() -> *mut c_char {
+    static mut CHAR_STRING: [u8; 19] = *b"helperGood1 string\0";
+    unsafe { CHAR_STRING.as_mut_ptr() as *mut c_char }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(use_good: c_int) {
-    if use_good != 0 {
+pub extern "C" fn bad() {
+    printLine(unsafe { helper_bad() });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn good() {
+    printLine(helper_good1());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn driver(useGood: c_int) {
+    if useGood != 0 {
         good();
     } else {
-        unsafe {
-            bad();
-        }
+        bad();
     }
 }

@@ -3,20 +3,20 @@ use std::mem::MaybeUninit;
 
 unsafe fn print_int_ptr_line(int_number: *const c_int) {
     unsafe {
-        println!("{}", *int_number);
+        libc::printf(b"%d\n\0".as_ptr() as *const libc::c_char, *int_number);
     }
 }
 
 fn bad() {
-    let data: MaybeUninit<*const c_int> = MaybeUninit::uninit();
     unsafe {
-        print_int_ptr_line(data.assume_init());
+        let data: *const c_int = MaybeUninit::uninit().assume_init();
+        print_int_ptr_line(data);
     }
 }
 
 fn good() {
-    let data: c_int = 5;
-    let data_addr: *const c_int = &data;
+    let mut data: c_int = 5;
+    let data_addr: *const c_int = &mut data as *mut c_int as *const c_int;
     unsafe {
         print_int_ptr_line(data_addr);
     }

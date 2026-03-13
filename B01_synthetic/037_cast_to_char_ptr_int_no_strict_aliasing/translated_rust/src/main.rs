@@ -13,7 +13,8 @@ fn driver(x: i32) {
 
 fn main() {
     let mut input = String::new();
-    io::stdin().read_to_string(&mut input).unwrap();
-    let x: i32 = input.split_whitespace().next().unwrap().parse().unwrap();
+    let _ = io::stdin().read_to_string(&mut input);
+    let token = input.split_whitespace().next().unwrap_or("");
+    let x: i32 = token.parse().unwrap_or(0);
     driver(x);
 }

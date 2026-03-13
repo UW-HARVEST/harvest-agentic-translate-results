@@ -2,6 +2,6 @@ use std::ffi::c_int;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
-    let y = 2 * x + 300;
+    let y: c_int = 2_i32.wrapping_mul(x).wrapping_add(300);
     println!("{}", y);
 }

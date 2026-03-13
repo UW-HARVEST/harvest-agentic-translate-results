@@ -1,10 +1,15 @@
 use std::ffi::{c_char, c_int};
 
-unsafe fn foo(inp: *const c_char, c: c_char) -> c_int {
+extern "C" {
+    fn strchr(s: *const c_char, c: c_int) -> *const c_char;
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
+
+fn foo(r#in: *const c_char, c: c_char) -> c_int {
     let mut res: c_int = 0;
-    let mut s = inp;
+    let mut s = r#in;
     loop {
-        s = unsafe { libc::strchr(s, c as c_int) };
+        s = unsafe { strchr(s, c as c_int) };
         if s.is_null() {
             break;
         }
@@ -15,9 +20,9 @@ unsafe fn foo(inp: *const c_char, c: c_char) -> c_int {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(inp: *const c_char) {
-    let a_count = unsafe { foo(inp, b'A' as c_char) };
-    let x_count = unsafe { foo(inp, b'x' as c_char) };
-    print!("A: {}\n", a_count);
-    print!("x: {}\n", x_count);
+pub extern "C" fn driver(r#in: *const c_char) {
+    unsafe {
+        printf(b"A: %d\n\0".as_ptr() as *const c_char, foo(r#in, b'A' as c_char));
+        printf(b"x: %d\n\0".as_ptr() as *const c_char, foo(r#in, b'x' as c_char));
+    }
 }

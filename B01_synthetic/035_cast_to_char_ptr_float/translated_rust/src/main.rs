@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read};
 
 fn print_hex(bytes: &[u8]) {
     for b in bytes {
@@ -13,7 +13,8 @@ fn driver(x: f32) {
 
 fn main() {
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    let x: f32 = input.trim().parse().unwrap_or(0.0);
+    let _ = io::stdin().read_to_string(&mut input);
+    // scanf("%f", &x) skips whitespace then parses a float; on failure x stays 0.0
+    let x: f32 = input.trim().parse().unwrap_or(0.0_f32);
     driver(x);
 }

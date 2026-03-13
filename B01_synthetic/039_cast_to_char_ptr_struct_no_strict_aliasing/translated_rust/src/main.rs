@@ -1,4 +1,5 @@
 use std::io::{self, Read};
+use std::mem;
 
 #[repr(C)]
 struct House {
@@ -20,14 +21,13 @@ fn driver(floors: i32) {
         bedrooms: 3,
         bathrooms: 2.0,
     };
-    let bytes: &[u8] =
-        unsafe { std::slice::from_raw_parts(&house as *const House as *const u8, size_of::<House>()) };
-    print_hex(bytes);
+    let bytes: [u8; mem::size_of::<House>()] = unsafe { mem::transmute(house) };
+    print_hex(&bytes);
 }
 
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
-    let x: i32 = input.trim().parse().unwrap_or(0);
+    let x: i32 = input.split_whitespace().next().unwrap().parse().unwrap();
     driver(x);
 }

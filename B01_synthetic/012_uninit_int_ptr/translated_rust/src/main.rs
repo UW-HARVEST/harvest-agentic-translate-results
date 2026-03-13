@@ -8,11 +8,10 @@ fn print_int_ptr_line(int_number: *const i32) {
 }
 
 fn bad() {
-    unsafe {
-        let data: MaybeUninit<*const i32> = MaybeUninit::uninit();
-        let data = data.assume_init();
-        print_int_ptr_line(data);
-    }
+    // Reproduce C's uninitialized pointer dereference (UB)
+    let data: MaybeUninit<*const i32> = MaybeUninit::uninit();
+    let ptr = unsafe { data.assume_init() };
+    print_int_ptr_line(ptr);
 }
 
 fn good() {
@@ -23,8 +22,11 @@ fn good() {
 
 fn main() {
     let mut input = String::new();
-    let _ = io::stdin().read_to_string(&mut input);
-    let x: i32 = input.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    io::stdin().read_to_string(&mut input).unwrap();
+    // scanf("%d", &x) skips whitespace and parses one int
+    let x: i32 = input.trim().split_whitespace().next()
+        .map(|s| s.parse().unwrap_or(0))
+        .unwrap_or(0);
 
     if x != 0 {
         good();

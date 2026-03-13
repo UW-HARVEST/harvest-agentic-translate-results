@@ -1,42 +1,42 @@
 use std::ffi::c_int;
-use std::sync::atomic::{AtomicI32, Ordering};
 
-static Y: AtomicI32 = AtomicI32::new(123);
+extern "C" {
+    fn printf(fmt: *const u8, ...) -> c_int;
+}
+
+static mut Y: c_int = 123;
 
 fn multi_stage(x: c_int, z: c_int) -> c_int {
-    let result;
-
-    loop {
+    let mut result: c_int = 0;
+    let failed = 'fail: {
         if x != 1 {
-            print!("Error: x != 1\n");
+            unsafe { printf(b"Error: x != 1\n\0".as_ptr()) };
             result = 1;
-            break;
+            break 'fail true;
         }
-
-        if Y.load(Ordering::SeqCst) != 2 {
-            print!("Error: x == 1 but y != 2\n");
+        if unsafe { Y } != 2 {
+            unsafe { printf(b"Error: x == 1 but y != 2\n\0".as_ptr()) };
             result = 2;
-            break;
+            break 'fail true;
         }
-
         if z != 3 {
-            print!("Error: x == 1 and y == 2, but z != 3\n");
+            unsafe { printf(b"Error: x == 1 and y == 2, but z != 3\n\0".as_ptr()) };
             result = 3;
-            break;
+            break 'fail true;
         }
-
-        print!("Ok!\n");
-        return 0;
+        false
+    };
+    if failed {
+        unsafe { printf(b"Operation failed\n\0".as_ptr()) };
+    } else {
+        unsafe { printf(b"Ok!\n\0".as_ptr()) };
     }
-
-    // fail:
-    print!("Operation failed\n");
     result
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int, local_y: c_int, z: c_int) {
-    Y.store(local_y, Ordering::SeqCst);
+    unsafe { Y = local_y };
     let result = multi_stage(x, z);
-    print!("Result: {}\n", result);
+    unsafe { printf(b"Result: %d\n\0".as_ptr(), result) };
 }

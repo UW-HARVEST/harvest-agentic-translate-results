@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, BufRead};
 
 fn print_line(line: &str) {
     println!("{}", line);
@@ -8,7 +8,7 @@ fn print_int_line(n: i32) {
     println!("{}", n);
 }
 
-/// Mimics C's atoi: skip leading whitespace, parse optional sign + digits.
+/// Mimics C's atoi: skip leading whitespace, optional sign, parse digits.
 fn c_atoi(s: &str) -> i32 {
     let s = s.trim_start();
     let mut chars = s.chars().peekable();
@@ -28,81 +28,89 @@ fn c_atoi(s: &str) -> i32 {
     if neg { result.wrapping_neg() } else { result }
 }
 
-/// Mimics fgets(buf, size, stdin): reads up to size-1 bytes, stops at newline (included).
-/// Returns None on EOF with no data read (like fgets returning NULL).
-fn fgets(size: usize) -> Option<String> {
+/// Mimics fgets(buf, 14, stdin). Returns None on EOF with no data read.
+fn read_input() -> Option<String> {
     let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let mut buf = Vec::new();
-    let limit = size - 1;
-    let mut byte = [0u8; 1];
-    for _ in 0..limit {
-        match handle.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) => {
-                buf.push(byte[0]);
-                if byte[0] == b'\n' {
-                    break;
-                }
+    let mut line = String::new();
+    match stdin.lock().read_line(&mut line) {
+        Ok(0) => None,
+        Ok(_) => {
+            if line.len() > 13 {
+                line.truncate(13);
             }
-            Err(_) => break,
+            Some(line)
         }
-    }
-    if buf.is_empty() {
-        None
-    } else {
-        Some(String::from_utf8_lossy(&buf).into_owned())
+        Err(_) => None,
     }
 }
 
 fn bad() {
     let mut data: i32 = -1;
-    if let Some(input) = fgets(14) {
-        data = c_atoi(&input);
-    } else {
-        print_line("fgets() failed.");
+    {
+        match read_input() {
+            Some(line) => {
+                data = c_atoi(&line);
+            }
+            None => {
+                print_line("fgets() failed.");
+            }
+        }
     }
-    let mut buffer = [0i32; 10];
-    if data >= 0 {
-        unsafe {
-            *buffer.as_mut_ptr().offset(data as isize) = 1;
+    {
+        let mut buffer: [i32; 10] = [0; 10];
+        if data >= 0 {
+            // Reproduce the C bug: unchecked array write (stack buffer overflow)
+            unsafe {
+                *buffer.as_mut_ptr().offset(data as isize) = 1;
+            }
+            for i in 0..10 {
+                print_int_line(buffer[i]);
+            }
+        } else {
+            print_line("ERROR: Array index is negative.");
         }
-        for i in 0..10 {
-            print_int_line(buffer[i]);
-        }
-    } else {
-        print_line("ERROR: Array index is negative.");
     }
 }
 
 fn good_g2b() {
-    let data: i32 = 7;
-    let mut buffer = [0i32; 10];
-    if data >= 0 {
-        buffer[data as usize] = 1;
-        for i in 0..10 {
-            print_int_line(buffer[i]);
+    #[allow(unused_assignments)]
+    let mut data: i32 = -1;
+    data = 7;
+    {
+        let mut buffer: [i32; 10] = [0; 10];
+        if data >= 0 {
+            buffer[data as usize] = 1;
+            for i in 0..10 {
+                print_int_line(buffer[i]);
+            }
+        } else {
+            print_line("ERROR: Array index is negative.");
         }
-    } else {
-        print_line("ERROR: Array index is negative.");
     }
 }
 
 fn good_b2g() {
     let mut data: i32 = -1;
-    if let Some(input) = fgets(14) {
-        data = c_atoi(&input);
-    } else {
-        print_line("fgets() failed.");
-    }
-    let mut buffer = [0i32; 10];
-    if data >= 0 && data < 10 {
-        buffer[data as usize] = 1;
-        for i in 0..10 {
-            print_int_line(buffer[i]);
+    {
+        match read_input() {
+            Some(line) => {
+                data = c_atoi(&line);
+            }
+            None => {
+                print_line("fgets() failed.");
+            }
         }
-    } else {
-        print_line("ERROR: Array index is out-of-bounds");
+    }
+    {
+        let mut buffer: [i32; 10] = [0; 10];
+        if data >= 0 && data < 10 {
+            buffer[data as usize] = 1;
+            for i in 0..10 {
+                print_int_line(buffer[i]);
+            }
+        } else {
+            print_line("ERROR: Array index is out-of-bounds");
+        }
     }
 }
 

@@ -2,8 +2,8 @@ fn print_line(line: &str) {
     println!("{}", line);
 }
 
-fn print_int_line(int_number: i32) {
-    println!("{}", int_number);
+fn print_int_line(n: i32) {
+    println!("{}", n);
 }
 
 fn bad() {
@@ -11,7 +11,8 @@ fn bad() {
     let int_two: i32 = 1;
     let int_sum: i32 = 0;
     print_int_line(int_sum);
-    let _ = int_one + int_two; // Bug: result discarded, not assigned to int_sum
+    // Bug preserved: result of addition is discarded, intSum stays 0
+    let _ = int_one + int_two;
     print_int_line(int_sum);
 }
 

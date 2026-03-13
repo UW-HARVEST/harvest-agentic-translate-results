@@ -7,18 +7,18 @@ fn print_line(line: Option<&str>) {
 }
 
 fn helper_bad() -> &'static str {
-    // C original returns pointer to local array (UB).
-    // In practice the string content typically survives, so reproduce that.
+    // C original returns a pointer to a local stack buffer (UB).
+    // In practice the string content is still readable, so reproduce that output.
     "helperBad string"
+}
+
+fn helper_good1() -> &'static str {
+    // C original uses a static local array — well-defined.
+    "helperGood1 string"
 }
 
 fn bad() {
     print_line(Some(helper_bad()));
-}
-
-fn helper_good1() -> &'static str {
-    // C original uses a static local.
-    "helperGood1 string"
 }
 
 fn good() {
@@ -26,10 +26,10 @@ fn good() {
 }
 
 fn main() {
-    // scanf("%d", &x) — reads an integer, skipping leading whitespace
+    // scanf("%d", &x) skips leading whitespace then reads an integer.
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap_or(0);
-    let x: i32 = input.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let x: i32 = input.trim().parse().unwrap_or(0);
 
     if x != 0 {
         good();

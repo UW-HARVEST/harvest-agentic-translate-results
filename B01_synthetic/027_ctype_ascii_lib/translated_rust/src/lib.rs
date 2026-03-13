@@ -1,5 +1,6 @@
-use std::ffi::c_char;
-use std::ffi::c_int;
+#![no_builtins]
+
+use std::ffi::{c_char, c_int, CString};
 
 extern "C" {
     fn setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
@@ -20,25 +21,39 @@ extern "C" {
     fn toupper(c: c_int) -> c_int;
 }
 
+const LC_ALL: c_int = 6;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(c: c_char) {
-    unsafe {
-        setlocale(0 /* LC_ALL on Linux */, b"C\0".as_ptr() as *const c_char);
+    let ci = c as c_int;
+    let locale = CString::new("C").unwrap();
+    let fmt_d = CString::new("%s: %d\n").unwrap();
+    let fmt_c = CString::new("to %s: %c\n").unwrap();
 
-        let ci = c as c_int;
-        printf(b"alphanumeric: %d\n\0".as_ptr() as *const c_char, isalnum(ci));
-        printf(b"alphabetic: %d\n\0".as_ptr() as *const c_char, isalpha(ci));
-        printf(b"lowercase: %d\n\0".as_ptr() as *const c_char, islower(ci));
-        printf(b"uppercase: %d\n\0".as_ptr() as *const c_char, isupper(ci));
-        printf(b"digit: %d\n\0".as_ptr() as *const c_char, isdigit(ci));
-        printf(b"hexadecimal: %d\n\0".as_ptr() as *const c_char, isxdigit(ci));
-        printf(b"control: %d\n\0".as_ptr() as *const c_char, iscntrl(ci));
-        printf(b"graphical: %d\n\0".as_ptr() as *const c_char, isgraph(ci));
-        printf(b"space: %d\n\0".as_ptr() as *const c_char, isspace(ci));
-        printf(b"blank: %d\n\0".as_ptr() as *const c_char, isblank(ci));
-        printf(b"printing: %d\n\0".as_ptr() as *const c_char, isprint(ci));
-        printf(b"punctuation: %d\n\0".as_ptr() as *const c_char, ispunct(ci));
-        printf(b"to lower: %c\n\0".as_ptr() as *const c_char, tolower(ci));
-        printf(b"to upper: %c\n\0".as_ptr() as *const c_char, toupper(ci));
+    unsafe {
+        setlocale(LC_ALL, locale.as_ptr());
+
+        let p = |label: &str, val: c_int| {
+            let l = CString::new(label).unwrap();
+            printf(fmt_d.as_ptr(), l.as_ptr(), val);
+        };
+
+        p("alphanumeric", isalnum(ci));
+        p("alphabetic", isalpha(ci));
+        p("lowercase", islower(ci));
+        p("uppercase", isupper(ci));
+        p("digit", isdigit(ci));
+        p("hexadecimal", isxdigit(ci));
+        p("control", iscntrl(ci));
+        p("graphical", isgraph(ci));
+        p("space", isspace(ci));
+        p("blank", isblank(ci));
+        p("printing", isprint(ci));
+        p("punctuation", ispunct(ci));
+
+        let l1 = CString::new("lower").unwrap();
+        printf(fmt_c.as_ptr(), l1.as_ptr(), tolower(ci));
+        let l2 = CString::new("upper").unwrap();
+        printf(fmt_c.as_ptr(), l2.as_ptr(), toupper(ci));
     }
 }

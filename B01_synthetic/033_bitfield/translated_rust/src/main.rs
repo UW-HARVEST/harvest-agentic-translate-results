@@ -1,9 +1,5 @@
 use std::io::{self, Read};
 
-fn scan_tokens(input: &str) -> Vec<&str> {
-    input.split_whitespace().collect()
-}
-
 struct Foo {
     x: u32,
     y: u32,
@@ -17,18 +13,22 @@ fn print_foo(foo: &Foo) {
 
 fn driver(x: u32, y: u32, b: bool, z: i32) {
     let foo = Foo {
-        x: x & 0x3,
-        y: y & 0x7,
-        b: b as i32,
+        x: x & 0x3,       // 2-bit unsigned
+        y: y & 0x7,       // 3-bit unsigned
+        b: b as i32,      // 1-bit bool printed as %d
         z,
     };
     print_foo(&foo);
 }
 
-fn main() {
+fn scanf_tokens() -> Vec<String> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
-    let tokens: Vec<&str> = scan_tokens(&input);
+    input.split_whitespace().map(String::from).collect()
+}
+
+fn main() {
+    let tokens = scanf_tokens();
     let x: u32 = tokens[0].parse().unwrap();
     let y: u32 = tokens[1].parse().unwrap();
     let b: i32 = tokens[2].parse().unwrap();

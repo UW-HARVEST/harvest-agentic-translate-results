@@ -4,18 +4,19 @@ fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    let mut buf = [0u8; 127]; // fgets(text, 128, stdin) reads up to 127 bytes + null
+    let mut buf = [0u8; 127];
     let mut inp = stdin.lock();
+    // Mimic fgets(text, 128, stdin): read up to 127 bytes, stop at \n (inclusive)
     loop {
         let mut i = 0;
         loop {
             let mut byte = [0u8; 1];
             match inp.read(&mut byte) {
-                Ok(0) | Err(_) => {
-                    if i == 0 {
-                        return;
+                Ok(0) => {
+                    // EOF
+                    if i > 0 {
+                        let _ = out.write_all(&buf[..i]);
                     }
-                    let _ = out.write_all(&buf[..i]);
                     return;
                 }
                 Ok(_) => {
@@ -25,6 +26,7 @@ fn main() {
                         break;
                     }
                 }
+                Err(_) => return,
             }
         }
         let _ = out.write_all(&buf[..i]);
