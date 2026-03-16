@@ -1,0 +1,44 @@
+use crate::params::*;
+use crate::address::*;
+use crate::thash::thash;
+use crate::utils::SpxCtx;
+
+pub fn compute_root(root: &mut [u8], leaf: &[u8], mut leaf_idx: u32, mut idx_offset: u32,
+                    auth_path: &[u8], tree_height: u32, ctx: &SpxCtx, addr: &mut [u32; 8]) {
+    let mut buffer = [0u8; 2 * SPX_N];
+    let mut auth_off = 0usize;
+
+    if leaf_idx & 1 != 0 {
+        buffer[SPX_N..2 * SPX_N].copy_from_slice(&leaf[..SPX_N]);
+        buffer[..SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+    } else {
+        buffer[..SPX_N].copy_from_slice(&leaf[..SPX_N]);
+        buffer[SPX_N..2 * SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+    }
+    auth_off += SPX_N;
+
+    for i in 0..tree_height - 1 {
+        leaf_idx >>= 1;
+        idx_offset >>= 1;
+        set_tree_height(addr, i + 1);
+        set_tree_index(addr, leaf_idx + idx_offset);
+
+        {
+            let tmp = buffer;
+            if leaf_idx & 1 != 0 {
+                thash(&mut buffer[SPX_N..], &tmp, 2, ctx, addr);
+                buffer[..SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+            } else {
+                thash(&mut buffer[..SPX_N], &tmp, 2, ctx, addr);
+                buffer[SPX_N..2 * SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+            }
+        }
+        auth_off += SPX_N;
+    }
+
+    leaf_idx >>= 1;
+    idx_offset >>= 1;
+    set_tree_height(addr, tree_height);
+    set_tree_index(addr, leaf_idx + idx_offset);
+    thash(root, &buffer, 2, ctx, addr);
+}
