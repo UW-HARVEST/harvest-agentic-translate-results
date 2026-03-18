@@ -1,0 +1,24 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/090_blake_256f_r_prf_addr_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/090_blake_256f_r_prf_addr_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/090_blake_256f_r_prf_addr_lib/translated_rust/src/lib.rs	2026-03-14 14:56:18.026474820 +0000
++++ /tmp/analyze/P01_sphincs_plus/090_blake_256f_r_prf_addr_lib/translated_rust/src/lib.rs	2026-03-18 03:22:10.000720900 +0000
+@@ -123,6 +123,20 @@
+     sign::crypto_sign_open(m_s, mlen_r, sm_s, smlen, pk_s)
+ }
+ 
++// ---- prf_addr API (SPX_NAMESPACE(prf_addr) = SPX_prf_addr) ----
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn SPX_prf_addr(
++    out: *mut c_uchar,
++    ctx: *const context::SpxCtx,
++    addr: *const [u32; 8],
++) {
++    let ctx_r = unsafe { &*ctx };
++    let addr_r = unsafe { &*addr };
++    let out_s = unsafe { std::slice::from_raw_parts_mut(out, params::SPX_N) };
++    hash_blake::prf_addr(out_s, ctx_r, addr_r);
++}
++
+ // ---- RNG API ----
+ 
+ #[unsafe(no_mangle)]

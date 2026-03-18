@@ -1,0 +1,75 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/hash_blake.rs /tmp/analyze/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/hash_blake.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/hash_blake.rs	2026-03-13 19:06:47.195542893 +0000
++++ /tmp/analyze/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/hash_blake.rs	2026-03-18 01:36:15.074640679 +0000
+@@ -24,9 +24,9 @@
+                           m: &[u8], mlen: u64, _ctx: &SpxCtx) {
+     let mut s = Blake512State::new();
+     blake512_init(&mut s);
+-    blake512_update(&mut s, &sk_prf[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &optrand[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake512_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &m[..mlen as usize], mlen);
+     blake512_final(&mut s, r);
+ }
+ 
+@@ -37,9 +37,9 @@
+ 
+     let mut s = Blake512State::new();
+     blake512_init(&mut s);
+-    blake512_update(&mut s, &r[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &pk[..SPX_PK_BYTES], (SPX_PK_BYTES as u64) * 8);
+-    blake512_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake512_update(&mut s, &r[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &pk[..SPX_PK_BYTES], SPX_PK_BYTES as u64);
++    blake512_update(&mut s, &m[..mlen as usize], mlen);
+     blake512_final(&mut s, &mut seed[2 * SPX_N..]);
+ 
+     seed[..SPX_N].copy_from_slice(&r[..SPX_N]);
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/main.rs /tmp/analyze/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/main.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/main.rs	2026-03-13 18:58:19.947191316 +0000
++++ /tmp/analyze/P01_sphincs_plus/013_sphincs_PQCgenKAT_sign_blake_256f_simple/translated_rust/src/main.rs	2026-03-18 01:36:35.934986466 +0000
+@@ -23,15 +23,15 @@
+ fn kat_tr_init(ctx: &mut KatTrCtx) {
+     blake512_init(&mut ctx.state);
+     let tag = b"KAT-TRANSCRIPT-v1-BLAKE";
+-    blake512_update(&mut ctx.state, tag, (tag.len() as u64) * 8);
++    blake512_update(&mut ctx.state, tag, tag.len() as u64);
+     let sep = [0u8; 1];
+-    blake512_update(&mut ctx.state, &sep, 8);
++    blake512_update(&mut ctx.state, &sep, 1);
+ }
+ 
+ fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &[u8]) {
+-    blake512_update(&mut ctx.state, label, (label.len() as u64) * 8);
++    blake512_update(&mut ctx.state, label, label.len() as u64);
+     let sep = [0u8; 1];
+-    blake512_update(&mut ctx.state, &sep, 8);
++    blake512_update(&mut ctx.state, &sep, 1);
+ }
+ 
+ fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
+@@ -44,8 +44,8 @@
+     for i in 0..8 {
+         lenle[i] = ((l >> (8 * i)) & 0xFF) as u8;
+     }
+-    blake512_update(&mut ctx.state, &lenle, 64);
+-    blake512_update(&mut ctx.state, &le, 64);
++    blake512_update(&mut ctx.state, &lenle, 8);
++    blake512_update(&mut ctx.state, &le, 8);
+ }
+ 
+ fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8], len: usize) {
+@@ -54,9 +54,9 @@
+     for i in 0..8 {
+         lenle[i] = ((l >> (8 * i)) & 0xFF) as u8;
+     }
+-    blake512_update(&mut ctx.state, &lenle, 64);
++    blake512_update(&mut ctx.state, &lenle, 8);
+     if len > 0 {
+-        blake512_update(&mut ctx.state, &buf[..len], (len as u64) * 8);
++        blake512_update(&mut ctx.state, &buf[..len], len as u64);
+     }
+ }
+ 

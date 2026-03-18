@@ -1,0 +1,33 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/context.rs /tmp/analyze/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/context.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/context.rs	2026-03-14 17:55:57.943245895 +0000
++++ /tmp/analyze/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/context.rs	2026-03-18 03:54:38.422901779 +0000
+@@ -1,5 +1,6 @@
+ use crate::params::*;
+ 
++#[repr(C)]
+ pub struct SpxCtx {
+     pub pub_seed: [u8; SPX_N],
+     pub sk_seed: [u8; SPX_N],
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/lib.rs	2026-03-14 17:59:44.866961444 +0000
++++ /tmp/analyze/P01_sphincs_plus/107_sha2_128f_r_gen_message_random_lib/translated_rust/src/lib.rs	2026-03-18 03:54:45.233014175 +0000
+@@ -16,6 +16,19 @@
+ use params::*;
+ 
+ #[unsafe(no_mangle)]
++pub extern "C" fn SPX_gen_message_random(
++    r: *mut u8, sk_prf: *const u8, optrand: *const u8,
++    m: *const u8, mlen: u64, ctx: *const context::SpxCtx,
++) {
++    let r = unsafe { std::slice::from_raw_parts_mut(r, SPX_N) };
++    let sk_prf = unsafe { std::slice::from_raw_parts(sk_prf, SPX_N) };
++    let optrand = unsafe { std::slice::from_raw_parts(optrand, SPX_N) };
++    let m = unsafe { std::slice::from_raw_parts(m, mlen as usize) };
++    let ctx = unsafe { &*ctx };
++    hash::gen_message_random(r, sk_prf, optrand, m, mlen, ctx);
++}
++
++#[unsafe(no_mangle)]
+ pub extern "C" fn crypto_sign_secretkeybytes() -> u64 {
+     CRYPTO_SECRETKEYBYTES as u64
+ }

@@ -1,0 +1,55 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/hash.rs /tmp/analyze/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/hash.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/hash.rs	2026-03-14 10:05:08.330241213 +0000
++++ /tmp/analyze/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/hash.rs	2026-03-18 02:22:32.420877157 +0000
+@@ -25,9 +25,9 @@
+         h: [0; 8], s: [0; 4], t: [0; 2], buflen: 0, nullt: 0, buf: [0; 64],
+     };
+     blake256_init(&mut s);
+-    blake256_update(&mut s, &sk_prf[..SPX_N], (SPX_N as u64) * 8);
+-    blake256_update(&mut s, &optrand[..SPX_N], (SPX_N as u64) * 8);
+-    blake256_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake256_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
++    blake256_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
++    blake256_update(&mut s, &m[..mlen as usize], mlen);
+     blake256_final(&mut s, r);
+ }
+ 
+@@ -43,9 +43,9 @@
+     };
+     blake256_init(&mut s);
+ 
+-    blake256_update(&mut s, &r[..SPX_N], (SPX_N as u64) * 8);
+-    blake256_update(&mut s, &pk[..SPX_PK_BYTES], (SPX_PK_BYTES as u64) * 8);
+-    blake256_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake256_update(&mut s, &r[..SPX_N], SPX_N as u64);
++    blake256_update(&mut s, &pk[..SPX_PK_BYTES], SPX_PK_BYTES as u64);
++    blake256_update(&mut s, &m[..mlen as usize], mlen);
+ 
+     blake256_final(&mut s, &mut seed[2 * SPX_N..]);
+ 
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/lib.rs	2026-03-14 10:08:20.383390579 +0000
++++ /tmp/analyze/P01_sphincs_plus/064_blake_128s_s_hash_message_lib/translated_rust/src/lib.rs	2026-03-18 02:22:43.601063342 +0000
+@@ -105,6 +105,22 @@
+ }
+ 
+ #[unsafe(no_mangle)]
++pub unsafe extern "C" fn SPX_hash_message(
++    digest: *mut u8, tree: *mut u64, leaf_idx: *mut u32,
++    r: *const u8, pk: *const u8, m: *const u8, mlen: u64,
++    ctx: *const context::SpxCtx,
++) {
++    let digest = unsafe { std::slice::from_raw_parts_mut(digest, params::SPX_DGST_BYTES) };
++    let r = unsafe { std::slice::from_raw_parts(r, params::SPX_N) };
++    let pk = unsafe { std::slice::from_raw_parts(pk, params::SPX_PK_BYTES) };
++    let m = unsafe { std::slice::from_raw_parts(m, mlen as usize) };
++    let tree = unsafe { &mut *tree };
++    let leaf_idx = unsafe { &mut *leaf_idx };
++    let ctx = unsafe { &*ctx };
++    hash::hash_message(digest, tree, leaf_idx, r, pk, m, mlen, ctx);
++}
++
++#[unsafe(no_mangle)]
+ pub extern "C" fn randombytes_init(
+     entropy_input: *const u8, personalization_string: *const u8,
+ ) {

@@ -1,0 +1,92 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_synthetic/mutable-duplication-dag/translated_rust/src/main.rs /tmp/analyze/B02_synthetic/mutable-duplication-dag/translated_rust/src/main.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_synthetic/mutable-duplication-dag/translated_rust/src/main.rs	2026-03-13 16:04:17.844939011 +0000
++++ /tmp/analyze/B02_synthetic/mutable-duplication-dag/translated_rust/src/main.rs	2026-03-18 00:40:49.219668009 +0000
+@@ -1,4 +1,4 @@
+-use std::io::{self, BufRead, Write};
++use std::io::{self, Write};
+ 
+ const MAX_CITY_NAME: usize = 64;
+ const MAX_EDGES: usize = 10;
+@@ -24,10 +24,6 @@
+ }
+ 
+ fn add_node(graph: &mut Graph, city_name: &str) -> Option<usize> {
+-    if city_name.is_empty() {
+-        eprint!("Error: NULL parameter in add_node\n");
+-        return None;
+-    }
+ 
+     if graph.nodes.len() >= MAX_NODES {
+         eprint!("Error: Graph is full (max {} nodes)\n", MAX_NODES);
+@@ -223,13 +219,32 @@
+     Some(path_indices)
+ }
+ 
++const MAX_INPUT: usize = 256;
++
+ fn read_line(_stdin: &io::Stdin, lock: &mut io::StdinLock) -> Option<String> {
+-    let mut buf = String::new();
+-    match lock.read_line(&mut buf) {
+-        Ok(0) => None,
+-        Ok(_) => Some(buf),
+-        Err(_) => None,
++    // Emulate C fgets(input, MAX_INPUT, stdin): reads at most MAX_INPUT-1 chars,
++    // stops at newline (included) or limit. Leaves rest in buffer.
++    let mut buf = Vec::new();
++    let mut byte = [0u8; 1];
++    loop {
++        match io::Read::read(lock, &mut byte) {
++            Ok(0) => {
++                if buf.is_empty() { return None; }
++                break;
++            }
++            Ok(_) => {
++                buf.push(byte[0]);
++                if byte[0] == b'\n' || buf.len() >= MAX_INPUT - 1 {
++                    break;
++                }
++            }
++            Err(_) => {
++                if buf.is_empty() { return None; }
++                break;
++            }
++        }
+     }
++    Some(String::from_utf8_lossy(&buf).into_owned())
+ }
+ 
+ fn main() {
+@@ -265,8 +280,8 @@
+             None => break,
+         };
+ 
+-        let choice: i32 = match line.trim().parse() {
+-            Ok(v) => v,
++        let choice: i32 = match line.trim().parse::<i64>() {
++            Ok(v) => v as i32,
+             Err(_) => {
+                 print!("Invalid input\n");
+                 continue;
+@@ -282,6 +297,11 @@
+                     None => break,
+                 };
+                 let name = line.trim_end_matches('\n').to_string();
++                // Emulate C string behavior: truncate at first null byte
++                let name = match name.find('\0') {
++                    Some(pos) => name[..pos].to_string(),
++                    None => name,
++                };
+ 
+                 if add_node(&mut graph, &name).is_some() {
+                     print!("Added city: {}\n", name);
+@@ -312,8 +332,8 @@
+                     Some(l) => l,
+                     None => break,
+                 };
+-                let distance: i32 = match line.trim().parse() {
+-                    Ok(v) => v,
++                let distance: i32 = match line.trim().parse::<i64>() {
++                    Ok(v) => v as i32,
+                     Err(_) => {
+                         print!("Invalid distance\n");
+                         continue;

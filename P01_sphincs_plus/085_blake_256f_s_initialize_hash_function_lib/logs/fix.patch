@@ -1,0 +1,38 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/lib.rs	2026-03-14 14:01:16.912325655 +0000
++++ /tmp/analyze/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/lib.rs	2026-03-18 03:11:16.549852010 +0000
+@@ -212,7 +212,7 @@
+ 
+ // initialize_hash_function export
+ #[unsafe(no_mangle)]
+-pub extern "C" fn initialize_hash_function(ctx: *mut context::SpxCtx) {
++pub extern "C" fn SPX_initialize_hash_function(ctx: *mut context::SpxCtx) {
+     unsafe {
+         hash_blake::initialize_hash_function(&mut *ctx);
+     }
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/rng.rs /tmp/analyze/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/rng.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/rng.rs	2026-03-14 13:59:11.730273252 +0000
++++ /tmp/analyze/P01_sphincs_plus/085_blake_256f_s_initialize_hash_function_lib/translated_rust/src/rng.rs	2026-03-18 03:10:48.489383337 +0000
+@@ -1,4 +1,5 @@
+-use openssl::symm::{Cipher, Crypter, Mode};
++use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
++use aes::Aes256;
+ 
+ pub const RNG_SUCCESS: i32 = 0;
+ pub const RNG_BAD_MAXLEN: i32 = -1;
+@@ -26,11 +27,10 @@
+ };
+ 
+ fn aes256_ecb(key: &[u8], ctr: &[u8], buffer: &mut [u8]) {
+-    let cipher = Cipher::aes_256_ecb();
+-    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, None).unwrap();
+-    crypter.pad(false);
+-    let count = crypter.update(ctr, buffer).unwrap();
+-    let _ = crypter.finalize(&mut buffer[count..]);
++    let cipher = Aes256::new(GenericArray::from_slice(key));
++    let mut block = *GenericArray::from_slice(&ctr[..16]);
++    cipher.encrypt_block(&mut block);
++    buffer[..16].copy_from_slice(&block);
+ }
+ 
+ pub fn seedexpander_init(

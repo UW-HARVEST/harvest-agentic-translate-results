@@ -1,0 +1,22 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/098_blake_256s_r_prf_addr_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/098_blake_256s_r_prf_addr_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/098_blake_256s_r_prf_addr_lib/translated_rust/src/lib.rs	2026-03-14 16:23:25.172317078 +0000
++++ /tmp/analyze/P01_sphincs_plus/098_blake_256s_r_prf_addr_lib/translated_rust/src/lib.rs	2026-03-18 03:34:05.512602365 +0000
+@@ -651,6 +651,18 @@
+     out[..SPX_N].copy_from_slice(&outbuf[..SPX_N]);
+ }
+ 
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn SPX_prf_addr(
++    out: *mut u8,
++    ctx: *const SpxCtx,
++    addr: *const [u32; 8],
++) {
++    let out_s = unsafe { std::slice::from_raw_parts_mut(out, SPX_N) };
++    let ctx_r = unsafe { &*ctx };
++    let addr_r = unsafe { &*addr };
++    prf_addr(out_s, ctx_r, addr_r);
++}
++
+ fn gen_message_random(r: &mut [u8], sk_prf: &[u8], optrand: &[u8], m: &[u8], _ctx: &SpxCtx) {
+     let mut s = BlakeState512 { h: [0;8], s: [0;4], t: [0;2], buflen: 0, nullt: 0, buf: [0;128] };
+     blake512_init(&mut s);

@@ -1,0 +1,188 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_organic/underhanded-c-luggage/translated_rust/src/main.rs /tmp/analyze/B02_organic/underhanded-c-luggage/translated_rust/src/main.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_organic/underhanded-c-luggage/translated_rust/src/main.rs	2026-03-13 12:35:46.148885926 +0000
++++ /tmp/analyze/B02_organic/underhanded-c-luggage/translated_rust/src/main.rs	2026-03-18 00:25:49.204773789 +0000
+@@ -10,8 +10,6 @@
+     comments: String,
+ }
+ 
+-/// Skip whitespace (spaces, tabs, newlines) in input, matching scanf's
+-/// trailing-space behavior. Returns remaining slice.
+ fn skip_whitespace(input: &[u8]) -> &[u8] {
+     let mut i = 0;
+     while i < input.len() && input[i].is_ascii_whitespace() {
+@@ -20,8 +18,6 @@
+     &input[i..]
+ }
+ 
+-/// Read characters matching a predicate, up to `max` chars.
+-/// Returns (matched_string, remaining) or None if zero chars matched.
+ fn scan_chars(input: &[u8], max: usize, pred: fn(u8) -> bool) -> Option<(String, &[u8])> {
+     let mut i = 0;
+     while i < input.len() && i < max && pred(input[i]) {
+@@ -34,22 +30,39 @@
+     Some((s, &input[i..]))
+ }
+ 
+-/// Read an unsigned decimal integer from input.
+-/// Returns (value, remaining) or None on EOF/no digits.
+-fn scan_uint(input: &[u8]) -> Option<(u32, &[u8])> {
++/// Replicate C scanf("%d "). Skips leading whitespace, reads optional sign + digits.
++/// Returns (value_if_matched, remaining_after_whitespace_skip).
++/// If no digits found after whitespace, returns None but still advances past whitespace
++/// (matching C scanf behavior where %d consumes leading whitespace even on failure).
++fn scan_int_with_ws<'a>(input: &'a [u8]) -> (Option<u32>, &'a [u8]) {
++    let after_ws = skip_whitespace(input);
++    if after_ws.is_empty() {
++        return (None, after_ws); // true EOF
++    }
+     let mut i = 0;
+-    while i < input.len() && input[i].is_ascii_digit() {
++    if i < after_ws.len() && (after_ws[i] == b'-' || after_ws[i] == b'+') {
+         i += 1;
+     }
+-    if i == 0 {
+-        return None;
++    let digit_start = if i > 0 && (after_ws[0] == b'-' || after_ws[0] == b'+') { 1 } else { 0 };
++    while i < after_ws.len() && after_ws[i].is_ascii_digit() {
++        i += 1;
+     }
+-    let s = std::str::from_utf8(&input[..i]).unwrap();
+-    let val: u32 = s.parse().unwrap();
+-    Some((val, &input[i..]))
++    if i == 0 || (i == 1 && digit_start == 0 && !after_ws[0].is_ascii_digit()) {
++        // No digits found — matching failure. Return position after whitespace skip.
++        return (None, after_ws);
++    }
++    // Check we actually got digits (not just a bare sign)
++    if i <= digit_start + (if after_ws[0] == b'-' || after_ws[0] == b'+' { 1 } else { 0 })
++        && !after_ws[digit_start..i].iter().any(|b| b.is_ascii_digit())
++    {
++        return (None, after_ws);
++    }
++    let s = std::str::from_utf8(&after_ws[..i]).unwrap();
++    let signed_val: i64 = s.parse().unwrap();
++    let val = signed_val as i32 as u32;
++    (Some(val), &after_ws[i..])
+ }
+ 
+-/// Read up to `max` chars until newline (scanf %[^\n] behavior).
+ fn scan_until_newline(input: &[u8], max: usize) -> (String, &[u8]) {
+     let mut i = 0;
+     while i < input.len() && i < max && input[i] != b'\n' {
+@@ -96,46 +109,77 @@
+ 
+     let mut directives: Vec<RoutingDirective> = Vec::new();
+ 
++    // Persist across iterations to replicate C stack-variable reuse on scanf partial match
++    let mut prev_time_stamp: u32 = 0;
++    let mut prev_luggage_id = String::new();
++    let mut prev_flight_id = String::new();
++    let mut prev_departure = String::new();
++    let mut prev_arrival = String::new();
++
+     loop {
+         // scanf("%d ", &time_stamp)
+-        input = skip_whitespace(input);
+-        let (time_stamp, rest) = match scan_uint(input) {
+-            Some(v) => v,
+-            None => break,
++        let (ts_opt, rest) = scan_int_with_ws(input);
++        input = rest;
++        if input.is_empty() && ts_opt.is_none() {
++            break; // true EOF
++        }
++        let time_stamp = match ts_opt {
++            Some(v) => {
++                // %d matched — now skip trailing whitespace (the space in "%d ")
++                input = skip_whitespace(input);
++                v
++            }
++            None => {
++                // matching failure, not EOF — retain previous value
++                // C scanf doesn't process the trailing space on failure
++                prev_time_stamp
++            }
+         };
+-        input = skip_whitespace(rest);
+ 
+         // scanf("%8[A-Z0-9] %6[A-Z0-9] ", luggage_id, flight_id)
+-        let (luggage_id, rest) = match scan_chars(input, 8, is_upper_or_digit) {
+-            Some(v) => v,
+-            None => break,
++        let luggage_id = match scan_chars(input, 8, is_upper_or_digit) {
++            Some((s, rest)) => {
++                input = skip_whitespace(rest);
++                s
++            }
++            None => prev_luggage_id.clone(),
+         };
+-        input = skip_whitespace(rest);
+ 
+-        let (flight_id, rest) = match scan_chars(input, 6, is_upper_or_digit) {
+-            Some(v) => v,
+-            None => break,
++        let flight_id = match scan_chars(input, 6, is_upper_or_digit) {
++            Some((s, rest)) => {
++                input = skip_whitespace(rest);
++                s
++            }
++            None => prev_flight_id.clone(),
+         };
+-        input = skip_whitespace(rest);
+ 
+         // scanf("%3[A-Z] %3[A-Z]", departure, arrival)
+-        let (departure, rest) = match scan_chars(input, 3, is_upper) {
+-            Some(v) => v,
+-            None => break,
++        let departure = match scan_chars(input, 3, is_upper) {
++            Some((s, rest)) => {
++                input = skip_whitespace(rest);
++                s
++            }
++            None => prev_departure.clone(),
+         };
+-        input = skip_whitespace(rest);
+ 
+-        let (arrival, rest) = match scan_chars(input, 3, is_upper) {
+-            Some(v) => v,
+-            None => break,
++        let arrival = match scan_chars(input, 3, is_upper) {
++            Some((s, rest)) => {
++                input = rest; // no trailing space in C format
++                s
++            }
++            None => prev_arrival.clone(),
+         };
+-        input = rest;
+ 
+-        // scanf("%80[^\n]", comments) — optional
++        // scanf("%80[^\n]", comments)
+         let (comments, rest) = scan_until_newline(input, 80);
+         input = rest;
+ 
+-        // Insert sorted by time_stamp
++        prev_time_stamp = time_stamp;
++        prev_luggage_id = luggage_id.clone();
++        prev_flight_id = flight_id.clone();
++        prev_departure = departure.clone();
++        prev_arrival = arrival.clone();
++
+         let pos = directives
+             .iter()
+             .position(|d| d.time_stamp > time_stamp)
+@@ -150,7 +194,6 @@
+         });
+     }
+ 
+-    // Print matching, non-superseded directives
+     let expected_luggage_id = &args[1];
+     let expected_flight_id = &args[2];
+     let expected_departure = &args[3];
+@@ -158,7 +201,6 @@
+ 
+     for i in 0..directives.len() {
+         let d = &directives[i];
+-        // superseded = later directive in list with same luggage_id and departure
+         if supersedes(&directives, i + 1, &d.luggage_id, &d.departure) {
+             continue;
+         }

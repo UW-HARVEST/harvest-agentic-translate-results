@@ -1,0 +1,49 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/080_blake_192s_s_hash_message_lib/translated_rust/src/hash_blake.rs /tmp/analyze/P01_sphincs_plus/080_blake_192s_s_hash_message_lib/translated_rust/src/hash_blake.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/080_blake_192s_s_hash_message_lib/translated_rust/src/hash_blake.rs	2026-03-14 12:56:50.748968250 +0000
++++ /tmp/analyze/P01_sphincs_plus/080_blake_192s_s_hash_message_lib/translated_rust/src/hash_blake.rs	2026-03-18 02:56:19.354805237 +0000
+@@ -22,9 +22,9 @@
+ 
+ pub fn gen_message_random(r: &mut [u8], sk_prf: &[u8], optrand: &[u8], m: &[u8], mlen: u64, _ctx: &SpxCtx) {
+     let mut s = Blake512State::new();
+-    blake512_update(&mut s, &sk_prf[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &optrand[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake512_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &m[..mlen as usize], mlen);
+     blake512_final(&mut s, r);
+ }
+ 
+@@ -42,9 +42,9 @@
+     let mut seed = vec![0u8; 2 * SPX_N + SPX_BLAKE512_OUTPUT_BYTES];
+ 
+     let mut s = Blake512State::new();
+-    blake512_update(&mut s, &r[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &pk[..SPX_PK_BYTES], (SPX_PK_BYTES as u64) * 8);
+-    blake512_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake512_update(&mut s, &r[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &pk[..SPX_PK_BYTES], SPX_PK_BYTES as u64);
++    blake512_update(&mut s, &m[..mlen as usize], mlen);
+     blake512_final(&mut s, &mut seed[2 * SPX_N..]);
+ 
+     seed[..SPX_N].copy_from_slice(&r[..SPX_N]);
+@@ -66,3 +66,19 @@
+     *leaf_idx = bytes_to_ull(&buf[bufp..], SPX_LEAF_BYTES) as u32;
+     *leaf_idx &= (!0u32) >> (32 - SPX_LEAF_BITS);
+ }
++
++#[unsafe(no_mangle)]
++pub extern "C" fn SPX_hash_message(
++    digest: *mut u8, tree: *mut u64, leaf_idx: *mut u32,
++    r: *const u8, pk: *const u8, m: *const u8, mlen: u64,
++    ctx: *const SpxCtx,
++) {
++    let r_s = unsafe { std::slice::from_raw_parts(r, SPX_N) };
++    let pk_s = unsafe { std::slice::from_raw_parts(pk, SPX_PK_BYTES) };
++    let m_s = unsafe { std::slice::from_raw_parts(m, mlen as usize) };
++    let digest_s = unsafe { std::slice::from_raw_parts_mut(digest, SPX_FORS_MSG_BYTES) };
++    let ctx_s = unsafe { &*ctx };
++    let tree_r = unsafe { &mut *tree };
++    let leaf_r = unsafe { &mut *leaf_idx };
++    hash_message(digest_s, tree_r, leaf_r, r_s, pk_s, m_s, mlen, ctx_s);
++}
