@@ -1,0 +1,44 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/hash_blake.rs /tmp/analyze/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/hash_blake.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/hash_blake.rs	2026-03-14 11:13:39.557616956 +0000
++++ /tmp/analyze/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/hash_blake.rs	2026-03-18 02:39:11.997557208 +0000
+@@ -26,9 +26,9 @@
+                           m: &[u8], mlen: u64, _ctx: &SpxCtx) {
+     let mut s = BlakeState512 { h: [0;8], s: [0;4], t: [0;2], buflen: 0, nullt: 0, buf: [0;128] };
+     blake512_init(&mut s);
+-    blake512_update(&mut s, &sk_prf[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &optrand[..SPX_N], (SPX_N as u64) * 8);
+-    blake512_update(&mut s, &m[..mlen as usize], mlen * 8);
++    blake512_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
++    blake512_update(&mut s, &m[..mlen as usize], mlen);
+     blake512_final(&mut s, r);
+ }
+ 
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/lib.rs	2026-03-14 11:16:47.520695567 +0000
++++ /tmp/analyze/P01_sphincs_plus/071_blake_192f_s_gen_message_random_lib/translated_rust/src/lib.rs	2026-03-18 02:39:41.158043587 +0000
+@@ -258,6 +258,24 @@
+     0
+ }
+ 
++#[unsafe(no_mangle)]
++pub extern "C" fn SPX_gen_message_random(
++    r: *mut libc::c_uchar,
++    sk_prf: *const libc::c_uchar,
++    optrand: *const libc::c_uchar,
++    m: *const libc::c_uchar,
++    mlen: libc::c_ulonglong,
++    ctx: *const SpxCtx,
++) {
++    unsafe {
++        let r_slice = std::slice::from_raw_parts_mut(r, SPX_BLAKE512_OUTPUT_BYTES);
++        let sk_prf_slice = std::slice::from_raw_parts(sk_prf, SPX_N);
++        let optrand_slice = std::slice::from_raw_parts(optrand, SPX_N);
++        let m_slice = std::slice::from_raw_parts(m, mlen as usize);
++        gen_message_random(r_slice, sk_prf_slice, optrand_slice, m_slice, mlen, &*ctx);
++    }
++}
++
+ // RNG exports
+ #[unsafe(no_mangle)]
+ pub extern "C" fn randombytes_init(

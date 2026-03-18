@@ -1,0 +1,23 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_organic/intput_lib/translated_rust/src/lib.rs /tmp/analyze/B02_organic/intput_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_organic/intput_lib/translated_rust/src/lib.rs	2026-03-13 10:54:42.608882979 +0000
++++ /tmp/analyze/B02_organic/intput_lib/translated_rust/src/lib.rs	2026-03-18 00:19:48.798812164 +0000
+@@ -1029,7 +1029,8 @@
+     *intmap = stbds_hmput_key(*intmap, INTMAP_ELEMSIZE, key_bytes, INTMAP_KEYSIZE, STBDS_HM_BINARY);
+     let arr = (*intmap).sub(INTMAP_ELEMSIZE); // HASH_TO_ARR
+     let idx = *stbds_temp(arr);
+-    let entry = arr.add(INTMAP_ELEMSIZE * idx as usize) as *mut IntMapEntry;
++    // C macro indexes from t (hash pointer), not arr: (t)[stbds_temp((t)-1)]
++    let entry = (*intmap).add(INTMAP_ELEMSIZE * idx as usize) as *mut IntMapEntry;
+     (*entry).key = k;
+     (*entry).value = v;
+ }
+@@ -1040,7 +1041,8 @@
+     *intmap = stbds_hmget_key(*intmap, INTMAP_ELEMSIZE, key_bytes, INTMAP_KEYSIZE, STBDS_HM_BINARY);
+     let arr = (*intmap).sub(INTMAP_ELEMSIZE);
+     let idx = *stbds_temp(arr);
+-    let entry = arr.add(INTMAP_ELEMSIZE * idx as usize) as *const IntMapEntry;
++    // C macro indexes from t (hash pointer), not arr: (t)[stbds_temp((t)-1)]
++    let entry = (*intmap).add(INTMAP_ELEMSIZE * idx as usize) as *const IntMapEntry;
+     (*entry).value
+ }
+ 

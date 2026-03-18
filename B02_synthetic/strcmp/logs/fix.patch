@@ -1,0 +1,94 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_synthetic/strcmp/translated_rust/src/main.rs /tmp/analyze/B02_synthetic/strcmp/translated_rust/src/main.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/B02_synthetic/strcmp/translated_rust/src/main.rs	2026-03-13 16:10:14.010816997 +0000
++++ /tmp/analyze/B02_synthetic/strcmp/translated_rust/src/main.rs	2026-03-18 00:50:36.959395758 +0000
+@@ -1,6 +1,7 @@
+ use std::io::{self, BufRead, Write};
+ use std::process;
+ 
++const MAX_INPUT: usize = 256;
+ const MAX_COMMAND: usize = 64;
+ const MAX_ARGS: usize = 10;
+ const MAX_FILES: usize = 20;
+@@ -420,8 +421,9 @@
+             println!("Usage: compareN <string1> <string2> <n>");
+             return;
+         }
+-        let n = c_atoi(&args[2]) as usize;
+-        let result = c_strncmp(&args[0], &args[1], n);
++        let n = c_atoi(&args[2]);
++        let n_usize = n as u32 as usize; // wrapping cast matching C: int -> size_t
++        let result = c_strncmp(&args[0], &args[1], n_usize);
+         println!("strncmp('{}', '{}', {}) = {}", args[0], args[1], n, result);
+         if result == 0 {
+             println!("First {} characters are equal", n);
+@@ -662,20 +664,61 @@
+     let mut state = State::new();
+     let stdin = io::stdin();
+     let stdout = io::stdout();
++    let mut leftover = String::new();
+ 
+     loop {
+         print!("> ");
+         stdout.lock().flush().unwrap();
+ 
+-        let mut input = String::new();
+-        if stdin.lock().read_line(&mut input).unwrap() == 0 {
+-            break;
+-        }
+-        // Remove trailing newline (like C's strcspn)
+-        if input.ends_with('\n') {
+-            input.pop();
+-            if input.ends_with('\r') {
+-                input.pop();
++        // Emulate C fgets(input, MAX_INPUT, stdin):
++        // reads at most MAX_INPUT-1 chars, stops at newline.
++        // If the line is longer, the remainder stays in the buffer
++        // and is read by the next fgets call.
++        let input: String;
++        if !leftover.is_empty() {
++            let chunk = leftover.clone();
++            leftover.clear();
++            if let Some(nl) = chunk.find('\n') {
++                input = chunk[..nl].to_string();
++                leftover = chunk[nl + 1..].to_string();
++            } else {
++                input = chunk;
++            }
++        } else {
++            let mut raw = String::new();
++            if stdin.lock().read_line(&mut raw).unwrap() == 0 {
++                break;
++            }
++            // Strip trailing newline
++            if raw.ends_with('\n') {
++                raw.pop();
++                if raw.ends_with('\r') {
++                    raw.pop();
++                }
++            }
++            if raw.len() > MAX_INPUT - 1 {
++                // fgets reads MAX_INPUT-1 chars; remainder spills to next read
++                // The spilled part does NOT include the newline (already stripped).
++                // Each subsequent fgets also reads at most MAX_INPUT-1 chars.
++                let mut rest = raw.split_off(MAX_INPUT - 1);
++                // C's strcspn(input, "\n") removes newline; the truncated chunk
++                // has no newline. The leftover chunks are separated by fgets size.
++                // Insert synthetic newlines every MAX_INPUT-1 chars in rest.
++                let mut chunks = String::new();
++                while rest.len() > MAX_INPUT - 1 {
++                    let tail = rest.split_off(MAX_INPUT - 1);
++                    chunks.push_str(&rest);
++                    chunks.push('\n');
++                    rest = tail;
++                }
++                if !rest.is_empty() {
++                    chunks.push_str(&rest);
++                    chunks.push('\n');
++                }
++                leftover = chunks;
++                input = raw;
++            } else {
++                input = raw;
+             }
+         }
+ 

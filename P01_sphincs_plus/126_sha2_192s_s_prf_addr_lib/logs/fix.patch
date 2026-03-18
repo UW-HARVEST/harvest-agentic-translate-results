@@ -1,0 +1,44 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/lib.rs	2026-03-14 21:40:19.134032905 +0000
++++ /tmp/analyze/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/lib.rs	2026-03-18 04:36:21.434378914 +0000
+@@ -26,6 +26,14 @@
+ use std::ptr;
+ 
+ #[unsafe(no_mangle)]
++pub extern "C" fn SPX_prf_addr(out: *mut u8, ctx: *const SpxCtx, addr: *const [u32; 8]) {
++    unsafe {
++        let out_s = std::slice::from_raw_parts_mut(out, SPX_N);
++        prf_addr(out_s, &*ctx, &*addr);
++    }
++}
++
++#[unsafe(no_mangle)]
+ pub extern "C" fn crypto_sign_secretkeybytes() -> u64 {
+     CRYPTO_SECRETKEYBYTES as u64
+ }
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/rng.rs /tmp/analyze/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/rng.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/rng.rs	2026-03-14 21:41:44.545433793 +0000
++++ /tmp/analyze/P01_sphincs_plus/126_sha2_192s_s_prf_addr_lib/translated_rust/src/rng.rs	2026-03-18 04:35:45.133777900 +0000
+@@ -1,4 +1,5 @@
+-use openssl::symm::{Cipher, Crypter, Mode};
++use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
++use aes::Aes256;
+ use std::sync::Mutex;
+ 
+ pub const RNG_SUCCESS: i32 = 0;
+@@ -29,11 +30,10 @@
+ });
+ 
+ fn aes256_ecb(key: &[u8], ctr: &[u8], buffer: &mut [u8]) {
+-    let cipher = Cipher::aes_256_ecb();
+-    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, None).unwrap();
+-    crypter.pad(false);
+-    let count = crypter.update(ctr, buffer).unwrap();
+-    let _ = crypter.finalize(&mut buffer[count..]);
++    let cipher = Aes256::new(GenericArray::from_slice(key));
++    let mut block = *GenericArray::from_slice(&ctr[..16]);
++    cipher.encrypt_block(&mut block);
++    buffer[..16].copy_from_slice(&block);
+ }
+ 
+ pub fn seedexpander_init(ctx: &mut AesXofStruct, seed: &[u8], diversifier: &[u8], maxlen: u64) -> i32 {

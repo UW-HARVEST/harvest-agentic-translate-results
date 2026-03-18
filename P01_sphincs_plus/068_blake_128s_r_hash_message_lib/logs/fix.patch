@@ -1,0 +1,58 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/lib.rs	2026-03-14 10:47:48.502205679 +0000
++++ /tmp/analyze/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/lib.rs	2026-03-18 02:34:04.682421690 +0000
+@@ -122,6 +122,28 @@
+ 
+ // RNG API
+ #[unsafe(no_mangle)]
++pub extern "C" fn SPX_hash_message(
++    digest: *mut u8,
++    tree: *mut u64,
++    leaf_idx: *mut u32,
++    r: *const u8,
++    pk: *const u8,
++    m: *const u8,
++    mlen: u64,
++    ctx: *const context::SpxCtx,
++) {
++    let digest = unsafe { core::slice::from_raw_parts_mut(digest, SPX_FORS_MSG_BYTES + 64) };
++    let r_slice = unsafe { core::slice::from_raw_parts(r, SPX_N) };
++    let pk_slice = unsafe { core::slice::from_raw_parts(pk, SPX_PK_BYTES) };
++    let m_slice = unsafe { core::slice::from_raw_parts(m, mlen as usize) };
++    let ctx_ref = unsafe { &*ctx };
++    let tree_ref = unsafe { &mut *tree };
++    let leaf_ref = unsafe { &mut *leaf_idx };
++    hash_blake::hash_message(digest, tree_ref, leaf_ref, r_slice, pk_slice, m_slice, mlen, ctx_ref);
++}
++
++// RNG API
++#[unsafe(no_mangle)]
+ pub extern "C" fn randombytes_init(
+     entropy_input: *const u8,
+     personalization_string: *const u8,
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/rng.rs /tmp/analyze/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/rng.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/rng.rs	2026-03-14 10:46:43.951147580 +0000
++++ /tmp/analyze/P01_sphincs_plus/068_blake_128s_r_hash_message_lib/translated_rust/src/rng.rs	2026-03-18 02:33:34.071908928 +0000
+@@ -1,4 +1,5 @@
+-use openssl::symm::{Cipher, Crypter, Mode};
++use aes::cipher::{BlockEncrypt, KeyInit};
++use aes::Aes256;
+ use std::sync::Mutex;
+ 
+ pub const RNG_SUCCESS: i32 = 0;
+@@ -27,11 +28,10 @@
+ });
+ 
+ fn aes256_ecb(key: &[u8], ctr: &[u8], buffer: &mut [u8]) {
+-    let cipher = Cipher::aes_256_ecb();
+-    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, None).unwrap();
+-    crypter.pad(false);
+-    let count = crypter.update(ctr, buffer).unwrap();
+-    let _ = crypter.finalize(&mut buffer[count..]).unwrap();
++    let cipher = Aes256::new_from_slice(key).unwrap();
++    let mut block = aes::Block::clone_from_slice(&ctr[..16]);
++    cipher.encrypt_block(&mut block);
++    buffer[..16].copy_from_slice(&block);
+ }
+ 
+ pub fn aes256_ctr_drbg_update(provided_data: Option<&[u8]>, key: &mut [u8], v: &mut [u8]) {

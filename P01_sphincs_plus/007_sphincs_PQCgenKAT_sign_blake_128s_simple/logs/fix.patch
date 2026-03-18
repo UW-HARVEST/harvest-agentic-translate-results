@@ -1,0 +1,136 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/hash.rs /tmp/analyze/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/hash.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/hash.rs	2026-03-16 18:26:01.397209324 +0000
++++ /tmp/analyze/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/hash.rs	2026-03-18 01:02:50.121523506 +0000
+@@ -15,7 +15,6 @@
+     buf[SPX_N..SPX_N + SPX_ADDR_BYTES].copy_from_slice(addr_bytes);
+     buf[SPX_N + SPX_ADDR_BYTES..SPX_N + SPX_ADDR_BYTES + SPX_N].copy_from_slice(&ctx.sk_seed);
+ 
+-    // C code: blake256(outbuf, buf, SPX_N + SPX_ADDR_BYTES) - hashes only first SPX_N + SPX_ADDR_BYTES bytes
+     blake256(&mut outbuf, &buf, (SPX_N + SPX_ADDR_BYTES) as u64);
+     out[..SPX_N].copy_from_slice(&outbuf[..SPX_N]);
+ }
+@@ -26,9 +25,10 @@
+         h: [0; 8], s: [0; 4], t: [0; 2], buflen: 0, nullt: 0, buf: [0; 64],
+     };
+     blake256_init(&mut s);
+-    blake256_update(&mut s, &sk_prf[..SPX_N], (SPX_N as u64) * 8);
+-    blake256_update(&mut s, &optrand[..SPX_N], (SPX_N as u64) * 8);
+-    blake256_update(&mut s, &m[..mlen as usize], mlen * 8);
++    // C code passes byte counts to blake256_update (not bit counts)
++    blake256_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
++    blake256_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
++    blake256_update(&mut s, &m[..mlen as usize], mlen);
+     blake256_final(&mut s, r);
+ }
+ 
+@@ -41,9 +41,10 @@
+         h: [0; 8], s: [0; 4], t: [0; 2], buflen: 0, nullt: 0, buf: [0; 64],
+     };
+     blake256_init(&mut s);
+-    blake256_update(&mut s, &r[..SPX_N], (SPX_N as u64) * 8);
+-    blake256_update(&mut s, &pk[..SPX_PK_BYTES], (SPX_PK_BYTES as u64) * 8);
+-    blake256_update(&mut s, &m[..mlen as usize], mlen * 8);
++    // C code passes byte counts to blake256_update
++    blake256_update(&mut s, &r[..SPX_N], SPX_N as u64);
++    blake256_update(&mut s, &pk[..SPX_PK_BYTES], SPX_PK_BYTES as u64);
++    blake256_update(&mut s, &m[..mlen as usize], mlen);
+     blake256_final(&mut s, &mut seed[2 * SPX_N..]);
+ 
+     seed[..SPX_N].copy_from_slice(&r[..SPX_N]);
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/main.rs /tmp/analyze/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/main.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/main.rs	2026-03-16 18:28:37.159829482 +0000
++++ /tmp/analyze/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/main.rs	2026-03-18 01:03:17.121969274 +0000
+@@ -22,15 +22,16 @@
+ fn kat_tr_init(ctx: &mut KatTrCtx) {
+     blake256_init(&mut ctx.state);
+     let tag = b"KAT-TRANSCRIPT-v1-BLAKE";
+-    blake256_update(&mut ctx.state, tag, (tag.len() as u64) * 8);
++    // C code: blakeX_update(ctx, tag, sizeof tag - 1) — passes byte count
++    blake256_update(&mut ctx.state, tag, (tag.len()) as u64);
+     let sep = [0x00u8];
+-    blake256_update(&mut ctx.state, &sep, 8);
++    blake256_update(&mut ctx.state, &sep, 1);
+ }
+ 
+ fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &[u8]) {
+-    blake256_update(&mut ctx.state, label, (label.len() as u64) * 8);
++    blake256_update(&mut ctx.state, label, label.len() as u64);
+     let sep = [0x00u8];
+-    blake256_update(&mut ctx.state, &sep, 8);
++    blake256_update(&mut ctx.state, &sep, 1);
+ }
+ 
+ fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
+@@ -43,8 +44,8 @@
+     for i in 0..8 {
+         lenle[i] = ((l >> (8 * i)) & 0xFF) as u8;
+     }
+-    blake256_update(&mut ctx.state, &lenle, 64);
+-    blake256_update(&mut ctx.state, &le, 64);
++    blake256_update(&mut ctx.state, &lenle, 8);
++    blake256_update(&mut ctx.state, &le, 8);
+ }
+ 
+ fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8], len: usize) {
+@@ -53,14 +54,14 @@
+     for i in 0..8 {
+         lenle[i] = ((l >> (8 * i)) & 0xFF) as u8;
+     }
+-    blake256_update(&mut ctx.state, &lenle, 64);
++    blake256_update(&mut ctx.state, &lenle, 8);
+     if len > 0 {
+-        blake256_update(&mut ctx.state, &buf[..len], (len as u64) * 8);
++        blake256_update(&mut ctx.state, &buf[..len], len as u64);
+     }
+ }
+ 
+ fn kat_tr_final(ctx: &mut KatTrCtx, out32: &mut [u8; 32]) {
+-    let mut outbuf = [0u8; 32]; // blakeX_output_bytes = 32 for blake256
++    let mut outbuf = [0u8; 32];
+     blake256_final(&mut ctx.state, &mut outbuf);
+     out32.copy_from_slice(&outbuf);
+ }
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/rng.rs /tmp/analyze/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/rng.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/rng.rs	2026-03-16 18:30:21.341581361 +0000
++++ /tmp/analyze/P01_sphincs_plus/007_sphincs_PQCgenKAT_sign_blake_128s_simple/translated_rust/src/rng.rs	2026-03-18 01:02:26.311130409 +0000
+@@ -1,5 +1,6 @@
+ #![allow(static_mut_refs)]
+-use openssl::symm::{Cipher, Crypter, Mode};
++use aes::cipher::{BlockEncrypt, KeyInit};
++use aes::Aes256;
+ 
+ pub struct Aes256CtrDrbg {
+     pub key: [u8; 32],
+@@ -14,20 +15,16 @@
+ };
+ 
+ fn aes256_ecb(key: &[u8; 32], ctr: &[u8; 16], buffer: &mut [u8; 16]) {
+-    let cipher = Cipher::aes_256_ecb();
+-    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, None).unwrap();
+-    crypter.pad(false);
+-    let mut out = [0u8; 32]; // need extra space for openssl
+-    let count = crypter.update(ctr, &mut out).unwrap();
+-    let _ = crypter.finalize(&mut out[count..]).unwrap();
+-    buffer.copy_from_slice(&out[..16]);
++    let cipher = Aes256::new(key.into());
++    let mut block = aes::Block::clone_from_slice(ctr);
++    cipher.encrypt_block(&mut block);
++    buffer.copy_from_slice(&block);
+ }
+ 
+ pub fn aes256_ctr_drbg_update(provided_data: Option<&[u8; 48]>, key: &mut [u8; 32], v: &mut [u8; 16]) {
+     let mut temp = [0u8; 48];
+ 
+     for i in 0..3 {
+-        // increment V
+         for j in (0..16).rev() {
+             if v[j] == 0xff {
+                 v[j] = 0x00;
+@@ -74,7 +71,6 @@
+         let mut i: usize = 0;
+ 
+         while xlen > 0 {
+-            // increment V
+             for j in (0..16).rev() {
+                 if DRBG_CTX.v[j] == 0xff {
+                     DRBG_CTX.v[j] = 0x00;

@@ -1,0 +1,34 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/context.rs /tmp/analyze/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/context.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/context.rs	2026-03-14 11:21:29.475313962 +0000
++++ /tmp/analyze/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/context.rs	2026-03-18 02:41:59.420348191 +0000
+@@ -1,5 +1,6 @@
+ use crate::params::*;
+ 
++#[repr(C)]
+ pub struct SpxCtx {
+     pub pub_seed: [u8; SPX_N],
+     pub sk_seed: [u8; SPX_N],
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/lib.rs	2026-03-14 11:28:10.551875876 +0000
++++ /tmp/analyze/P01_sphincs_plus/072_blake_192f_s_hash_message_lib/translated_rust/src/lib.rs	2026-03-18 02:41:50.660202245 +0000
+@@ -59,6 +59,20 @@
+ }
+ 
+ #[unsafe(no_mangle)]
++pub unsafe extern "C" fn SPX_hash_message(
++    digest: *mut u8, tree: *mut u64, leaf_idx: *mut u32,
++    r: *const u8, pk: *const u8, m: *const u8, mlen: u64,
++    ctx: *const SpxCtx,
++) {
++    let ctx = unsafe { &*ctx };
++    let r_slice = unsafe { std::slice::from_raw_parts(r, SPX_N) };
++    let pk_slice = unsafe { std::slice::from_raw_parts(pk, SPX_PK_BYTES) };
++    let m_slice = unsafe { std::slice::from_raw_parts(m, mlen as usize) };
++    let digest_slice = unsafe { std::slice::from_raw_parts_mut(digest, SPX_FORS_MSG_BYTES) };
++    hash_message(digest_slice, unsafe { &mut *tree }, unsafe { &mut *leaf_idx }, r_slice, pk_slice, m_slice, mlen, ctx);
++}
++
++#[unsafe(no_mangle)]
+ pub unsafe extern "C" fn crypto_sign_seed_keypair(
+     pk: *mut u8, sk: *mut u8, seed: *const u8,
+ ) -> i32 {

@@ -1,0 +1,51 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/108_sha2_128f_r_hash_message_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/108_sha2_128f_r_hash_message_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/108_sha2_128f_r_hash_message_lib/translated_rust/src/lib.rs	2026-03-14 18:10:30.677546700 +0000
++++ /tmp/analyze/P01_sphincs_plus/108_sha2_128f_r_hash_message_lib/translated_rust/src/lib.rs	2026-03-18 03:56:50.015074756 +0000
+@@ -533,7 +533,28 @@
+     r_out[..SPX_N].copy_from_slice(&buf[..SPX_N]);
+ }
+ 
+-fn hash_message(
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn SPX_hash_message(
++    digest: *mut u8,
++    tree: *mut u64,
++    leaf_idx: *mut u32,
++    r: *const u8,
++    pk: *const u8,
++    m: *const u8,
++    mlen: u64,
++    ctx: *const SpxCtx,
++) {
++    let digest = unsafe { std::slice::from_raw_parts_mut(digest, SPX_DGST_BYTES) };
++    let r = unsafe { std::slice::from_raw_parts(r, SPX_N) };
++    let pk = unsafe { std::slice::from_raw_parts(pk, SPX_PK_BYTES) };
++    let m = unsafe { std::slice::from_raw_parts(m, mlen as usize) };
++    let ctx = unsafe { &*ctx };
++    let tree = unsafe { &mut *tree };
++    let leaf_idx = unsafe { &mut *leaf_idx };
++    hash_message_inner(digest, tree, leaf_idx, r, pk, m, mlen, ctx);
++}
++
++fn hash_message_inner(
+     digest: &mut [u8],
+     tree: &mut u64,
+     leaf_idx: &mut u32,
+@@ -1251,7 +1272,7 @@
+     randombytes(&mut optrand, SPX_N);
+     gen_message_random(sig_slice, sk_prf, &optrand, m_slice, mlen as u64, &ctx);
+ 
+-    hash_message(
++    hash_message_inner(
+         &mut mhash,
+         &mut tree,
+         &mut idx_leaf,
+@@ -1340,7 +1361,7 @@
+     set_type(&mut tree_addr, SPX_ADDR_TYPE_HASHTREE);
+     set_type(&mut wots_pk_addr, SPX_ADDR_TYPE_WOTSPK);
+ 
+-    hash_message(
++    hash_message_inner(
+         &mut mhash,
+         &mut tree,
+         &mut idx_leaf,

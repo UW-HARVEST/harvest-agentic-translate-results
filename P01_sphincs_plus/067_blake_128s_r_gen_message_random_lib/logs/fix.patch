@@ -1,0 +1,103 @@
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/blake_hash.rs /tmp/analyze/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/blake_hash.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/blake_hash.rs	2026-03-14 10:32:28.237121969 +0000
++++ /tmp/analyze/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/blake_hash.rs	2026-03-18 02:30:45.289076072 +0000
+@@ -34,12 +34,13 @@
+         h: [0; 8], s: [0; 4], t: [0; 2], buflen: 0, nullt: 0, buf: [0; 64],
+     };
+     blake256_init(&mut s);
+-    blake256_update(&mut s, sk_prf, (SPX_N as u64) * 8);
+-    blake256_update(&mut s, optrand, (SPX_N as u64) * 8);
+-    blake256_update(&mut s, m, mlen * 8);
++    blake256_update(&mut s, sk_prf, SPX_N as u64);
++    blake256_update(&mut s, optrand, SPX_N as u64);
++    blake256_update(&mut s, m, mlen);
+     let mut full_out = [0u8; SPX_BLAKE256_OUTPUT_BYTES];
+     blake256_final(&mut s, &mut full_out);
+-    r[..SPX_N].copy_from_slice(&full_out[..SPX_N]);
++    let copy_len = r.len().min(SPX_BLAKE256_OUTPUT_BYTES);
++    r[..copy_len].copy_from_slice(&full_out[..copy_len]);
+ }
+ 
+ pub fn hash_message(
+@@ -65,9 +66,9 @@
+         h: [0; 8], s: [0; 4], t: [0; 2], buflen: 0, nullt: 0, buf: [0; 64],
+     };
+     blake256_init(&mut s);
+-    blake256_update(&mut s, r, (SPX_N as u64) * 8);
+-    blake256_update(&mut s, pk, (SPX_PK_BYTES as u64) * 8);
+-    blake256_update(&mut s, m, mlen * 8);
++    blake256_update(&mut s, r, SPX_N as u64);
++    blake256_update(&mut s, pk, SPX_PK_BYTES as u64);
++    blake256_update(&mut s, m, mlen);
+     blake256_final(&mut s, &mut seed[2 * SPX_N..]);
+ 
+     seed[..SPX_N].copy_from_slice(&r[..SPX_N]);
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/lib.rs /tmp/analyze/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/lib.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/lib.rs	2026-03-14 10:36:55.931509374 +0000
++++ /tmp/analyze/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/lib.rs	2026-03-18 02:30:57.479281029 +0000
+@@ -103,6 +103,24 @@
+     sign::crypto_sign_open(m, mlen, sm, smlen, pk)
+ }
+ 
++// SPX_gen_message_random export
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn SPX_gen_message_random(
++    r: *mut c_uchar,
++    sk_prf: *const c_uchar,
++    optrand: *const c_uchar,
++    m: *const c_uchar,
++    mlen: u64,
++    ctx: *const params::SpxCtx,
++) {
++    let r = unsafe { std::slice::from_raw_parts_mut(r, 4 * SPX_N) };
++    let sk_prf = unsafe { std::slice::from_raw_parts(sk_prf, 3 * SPX_N) };
++    let optrand = unsafe { std::slice::from_raw_parts(optrand, SPX_N) };
++    let m = unsafe { std::slice::from_raw_parts(m, mlen as usize) };
++    let ctx = unsafe { &*ctx };
++    blake_hash::gen_message_random(r, sk_prf, optrand, m, mlen, ctx);
++}
++
+ // RNG exports
+ #[unsafe(no_mangle)]
+ pub extern "C" fn randombytes_init(
+diff -ruN /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/rng.rs /tmp/analyze/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/rng.rs
+--- /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/rng.rs	2026-03-14 10:35:52.560470722 +0000
++++ /tmp/analyze/P01_sphincs_plus/067_blake_128s_r_gen_message_random_lib/translated_rust/src/rng.rs	2026-03-18 02:28:56.917272745 +0000
+@@ -1,4 +1,5 @@
+-use openssl::symm::{Cipher, Crypter, Mode};
++use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
++use aes::Aes256;
+ 
+ pub const RNG_SUCCESS: i32 = 0;
+ 
+@@ -15,18 +16,16 @@
+ };
+ 
+ fn aes256_ecb(key: &[u8], ctr: &[u8], buffer: &mut [u8]) {
+-    let cipher = Cipher::aes_256_ecb();
+-    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, None).unwrap();
+-    crypter.pad(false);
+-    let count = crypter.update(ctr, buffer).unwrap();
+-    let _ = crypter.finalize(&mut buffer[count..]).unwrap();
++    let cipher = Aes256::new(GenericArray::from_slice(key));
++    let mut block = *GenericArray::from_slice(ctr);
++    cipher.encrypt_block(&mut block);
++    buffer[..16].copy_from_slice(&block);
+ }
+ 
+ fn aes256_ctr_drbg_update(provided_data: Option<&[u8]>, key: &mut [u8; 32], v: &mut [u8; 16]) {
+     let mut temp = [0u8; 48];
+ 
+     for i in 0..3 {
+-        // increment V
+         for j in (0..16).rev() {
+             if v[j] == 0xff {
+                 v[j] = 0x00;
+@@ -72,7 +71,6 @@
+ 
+     unsafe {
+         while xlen > 0 {
+-            // increment V
+             for j in (0..16).rev() {
+                 if DRBG_CTX.v[j] == 0xff {
+                     DRBG_CTX.v[j] = 0x00;
