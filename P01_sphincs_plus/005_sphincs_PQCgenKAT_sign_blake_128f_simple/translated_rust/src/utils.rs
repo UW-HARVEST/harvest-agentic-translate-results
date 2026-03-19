@@ -1,67 +1,7 @@
 use crate::params::*;
-
-pub struct SpxCtx {
-    pub pub_seed: [u8; SPX_N],
-    pub sk_seed: [u8; SPX_N],
-}
-
-// address.c
-
-pub fn addr_bytes(addr: &[u32; 8]) -> &[u8; 32] {
-    unsafe { &*(addr as *const [u32; 8] as *const [u8; 32]) }
-}
-
-pub fn addr_bytes_mut(addr: &mut [u32; 8]) -> &mut [u8; 32] {
-    unsafe { &mut *(addr as *mut [u32; 8] as *mut [u8; 32]) }
-}
-
-pub fn set_layer_addr(addr: &mut [u32; 8], layer: u32) {
-    addr_bytes_mut(addr)[SPX_OFFSET_LAYER] = layer as u8;
-}
-
-pub fn set_tree_addr(addr: &mut [u32; 8], tree: u64) {
-    ull_to_bytes(&mut addr_bytes_mut(addr)[SPX_OFFSET_TREE..SPX_OFFSET_TREE + 8], 8, tree);
-}
-
-pub fn set_type(addr: &mut [u32; 8], type_val: u32) {
-    addr_bytes_mut(addr)[SPX_OFFSET_TYPE] = type_val as u8;
-}
-
-pub fn copy_subtree_addr(out: &mut [u32; 8], inp: &[u32; 8]) {
-    let src = addr_bytes(inp);
-    let dst = addr_bytes_mut(out);
-    dst[..SPX_OFFSET_TREE + 8].copy_from_slice(&src[..SPX_OFFSET_TREE + 8]);
-}
-
-pub fn set_keypair_addr(addr: &mut [u32; 8], keypair: u32) {
-    u32_to_bytes(&mut addr_bytes_mut(addr)[SPX_OFFSET_KP_ADDR..], keypair);
-}
-
-pub fn copy_keypair_addr(out: &mut [u32; 8], inp: &[u32; 8]) {
-    let src = addr_bytes(inp);
-    let dst = addr_bytes_mut(out);
-    dst[..SPX_OFFSET_TREE + 8].copy_from_slice(&src[..SPX_OFFSET_TREE + 8]);
-    dst[SPX_OFFSET_KP_ADDR..SPX_OFFSET_KP_ADDR + 4]
-        .copy_from_slice(&src[SPX_OFFSET_KP_ADDR..SPX_OFFSET_KP_ADDR + 4]);
-}
-
-pub fn set_chain_addr(addr: &mut [u32; 8], chain: u32) {
-    addr_bytes_mut(addr)[SPX_OFFSET_CHAIN_ADDR] = chain as u8;
-}
-
-pub fn set_hash_addr(addr: &mut [u32; 8], hash: u32) {
-    addr_bytes_mut(addr)[SPX_OFFSET_HASH_ADDR] = hash as u8;
-}
-
-pub fn set_tree_height(addr: &mut [u32; 8], tree_height: u32) {
-    addr_bytes_mut(addr)[SPX_OFFSET_TREE_HGT] = tree_height as u8;
-}
-
-pub fn set_tree_index(addr: &mut [u32; 8], tree_index: u32) {
-    u32_to_bytes(&mut addr_bytes_mut(addr)[SPX_OFFSET_TREE_INDEX..], tree_index);
-}
-
-// utils.c
+use crate::context::SpxCtx;
+use crate::address::*;
+use crate::hash::{initialize_hash_function, thash};
 
 pub fn ull_to_bytes(out: &mut [u8], outlen: usize, mut val: u64) {
     for i in (0..outlen).rev() {
@@ -77,10 +17,107 @@ pub fn u32_to_bytes(out: &mut [u8], val: u32) {
     out[3] = val as u8;
 }
 
-pub fn bytes_to_ull(inp: &[u8], inlen: usize) -> u64 {
+pub fn bytes_to_ull(input: &[u8], inlen: usize) -> u64 {
     let mut retval: u64 = 0;
     for i in 0..inlen {
-        retval |= (inp[i] as u64) << (8 * (inlen - 1 - i));
+        retval |= (input[i] as u64) << (8 * (inlen - 1 - i));
     }
     retval
+}
+
+pub fn compute_root(
+    root: &mut [u8],
+    leaf: &[u8],
+    mut leaf_idx: u32,
+    mut idx_offset: u32,
+    auth_path: &[u8],
+    tree_height: u32,
+    ctx: &SpxCtx,
+    addr: &mut [u32; 8],
+) {
+    let mut buffer = [0u8; 2 * SPX_N];
+    let mut auth_off: usize = 0;
+
+    if leaf_idx & 1 != 0 {
+        buffer[SPX_N..2 * SPX_N].copy_from_slice(&leaf[..SPX_N]);
+        buffer[..SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+    } else {
+        buffer[..SPX_N].copy_from_slice(&leaf[..SPX_N]);
+        buffer[SPX_N..2 * SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+    }
+    auth_off += SPX_N;
+
+    for i in 0..(tree_height - 1) {
+        leaf_idx >>= 1;
+        idx_offset >>= 1;
+        set_tree_height(addr, i + 1);
+        set_tree_index(addr, leaf_idx + idx_offset);
+
+        let src = buffer;
+        if leaf_idx & 1 != 0 {
+            thash(&mut buffer[SPX_N..], &src, 2, ctx, addr);
+            buffer[..SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+        } else {
+            thash(&mut buffer[..SPX_N], &src, 2, ctx, addr);
+            buffer[SPX_N..2 * SPX_N].copy_from_slice(&auth_path[auth_off..auth_off + SPX_N]);
+        }
+        auth_off += SPX_N;
+    }
+
+    leaf_idx >>= 1;
+    idx_offset >>= 1;
+    set_tree_height(addr, tree_height);
+    set_tree_index(addr, leaf_idx + idx_offset);
+    thash(root, &buffer, 2, ctx, addr);
+}
+
+pub fn treehash(
+    root: &mut [u8],
+    auth_path: &mut [u8],
+    ctx: &SpxCtx,
+    leaf_idx: u32,
+    idx_offset: u32,
+    tree_height: u32,
+    gen_leaf: fn(&mut [u8], &SpxCtx, u32, &[u32; 8]),
+    tree_addr: &mut [u32; 8],
+) {
+    let mut stack = vec![0u8; (tree_height as usize + 1) * SPX_N];
+    let mut heights = vec![0u32; tree_height as usize + 1];
+    let mut offset: usize = 0;
+
+    for idx in 0..(1u32 << tree_height) {
+        gen_leaf(
+            &mut stack[offset * SPX_N..(offset + 1) * SPX_N],
+            ctx,
+            idx + idx_offset,
+            tree_addr,
+        );
+        offset += 1;
+        heights[offset - 1] = 0;
+
+        if (leaf_idx ^ 0x1) == idx {
+            auth_path[..SPX_N].copy_from_slice(&stack[(offset - 1) * SPX_N..offset * SPX_N]);
+        }
+
+        while offset >= 2 && heights[offset - 1] == heights[offset - 2] {
+            let tree_idx = idx >> (heights[offset - 1] + 1);
+            set_tree_height(tree_addr, heights[offset - 1] + 1);
+            set_tree_index(
+                tree_addr,
+                tree_idx + (idx_offset >> (heights[offset - 1] + 1)),
+            );
+            let base = (offset - 2) * SPX_N;
+            let src = stack[base..base + 2 * SPX_N].to_vec();
+            thash(&mut stack[base..base + SPX_N], &src, 2, ctx, tree_addr);
+            offset -= 1;
+            heights[offset - 1] += 1;
+
+            if ((leaf_idx >> heights[offset - 1]) ^ 0x1) == tree_idx {
+                let h = heights[offset - 1] as usize;
+                auth_path[h * SPX_N..(h + 1) * SPX_N]
+                    .copy_from_slice(&stack[(offset - 1) * SPX_N..offset * SPX_N]);
+            }
+        }
+    }
+    root[..SPX_N].copy_from_slice(&stack[..SPX_N]);
 }
