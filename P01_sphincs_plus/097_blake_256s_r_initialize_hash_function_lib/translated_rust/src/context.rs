@@ -1,16 +1,1 @@
-use crate::params::*;
-
-#[derive(Clone)]
-pub struct SpxCtx {
-    pub pub_seed: [u8; SPX_N],
-    pub sk_seed: [u8; SPX_N],
-}
-
-impl Default for SpxCtx {
-    fn default() -> Self {
-        SpxCtx {
-            pub_seed: [0u8; SPX_N],
-            sk_seed: [0u8; SPX_N],
-        }
-    }
-}
+/local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/005_sphincs_PQCgenKAT_sign_blake_128f_simple/translated_rust/src/context.rs

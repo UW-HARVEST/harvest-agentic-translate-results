@@ -1,29 +1,32 @@
-use aes::cipher::{BlockEncrypt, KeyInit};
+#![allow(non_snake_case)]
+use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
 use aes::Aes256;
 
-pub struct Aes256CtrDrbg {
-    pub key: [u8; 32],
-    pub v: [u8; 16],
+pub const RNG_SUCCESS: i32 = 0;
+
+#[derive(Clone)]
+pub struct AES256_CTR_DRBG_struct {
+    pub Key: [u8; 32],
+    pub V: [u8; 16],
     pub reseed_counter: i32,
 }
 
-static mut DRBG_CTX: Aes256CtrDrbg = Aes256CtrDrbg {
-    key: [0; 32],
-    v: [0; 16],
+static mut DRBG_CTX: AES256_CTR_DRBG_struct = AES256_CTR_DRBG_struct {
+    Key: [0; 32],
+    V: [0; 16],
     reseed_counter: 0,
 };
 
-fn aes256_ecb(key: &[u8; 32], ctr: &[u8; 16], buffer: &mut [u8; 16]) {
-    let cipher = Aes256::new(key.into());
-    let mut block = aes::Block::clone_from_slice(ctr);
+fn AES256_ECB(key: &[u8], ctr: &[u8], buffer: &mut [u8]) {
+    let cipher = Aes256::new(GenericArray::from_slice(key));
+    let mut block = *GenericArray::from_slice(ctr);
     cipher.encrypt_block(&mut block);
-    buffer.copy_from_slice(&block);
+    buffer[..16].copy_from_slice(&block);
 }
 
-pub fn aes256_ctr_drbg_update(provided_data: Option<&[u8; 48]>, key: &mut [u8; 32], v: &mut [u8; 16]) {
+pub fn AES256_CTR_DRBG_Update(provided_data: Option<&[u8]>, key: &mut [u8], v: &mut [u8]) {
     let mut temp = [0u8; 48];
     for i in 0..3 {
-        // increment V
         for j in (0..16).rev() {
             if v[j] == 0xff {
                 v[j] = 0x00;
@@ -32,50 +35,52 @@ pub fn aes256_ctr_drbg_update(provided_data: Option<&[u8; 48]>, key: &mut [u8; 3
                 break;
             }
         }
-        let mut out = [0u8; 16];
-        aes256_ecb(&*key, &*v, &mut out);
-        temp[16 * i..16 * i + 16].copy_from_slice(&out);
+        AES256_ECB(key, v, &mut temp[16 * i..16 * i + 16]);
     }
     if let Some(pd) = provided_data {
         for i in 0..48 {
             temp[i] ^= pd[i];
         }
     }
-    key.copy_from_slice(&temp[..32]);
-    v.copy_from_slice(&temp[32..48]);
+    key[..32].copy_from_slice(&temp[..32]);
+    v[..16].copy_from_slice(&temp[32..48]);
 }
 
-pub fn randombytes_init(entropy_input: &[u8; 48], personalization_string: Option<&[u8; 48]>) {
+pub fn randombytes_init(entropy_input: &[u8], personalization_string: Option<&[u8]>) {
     let mut seed_material = [0u8; 48];
-    seed_material.copy_from_slice(entropy_input);
+    seed_material.copy_from_slice(&entropy_input[..48]);
     if let Some(ps) = personalization_string {
         for i in 0..48 {
             seed_material[i] ^= ps[i];
         }
     }
     unsafe {
-        DRBG_CTX.key = [0; 32];
-        DRBG_CTX.v = [0; 16];
-        aes256_ctr_drbg_update(Some(&seed_material), &mut DRBG_CTX.key, &mut DRBG_CTX.v);
+        DRBG_CTX.Key = [0; 32];
+        DRBG_CTX.V = [0; 16];
+        let mut key = DRBG_CTX.Key;
+        let mut v = DRBG_CTX.V;
+        AES256_CTR_DRBG_Update(Some(&seed_material), &mut key, &mut v);
+        DRBG_CTX.Key = key;
+        DRBG_CTX.V = v;
         DRBG_CTX.reseed_counter = 1;
     }
 }
 
-pub fn randombytes(x: &mut [u8], mut xlen: u64) {
+pub fn randombytes(x: &mut [u8], mut xlen: u64) -> i32 {
+    let mut block = [0u8; 16];
+    let mut i: usize = 0;
+
     unsafe {
-        let mut block = [0u8; 16];
-        let mut i = 0usize;
         while xlen > 0 {
-            // increment V
             for j in (0..16).rev() {
-                if DRBG_CTX.v[j] == 0xff {
-                    DRBG_CTX.v[j] = 0x00;
+                if DRBG_CTX.V[j] == 0xff {
+                    DRBG_CTX.V[j] = 0x00;
                 } else {
-                    DRBG_CTX.v[j] += 1;
+                    DRBG_CTX.V[j] += 1;
                     break;
                 }
             }
-            aes256_ecb(&DRBG_CTX.key, &DRBG_CTX.v, &mut block);
+            AES256_ECB(&DRBG_CTX.Key, &DRBG_CTX.V, &mut block);
             if xlen > 15 {
                 x[i..i + 16].copy_from_slice(&block);
                 i += 16;
@@ -85,7 +90,12 @@ pub fn randombytes(x: &mut [u8], mut xlen: u64) {
                 xlen = 0;
             }
         }
-        aes256_ctr_drbg_update(None, &mut DRBG_CTX.key, &mut DRBG_CTX.v);
+        let mut key = DRBG_CTX.Key;
+        let mut v = DRBG_CTX.V;
+        AES256_CTR_DRBG_Update(None, &mut key, &mut v);
+        DRBG_CTX.Key = key;
+        DRBG_CTX.V = v;
         DRBG_CTX.reseed_counter += 1;
     }
+    RNG_SUCCESS
 }
