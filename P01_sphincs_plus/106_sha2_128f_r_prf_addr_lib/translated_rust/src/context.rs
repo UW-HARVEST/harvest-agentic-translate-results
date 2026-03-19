@@ -1,1 +1,6 @@
-/local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/P01_sphincs_plus/005_sphincs_PQCgenKAT_sign_blake_128f_simple/translated_rust/src/context.rs
+use crate::params::*;
+
+pub struct SpxCtx {
+    pub pub_seed: [u8; SPX_N],
+    pub sk_seed: [u8; SPX_N],
+}
