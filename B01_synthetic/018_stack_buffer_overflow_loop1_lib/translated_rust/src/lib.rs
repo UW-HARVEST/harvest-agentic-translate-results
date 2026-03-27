@@ -1,60 +1,50 @@
-use std::ffi::{c_char, c_int, CStr};
-use std::alloc::{alloc, Layout};
+use std::ffi::{c_char, c_int};
+
+extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn printLine(line: *const c_char) {
+pub unsafe extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
-        unsafe {
-            let s = CStr::from_ptr(line);
-            println!("{}", s.to_str().unwrap_or(""));
-        }
+        unsafe { printf(b"%s\n\0".as_ptr() as *const c_char, line) };
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn printIntLine(int_number: c_int) {
-    println!("{}", int_number);
+pub unsafe extern "C" fn printIntLine(int_number: c_int) {
+    unsafe { printf(b"%d\n\0".as_ptr() as *const c_char, int_number) };
 }
 
-/// Reproduces the C bug: allocates only 10 bytes (not 10*sizeof(int)),
-/// then writes 10 ints through that pointer — a buffer overflow.
-fn bad() {
-    unsafe {
-        // alloca(10) — only 10 bytes, not enough for 10 ints
-        let layout = Layout::from_size_align(10, std::mem::align_of::<c_int>()).unwrap();
-        let data = alloc(layout) as *mut c_int;
-
-        let source: [c_int; 10] = [0; 10];
-        for i in 0..10 {
-            *data.add(i) = source[i];
-        }
-        printIntLine(*data);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bad() {
+    // alloca(10) — only 10 bytes, but we write 10 ints (buffer overflow)
+    let mut buf = [0u8; 10];
+    let data: *mut c_int = buf.as_mut_ptr() as *mut c_int;
+    let source: [c_int; 10] = [0; 10];
+    for i in 0..10 {
+        unsafe { *data.add(i) = source[i] };
     }
+    unsafe { printIntLine(*data) };
 }
 
-fn good() {
-    unsafe {
-        // alloca(10*sizeof(int)) — correct size
-        let layout = Layout::from_size_align(
-            10 * std::mem::size_of::<c_int>(),
-            std::mem::align_of::<c_int>(),
-        )
-        .unwrap();
-        let data = alloc(layout) as *mut c_int;
-
-        let source: [c_int; 10] = [0; 10];
-        for i in 0..10 {
-            *data.add(i) = source[i];
-        }
-        printIntLine(*data);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn good() {
+    // alloca(10 * sizeof(int)) — 40 bytes, correct size
+    let mut buf = [0u8; 10 * std::mem::size_of::<c_int>()];
+    let data: *mut c_int = buf.as_mut_ptr() as *mut c_int;
+    let source: [c_int; 10] = [0; 10];
+    for i in 0..10 {
+        unsafe { *data.add(i) = source[i] };
     }
+    unsafe { printIntLine(*data) };
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(use_good: c_int) {
     if use_good != 0 {
-        good();
+        unsafe { good() };
     } else {
-        bad();
+        unsafe { bad() };
     }
 }

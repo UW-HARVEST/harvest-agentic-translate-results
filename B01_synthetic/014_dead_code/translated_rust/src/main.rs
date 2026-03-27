@@ -1,30 +1,39 @@
-fn print_line(line: &str) {
-    println!("{}", line);
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+#[no_mangle]
+pub extern "C" fn printLine(line: *const c_char) {
+    if !line.is_null() {
+        let s = unsafe { CStr::from_ptr(line) };
+        println!("{}", s.to_str().unwrap());
+    }
 }
 
 #[allow(dead_code)]
 fn helper_bad() {
-    print_line("helperBad()");
+    printLine(b"helperBad()\0".as_ptr() as *const c_char);
 }
 
-fn bad() {
-    print_line("bad()");
+#[no_mangle]
+pub extern "C" fn bad() {
+    printLine(b"bad()\0".as_ptr() as *const c_char);
 }
 
 fn helper_good() {
-    print_line("helperGood()");
+    printLine(b"helperGood()\0".as_ptr() as *const c_char);
 }
 
-fn good() {
-    print_line("good()");
+#[no_mangle]
+pub extern "C" fn good() {
+    printLine(b"good()\0".as_ptr() as *const c_char);
     helper_good();
 }
 
 fn main() {
-    print_line("Calling good()...");
+    printLine(b"Calling good()...\0".as_ptr() as *const c_char);
     good();
-    print_line("Finished good()");
-    print_line("Calling bad()...");
+    printLine(b"Finished good()\0".as_ptr() as *const c_char);
+    printLine(b"Calling bad()...\0".as_ptr() as *const c_char);
     bad();
-    print_line("Finished bad()");
+    printLine(b"Finished bad()\0".as_ptr() as *const c_char);
 }

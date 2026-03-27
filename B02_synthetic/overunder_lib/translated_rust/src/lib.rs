@@ -1,6 +1,21 @@
 use std::ffi::c_int;
 
-fn safe_double_to_int(d: f64) -> c_int {
+#[repr(C)]
+pub struct DataBlock {
+    pub id: c_int,
+    pub value: f64,
+    pub label: [u8; 20],
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn copy_data_block(dest: *mut DataBlock, src: *const DataBlock) {
+    unsafe {
+        std::ptr::copy_nonoverlapping(src as *const u8, dest as *mut u8, std::mem::size_of::<DataBlock>());
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn safe_double_to_int(d: f64) -> c_int {
     if d > i32::MAX as f64 {
         i32::MAX
     } else if d < i32::MIN as f64 {
@@ -12,9 +27,9 @@ fn safe_double_to_int(d: f64) -> c_int {
     }
 }
 
-fn process_with_fallthrough(code: c_int, base_value: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn process_with_fallthrough(code: c_int, base_value: c_int) -> c_int {
     let mut result = base_value;
-
     match code {
         5 => {
             result += 50;
@@ -48,11 +63,11 @@ fn process_with_fallthrough(code: c_int, base_value: c_int) -> c_int {
             result = -1;
         }
     }
-
     result
 }
 
-fn handle_pointer_operations(value: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn handle_pointer_operations(value: c_int) -> c_int {
     let local_value = value * 2;
     local_value + 100
 }
@@ -66,16 +81,14 @@ pub extern "C" fn overunder(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
     let _result_3 = c;
     let _result_4 = d;
 
-    // PRINT_VAR(result_1) -> printf("result_1 = %d\n", result_1)
-    // PRINT_VAR(result_2) -> printf("result_2 = %d\n", result_2)
+    // PRINT_VAR(result_1) -> printf("result_1" " = %d\n", result_1)
     print!("result_1 = {}\n", result_1);
     print!("result_2 = {}\n", result_2);
 
-    let temp1: f64 = a as f64 * 1.5;
-    let temp2: f64 = b as f64 * 2.7;
-    let temp3: f64 = c as f64 / 3.3;
-    // C: sqrt((double)(d * d + a * a)) — d*d + a*a wraps as i32
-    let temp4: f64 = (((d.wrapping_mul(d)).wrapping_add(a.wrapping_mul(a))) as f64).sqrt();
+    let temp1 = a as f64 * 1.5;
+    let temp2 = b as f64 * 2.7;
+    let temp3 = c as f64 / 3.3;
+    let temp4 = ((d * d + a * a) as f64).sqrt();
 
     let conv1 = safe_double_to_int(temp1);
     let conv2 = safe_double_to_int(temp2);
@@ -87,22 +100,20 @@ pub extern "C" fn overunder(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
     let switch_result = process_with_fallthrough(a % 6, b);
     print!("Switch fall-through result: {}\n", switch_result);
 
-    // DataBlock source_block
-    let block_id = a;
-    let block_value = temp1;
-    let block_label = "Source";
+    let source_id = a;
+    let source_value = temp1;
+    let source_label = "Source";
 
-    // copy_data_block — just reuse same values
     print!(
         "Copied block: id={}, value={:.2}, label={}\n",
-        block_id, block_value, block_label
+        source_id, source_value, source_label
     );
 
     let ptr_result = handle_pointer_operations(c);
     print!("Pointer operation result: {}\n", ptr_result);
 
     total = conv1 + conv2 + conv3 + conv4 + switch_result + ptr_result;
-    total += block_id;
+    total += source_id;
 
     let overflow_test: f64 = 1e15;
     let safe_conv = safe_double_to_int(overflow_test);

@@ -1,82 +1,95 @@
-use std::alloc::{Layout, alloc_zeroed, dealloc};
-use std::os::raw::c_int;
-use std::ptr;
+use std::os::raw::{c_char, c_int, c_uchar};
 
 #[repr(C)]
-struct MemoryBlock {
+pub struct DataBlock {
+    id: c_int,
+    name: [c_char; 32],
+    flags: c_uchar,
+}
+
+#[repr(C)]
+pub struct MemoryBlock {
     data: *mut c_int,
     size: usize,
 }
 
-fn allocate_block(count: usize, init_value: c_int) -> *mut MemoryBlock {
+#[unsafe(no_mangle)]
+pub extern "C" fn create_block(id: c_int, name: *const c_char, flags: c_uchar) -> DataBlock {
+    let mut block = DataBlock {
+        id,
+        name: [0; 32],
+        flags,
+    };
     unsafe {
-        let layout_mb = Layout::new::<MemoryBlock>();
-        let mb = alloc_zeroed(layout_mb) as *mut MemoryBlock;
-        if mb.is_null() {
-            return ptr::null_mut();
+        let mut i = 0;
+        while i < 31 && *name.add(i) != 0 {
+            block.name[i] = *name.add(i);
+            i += 1;
         }
+    }
+    block
+}
 
-        let layout_data = match Layout::array::<c_int>(count) {
-            Ok(l) => l,
-            Err(_) => {
-                dealloc(mb as *mut u8, layout_mb);
-                return ptr::null_mut();
-            }
-        };
-        let data = alloc_zeroed(layout_data) as *mut c_int;
-        if data.is_null() {
-            dealloc(mb as *mut u8, layout_mb);
-            return ptr::null_mut();
+#[unsafe(no_mangle)]
+pub extern "C" fn allocate_block(count: usize, init_value: c_int) -> *mut MemoryBlock {
+    let mb = Box::into_raw(Box::new(MemoryBlock {
+        data: std::ptr::null_mut(),
+        size: 0,
+    }));
+    unsafe {
+        let layout = std::alloc::Layout::array::<c_int>(count).unwrap();
+        let ptr = std::alloc::alloc_zeroed(layout) as *mut c_int;
+        if ptr.is_null() {
+            drop(Box::from_raw(mb));
+            return std::ptr::null_mut();
         }
-
-        (*mb).data = data;
+        (*mb).data = ptr;
         (*mb).size = count;
-
         for i in 0..count {
-            *data.add(i) = init_value + i as c_int;
+            *ptr.add(i) = init_value + i as c_int;
         }
+    }
+    mb
+}
 
-        mb
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_block(mb: *mut MemoryBlock) {
+    if !mb.is_null() {
+        if !(*mb).data.is_null() {
+            let layout = std::alloc::Layout::array::<c_int>((*mb).size).unwrap();
+            std::alloc::dealloc((*mb).data as *mut u8, layout);
+        }
+        drop(Box::from_raw(mb));
     }
 }
 
-fn free_block(mb: *mut MemoryBlock) {
+#[unsafe(no_mangle)]
+pub extern "C" fn compute_hash(mb1: *mut MemoryBlock, mb2: *mut MemoryBlock) -> c_int {
+    let mut hash: c_int = 0;
     unsafe {
-        if !mb.is_null() {
-            if !(*mb).data.is_null() {
-                let layout_data = Layout::array::<c_int>((*mb).size).unwrap();
-                dealloc((*mb).data as *mut u8, layout_data);
-            }
-            dealloc(mb as *mut u8, Layout::new::<MemoryBlock>());
-        }
-    }
-}
-
-fn compute_hash(mb1: *mut MemoryBlock, mb2: *mut MemoryBlock) -> c_int {
-    unsafe {
-        let mut hash: c_int = 0;
-
-        if ((*mb1).data as usize) < ((*mb2).data as usize) {
+        let d1 = (*mb1).data as usize;
+        let d2 = (*mb2).data as usize;
+        if d1 < d2 {
             hash += 100;
-        } else if ((*mb1).data as usize) > ((*mb2).data as usize) {
+        } else if d1 > d2 {
             hash += 200;
         }
 
-        if (mb1 as usize) < (mb2 as usize) {
+        let p1 = mb1 as usize;
+        let p2 = mb2 as usize;
+        if p1 < p2 {
             hash += 10;
-        } else if (mb1 as usize) > (mb2 as usize) {
+        } else if p1 > p2 {
             hash += 20;
         }
-
-        hash
     }
+    hash
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn betagamma(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {
     let mut result: c_int = 0;
 
-    // Block flags: Alpha=0b10101010, Beta=0b11001100, Gamma=0b11110000
     let block_ids: [c_int; 3] = [1, 2, 3];
     let block_flags: [u8; 3] = [0b10101010, 0b11001100, 0b11110000];
 
@@ -103,8 +116,10 @@ pub extern "C" fn betagamma(param1: c_int, param2: c_int, param3: c_int, param4:
     let mem2 = allocate_block(block_size, param2);
 
     if mem1.is_null() || mem2.is_null() {
-        free_block(mem1);
-        free_block(mem2);
+        unsafe {
+            free_block(mem1);
+            free_block(mem2);
+        }
         return -1;
     }
 
@@ -120,16 +135,16 @@ pub extern "C" fn betagamma(param1: c_int, param2: c_int, param3: c_int, param4:
         for i in 0..(*mem2).size {
             sum2 += *(*mem2).data.add(i);
         }
-
         result += (sum1 - sum2) / 10;
 
-        // special.id = 99, special.flags = 0b11111111 = 255
+        // mem1->data != mem2->data is always true for separate allocations
         if (*mem1).data != (*mem2).data {
-            result += 99;
+            result += 99; // special.id
         }
 
+        // mem1->data > NULL && mem2->data > NULL — always true for valid allocs
         if ((*mem1).data as usize) > 0 && ((*mem2).data as usize) > 0 {
-            result += 255_i32;
+            result += 0b11111111_u8 as c_int; // special.flags = 0xFF
         }
 
         free_block(mem1);

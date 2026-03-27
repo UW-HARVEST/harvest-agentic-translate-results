@@ -1,13 +1,25 @@
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
+#![allow(non_camel_case_types, non_snake_case, unused_assignments)]
+
+use libc::{
+    atoi, c_char, c_int, c_uint, c_void, calloc, clearerr, fclose, feof, fgets, fileno, fopen,
+    fseek, fstat, free, memset, perror, realloc, select, snprintf, stat, strchr, strdup,
+    strlen, strncmp, strncpy, strrchr, strstr, strerror, timeval, FILE, SEEK_CUR, SEEK_END,
+    EXIT_FAILURE,
+};
 use std::ptr;
 
-// ============================================================
-// Constants from shared.h, read-alert.h, file-queue.h
-// ============================================================
-const OS_MAXSTR: usize = 1024;
-const MAX_FQUEUE: usize = 256;
-const FQ_TIMEOUT: i64 = 5;
+extern "C" {
+    static stderr: *mut FILE;
+}
 
+// ── constants from shared.h ──
+const OS_MAXSTR: usize = 1024;
+
+// ── constants from file-queue.h ──
+const MAX_FQUEUE: usize = 256;
+const FQ_TIMEOUT: libc::c_long = 5;
+
+// ── constants from read-alert.h ──
 const ALERTS_DAILY: &[u8] = b"alerts.log\0";
 
 const CRALERT_MAIL_SET: c_int = 0x001;
@@ -16,115 +28,33 @@ const CRALERT_READ_ALL: c_int = 0x004;
 const CRALERT_READ_FAILED: c_int = 0x008;
 const CRALERT_FP_SET: c_int = 0x010;
 
-const ALERT_BEGIN: &[u8] = b"** Alert";
+// ── string constants for read-alert parsing ──
+const ALERT_BEGIN: &[u8] = b"** Alert\0";
 const ALERT_BEGIN_SZ: usize = 8;
-const RULE_BEGIN: &[u8] = b"Rule: ";
+const RULE_BEGIN: &[u8] = b"Rule: \0";
 const RULE_BEGIN_SZ: usize = 6;
-const SRCIP_BEGIN: &[u8] = b"Src IP: ";
+const SRCIP_BEGIN: &[u8] = b"Src IP: \0";
 const SRCIP_BEGIN_SZ: usize = 8;
-const SRCPORT_BEGIN: &[u8] = b"Src Port: ";
+const SRCPORT_BEGIN: &[u8] = b"Src Port: \0";
 const SRCPORT_BEGIN_SZ: usize = 10;
-const DSTIP_BEGIN: &[u8] = b"Dst IP: ";
+const DSTIP_BEGIN: &[u8] = b"Dst IP: \0";
 const DSTIP_BEGIN_SZ: usize = 8;
-const DSTPORT_BEGIN: &[u8] = b"Dst Port: ";
+const DSTPORT_BEGIN: &[u8] = b"Dst Port: \0";
 const DSTPORT_BEGIN_SZ: usize = 10;
-const USER_BEGIN: &[u8] = b"User: ";
+const USER_BEGIN: &[u8] = b"User: \0";
 const USER_BEGIN_SZ: usize = 6;
-const ALERT_MAIL: &[u8] = b"mail";
+const ALERT_MAIL: &[u8] = b"mail\0";
 const ALERT_MAIL_SZ: usize = 4;
 const LOG_LIMIT: usize = 100;
 
-// ============================================================
-// libc bindings
-// ============================================================
-extern "C" {
-    fn calloc(num: usize, size: usize) -> *mut c_void;
-    fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
-    fn strdup(s: *const c_char) -> *mut c_char;
-    fn strlen(s: *const c_char) -> usize;
-    fn strncpy(dst: *mut c_char, src: *const c_char, n: usize) -> *mut c_char;
-    fn strncmp(s1: *const c_char, s2: *const c_char, n: usize) -> c_int;
-    fn strstr(haystack: *const c_char, needle: *const c_char) -> *const c_char;
-    fn strchr(s: *const c_char, c: c_int) -> *mut c_char;
-    fn strrchr(s: *const c_char, c: c_int) -> *mut c_char;
-    fn atoi(s: *const c_char) -> c_int;
-    fn snprintf(s: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
-    fn fprintf(stream: *mut libc_FILE, fmt: *const c_char, ...) -> c_int;
-    fn perror(s: *const c_char);
-    fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc_FILE;
-    fn fclose(fp: *mut libc_FILE) -> c_int;
-    fn fgets(buf: *mut c_char, n: c_int, fp: *mut libc_FILE) -> *mut c_char;
-    fn fseek(fp: *mut libc_FILE, offset: i64, whence: c_int) -> c_int;
-    fn feof(fp: *mut libc_FILE) -> c_int;
-    fn clearerr(fp: *mut libc_FILE);
-    fn fileno(fp: *mut libc_FILE) -> c_int;
-    fn fstat(fd: c_int, buf: *mut Stat) -> c_int;
-    fn select(
-        nfds: c_int,
-        readfds: *mut c_void,
-        writefds: *mut c_void,
-        exceptfds: *mut c_void,
-        timeout: *mut Timeval,
-    ) -> c_int;
-    fn strerror(errnum: c_int) -> *mut c_char;
-    fn memset(s: *mut c_void, c: c_int, n: usize) -> *mut c_void;
-    fn exit(status: c_int) -> !;
+// ── month table from file-queue.c ──
+static S_MONTH: [&[u8; 4]; 12] = [
+    b"Jan\0", b"Feb\0", b"Mar\0", b"Apr\0", b"May\0", b"Jun\0",
+    b"Jul\0", b"Aug\0", b"Sep\0", b"Oct\0", b"Nov\0", b"Dec\0",
+];
 
-    static mut stderr: *mut libc_FILE;
-    static mut errno: c_int;
-}
+// ── structs ──
 
-fn get_errno() -> c_int {
-    unsafe { *libc_errno_location() }
-}
-
-extern "C" {
-    #[cfg(target_os = "linux")]
-    fn __errno_location() -> *mut c_int;
-}
-
-#[cfg(target_os = "linux")]
-fn libc_errno_location() -> *mut c_int {
-    unsafe { __errno_location() }
-}
-
-// Opaque FILE type
-#[repr(C)]
-struct libc_FILE {
-    _opaque: [u8; 0],
-}
-
-const SEEK_CUR: c_int = 1;
-const SEEK_END: c_int = 2;
-const EXIT_FAILURE: c_int = 1;
-
-// struct timeval
-#[repr(C)]
-struct Timeval {
-    tv_sec: i64,
-    tv_usec: i64,
-}
-
-// struct stat - use a large enough buffer
-#[repr(C)]
-struct Stat {
-    _buf: [u8; 256], // oversized to cover all platforms
-}
-
-// Offset of st_mtime in struct stat on Linux x86_64 is 88 bytes
-// (st_mtime is a time_t = i64)
-impl Stat {
-    fn st_mtime(&self) -> i64 {
-        // On Linux x86_64, st_mtim.tv_sec is at offset 88
-        let bytes: [u8; 8] = self._buf[88..96].try_into().unwrap();
-        i64::from_ne_bytes(bytes)
-    }
-}
-
-// ============================================================
-// alert_data struct (matches C layout)
-// ============================================================
 #[repr(C)]
 pub struct alert_data {
     pub rule: c_uint,
@@ -142,92 +72,106 @@ pub struct alert_data {
     pub filename: *mut c_char,
 }
 
-// ============================================================
-// file_queue struct (matches C layout)
-// ============================================================
+#[repr(C)]
+pub struct tm {
+    pub tm_sec: c_int,
+    pub tm_min: c_int,
+    pub tm_hour: c_int,
+    pub tm_mday: c_int,
+    pub tm_mon: c_int,
+    pub tm_year: c_int,
+    pub tm_wday: c_int,
+    pub tm_yday: c_int,
+    pub tm_isdst: c_int,
+    pub tm_gmtoff: libc::c_long,
+    pub tm_zone: *const c_char,
+}
+
 #[repr(C)]
 pub struct file_queue {
-    pub last_change: i64, // time_t
+    pub last_change: libc::time_t,
     pub year: c_int,
     pub day: c_int,
     pub flags: c_int,
     pub mon: [c_char; 4],
     pub file_name: [c_char; MAX_FQUEUE + 1],
-    pub fp: *mut libc_FILE,
-    pub f_status: Stat,
+    pub fp: *mut FILE,
+    pub f_status: stat,
 }
 
-// ============================================================
-// shared.h helpers
-// ============================================================
-unsafe fn os_free(x: &mut *mut c_char) {
-    if !(*x).is_null() {
-        free(*x as *mut c_void);
-        *x = ptr::null_mut();
-    }
-}
+// ── shared.h helpers ──
 
-unsafe fn os_calloc(num: usize, size: usize) -> *mut c_void {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn os_calloc(num: usize, size: usize) -> *mut c_void {
     let out = calloc(num, size);
     if out.is_null() {
-        fprintf(
+        libc::fprintf(
             stderr,
             b"Memory allocation failed in os_calloc\0".as_ptr() as *const c_char,
         );
-        exit(EXIT_FAILURE);
+        libc::exit(EXIT_FAILURE);
     }
     out
 }
 
-unsafe fn os_realloc_raw(ptr: *mut c_void, new_size: usize) -> *mut c_void {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn os_realloc(ptr: *mut c_void, new_size: usize) -> *mut c_void {
     let out = realloc(ptr, new_size);
     if out.is_null() {
-        fprintf(
+        libc::fprintf(
             stderr,
             b"Memory allocation failed in os_realloc\0".as_ptr() as *const c_char,
         );
-        exit(EXIT_FAILURE);
+        libc::exit(EXIT_FAILURE);
     }
     out
 }
 
-unsafe fn os_strdup(s: *const c_char) -> *mut c_char {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn os_strdup(s: *const c_char) -> *mut c_char {
     if s.is_null() {
-        fprintf(
+        libc::fprintf(
             stderr,
             b"NULL string passed to os_strdup\0".as_ptr() as *const c_char,
         );
-        exit(EXIT_FAILURE);
+        libc::exit(EXIT_FAILURE);
     }
     let dup = strdup(s);
     if dup.is_null() {
-        fprintf(
+        libc::fprintf(
             stderr,
             b"Memory allocation failed in os_strdup\0".as_ptr() as *const c_char,
         );
-        exit(EXIT_FAILURE);
+        libc::exit(EXIT_FAILURE);
     }
     dup
 }
 
-/// os_clearnl: if (p = strrchr(x, '\n')) *p = '\0';
-unsafe fn os_clearnl(x: *mut c_char) -> *mut c_char {
-    let p = strrchr(x, b'\n' as c_int);
+/// os_free macro: free and null
+unsafe fn os_free(p: &mut *mut c_char) {
+    if !(*p).is_null() {
+        free(*p as *mut c_void);
+        *p = ptr::null_mut();
+    }
+}
+
+/// os_clearnl macro: strip trailing newline
+unsafe fn os_clearnl(s: *mut c_char) {
+    let p = strrchr(s, b'\n' as c_int);
     if !p.is_null() {
         *p = 0;
     }
-    p
 }
 
-// ============================================================
-// file-queue.c: merror
-// ============================================================
-static FSTAT_ERROR: &[u8] =
-    b"(1118): Could not retrieve information of file '%s' due to [(%d)-(%s)].\0";
-static FSEEK_ERROR: &[u8] =
-    b"(1116): Could not set position in file '%s' due to [(%d)-(%s)].\0";
+// ── file-queue.c: merror ──
 
-unsafe fn merror(err_template: *const c_char, file_name: *const c_char, err: c_int, err_msg: *const c_char) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn merror(
+    err_template: *const c_char,
+    file_name: *const c_char,
+    err: c_int,
+    err_msg: *const c_char,
+) {
     let mut buffer: [c_char; 256] = [0; 256];
     snprintf(
         buffer.as_mut_ptr(),
@@ -237,31 +181,25 @@ unsafe fn merror(err_template: *const c_char, file_name: *const c_char, err: c_i
         err,
         err_msg,
     );
-    fprintf(stderr, b"%s\n\0".as_ptr() as *const c_char, buffer.as_ptr());
+    libc::fprintf(
+        stderr,
+        b"%s\n\0".as_ptr() as *const c_char,
+        buffer.as_ptr(),
+    );
 }
 
-// ============================================================
-// s_month table
-// ============================================================
-static S_MONTH: [&[u8]; 12] = [
-    b"Jan\0", b"Feb\0", b"Mar\0", b"Apr\0", b"May\0", b"Jun\0",
-    b"Jul\0", b"Aug\0", b"Sep\0", b"Oct\0", b"Nov\0", b"Dec\0",
-];
+// ── file-queue.c: file_sleep ──
 
-// ============================================================
-// file-queue.c: file_sleep
-// ============================================================
 unsafe fn file_sleep() {
-    let mut fp_timeout = Timeval {
+    let mut fp_timeout = timeval {
         tv_sec: FQ_TIMEOUT,
         tv_usec: 0,
     };
     select(0, ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), &mut fp_timeout);
 }
 
-// ============================================================
-// file-queue.c: GetFile_Queue
-// ============================================================
+// ── file-queue.c: GetFile_Queue ──
+
 unsafe fn GetFile_Queue(fileq: *mut file_queue) {
     (*fileq).file_name[0] = 0;
     (*fileq).file_name[MAX_FQUEUE] = 0;
@@ -283,10 +221,11 @@ unsafe fn GetFile_Queue(fileq: *mut file_queue) {
     }
 }
 
-// ============================================================
-// file-queue.c: Handle_Queue
-// ============================================================
+// ── file-queue.c: Handle_Queue ──
+
 unsafe fn Handle_Queue(fileq: *mut file_queue, flags: c_int) -> c_int {
+    let errno_ptr = libc::__errno_location();
+
     if flags & CRALERT_FP_SET == 0 {
         if !(*fileq).fp.is_null() {
             fclose((*fileq).fp);
@@ -309,10 +248,11 @@ unsafe fn Handle_Queue(fileq: *mut file_queue, flags: c_int) -> c_int {
 
         if fseek((*fileq).fp, 0, SEEK_END) < 0 {
             merror(
-                FSEEK_ERROR.as_ptr() as *const c_char,
+                b"(1116): Could not set position in file '%s' due to [(%d)-(%s)].\0".as_ptr()
+                    as *const c_char,
                 (*fileq).file_name.as_ptr(),
-                get_errno(),
-                strerror(get_errno()),
+                *errno_ptr,
+                strerror(*errno_ptr),
             );
             fclose((*fileq).fp);
             (*fileq).fp = ptr::null_mut();
@@ -323,10 +263,11 @@ unsafe fn Handle_Queue(fileq: *mut file_queue, flags: c_int) -> c_int {
     if !(*fileq).fp.is_null() {
         if fstat(fileno((*fileq).fp), &mut (*fileq).f_status) < 0 {
             merror(
-                FSTAT_ERROR.as_ptr() as *const c_char,
+                b"(1118): Could not retrieve information of file '%s' due to [(%d)-(%s)].\0"
+                    .as_ptr() as *const c_char,
                 (*fileq).file_name.as_ptr(),
-                get_errno(),
-                strerror(get_errno()),
+                *errno_ptr,
+                strerror(*errno_ptr),
             );
             fclose((*fileq).fp);
             (*fileq).fp = ptr::null_mut();
@@ -334,34 +275,19 @@ unsafe fn Handle_Queue(fileq: *mut file_queue, flags: c_int) -> c_int {
         }
     }
 
-    (*fileq).last_change = (*fileq).f_status.st_mtime();
+    (*fileq).last_change = (*fileq).f_status.st_mtime;
 
     1
 }
 
-// ============================================================
-// struct tm (C)
-// ============================================================
-#[repr(C)]
-pub struct tm {
-    pub tm_sec: c_int,
-    pub tm_min: c_int,
-    pub tm_hour: c_int,
-    pub tm_mday: c_int,
-    pub tm_mon: c_int,
-    pub tm_year: c_int,
-    pub tm_wday: c_int,
-    pub tm_yday: c_int,
-    pub tm_isdst: c_int,
-    pub tm_gmtoff: i64,
-    pub tm_zone: *const c_char,
-}
+// ── file-queue.c: Init_FileQueue ──
 
-// ============================================================
-// file-queue.c: Init_FileQueue
-// ============================================================
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Init_FileQueue(fileq: *mut file_queue, p: *const tm, flags: c_int) -> c_int {
+pub unsafe extern "C" fn Init_FileQueue(
+    fileq: *mut file_queue,
+    p: *const tm,
+    flags: c_int,
+) -> c_int {
     if flags & CRALERT_FP_SET == 0 {
         (*fileq).fp = ptr::null_mut();
     }
@@ -393,9 +319,8 @@ pub unsafe extern "C" fn Init_FileQueue(fileq: *mut file_queue, p: *const tm, fl
     0
 }
 
-// ============================================================
-// file-queue.c: Read_FileMon
-// ============================================================
+// ── file-queue.c: Read_FileMon ──
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Read_FileMon(
     fileq: *mut file_queue,
@@ -447,9 +372,8 @@ pub unsafe extern "C" fn Read_FileMon(
     ptr::null_mut()
 }
 
-// ============================================================
-// read-alert.c: FreeAlertData
-// ============================================================
+// ── read-alert.c: FreeAlertData ──
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn FreeAlertData(al_data: *mut alert_data) {
     os_free(&mut (*al_data).alertid);
@@ -463,14 +387,13 @@ pub unsafe extern "C" fn FreeAlertData(al_data: *mut alert_data) {
     os_free(&mut (*al_data).filename);
 
     free(al_data as *mut c_void);
-    // al_data = NULL; -- C sets local param, no-op
+    // al_data = NULL; -- no-op in C (local param), omitted
 }
 
-// ============================================================
-// read-alert.c: GetAlertData
-// ============================================================
+// ── read-alert.c: GetAlertData ──
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut libc_FILE) -> *mut alert_data {
+pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut FILE) -> *mut alert_data {
     let al_data: *mut alert_data = os_calloc(1, std::mem::size_of::<alert_data>()) as *mut alert_data;
 
     let mut _r: c_int = 0;
@@ -480,19 +403,24 @@ pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut libc_FILE) -> *mut a
     let mut str_buf: [c_char; OS_MAXSTR + 1] = [0; OS_MAXSTR + 1];
     str_buf[OS_MAXSTR] = 0;
 
-    while !fgets(str_buf.as_mut_ptr(), OS_MAXSTR as c_int, fp).is_null() {
-        // End of alert
+    while !fgets(
+        str_buf.as_mut_ptr(),
+        OS_MAXSTR as c_int,
+        fp,
+    )
+    .is_null()
+    {
+        // Check for ALERT_BEGIN
         if strncmp(
             ALERT_BEGIN.as_ptr() as *const c_char,
             str_buf.as_ptr(),
             ALERT_BEGIN_SZ,
         ) == 0
         {
-            let mut z: usize;
+            let mut z: usize = 0;
 
             if _r == 2 {
-                let neg_len = -(strlen(str_buf.as_ptr()) as i64);
-                if fseek(fp, neg_len, SEEK_CUR) != -1 {
+                if fseek(fp, -(strlen(str_buf.as_ptr()) as libc::c_long), SEEK_CUR) != -1 {
                     return al_data;
                 } else {
                     // goto l_error
@@ -509,9 +437,9 @@ pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut libc_FILE) -> *mut a
                 continue;
             }
 
-            z = strlen(p) - strlen(m);
+            z = strlen(p).wrapping_sub(strlen(m));
             (*al_data).alertid =
-                os_realloc_raw((*al_data).alertid as *mut c_void, (z + 1) * std::mem::size_of::<c_char>())
+                os_realloc((*al_data).alertid as *mut c_void, (z + 1) * std::mem::size_of::<c_char>())
                     as *mut c_char;
             strncpy((*al_data).alertid, p, z);
             *(*al_data).alertid.add(z) = 0;
@@ -561,7 +489,7 @@ pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut libc_FILE) -> *mut a
             continue;
         }
 
-        // r1: extract date and location
+        // _r == 1: date/location line
         if _r == 1 {
             os_clearnl(str_buf.as_mut_ptr());
 
@@ -704,7 +632,7 @@ pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut libc_FILE) -> *mut a
                 os_free(&mut (*al_data).user);
                 (*al_data).user = os_strdup(p);
             }
-            // log message
+            // log message / syscheck
             else if log_size < LOG_LIMIT {
                 os_clearnl(str_buf.as_mut_ptr());
                 if issyscheck == 1 {
@@ -726,20 +654,19 @@ pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut libc_FILE) -> *mut a
         }
     }
 
-    // End of file with _r == 2
+    // End of file with valid data
     if feof(fp) != 0 && _r == 2 {
         return al_data;
     }
 
-    // l_error:
+    // l_error
     FreeAlertData(al_data);
     clearerr(fp);
     ptr::null_mut()
 }
 
-// ============================================================
-// driver.c: driver
-// ============================================================
+// ── driver.c: driver ──
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(
     day: c_int,
@@ -765,7 +692,7 @@ pub unsafe extern "C" fn driver(
     let mut fq: file_queue = std::mem::zeroed();
 
     if Init_FileQueue(&mut fq, &time, flags) < 0 {
-        fprintf(
+        libc::fprintf(
             stderr,
             b"File queue initialization failed\0".as_ptr() as *const c_char,
         );

@@ -1,53 +1,56 @@
 use std::ffi::{c_char, c_int, CStr};
 
-fn print_line(line: *const c_char) {
+const CHAR_MAX: i8 = i8::MAX; // 127
+
+#[unsafe(no_mangle)]
+pub extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
         let s = unsafe { CStr::from_ptr(line) };
-        println!("{}", s.to_str().unwrap());
+        println!("{}", s.to_str().unwrap_or(""));
     }
 }
 
-fn print_hex_char_line(char_hex: c_char) {
-    // C promotes char to int, then %02x prints it as unsigned hex of that int.
-    // For negative char values, sign-extension to i32 then cast to u32 gives e.g. 0xfffffffe.
+#[unsafe(no_mangle)]
+pub extern "C" fn printHexCharLine(char_hex: c_char) {
+    // C promotes char to int, then %02x prints as unsigned int
     let as_int = char_hex as i32;
-    println!("{:02x}", as_int as u32);
+    let as_uint = as_int as u32;
+    println!("{:02x}", as_uint);
 }
 
-fn bad() {
-    let data: i8 = i8::MAX; // CHAR_MAX = 127
+#[unsafe(no_mangle)]
+pub extern "C" fn bad() {
+    let data: i8 = CHAR_MAX;
     if data > 0 {
-        // C: integer promotion makes 127*2=254 as int, then truncated to char = -2
-        let result: i8 = (data as i32 * 2) as i8;
-        print_hex_char_line(result as c_char);
+        let result: i8 = data.wrapping_mul(2);
+        printHexCharLine(result);
     }
 }
 
 fn good_g2b() {
     let data: i8 = 2;
     if data > 0 {
-        let result: i8 = (data as i32 * 2) as i8;
-        print_hex_char_line(result as c_char);
+        let result: i8 = data.wrapping_mul(2);
+        printHexCharLine(result);
     }
 }
 
 fn good_b2g() {
-    let mut data: i8;
-    data = b' ' as i8;
-    data = i8::MAX; // CHAR_MAX
+    let data: i8;
+    // data = ' ' then reassigned — matches C source
+    data = CHAR_MAX;
     if data > 0 {
-        if data < (i8::MAX / 2) {
-            let result: i8 = (data as i32 * 2) as i8;
-            print_hex_char_line(result as c_char);
+        if data < (CHAR_MAX / 2) {
+            let result: i8 = data.wrapping_mul(2);
+            printHexCharLine(result);
         } else {
-            print_line(
-                b"data value is too large to perform arithmetic safely.\0".as_ptr() as *const c_char,
-            );
+            printLine(c"data value is too large to perform arithmetic safely.".as_ptr());
         }
     }
 }
 
-fn good() {
+#[unsafe(no_mangle)]
+pub extern "C" fn good() {
     good_g2b();
     good_b2g();
 }

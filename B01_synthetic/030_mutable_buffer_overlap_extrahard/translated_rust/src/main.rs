@@ -1,52 +1,41 @@
-use std::io::{self, BufRead};
+use std::io::{self, Read};
 
-fn fma_array(out: &mut [i32], mul1: &[i32], mul2: &[i32], add: &[i32], len: usize) {
-    for i in 0..len {
-        out[i] = mul1[i].wrapping_mul(mul2[i]).wrapping_add(add[i]);
+#[no_mangle]
+pub extern "C" fn fma_array(out: *mut i32, mul1: *const i32, mul2: *const i32, add: *const i32, len: i32) {
+    for i in 0..len as usize {
+        unsafe {
+            *out.add(i) = *mul1.add(i) * (*mul2.add(i)) + *add.add(i);
+        }
     }
 }
 
-fn driver(data: &mut [i32], len: usize) {
-    // In C, all four pointers alias the same buffer.
-    // Since fma_array reads index i before writing index i,
-    // the effective operation is: out[i] = out[i] * out[i] + out[i]
-    // We snapshot to replicate the aliased-pointer semantics.
-    let snap = data[..len].to_vec();
-    fma_array(&mut data[..len], &snap, &snap, &snap, len);
-    for i in 0..len {
-        println!("{}", data[i]);
+#[no_mangle]
+pub extern "C" fn driver(out: *mut i32, len: i32) {
+    fma_array(out, out, out, out, len);
+    for i in 0..len as usize {
+        unsafe {
+            println!("{}", *out.add(i));
+        }
     }
 }
 
 fn main() {
+    let mut input = String::new();
+    io::stdin().read_to_string(&mut input).unwrap();
+
     let mut data = [0i32; 100];
     let mut count = 0usize;
-    let stdin = io::stdin();
-    // scanf("%d") skips whitespace (including newlines) and reads one int.
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        for token in line.split_whitespace() {
-            if count >= 100 {
-                break;
-            }
-            match token.parse::<i32>() {
-                Ok(v) => {
-                    data[count] = v;
-                    count += 1;
-                }
-                Err(_) => {
-                    // scanf returns != 1 on parse failure -> break
-                    driver(&mut data, count);
-                    return;
-                }
-            }
-        }
+    for token in input.split_whitespace() {
         if count >= 100 {
             break;
         }
+        if let Ok(v) = token.parse::<i32>() {
+            data[count] = v;
+            count += 1;
+        } else {
+            break;
+        }
     }
-    driver(&mut data, count);
+
+    driver(data.as_mut_ptr(), count as i32);
 }

@@ -1,20 +1,26 @@
 use std::ffi::c_int;
 
-fn sipround(v0: &mut usize, v1: &mut usize, v2: &mut usize, v3: &mut usize) {
-    *v0 = v0.wrapping_add(*v1);
-    *v1 = v1.rotate_left(13);
-    *v1 ^= *v0;
-    *v0 = v0.rotate_left(32);
-    *v2 = v2.wrapping_add(*v3);
-    *v3 = v3.rotate_left(16);
-    *v3 ^= *v2;
-    *v2 = v2.wrapping_add(*v1);
-    *v1 = v1.rotate_left(17);
-    *v1 ^= *v2;
-    *v2 = v2.rotate_left(32);
-    *v0 = v0.wrapping_add(*v3);
-    *v3 = v3.rotate_left(21);
-    *v3 ^= *v0;
+fn rotl(val: usize, n: u32) -> usize {
+    (val << n) | (val >> ((std::mem::size_of::<usize>() * 8) as u32 - n))
+}
+
+macro_rules! sipround {
+    ($v0:expr, $v1:expr, $v2:expr, $v3:expr) => {
+        $v0 = $v0.wrapping_add($v1);
+        $v1 = rotl($v1, 13);
+        $v1 ^= $v0;
+        $v0 = rotl($v0, (std::mem::size_of::<usize>() * 8 / 2) as u32);
+        $v2 = $v2.wrapping_add($v3);
+        $v3 = rotl($v3, 16);
+        $v3 ^= $v2;
+        $v2 = $v2.wrapping_add($v1);
+        $v1 = rotl($v1, 17);
+        $v1 ^= $v2;
+        $v2 = rotl($v2, (std::mem::size_of::<usize>() * 8 / 2) as u32);
+        $v0 = $v0.wrapping_add($v3);
+        $v3 = rotl($v3, 21);
+        $v3 ^= $v0;
+    };
 }
 
 fn stbds_siphash_bytes(p: *const u8, len: usize, seed: usize) -> usize {
@@ -28,75 +34,74 @@ fn stbds_siphash_bytes(p: *const u8, len: usize, seed: usize) -> usize {
     v2 ^= 0x0706050403020100_usize ^ seed;
     v3 ^= 0x0f0e0d0c0b0a0908_usize ^ !seed;
 
-    let sz = std::mem::size_of::<usize>();
-    let mut i = 0usize;
-    while i + sz <= len {
-        let dd = unsafe { d.add(i) };
-        let data: usize;
+    let mut i: usize = 0;
+    while i + std::mem::size_of::<usize>() <= len {
+        let dp = unsafe { d.add(i) };
+        let mut data: usize;
         unsafe {
-            // Lower 4 bytes: unsigned char promoted to int (i32) in C, then to size_t
-            // d[3] << 24 can set the sign bit of int, which sign-extends to size_t
-            let lo = (*dd.add(0) as i32)
-                | ((*dd.add(1) as i32) << 8)
-                | ((*dd.add(2) as i32) << 16)
-                | ((*dd.add(3) as i32) << 24);
-            // Upper 4 bytes: same pattern, then << 16 << 16
-            let hi = (*dd.add(4) as i32)
-                | ((*dd.add(5) as i32) << 8)
-                | ((*dd.add(6) as i32) << 16)
-                | ((*dd.add(7) as i32) << 24);
-            data = (lo as usize) | ((hi as usize) << 16 << 16);
+            let lo = (*dp.add(0) as i32)
+                | (*dp.add(1) as i32) << 8
+                | (*dp.add(2) as i32) << 16
+                | (*dp.add(3) as i32) << 24;
+            data = lo as usize;
+            let hi = (*dp.add(4) as i32)
+                | (*dp.add(5) as i32) << 8
+                | (*dp.add(6) as i32) << 16
+                | (*dp.add(7) as i32) << 24;
+            data |= (hi as usize) << 16 << 16;
         }
         v3 ^= data;
         for _ in 0..2 {
-            sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+            sipround!(v0, v1, v2, v3);
         }
         v0 ^= data;
-        i += sz;
+        i += std::mem::size_of::<usize>();
     }
 
-    let mut data: usize = len << (sz * 8 - 8);
-    let dd = unsafe { d.add(i) };
+    let mut data: usize = len << ((std::mem::size_of::<usize>() * 8 - 8) as u32);
+    let dp = unsafe { d.add(i) };
     let rem = len - i;
-    // C fallthrough switch — each case falls into the next
+    // Fallthrough switch: each case falls through to the next.
+    // Cases 7..1 accumulate into data, case 0 is break.
     if rem >= 7 {
-        data |= unsafe { (*dd.add(6) as usize) << 24 << 24 };
+        data |= (unsafe { *dp.add(6) } as usize) << 24 << 24;
     }
     if rem >= 6 {
-        data |= unsafe { (*dd.add(5) as usize) << 20 << 20 };
+        data |= (unsafe { *dp.add(5) } as usize) << 20 << 20;
     }
     if rem >= 5 {
-        data |= unsafe { (*dd.add(4) as usize) << 16 << 16 };
+        data |= (unsafe { *dp.add(4) } as usize) << 16 << 16;
     }
     if rem >= 4 {
-        // C: (d[3] << 24) — unsigned char promoted to int
-        data |= unsafe { ((*dd.add(3) as i32) << 24) as usize };
+        // C: (d[3] << 24) — unsigned char promoted to int, shifted 24.
+        // If d[3] >= 128, result is negative int, sign-extended to size_t.
+        data |= ((unsafe { *dp.add(3) } as i32) << 24) as usize;
     }
     if rem >= 3 {
-        data |= unsafe { ((*dd.add(2) as i32) << 16) as usize };
+        data |= (unsafe { *dp.add(2) } as usize) << 16;
     }
     if rem >= 2 {
-        data |= unsafe { ((*dd.add(1) as i32) << 8) as usize };
+        data |= (unsafe { *dp.add(1) } as usize) << 8;
     }
     if rem >= 1 {
-        data |= unsafe { *dd.add(0) as usize };
+        data |= unsafe { *dp.add(0) } as usize;
     }
 
     v3 ^= data;
     for _ in 0..2 {
-        sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        sipround!(v0, v1, v2, v3);
     }
     v0 ^= data;
     v2 ^= 0xff;
     for _ in 0..4 {
-        sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        sipround!(v0, v1, v2, v3);
     }
     v0 ^ v1 ^ v2 ^ v3
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn stbds_hash_bytes(p: *mut u8, len: usize, seed: usize) -> usize {
-    stbds_siphash_bytes(p, len, seed)
+pub extern "C" fn stbds_hash_bytes(p: *mut std::ffi::c_void, len: usize, seed: usize) -> usize {
+    stbds_siphash_bytes(p as *const u8, len, seed)
 }
 
 #[unsafe(no_mangle)]

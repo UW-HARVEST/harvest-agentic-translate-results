@@ -1,157 +1,173 @@
-mod tokenizer;
-mod analyzer;
-
 use std::io::{self, BufRead, Write};
-use tokenizer::*;
-use analyzer::*;
+use std::fs;
+
+use text_analyzer::tokenizer::*;
+use text_analyzer::analyzer::*;
 
 const MAX_INPUT_SIZE: usize = 4096;
 
 fn print_menu() {
-    println!("\n=== Text Analyzer ===");
-    println!("1. Analyze text");
-    println!("2. Load text from file");
-    println!("3. Show token distribution");
-    println!("4. Calculate complexity score");
-    println!("5. Find pattern");
-    println!("6. Interactive tokenizer");
-    println!("7. Exit");
+    print!("\n=== Text Analyzer ===\n");
+    print!("1. Analyze text\n");
+    print!("2. Load text from file\n");
+    print!("3. Show token distribution\n");
+    print!("4. Calculate complexity score\n");
+    print!("5. Find pattern\n");
+    print!("6. Interactive tokenizer\n");
+    print!("7. Exit\n");
     print!("Choice: ");
     io::stdout().flush().unwrap();
 }
 
 fn print_analysis_result(result: &AnalysisResult) {
-    println!("\n=== Analysis Results ===");
-    println!("Words/Identifiers: {}", result.word_count);
-    println!("Numbers: {}", result.number_count);
-    println!("Keywords: {}", result.keyword_count);
-    println!("Operators: {}", result.operator_count);
-    println!("Comments: {}", result.comment_count);
-    println!("Strings: {}", result.string_count);
-    println!("Lines: {}", result.line_count);
-    println!("Characters: {}", result.char_count);
-}
-
-fn fgets_line(stdin: &io::Stdin) -> Option<String> {
-    let mut line = String::new();
-    match stdin.lock().read_line(&mut line) {
-        Ok(0) => None,
-        Ok(_) => Some(line),
-        Err(_) => None,
-    }
+    print!("\n=== Analysis Results ===\n");
+    print!("Words/Identifiers: {}\n", result.word_count);
+    print!("Numbers: {}\n", result.number_count);
+    print!("Keywords: {}\n", result.keyword_count);
+    print!("Operators: {}\n", result.operator_count);
+    print!("Comments: {}\n", result.comment_count);
+    print!("Strings: {}\n", result.string_count);
+    print!("Lines: {}\n", result.line_count);
+    print!("Characters: {}\n", result.char_count);
 }
 
 fn interactive_tokenizer(ops: &TokenizerOps) {
-    println!("\nEnter text (empty line to stop):");
-    let stdin = io::stdin();
+    print!("\nEnter text (empty line to stop):\n");
+    io::stdout().flush().unwrap();
+
     let mut input = String::new();
-    loop {
-        let line = match fgets_line(&stdin) {
-            Some(l) => l,
-            None => break,
+    let stdin = io::stdin();
+
+    for line_result in stdin.lock().lines() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(_) => break,
         };
-        if line == "\n" || line.is_empty() {
+        if line.is_empty() {
             break;
         }
-        let remaining = MAX_INPUT_SIZE - input.len();
-        if remaining > 1 {
-            let take = std::cmp::min(line.len(), remaining - 1);
-            input.push_str(&line[..take]);
+        // fgets includes the newline; BufRead::lines() strips it. Re-add it.
+        let remaining = MAX_INPUT_SIZE - input.len() - 1;
+        let to_append = format!("{}\n", line);
+        if to_append.len() <= remaining {
+            input.push_str(&to_append);
+        } else {
+            input.push_str(&to_append[..remaining]);
         }
     }
+
     if (ops.load_text)(&input) != 0 {
-        println!("Failed to load text");
+        print!("Failed to load text\n");
         return;
     }
-    println!("\n=== Tokens ===");
+
+    print!("\n=== Tokens ===\n");
+
     let token_type_names = [
         "EOF", "WORD", "NUMBER", "PUNCT", "SPACE",
         "NEWLINE", "IDENT", "KEYWORD", "OPERATOR",
         "STRING", "COMMENT", "ERROR",
     ];
+
     let mut count = 0;
     loop {
         let token = (ops.next_token)();
         if token.token_type == TokenType::Eof {
             break;
         }
-        println!("[{}] '{}' (L{}:C{})",
+        print!(
+            "[{}] '{}' (L{}:C{})\n",
             token_type_names[token.token_type as usize],
             token.value,
             token.line,
-            token.column);
+            token.column
+        );
         count += 1;
         if count > 100 {
-            println!("... (truncated, too many tokens)");
+            print!("... (truncated, too many tokens)\n");
             break;
         }
     }
 }
 
 fn read_file(filename: &str) -> Option<String> {
-    let content = match std::fs::read(filename) {
+    let content = match fs::read_to_string(filename) {
         Ok(c) => c,
         Err(_) => {
-            eprintln!("Error: Could not open file '{}'", filename);
+            eprint!("Error: Could not open file '{}'\n", filename);
             return None;
         }
     };
     if content.len() > MAX_BUFFER_SIZE {
-        eprintln!("Error: File too large");
+        eprint!("Error: File too large\n");
         return None;
     }
-    Some(String::from_utf8_lossy(&content).into_owned())
+    Some(content)
+}
+
+fn read_multiline_input() -> String {
+    let mut text = String::new();
+    let stdin = io::stdin();
+    for line_result in stdin.lock().lines() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        if line.is_empty() {
+            break;
+        }
+        let to_append = format!("{}\n", line);
+        let remaining = MAX_INPUT_SIZE - text.len() - 1;
+        if to_append.len() <= remaining {
+            text.push_str(&to_append);
+        } else {
+            text.push_str(&to_append[..remaining]);
+        }
+    }
+    text
 }
 
 fn main() {
     let ops = get_tokenizer_ops();
-    analyzer_init(get_tokenizer_ops());
-    println!("Text Analysis and Tokenization System");
-    println!("This system demonstrates function pointers and static globals");
+    analyzer_init(ops.clone());
+
+    print!("Text Analysis and Tokenization System\n");
+    print!("This system demonstrates function pointers and static globals\n");
+
     let stdin = io::stdin();
     loop {
         print_menu();
-        let input = match fgets_line(&stdin) {
-            Some(l) => l,
-            None => break,
-        };
+
+        let mut input = String::new();
+        if stdin.lock().read_line(&mut input).unwrap_or(0) == 0 {
+            break;
+        }
+
         let choice: i32 = match input.trim().parse() {
             Ok(n) => n,
             Err(_) => {
-                println!("Invalid input");
+                print!("Invalid input\n");
                 continue;
             }
         };
+
         match choice {
             1 => {
-                println!("Enter text to analyze (empty line to stop):");
-                let mut text = String::new();
-                loop {
-                    let line = match fgets_line(&stdin) {
-                        Some(l) => l,
-                        None => break,
-                    };
-                    if line == "\n" || line.is_empty() {
-                        break;
-                    }
-                    let remaining = MAX_INPUT_SIZE - text.len();
-                    if remaining > 1 {
-                        let take = std::cmp::min(line.len(), remaining - 1);
-                        text.push_str(&line[..take]);
-                    }
-                }
+                print!("Enter text to analyze (empty line to stop):\n");
+                io::stdout().flush().unwrap();
+                let text = read_multiline_input();
                 let result = analyze_text(&text);
                 print_analysis_result(&result);
             }
             2 => {
                 print!("Enter filename: ");
                 io::stdout().flush().unwrap();
-                let input = match fgets_line(&stdin) {
-                    Some(l) => l,
-                    None => continue,
-                };
-                let filename = input.trim_end_matches('\n');
-                if let Some(content) = read_file(filename) {
+                let mut fname = String::new();
+                if stdin.lock().read_line(&mut fname).unwrap_or(0) == 0 {
+                    break;
+                }
+                let fname = fname.trim_end_matches('\n').trim_end_matches('\r');
+                if let Some(content) = read_file(fname) {
                     let result = analyze_text(&content);
                     print_analysis_result(&result);
                 }
@@ -161,34 +177,34 @@ fn main() {
             }
             4 => {
                 let score = calculate_complexity_score();
-                println!("\nComplexity Score: {}", score);
+                print!("\nComplexity Score: {}\n", score);
                 if score < 10 {
-                    println!("Complexity: Low");
+                    print!("Complexity: Low\n");
                 } else if score < 50 {
-                    println!("Complexity: Medium");
+                    print!("Complexity: Medium\n");
                 } else {
-                    println!("Complexity: High");
+                    print!("Complexity: High\n");
                 }
             }
             5 => {
                 print!("Enter pattern to search: ");
                 io::stdout().flush().unwrap();
-                let input = match fgets_line(&stdin) {
-                    Some(l) => l,
-                    None => continue,
-                };
-                let pattern = input.trim_end_matches('\n');
-                find_patterns(pattern);
+                let mut pat = String::new();
+                if stdin.lock().read_line(&mut pat).unwrap_or(0) == 0 {
+                    break;
+                }
+                let pat = pat.trim_end_matches('\n').trim_end_matches('\r');
+                find_patterns(pat);
             }
             6 => {
                 interactive_tokenizer(&ops);
             }
             7 => {
-                println!("Goodbye!");
+                print!("Goodbye!\n");
                 return;
             }
             _ => {
-                println!("Invalid choice");
+                print!("Invalid choice\n");
             }
         }
     }

@@ -1,8 +1,8 @@
-use std::ffi::{c_char, c_int, CStr, CString};
-use std::io::Write;
+use std::ffi::{c_char, c_int};
 use std::ptr;
 
-/// Mirrors the C `matrix_t` struct layout.
+// ── matrix_t ────────────────────────────────────────────────────────────────
+
 #[repr(C)]
 pub struct matrix_t {
     pub matrix: *mut *mut c_int,
@@ -10,58 +10,63 @@ pub struct matrix_t {
     pub height: c_int,
 }
 
-/// Allocate a matrix with row pointers (mirrors C's int** layout).
-/// Returns null on allocation failure (prints to stderr like the C version).
-fn allocate_matrix(width: c_int, height: c_int) -> *mut matrix_t {
-    let mat = Box::into_raw(Box::new(matrix_t {
-        matrix: ptr::null_mut(),
-        width,
-        height,
-    }));
+// ── allocate_matrix ─────────────────────────────────────────────────────────
 
-    let mut rows: Vec<*mut c_int> = Vec::with_capacity(height as usize);
-    for _i in 0..height {
-        let row = vec![0 as c_int; width as usize];
-        rows.push(Box::into_raw(row.into_boxed_slice()) as *mut c_int);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn allocate_matrix(width: c_int, height: c_int) -> *mut matrix_t {
+    let mat = libc::malloc(std::mem::size_of::<matrix_t>()) as *mut matrix_t;
+    if mat.is_null() {
+        libc::perror(b"Failed to allocate memory for matrix struct\0".as_ptr() as *const c_char);
+        return ptr::null_mut();
     }
 
-    let row_ptrs = rows.into_boxed_slice();
-    unsafe {
-        (*mat).matrix = Box::into_raw(row_ptrs) as *mut *mut c_int;
+    (*mat).width = width;
+    (*mat).height = height;
+
+    (*mat).matrix = libc::malloc((height as usize) * std::mem::size_of::<*mut c_int>()) as *mut *mut c_int;
+    if (*mat).matrix.is_null() {
+        libc::perror(b"Failed to allocate memory for matrix rows\0".as_ptr() as *const c_char);
+        libc::free(mat as *mut libc::c_void);
+        return ptr::null_mut();
+    }
+
+    for i in 0..height as usize {
+        let row = libc::malloc((width as usize) * std::mem::size_of::<c_int>()) as *mut c_int;
+        if row.is_null() {
+            libc::perror(b"Failed to allocate memory for matrix columns\0".as_ptr() as *const c_char);
+            // C bug: frees 0..=i (inclusive), which frees the NULL row too.
+            // We reproduce it exactly.
+            for j in 0..=i {
+                libc::free(*(*mat).matrix.add(j) as *mut libc::c_void);
+            }
+            libc::free((*mat).matrix as *mut libc::c_void);
+            libc::free(mat as *mut libc::c_void);
+            return ptr::null_mut();
+        }
+        *(*mat).matrix.add(i) = row;
     }
 
     mat
 }
 
+// ── free_matrix ─────────────────────────────────────────────────────────────
+
 #[unsafe(no_mangle)]
-pub extern "C" fn free_matrix(mat: *mut matrix_t) {
+pub unsafe extern "C" fn free_matrix(mat: *mut matrix_t) {
     if mat.is_null() {
         return;
     }
-    unsafe {
-        let height = (*mat).height;
-        let matrix_ptr = (*mat).matrix;
-        if !matrix_ptr.is_null() {
-            for i in 0..height as usize {
-                let row = *matrix_ptr.add(i);
-                if !row.is_null() {
-                    drop(Box::from_raw(std::slice::from_raw_parts_mut(
-                        row,
-                        (*mat).width as usize,
-                    )));
-                }
-            }
-            drop(Box::from_raw(std::slice::from_raw_parts_mut(
-                matrix_ptr,
-                height as usize,
-            )));
-        }
-        drop(Box::from_raw(mat));
+    for i in 0..(*mat).height as usize {
+        libc::free(*(*mat).matrix.add(i) as *mut libc::c_void);
     }
+    libc::free((*mat).matrix as *mut libc::c_void);
+    libc::free(mat as *mut libc::c_void);
 }
 
+// ── initialize_matrix_from_string ───────────────────────────────────────────
+
 #[unsafe(no_mangle)]
-pub extern "C" fn initialize_matrix_from_string(
+pub unsafe extern "C" fn initialize_matrix_from_string(
     input: *const c_char,
     width: c_int,
     height: c_int,
@@ -71,175 +76,181 @@ pub extern "C" fn initialize_matrix_from_string(
         return ptr::null_mut();
     }
 
-    let input_str = unsafe { CStr::from_ptr(input) };
-    let input_str = match input_str.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("Failed to duplicate input string");
-            free_matrix(mat);
-            return ptr::null_mut();
-        }
-    };
-
-    // strtok_r skips consecutive delimiters, so filter empties
-    let mut rows = input_str.split('\n').filter(|s| !s.is_empty());
-    for i in 0..height as usize {
-        let row_token = match rows.next() {
-            Some(s) => s,
-            None => {
-                eprintln!("Insufficient rows in input string.");
-                free_matrix(mat);
-                return ptr::null_mut();
-            }
-        };
-
-        let mut cols = row_token.split(' ').filter(|s| !s.is_empty());
-        for j in 0..width as usize {
-            let col_token = match cols.next() {
-                Some(s) => s,
-                None => {
-                    eprintln!("Insufficient columns in row {}.", i + 1);
-                    free_matrix(mat);
-                    return ptr::null_mut();
-                }
-            };
-            // Reproduce C atoi behavior: skip whitespace, optional sign, digits
-            let trimmed = col_token.trim_start();
-            let val: c_int = if trimmed.is_empty() {
-                0
-            } else {
-                let (neg, rest) = if trimmed.starts_with('-') {
-                    (true, &trimmed[1..])
-                } else if trimmed.starts_with('+') {
-                    (false, &trimmed[1..])
-                } else {
-                    (false, trimmed)
-                };
-                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                let abs: c_int = digits.parse().unwrap_or(0);
-                if neg { abs.wrapping_neg() } else { abs }
-            };
-            unsafe {
-                let row_ptr = *(*mat).matrix.add(i);
-                *row_ptr.add(j) = val;
-            }
-        }
-    }
-
-    mat
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn multiply_matrices(
-    mat_a: *mut matrix_t,
-    mat_b: *mut matrix_t,
-) -> *mut matrix_t {
-    unsafe {
-        if (*mat_a).width != (*mat_b).height {
-            eprintln!("Matrix dimensions do not allow multiplication.");
-            return ptr::null_mut();
-        }
-
-        let result = allocate_matrix((*mat_b).width, (*mat_a).height);
-        for i in 0..(*mat_a).height as usize {
-            for j in 0..(*mat_b).width as usize {
-                let mut sum: c_int = 0;
-                for k in 0..(*mat_a).width as usize {
-                    let a_val = *(*(*mat_a).matrix.add(i)).add(k);
-                    let b_val = *(*(*mat_b).matrix.add(k)).add(j);
-                    sum = sum.wrapping_add(a_val.wrapping_mul(b_val));
-                }
-                *(*(*result).matrix.add(i)).add(j) = sum;
-            }
-        }
-
-        result
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn matrix_to_string(mat: *mut matrix_t) -> *mut c_char {
-    if mat.is_null() {
-        eprintln!("Error: Matrix is NULL.");
+    let input_copy = libc::strdup(input);
+    if input_copy.is_null() {
+        libc::perror(b"Failed to duplicate input string\0".as_ptr() as *const c_char);
+        free_matrix(mat);
         return ptr::null_mut();
     }
 
-    unsafe {
-        let mut result = String::new();
-        for i in 0..(*mat).height as usize {
-            for j in 0..(*mat).width as usize {
-                let val = *(*(*mat).matrix.add(i)).add(j);
-                if j > 0 {
-                    result.push(' ');
-                }
-                result.push_str(&val.to_string());
-            }
-            result.push('\n');
+    let mut saveptr_row: *mut c_char = ptr::null_mut();
+    let newline = b"\n\0".as_ptr() as *const c_char;
+    let space = b" \0".as_ptr() as *const c_char;
+
+    let mut row_token = libc::strtok_r(input_copy, newline, &mut saveptr_row);
+
+    for i in 0..height {
+        if row_token.is_null() {
+            libc::fprintf(
+                libc_stderr(),
+                b"Insufficient rows in input string.\n\0".as_ptr() as *const c_char,
+            );
+            libc::free(input_copy as *mut libc::c_void);
+            free_matrix(mat);
+            return ptr::null_mut();
         }
 
-        match CString::new(result) {
-            Ok(cs) => cs.into_raw(),
-            Err(_) => ptr::null_mut(),
+        let mut saveptr_col: *mut c_char = ptr::null_mut();
+        let mut col_token = libc::strtok_r(row_token, space, &mut saveptr_col);
+
+        for j in 0..width {
+            if col_token.is_null() {
+                libc::fprintf(
+                    libc_stderr(),
+                    b"Insufficient columns in row %d.\n\0".as_ptr() as *const c_char,
+                    i + 1,
+                );
+                libc::free(input_copy as *mut libc::c_void);
+                free_matrix(mat);
+                return ptr::null_mut();
+            }
+            *(*(*mat).matrix.add(i as usize)).add(j as usize) = libc::atoi(col_token);
+            col_token = libc::strtok_r(ptr::null_mut(), space, &mut saveptr_col);
         }
+
+        row_token = libc::strtok_r(ptr::null_mut(), newline, &mut saveptr_row);
     }
+
+    libc::free(input_copy as *mut libc::c_void);
+    mat
 }
 
+// ── multiply_matrices ───────────────────────────────────────────────────────
+
 #[unsafe(no_mangle)]
-pub extern "C" fn write_to_file(
+pub unsafe extern "C" fn multiply_matrices(
+    mat_a: *mut matrix_t,
+    mat_b: *mut matrix_t,
+) -> *mut matrix_t {
+    if (*mat_a).width != (*mat_b).height {
+        libc::fprintf(
+            libc_stderr(),
+            b"Matrix dimensions do not allow multiplication.\n\0".as_ptr() as *const c_char,
+        );
+        return ptr::null_mut();
+    }
+
+    let result = allocate_matrix((*mat_b).width, (*mat_a).height);
+    for i in 0..(*mat_a).height as usize {
+        for j in 0..(*mat_b).width as usize {
+            *(*(*result).matrix.add(i)).add(j) = 0;
+            for k in 0..(*mat_a).width as usize {
+                *(*(*result).matrix.add(i)).add(j) +=
+                    *(*(*mat_a).matrix.add(i)).add(k) * *(*(*mat_b).matrix.add(k)).add(j);
+            }
+        }
+    }
+
+    result
+}
+
+// ── matrix_to_string ────────────────────────────────────────────────────────
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn matrix_to_string(mat: *mut matrix_t) -> *mut c_char {
+    if mat.is_null() {
+        libc::fprintf(
+            libc_stderr(),
+            b"Error: Matrix is NULL.\n\0".as_ptr() as *const c_char,
+        );
+        return ptr::null_mut();
+    }
+
+    let h = (*mat).height;
+    let w = (*mat).width;
+    let buffer_size = (h * (w * 10 + w) + h + 1) as usize;
+    let result = libc::malloc(buffer_size) as *mut c_char;
+    if result.is_null() {
+        libc::perror(b"Failed to allocate memory for matrix string\0".as_ptr() as *const c_char);
+        return ptr::null_mut();
+    }
+    *result = 0;
+
+    for i in 0..h as usize {
+        for j in 0..w as usize {
+            let mut buffer = [0u8; 12];
+            libc::snprintf(
+                buffer.as_mut_ptr() as *mut c_char,
+                buffer.len(),
+                b"%d\0".as_ptr() as *const c_char,
+                *(*(*mat).matrix.add(i)).add(j),
+            );
+            libc::strcat(result, buffer.as_ptr() as *const c_char);
+
+            if (j as c_int) < w - 1 {
+                libc::strcat(result, b" \0".as_ptr() as *const c_char);
+            }
+        }
+        libc::strcat(result, b"\n\0".as_ptr() as *const c_char);
+    }
+
+    result
+}
+
+// ── write_to_file ───────────────────────────────────────────────────────────
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn write_to_file(
     filename: *const c_char,
     content: *const c_char,
 ) -> c_int {
     if content.is_null() {
-        eprintln!("Error: Content is NULL.");
-        return libc_einval();
+        libc::fprintf(
+            libc_stderr(),
+            b"Error: Content is NULL.\n\0".as_ptr() as *const c_char,
+        );
+        return libc::EINVAL;
     }
 
-    let filename_str = unsafe { CStr::from_ptr(filename) };
-    let content_str = unsafe { CStr::from_ptr(content) };
-
-    let filename_str = match filename_str.to_str() {
-        Ok(s) => s,
-        Err(_) => return libc_einval(),
-    };
-
-    let file = std::fs::File::create(filename_str);
-    let mut file = match file {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!(
-                "Error opening file '{}': {}",
-                filename_str,
-                errno_str_for(&e)
-            );
-            return raw_os_error(&e);
-        }
-    };
-
-    if let Err(e) = file.write_all(content_str.to_bytes()) {
-        eprintln!(
-            "Error writing to file '{}': {}",
-            filename_str,
-            errno_str_for(&e)
+    let file = libc::fopen(filename, b"w\0".as_ptr() as *const c_char);
+    if file.is_null() {
+        libc::fprintf(
+            libc_stderr(),
+            b"Error opening file '%s': %s\n\0".as_ptr() as *const c_char,
+            filename,
+            libc::strerror(*libc::__errno_location()),
         );
-        return raw_os_error(&e);
+        return *libc::__errno_location();
     }
 
-    if let Err(e) = file.flush() {
-        eprintln!(
-            "Error closing file '{}': {}",
-            filename_str,
-            errno_str_for(&e)
+    if libc::fprintf(file, b"%s\0".as_ptr() as *const c_char, content) < 0 {
+        libc::fprintf(
+            libc_stderr(),
+            b"Error writing to file '%s': %s\n\0".as_ptr() as *const c_char,
+            filename,
+            libc::strerror(*libc::__errno_location()),
         );
-        return raw_os_error(&e);
+        libc::fclose(file);
+        return *libc::__errno_location();
+    }
+
+    if libc::fclose(file) != 0 {
+        libc::fprintf(
+            libc_stderr(),
+            b"Error closing file '%s': %s\n\0".as_ptr() as *const c_char,
+            filename,
+            libc::strerror(*libc::__errno_location()),
+        );
+        return *libc::__errno_location();
     }
 
     0
 }
 
-const OUT_FILE: &[u8] = b"matrix.txt\0";
+// ── driver ──────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(
+pub unsafe extern "C" fn driver(
     width_a: c_int,
     height_a: c_int,
     matrix_a: *const c_char,
@@ -249,52 +260,50 @@ pub extern "C" fn driver(
 ) -> c_int {
     let mat_a = initialize_matrix_from_string(matrix_a, width_a, height_a);
     if mat_a.is_null() {
-        return 1; // EXIT_FAILURE
+        return libc::EXIT_FAILURE;
     }
     let mat_b = initialize_matrix_from_string(matrix_b, width_b, height_b);
     if mat_b.is_null() {
         free_matrix(mat_a);
-        return 1;
+        return libc::EXIT_FAILURE;
     }
 
     let res = multiply_matrices(mat_a, mat_b);
     if res.is_null() {
         free_matrix(mat_a);
         free_matrix(mat_b);
-        return 1;
+        return libc::EXIT_FAILURE;
     }
     let res_str = matrix_to_string(res);
     if res_str.is_null() {
         free_matrix(mat_a);
         free_matrix(mat_b);
-        free_matrix(res);
-        return 1;
+        // C bug: uses free(res) instead of free_matrix(res). Reproduce exactly.
+        libc::free(res as *mut libc::c_void);
+        return libc::EXIT_FAILURE;
     }
 
-    let res_write = write_to_file(OUT_FILE.as_ptr() as *const c_char, res_str);
+    let out_file = b"matrix.txt\0".as_ptr() as *const c_char;
+    let res_write = write_to_file(out_file, res_str);
 
     free_matrix(mat_a);
     free_matrix(mat_b);
     free_matrix(res);
-    unsafe {
-        drop(CString::from_raw(res_str));
-    }
+    libc::free(res_str as *mut libc::c_void);
 
     if res_write != 0 {
-        return 1;
+        return libc::EXIT_FAILURE;
     }
 
-    0 // EXIT_SUCCESS
+    libc::EXIT_SUCCESS
 }
 
-fn libc_einval() -> c_int {
-    22 // EINVAL on Linux
-}
+// ── helper: get stderr FILE* ────────────────────────────────────────────────
 
-fn raw_os_error(e: &std::io::Error) -> c_int {
-    e.raw_os_error().unwrap_or(libc_einval())
-}
-
-fn errno_str_for(e: &std::io::Error) -> String {
-    format!("{}", e)
+unsafe fn libc_stderr() -> *mut libc::FILE {
+    // On Linux glibc, stderr is a global symbol
+    extern "C" {
+        static mut stderr: *mut libc::FILE;
+    }
+    stderr
 }

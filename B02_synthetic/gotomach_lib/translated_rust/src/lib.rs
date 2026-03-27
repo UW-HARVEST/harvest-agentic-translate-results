@@ -1,27 +1,18 @@
-use std::os::raw::c_int;
+use std::alloc::{Layout, alloc, dealloc};
+use std::ptr;
 
-const UINT16_MAX: c_int = 65535;
-
-type OperationFn = fn(c_int, c_int, *mut core::ffi::c_void) -> c_int;
-
-fn process_value(value: c_int, _unused_param: c_int, _unused_context: *mut core::ffi::c_void) -> c_int {
-    value + 10
+extern "C" {
+    fn write(fd: i32, buf: *const core::ffi::c_void, count: usize) -> isize;
 }
 
-fn double_value(value: c_int, _unused_param: c_int, _unused_context: *mut core::ffi::c_void) -> c_int {
-    value * 2
-}
-
-fn triple_value(value: c_int, _unused_param: c_int, _unused_context: *mut core::ffi::c_void) -> c_int {
-    value * 3
-}
+type OperationFn = extern "C" fn(i32, i32, *mut core::ffi::c_void) -> i32;
 
 struct ProcessorState {
-    results: Vec<c_int>,
+    results: *mut i32,
     capacity: usize,
     count: usize,
     operation: OperationFn,
-    status: u8,
+    status: i8,
 }
 
 fn is_valid_state(state: &ProcessorState) -> bool {
@@ -32,96 +23,203 @@ fn is_valid_state(state: &ProcessorState) -> bool {
     }
 }
 
-fn check_char_flag(flag: u8) -> bool {
+fn check_char_flag(flag: i8) -> bool {
     flag != 0
 }
 
-fn init_processor(capacity: usize, op: OperationFn) -> Option<ProcessorState> {
-    Some(ProcessorState {
-        results: vec![0; capacity],
-        capacity,
-        count: 0,
-        operation: op,
-        status: 1,
-    })
-}
-
-macro_rules! log_msg {
-    ($level:ident, $msg:expr) => {
-        println!(concat!("[", stringify!($level), "] ", $msg));
-    };
+#[unsafe(no_mangle)]
+pub extern "C" fn process_value(value: i32, _unused_param: i32, _unused_context: *mut core::ffi::c_void) -> i32 {
+    value + 10
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn gotomach(iterations: c_int, seed: c_int, mode: c_int, threshold: c_int) -> c_int {
-    let mut result: c_int;
+pub extern "C" fn double_value(value: i32, _unused_param: i32, _unused_context: *mut core::ffi::c_void) -> i32 {
+    value * 2
+}
 
-    log_msg!(INFO, "Starting gotomach function");
+#[unsafe(no_mangle)]
+pub extern "C" fn triple_value(value: i32, _unused_param: i32, _unused_context: *mut core::ffi::c_void) -> i32 {
+    value * 3
+}
 
-    if iterations < 0 || iterations > UINT16_MAX {
-        log_msg!(ERROR, "Invalid iteration count");
-        return -1;
+fn log_msg(level: &[u8], msg: &[u8]) {
+    // Reproduce printf("[level] msg\n") byte-identically via write(2) to stdout
+    unsafe {
+        let mut buf = Vec::with_capacity(1 + level.len() + 2 + msg.len() + 1);
+        buf.push(b'[');
+        buf.extend_from_slice(level);
+        buf.extend_from_slice(b"] ");
+        buf.extend_from_slice(msg);
+        buf.push(b'\n');
+        write(1, buf.as_ptr() as *const core::ffi::c_void, buf.len());
+    }
+}
+
+fn init_processor(capacity: usize, op: OperationFn) -> *mut ProcessorState {
+    unsafe {
+        let state_layout = Layout::new::<ProcessorState>();
+        let state_ptr = alloc(state_layout) as *mut ProcessorState;
+        if state_ptr.is_null() {
+            return ptr::null_mut();
+        }
+
+        if capacity == 0 {
+            // Match C malloc(0) — store a non-null dangling pointer or null.
+            // C malloc(0) is implementation-defined; but the loop won't run so it doesn't matter.
+            // We use a dangling pointer to avoid Layout with size 0 issues.
+            let results = std::ptr::NonNull::<i32>::dangling().as_ptr();
+            ptr::write(state_ptr, ProcessorState {
+                results,
+                capacity,
+                count: 0,
+                operation: op,
+                status: 1,
+            });
+            return state_ptr;
+        }
+
+        let results_layout = Layout::array::<i32>(capacity).unwrap();
+        let results_ptr = alloc(results_layout) as *mut i32;
+        if results_ptr.is_null() {
+            dealloc(state_ptr as *mut u8, state_layout);
+            return ptr::null_mut();
+        }
+
+        ptr::write(state_ptr, ProcessorState {
+            results: results_ptr,
+            capacity,
+            count: 0,
+            operation: op,
+            status: 1,
+        });
+
+        state_ptr
+    }
+}
+
+fn cleanup_processor(state: *mut ProcessorState) {
+    if !state.is_null() {
+        unsafe {
+            let s = &*state;
+            if !s.results.is_null() && s.capacity > 0 {
+                let results_layout = Layout::array::<i32>(s.capacity).unwrap();
+                dealloc(s.results as *mut u8, results_layout);
+            }
+            let state_layout = Layout::new::<ProcessorState>();
+            dealloc(state as *mut u8, state_layout);
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gotomach(iterations: i32, seed: i32, mode: i32, threshold: i32) -> i32 {
+    let mut state: *mut ProcessorState = ptr::null_mut();
+    let mut temp_buffer: *mut i32 = ptr::null_mut();
+    let mut result: i32;
+    let selected_op: OperationFn;
+
+    log_msg(b"INFO", b"Starting gotomach function");
+
+    if iterations < 0 || iterations > u16::MAX as i32 {
+        log_msg(b"ERROR", b"Invalid iteration count");
+        result = -1;
+        // goto cleanup
+        cleanup(temp_buffer, state, iterations as usize);
+        return result;
     }
 
-    if seed < 0 || seed > UINT16_MAX {
-        log_msg!(ERROR, "Invalid seed value");
-        return -2;
+    if seed < 0 || seed > u16::MAX as i32 {
+        log_msg(b"ERROR", b"Invalid seed value");
+        result = -2;
+        cleanup(temp_buffer, state, iterations as usize);
+        return result;
     }
 
-    let selected_op: OperationFn = match mode {
+    selected_op = match mode {
         0 => process_value,
         1 => double_value,
         2 => triple_value,
         _ => {
-            log_msg!(WARNING, "Invalid mode, using default");
+            log_msg(b"WARNING", b"Invalid mode, using default");
             process_value
         }
     };
 
-    let mut state = match init_processor(iterations as usize, selected_op) {
-        Some(s) => s,
-        None => {
-            log_msg!(ERROR, "Failed to initialize processor");
-            return -3;
-        }
-    };
+    let iter_usize = iterations as usize;
 
-    let iterations_usize = iterations as usize;
-    let mut temp_buffer: Vec<c_int> = vec![0; iterations_usize];
-
-    if !check_char_flag(state.status) {
-        log_msg!(ERROR, "Invalid state status");
-        return -5;
+    state = init_processor(iter_usize, selected_op);
+    if state.is_null() {
+        log_msg(b"ERROR", b"Failed to initialize processor");
+        result = -3;
+        cleanup(temp_buffer, state, iter_usize);
+        return result;
     }
 
-    let mut current_value = seed;
-    for i in 0..iterations_usize {
-        if !is_valid_state(&state) {
-            log_msg!(ERROR, "State became invalid during processing");
-            return -6;
+    if iter_usize > 0 {
+        unsafe {
+            let layout = Layout::array::<i32>(iter_usize).unwrap();
+            temp_buffer = alloc(layout) as *mut i32;
+        }
+    }
+    if iter_usize > 0 && temp_buffer.is_null() {
+        log_msg(b"ERROR", b"Failed to allocate temporary buffer");
+        result = -4;
+        cleanup(temp_buffer, state, iter_usize);
+        return result;
+    }
+
+    unsafe {
+        if !check_char_flag((*state).status) {
+            log_msg(b"ERROR", b"Invalid state status");
+            result = -5;
+            cleanup(temp_buffer, state, iter_usize);
+            return result;
         }
 
-        temp_buffer[i] = (state.operation)(current_value, 0, std::ptr::null_mut());
+        let mut current_value = seed;
+        for i in 0..iterations {
+            let idx = i as usize;
+            if !is_valid_state(&*state) {
+                log_msg(b"ERROR", b"State became invalid during processing");
+                result = -6;
+                cleanup(temp_buffer, state, iter_usize);
+                return result;
+            }
 
-        if temp_buffer[i] < threshold {
-            state.results[state.count] = temp_buffer[i];
-            state.count += 1;
+            let val = ((*state).operation)(current_value, 0, ptr::null_mut());
+            *temp_buffer.add(idx) = val;
+
+            if *temp_buffer.add(idx) < threshold {
+                *(*state).results.add((*state).count) = *temp_buffer.add(idx);
+                (*state).count += 1;
+            }
+
+            current_value = *temp_buffer.add(idx) % 1000;
+
+            if (*state).count >= u16::MAX as usize {
+                log_msg(b"WARNING", b"Reached maximum count");
+                break;
+            }
         }
 
-        current_value = temp_buffer[i] % 1000;
-
-        if state.count >= UINT16_MAX as usize {
-            log_msg!(WARNING, "Reached maximum count");
-            break;
+        result = 0;
+        for i in 0..(*state).count {
+            result += *(*state).results.add(i);
         }
     }
 
-    result = 0;
-    for i in 0..state.count {
-        result += state.results[i];
-    }
+    log_msg(b"INFO", b"Processing completed successfully");
 
-    log_msg!(INFO, "Processing completed successfully");
-
+    cleanup(temp_buffer, state, iter_usize);
     result
+}
+
+fn cleanup(temp_buffer: *mut i32, state: *mut ProcessorState, capacity: usize) {
+    if !temp_buffer.is_null() && capacity > 0 {
+        unsafe {
+            let layout = Layout::array::<i32>(capacity).unwrap();
+            dealloc(temp_buffer as *mut u8, layout);
+        }
+    }
+    cleanup_processor(state);
 }

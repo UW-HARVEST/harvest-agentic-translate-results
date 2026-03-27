@@ -1,21 +1,28 @@
 use std::io::{self, Read};
 
-fn fma_array(out: &mut [i32], mul1: &[i32], mul2: &[i32], add: &[i32], len: usize) {
-    for i in 0..len {
-        out[i] = mul1[i] * mul2[i] + add[i];
+#[no_mangle]
+pub extern "C" fn fma_array(out: *mut i32, mul1: *const i32, mul2: *const i32, add: *const i32, len: i32) {
+    for i in 0..len as usize {
+        unsafe {
+            *out.add(i) = *mul1.add(i) * (*mul2.add(i)) + *add.add(i);
+        }
     }
 }
 
-fn call_fma(data: &[i32], len: usize) -> i32 {
+#[no_mangle]
+pub extern "C" fn call_fma(data: *const i32, len: i32) -> i32 {
     if len == 0 {
         return 0;
     }
-    let mut out = vec![0i32; len];
-    let ones = vec![1i32; len];
-    let zeros = vec![0i32; len];
+    let len_u = len as usize;
+    let mut out = vec![0i32; len_u];
+    let ones = vec![1i32; len_u];
+    let zeros = vec![0i32; len_u];
 
-    fma_array(&mut out, &ones, data, &zeros, len);
-    out[len - 1]
+    unsafe {
+        fma_array(out.as_mut_ptr(), ones.as_ptr(), std::slice::from_raw_parts(data, len_u).as_ptr(), zeros.as_ptr(), len);
+    }
+    out[len_u - 1]
 }
 
 fn main() {
@@ -28,14 +35,14 @@ fn main() {
         if i >= 100 {
             break;
         }
-        if let Ok(v) = token.parse::<i32>() {
-            data[i] = v;
+        if let Ok(val) = token.parse::<i32>() {
+            data[i] = val;
             i += 1;
         } else {
             break;
         }
     }
 
-    let result = call_fma(&data, i);
+    let result = call_fma(data.as_ptr(), i as i32);
     println!("{}", result);
 }

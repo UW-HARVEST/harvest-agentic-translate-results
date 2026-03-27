@@ -14,7 +14,11 @@ fn driver(x: f32) {
 fn main() {
     let mut input = String::new();
     let _ = io::stdin().read_to_string(&mut input);
-    // scanf("%f", &x) skips whitespace then parses a float; on failure x stays 0.0
-    let x: f32 = input.trim().parse().unwrap_or(0.0_f32);
+    let mut x: f32 = 0.0;
+    if let Some(token) = input.split_whitespace().next() {
+        if let Ok(v) = token.parse::<f32>() {
+            x = v;
+        }
+    }
     driver(x);
 }

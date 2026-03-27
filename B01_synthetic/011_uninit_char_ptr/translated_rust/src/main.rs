@@ -1,52 +1,38 @@
-use std::ffi::CStr;
-use std::io::{self, BufRead};
+use std::io::{self, Read};
 use std::mem::MaybeUninit;
-use std::os::raw::c_char;
 
-fn print_line(line: *const c_char) {
+#[no_mangle]
+pub extern "C" fn printLine(line: *const u8) {
     if !line.is_null() {
         unsafe {
-            let s = CStr::from_ptr(line);
-            println!("{}", s.to_str().unwrap_or(""));
+            let mut len = 0usize;
+            while *line.add(len) != 0 {
+                len += 1;
+            }
+            let slice = std::slice::from_raw_parts(line, len);
+            let s = std::str::from_utf8_unchecked(slice);
+            println!("{}", s);
         }
     }
 }
 
-fn bad() {
-    unsafe {
-        let data: *const c_char = MaybeUninit::uninit().assume_init();
-        print_line(data);
-    }
+#[no_mangle]
+pub extern "C" fn bad() {
+    let data: *const u8 = unsafe { MaybeUninit::uninit().assume_init() };
+    printLine(data);
 }
 
-fn good() {
-    let data: *const c_char = b"string\0".as_ptr() as *const c_char;
-    print_line(data);
+#[no_mangle]
+pub extern "C" fn good() {
+    let data: *const u8 = b"string\0".as_ptr();
+    printLine(data);
 }
 
 fn main() {
-    let mut x: i32 = 0;
-    let stdin = io::stdin();
-    // Match scanf("%d", &x): read tokens skipping whitespace
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        for token in line.split_whitespace() {
-            if let Ok(val) = token.parse::<i32>() {
-                x = val;
-                // scanf stops after first successful conversion
-                if x != 0 {
-                    good();
-                } else {
-                    bad();
-                }
-                return;
-            }
-        }
-    }
-    // If no integer was read, x stays 0 (scanf failure), call bad()
+    let mut input = String::new();
+    let _ = io::stdin().read_to_string(&mut input);
+    let x: i32 = input.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+
     if x != 0 {
         good();
     } else {

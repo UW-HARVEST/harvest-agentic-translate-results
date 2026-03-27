@@ -96,7 +96,7 @@ fn ima_btoh64(v: ImaU64) -> ImaU64 {
     ima_bswap64(v)
 }
 
-const fn make_tag(a: u8, b: u8, c: u8, d: u8) -> ImaU32 {
+const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> ImaU32 {
     (a as ImaU32) | ((b as ImaU32) << 8) | ((c as ImaU32) << 16) | ((d as ImaU32) << 24)
 }
 
@@ -104,43 +104,33 @@ const fn make_tag(a: u8, b: u8, c: u8, d: u8) -> ImaU32 {
 pub unsafe extern "C" fn ima_parse(info: *mut ImaInfo, data: *const u8) -> c_int {
     let header = data as *const CafHeader;
     let mut chunk = unsafe { header.add(1) } as *const CafChunk;
-    let desc: *const CafAudioDescription;
-    let pakt: *const CafPacketTable;
+    let mut desc: *const CafAudioDescription = std::ptr::null();
+    let mut pakt: *const CafPacketTable = std::ptr::null();
     let blocks: *const ImaBlock;
     let chunk_size: ImaS64;
 
-    // Check 'caff' magic (built as little-endian u32 from chars: 'f','f','a','c')
-    if ima_btoh32(unsafe { (*header).type_ }) != make_tag(b'f', b'f', b'a', b'c') {
+    if ima_btoh32(unsafe { (*header).type_ }) != fourcc(b'f', b'f', b'a', b'c') {
         return -1;
     }
     if ima_btoh16(unsafe { (*header).version }) != 1 {
         return -2;
     }
 
-    let mut found_desc: *const CafAudioDescription = std::ptr::null();
-    let mut found_pakt: *const CafPacketTable = std::ptr::null();
-
     loop {
         let chunk_type = ima_btoh32(unsafe { (*chunk).type_ });
         let cs = ima_btoh64(unsafe { (*chunk).size } as ImaU64);
-        let cs = cs as ImaS64;
 
-        if chunk_type == make_tag(b'c', b's', b'e', b'd') {
-            // 'desc' chunk
-            found_desc = unsafe { chunk.add(1) } as *const CafAudioDescription;
-        } else if chunk_type == make_tag(b't', b'k', b'a', b'p') {
-            // 'pakt' chunk
-            found_pakt = unsafe { chunk.add(1) } as *const CafPacketTable;
-        } else if chunk_type == make_tag(b'a', b't', b'a', b'd') {
-            // 'data' chunk
+        if chunk_type == fourcc(b'c', b's', b'e', b'd') {
+            desc = unsafe { chunk.add(1) } as *const CafAudioDescription;
+        } else if chunk_type == fourcc(b't', b'k', b'a', b'p') {
+            pakt = unsafe { chunk.add(1) } as *const CafPacketTable;
+        } else if chunk_type == fourcc(b'a', b't', b'a', b'd') {
             let caf_data = unsafe { chunk.add(1) } as *const CafData;
             blocks = unsafe { caf_data.add(1) } as *const ImaBlock;
-            chunk_size = cs;
+            chunk_size = cs as ImaS64;
 
-            // Check format_id == 'ima4'
-            desc = found_desc;
-            pakt = found_pakt;
-            if ima_btoh32(unsafe { (*desc).format_id }) != make_tag(b'4', b'a', b'm', b'i') {
+            // Check format_id after finding data chunk (matches C control flow)
+            if ima_btoh32(unsafe { (*desc).format_id }) != fourcc(b'4', b'a', b'm', b'i') {
                 return -3;
             }
 
@@ -149,19 +139,16 @@ pub unsafe extern "C" fn ima_parse(info: *mut ImaInfo, data: *const u8) -> c_int
                 (*info).size = chunk_size as ImaU64;
                 (*info).frame_count = ima_btoh64((*pakt).frame_count as ImaU64);
                 (*info).channel_count = ima_btoh32((*desc).channels_per_frame);
-
-                // Union punning for sample_rate: read f64 bits as u64, bswap, reinterpret as f64
-                let sr_bits = *(&(*desc).sample_rate as *const ImaF64 as *const ImaU64);
-                let sr_bits = ima_btoh64(sr_bits);
-                (*info).sample_rate = f64::from_bits(sr_bits);
+                // Match C: conv64.u = desc->sample_rate (numeric f64→u64 conversion)
+                // then conv64.u = ima_btoh64(conv64.u); info->sample_rate = conv64.f
+                let sr_as_u64 = (*desc).sample_rate as ImaU64;
+                let swapped = ima_btoh64(sr_as_u64);
+                (*info).sample_rate = ImaF64::from_bits(swapped);
             }
 
             return 0;
         }
 
-        // Advance to next chunk: skip past chunk header + chunk_size bytes
-        chunk = unsafe {
-            (chunk.add(1) as *const ImaU8).add(cs as usize) as *const CafChunk
-        };
+        chunk = unsafe { (chunk.add(1) as *const ImaU8).add(cs as usize) } as *const CafChunk;
     }
 }

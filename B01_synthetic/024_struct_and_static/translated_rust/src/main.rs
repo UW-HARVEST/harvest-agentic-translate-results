@@ -35,7 +35,8 @@ fn print_the_house() {
     }
 }
 
-fn run(extra_bedrooms: i32) {
+#[no_mangle]
+pub extern "C" fn run(extra_bedrooms: i32) {
     print_the_house();
     add_floor_to_the_house();
     print_the_house();

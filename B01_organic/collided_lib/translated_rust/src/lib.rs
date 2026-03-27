@@ -1,7 +1,7 @@
 use std::os::raw::c_int;
 
-pub const C2_TYPE_CIRCLE: c_int = 0;
-pub const C2_TYPE_AABB: c_int = 1;
+const C2_TYPE_CIRCLE: c_int = 0;
+const C2_TYPE_AABB: c_int = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -24,58 +24,70 @@ struct C2AABB {
     max: C2v,
 }
 
-fn c2v(x: f32, y: f32) -> C2v {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2V(x: f32, y: f32) -> C2v {
     C2v { x, y }
 }
 
-fn c2_maxv(a: C2v, b: C2v) -> C2v {
-    c2v(
-        if a.x > b.x { a.x } else { b.x },
-        if a.y > b.y { a.y } else { b.y },
-    )
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Maxv(a: C2v, b: C2v) -> C2v {
+    C2v {
+        x: if a.x > b.x { a.x } else { b.x },
+        y: if a.y > b.y { a.y } else { b.y },
+    }
 }
 
-fn c2_minv(a: C2v, b: C2v) -> C2v {
-    c2v(
-        if a.x < b.x { a.x } else { b.x },
-        if a.y < b.y { a.y } else { b.y },
-    )
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Minv(a: C2v, b: C2v) -> C2v {
+    C2v {
+        x: if a.x < b.x { a.x } else { b.x },
+        y: if a.y < b.y { a.y } else { b.y },
+    }
 }
 
-fn c2_clampv(a: C2v, lo: C2v, hi: C2v) -> C2v {
-    c2_maxv(lo, c2_minv(a, hi))
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Clampv(a: C2v, lo: C2v, hi: C2v) -> C2v {
+    c2Maxv(lo, c2Minv(a, hi))
 }
 
-fn c2_sub(a: C2v, b: C2v) -> C2v {
-    c2v(a.x - b.x, a.y - b.y)
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Sub(a: C2v, b: C2v) -> C2v {
+    C2v {
+        x: a.x - b.x,
+        y: a.y - b.y,
+    }
 }
 
-fn c2_dot(a: C2v, b: C2v) -> f32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Dot(a: C2v, b: C2v) -> f32 {
     a.x * b.x + a.y * b.y
 }
 
-fn c2_circle_to_circle(a: C2Circle, b: C2Circle) -> c_int {
-    let c = c2_sub(b.p, a.p);
-    let d2 = c2_dot(c, c);
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoCircle(a: C2Circle, b: C2Circle) -> c_int {
+    let c = c2Sub(b.p, a.p);
+    let d2 = c2Dot(c, c);
     let r2 = a.r + b.r;
     let r2 = r2 * r2;
     (d2 < r2) as c_int
 }
 
-fn c2_circle_to_aabb(a: C2Circle, b: C2AABB) -> c_int {
-    let l = c2_clampv(a.p, b.min, b.max);
-    let ab = c2_sub(a.p, l);
-    let d2 = c2_dot(ab, ab);
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoAABB(a: C2Circle, b: C2AABB) -> c_int {
+    let l = c2Clampv(a.p, b.min, b.max);
+    let ab = c2Sub(a.p, l);
+    let d2 = c2Dot(ab, ab);
     let r2 = a.r * a.r;
     (d2 < r2) as c_int
 }
 
-fn c2_aabb_to_aabb(a: C2AABB, b: C2AABB) -> c_int {
-    let d0 = b.max.x < a.min.x;
-    let d1 = a.max.x < b.min.x;
-    let d2 = b.max.y < a.min.y;
-    let d3 = a.max.y < b.min.y;
-    (!(d0 | d1 | d2 | d3)) as c_int
+#[unsafe(no_mangle)]
+pub extern "C" fn c2AABBtoAABB(a: C2AABB, b: C2AABB) -> c_int {
+    let d0 = (b.max.x < a.min.x) as c_int;
+    let d1 = (a.max.x < b.min.x) as c_int;
+    let d2 = (b.max.y < a.min.y) as c_int;
+    let d3 = (a.max.y < b.min.y) as c_int;
+    ((d0 | d1 | d2 | d3) == 0) as c_int
 }
 
 #[unsafe(no_mangle)]
@@ -85,33 +97,27 @@ pub extern "C" fn collided(
     b: *const std::ffi::c_void,
     type_b: c_int,
 ) -> c_int {
-    match type_a {
-        C2_TYPE_CIRCLE => match type_b {
-            C2_TYPE_CIRCLE => {
-                let a = unsafe { *(a as *const C2Circle) };
-                let b = unsafe { *(b as *const C2Circle) };
-                c2_circle_to_circle(a, b)
-            }
-            C2_TYPE_AABB => {
-                let a = unsafe { *(a as *const C2Circle) };
-                let b = unsafe { *(b as *const C2AABB) };
-                c2_circle_to_aabb(a, b)
-            }
+    unsafe {
+        match type_a {
+            C2_TYPE_CIRCLE => match type_b {
+                C2_TYPE_CIRCLE => {
+                    c2CircletoCircle(*(a as *const C2Circle), *(b as *const C2Circle))
+                }
+                C2_TYPE_AABB => {
+                    c2CircletoAABB(*(a as *const C2Circle), *(b as *const C2AABB))
+                }
+                _ => 0,
+            },
+            C2_TYPE_AABB => match type_b {
+                C2_TYPE_CIRCLE => {
+                    c2CircletoAABB(*(b as *const C2Circle), *(a as *const C2AABB))
+                }
+                C2_TYPE_AABB => {
+                    c2AABBtoAABB(*(a as *const C2AABB), *(b as *const C2AABB))
+                }
+                _ => 0,
+            },
             _ => 0,
-        },
-        C2_TYPE_AABB => match type_b {
-            C2_TYPE_CIRCLE => {
-                let b = unsafe { *(b as *const C2Circle) };
-                let a = unsafe { *(a as *const C2AABB) };
-                c2_circle_to_aabb(b, a)
-            }
-            C2_TYPE_AABB => {
-                let a = unsafe { *(a as *const C2AABB) };
-                let b = unsafe { *(b as *const C2AABB) };
-                c2_aabb_to_aabb(a, b)
-            }
-            _ => 0,
-        },
-        _ => 0,
+        }
     }
 }

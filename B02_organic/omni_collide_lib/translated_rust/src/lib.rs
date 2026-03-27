@@ -1,17 +1,9 @@
-#![allow(non_camel_case_types)]
-use std::os::raw::c_int;
+use std::alloc::{alloc, Layout};
+use std::ptr;
 
-// --- C2_TYPE enum ---
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum C2_TYPE {
-    C2_TYPE_CAPSULE = 0,
-    C2_TYPE_CIRCLE = 1,
-    C2_TYPE_AABB = 2,
-}
+// ── Types ──
 
-// --- Structs ---
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 struct C2v { x: f32, y: f32 }
 
@@ -35,87 +27,115 @@ struct C2AABB { min: C2v, max: C2v }
 #[repr(C)]
 struct C2Capsule { a: C2v, b: C2v, r: f32 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 #[repr(C)]
-struct C2GJKCache { metric: f32, count: c_int, i_a: [c_int; 3], i_b: [c_int; 3], div: f32 }
-
-#[derive(Clone, Copy, Default)]
-#[repr(C)]
-struct C2Proxy { radius: f32, count: c_int, verts: [C2v; 8] }
-
-#[derive(Clone, Copy, Default)]
-#[repr(C)]
-struct C2sv { s_a: C2v, s_b: C2v, p: C2v, u: f32, i_a: c_int, i_b: c_int }
+struct C2GJKCache { metric: f32, count: i32, i_a: [i32; 3], i_b: [i32; 3], div: f32 }
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-struct C2Simplex { a: C2sv, b: C2sv, c: C2sv, d: C2sv, div: f32, count: c_int }
+struct C2Proxy { radius: f32, count: i32, verts: [C2v; 8] }
 
-// --- Vector helpers ---
-fn c2v_new(x: f32, y: f32) -> C2v { C2v { x, y } }
-fn c2_mulvs(mut a: C2v, b: f32) -> C2v { a.x *= b; a.y *= b; a }
-fn c2_maxv(a: C2v, b: C2v) -> C2v { c2v_new(if a.x > b.x { a.x } else { b.x }, if a.y > b.y { a.y } else { b.y }) }
-fn c2_minv(a: C2v, b: C2v) -> C2v { c2v_new(if a.x < b.x { a.x } else { b.x }, if a.y < b.y { a.y } else { b.y }) }
-fn c2_clampv(a: C2v, lo: C2v, hi: C2v) -> C2v { c2_maxv(lo, c2_minv(a, hi)) }
-fn c2_sub(mut a: C2v, b: C2v) -> C2v { a.x -= b.x; a.y -= b.y; a }
-fn c2_add(mut a: C2v, b: C2v) -> C2v { a.x += b.x; a.y += b.y; a }
-fn c2_dot(a: C2v, b: C2v) -> f32 { a.x * b.x + a.y * b.y }
-fn c2_neg(a: C2v) -> C2v { c2v_new(-a.x, -a.y) }
-fn c2_len(a: C2v) -> f32 { c2_dot(a, a).sqrt() }
-fn c2_det2(a: C2v, b: C2v) -> f32 { a.x * b.y - a.y * b.x }
-fn c2_skew(a: C2v) -> C2v { C2v { x: -a.y, y: a.x } }
-fn c2_ccw90(a: C2v) -> C2v { C2v { x: a.y, y: -a.x } }
-fn c2_div(a: C2v, b: f32) -> C2v { c2_mulvs(a, 1.0 / b) }
-fn c2_norm(a: C2v) -> C2v { c2_div(a, c2_len(a)) }
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct C2sv { s_a: C2v, s_b: C2v, p: C2v, u: f32, i_a: i32, i_b: i32 }
 
-fn c2_rot_identity() -> C2r { C2r { c: 1.0, s: 0.0 } }
-fn c2x_identity() -> C2x { C2x { p: c2v_new(0.0, 0.0), r: c2_rot_identity() } }
-fn c2_mulrv(a: C2r, b: C2v) -> C2v { c2v_new(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y) }
-fn c2_mulxv(a: C2x, b: C2v) -> C2v { c2_add(c2_mulrv(a.r, b), a.p) }
-fn c2_mulrv_t(a: C2r, b: C2v) -> C2v { c2v_new(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y) }
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct C2Simplex { a: C2sv, b: C2sv, c: C2sv, d: C2sv, div: f32, count: i32 }
 
-// --- Proxy ---
-fn c2_bb_verts(out: &mut [C2v; 8], bb: &C2AABB) {
-    out[0] = bb.min;
-    out[1] = c2v_new(bb.max.x, bb.min.y);
-    out[2] = bb.max;
-    out[3] = c2v_new(bb.min.x, bb.max.y);
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq)]
+pub enum C2Type { Capsule = 0, Circle = 1, AABB = 2 }
+
+// ── Vector helpers ──
+
+fn c2v(x: f32, y: f32) -> C2v { C2v { x, y } }
+
+fn c2mulvs(mut a: C2v, b: f32) -> C2v { a.x *= b; a.y *= b; a }
+
+fn c2maxv(a: C2v, b: C2v) -> C2v {
+    c2v(if a.x > b.x { a.x } else { b.x }, if a.y > b.y { a.y } else { b.y })
 }
 
-fn c2_make_proxy(shape: *const u8, typ: C2_TYPE, p: &mut C2Proxy) {
+fn c2minv(a: C2v, b: C2v) -> C2v {
+    c2v(if a.x < b.x { a.x } else { b.x }, if a.y < b.y { a.y } else { b.y })
+}
+
+fn c2clampv(a: C2v, lo: C2v, hi: C2v) -> C2v { c2maxv(lo, c2minv(a, hi)) }
+
+fn c2sub(mut a: C2v, b: C2v) -> C2v { a.x -= b.x; a.y -= b.y; a }
+
+fn c2add(mut a: C2v, b: C2v) -> C2v { a.x += b.x; a.y += b.y; a }
+
+fn c2dot(a: C2v, b: C2v) -> f32 { a.x * b.x + a.y * b.y }
+
+fn c2neg(a: C2v) -> C2v { c2v(-a.x, -a.y) }
+
+fn c2len(a: C2v) -> f32 { c2dot(a, a).sqrt() }
+
+fn c2det2(a: C2v, b: C2v) -> f32 { a.x * b.y - a.y * b.x }
+
+fn c2mulrv(a: C2r, b: C2v) -> C2v { c2v(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y) }
+
+fn c2mulrv_t(a: C2r, b: C2v) -> C2v { c2v(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y) }
+
+fn c2mulxv(a: C2x, b: C2v) -> C2v { c2add(c2mulrv(a.r, b), a.p) }
+
+fn c2div(a: C2v, b: f32) -> C2v { c2mulvs(a, 1.0 / b) }
+
+fn c2norm(a: C2v) -> C2v { c2div(a, c2len(a)) }
+
+fn c2skew(a: C2v) -> C2v { C2v { x: -a.y, y: a.x } }
+
+fn c2ccw90(a: C2v) -> C2v { C2v { x: a.y, y: -a.x } }
+
+fn c2x_identity() -> C2x { C2x { p: c2v(0.0, 0.0), r: C2r { c: 1.0, s: 0.0 } } }
+
+// ── Proxy / BB ──
+
+fn c2bb_verts(bb: &C2AABB) -> [C2v; 4] {
+    [bb.min, c2v(bb.max.x, bb.min.y), bb.max, c2v(bb.min.x, bb.max.y)]
+}
+
+fn c2make_proxy(shape: *const u8, typ: C2Type) -> C2Proxy {
+    let zero = c2v(0.0, 0.0);
+    let mut p = C2Proxy { radius: 0.0, count: 0, verts: [zero; 8] };
     unsafe {
         match typ {
-            C2_TYPE::C2_TYPE_CIRCLE => {
+            C2Type::Circle => {
                 let c = &*(shape as *const C2Circle);
                 p.radius = c.r; p.count = 1; p.verts[0] = c.p;
             }
-            C2_TYPE::C2_TYPE_AABB => {
+            C2Type::AABB => {
                 let bb = &*(shape as *const C2AABB);
                 p.radius = 0.0; p.count = 4;
-                c2_bb_verts(&mut p.verts, bb);
+                let v = c2bb_verts(bb);
+                p.verts[0] = v[0]; p.verts[1] = v[1]; p.verts[2] = v[2]; p.verts[3] = v[3];
             }
-            C2_TYPE::C2_TYPE_CAPSULE => {
+            C2Type::Capsule => {
                 let c = &*(shape as *const C2Capsule);
-                p.radius = c.r; p.count = 2;
-                p.verts[0] = c.a; p.verts[1] = c.b;
+                p.radius = c.r; p.count = 2; p.verts[0] = c.a; p.verts[1] = c.b;
             }
         }
     }
+    p
 }
 
-// --- Simplex operations ---
-fn c2_gjk_simplex_metric(s: &C2Simplex) -> f32 {
+// ── Simplex helpers ──
+
+fn c2gjk_simplex_metric(s: &C2Simplex) -> f32 {
     match s.count {
-        2 => c2_len(c2_sub(s.b.p, s.a.p)),
-        3 => c2_det2(c2_sub(s.b.p, s.a.p), c2_sub(s.c.p, s.a.p)),
+        2 => c2len(c2sub(s.b.p, s.a.p)),
+        3 => c2det2(c2sub(s.b.p, s.a.p), c2sub(s.c.p, s.a.p)),
         _ => 0.0,
     }
 }
 
-fn c22(s: &mut C2Simplex) {
-    let a = s.a.p; let b = s.b.p;
-    let u = c2_dot(b, c2_sub(b, a));
-    let v = c2_dot(a, c2_sub(a, b));
+fn c22_inner(s: &mut C2Simplex) {
+    let a = s.a.p;
+    let b = s.b.p;
+    let u = c2dot(b, c2sub(b, a));
+    let v = c2dot(a, c2sub(a, b));
     if v <= 0.0 {
         s.a.u = 1.0; s.div = 1.0; s.count = 1;
     } else if u <= 0.0 {
@@ -125,18 +145,20 @@ fn c22(s: &mut C2Simplex) {
     }
 }
 
-fn c23(s: &mut C2Simplex) {
-    let a = s.a.p; let b = s.b.p; let c = s.c.p;
-    let u_ab = c2_dot(b, c2_sub(b, a));
-    let v_ab = c2_dot(a, c2_sub(a, b));
-    let u_bc = c2_dot(c, c2_sub(c, b));
-    let v_bc = c2_dot(b, c2_sub(b, c));
-    let u_ca = c2_dot(a, c2_sub(a, c));
-    let v_ca = c2_dot(c, c2_sub(c, a));
-    let area = c2_det2(c2_sub(b, a), c2_sub(c, a));
-    let u_abc = c2_det2(b, c) * area;
-    let v_abc = c2_det2(c, a) * area;
-    let w_abc = c2_det2(a, b) * area;
+fn c23_inner(s: &mut C2Simplex) {
+    let a = s.a.p;
+    let b = s.b.p;
+    let c = s.c.p;
+    let u_ab = c2dot(b, c2sub(b, a));
+    let v_ab = c2dot(a, c2sub(a, b));
+    let u_bc = c2dot(c, c2sub(c, b));
+    let v_bc = c2dot(b, c2sub(b, c));
+    let u_ca = c2dot(a, c2sub(a, c));
+    let v_ca = c2dot(c, c2sub(c, a));
+    let area = c2det2(c2sub(b, a), c2sub(c, a));
+    let u_abc = c2det2(b, c) * area;
+    let v_abc = c2det2(c, a) * area;
+    let w_abc = c2det2(a, b) * area;
     if v_ab <= 0.0 && u_ca <= 0.0 {
         s.a.u = 1.0; s.div = 1.0; s.count = 1;
     } else if u_ab <= 0.0 && v_bc <= 0.0 {
@@ -154,93 +176,90 @@ fn c23(s: &mut C2Simplex) {
     }
 }
 
-fn c2_d(s: &C2Simplex) -> C2v {
+fn c2d(s: &C2Simplex) -> C2v {
     match s.count {
-        1 => c2_neg(s.a.p),
+        1 => c2neg(s.a.p),
         2 => {
-            let ab = c2_sub(s.b.p, s.a.p);
-            if c2_det2(ab, c2_neg(s.a.p)) > 0.0 { c2_skew(ab) } else { c2_ccw90(ab) }
+            let ab = c2sub(s.b.p, s.a.p);
+            if c2det2(ab, c2neg(s.a.p)) > 0.0 { c2skew(ab) } else { c2ccw90(ab) }
         }
-        _ => c2v_new(0.0, 0.0),
+        _ => c2v(0.0, 0.0),
     }
 }
 
-fn c2_support(verts: &[C2v; 8], count: c_int, d: C2v) -> c_int {
-    let mut imax = 0;
-    let mut dmax = c2_dot(verts[0], d);
+fn c2support(verts: &[C2v], count: i32, d: C2v) -> i32 {
+    let mut imax = 0i32;
+    let mut dmax = c2dot(verts[0], d);
     for i in 1..count {
-        let dot = c2_dot(verts[i as usize], d);
+        let dot = c2dot(verts[i as usize], d);
         if dot > dmax { imax = i; dmax = dot; }
     }
     imax
 }
 
-fn c2_witness(s: &C2Simplex, a: &mut C2v, b: &mut C2v) {
-    let den = 1.0f32 / s.div;
+fn c2witness(s: &C2Simplex, a: &mut C2v, b: &mut C2v) {
+    let den = 1.0 / s.div;
     match s.count {
         1 => { *a = s.a.s_a; *b = s.a.s_b; }
         2 => {
-            *a = c2_add(c2_mulvs(s.a.s_a, den * s.a.u), c2_mulvs(s.b.s_a, den * s.b.u));
-            *b = c2_add(c2_mulvs(s.a.s_b, den * s.a.u), c2_mulvs(s.b.s_b, den * s.b.u));
+            *a = c2add(c2mulvs(s.a.s_a, den * s.a.u), c2mulvs(s.b.s_a, den * s.b.u));
+            *b = c2add(c2mulvs(s.a.s_b, den * s.a.u), c2mulvs(s.b.s_b, den * s.b.u));
         }
         3 => {
-            *a = c2_add(c2_add(c2_mulvs(s.a.s_a, den * s.a.u), c2_mulvs(s.b.s_a, den * s.b.u)), c2_mulvs(s.c.s_a, den * s.c.u));
-            *b = c2_add(c2_add(c2_mulvs(s.a.s_b, den * s.a.u), c2_mulvs(s.b.s_b, den * s.b.u)), c2_mulvs(s.c.s_b, den * s.c.u));
+            *a = c2add(c2add(c2mulvs(s.a.s_a, den * s.a.u), c2mulvs(s.b.s_a, den * s.b.u)), c2mulvs(s.c.s_a, den * s.c.u));
+            *b = c2add(c2add(c2mulvs(s.a.s_b, den * s.a.u), c2mulvs(s.b.s_b, den * s.b.u)), c2mulvs(s.c.s_b, den * s.c.u));
         }
-        _ => { *a = c2v_new(0.0, 0.0); *b = c2v_new(0.0, 0.0); }
+        _ => { *a = c2v(0.0, 0.0); *b = c2v(0.0, 0.0); }
     }
 }
 
-fn c2_l(s: &C2Simplex) -> C2v {
-    let den = 1.0f32 / s.div;
+fn c2l(s: &C2Simplex) -> C2v {
+    let den = 1.0 / s.div;
     match s.count {
         1 => s.a.p,
-        2 => c2_add(c2_mulvs(s.a.p, den * s.a.u), c2_mulvs(s.b.p, den * s.b.u)),
-        _ => c2v_new(0.0, 0.0),
+        2 => c2add(c2mulvs(s.a.p, den * s.a.u), c2mulvs(s.b.p, den * s.b.u)),
+        _ => c2v(0.0, 0.0),
     }
 }
 
-// --- GJK ---
+// ── GJK ──
+
 const FLT_MAX: f32 = 3.40282346638528859811704183484516925e+38;
 const FLT_EPSILON: f32 = 1.19209289550781250000000000000000000e-7;
 
-fn c2_gjk(
-    a_shape: *const u8, type_a: C2_TYPE, ax_ptr: *const C2x,
-    b_shape: *const u8, type_b: C2_TYPE, bx_ptr: *const C2x,
+fn c2gjk(
+    a_shape: *const u8, type_a: C2Type, ax_ptr: *const C2x,
+    b_shape: *const u8, type_b: C2Type, bx_ptr: *const C2x,
     out_a: *mut C2v, out_b: *mut C2v,
-    use_radius: c_int, iterations: *mut c_int, cache: *mut C2GJKCache,
+    use_radius: i32, iterations: *mut i32, cache: *mut C2GJKCache,
 ) -> f32 {
-    unsafe {
-        let ax = if ax_ptr.is_null() { c2x_identity() } else { *ax_ptr };
-        let bx = if bx_ptr.is_null() { c2x_identity() } else { *bx_ptr };
-        let mut p_a = C2Proxy::default();
-        let mut p_b = C2Proxy::default();
-        c2_make_proxy(a_shape, type_a, &mut p_a);
-        c2_make_proxy(b_shape, type_b, &mut p_b);
+    let ax = if ax_ptr.is_null() { c2x_identity() } else { unsafe { *ax_ptr } };
+    let bx = if bx_ptr.is_null() { c2x_identity() } else { unsafe { *bx_ptr } };
+    let p_a = c2make_proxy(a_shape, type_a);
+    let p_b = c2make_proxy(b_shape, type_b);
 
-        let mut s = C2Simplex {
-            a: C2sv::default(), b: C2sv::default(), c: C2sv::default(), d: C2sv::default(),
-            div: 0.0, count: 0,
-        };
-        let verts_base: *mut C2sv = &mut s.a as *mut C2sv;
+    let zero_sv = C2sv { s_a: c2v(0.0,0.0), s_b: c2v(0.0,0.0), p: c2v(0.0,0.0), u: 0.0, i_a: 0, i_b: 0 };
+    let mut s = C2Simplex { a: zero_sv, b: zero_sv, c: zero_sv, d: zero_sv, div: 0.0, count: 0 };
+    let verts: *mut C2sv = &mut s.a as *mut C2sv;
 
-        let mut cache_was_read = false;
-        if !cache.is_null() {
+    let mut cache_was_read = false;
+    if !cache.is_null() {
+        unsafe {
             let cache_was_good = (*cache).count != 0;
             if cache_was_good {
                 for i in 0..(*cache).count {
                     let ia = (*cache).i_a[i as usize];
                     let ib = (*cache).i_b[i as usize];
-                    let sa = c2_mulxv(ax, p_a.verts[ia as usize]);
-                    let sb = c2_mulxv(bx, p_b.verts[ib as usize]);
-                    let v = &mut *verts_base.add(i as usize);
+                    let sa = c2mulxv(ax, p_a.verts[ia as usize]);
+                    let sb = c2mulxv(bx, p_b.verts[ib as usize]);
+                    let v = &mut *verts.add(i as usize);
                     v.i_a = ia; v.s_a = sa; v.i_b = ib; v.s_b = sb;
-                    v.p = c2_sub(v.s_b, v.s_a); v.u = 0.0;
+                    v.p = c2sub(v.s_b, v.s_a); v.u = 0.0;
                 }
                 s.count = (*cache).count;
                 s.div = (*cache).div;
                 let metric_old = (*cache).metric;
-                let metric = c2_gjk_simplex_metric(&s);
+                let metric = c2gjk_simplex_metric(&s);
                 let min_metric = if metric < metric_old { metric } else { metric_old };
                 let max_metric = if metric > metric_old { metric } else { metric_old };
                 if !(min_metric < max_metric * 2.0 && metric < -1.0e8) {
@@ -248,214 +267,358 @@ fn c2_gjk(
                 }
             }
         }
+    }
 
-        if !cache_was_read {
-            s.a.i_a = 0; s.a.i_b = 0;
-            s.a.s_a = c2_mulxv(ax, p_a.verts[0]);
-            s.a.s_b = c2_mulxv(bx, p_b.verts[0]);
-            s.a.p = c2_sub(s.a.s_b, s.a.s_a);
-            s.a.u = 1.0; s.div = 1.0; s.count = 1;
+    if !cache_was_read {
+        s.a.i_a = 0; s.a.i_b = 0;
+        s.a.s_a = c2mulxv(ax, p_a.verts[0]);
+        s.a.s_b = c2mulxv(bx, p_b.verts[0]);
+        s.a.p = c2sub(s.a.s_b, s.a.s_a);
+        s.a.u = 1.0; s.div = 1.0; s.count = 1;
+    }
+
+    let mut save_a = [0i32; 3];
+    let mut save_b = [0i32; 3];
+    let mut d0 = FLT_MAX;
+    let mut d1: f32;
+    let mut iter = 0i32;
+    let mut hit = false;
+
+    while iter < 20 {
+        let save_count = s.count;
+        for i in 0..save_count as usize {
+            unsafe {
+                save_a[i] = (*verts.add(i)).i_a;
+                save_b[i] = (*verts.add(i)).i_b;
+            }
         }
+        match s.count {
+            1 => {}
+            2 => c22_inner(&mut s),
+            3 => c23_inner(&mut s),
+            _ => {}
+        }
+        if s.count == 3 { hit = true; break; }
+        let p = c2l(&s);
+        d1 = c2dot(p, p);
+        if d1 > d0 { break; }
+        d0 = d1;
+        let d = c2d(&s);
+        if c2dot(d, d) < FLT_EPSILON * FLT_EPSILON { break; }
 
-        let mut save_a = [0i32; 3];
-        let mut save_b = [0i32; 3];
-        let mut d0 = FLT_MAX;
-        let mut d1: f32;
-        let mut iter = 0i32;
-        let mut hit = false;
+        let ia = c2support(&p_a.verts, p_a.count, c2mulrv_t(ax.r, c2neg(d)));
+        let sa = c2mulxv(ax, p_a.verts[ia as usize]);
+        let ib = c2support(&p_b.verts, p_b.count, c2mulrv_t(bx.r, d));
+        let sb = c2mulxv(bx, p_b.verts[ib as usize]);
 
-        while iter < 20 {
-            let save_count = s.count;
-            for i in 0..save_count as usize {
-                let v = &*verts_base.add(i);
-                save_a[i] = v.i_a;
-                save_b[i] = v.i_b;
-            }
-            match s.count {
-                1 => {}
-                2 => c22(&mut s),
-                3 => c23(&mut s),
-                _ => {}
-            }
-            if s.count == 3 { hit = true; break; }
-
-            let p = c2_l(&s);
-            d1 = c2_dot(p, p);
-            if d1 > d0 { break; }
-            d0 = d1;
-
-            let d = c2_d(&s);
-            if c2_dot(d, d) < FLT_EPSILON * FLT_EPSILON { break; }
-
-            let ia = c2_support(&p_a.verts, p_a.count, c2_mulrv_t(ax.r, c2_neg(d)));
-            let sa = c2_mulxv(ax, p_a.verts[ia as usize]);
-            let ib = c2_support(&p_b.verts, p_b.count, c2_mulrv_t(bx.r, d));
-            let sb = c2_mulxv(bx, p_b.verts[ib as usize]);
-
-            let v = &mut *verts_base.add(s.count as usize);
+        unsafe {
+            let v = &mut *verts.add(s.count as usize);
             v.i_a = ia; v.s_a = sa; v.i_b = ib; v.s_b = sb;
-            v.p = c2_sub(v.s_b, v.s_a);
-
-            let mut dup = false;
-            for i in 0..save_count as usize {
-                if ia == save_a[i] && ib == save_b[i] { dup = true; break; }
-            }
-            if dup { break; }
-            s.count += 1;
-            iter += 1;
+            v.p = c2sub(v.s_b, v.s_a);
         }
 
-        let mut wa = c2v_new(0.0, 0.0);
-        let mut wb = c2v_new(0.0, 0.0);
-        c2_witness(&s, &mut wa, &mut wb);
-        let mut dist = c2_len(c2_sub(wa, wb));
-
-        if hit {
-            wa = wb;
-            dist = 0.0;
-        } else if use_radius != 0 {
-            let r_a = p_a.radius;
-            let r_b = p_b.radius;
-            if dist > r_a + r_b && dist > FLT_EPSILON {
-                dist -= r_a + r_b;
-                let n = c2_norm(c2_sub(wb, wa));
-                wa = c2_add(wa, c2_mulvs(n, r_a));
-                wb = c2_sub(wb, c2_mulvs(n, r_b));
-                if wa.x == wb.x && wa.y == wb.y { dist = 0.0; }
-            } else {
-                let p = c2_mulvs(c2_add(wa, wb), 0.5);
-                wa = p; wb = p; dist = 0.0;
-            }
+        let mut dup = false;
+        for i in 0..save_count as usize {
+            if ia == save_a[i] && ib == save_b[i] { dup = true; break; }
         }
+        if dup { break; }
+        s.count += 1;
+        iter += 1;
+    }
 
-        if !cache.is_null() {
-            (*cache).metric = c2_gjk_simplex_metric(&s);
+    let mut wa = c2v(0.0, 0.0);
+    let mut wb = c2v(0.0, 0.0);
+    c2witness(&s, &mut wa, &mut wb);
+    let mut dist = c2len(c2sub(wa, wb));
+
+    if hit {
+        wa = wb;
+        dist = 0.0;
+    } else if use_radius != 0 {
+        let r_a = p_a.radius;
+        let r_b = p_b.radius;
+        if dist > r_a + r_b && dist > FLT_EPSILON {
+            dist -= r_a + r_b;
+            let n = c2norm(c2sub(wb, wa));
+            wa = c2add(wa, c2mulvs(n, r_a));
+            wb = c2sub(wb, c2mulvs(n, r_b));
+            if wa.x == wb.x && wa.y == wb.y { dist = 0.0; }
+        } else {
+            let p = c2mulvs(c2add(wa, wb), 0.5);
+            wa = p; wb = p; dist = 0.0;
+        }
+    }
+
+    if !cache.is_null() {
+        unsafe {
+            (*cache).metric = c2gjk_simplex_metric(&s);
             (*cache).count = s.count;
             for i in 0..s.count as usize {
-                let v = &*verts_base.add(i);
+                let v = &*verts.add(i);
                 (*cache).i_a[i] = v.i_a;
                 (*cache).i_b[i] = v.i_b;
             }
             (*cache).div = s.div;
         }
-        if !out_a.is_null() { *out_a = wa; }
-        if !out_b.is_null() { *out_b = wb; }
-        if !iterations.is_null() { *iterations = iter; }
-        dist
     }
+    if !out_a.is_null() { unsafe { *out_a = wa; } }
+    if !out_b.is_null() { unsafe { *out_b = wb; } }
+    if !iterations.is_null() { unsafe { *iterations = iter; } }
+    dist
 }
 
-// --- Collision tests ---
-fn c2_aabb_to_aabb(a: C2AABB, b: C2AABB) -> c_int {
-    let d0 = (b.max.x < a.min.x) as c_int;
-    let d1 = (a.max.x < b.min.x) as c_int;
-    let d2 = (b.max.y < a.min.y) as c_int;
-    let d3 = (a.max.y < b.min.y) as c_int;
-    ((d0 | d1 | d2 | d3) == 0) as c_int
+// ── Collision tests ──
+
+fn c2aabb_to_aabb(a: C2AABB, b: C2AABB) -> i32 {
+    let d0 = b.max.x < a.min.x;
+    let d1 = a.max.x < b.min.x;
+    let d2 = b.max.y < a.min.y;
+    let d3 = a.max.y < b.min.y;
+    if d0 || d1 || d2 || d3 { 0 } else { 1 }
 }
 
-fn c2_aabb_to_capsule(a: &C2AABB, b: &C2Capsule) -> c_int {
-    if c2_gjk(
-        a as *const C2AABB as *const u8, C2_TYPE::C2_TYPE_AABB, std::ptr::null(),
-        b as *const C2Capsule as *const u8, C2_TYPE::C2_TYPE_CAPSULE, std::ptr::null(),
-        std::ptr::null_mut(), std::ptr::null_mut(), 1, std::ptr::null_mut(), std::ptr::null_mut(),
-    ) != 0.0 { return 0; }
-    1
+fn c2aabb_to_capsule(a: &C2AABB, b: &C2Capsule) -> i32 {
+    if c2gjk(
+        a as *const C2AABB as *const u8, C2Type::AABB, ptr::null(),
+        b as *const C2Capsule as *const u8, C2Type::Capsule, ptr::null(),
+        ptr::null_mut(), ptr::null_mut(), 1, ptr::null_mut(), ptr::null_mut(),
+    ) != 0.0 { 0 } else { 1 }
 }
 
-fn c2_capsule_to_capsule(a: &C2Capsule, b: &C2Capsule) -> c_int {
-    if c2_gjk(
-        a as *const C2Capsule as *const u8, C2_TYPE::C2_TYPE_CAPSULE, std::ptr::null(),
-        b as *const C2Capsule as *const u8, C2_TYPE::C2_TYPE_CAPSULE, std::ptr::null(),
-        std::ptr::null_mut(), std::ptr::null_mut(), 1, std::ptr::null_mut(), std::ptr::null_mut(),
-    ) != 0.0 { return 0; }
-    1
+fn c2capsule_to_capsule(a: &C2Capsule, b: &C2Capsule) -> i32 {
+    if c2gjk(
+        a as *const C2Capsule as *const u8, C2Type::Capsule, ptr::null(),
+        b as *const C2Capsule as *const u8, C2Type::Capsule, ptr::null(),
+        ptr::null_mut(), ptr::null_mut(), 1, ptr::null_mut(), ptr::null_mut(),
+    ) != 0.0 { 0 } else { 1 }
 }
 
-fn c2_circle_to_circle(a: C2Circle, b: C2Circle) -> c_int {
-    let c = c2_sub(b.p, a.p);
-    let d2 = c2_dot(c, c);
-    let mut r2 = a.r + b.r;
-    r2 = r2 * r2;
-    (d2 < r2) as c_int
+fn c2circle_to_circle(a: C2Circle, b: C2Circle) -> i32 {
+    let c = c2sub(b.p, a.p);
+    let d2 = c2dot(c, c);
+    let r2 = (a.r + b.r) * (a.r + b.r);
+    if d2 < r2 { 1 } else { 0 }
 }
 
-fn c2_circle_to_aabb(a: C2Circle, b: C2AABB) -> c_int {
-    let l = c2_clampv(a.p, b.min, b.max);
-    let ab = c2_sub(a.p, l);
-    let d2 = c2_dot(ab, ab);
+fn c2circle_to_aabb(a: C2Circle, b: C2AABB) -> i32 {
+    let l = c2clampv(a.p, b.min, b.max);
+    let ab = c2sub(a.p, l);
+    let d2 = c2dot(ab, ab);
     let r2 = a.r * a.r;
-    (d2 < r2) as c_int
+    if d2 < r2 { 1 } else { 0 }
 }
 
-fn c2_circle_to_capsule(a: C2Circle, b: C2Capsule) -> c_int {
-    let n = c2_sub(b.b, b.a);
-    let ap = c2_sub(a.p, b.a);
-    let da = c2_dot(ap, n);
+fn c2circle_to_capsule(a: C2Circle, b: C2Capsule) -> i32 {
+    let n = c2sub(b.b, b.a);
+    let ap = c2sub(a.p, b.a);
+    let da = c2dot(ap, n);
     let d2;
     if da < 0.0 {
-        d2 = c2_dot(ap, ap);
+        d2 = c2dot(ap, ap);
     } else {
-        let db = c2_dot(c2_sub(a.p, b.b), n);
+        let db = c2dot(c2sub(a.p, b.b), n);
         if db < 0.0 {
-            let e = c2_sub(ap, c2_mulvs(n, da / c2_dot(n, n)));
-            d2 = c2_dot(e, e);
+            let e = c2sub(ap, c2mulvs(n, da / c2dot(n, n)));
+            d2 = c2dot(e, e);
         } else {
-            let bp = c2_sub(a.p, b.b);
-            d2 = c2_dot(bp, bp);
+            let bp = c2sub(a.p, b.b);
+            d2 = c2dot(bp, bp);
         }
     }
     let r = a.r + b.r;
-    (d2 < r * r) as c_int
+    if d2 < r * r { 1 } else { 0 }
 }
 
-fn c2_collided(a: *const u8, type_a: C2_TYPE, b: *const u8, type_b: C2_TYPE) -> c_int {
+fn c2collided(a: *const u8, type_a: C2Type, b: *const u8, type_b: C2Type) -> i32 {
     unsafe {
         match type_a {
-            C2_TYPE::C2_TYPE_CIRCLE => match type_b {
-                C2_TYPE::C2_TYPE_CIRCLE => c2_circle_to_circle(*(a as *const C2Circle), *(b as *const C2Circle)),
-                C2_TYPE::C2_TYPE_AABB => c2_circle_to_aabb(*(a as *const C2Circle), *(b as *const C2AABB)),
-                C2_TYPE::C2_TYPE_CAPSULE => c2_circle_to_capsule(*(a as *const C2Circle), *(b as *const C2Capsule)),
+            C2Type::Circle => match type_b {
+                C2Type::Circle => c2circle_to_circle(*(a as *const C2Circle), *(b as *const C2Circle)),
+                C2Type::AABB => c2circle_to_aabb(*(a as *const C2Circle), *(b as *const C2AABB)),
+                C2Type::Capsule => c2circle_to_capsule(*(a as *const C2Circle), *(b as *const C2Capsule)),
             },
-            C2_TYPE::C2_TYPE_AABB => match type_b {
-                C2_TYPE::C2_TYPE_CIRCLE => c2_circle_to_aabb(*(b as *const C2Circle), *(a as *const C2AABB)),
-                C2_TYPE::C2_TYPE_AABB => c2_aabb_to_aabb(*(a as *const C2AABB), *(b as *const C2AABB)),
-                C2_TYPE::C2_TYPE_CAPSULE => c2_aabb_to_capsule(&*(a as *const C2AABB), &*(b as *const C2Capsule)),
+            C2Type::AABB => match type_b {
+                C2Type::Circle => c2circle_to_aabb(*(b as *const C2Circle), *(a as *const C2AABB)),
+                C2Type::AABB => c2aabb_to_aabb(*(a as *const C2AABB), *(b as *const C2AABB)),
+                C2Type::Capsule => c2aabb_to_capsule(&*(a as *const C2AABB), &*(b as *const C2Capsule)),
             },
-            C2_TYPE::C2_TYPE_CAPSULE => match type_b {
-                C2_TYPE::C2_TYPE_CIRCLE => c2_circle_to_capsule(*(b as *const C2Circle), *(a as *const C2Capsule)),
-                C2_TYPE::C2_TYPE_AABB => c2_aabb_to_capsule(&*(b as *const C2AABB), &*(a as *const C2Capsule)),
-                C2_TYPE::C2_TYPE_CAPSULE => c2_capsule_to_capsule(&*(a as *const C2Capsule), &*(b as *const C2Capsule)),
+            C2Type::Capsule => match type_b {
+                C2Type::Circle => c2circle_to_capsule(*(b as *const C2Circle), *(a as *const C2Capsule)),
+                C2Type::AABB => c2aabb_to_capsule(&*(b as *const C2AABB), &*(a as *const C2Capsule)),
+                C2Type::Capsule => c2capsule_to_capsule(&*(a as *const C2Capsule), &*(b as *const C2Capsule)),
             },
         }
     }
 }
 
-fn ptr_from_parts(typ: C2_TYPE, a: f32, b: f32, c: f32, d: f32, e: f32) -> *mut u8 {
-    match typ {
-        C2_TYPE::C2_TYPE_CIRCLE => {
-            let shape = Box::new(C2Circle { p: c2v_new(a, b), r: c });
-            Box::into_raw(shape) as *mut u8
-        }
-        C2_TYPE::C2_TYPE_AABB => {
-            let shape = Box::new(C2AABB { min: c2v_new(a, b), max: c2v_new(c, d) });
-            Box::into_raw(shape) as *mut u8
-        }
-        C2_TYPE::C2_TYPE_CAPSULE => {
-            let shape = Box::new(C2Capsule { a: c2v_new(a, b), b: c2v_new(c, d), r: e });
-            Box::into_raw(shape) as *mut u8
+fn ptr_from_parts_inner(typ: C2Type, a: f32, b: f32, c: f32, d: f32, e: f32) -> *mut u8 {
+    unsafe {
+        match typ {
+            C2Type::Circle => {
+                let p = alloc(Layout::new::<C2Circle>()) as *mut C2Circle;
+                (*p).p = c2v(a, b); (*p).r = c;
+                p as *mut u8
+            }
+            C2Type::AABB => {
+                let p = alloc(Layout::new::<C2AABB>()) as *mut C2AABB;
+                (*p).min = c2v(a, b); (*p).max = c2v(c, d);
+                p as *mut u8
+            }
+            C2Type::Capsule => {
+                let p = alloc(Layout::new::<C2Capsule>()) as *mut C2Capsule;
+                (*p).a = c2v(a, b); (*p).b = c2v(c, d); (*p).r = e;
+                p as *mut u8
+            }
         }
     }
 }
 
-// --- Public API ---
+// ── Public API ──
+
 #[unsafe(no_mangle)]
 pub extern "C" fn omni_collide(
-    type_a: C2_TYPE, a1: f32, a2: f32, a3: f32, a4: f32, a5: f32,
-    type_b: C2_TYPE, b1: f32, b2: f32, b3: f32, b4: f32, b5: f32,
-) -> c_int {
-    let a = ptr_from_parts(type_a, a1, a2, a3, a4, a5);
-    let b = ptr_from_parts(type_b, b1, b2, b3, b4, b5);
-    c2_collided(a, type_a, b, type_b)
-    // Note: intentionally leaks memory, matching C behavior
+    type_a: C2Type, a1: f32, a2: f32, a3: f32, a4: f32, a5: f32,
+    type_b: C2Type, b1: f32, b2: f32, b3: f32, b4: f32, b5: f32,
+) -> std::ffi::c_int {
+    let a = ptr_from_parts_inner(type_a, a1, a2, a3, a4, a5);
+    let b = ptr_from_parts_inner(type_b, b1, b2, b3, b4, b5);
+    c2collided(a, type_a, b, type_b)
+}
+
+// ── Exported wrappers matching C symbol names ──
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2V(x: f32, y: f32) -> C2v { c2v(x, y) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Add(a: C2v, b: C2v) -> C2v { c2add(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Sub(a: C2v, b: C2v) -> C2v { c2sub(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Dot(a: C2v, b: C2v) -> f32 { c2dot(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Len(a: C2v) -> f32 { c2len(a) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Det2(a: C2v, b: C2v) -> f32 { c2det2(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Mulvs(a: C2v, b: f32) -> C2v { c2mulvs(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Mulrv(a: C2r, b: C2v) -> C2v { c2mulrv(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2MulrvT(a: C2r, b: C2v) -> C2v { c2mulrv_t(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Mulxv(a: C2x, b: C2v) -> C2v { c2mulxv(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Neg(a: C2v) -> C2v { c2neg(a) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Skew(a: C2v) -> C2v { c2skew(a) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CCW90(a: C2v) -> C2v { c2ccw90(a) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Norm(a: C2v) -> C2v { c2norm(a) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Div(a: C2v, b: f32) -> C2v { c2div(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Maxv(a: C2v, b: C2v) -> C2v { c2maxv(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Minv(a: C2v, b: C2v) -> C2v { c2minv(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Clampv(a: C2v, lo: C2v, hi: C2v) -> C2v { c2clampv(a, lo, hi) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2RotIdentity() -> C2r { C2r { c: 1.0, s: 0.0 } }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2xIdentity() -> C2x { c2x_identity() }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2BBVerts(out: *mut C2v, bb: *const C2AABB) {
+    let v = c2bb_verts(&*bb);
+    for i in 0..4 { *out.add(i) = v[i]; }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2MakeProxy(shape: *const u8, typ: C2Type, p: *mut C2Proxy) {
+    *p = c2make_proxy(shape, typ);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2GJKSimplexMetric(s: *const C2Simplex) -> f32 {
+    c2gjk_simplex_metric(&*s)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c22(s: *mut C2Simplex) { self::c22_inner(&mut *s) }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c23(s: *mut C2Simplex) { self::c23_inner(&mut *s) }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2D(s: *const C2Simplex) -> C2v { c2d(&*s) }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2Support(verts: *const C2v, count: i32, d: C2v) -> i32 {
+    c2support(std::slice::from_raw_parts(verts, count as usize), count, d)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2Witness(s: *const C2Simplex, a: *mut C2v, b: *mut C2v) {
+    c2witness(&*s, &mut *a, &mut *b);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2L(s: *const C2Simplex) -> C2v { c2l(&*s) }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2GJK(
+    a: *const u8, type_a: C2Type, ax_ptr: *const C2x,
+    b: *const u8, type_b: C2Type, bx_ptr: *const C2x,
+    out_a: *mut C2v, out_b: *mut C2v,
+    use_radius: i32, iterations: *mut i32, cache: *mut C2GJKCache,
+) -> f32 {
+    c2gjk(a, type_a, ax_ptr, b, type_b, bx_ptr, out_a, out_b, use_radius, iterations, cache)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoCircle(a: C2Circle, b: C2Circle) -> i32 { c2circle_to_circle(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoAABB(a: C2Circle, b: C2AABB) -> i32 { c2circle_to_aabb(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoCapsule(a: C2Circle, b: C2Capsule) -> i32 { c2circle_to_capsule(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2AABBtoAABB(a: C2AABB, b: C2AABB) -> i32 { c2aabb_to_aabb(a, b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2AABBtoCapsule(a: C2AABB, b: C2Capsule) -> i32 { c2aabb_to_capsule(&a, &b) }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CapsuletoCapsule(a: C2Capsule, b: C2Capsule) -> i32 { c2capsule_to_capsule(&a, &b) }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2Collided(a: *const u8, type_a: C2Type, b: *const u8, type_b: C2Type) -> i32 {
+    c2collided(a, type_a, b, type_b)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ptr_from_parts(typ: C2Type, a: f32, b: f32, c: f32, d: f32, e: f32) -> *mut u8 {
+    self::ptr_from_parts_inner(typ, a, b, c, d, e)
 }

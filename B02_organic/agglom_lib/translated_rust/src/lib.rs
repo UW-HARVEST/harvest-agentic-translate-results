@@ -1,6 +1,6 @@
-#![allow(non_upper_case_globals, non_snake_case, clippy::all)]
+#![allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code, clippy::all)]
 
-// ---- Collision detection types and functions (f2) ----
+// ---- Structs and Enums ----
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -23,42 +23,68 @@ struct c2AABB {
     max: c2v,
 }
 
-const C2_TYPE_CIRCLE: i32 = 0;
-const C2_TYPE_AABB: i32 = 1;
+#[repr(i32)]
+#[derive(Clone, Copy)]
+enum C2_TYPE {
+    C2_TYPE_CIRCLE = 0,
+    C2_TYPE_AABB = 1,
+}
 
-fn c2V(x: f32, y: f32) -> c2v {
+#[repr(C)]
+struct cn_rnd_t {
+    state: [u64; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct lm_vec2 {
+    x: f32,
+    y: f32,
+}
+
+// ---- Helper functions ----
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
     c2v { x, y }
 }
 
-fn c2Maxv(a: c2v, b: c2v) -> c2v {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
     c2V(
         if a.x > b.x { a.x } else { b.x },
         if a.y > b.y { a.y } else { b.y },
     )
 }
 
-fn c2Minv(a: c2v, b: c2v) -> c2v {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
     c2V(
         if a.x < b.x { a.x } else { b.x },
         if a.y < b.y { a.y } else { b.y },
     )
 }
 
-fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
     c2Maxv(lo, c2Minv(a, hi))
 }
 
-fn c2Sub(mut a: c2v, b: c2v) -> c2v {
-    a.x -= b.x;
-    a.y -= b.y;
-    a
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
+    c2v {
+        x: a.x - b.x,
+        y: a.y - b.y,
+    }
 }
 
-fn c2Dot(a: c2v, b: c2v) -> f32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
     a.x * b.x + a.y * b.y
 }
 
-fn c2CircletoCircle(a: c2Circle, b: c2Circle) -> i32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoCircle(a: c2Circle, b: c2Circle) -> i32 {
     let c = c2Sub(b.p, a.p);
     let d2 = c2Dot(c, c);
     let mut r2 = a.r + b.r;
@@ -66,7 +92,8 @@ fn c2CircletoCircle(a: c2Circle, b: c2Circle) -> i32 {
     (d2 < r2) as i32
 }
 
-fn c2CircletoAABB(a: c2Circle, b: c2AABB) -> i32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2CircletoAABB(a: c2Circle, b: c2AABB) -> i32 {
     let l = c2Clampv(a.p, b.min, b.max);
     let ab = c2Sub(a.p, l);
     let d2 = c2Dot(ab, ab);
@@ -74,7 +101,8 @@ fn c2CircletoAABB(a: c2Circle, b: c2AABB) -> i32 {
     (d2 < r2) as i32
 }
 
-fn c2AABBtoAABB(a: c2AABB, b: c2AABB) -> i32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2AABBtoAABB(a: c2AABB, b: c2AABB) -> i32 {
     let d0 = (b.max.x < a.min.x) as i32;
     let d1 = (a.max.x < b.min.x) as i32;
     let d2 = (b.max.y < a.min.y) as i32;
@@ -82,25 +110,28 @@ fn c2AABBtoAABB(a: c2AABB, b: c2AABB) -> i32 {
     ((d0 | d1 | d2 | d3) == 0) as i32
 }
 
-fn f2_impl(a: *const u8, type_a: i32, b: *const u8, type_b: i32) -> i32 {
+fn f2_impl(a: *const u8, type_a: C2_TYPE, b: *const u8, type_b: C2_TYPE) -> i32 {
     unsafe {
         match type_a {
-            C2_TYPE_CIRCLE => match type_b {
-                C2_TYPE_CIRCLE => c2CircletoCircle(*(a as *const c2Circle), *(b as *const c2Circle)),
-                C2_TYPE_AABB => c2CircletoAABB(*(a as *const c2Circle), *(b as *const c2AABB)),
-                _ => 0,
+            C2_TYPE::C2_TYPE_CIRCLE => match type_b {
+                C2_TYPE::C2_TYPE_CIRCLE => {
+                    c2CircletoCircle(*(a as *const c2Circle), *(b as *const c2Circle))
+                }
+                C2_TYPE::C2_TYPE_AABB => {
+                    c2CircletoAABB(*(a as *const c2Circle), *(b as *const c2AABB))
+                }
             },
-            C2_TYPE_AABB => match type_b {
-                C2_TYPE_CIRCLE => c2CircletoAABB(*(b as *const c2Circle), *(a as *const c2AABB)),
-                C2_TYPE_AABB => c2AABBtoAABB(*(a as *const c2AABB), *(b as *const c2AABB)),
-                _ => 0,
+            C2_TYPE::C2_TYPE_AABB => match type_b {
+                C2_TYPE::C2_TYPE_CIRCLE => {
+                    c2CircletoAABB(*(b as *const c2Circle), *(a as *const c2AABB))
+                }
+                C2_TYPE::C2_TYPE_AABB => {
+                    c2AABBtoAABB(*(a as *const c2AABB), *(b as *const c2AABB))
+                }
             },
-            _ => 0,
         }
     }
 }
-
-// ---- Floor division (f3) ----
 
 fn f3_impl(v1: i32, v2: i32) -> i32 {
     if v2 == 0 {
@@ -113,7 +144,7 @@ fn f3_impl(v1: i32, v2: i32) -> i32 {
         if v2 >= 0 {
             return v1 / v2;
         } else if v2 != int_min {
-            q = -(v1 / (-v2));
+            q = (v1 / (-v2)).wrapping_neg();
             r = v1 % (-v2);
         } else {
             q = 0;
@@ -121,21 +152,21 @@ fn f3_impl(v1: i32, v2: i32) -> i32 {
         }
     } else if v1 != int_min {
         if v2 >= 0 {
-            q = -((-v1) / v2);
-            r = -((-v1) % v2);
+            q = ((-v1) / v2).wrapping_neg();
+            r = ((-v1) % v2).wrapping_neg();
         } else if v2 != int_min {
             q = (-v1) / (-v2);
-            r = -((-v1) % (-v2));
+            r = ((-v1) % (-v2)).wrapping_neg();
         } else {
             q = 1;
             r = v1.wrapping_sub(q.wrapping_mul(v2));
         }
     } else if v2 >= 0 {
-        q = -((-(v1.wrapping_add(v2))) / v2) - 1;
-        r = -((-(v1.wrapping_add(v2))) % v2);
+        q = ((v1.wrapping_add(v2)).wrapping_neg() / v2).wrapping_neg().wrapping_sub(1);
+        r = ((v1.wrapping_add(v2)).wrapping_neg() % v2).wrapping_neg();
     } else if v2 != int_min {
-        q = ((-(v1.wrapping_sub(v2))) / (-v2)) + 1;
-        r = -((-(v1.wrapping_sub(v2))) % (-v2));
+        q = ((v1.wrapping_sub(v2)).wrapping_neg() / v2.wrapping_neg()).wrapping_add(1);
+        r = ((v1.wrapping_sub(v2)).wrapping_neg() % v2.wrapping_neg()).wrapping_neg();
     } else {
         q = 1;
         r = 0;
@@ -143,18 +174,11 @@ fn f3_impl(v1: i32, v2: i32) -> i32 {
     if r >= 0 {
         q
     } else {
-        q + if v2 > 0 { -1 } else { 1 }
+        q.wrapping_add(if v2 > 0 { -1 } else { 1 })
     }
 }
 
-// ---- RNG (f4) ----
-
-#[repr(C)]
-struct CnRnd {
-    state: [u64; 2],
-}
-
-fn cn_rnd_next(rnd: &mut CnRnd) -> u64 {
+fn cn_rnd_next(rnd: &mut cn_rnd_t) -> u64 {
     let mut x = rnd.state[0];
     let y = rnd.state[1];
     rnd.state[0] = y;
@@ -165,15 +189,13 @@ fn cn_rnd_next(rnd: &mut CnRnd) -> u64 {
     x.wrapping_add(y)
 }
 
-fn f4_impl(rnd: &mut CnRnd) -> f64 {
+fn f4_impl(rnd: &mut cn_rnd_t) -> f64 {
     let value = cn_rnd_next(rnd);
     let exponent: u64 = 1023;
     let mantissa = value >> 12;
     let result = (exponent << 52) | mantissa;
     f64::from_bits(result) - 1.0
 }
-
-// ---- Bit reversal (f5) ----
 
 fn f5_impl(mut a: u32) -> u32 {
     a = ((a & 0xAAAA) >> 1) | ((a & 0x5555) << 1);
@@ -183,9 +205,6 @@ fn f5_impl(mut a: u32) -> u32 {
     a
 }
 
-// ---- CRC16 tables ----
-
-#[allow(dead_code)]
 static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [
     [
         0x0000, 0x8005, 0x800f, 0x000a, 0x801b, 0x001e, 0x0014, 0x8011,
@@ -461,40 +480,39 @@ static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [
     ],
 ];
 
-// ---- FLAC frame size (f7) ----
-
 fn f7_impl(blocksize: u32, channels: u32, bitdepth: u32) -> u32 {
-    18u32.wrapping_add(channels)
-        .wrapping_add(
-            ((blocksize.wrapping_mul(bitdepth).wrapping_mul(channels.wrapping_mul((channels != 2) as u32)))
-            .wrapping_add(blocksize.wrapping_mul(bitdepth).wrapping_mul((channels == 2) as u32))
-            .wrapping_add(blocksize.wrapping_mul(bitdepth.wrapping_add((bitdepth != 32) as u32)).wrapping_mul((channels == 2) as u32))
+    18u32.wrapping_add(channels).wrapping_add(
+        (blocksize
+            .wrapping_mul(bitdepth)
+            .wrapping_mul(channels.wrapping_mul((channels != 2) as u32))
+            .wrapping_add(
+                blocksize
+                    .wrapping_mul(bitdepth)
+                    .wrapping_mul((channels == 2) as u32),
+            )
+            .wrapping_add(
+                blocksize
+                    .wrapping_mul(bitdepth.wrapping_add((bitdepth != 32) as u32))
+                    .wrapping_mul((channels == 2) as u32),
+            )
             .wrapping_add(7))
-            / 8)
+            / 8,
+    )
 }
 
-// ---- Barycentric coordinates (f9) ----
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct LmVec2 {
-    x: f32,
-    y: f32,
+fn lm_v2(x: f32, y: f32) -> lm_vec2 {
+    lm_vec2 { x, y }
 }
 
-fn lm_v2(x: f32, y: f32) -> LmVec2 {
-    LmVec2 { x, y }
-}
-
-fn lm_sub2(a: LmVec2, b: LmVec2) -> LmVec2 {
+fn lm_sub2(a: lm_vec2, b: lm_vec2) -> lm_vec2 {
     lm_v2(a.x - b.x, a.y - b.y)
 }
 
-fn lm_dot2(a: LmVec2, b: LmVec2) -> f32 {
+fn lm_dot2(a: lm_vec2, b: lm_vec2) -> f32 {
     a.x * b.x + a.y * b.y
 }
 
-fn f9_impl(p1: LmVec2, p2: LmVec2, p3: LmVec2, p: LmVec2) -> LmVec2 {
+fn f9_impl(p1: lm_vec2, p2: lm_vec2, p3: lm_vec2, p: lm_vec2) -> lm_vec2 {
     let v0 = lm_sub2(p3, p1);
     let v1 = lm_sub2(p2, p1);
     let v2 = lm_sub2(p, p1);
@@ -508,8 +526,6 @@ fn f9_impl(p1: LmVec2, p2: LmVec2, p3: LmVec2, p: LmVec2) -> LmVec2 {
     let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
     lm_v2(u, v)
 }
-
-// ---- Half-float to float (f10) ----
 
 static M_MANTISSA: [u32; 2048] = [
     0x00000000, 0x33800000, 0x34000000, 0x34400000, 0x34800000, 0x34a00000,
@@ -884,11 +900,9 @@ static M_EXPONENT: [u32; 64] = [
 fn f10_impl(h: u16) -> f32 {
     let n = (h >> 10) as usize;
     let idx = ((h & 0x3ff) + M_OFFSET[n]) as usize;
-    let num = M_MANTISSA[idx] + M_EXPONENT[n];
+    let num = M_MANTISSA[idx].wrapping_add(M_EXPONENT[n]);
     f32::from_bits(num)
 }
-
-// ---- HSL to RGB (f11) ----
 
 fn f11_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     let h = src[0];
@@ -912,6 +926,7 @@ fn f11_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
         dest[1] = c + m;
         dest[2] = m;
     } else if h < 120.0 && h < 180.0 {
+        // NOTE: C code has `h < 120.0f && h < 180.0f` - reproducing exactly
         dest[0] = m;
         dest[1] = c + m;
         dest[2] = x + m;
@@ -933,8 +948,6 @@ fn f11_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
         dest[2] = m;
     }
 }
-
-// ---- HSV to RGB (f12) ----
 
 fn f12_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     let mut h = src[0];
@@ -965,14 +978,13 @@ fn f12_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     dest[2] = b;
 }
 
-// ---- RGB to HSV (f13) ----
-
 fn f13_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     let r = src[0];
     let g = src[1];
     let b = src[2];
     let mut h: f32 = 0.0;
     let mut s: f32 = 0.0;
+    let v: f32;
     let mut min = r;
     let mut max = r;
     min = if min < g { min } else { g };
@@ -980,7 +992,7 @@ fn f13_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     max = if max > g { max } else { g };
     max = if max > b { max } else { b };
     let delta = max - min;
-    let v = max;
+    v = max;
     if delta == 0.0 || max == 0.0 {
         dest[0] = h;
         dest[1] = s;
@@ -1004,12 +1016,78 @@ fn f13_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     dest[2] = v;
 }
 
-// ---- Public API ----
+// ---- Exported wrappers for f* functions ----
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f2(a: *const u8, type_a: i32, b: *const u8, type_b: i32) -> i32 {
+    let ta = if type_a == 0 { C2_TYPE::C2_TYPE_CIRCLE } else { C2_TYPE::C2_TYPE_AABB };
+    let tb = if type_b == 0 { C2_TYPE::C2_TYPE_CIRCLE } else { C2_TYPE::C2_TYPE_AABB };
+    f2_impl(a, ta, b, tb)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f3(v1: i32, v2: i32) -> i32 {
+    f3_impl(v1, v2)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f4(rnd: *mut cn_rnd_t) -> f64 {
+    unsafe { f4_impl(&mut *rnd) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f5(a: u32) -> u32 {
+    f5_impl(a)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f7(blocksize: u32, channels: u32, bitdepth: u32) -> u32 {
+    f7_impl(blocksize, channels, bitdepth)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f9(p1: lm_vec2, p2: lm_vec2, p3: lm_vec2, p: lm_vec2) -> lm_vec2 {
+    f9_impl(p1, p2, p3, p)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f10(h: u16) -> f32 {
+    f10_impl(h)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f11(dest: *mut f32, src: *const f32) {
+    unsafe {
+        let s = &*(src as *const [f32; 3]);
+        let d = &mut *(dest as *mut [f32; 3]);
+        f11_impl(d, s);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f12(dest: *mut f32, src: *const f32) {
+    unsafe {
+        let s = &*(src as *const [f32; 3]);
+        let d = &mut *(dest as *mut [f32; 3]);
+        f12_impl(d, s);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn f13(dest: *mut f32, src: *const f32) {
+    unsafe {
+        let s = &*(src as *const [f32; 3]);
+        let d = &mut *(dest as *mut [f32; 3]);
+        f13_impl(d, s);
+    }
+}
+
+// ---- Exported function ----
 
 #[unsafe(no_mangle)]
 pub extern "C" fn agglom(
     f2_1: f32, f2_2: f32, f2_3: f32, f2_7: f32, f2_8: f32, f2_9: f32, f2_10: f32,
-    f3_1: std::ffi::c_int, f3_2: std::ffi::c_int,
+    f3_1: i32, f3_2: i32,
     f4_1: u64, f4_2: u64,
     f5_1: u32,
     f7_1: u32, f7_2: u32, f7_3: u32,
@@ -1021,10 +1099,18 @@ pub extern "C" fn agglom(
 ) -> f64 {
     let mut ret: f64 = 0.0;
 
-    let f2_5 = c2Circle { p: c2v { x: f2_1, y: f2_2 }, r: f2_3 };
-    let f2_6 = C2_TYPE_CIRCLE;
-    let f2_11 = c2AABB { min: c2v { x: f2_7, y: f2_8 }, max: c2v { x: f2_9, y: f2_10 } };
-    let f2_12 = C2_TYPE_AABB;
+    let f2_5 = c2Circle {
+        p: c2v { x: f2_1, y: f2_2 },
+        r: f2_3,
+    };
+    let f2_6 = C2_TYPE::C2_TYPE_CIRCLE;
+
+    let f2_11 = c2AABB {
+        min: c2v { x: f2_7, y: f2_8 },
+        max: c2v { x: f2_9, y: f2_10 },
+    };
+    let f2_12 = C2_TYPE::C2_TYPE_AABB;
+
     let f2_r = f2_impl(
         &f2_5 as *const c2Circle as *const u8,
         f2_6,
@@ -1036,7 +1122,9 @@ pub extern "C" fn agglom(
     let f3_r = f3_impl(f3_1, f3_2);
     ret += f3_r as f64;
 
-    let mut f4_3 = CnRnd { state: [f4_1, f4_2] };
+    let mut f4_3 = cn_rnd_t {
+        state: [f4_1, f4_2],
+    };
     let f4_r = f4_impl(&mut f4_3);
     if !f4_r.is_nan() {
         ret += f4_r;
@@ -1048,10 +1136,11 @@ pub extern "C" fn agglom(
     let f7_r = f7_impl(f7_1, f7_2, f7_3);
     ret += f7_r as f64;
 
-    let f9_3 = LmVec2 { x: f9_1, y: f9_2 };
-    let f9_6 = LmVec2 { x: f9_4, y: f9_5 };
-    let f9_9 = LmVec2 { x: f9_7, y: f9_8 };
-    let f9_12 = LmVec2 { x: f9_10, y: f9_11 };
+    let f9_3 = lm_vec2 { x: f9_1, y: f9_2 };
+    let f9_6 = lm_vec2 { x: f9_4, y: f9_5 };
+    let f9_9 = lm_vec2 { x: f9_7, y: f9_8 };
+    let f9_12 = lm_vec2 { x: f9_10, y: f9_11 };
+
     let f9_r = f9_impl(f9_3, f9_6, f9_9, f9_12);
     if !f9_r.x.is_nan() {
         ret += f9_r.x as f64;
@@ -1068,27 +1157,27 @@ pub extern "C" fn agglom(
     let mut f11_r = [0.0f32; 3];
     let f11_5 = [f11_2, f11_3, f11_4];
     f11_impl(&mut f11_r, &f11_5);
-    for v in &f11_r {
-        if !v.is_nan() {
-            ret += *v as f64;
+    for i in 0..3 {
+        if !f11_r[i].is_nan() {
+            ret += f11_r[i] as f64;
         }
     }
 
     let mut f12_r = [0.0f32; 3];
     let f12_5 = [f12_2, f12_3, f12_4];
     f12_impl(&mut f12_r, &f12_5);
-    for v in &f12_r {
-        if !v.is_nan() {
-            ret += *v as f64;
+    for i in 0..3 {
+        if !f12_r[i].is_nan() {
+            ret += f12_r[i] as f64;
         }
     }
 
     let mut f13_r = [0.0f32; 3];
     let f13_5 = [f13_2, f13_3, f13_4];
     f13_impl(&mut f13_r, &f13_5);
-    for v in &f13_r {
-        if !v.is_nan() {
-            ret += *v as f64;
+    for i in 0..3 {
+        if !f13_r[i].is_nan() {
+            ret += f13_r[i] as f64;
         }
     }
 

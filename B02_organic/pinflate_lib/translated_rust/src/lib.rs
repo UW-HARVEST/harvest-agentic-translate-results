@@ -1,11 +1,11 @@
 use std::ffi::c_int;
-use std::ptr;
+use std::ffi::c_void;
 
-// --- Global mutable state (mirrors C globals) ---
+#[unsafe(no_mangle)]
+pub static mut cp_error_reason: *const u8 = std::ptr::null();
 
-static mut CP_ERROR_REASON: *const u8 = ptr::null();
-
-static CP_FIXED_TABLE: [u8; 288 + 32] = [
+#[unsafe(no_mangle)]
+pub static cp_fixed_table: [u8; 320] = [
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
@@ -21,31 +21,34 @@ static CP_FIXED_TABLE: [u8; 288 + 32] = [
     5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
 ];
 
-static CP_PERMUTATION_ORDER: [u8; 19] = [
+#[unsafe(no_mangle)]
+pub static cp_permutation_order: [u8; 19] = [
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
 ];
 
-static CP_LEN_EXTRA_BITS: [u8; 29 + 2] = [
+#[unsafe(no_mangle)]
+pub static cp_len_extra_bits: [u8; 31] = [
     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5,
     5, 5, 5, 0, 0, 0,
 ];
 
-static CP_LEN_BASE: [u32; 29 + 2] = [
+#[unsafe(no_mangle)]
+pub static cp_len_base: [u32; 31] = [
     3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67,
     83, 99, 115, 131, 163, 195, 227, 258, 0, 0,
 ];
 
-static CP_DIST_EXTRA_BITS: [u8; 30 + 2] = [
+#[unsafe(no_mangle)]
+pub static cp_dist_extra_bits: [u8; 32] = [
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
     11, 11, 12, 12, 13, 13, 0, 0,
 ];
 
-static CP_DIST_BASE: [u32; 30 + 2] = [
+#[unsafe(no_mangle)]
+pub static cp_dist_base: [u32; 32] = [
     1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513,
     769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0, 0,
 ];
-
-// --- State struct ---
 
 #[repr(C)]
 struct CpState {
@@ -69,29 +72,18 @@ struct CpState {
     nlen: u32,
 }
 
-impl CpState {
-    fn zeroed() -> Self {
-        unsafe { std::mem::zeroed() }
-    }
-}
-
-// --- Helper functions ---
-
-unsafe fn cp_would_overflow(s: *mut CpState, num_bits: i32) -> bool {
-    ((*s).bits_left + (*s).count) - num_bits < 0
-}
-
 unsafe fn cp_ptr(s: *mut CpState) -> *mut u8 {
-    ((*s).words.offset((*s).word_index as isize) as *mut u8).offset(-((*s).count / 8) as isize)
+    ((*s).words.offset((*s).word_index as isize) as *mut u8)
+        .offset(-((*s).count / 8) as isize)
 }
 
 unsafe fn cp_peak_bits(s: *mut CpState, num_bits_to_read: i32) -> u64 {
     if (*s).count < num_bits_to_read {
         if (*s).word_index < (*s).word_count {
             let word = *(*s).words.offset((*s).word_index as isize);
-            (*s).word_index += 1;
             (*s).bits |= (word as u64) << (*s).count;
             (*s).count += 32;
+            (*s).word_index += 1;
         } else if (*s).final_word_available != 0 {
             let word = (*s).final_word;
             (*s).bits |= (word as u64) << (*s).count;
@@ -103,11 +95,11 @@ unsafe fn cp_peak_bits(s: *mut CpState, num_bits_to_read: i32) -> u64 {
 }
 
 unsafe fn cp_consume_bits(s: *mut CpState, num_bits_to_read: i32) -> u32 {
-    let bits = (*s).bits & (((1u64) << num_bits_to_read) - 1);
+    let bits = ((*s).bits & (((1u64) << num_bits_to_read) - 1)) as u32;
     (*s).bits >>= num_bits_to_read;
     (*s).count -= num_bits_to_read;
     (*s).bits_left -= num_bits_to_read;
-    bits as u32
+    bits
 }
 
 unsafe fn cp_read_bits(s: *mut CpState, num_bits_to_read: i32) -> u32 {
@@ -123,7 +115,7 @@ fn cp_rev16(a: u32) -> u32 {
 }
 
 unsafe fn cp_build(
-    s: *mut CpState,
+    s: *mut CpState, // null if no lookup table needed
     tree: *mut u32,
     lens: *const u8,
     sym_count: i32,
@@ -144,7 +136,7 @@ unsafe fn cp_build(
     }
 
     if !s.is_null() {
-        ptr::write_bytes((*s).lookup.as_mut_ptr(), 0, (*s).lookup.len());
+        (*s).lookup = [0u16; 1 << 9];
     }
 
     for i in 0..sym_count {
@@ -160,7 +152,7 @@ unsafe fn cp_build(
             if !s.is_null() && len <= 9 {
                 let mut j = (cp_rev16(code) >> (16 - len)) as i32;
                 while j < (1 << 9) {
-                    (*s).lookup[j as usize] = ((len << 9) | i) as u16;
+                    (*s).lookup[j as usize] = ((len << 9) | (i as i32)) as u16;
                     j += 1 << len;
                 }
             }
@@ -176,18 +168,18 @@ unsafe fn cp_stored(s: *mut CpState) -> i32 {
     let nlen = cp_read_bits(s, 16) as u16;
 
     if len != !nlen {
-        CP_ERROR_REASON = b"Failed to find LEN and NLEN as complements within stored (uncompressed) stream.\0".as_ptr();
+        cp_error_reason = b"Failed to find LEN and NLEN as complements within stored (uncompressed) stream.\0".as_ptr();
         return 0;
     }
-    if !((*s).bits_left / 8 <= len as i32) {
-        CP_ERROR_REASON =
+    if !(((*s).bits_left / 8) <= len as i32) {
+        cp_error_reason =
             b"Stored block extends beyond end of input stream.\0".as_ptr();
         return 0;
     }
 
     let p = cp_ptr(s);
-    ptr::copy_nonoverlapping(p, (*s).out, len as usize);
-    (*s).out = (*s).out.offset(len as isize);
+    std::ptr::copy_nonoverlapping(p, (*s).out, len as usize);
+    (*s).out = (*s).out.add(len as usize);
     1
 }
 
@@ -195,13 +187,13 @@ unsafe fn cp_fixed(s: *mut CpState) -> i32 {
     (*s).nlit = cp_build(
         s,
         (*s).lit.as_mut_ptr(),
-        CP_FIXED_TABLE.as_ptr(),
+        cp_fixed_table.as_ptr(),
         288,
     ) as u32;
     (*s).ndst = cp_build(
-        ptr::null_mut(),
+        std::ptr::null_mut(),
         (*s).dst.as_mut_ptr(),
-        CP_FIXED_TABLE.as_ptr().offset(288),
+        cp_fixed_table.as_ptr().add(288),
         32,
     ) as u32;
     1
@@ -232,11 +224,11 @@ unsafe fn cp_dynamic(s: *mut CpState) -> i32 {
     let nlen = 4 + cp_read_bits(s, 4) as i32;
 
     for i in 0..nlen {
-        lenlens[CP_PERMUTATION_ORDER[i as usize] as usize] = cp_read_bits(s, 3) as u8;
+        lenlens[cp_permutation_order[i as usize] as usize] = cp_read_bits(s, 3) as u8;
     }
-    (*s).nlen = cp_build(ptr::null_mut(), (*s).len.as_mut_ptr(), lenlens.as_ptr(), 19) as u32;
+    (*s).nlen = cp_build(std::ptr::null_mut(), (*s).len.as_mut_ptr(), lenlens.as_ptr(), 19) as u32;
 
-    let mut lens = [0u8; 288 + 32];
+    let mut lens = [0u8; 320];
     let mut n = 0i32;
     while n < nlit + ndst {
         let sym = cp_decode(s, (*s).len.as_mut_ptr(), (*s).nlen as i32);
@@ -271,9 +263,9 @@ unsafe fn cp_dynamic(s: *mut CpState) -> i32 {
 
     (*s).nlit = cp_build(s, (*s).lit.as_mut_ptr(), lens.as_ptr(), nlit) as u32;
     (*s).ndst = cp_build(
-        ptr::null_mut(),
+        std::ptr::null_mut(),
         (*s).dst.as_mut_ptr(),
-        lens.as_ptr().offset(nlit as isize),
+        lens.as_ptr().add(nlit as usize),
         ndst,
     ) as u32;
     1
@@ -283,39 +275,43 @@ unsafe fn cp_block(s: *mut CpState) -> i32 {
     loop {
         let symbol = cp_decode(s, (*s).lit.as_mut_ptr(), (*s).nlit as i32);
         if symbol < 256 {
-            if !((*s).out.offset(1) <= (*s).out_end) {
-                CP_ERROR_REASON =
-                    b"Attempted to overwrite out buffer while outputting a symbol.\0".as_ptr();
+            if !((*s).out.add(1) <= (*s).out_end) {
+                cp_error_reason =
+                    b"Attempted to overwrite out buffer while outputting a symbol.\0"
+                        .as_ptr();
                 return 0;
             }
             *(*s).out = symbol as u8;
-            (*s).out = (*s).out.offset(1);
+            (*s).out = (*s).out.add(1);
         } else if symbol > 256 {
-            let symbol = symbol - 257;
-            let length = cp_read_bits(s, CP_LEN_EXTRA_BITS[symbol as usize] as i32) as i32
-                + CP_LEN_BASE[symbol as usize] as i32;
-            let distance_symbol = cp_decode(s, (*s).dst.as_mut_ptr(), (*s).ndst as i32);
-            let backwards_distance =
-                cp_read_bits(s, CP_DIST_EXTRA_BITS[distance_symbol as usize] as i32) as i32
-                    + CP_DIST_BASE[distance_symbol as usize] as i32;
+            let symbol = (symbol - 257) as usize;
+            let length = (cp_read_bits(s, cp_len_extra_bits[symbol] as i32)
+                + cp_len_base[symbol]) as i32;
+            let distance_symbol =
+                cp_decode(s, (*s).dst.as_mut_ptr(), (*s).ndst as i32) as usize;
+            let backwards_distance = (cp_read_bits(
+                s,
+                cp_dist_extra_bits[distance_symbol] as i32,
+            ) + cp_dist_base[distance_symbol]) as i32;
 
             if !((*s).out.offset(-(backwards_distance as isize)) >= (*s).begin) {
-                CP_ERROR_REASON = b"Attempted to write before out buffer (invalid backwards distance).\0".as_ptr();
+                cp_error_reason = b"Attempted to write before out buffer (invalid backwards distance).\0".as_ptr();
                 return 0;
             }
-            if !((*s).out.offset(length as isize) <= (*s).out_end) {
-                CP_ERROR_REASON =
-                    b"Attempted to overwrite out buffer while outputting a string.\0".as_ptr();
+            if !((*s).out.add(length as usize) <= (*s).out_end) {
+                cp_error_reason =
+                    b"Attempted to overwrite out buffer while outputting a string.\0"
+                        .as_ptr();
                 return 0;
             }
 
             let src = (*s).out.offset(-(backwards_distance as isize));
             let dst = (*s).out;
-            (*s).out = (*s).out.offset(length as isize);
+            (*s).out = (*s).out.add(length as usize);
 
             match backwards_distance {
                 1 => {
-                    ptr::write_bytes(dst, *src, length as usize);
+                    std::ptr::write_bytes(dst, *src, length as usize);
                 }
                 _ => {
                     let mut src = src;
@@ -323,8 +319,8 @@ unsafe fn cp_block(s: *mut CpState) -> i32 {
                     let mut length = length;
                     while length > 0 {
                         *dst = *src;
-                        dst = dst.offset(1);
-                        src = src.offset(1);
+                        dst = dst.add(1);
+                        src = src.add(1);
                         length -= 1;
                     }
                 }
@@ -336,44 +332,45 @@ unsafe fn cp_block(s: *mut CpState) -> i32 {
     1
 }
 
-// --- Public API ---
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pinflate(
-    in_ptr: *mut std::ffi::c_void,
+    in_: *mut c_void,
     in_bytes: c_int,
-    out_ptr: *mut std::ffi::c_void,
+    out: *mut c_void,
     out_bytes: c_int,
 ) -> c_int {
-    let mut s = Box::new(CpState::zeroed());
-    let s = &mut *s as *mut CpState;
+    let layout = std::alloc::Layout::new::<CpState>();
+    let s = std::alloc::alloc_zeroed(layout) as *mut CpState;
+    if s.is_null() {
+        return 0;
+    }
 
     (*s).bits = 0;
     (*s).count = 0;
     (*s).word_index = 0;
     (*s).bits_left = in_bytes * 8;
 
-    let in_addr = in_ptr as usize;
-    let first_bytes = ((in_addr + 3) & !3).wrapping_sub(in_addr) as i32;
-    (*s).words = (in_ptr as *mut u8).offset(first_bytes as isize) as *mut u32;
+    let in_ptr = in_ as *mut u8;
+    let first_bytes = ((((in_ptr as usize) + 3) & !3) - (in_ptr as usize)) as i32;
+    (*s).words = in_ptr.add(first_bytes as usize) as *mut u32;
     (*s).word_count = (in_bytes - first_bytes) / 4;
     let last_bytes = (in_bytes - first_bytes) & 3;
 
     for i in 0..first_bytes {
-        (*s).bits |= (*(in_ptr as *mut u8).offset(i as isize) as u64) << (i * 8);
+        (*s).bits |= (*in_ptr.add(i as usize) as u64) << (i * 8);
     }
 
     (*s).final_word_available = if last_bytes != 0 { 1 } else { 0 };
     (*s).final_word = 0;
     for i in 0..last_bytes {
         (*s).final_word |=
-            (*(in_ptr as *mut u8).offset((in_bytes - last_bytes + i) as isize) as u32) << (i * 8);
+            (*in_ptr.add((in_bytes - last_bytes + i) as usize) as u32) << (i * 8);
     }
 
     (*s).count = first_bytes * 8;
-    (*s).out = out_ptr as *mut u8;
-    (*s).out_end = (out_ptr as *mut u8).offset(out_bytes as isize);
-    (*s).begin = out_ptr as *mut u8;
+    (*s).out = out as *mut u8;
+    (*s).out_end = (out as *mut u8).add(out_bytes as usize);
+    (*s).begin = out as *mut u8;
 
     let mut bfinal;
     loop {
@@ -382,24 +379,28 @@ pub unsafe extern "C" fn pinflate(
         match btype {
             0 => {
                 if cp_stored(s) == 0 {
+                    std::alloc::dealloc(s as *mut u8, layout);
                     return 0;
                 }
             }
             1 => {
                 cp_fixed(s);
                 if cp_block(s) == 0 {
+                    std::alloc::dealloc(s as *mut u8, layout);
                     return 0;
                 }
             }
             2 => {
                 cp_dynamic(s);
                 if cp_block(s) == 0 {
+                    std::alloc::dealloc(s as *mut u8, layout);
                     return 0;
                 }
             }
             3 => {
-                CP_ERROR_REASON =
+                cp_error_reason =
                     b"Detected unknown block type within input stream.\0".as_ptr();
+                std::alloc::dealloc(s as *mut u8, layout);
                 return 0;
             }
             _ => unreachable!(),
@@ -409,5 +410,6 @@ pub unsafe extern "C" fn pinflate(
         }
     }
 
+    std::alloc::dealloc(s as *mut u8, layout);
     1
 }

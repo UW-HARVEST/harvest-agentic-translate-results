@@ -1,64 +1,79 @@
-use std::io::{self, Read, Write, BufWriter};
+use std::io::{self, Read, Write};
 
-fn c_atoi(s: &[u8]) -> i32 {
-    let mut i = 0;
-    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) {
-        i += 1;
-    }
-    let neg = if i < s.len() && s[i] == b'-' {
-        i += 1;
-        true
-    } else {
-        if i < s.len() && s[i] == b'+' {
-            i += 1;
-        }
-        false
+fn print_line(line: &[u8]) {
+    let len = line.iter().position(|&b| b == 0).unwrap_or(line.len());
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    let _ = out.write_all(&line[..len]);
+    let _ = out.write_all(b"\n");
+}
+
+fn c_atoi(s: &str) -> i32 {
+    let s = s.trim_start();
+    let mut chars = s.chars().peekable();
+    let neg = match chars.peek() {
+        Some('-') => { chars.next(); true }
+        Some('+') => { chars.next(); false }
+        _ => false,
     };
     let mut result: i32 = 0;
-    while i < s.len() && s[i].is_ascii_digit() {
-        result = result.wrapping_mul(10).wrapping_add((s[i] - b'0') as i32);
-        i += 1;
+    for c in chars {
+        if c.is_ascii_digit() {
+            result = result.wrapping_mul(10).wrapping_add(c as i32 - '0' as i32);
+        } else {
+            break;
+        }
     }
     if neg { result.wrapping_neg() } else { result }
 }
 
-fn c_fgets(buf: &mut Vec<u8>, max_size: usize) -> bool {
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let max_chars = max_size - 1;
-    let mut byte = [0u8; 1];
-    loop {
-        if buf.len() >= max_chars {
+unsafe fn c_strncpy(dest: *mut u8, src: *const u8, n: usize) {
+    let mut i = 0usize;
+    while i < n {
+        let b = *src.add(i);
+        *dest.add(i) = b;
+        if b == 0 {
+            i += 1;
             break;
         }
-        match handle.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) => {
-                buf.push(byte[0]);
-                if byte[0] == b'\n' {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
+        i += 1;
     }
-    !buf.is_empty()
+    while i < n {
+        *dest.add(i) = 0;
+        i += 1;
+    }
 }
 
 fn main() {
-    // Use a BufWriter so output is buffered like C's fully-buffered stdout on pipes.
-    // This means if we abort(), unflushed output is lost — matching C behavior.
-    let stdout = io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-
     let mut data: i32 = -1;
 
     {
-        let mut input_buffer = Vec::new();
-        if c_fgets(&mut input_buffer, 14) {
-            data = c_atoi(&input_buffer);
+        let mut buf = [0u8; 13];
+        let mut pos = 0usize;
+        let stdin = io::stdin();
+        let mut handle = stdin.lock();
+        loop {
+            if pos >= 13 {
+                break;
+            }
+            let mut byte = [0u8; 1];
+            match handle.read(&mut byte) {
+                Ok(0) => break,
+                Ok(_) => {
+                    buf[pos] = byte[0];
+                    pos += 1;
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        if pos == 0 {
+            print_line(b"fgets() failed.\0");
         } else {
-            let _ = writeln!(out, "fgets() failed.");
+            let s = std::str::from_utf8(&buf[..pos]).unwrap_or("");
+            data = c_atoi(s);
         }
     }
 
@@ -71,23 +86,14 @@ fn main() {
         source[99] = 0;
 
         if data < 100 {
-            if data < 0 {
-                // C: strncpy with wrapped huge size + dest[negative] = UB -> segfault.
-                // Buffered output is lost. Abort to match.
-                std::process::abort();
-            }
             let n = data as usize;
-            let src_null = source.iter().position(|&b| b == 0).unwrap_or(source.len());
-            for i in 0..n {
-                dest[i] = if i < src_null { source[i] } else { 0 };
+            unsafe {
+                c_strncpy(dest.as_mut_ptr(), source.as_ptr(), n);
             }
-            dest[n] = 0;
+            unsafe {
+                *dest.as_mut_ptr().offset(data as isize) = 0;
+            }
         }
-
-        let end = dest.iter().position(|&b| b == 0).unwrap_or(dest.len());
-        let s = std::str::from_utf8(&dest[..end]).unwrap_or("");
-        let _ = writeln!(out, "{}", s);
+        print_line(&dest);
     }
-
-    let _ = out.flush();
 }

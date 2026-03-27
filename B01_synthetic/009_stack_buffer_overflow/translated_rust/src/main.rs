@@ -8,15 +8,15 @@ fn print_int_line(n: i32) {
     println!("{}", n);
 }
 
-/// Mimics C's atoi: skip leading whitespace, optional sign, parse digits.
 fn c_atoi(s: &str) -> i32 {
     let s = s.trim_start();
     let mut chars = s.chars().peekable();
-    let neg = match chars.peek() {
-        Some('-') => { chars.next(); true }
-        Some('+') => { chars.next(); false }
-        _ => false,
-    };
+    let mut neg = false;
+    match chars.peek() {
+        Some('+') => { chars.next(); }
+        Some('-') => { neg = true; chars.next(); }
+        _ => {}
+    }
     let mut result: i32 = 0;
     for c in chars {
         if let Some(d) = c.to_digit(10) {
@@ -28,38 +28,30 @@ fn c_atoi(s: &str) -> i32 {
     if neg { result.wrapping_neg() } else { result }
 }
 
-/// Mimics fgets(buf, 14, stdin). Returns None on EOF with no data read.
-fn read_input() -> Option<String> {
+fn read_input() -> Result<i32, ()> {
     let stdin = io::stdin();
     let mut line = String::new();
     match stdin.lock().read_line(&mut line) {
-        Ok(0) => None,
+        Ok(0) => Err(()),
         Ok(_) => {
             if line.len() > 13 {
                 line.truncate(13);
             }
-            Some(line)
+            Ok(c_atoi(&line))
         }
-        Err(_) => None,
+        Err(_) => Err(()),
     }
 }
 
 fn bad() {
     let mut data: i32 = -1;
-    {
-        match read_input() {
-            Some(line) => {
-                data = c_atoi(&line);
-            }
-            None => {
-                print_line("fgets() failed.");
-            }
-        }
+    match read_input() {
+        Ok(v) => data = v,
+        Err(()) => print_line("fgets() failed."),
     }
     {
-        let mut buffer: [i32; 10] = [0; 10];
+        let mut buffer = [0i32; 10];
         if data >= 0 {
-            // Reproduce the C bug: unchecked array write (stack buffer overflow)
             unsafe {
                 *buffer.as_mut_ptr().offset(data as isize) = 1;
             }
@@ -77,7 +69,7 @@ fn good_g2b() {
     let mut data: i32 = -1;
     data = 7;
     {
-        let mut buffer: [i32; 10] = [0; 10];
+        let mut buffer = [0i32; 10];
         if data >= 0 {
             buffer[data as usize] = 1;
             for i in 0..10 {
@@ -91,18 +83,12 @@ fn good_g2b() {
 
 fn good_b2g() {
     let mut data: i32 = -1;
-    {
-        match read_input() {
-            Some(line) => {
-                data = c_atoi(&line);
-            }
-            None => {
-                print_line("fgets() failed.");
-            }
-        }
+    match read_input() {
+        Ok(v) => data = v,
+        Err(()) => print_line("fgets() failed."),
     }
     {
-        let mut buffer: [i32; 10] = [0; 10];
+        let mut buffer = [0i32; 10];
         if data >= 0 && data < 10 {
             buffer[data as usize] = 1;
             for i in 0..10 {

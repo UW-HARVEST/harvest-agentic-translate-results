@@ -4,31 +4,32 @@ fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    let mut input = stdin.lock();
+    // fgets(text, 128, stdin) reads up to 127 bytes, stopping at \n (inclusive) or EOF.
     let mut buf = [0u8; 127];
-    let mut inp = stdin.lock();
-    // Mimic fgets(text, 128, stdin): read up to 127 bytes, stop at \n (inclusive)
     loop {
         let mut i = 0;
         loop {
+            if i >= 127 {
+                break;
+            }
             let mut byte = [0u8; 1];
-            match inp.read(&mut byte) {
-                Ok(0) => {
-                    // EOF
-                    if i > 0 {
-                        let _ = out.write_all(&buf[..i]);
-                    }
-                    return;
-                }
+            match input.read(&mut byte) {
+                Ok(0) | Err(_) => break,
                 Ok(_) => {
                     buf[i] = byte[0];
                     i += 1;
-                    if byte[0] == b'\n' || i == 127 {
+                    if byte[0] == b'\n' {
                         break;
                     }
                 }
-                Err(_) => return,
             }
         }
-        let _ = out.write_all(&buf[..i]);
+        if i == 0 {
+            break;
+        }
+        // fputs stops at the first null byte (C string semantics)
+        let len = buf[..i].iter().position(|&b| b == 0).unwrap_or(i);
+        let _ = out.write_all(&buf[..len]);
     }
 }

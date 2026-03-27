@@ -1,36 +1,43 @@
 use std::os::raw::c_int;
 
-type OperationFunc = fn(c_int, c_int, c_int, c_int) -> c_int;
+type OperationFunc = extern "C" fn(c_int, c_int, c_int, c_int) -> c_int;
 
+#[repr(C)]
 #[derive(Clone, Copy)]
-struct Result_ {
-    value: c_int,
-    scaled: f64,
-    rank: c_int,
+pub struct Result_ {
+    pub value: c_int,
+    pub scaled: f64,
+    pub rank: c_int,
 }
 
-struct ResultArray {
-    data: [Result_; 10],
-    count: c_int,
+#[repr(C)]
+pub struct ResultArray {
+    pub data: [Result_; 10],
+    pub count: c_int,
 }
 
-fn add_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn add_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
     a.wrapping_add(b)
 }
 
-fn multiply_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn multiply_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
     a.wrapping_mul(b)
 }
 
-fn subtract_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn subtract_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
     a.wrapping_sub(b)
 }
 
-fn modulo_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn modulo_operation(a: c_int, b: c_int, _: c_int, _: c_int) -> c_int {
     if b == 0 { 0 } else { a.wrapping_rem(b) }
 }
 
-fn safe_double_to_int(d: f64) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn safe_double_to_int(d: f64) -> c_int {
     if d >= i32::MAX as f64 {
         return i32::MAX;
     }
@@ -43,16 +50,17 @@ fn safe_double_to_int(d: f64) -> c_int {
     d as c_int
 }
 
-fn compute_scaled_value(_base: c_int, _scale_factor: f64) -> c_int {
-    let scaled = _base as f64 * _scale_factor;
+#[unsafe(no_mangle)]
+pub extern "C" fn compute_scaled_value(base: c_int, scale_factor: f64) -> c_int {
+    let scaled = base as f64 * scale_factor;
     safe_double_to_int(scaled)
 }
 
-fn compare_results_in_array(arr: &ResultArray, idx1: c_int, idx2: c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn compare_results_in_array(arr: &ResultArray, idx1: c_int, idx2: c_int) -> c_int {
     if idx1 >= arr.count || idx2 >= arr.count {
         return 0;
     }
-    // C code compares pointers into contiguous array, which is equivalent to comparing indices
     if idx1 < idx2 {
         -1
     } else if idx1 > idx2 {
@@ -62,18 +70,21 @@ fn compare_results_in_array(arr: &ResultArray, idx1: c_int, idx2: c_int) -> c_in
     }
 }
 
-fn init_result_array(arr: &mut ResultArray, values: &[c_int], count: c_int) {
+#[unsafe(no_mangle)]
+pub extern "C" fn init_result_array(arr: &mut ResultArray, values: *const c_int, count: c_int) {
     arr.count = if count < 10 { count } else { 10 };
     for i in 0..arr.count as usize {
+        let v = unsafe { *values.add(i) };
         arr.data[i] = Result_ {
-            value: values[i],
-            scaled: values[i] as f64 * 1.5,
+            value: v,
+            scaled: v as f64 * 1.5,
             rank: i as c_int,
         };
     }
 }
 
-fn process_with_foreach(arr: &mut ResultArray, op: OperationFunc) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn process_with_foreach(arr: &mut ResultArray, op: OperationFunc) -> c_int {
     let mut total: c_int = 0;
     for i in 0..arr.count as usize {
         let result = op(arr.data[i].value, arr.data[i].rank, 0, 0);
@@ -85,11 +96,10 @@ fn process_with_foreach(arr: &mut ResultArray, op: OperationFunc) -> c_int {
     total
 }
 
-fn compute_weighted_sum(arr: &ResultArray) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn compute_weighted_sum(arr: &ResultArray) -> c_int {
     let mut sum: c_int = 0;
     for i in 0..arr.count as usize {
-        // C code: weight = (current > base) ? (int)(current - base) : 1
-        // pointer arithmetic on contiguous array: current - base == i
         let weight: c_int = if i > 0 { i as c_int } else { 1 };
         let weighted = arr.data[i].value as f64 * weight as f64 * 0.8;
         sum = sum.wrapping_add(safe_double_to_int(weighted));
@@ -121,7 +131,7 @@ pub extern "C" fn arrayfunc(param1: c_int, param2: c_int, param3: c_int, param4:
         data: [Result_ { value: 0, scaled: 0.0, rank: 0 }; 10],
         count: 0,
     };
-    init_result_array(&mut arr, &values, 8);
+    init_result_array(&mut arr, values.as_ptr(), 8);
 
     let mut result: c_int = 0;
 
@@ -131,8 +141,8 @@ pub extern "C" fn arrayfunc(param1: c_int, param2: c_int, param3: c_int, param4:
 
     result = result.wrapping_add(compute_weighted_sum(&arr));
 
-    for i in 0..(arr.count - 1) as usize {
-        let cmp = compare_results_in_array(&arr, i as c_int, (i + 1) as c_int);
+    for i in 0..arr.count - 1 {
+        let cmp = compare_results_in_array(&arr, i, i + 1);
         result = result.wrapping_add(cmp);
     }
 

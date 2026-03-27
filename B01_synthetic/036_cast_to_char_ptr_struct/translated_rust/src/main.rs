@@ -8,19 +8,20 @@ struct HouseT {
 }
 
 fn print_hex(p: &[u8]) {
-    for &b in p {
+    for b in p {
         print!("{:02x}", b);
     }
     println!();
 }
 
-fn driver(floors: i32) {
+#[no_mangle]
+pub extern "C" fn driver(floors: i32) {
     let house = HouseT {
         floors,
         bedrooms: 3,
         bathrooms: 2.0,
     };
-    let bytes = unsafe {
+    let bytes: &[u8] = unsafe {
         std::slice::from_raw_parts(
             &house as *const HouseT as *const u8,
             std::mem::size_of::<HouseT>(),
@@ -32,6 +33,6 @@ fn driver(floors: i32) {
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
-    let x: i32 = input.trim().parse().unwrap();
+    let x: i32 = input.split_whitespace().next().unwrap().parse().unwrap();
     driver(x);
 }

@@ -1,18 +1,17 @@
 #![allow(
     non_camel_case_types,
     non_snake_case,
-    unused_variables,
-    unused_assignments,
-    unused_mut,
-    clippy::all
+    clippy::missing_safety_doc,
+    unused_assignments
 )]
 
-use std::alloc::{self, Layout};
+use libc::{c_int, c_void, free, malloc, memcmp, memcpy, memmove, realloc, size_t, strcmp, strlen};
 use std::ptr;
 
 // ============================================================
 // Constants
 // ============================================================
+
 const STBDS_BUCKET_LENGTH: usize = 8;
 const STBDS_BUCKET_SHIFT: usize = 3;
 const STBDS_BUCKET_MASK: usize = STBDS_BUCKET_LENGTH - 1;
@@ -24,8 +23,8 @@ const STBDS_INDEX_DELETED: isize = -2;
 const STBDS_HASH_EMPTY: usize = 0;
 const STBDS_HASH_DELETED: usize = 1;
 
-const STBDS_HM_BINARY: i32 = 0;
-const STBDS_HM_STRING: i32 = 1;
+const STBDS_HM_BINARY: c_int = 0;
+const STBDS_HM_STRING: c_int = 1;
 
 const STBDS_SH_NONE: u8 = 0;
 const STBDS_SH_DEFAULT: u8 = 1;
@@ -37,16 +36,15 @@ const STBDS_SIZE_T_BITS: usize = std::mem::size_of::<usize>() * 8;
 const STBDS_STRING_ARENA_BLOCKSIZE_MIN: usize = 512;
 const STBDS_STRING_ARENA_BLOCKSIZE_MAX: usize = 1 << 20;
 
-static mut STBDS_HASH_SEED: usize = 0x31415926;
-
 // ============================================================
 // Structs
 // ============================================================
+
 #[repr(C)]
 struct stbds_array_header {
     length: usize,
     capacity: usize,
-    hash_table: *mut std::ffi::c_void,
+    hash_table: *mut c_void,
     temp: isize,
 }
 
@@ -86,63 +84,40 @@ struct stbds_hash_index {
 }
 
 // ============================================================
-// Helpers: malloc/realloc/free wrappers
+// Helper macros/functions
 // ============================================================
-unsafe fn c_realloc(p: *mut u8, size: usize) -> *mut u8 {
-    if p.is_null() {
-        c_malloc(size)
-    } else {
-        // We stored the layout at (ptr - 16)
-        let meta = p.sub(16) as *const usize;
-        let old_size = *meta;
-        let old_align = *meta.add(1);
-        let old_layout = Layout::from_size_align_unchecked(old_size + 16, old_align);
-        let raw = p.sub(16);
-        let new_raw = alloc::realloc(raw, old_layout, size + 16);
-        if new_raw.is_null() {
-            return ptr::null_mut();
-        }
-        let meta = new_raw as *mut usize;
-        *meta = size;
-        // align stays the same
-        new_raw.add(16)
-    }
-}
 
-unsafe fn c_malloc(size: usize) -> *mut u8 {
-    let align = 16usize;
-    let total = size + 16;
-    let layout = Layout::from_size_align_unchecked(total, align);
-    let raw = alloc::alloc(layout);
-    if raw.is_null() {
-        return ptr::null_mut();
-    }
-    let meta = raw as *mut usize;
-    *meta = size;
-    *meta.add(1) = align;
-    raw.add(16)
-}
-
-unsafe fn c_free(p: *mut u8) {
-    if p.is_null() {
-        return;
-    }
-    let meta = p.sub(16) as *const usize;
-    let size = *meta;
-    let align = *meta.add(1);
-    let layout = Layout::from_size_align_unchecked(size + 16, align);
-    alloc::dealloc(p.sub(16), layout);
-}
-
-// ============================================================
-// Header access helpers
-// ============================================================
-#[inline(always)]
+#[inline]
 unsafe fn stbds_header(t: *mut u8) -> *mut stbds_array_header {
-    (t as *mut stbds_array_header).sub(1)
+    (t as *mut stbds_array_header).offset(-1)
 }
 
-#[inline(always)]
+#[inline]
+unsafe fn stbds_temp(t: *mut u8) -> &'static mut isize {
+    &mut (*stbds_header(t)).temp
+}
+
+#[inline]
+unsafe fn stbds_temp_key(t: *mut u8) -> *mut *mut u8 {
+    (*stbds_header(t)).hash_table as *mut *mut u8
+}
+
+#[inline]
+fn stbds_align_fwd(n: usize, a: usize) -> usize {
+    (n + a - 1) & !(a - 1)
+}
+
+#[inline]
+fn stbds_rotate_left(val: usize, n: u32) -> usize {
+    val.rotate_left(n)
+}
+
+#[inline]
+fn stbds_rotate_right(val: usize, n: u32) -> usize {
+    val.rotate_right(n)
+}
+
+#[inline]
 unsafe fn stbds_arrlen(a: *mut u8) -> isize {
     if a.is_null() {
         0
@@ -151,7 +126,7 @@ unsafe fn stbds_arrlen(a: *mut u8) -> isize {
     }
 }
 
-#[inline(always)]
+#[inline]
 unsafe fn stbds_arrlenu(a: *mut u8) -> usize {
     if a.is_null() {
         0
@@ -160,7 +135,7 @@ unsafe fn stbds_arrlenu(a: *mut u8) -> usize {
     }
 }
 
-#[inline(always)]
+#[inline]
 unsafe fn stbds_arrcap(a: *mut u8) -> usize {
     if a.is_null() {
         0
@@ -169,39 +144,48 @@ unsafe fn stbds_arrcap(a: *mut u8) -> usize {
     }
 }
 
-#[inline(always)]
+#[inline]
 unsafe fn stbds_hash_table(a: *mut u8) -> *mut stbds_hash_index {
     (*stbds_header(a)).hash_table as *mut stbds_hash_index
 }
 
-#[inline(always)]
-unsafe fn stbds_temp(a: *mut u8) -> &'static mut isize {
-    &mut (*stbds_header(a)).temp
+#[inline]
+fn hash_to_arr(x: *mut u8, elemsize: usize) -> *mut u8 {
+    unsafe { x.sub(elemsize) }
 }
 
-#[inline(always)]
-unsafe fn stbds_temp_key(a: *mut u8) -> &'static mut *mut u8 {
-    // *(char **) stbds_header(t)->hash_table
-    &mut *((*stbds_header(a)).hash_table as *mut *mut u8)
+#[inline]
+fn arr_to_hash(x: *mut u8, elemsize: usize) -> *mut u8 {
+    unsafe { x.add(elemsize) }
 }
 
 // ============================================================
-// HASH_TO_ARR / ARR_TO_HASH
+// Global seed
 // ============================================================
-#[inline(always)]
-unsafe fn hash_to_arr(x: *mut u8, elemsize: usize) -> *mut u8 {
-    x.sub(elemsize)
-}
 
-#[inline(always)]
-unsafe fn arr_to_hash(x: *mut u8, elemsize: usize) -> *mut u8 {
-    x.add(elemsize)
+static mut STBDS_HASH_SEED: usize = 0x31415926;
+
+// ============================================================
+// stbds_rand_seed
+// ============================================================
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_rand_seed(seed: usize) {
+    STBDS_HASH_SEED = seed;
 }
 
 // ============================================================
 // stbds_arrgrowf
 // ============================================================
-unsafe fn stbds_arrgrowf(a: *mut u8, elemsize: usize, addlen: usize, min_cap: usize) -> *mut u8 {
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_arrgrowf(
+    a: *mut c_void,
+    elemsize: usize,
+    addlen: usize,
+    min_cap: usize,
+) -> *mut c_void {
+    let a = a as *mut u8;
     let mut min_cap = min_cap;
     let min_len = (stbds_arrlen(a) as usize).wrapping_add(addlen);
 
@@ -210,62 +194,174 @@ unsafe fn stbds_arrgrowf(a: *mut u8, elemsize: usize, addlen: usize, min_cap: us
     }
 
     if min_cap <= stbds_arrcap(a) {
-        return a;
+        return a as *mut c_void;
     }
 
-    let double_cap = stbds_arrcap(a).wrapping_mul(2);
-    if min_cap < double_cap {
-        min_cap = double_cap;
+    if min_cap < 2 * stbds_arrcap(a) {
+        min_cap = 2 * stbds_arrcap(a);
     } else if min_cap < 4 {
         min_cap = 4;
     }
 
-    let alloc_size = elemsize
-        .wrapping_mul(min_cap)
-        .wrapping_add(std::mem::size_of::<stbds_array_header>());
+    let alloc_size = elemsize * min_cap + std::mem::size_of::<stbds_array_header>();
     let b = if a.is_null() {
-        c_realloc(ptr::null_mut(), alloc_size)
+        realloc(ptr::null_mut(), alloc_size)
     } else {
-        c_realloc(stbds_header(a) as *mut u8, alloc_size)
+        realloc(stbds_header(a) as *mut c_void, alloc_size)
     };
-    let b = b.add(std::mem::size_of::<stbds_array_header>());
+    let b = (b as *mut u8).add(std::mem::size_of::<stbds_array_header>());
+
     if a.is_null() {
         (*stbds_header(b)).length = 0;
         (*stbds_header(b)).hash_table = ptr::null_mut();
         (*stbds_header(b)).temp = 0;
     }
+
     (*stbds_header(b)).capacity = min_cap;
-    b
+
+    b as *mut c_void
 }
 
 // ============================================================
 // stbds_arrfreef
 // ============================================================
-unsafe fn stbds_arrfreef(a: *mut u8) {
-    c_free(stbds_header(a) as *mut u8);
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_arrfreef(a: *mut c_void) {
+    free(stbds_header(a as *mut u8) as *mut c_void);
 }
 
 // ============================================================
-// Alignment helper
+// Hash functions
 // ============================================================
-#[inline(always)]
-fn align_fwd(n: usize, a: usize) -> usize {
-    (n.wrapping_add(a).wrapping_sub(1)) & !a.wrapping_sub(1)
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hash_string(str: *mut u8, seed: usize) -> usize {
+    let mut hash = seed;
+    let mut p = str;
+    while *p != 0 {
+        hash = stbds_rotate_left(hash, 9).wrapping_add(*p as usize);
+        p = p.add(1);
+    }
+
+    hash ^= seed;
+    hash = (!hash).wrapping_add(hash << 18);
+    hash ^= hash ^ stbds_rotate_right(hash, 31);
+    hash = hash.wrapping_mul(21);
+    hash ^= hash ^ stbds_rotate_right(hash, 11);
+    hash = hash.wrapping_add(hash << 6);
+    hash ^= stbds_rotate_right(hash, 22);
+    hash.wrapping_add(seed)
+}
+
+unsafe fn stbds_siphash_bytes(p: *const u8, len: usize, seed: usize) -> usize {
+    let d = p;
+
+    let mut v0 = ((0x736f6d65_usize << 16 << 16) + 0x70736575) ^ seed;
+    let mut v1 = ((0x646f7261_usize << 16 << 16) + 0x6e646f6d) ^ !seed;
+    let mut v2 = ((0x6c796765_usize << 16 << 16) + 0x6e657261) ^ seed;
+    let mut v3 = ((0x74656462_usize << 16 << 16) + 0x79746573) ^ !seed;
+
+    v0 ^= 0x0706050403020100_u64 as usize ^ seed;
+    v1 ^= 0x0f0e0d0c0b0a0908_u64 as usize ^ !seed;
+    v2 ^= 0x0706050403020100_u64 as usize ^ seed;
+    v3 ^= 0x0f0e0d0c0b0a0908_u64 as usize ^ !seed;
+
+    macro_rules! sipround {
+        () => {
+            v0 = v0.wrapping_add(v1);
+            v1 = stbds_rotate_left(v1, 13);
+            v1 ^= v0;
+            v0 = stbds_rotate_left(v0, (STBDS_SIZE_T_BITS / 2) as u32);
+            v2 = v2.wrapping_add(v3);
+            v3 = stbds_rotate_left(v3, 16);
+            v3 ^= v2;
+            v2 = v2.wrapping_add(v1);
+            v1 = stbds_rotate_left(v1, 17);
+            v1 ^= v2;
+            v2 = stbds_rotate_left(v2, (STBDS_SIZE_T_BITS / 2) as u32);
+            v0 = v0.wrapping_add(v3);
+            v3 = stbds_rotate_left(v3, 21);
+            v3 ^= v0;
+        };
+    }
+
+    let mut i = 0usize;
+    while i + std::mem::size_of::<usize>() <= len {
+        let dp = d.add(i);
+        let mut data: usize = *dp.add(0) as usize
+            | ((*dp.add(1) as usize) << 8)
+            | ((*dp.add(2) as usize) << 16)
+            | ((*dp.add(3) as usize) << 24);
+        data |= ((*dp.add(4) as usize)
+            | ((*dp.add(5) as usize) << 8)
+            | ((*dp.add(6) as usize) << 16)
+            | ((*dp.add(7) as usize) << 24))
+            << 16
+            << 16;
+
+        v3 ^= data;
+        for _ in 0..2 {
+            sipround!();
+        }
+        v0 ^= data;
+        i += std::mem::size_of::<usize>();
+    }
+
+    let dp = d.add(i);
+    let mut data: usize = len << (STBDS_SIZE_T_BITS - 8);
+    let remaining = len - i;
+    // fallthrough switch
+    if remaining >= 7 {
+        data |= (*dp.add(6) as usize) << 24 << 24;
+    }
+    if remaining >= 6 {
+        data |= (*dp.add(5) as usize) << 20 << 20;
+    }
+    if remaining >= 5 {
+        data |= (*dp.add(4) as usize) << 16 << 16;
+    }
+    if remaining >= 4 {
+        data |= (*dp.add(3) as usize) << 24;
+    }
+    if remaining >= 3 {
+        data |= (*dp.add(2) as usize) << 16;
+    }
+    if remaining >= 2 {
+        data |= (*dp.add(1) as usize) << 8;
+    }
+    if remaining >= 1 {
+        data |= *dp.add(0) as usize;
+    }
+
+    v3 ^= data;
+    for _ in 0..2 {
+        sipround!();
+    }
+    v0 ^= data;
+    v2 ^= 0xff;
+    for _ in 0..4 {
+        sipround!();
+    }
+
+    v0 ^ v1 ^ v2 ^ v3
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize {
+    stbds_siphash_bytes(p as *const u8, len, seed)
 }
 
 // ============================================================
-// stbds_probe_position
+// Hash index helpers
 // ============================================================
-#[inline(always)]
-fn stbds_probe_position(hash: usize, slot_count: usize, _slot_log2: usize) -> usize {
-    hash & slot_count.wrapping_sub(1)
+
+unsafe fn stbds_probe_position(hash: usize, slot_count: usize, _slot_log2: usize) -> usize {
+    hash & (slot_count - 1)
 }
 
-// ============================================================
-// stbds_log2
-// ============================================================
-fn stbds_log2(mut slot_count: usize) -> usize {
-    let mut n: usize = 0;
+unsafe fn stbds_log2(mut slot_count: usize) -> usize {
+    let mut n = 0usize;
     while slot_count > 1 {
         slot_count >>= 1;
         n += 1;
@@ -273,262 +369,72 @@ fn stbds_log2(mut slot_count: usize) -> usize {
     n
 }
 
-// ============================================================
-// Rotate helpers
-// ============================================================
-#[inline(always)]
-fn rotate_left(val: usize, n: u32) -> usize {
-    val.rotate_left(n)
-}
-
-#[inline(always)]
-fn rotate_right(val: usize, n: u32) -> usize {
-    val.rotate_right(n)
-}
-
-// ============================================================
-// stbds_hash_string
-// ============================================================
-unsafe fn stbds_hash_string_impl(str: *const u8, seed: usize) -> usize {
-    let mut hash = seed;
-    let mut p = str;
-    while *p != 0 {
-        hash = rotate_left(hash, 9).wrapping_add(*p as usize);
-        p = p.add(1);
-    }
-
-    hash ^= seed;
-    hash = (!hash).wrapping_add(hash << 18);
-    hash ^= hash ^ rotate_right(hash, 31);
-    hash = hash.wrapping_mul(21);
-    hash ^= hash ^ rotate_right(hash, 11);
-    hash = hash.wrapping_add(hash << 6);
-    hash ^= rotate_right(hash, 22);
-    hash.wrapping_add(seed)
-}
-
-// ============================================================
-// stbds_siphash_bytes
-// ============================================================
-unsafe fn stbds_siphash_bytes(p: *const u8, len: usize, seed: usize) -> usize {
-    let d = p;
-    let mut v0: usize;
-    let mut v1: usize;
-    let mut v2: usize;
-    let mut v3: usize;
-    let mut data: usize;
-
-    v0 = ((0x736f6d65usize << 16) << 16).wrapping_add(0x70736575) ^ seed;
-    v1 = ((0x646f7261usize << 16) << 16).wrapping_add(0x6e646f6d) ^ !seed;
-    v2 = ((0x6c796765usize << 16) << 16).wrapping_add(0x6e657261) ^ seed;
-    v3 = ((0x74656462usize << 16) << 16).wrapping_add(0x79746573) ^ !seed;
-
-    v0 ^= 0x0706050403020100u64 as usize ^ seed;
-    v1 ^= 0x0f0e0d0c0b0a0908u64 as usize ^ !seed;
-    v2 ^= 0x0706050403020100u64 as usize ^ seed;
-    v3 ^= 0x0f0e0d0c0b0a0908u64 as usize ^ !seed;
-
-    macro_rules! sipround {
-        () => {
-            v0 = v0.wrapping_add(v1);
-            v1 = rotate_left(v1, 13);
-            v1 ^= v0;
-            v0 = rotate_left(v0, (STBDS_SIZE_T_BITS / 2) as u32);
-            v2 = v2.wrapping_add(v3);
-            v3 = rotate_left(v3, 16);
-            v3 ^= v2;
-            v2 = v2.wrapping_add(v1);
-            v1 = rotate_left(v1, 17);
-            v1 ^= v2;
-            v2 = rotate_left(v2, (STBDS_SIZE_T_BITS / 2) as u32);
-            v0 = v0.wrapping_add(v3);
-            v3 = rotate_left(v3, 21);
-            v3 ^= v0;
-        };
-    }
-
-    let mut i: usize = 0;
-    while i + std::mem::size_of::<usize>() <= len {
-        let dp = d.add(i);
-        data = *dp.add(0) as usize
-            | ((*dp.add(1) as usize) << 8)
-            | ((*dp.add(2) as usize) << 16)
-            | ((*dp.add(3) as usize) << 24);
-        data |= ((*dp.add(4) as usize
-            | ((*dp.add(5) as usize) << 8)
-            | ((*dp.add(6) as usize) << 16)
-            | ((*dp.add(7) as usize) << 24))
-            << 16)
-            << 16;
-
-        v3 ^= data;
-        for _j in 0..2 {
-            sipround!();
-        }
-        v0 ^= data;
-        i += std::mem::size_of::<usize>();
-    }
-
-    data = len << (STBDS_SIZE_T_BITS - 8);
-    let rem = len - i;
-    let dp = d.add(i);
-    // C fallthrough switch
-    if rem >= 7 {
-        data |= ((*dp.add(6) as usize) << 24) << 24;
-    }
-    if rem >= 6 {
-        data |= ((*dp.add(5) as usize) << 20) << 20;
-    }
-    if rem >= 5 {
-        data |= ((*dp.add(4) as usize) << 16) << 16;
-    }
-    if rem >= 4 {
-        data |= (*dp.add(3) as usize) << 24;
-    }
-    if rem >= 3 {
-        data |= (*dp.add(2) as usize) << 16;
-    }
-    if rem >= 2 {
-        data |= (*dp.add(1) as usize) << 8;
-    }
-    if rem >= 1 {
-        data |= *dp.add(0) as usize;
-    }
-
-    v3 ^= data;
-    for _j in 0..2 {
-        sipround!();
-    }
-    v0 ^= data;
-    v2 ^= 0xff;
-    for _j in 0..4 {
-        sipround!();
-    }
-
-    v0 ^ v1 ^ v2 ^ v3
-}
-
-// ============================================================
-// stbds_is_key_equal
-// ============================================================
-unsafe fn stbds_is_key_equal(
-    a: *mut u8,
-    elemsize: usize,
-    key: *const u8,
-    keysize: usize,
-    keyoffset: usize,
-    mode: i32,
-    i: isize,
-) -> bool {
-    if mode >= STBDS_HM_STRING {
-        let str_ptr = *(a.add(elemsize.wrapping_mul(i as usize).wrapping_add(keyoffset)) as *const *const u8);
-        libc_strcmp(key, str_ptr) == 0
-    } else {
-        libc_memcmp(
-            key,
-            a.add(elemsize.wrapping_mul(i as usize).wrapping_add(keyoffset)),
-            keysize,
-        ) == 0
-    }
-}
-
-unsafe fn libc_strcmp(a: *const u8, b: *const u8) -> i32 {
-    let mut i = 0;
-    loop {
-        let ca = *a.add(i);
-        let cb = *b.add(i);
-        if ca != cb {
-            return (ca as i32) - (cb as i32);
-        }
-        if ca == 0 {
-            return 0;
-        }
-        i += 1;
-    }
-}
-
-unsafe fn libc_memcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
-    for i in 0..n {
-        let ca = *a.add(i);
-        let cb = *b.add(i);
-        if ca != cb {
-            return (ca as i32) - (cb as i32);
-        }
-    }
-    0
-}
-
-// ============================================================
-// stbds_make_hash_index
-// ============================================================
 unsafe fn stbds_make_hash_index(
     slot_count: usize,
     ot: *mut stbds_hash_index,
 ) -> *mut stbds_hash_index {
-    let num_buckets = slot_count >> STBDS_BUCKET_SHIFT;
-    let alloc_size = num_buckets * std::mem::size_of::<stbds_hash_bucket>()
+    let alloc_size = (slot_count >> STBDS_BUCKET_SHIFT)
+        * std::mem::size_of::<stbds_hash_bucket>()
         + std::mem::size_of::<stbds_hash_index>()
         + STBDS_CACHE_LINE_SIZE
         - 1;
-    let t = c_realloc(ptr::null_mut(), alloc_size) as *mut stbds_hash_index;
-    (*t).storage = align_fwd(
-        (t.add(1)) as usize,
-        STBDS_CACHE_LINE_SIZE,
-    ) as *mut stbds_hash_bucket;
+    let t = realloc(ptr::null_mut(), alloc_size) as *mut stbds_hash_index;
+    (*t).storage =
+        stbds_align_fwd((t.add(1)) as usize, STBDS_CACHE_LINE_SIZE) as *mut stbds_hash_bucket;
     (*t).slot_count = slot_count;
     (*t).slot_count_log2 = stbds_log2(slot_count);
     (*t).tombstone_count = 0;
     (*t).used_count = 0;
 
-    (*t).used_count_threshold = slot_count.wrapping_sub(slot_count >> 2);
-    (*t).tombstone_count_threshold = (slot_count >> 3).wrapping_add(slot_count >> 4);
+    (*t).used_count_threshold = slot_count - (slot_count >> 2);
+    (*t).tombstone_count_threshold = (slot_count >> 3) + (slot_count >> 4);
     (*t).used_count_shrink_threshold = slot_count >> 2;
 
     if slot_count <= STBDS_BUCKET_LENGTH {
         (*t).used_count_shrink_threshold = 0;
     }
-    assert!(
-        (*t).used_count_threshold + (*t).tombstone_count_threshold < (*t).slot_count
-    );
+    assert!((*t).used_count_threshold + (*t).tombstone_count_threshold < (*t).slot_count);
 
     if !ot.is_null() {
-        (*t).string = ptr::read(&(*ot).string);
+        (*t).string = std::ptr::read(&(*ot).string);
         (*t).seed = (*ot).seed;
     } else {
         ptr::write_bytes(&mut (*t).string as *mut stbds_string_arena, 0, 1);
         (*t).seed = STBDS_HASH_SEED;
         // stbds_load_32_or_64 for a
-        let mut temp: usize;
         let a: usize;
-        temp = 0x87b0b0fd ^ 2147001325u32 as usize;
-        temp <<= 16;
-        temp <<= 16;
-        temp >>= 16;
-        temp >>= 16;
-        let mut a_val = 0x27bb2ee6usize;
-        a_val <<= 16;
-        a_val <<= 16;
-        a_val ^= temp ^ 2147001325u32 as usize;
-        a = a_val;
-
-        // stbds_load_32_or_64 for b
+        {
+            let mut temp: usize;
+            temp = 0x87b0b0fd_usize ^ 2147001325_usize;
+            temp <<= 16;
+            temp <<= 16;
+            temp >>= 16;
+            temp >>= 16;
+            let mut var = 0x27bb2ee6_usize;
+            var <<= 16;
+            var <<= 16;
+            var ^= temp ^ 2147001325_usize;
+            a = var;
+        }
         let b: usize;
-        temp = 0xb504f32d ^ 715136305u32 as usize;
-        temp <<= 16;
-        temp <<= 16;
-        temp >>= 16;
-        temp >>= 16;
-        let mut b_val = 0usize;
-        b_val <<= 16;
-        b_val <<= 16;
-        b_val ^= temp ^ 715136305u32 as usize;
-        b = b_val;
-
+        {
+            let mut temp: usize;
+            temp = 0xb504f32d_usize ^ 715136305_usize;
+            temp <<= 16;
+            temp <<= 16;
+            temp >>= 16;
+            temp >>= 16;
+            let mut var = 0_usize;
+            var <<= 16;
+            var <<= 16;
+            var ^= temp ^ 715136305_usize;
+            b = var;
+        }
         STBDS_HASH_SEED = STBDS_HASH_SEED.wrapping_mul(a).wrapping_add(b);
     }
 
     // Initialize buckets
-    for i in 0..num_buckets {
+    for i in 0..(slot_count >> STBDS_BUCKET_SHIFT) {
         let bucket = &mut *(*t).storage.add(i);
         for j in 0..STBDS_BUCKET_LENGTH {
             bucket.hash[j] = STBDS_HASH_EMPTY;
@@ -541,8 +447,7 @@ unsafe fn stbds_make_hash_index(
     // Rehash from old table
     if !ot.is_null() {
         (*t).used_count = (*ot).used_count;
-        let old_num_buckets = (*ot).slot_count >> STBDS_BUCKET_SHIFT;
-        for i in 0..old_num_buckets {
+        for i in 0..((*ot).slot_count >> STBDS_BUCKET_SHIFT) {
             let ob = &*(*ot).storage.add(i);
             for j in 0..STBDS_BUCKET_LENGTH {
                 if ob.index[j] >= 0 {
@@ -553,8 +458,7 @@ unsafe fn stbds_make_hash_index(
                     'outer: loop {
                         let bucket = &mut *(*t).storage.add(pos >> STBDS_BUCKET_SHIFT);
 
-                        let start = pos & STBDS_BUCKET_MASK;
-                        for z in start..STBDS_BUCKET_LENGTH {
+                        for z in (pos & STBDS_BUCKET_MASK)..STBDS_BUCKET_LENGTH {
                             if bucket.hash[z] == 0 {
                                 bucket.hash[z] = hash;
                                 bucket.index[z] = ob.index[j];
@@ -562,7 +466,8 @@ unsafe fn stbds_make_hash_index(
                             }
                         }
 
-                        for z in 0..start {
+                        let limit = pos & STBDS_BUCKET_MASK;
+                        for z in 0..limit {
                             if bucket.hash[z] == 0 {
                                 bucket.hash[z] = hash;
                                 bucket.index[z] = ob.index[j];
@@ -570,9 +475,9 @@ unsafe fn stbds_make_hash_index(
                             }
                         }
 
-                        pos = pos.wrapping_add(step);
+                        pos += step;
                         step += STBDS_BUCKET_LENGTH;
-                        pos &= (*t).slot_count.wrapping_sub(1);
+                        pos &= (*t).slot_count - 1;
                     }
                 }
             }
@@ -583,9 +488,96 @@ unsafe fn stbds_make_hash_index(
 }
 
 // ============================================================
+// Key comparison
+// ============================================================
+
+unsafe fn stbds_is_key_equal(
+    a: *mut u8,
+    elemsize: usize,
+    key: *mut u8,
+    keysize: usize,
+    keyoffset: usize,
+    mode: c_int,
+    i: isize,
+) -> bool {
+    if mode >= STBDS_HM_STRING {
+        let stored_key_ptr = *(a.add(elemsize * i as usize + keyoffset) as *const *const u8);
+        strcmp(key as *const i8, stored_key_ptr as *const i8) == 0
+    } else {
+        memcmp(
+            key as *const c_void,
+            a.add(elemsize * i as usize + keyoffset) as *const c_void,
+            keysize,
+        ) == 0
+    }
+}
+
+// ============================================================
+// stbds_hm_find_slot
+// ============================================================
+
+unsafe fn stbds_hm_find_slot(
+    a: *mut u8,
+    elemsize: usize,
+    key: *mut u8,
+    keysize: usize,
+    keyoffset: usize,
+    mode: c_int,
+) -> isize {
+    let raw_a = hash_to_arr(a, elemsize);
+    let table = stbds_hash_table(raw_a);
+    let mut hash = if mode >= STBDS_HM_STRING {
+        stbds_hash_string(key, (*table).seed)
+    } else {
+        stbds_hash_bytes(key as *mut c_void, keysize, (*table).seed)
+    };
+    let mut step = STBDS_BUCKET_LENGTH;
+
+    if hash < 2 {
+        hash += 2;
+    }
+
+    let mut pos = stbds_probe_position(hash, (*table).slot_count, (*table).slot_count_log2);
+
+    loop {
+        let bucket = &*(*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
+
+        for i in (pos & STBDS_BUCKET_MASK)..STBDS_BUCKET_LENGTH {
+            if bucket.hash[i] == hash {
+                if stbds_is_key_equal(a, elemsize, key, keysize, keyoffset, mode, bucket.index[i])
+                {
+                    return ((pos & !STBDS_BUCKET_MASK) + i) as isize;
+                }
+            } else if bucket.hash[i] == STBDS_HASH_EMPTY {
+                return -1;
+            }
+        }
+
+        let limit = pos & STBDS_BUCKET_MASK;
+        for i in 0..limit {
+            if bucket.hash[i] == hash {
+                if stbds_is_key_equal(a, elemsize, key, keysize, keyoffset, mode, bucket.index[i])
+                {
+                    return ((pos & !STBDS_BUCKET_MASK) + i) as isize;
+                }
+            } else if bucket.hash[i] == STBDS_HASH_EMPTY {
+                return -1;
+            }
+        }
+
+        pos += step;
+        step += STBDS_BUCKET_LENGTH;
+        pos &= (*table).slot_count - 1;
+    }
+}
+
+// ============================================================
 // stbds_hmfree_func
 // ============================================================
-unsafe fn stbds_hmfree_func_impl(a: *mut u8, elemsize: usize) {
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hmfree_func(a: *mut c_void, elemsize: usize) {
+    let a = a as *mut u8;
     if a.is_null() {
         return;
     }
@@ -594,170 +586,126 @@ unsafe fn stbds_hmfree_func_impl(a: *mut u8, elemsize: usize) {
         if (*ht).string.mode == STBDS_SH_STRDUP {
             let len = (*stbds_header(a)).length;
             for i in 1..len {
-                let str_ptr = *(a.add(elemsize * i) as *mut *mut u8);
-                c_free(str_ptr);
+                let p = *(a.add(elemsize * i) as *mut *mut u8);
+                free(p as *mut c_void);
             }
         }
-        stbds_strreset_impl(&mut (*ht).string);
+        stbds_strreset(&mut (*ht).string);
     }
-    c_free((*stbds_header(a)).hash_table as *mut u8);
-    c_free(stbds_header(a) as *mut u8);
-}
-
-// ============================================================
-// stbds_hm_find_slot
-// ============================================================
-unsafe fn stbds_hm_find_slot(
-    a: *mut u8,
-    elemsize: usize,
-    key: *const u8,
-    keysize: usize,
-    keyoffset: usize,
-    mode: i32,
-) -> isize {
-    let raw_a = hash_to_arr(a, elemsize);
-    let table = stbds_hash_table(raw_a);
-    let hash = if mode >= STBDS_HM_STRING {
-        stbds_hash_string_impl(key, (*table).seed)
-    } else {
-        stbds_siphash_bytes(key, keysize, (*table).seed)
-    };
-    let hash = if hash < 2 { hash + 2 } else { hash };
-    let mut step = STBDS_BUCKET_LENGTH;
-    let mut pos = stbds_probe_position(hash, (*table).slot_count, (*table).slot_count_log2);
-
-    loop {
-        let bucket = &*(*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
-
-        let start = pos & STBDS_BUCKET_MASK;
-        for i in start..STBDS_BUCKET_LENGTH {
-            if bucket.hash[i] == hash {
-                if stbds_is_key_equal(a, elemsize, key, keysize, keyoffset, mode, bucket.index[i]) {
-                    return ((pos & !STBDS_BUCKET_MASK) + i) as isize;
-                }
-            } else if bucket.hash[i] == STBDS_HASH_EMPTY {
-                return -1;
-            }
-        }
-
-        for i in 0..start {
-            if bucket.hash[i] == hash {
-                if stbds_is_key_equal(a, elemsize, key, keysize, keyoffset, mode, bucket.index[i]) {
-                    return ((pos & !STBDS_BUCKET_MASK) + i) as isize;
-                }
-            } else if bucket.hash[i] == STBDS_HASH_EMPTY {
-                return -1;
-            }
-        }
-
-        pos = pos.wrapping_add(step);
-        step += STBDS_BUCKET_LENGTH;
-        pos &= (*table).slot_count.wrapping_sub(1);
-    }
+    free((*stbds_header(a)).hash_table);
+    free(stbds_header(a) as *mut c_void);
 }
 
 // ============================================================
 // stbds_hmget_key_ts
 // ============================================================
-unsafe fn stbds_hmget_key_ts_impl(
-    a: *mut u8,
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hmget_key_ts(
+    a: *mut c_void,
     elemsize: usize,
-    key: *const u8,
+    key: *mut c_void,
     keysize: usize,
     temp: *mut isize,
-    mode: i32,
-) -> *mut u8 {
+    mode: c_int,
+) -> *mut c_void {
+    let a = a as *mut u8;
     let keyoffset: usize = 0;
     if a.is_null() {
-        let arr = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
-        (*stbds_header(arr)).length += 1;
-        ptr::write_bytes(arr, 0, elemsize);
+        let new_a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1) as *mut u8;
+        (*stbds_header(new_a)).length += 1;
+        ptr::write_bytes(new_a, 0, elemsize);
         *temp = STBDS_INDEX_EMPTY;
-        return arr_to_hash(arr, elemsize);
+        return arr_to_hash(new_a, elemsize) as *mut c_void;
     } else {
         let raw_a = hash_to_arr(a, elemsize);
         let table = stbds_hash_table(raw_a);
         if table.is_null() {
             *temp = -1;
         } else {
-            let slot = stbds_hm_find_slot(a, elemsize, key, keysize, keyoffset, mode);
+            let slot = stbds_hm_find_slot(a, elemsize, key as *mut u8, keysize, keyoffset, mode);
             if slot < 0 {
                 *temp = STBDS_INDEX_EMPTY;
             } else {
-                let b = &*(*table).storage.add((slot as usize) >> STBDS_BUCKET_SHIFT);
-                *temp = b.index[(slot as usize) & STBDS_BUCKET_MASK];
+                let b = &*(*table).storage.add(slot as usize >> STBDS_BUCKET_SHIFT);
+                *temp = b.index[slot as usize & STBDS_BUCKET_MASK];
             }
         }
-        return a;
+        return a as *mut c_void;
     }
 }
 
 // ============================================================
 // stbds_hmget_key
 // ============================================================
-unsafe fn stbds_hmget_key_impl(
-    a: *mut u8,
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hmget_key(
+    a: *mut c_void,
     elemsize: usize,
-    key: *const u8,
+    key: *mut c_void,
     keysize: usize,
-    mode: i32,
-) -> *mut u8 {
+    mode: c_int,
+) -> *mut c_void {
     let mut temp: isize = 0;
-    let p = stbds_hmget_key_ts_impl(a, elemsize, key, keysize, &mut temp, mode);
-    *stbds_temp(hash_to_arr(p, elemsize)) = temp;
+    let p = stbds_hmget_key_ts(a, elemsize, key, keysize, &mut temp, mode);
+    let raw = hash_to_arr(p as *mut u8, elemsize);
+    *stbds_temp(raw) = temp;
     p
 }
 
 // ============================================================
 // stbds_hmput_default
 // ============================================================
-unsafe fn stbds_hmput_default_impl(a: *mut u8, elemsize: usize) -> *mut u8 {
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hmput_default(a: *mut c_void, elemsize: usize) -> *mut c_void {
+    let a = a as *mut u8;
     if a.is_null() || (*stbds_header(hash_to_arr(a, elemsize))).length == 0 {
         let raw = if !a.is_null() {
             hash_to_arr(a, elemsize)
         } else {
             ptr::null_mut()
         };
-        let arr = stbds_arrgrowf(raw, elemsize, 0, 1);
-        (*stbds_header(arr)).length += 1;
-        ptr::write_bytes(arr, 0, elemsize);
-        return arr_to_hash(arr, elemsize);
+        let new_a = stbds_arrgrowf(raw as *mut c_void, elemsize, 0, 1) as *mut u8;
+        (*stbds_header(new_a)).length += 1;
+        ptr::write_bytes(new_a, 0, elemsize);
+        return arr_to_hash(new_a, elemsize) as *mut c_void;
     }
-    a
+    a as *mut c_void
 }
 
 // ============================================================
 // stbds_strdup
 // ============================================================
-unsafe fn stbds_strdup_impl(str: *const u8) -> *mut u8 {
-    let mut len = 0usize;
-    while *str.add(len) != 0 {
-        len += 1;
-    }
-    len += 1;
-    let p = c_realloc(ptr::null_mut(), len);
-    ptr::copy(str, p, len);
+
+unsafe fn stbds_strdup(str: *const u8) -> *mut u8 {
+    let len = strlen(str as *const i8) + 1;
+    let p = realloc(ptr::null_mut(), len) as *mut u8;
+    memmove(p as *mut c_void, str as *const c_void, len);
     p
 }
 
 // ============================================================
 // stbds_hmput_key
 // ============================================================
-unsafe fn stbds_hmput_key_impl(
-    a: *mut u8,
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hmput_key(
+    a: *mut c_void,
     elemsize: usize,
-    key: *const u8,
+    key: *mut c_void,
     keysize: usize,
-    mode: i32,
-) -> *mut u8 {
+    mode: c_int,
+) -> *mut c_void {
     let keyoffset: usize = 0;
-    let mut a = a;
+    let mut a = a as *mut u8;
 
     if a.is_null() {
-        let arr = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
-        ptr::write_bytes(arr, 0, elemsize);
-        (*stbds_header(arr)).length += 1;
-        a = arr_to_hash(arr, elemsize);
+        let new_a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1) as *mut u8;
+        ptr::write_bytes(new_a, 0, elemsize);
+        (*stbds_header(new_a)).length += 1;
+        a = arr_to_hash(new_a, elemsize);
     }
 
     let raw_a = a;
@@ -773,7 +721,7 @@ unsafe fn stbds_hmput_key_impl(
         };
         let nt = stbds_make_hash_index(slot_count, table);
         if !table.is_null() {
-            c_free(table as *mut u8);
+            free(table as *mut c_void);
         } else {
             (*nt).string.mode = if mode >= STBDS_HM_STRING {
                 STBDS_SH_DEFAULT
@@ -781,78 +729,91 @@ unsafe fn stbds_hmput_key_impl(
                 0
             };
         }
-        (*stbds_header(arr)).hash_table = nt as *mut std::ffi::c_void;
+        (*stbds_header(arr)).hash_table = nt as *mut c_void;
         table = nt;
     }
 
-    {
-        let hash = if mode >= STBDS_HM_STRING {
-            stbds_hash_string_impl(key, (*table).seed)
-        } else {
-            stbds_siphash_bytes(key, keysize, (*table).seed)
-        };
-        let hash = if hash < 2 { hash + 2 } else { hash };
-        let mut step = STBDS_BUCKET_LENGTH;
-        let mut tombstone: isize = -1;
-        let mut pos = stbds_probe_position(hash, (*table).slot_count, (*table).slot_count_log2);
+    let mut hash = if mode >= STBDS_HM_STRING {
+        stbds_hash_string(key as *mut u8, (*table).seed)
+    } else {
+        stbds_hash_bytes(key, keysize, (*table).seed)
+    };
+    let mut step = STBDS_BUCKET_LENGTH;
+    let mut tombstone: isize = -1;
 
-        loop {
-            let bucket = &*(*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
+    if hash < 2 {
+        hash += 2;
+    }
 
-            let start = pos & STBDS_BUCKET_MASK;
-            for i in start..STBDS_BUCKET_LENGTH {
-                if bucket.hash[i] == hash {
-                    if stbds_is_key_equal(
-                        raw_a, elemsize, key, keysize, keyoffset, mode, bucket.index[i],
-                    ) {
-                        *stbds_temp(arr) = bucket.index[i];
-                        if mode >= STBDS_HM_STRING {
-                            *stbds_temp_key(arr) = *(raw_a
-                                .add(elemsize.wrapping_mul(bucket.index[i] as usize).wrapping_add(keyoffset))
-                                as *const *mut u8);
-                        }
-                        return arr_to_hash(arr, elemsize);
+    let mut pos = stbds_probe_position(hash, (*table).slot_count, (*table).slot_count_log2);
+
+    loop {
+        let bucket = &*(*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
+
+        for i in (pos & STBDS_BUCKET_MASK)..STBDS_BUCKET_LENGTH {
+            if bucket.hash[i] == hash {
+                if stbds_is_key_equal(
+                    raw_a,
+                    elemsize,
+                    key as *mut u8,
+                    keysize,
+                    keyoffset,
+                    mode,
+                    bucket.index[i],
+                ) {
+                    *stbds_temp(arr) = bucket.index[i];
+                    if mode >= STBDS_HM_STRING {
+                        *stbds_temp_key(arr) = *(raw_a
+                            .add(elemsize * bucket.index[i] as usize + keyoffset)
+                            as *const *mut u8);
                     }
-                } else if bucket.hash[i] == 0 {
-                    pos = (pos & !STBDS_BUCKET_MASK) + i;
-                    // goto found_empty_slot
-                    return stbds_hmput_key_found_empty(
-                        arr, raw_a, elemsize, key, keysize, keyoffset, mode, table, hash, pos,
-                        tombstone,
-                    );
-                } else if tombstone < 0 {
-                    if bucket.index[i] == STBDS_INDEX_DELETED {
-                        tombstone = ((pos & !STBDS_BUCKET_MASK) + i) as isize;
-                    }
+                    return arr_to_hash(arr, elemsize) as *mut c_void;
+                }
+            } else if bucket.hash[i] == 0 {
+                pos = (pos & !STBDS_BUCKET_MASK) + i;
+                // goto found_empty_slot
+                return stbds_hmput_key_found_empty(
+                    arr, raw_a, elemsize, key, keysize, keyoffset, mode, table, pos, tombstone,
+                    hash,
+                );
+            } else if tombstone < 0 {
+                if bucket.index[i] == STBDS_INDEX_DELETED {
+                    tombstone = ((pos & !STBDS_BUCKET_MASK) + i) as isize;
                 }
             }
-
-            let limit = start;
-            for i in 0..limit {
-                if bucket.hash[i] == hash {
-                    if stbds_is_key_equal(
-                        raw_a, elemsize, key, keysize, keyoffset, mode, bucket.index[i],
-                    ) {
-                        *stbds_temp(arr) = bucket.index[i];
-                        return arr_to_hash(arr, elemsize);
-                    }
-                } else if bucket.hash[i] == 0 {
-                    pos = (pos & !STBDS_BUCKET_MASK) + i;
-                    return stbds_hmput_key_found_empty(
-                        arr, raw_a, elemsize, key, keysize, keyoffset, mode, table, hash, pos,
-                        tombstone,
-                    );
-                } else if tombstone < 0 {
-                    if bucket.index[i] == STBDS_INDEX_DELETED {
-                        tombstone = ((pos & !STBDS_BUCKET_MASK) + i) as isize;
-                    }
-                }
-            }
-
-            pos = pos.wrapping_add(step);
-            step += STBDS_BUCKET_LENGTH;
-            pos &= (*table).slot_count.wrapping_sub(1);
         }
+
+        let limit = pos & STBDS_BUCKET_MASK;
+        for i in 0..limit {
+            if bucket.hash[i] == hash {
+                if stbds_is_key_equal(
+                    raw_a,
+                    elemsize,
+                    key as *mut u8,
+                    keysize,
+                    keyoffset,
+                    mode,
+                    bucket.index[i],
+                ) {
+                    *stbds_temp(arr) = bucket.index[i];
+                    return arr_to_hash(arr, elemsize) as *mut c_void;
+                }
+            } else if bucket.hash[i] == 0 {
+                pos = (pos & !STBDS_BUCKET_MASK) + i;
+                return stbds_hmput_key_found_empty(
+                    arr, raw_a, elemsize, key, keysize, keyoffset, mode, table, pos, tombstone,
+                    hash,
+                );
+            } else if tombstone < 0 {
+                if bucket.index[i] == STBDS_INDEX_DELETED {
+                    tombstone = ((pos & !STBDS_BUCKET_MASK) + i) as isize;
+                }
+            }
+        }
+
+        pos += step;
+        step += STBDS_BUCKET_LENGTH;
+        pos &= (*table).slot_count - 1;
     }
 }
 
@@ -860,26 +821,26 @@ unsafe fn stbds_hmput_key_found_empty(
     mut arr: *mut u8,
     mut raw_a: *mut u8,
     elemsize: usize,
-    key: *const u8,
+    key: *mut c_void,
     keysize: usize,
-    keyoffset: usize,
-    mode: i32,
+    _keyoffset: usize,
+    mode: c_int,
     table: *mut stbds_hash_index,
-    hash: usize,
     mut pos: usize,
     tombstone: isize,
-) -> *mut u8 {
+    hash: usize,
+) -> *mut c_void {
     if tombstone >= 0 {
         pos = tombstone as usize;
         (*table).tombstone_count -= 1;
     }
     (*table).used_count += 1;
 
-    let i = stbds_arrlen(arr) as isize;
+    let i = stbds_arrlen(arr);
     if (i as usize) + 1 > stbds_arrcap(arr) {
-        arr = stbds_arrgrowf(arr, elemsize, 1, 0);
+        arr = stbds_arrgrowf(arr as *mut c_void, elemsize, 1, 0) as *mut u8;
+        raw_a = arr_to_hash(arr, elemsize);
     }
-    raw_a = arr_to_hash(arr, elemsize);
 
     assert!((i as usize) + 1 <= stbds_arrcap(arr));
     (*stbds_header(arr)).length = (i + 1) as usize;
@@ -890,108 +851,126 @@ unsafe fn stbds_hmput_key_found_empty(
 
     match (*table).string.mode {
         STBDS_SH_STRDUP => {
-            let dup = stbds_strdup_impl(key);
-            *(arr.add(elemsize * (i as usize)) as *mut *mut u8) = dup;
+            let dup = stbds_strdup(key as *const u8);
+            *(arr.add(elemsize * i as usize) as *mut *mut u8) = dup;
             *stbds_temp_key(arr) = dup;
         }
         STBDS_SH_ARENA => {
-            let s = stbds_stralloc_impl(&mut (*table).string, key);
-            *(arr.add(elemsize * (i as usize)) as *mut *mut u8) = s;
-            *stbds_temp_key(arr) = s;
+            let alloc =
+                stbds_stralloc(&mut (*table).string, key as *mut u8) as *mut u8;
+            *(arr.add(elemsize * i as usize) as *mut *mut u8) = alloc;
+            *stbds_temp_key(arr) = alloc;
         }
         STBDS_SH_DEFAULT => {
-            *(arr.add(elemsize * (i as usize)) as *mut *mut u8) = key as *mut u8;
-            *stbds_temp_key(arr) = key as *mut u8;
+            let k = key as *mut u8;
+            *(arr.add(elemsize * i as usize) as *mut *mut u8) = k;
+            *stbds_temp_key(arr) = k;
         }
         _ => {
-            ptr::copy_nonoverlapping(key, arr.add(elemsize * (i as usize)), keysize);
+            memcpy(
+                arr.add(elemsize * i as usize) as *mut c_void,
+                key as *const c_void,
+                keysize,
+            );
         }
     }
 
-    arr_to_hash(arr, elemsize)
+    arr_to_hash(arr, elemsize) as *mut c_void
 }
 
 // ============================================================
 // stbds_shmode_func
 // ============================================================
-unsafe fn stbds_shmode_func_impl(elemsize: usize, mode: i32) -> *mut u8 {
-    let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_shmode_func(elemsize: usize, mode: c_int) -> *mut c_void {
+    let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1) as *mut u8;
     ptr::write_bytes(a, 0, elemsize);
     (*stbds_header(a)).length = 1;
     let h = stbds_make_hash_index(STBDS_BUCKET_LENGTH, ptr::null_mut());
     (*h).string.mode = mode as u8;
-    (*stbds_header(a)).hash_table = h as *mut std::ffi::c_void;
-    arr_to_hash(a, elemsize)
+    (*stbds_header(a)).hash_table = h as *mut c_void;
+    arr_to_hash(a, elemsize) as *mut c_void
 }
 
 // ============================================================
 // stbds_hmdel_key
 // ============================================================
-unsafe fn stbds_hmdel_key_impl(
-    a: *mut u8,
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_hmdel_key(
+    a: *mut c_void,
     elemsize: usize,
-    key: *const u8,
+    key: *mut c_void,
     keysize: usize,
     keyoffset: usize,
-    mode: i32,
-) -> *mut u8 {
+    mode: c_int,
+) -> *mut c_void {
+    let a = a as *mut u8;
     if a.is_null() {
         return ptr::null_mut();
     }
+
     let raw_a = hash_to_arr(a, elemsize);
-    let table = stbds_hash_table(raw_a);
+    let mut table = stbds_hash_table(raw_a);
     *stbds_temp(raw_a) = 0;
+
     if table.is_null() {
-        return a;
+        return a as *mut c_void;
     }
 
-    let slot = stbds_hm_find_slot(a, elemsize, key, keysize, keyoffset, mode);
+    let slot = stbds_hm_find_slot(a, elemsize, key as *mut u8, keysize, keyoffset, mode);
     if slot < 0 {
-        return a;
+        return a as *mut c_void;
     }
 
-    let b = &mut *(*table).storage.add((slot as usize) >> STBDS_BUCKET_SHIFT);
-    let i = (slot as usize) & STBDS_BUCKET_MASK;
+    let b = &mut *(*table).storage.add(slot as usize >> STBDS_BUCKET_SHIFT);
+    let i = slot as usize & STBDS_BUCKET_MASK;
     let old_index = b.index[i];
-    let final_index = stbds_arrlen(raw_a) as isize - 1 - 1;
+    let final_index = stbds_arrlen(raw_a) - 1 - 1;
+
     assert!((slot as usize) < (*table).slot_count);
     (*table).used_count -= 1;
     (*table).tombstone_count += 1;
     *stbds_temp(raw_a) = 1;
-    assert!((*table).used_count < usize::MAX); // used_count >= 0 always true for usize
+    assert!((*table).used_count < usize::MAX); // unsigned, always true like C
     b.hash[i] = STBDS_HASH_DELETED;
     b.index[i] = STBDS_INDEX_DELETED;
 
     if mode == STBDS_HM_STRING && (*table).string.mode == STBDS_SH_STRDUP {
-        let str_ptr = *(a.add(elemsize.wrapping_mul(old_index as usize)) as *mut *mut u8);
-        c_free(str_ptr);
+        let p = *(a.add(elemsize * old_index as usize) as *mut *mut u8);
+        free(p as *mut c_void);
     }
 
     if old_index != final_index {
-        ptr::copy(
-            a.add(elemsize.wrapping_mul(final_index as usize)),
-            a.add(elemsize.wrapping_mul(old_index as usize)),
+        memmove(
+            a.add(elemsize * old_index as usize) as *mut c_void,
+            a.add(elemsize * final_index as usize) as *const c_void,
             elemsize,
         );
 
         let slot2 = if mode == STBDS_HM_STRING {
-            let key_ptr = *(a.add(
-                elemsize.wrapping_mul(old_index as usize).wrapping_add(keyoffset),
-            ) as *const *const u8);
-            stbds_hm_find_slot(a, elemsize, key_ptr, keysize, keyoffset, mode)
+            stbds_hm_find_slot(
+                a,
+                elemsize,
+                *(a.add(elemsize * old_index as usize + keyoffset) as *mut *mut u8),
+                keysize,
+                keyoffset,
+                mode,
+            )
         } else {
             stbds_hm_find_slot(
                 a,
                 elemsize,
-                a.add(elemsize.wrapping_mul(old_index as usize).wrapping_add(keyoffset)),
+                a.add(elemsize * old_index as usize + keyoffset),
                 keysize,
                 keyoffset,
                 mode,
             )
         };
         assert!(slot2 >= 0);
-        let b2 = &mut *(*table).storage.add((slot2 as usize) >> STBDS_BUCKET_SHIFT);
-        let i2 = (slot2 as usize) & STBDS_BUCKET_MASK;
+        let b2 = &mut *(*table).storage.add(slot2 as usize >> STBDS_BUCKET_SHIFT);
+        let i2 = slot2 as usize & STBDS_BUCKET_MASK;
         assert!(b2.index[i2] == final_index);
         b2.index[i2] = old_index;
     }
@@ -1001,254 +980,304 @@ unsafe fn stbds_hmdel_key_impl(
         && (*table).slot_count > STBDS_BUCKET_LENGTH
     {
         (*stbds_header(raw_a)).hash_table =
-            stbds_make_hash_index((*table).slot_count >> 1, table) as *mut std::ffi::c_void;
-        c_free(table as *mut u8);
+            stbds_make_hash_index((*table).slot_count >> 1, table) as *mut c_void;
+        free(table as *mut c_void);
     } else if (*table).tombstone_count > (*table).tombstone_count_threshold {
         (*stbds_header(raw_a)).hash_table =
-            stbds_make_hash_index((*table).slot_count, table) as *mut std::ffi::c_void;
-        c_free(table as *mut u8);
+            stbds_make_hash_index((*table).slot_count, table) as *mut c_void;
+        free(table as *mut c_void);
     }
 
-    a
+    a as *mut c_void
 }
 
 // ============================================================
 // stbds_stralloc
 // ============================================================
-unsafe fn stbds_stralloc_impl(a: &mut stbds_string_arena, str: *const u8) -> *mut u8 {
-    let mut len = 0usize;
-    while *str.add(len) != 0 {
-        len += 1;
-    }
-    len += 1;
 
-    if len > a.remaining {
-        let blocksize_shift = a.block >> 1;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_stralloc(
+    a: *mut stbds_string_arena,
+    str: *mut u8,
+) -> *mut u8 {
+    let len = strlen(str as *const i8) + 1;
+    if len > (*a).remaining {
+        let blocksize_shift = (*a).block >> 1;
         let mut blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize_shift as usize);
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
-            a.block += 1;
+            (*a).block += 1;
         }
 
         if len > blocksize {
             let sb_size = std::mem::size_of::<stbds_string_block>() - 8 + len;
-            let sb = c_realloc(ptr::null_mut(), sb_size) as *mut stbds_string_block;
-            ptr::copy(str, (*sb).storage.as_mut_ptr(), len);
-            if !a.storage.is_null() {
-                (*sb).next = (*a.storage).next;
-                (*a.storage).next = sb;
+            let sb = realloc(ptr::null_mut(), sb_size) as *mut stbds_string_block;
+            memmove(
+                (*sb).storage.as_mut_ptr() as *mut c_void,
+                str as *const c_void,
+                len,
+            );
+            if !(*a).storage.is_null() {
+                (*sb).next = (*(*a).storage).next;
+                (*(*a).storage).next = sb;
             } else {
                 (*sb).next = ptr::null_mut();
-                a.storage = sb;
-                a.remaining = 0;
+                (*a).storage = sb;
+                (*a).remaining = 0;
             }
             return (*sb).storage.as_mut_ptr();
         } else {
             let sb_size = std::mem::size_of::<stbds_string_block>() - 8 + blocksize;
-            let sb = c_realloc(ptr::null_mut(), sb_size) as *mut stbds_string_block;
-            (*sb).next = a.storage;
-            a.storage = sb;
-            a.remaining = blocksize;
+            let sb = realloc(ptr::null_mut(), sb_size) as *mut stbds_string_block;
+            (*sb).next = (*a).storage;
+            (*a).storage = sb;
+            (*a).remaining = blocksize;
         }
     }
 
-    assert!(len <= a.remaining);
-    let p = (*a.storage).storage.as_mut_ptr().add(a.remaining - len);
-    a.remaining -= len;
-    ptr::copy(str, p, len);
+    assert!(len <= (*a).remaining);
+    let p = (*(*a).storage).storage.as_mut_ptr().add((*a).remaining - len);
+    (*a).remaining -= len;
+    memmove(p as *mut c_void, str as *const c_void, len);
     p
 }
 
 // ============================================================
 // stbds_strreset
 // ============================================================
-unsafe fn stbds_strreset_impl(a: &mut stbds_string_arena) {
-    let mut x = a.storage;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
+    let mut x = (*a).storage;
     while !x.is_null() {
         let y = (*x).next;
-        c_free(x as *mut u8);
+        free(x as *mut c_void);
         x = y;
     }
-    ptr::write_bytes(a as *mut stbds_string_arena, 0, 1);
+    ptr::write_bytes(a, 0, 1);
 }
 
 // ============================================================
-// Public C API: hm_geti
+// stbds_unit_tests (stub)
 // ============================================================
 
-// Helper struct matching C: struct { int key; int value; }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stbds_unit_tests() {}
+
+// ============================================================
+// hm_geti - the exported test function
+// ============================================================
+//
+// The C code uses stb_ds macros with struct { int key; int value; }.
+// We replicate the macro expansions directly.
+
+// ============================================================
+// strkey
+// ============================================================
+
+static mut STRKEY_BUFFER: [u8; 256] = [0u8; 256];
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strkey(n: c_int) -> *mut u8 {
+    let s = format!("test_{}\0", n);
+    let bytes = s.as_bytes();
+    ptr::copy_nonoverlapping(bytes.as_ptr(), STRKEY_BUFFER.as_mut_ptr(), bytes.len());
+    STRKEY_BUFFER.as_mut_ptr()
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct IntMapEntry {
-    key: i32,
-    value: i32,
+    key: c_int,
+    value: c_int,
 }
 
-// Macro-like helpers for the hashmap operations on IntMapEntry
-// These replicate the C macro expansions for the specific IntMapEntry type.
+// Helper: size of IntMapEntry
+const INTMAP_ELEM: usize = std::mem::size_of::<IntMapEntry>();
 
-const INTMAP_ELEMSIZE: usize = std::mem::size_of::<IntMapEntry>();
-const INTMAP_KEYSIZE: usize = std::mem::size_of::<i32>();
-
-unsafe fn intmap_hmgeti(intmap: &mut *mut u8, k: i32) -> isize {
-    let key_bytes = k.to_ne_bytes();
-    *intmap = stbds_hmget_key_impl(
-        *intmap,
-        INTMAP_ELEMSIZE,
-        key_bytes.as_ptr(),
-        INTMAP_KEYSIZE,
+/// Equivalent of hmgeti(intmap, k): look up key, return index or -1
+unsafe fn hm_geti_hmgeti(intmap: &mut *mut IntMapEntry, k: c_int) -> isize {
+    let key_val = k;
+    let result = stbds_hmget_key(
+        *intmap as *mut c_void,
+        INTMAP_ELEM,
+        &key_val as *const c_int as *mut c_void,
+        std::mem::size_of::<c_int>(),
         STBDS_HM_BINARY,
     );
-    let arr = hash_to_arr(*intmap, INTMAP_ELEMSIZE);
-    (*stbds_header(arr)).temp
+    *intmap = result as *mut IntMapEntry;
+    let raw = hash_to_arr(*intmap as *mut u8, INTMAP_ELEM);
+    *stbds_temp(raw)
 }
 
-unsafe fn intmap_hmget(intmap: &mut *mut u8, k: i32) -> i32 {
-    let key_bytes = k.to_ne_bytes();
-    *intmap = stbds_hmget_key_impl(
-        *intmap,
-        INTMAP_ELEMSIZE,
-        key_bytes.as_ptr(),
-        INTMAP_KEYSIZE,
-        STBDS_HM_BINARY,
-    );
-    let arr = hash_to_arr(*intmap, INTMAP_ELEMSIZE);
-    let idx = (*stbds_header(arr)).temp;
-    let entry = &*((*intmap).add(INTMAP_ELEMSIZE.wrapping_mul(idx as usize)) as *const IntMapEntry);
-    entry.value
-}
-
-unsafe fn intmap_hmget_ts(intmap: &mut *mut u8, k: i32, temp: &mut isize) -> i32 {
-    let key_bytes = k.to_ne_bytes();
-    *intmap = stbds_hmget_key_ts_impl(
-        *intmap,
-        INTMAP_ELEMSIZE,
-        key_bytes.as_ptr(),
-        INTMAP_KEYSIZE,
+/// Equivalent of hmgeti_ts(intmap, k, temp)
+unsafe fn hm_geti_hmgeti_ts(intmap: &mut *mut IntMapEntry, k: c_int, temp: &mut isize) -> isize {
+    let key_val = k;
+    let result = stbds_hmget_key_ts(
+        *intmap as *mut c_void,
+        INTMAP_ELEM,
+        &key_val as *const c_int as *mut c_void,
+        std::mem::size_of::<c_int>(),
         temp,
         STBDS_HM_BINARY,
     );
-    let entry = &*((*intmap).add(INTMAP_ELEMSIZE.wrapping_mul(*temp as usize)) as *const IntMapEntry);
-    entry.value
+    *intmap = result as *mut IntMapEntry;
+    *temp
 }
 
-unsafe fn intmap_hmput(intmap: &mut *mut u8, k: i32, v: i32) {
-    let key_bytes = k.to_ne_bytes();
-    *intmap = stbds_hmput_key_impl(
-        *intmap,
-        INTMAP_ELEMSIZE,
-        key_bytes.as_ptr(),
-        INTMAP_KEYSIZE,
+/// Equivalent of hmget(intmap, k): look up key, return value
+unsafe fn hm_geti_hmget(intmap: &mut *mut IntMapEntry, k: c_int) -> c_int {
+    let idx = hm_geti_hmgeti(intmap, k);
+    // hmget returns hmgetp(t,k)->value
+    // hmgetp returns &(t)[stbds_temp((t)-1)]
+    let raw = hash_to_arr(*intmap as *mut u8, INTMAP_ELEM);
+    let t = *stbds_temp(raw);
+    (*intmap.offset(t)).value
+}
+
+/// Equivalent of hmget_ts(intmap, k, temp)
+unsafe fn hm_geti_hmget_ts(intmap: &mut *mut IntMapEntry, k: c_int, temp: &mut isize) -> c_int {
+    let _idx = hm_geti_hmgeti_ts(intmap, k, temp);
+    (*intmap.offset(*temp)).value
+}
+
+/// Equivalent of hmput(intmap, k, v)
+unsafe fn hm_geti_hmput(intmap: &mut *mut IntMapEntry, k: c_int, v: c_int) {
+    let key_val = k;
+    let result = stbds_hmput_key(
+        *intmap as *mut c_void,
+        INTMAP_ELEM,
+        &key_val as *const c_int as *mut c_void,
+        std::mem::size_of::<c_int>(),
         STBDS_HM_BINARY,
     );
-    let arr = hash_to_arr(*intmap, INTMAP_ELEMSIZE);
-    let idx = (*stbds_header(arr)).temp;
-    let entry = &mut *((*intmap).add(INTMAP_ELEMSIZE.wrapping_mul(idx as usize)) as *mut IntMapEntry);
-    entry.key = k;
-    entry.value = v;
+    *intmap = result as *mut IntMapEntry;
+    let raw = hash_to_arr(*intmap as *mut u8, INTMAP_ELEM);
+    let t = *stbds_temp(raw);
+    (*intmap.offset(t)).key = k;
+    (*intmap.offset(t)).value = v;
 }
 
-unsafe fn intmap_hmdefault(intmap: &mut *mut u8, v: i32) {
-    *intmap = stbds_hmput_default_impl(*intmap, INTMAP_ELEMSIZE);
-    // (t)[-1].value = v
-    let entry = &mut *((*intmap).sub(INTMAP_ELEMSIZE) as *mut IntMapEntry);
-    entry.value = v;
+/// Equivalent of hmdefault(intmap, v)
+unsafe fn hm_geti_hmdefault(intmap: &mut *mut IntMapEntry, v: c_int) {
+    let result = stbds_hmput_default(*intmap as *mut c_void, INTMAP_ELEM);
+    *intmap = result as *mut IntMapEntry;
+    (*intmap.offset(-1)).value = v;
 }
 
-unsafe fn intmap_hmdel(intmap: &mut *mut u8, k: i32) {
-    let key_bytes = k.to_ne_bytes();
-    *intmap = stbds_hmdel_key_impl(
-        *intmap,
-        INTMAP_ELEMSIZE,
-        key_bytes.as_ptr(),
-        INTMAP_KEYSIZE,
+/// Equivalent of hmdel(intmap, k)
+unsafe fn hm_geti_hmdel(intmap: &mut *mut IntMapEntry, k: c_int) -> isize {
+    let key_val = k;
+    let result = stbds_hmdel_key(
+        *intmap as *mut c_void,
+        INTMAP_ELEM,
+        &key_val as *const c_int as *mut c_void,
+        std::mem::size_of::<c_int>(),
         0, // STBDS_OFFSETOF((t),key) = 0 since key is first field
         STBDS_HM_BINARY,
     );
+    *intmap = result as *mut IntMapEntry;
+    if (*intmap).is_null() {
+        0
+    } else {
+        let raw = hash_to_arr(*intmap as *mut u8, INTMAP_ELEM);
+        *stbds_temp(raw)
+    }
 }
 
-unsafe fn intmap_hmfree(intmap: &mut *mut u8) {
+/// Equivalent of hmfree(intmap)
+unsafe fn hm_geti_hmfree(intmap: &mut *mut IntMapEntry) {
     if !(*intmap).is_null() {
-        stbds_hmfree_func_impl((*intmap).sub(INTMAP_ELEMSIZE), INTMAP_ELEMSIZE);
+        stbds_hmfree_func((*intmap).offset(-1) as *mut c_void, INTMAP_ELEM);
     }
     *intmap = ptr::null_mut();
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hm_geti(num: std::ffi::c_int) {
-    unsafe {
-        let mut intmap: *mut u8 = ptr::null_mut();
-        let mut temp: isize = 0;
+pub unsafe extern "C" fn hm_geti(num: c_int) {
+    let mut intmap: *mut IntMapEntry = ptr::null_mut();
+    let mut temp: isize = 0;
 
-        let mut i: i32;
-        i = 1;
-        assert!(intmap_hmgeti(&mut intmap, i) == -1);
-        intmap_hmdefault(&mut intmap, -2);
-        assert!(intmap_hmgeti(&mut intmap, i) == -1);
-        assert!(intmap_hmget(&mut intmap, i) == -2);
-        i = 0;
-        while i < num {
-            intmap_hmput(&mut intmap, i, i * 5);
-            i += 2;
-        }
-        i = 0;
-        while i < num {
-            if i & 1 != 0 {
-                assert!(intmap_hmget(&mut intmap, i) == -2);
-            } else {
-                assert!(intmap_hmget(&mut intmap, i) == i * 5);
-            }
-            if i & 1 != 0 {
-                assert!(intmap_hmget_ts(&mut intmap, i, &mut temp) == -2);
-            } else {
-                assert!(intmap_hmget_ts(&mut intmap, i, &mut temp) == i * 5);
-            }
-            i += 1;
-        }
-        i = 0;
-        while i < num {
-            intmap_hmput(&mut intmap, i, i * 3);
-            i += 2;
-        }
-        i = 0;
-        while i < num {
-            if i & 1 != 0 {
-                assert!(intmap_hmget(&mut intmap, i) == -2);
-            } else {
-                assert!(intmap_hmget(&mut intmap, i) == i * 3);
-            }
-            i += 1;
-        }
-        i = 2;
-        while i < num {
-            intmap_hmdel(&mut intmap, i);
-            i += 4;
-        }
-        i = 0;
-        while i < num {
-            if i & 3 != 0 {
-                assert!(intmap_hmget(&mut intmap, i) == -2);
-            } else {
-                assert!(intmap_hmget(&mut intmap, i) == i * 3);
-            }
-            i += 1;
-        }
-        i = 0;
-        while i < num {
-            intmap_hmdel(&mut intmap, i);
-            i += 1;
-        }
-        i = 0;
-        while i < num {
-            assert!(intmap_hmget(&mut intmap, i) == -2);
-            i += 1;
-        }
-        intmap_hmfree(&mut intmap);
-        i = 0;
-        while i < num {
-            intmap_hmput(&mut intmap, i, i * 3);
-            i += 2;
-        }
-        intmap_hmfree(&mut intmap);
+    let mut i: c_int;
+
+    i = 1;
+    assert!(hm_geti_hmgeti(&mut intmap, i) == -1);
+    hm_geti_hmdefault(&mut intmap, -2);
+    assert!(hm_geti_hmgeti(&mut intmap, i) == -1);
+    assert!(hm_geti_hmget(&mut intmap, i) == -2);
+
+    i = 0;
+    while i < num {
+        hm_geti_hmput(&mut intmap, i, i * 5);
+        i += 2;
     }
+
+    i = 0;
+    while i < num {
+        if i & 1 != 0 {
+            assert!(hm_geti_hmget(&mut intmap, i) == -2);
+        } else {
+            assert!(hm_geti_hmget(&mut intmap, i) == i * 5);
+        }
+        if i & 1 != 0 {
+            assert!(hm_geti_hmget_ts(&mut intmap, i, &mut temp) == -2);
+        } else {
+            assert!(hm_geti_hmget_ts(&mut intmap, i, &mut temp) == i * 5);
+        }
+        i += 1;
+    }
+
+    i = 0;
+    while i < num {
+        hm_geti_hmput(&mut intmap, i, i * 3);
+        i += 2;
+    }
+
+    i = 0;
+    while i < num {
+        if i & 1 != 0 {
+            assert!(hm_geti_hmget(&mut intmap, i) == -2);
+        } else {
+            assert!(hm_geti_hmget(&mut intmap, i) == i * 3);
+        }
+        i += 1;
+    }
+
+    i = 2;
+    while i < num {
+        hm_geti_hmdel(&mut intmap, i);
+        i += 4;
+    }
+
+    i = 0;
+    while i < num {
+        if i & 3 != 0 {
+            assert!(hm_geti_hmget(&mut intmap, i) == -2);
+        } else {
+            assert!(hm_geti_hmget(&mut intmap, i) == i * 3);
+        }
+        i += 1;
+    }
+
+    i = 0;
+    while i < num {
+        hm_geti_hmdel(&mut intmap, i);
+        i += 1;
+    }
+
+    i = 0;
+    while i < num {
+        assert!(hm_geti_hmget(&mut intmap, i) == -2);
+        i += 1;
+    }
+
+    hm_geti_hmfree(&mut intmap);
+
+    i = 0;
+    while i < num {
+        hm_geti_hmput(&mut intmap, i, i * 3);
+        i += 2;
+    }
+
+    hm_geti_hmfree(&mut intmap);
 }
