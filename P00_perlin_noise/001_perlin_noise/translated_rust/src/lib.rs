@@ -1,3 +1,5 @@
+// ---- permutation tables (exact copy from stb_perlin.h) ----
+
 static RANDTAB: [u8; 512] = [
     23, 125, 161, 52, 103, 117, 70, 37, 247, 101, 203, 169, 124, 126, 44, 123,
     152, 238, 145, 45, 171, 114, 253, 10, 192, 136, 4, 157, 249, 30, 35, 72,
@@ -108,9 +110,11 @@ pub extern "C" fn stb_perlin_noise3_internal(x: f32, y: f32, z: f32, x_wrap: i32
     let x_mask = (x_wrap.wrapping_sub(1) as u32) & 255;
     let y_mask = (y_wrap.wrapping_sub(1) as u32) & 255;
     let z_mask = (z_wrap.wrapping_sub(1) as u32) & 255;
+
     let px = fastfloor(x);
     let py = fastfloor(y);
     let pz = fastfloor(z);
+
     let x0 = (px as u32 & x_mask) as usize;
     let x1 = ((px + 1) as u32 & x_mask) as usize;
     let y0 = (py as u32 & y_mask) as usize;
@@ -170,9 +174,10 @@ pub extern "C" fn stb_perlin_ridge_noise3(x: f32, y: f32, z: f32, lacunarity: f3
     let mut prev = 1.0f32;
     let mut amplitude = 0.5f32;
     let mut sum = 0.0f32;
+
     for i in 0..octaves {
         let r = stb_perlin_noise3_internal(x * frequency, y * frequency, z * frequency, 0, 0, 0, i as u8);
-        let r = offset - r.abs();
+        let r = offset - (r as f64).abs() as f32;
         let r = r * r;
         sum += r * amplitude * prev;
         prev = r;
@@ -187,6 +192,7 @@ pub extern "C" fn stb_perlin_fbm_noise3(x: f32, y: f32, z: f32, lacunarity: f32,
     let mut frequency = 1.0f32;
     let mut amplitude = 1.0f32;
     let mut sum = 0.0f32;
+
     for i in 0..octaves {
         sum += stb_perlin_noise3_internal(x * frequency, y * frequency, z * frequency, 0, 0, 0, i as u8) * amplitude;
         frequency *= lacunarity;
@@ -200,9 +206,10 @@ pub extern "C" fn stb_perlin_turbulence_noise3(x: f32, y: f32, z: f32, lacunarit
     let mut frequency = 1.0f32;
     let mut amplitude = 1.0f32;
     let mut sum = 0.0f32;
+
     for i in 0..octaves {
         let r = stb_perlin_noise3_internal(x * frequency, y * frequency, z * frequency, 0, 0, 0, i as u8) * amplitude;
-        sum += r.abs();
+        sum += (r as f64).abs() as f32;
         frequency *= lacunarity;
         amplitude *= gain;
     }
@@ -214,15 +221,19 @@ pub extern "C" fn stb_perlin_noise3_wrap_nonpow2(x: f32, y: f32, z: f32, x_wrap:
     let px = fastfloor(x);
     let py = fastfloor(y);
     let pz = fastfloor(z);
+
     let x_wrap2 = if x_wrap != 0 { x_wrap } else { 256 };
     let y_wrap2 = if y_wrap != 0 { y_wrap } else { 256 };
     let z_wrap2 = if z_wrap != 0 { z_wrap } else { 256 };
+
     let mut x0 = px % x_wrap2;
     let mut y0 = py % y_wrap2;
     let mut z0 = pz % z_wrap2;
+
     if x0 < 0 { x0 += x_wrap2; }
     if y0 < 0 { y0 += y_wrap2; }
     if z0 < 0 { z0 += z_wrap2; }
+
     let x1 = ((x0 + 1) % x_wrap2) as usize;
     let y1 = ((y0 + 1) % y_wrap2) as usize;
     let z1 = ((z0 + 1) % z_wrap2) as usize;
@@ -279,101 +290,5 @@ pub extern "C" fn inner(which: i32, x: f32, y: f32, z: f32, x_wrap: i32, y_wrap:
         4 => stb_perlin_turbulence_noise3(x, y, z, lacunarity, gain, octaves),
         5 => stb_perlin_noise3_wrap_nonpow2(x, y, z, x_wrap, y_wrap, z_wrap, seed as u8),
         _ => f32::NAN,
-    }
-}
-
-// Export main to match C .so symbol table
-// Only included in cdylib builds, not when linked as rlib into the binary
-#[cfg(not(feature = "_bin"))]
-mod _main_export {
-    #[no_mangle]
-    pub extern "C" fn main(_argc: i32, _argv: *const *const u8) -> i32 {
-        use std::io::Read;
-        let mut input = String::new();
-        std::io::stdin().read_to_string(&mut input).unwrap();
-        let tokens: Vec<&str> = input.split_whitespace().collect();
-        if tokens.len() < 12 { return 1; }
-        let which: i32 = tokens[0].parse().unwrap();
-        let x: f32 = tokens[1].parse().unwrap();
-        let y: f32 = tokens[2].parse().unwrap();
-        let z: f32 = tokens[3].parse().unwrap();
-        let x_wrap: i32 = tokens[4].parse().unwrap();
-        let y_wrap: i32 = tokens[5].parse().unwrap();
-        let z_wrap: i32 = tokens[6].parse().unwrap();
-        let seed: i32 = tokens[7].parse().unwrap();
-        let lacunarity: f32 = tokens[8].parse().unwrap();
-        let gain: f32 = tokens[9].parse().unwrap();
-        let offset: f32 = tokens[10].parse().unwrap();
-        let octaves: i32 = tokens[11].parse().unwrap();
-        let res = super::inner(which, x, y, z, x_wrap, y_wrap, z_wrap, seed, lacunarity, gain, offset, octaves);
-        println!("{}", super::format_g(res, 9));
-        0
-    }
-}
-
-/// Emulates C's %.*g printf format specifier.
-pub fn format_g(val: f32, precision: usize) -> String {
-    let v = val as f64;
-    if v.is_nan() {
-        return "nan".to_string();
-    }
-    if v.is_infinite() {
-        return if v > 0.0 { "inf".to_string() } else { "-inf".to_string() };
-    }
-    if v == 0.0 {
-        return if v.is_sign_negative() { "-0".to_string() } else { "0".to_string() };
-    }
-    let exp = v.abs().log10().floor() as i32;
-    if exp < -4 || exp >= precision as i32 {
-        let s = format!("{:.prec$e}", v, prec = precision - 1);
-        let s = fix_exponent(&s);
-        trim_trailing_zeros_g(&s)
-    } else {
-        let digits_after = if precision as i32 - 1 - exp > 0 {
-            (precision as i32 - 1 - exp) as usize
-        } else {
-            0
-        };
-        let s = format!("{:.prec$}", v, prec = digits_after);
-        trim_trailing_zeros_g(&s)
-    }
-}
-
-fn fix_exponent(s: &str) -> String {
-    if let Some(e_pos) = s.find('e') {
-        let (mantissa, exp_part) = s.split_at(e_pos);
-        let exp_str = &exp_part[1..];
-        let (sign, digits) = if exp_str.starts_with('-') {
-            ("-", &exp_str[1..])
-        } else if exp_str.starts_with('+') {
-            ("+", &exp_str[1..])
-        } else {
-            ("+", exp_str)
-        };
-        let exp_num: i32 = digits.parse().unwrap();
-        if exp_num.abs() < 100 {
-            format!("{}e{}{:02}", mantissa, sign, exp_num.abs())
-        } else {
-            format!("{}e{}{:03}", mantissa, sign, exp_num.abs())
-        }
-    } else {
-        s.to_string()
-    }
-}
-
-fn trim_trailing_zeros_g(s: &str) -> String {
-    if let Some(e_pos) = s.find('e') {
-        let mantissa = &s[..e_pos];
-        let exp_part = &s[e_pos..];
-        let trimmed = if mantissa.contains('.') {
-            mantissa.trim_end_matches('0').trim_end_matches('.')
-        } else {
-            mantissa
-        };
-        format!("{}{}", trimmed, exp_part)
-    } else if s.contains('.') {
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
-    } else {
-        s.to_string()
     }
 }

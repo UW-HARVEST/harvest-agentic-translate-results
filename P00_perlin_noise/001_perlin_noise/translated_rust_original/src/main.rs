@@ -1,5 +1,7 @@
 use std::io::{self, Read};
 
+// ---- permutation tables (exact copy from stb_perlin.h) ----
+
 static RANDTAB: [u8; 512] = [
     23, 125, 161, 52, 103, 117, 70, 37, 247, 101, 203, 169, 124, 126, 44, 123,
     152, 238, 145, 45, 171, 114, 253, 10, 192, 136, 4, 157, 249, 30, 35, 72,
@@ -109,9 +111,11 @@ fn noise3_internal(x: f32, y: f32, z: f32, x_wrap: i32, y_wrap: i32, z_wrap: i32
     let x_mask = (x_wrap.wrapping_sub(1) as u32) & 255;
     let y_mask = (y_wrap.wrapping_sub(1) as u32) & 255;
     let z_mask = (z_wrap.wrapping_sub(1) as u32) & 255;
+
     let px = fastfloor(x);
     let py = fastfloor(y);
     let pz = fastfloor(z);
+
     let x0 = (px as u32 & x_mask) as usize;
     let x1 = ((px + 1) as u32 & x_mask) as usize;
     let y0 = (py as u32 & y_mask) as usize;
@@ -168,9 +172,10 @@ fn ridge_noise3(x: f32, y: f32, z: f32, lacunarity: f32, gain: f32, offset: f32,
     let mut prev = 1.0f32;
     let mut amplitude = 0.5f32;
     let mut sum = 0.0f32;
+
     for i in 0..octaves {
         let r = noise3_internal(x * frequency, y * frequency, z * frequency, 0, 0, 0, i as u8);
-        let r = offset - r.abs();
+        let r = offset - (r as f64).abs() as f32;
         let r = r * r;
         sum += r * amplitude * prev;
         prev = r;
@@ -184,6 +189,7 @@ fn fbm_noise3(x: f32, y: f32, z: f32, lacunarity: f32, gain: f32, octaves: i32) 
     let mut frequency = 1.0f32;
     let mut amplitude = 1.0f32;
     let mut sum = 0.0f32;
+
     for i in 0..octaves {
         sum += noise3_internal(x * frequency, y * frequency, z * frequency, 0, 0, 0, i as u8) * amplitude;
         frequency *= lacunarity;
@@ -196,9 +202,10 @@ fn turbulence_noise3(x: f32, y: f32, z: f32, lacunarity: f32, gain: f32, octaves
     let mut frequency = 1.0f32;
     let mut amplitude = 1.0f32;
     let mut sum = 0.0f32;
+
     for i in 0..octaves {
         let r = noise3_internal(x * frequency, y * frequency, z * frequency, 0, 0, 0, i as u8) * amplitude;
-        sum += r.abs();
+        sum += (r as f64).abs() as f32;
         frequency *= lacunarity;
         amplitude *= gain;
     }
@@ -209,15 +216,19 @@ fn noise3_wrap_nonpow2(x: f32, y: f32, z: f32, x_wrap: i32, y_wrap: i32, z_wrap:
     let px = fastfloor(x);
     let py = fastfloor(y);
     let pz = fastfloor(z);
+
     let x_wrap2 = if x_wrap != 0 { x_wrap } else { 256 };
     let y_wrap2 = if y_wrap != 0 { y_wrap } else { 256 };
     let z_wrap2 = if z_wrap != 0 { z_wrap } else { 256 };
+
     let mut x0 = px % x_wrap2;
     let mut y0 = py % y_wrap2;
     let mut z0 = pz % z_wrap2;
+
     if x0 < 0 { x0 += x_wrap2; }
     if y0 < 0 { y0 += y_wrap2; }
     if z0 < 0 { z0 += z_wrap2; }
+
     let x1 = ((x0 + 1) % x_wrap2) as usize;
     let y1 = ((y0 + 1) % y_wrap2) as usize;
     let z1 = ((z0 + 1) % z_wrap2) as usize;
@@ -276,124 +287,51 @@ fn inner(which: i32, x: f32, y: f32, z: f32, x_wrap: i32, y_wrap: i32, z_wrap: i
     }
 }
 
-/// Reads whitespace-delimited tokens from stdin (matching C scanf behavior).
-struct Scanner {
-    tokens: Vec<String>,
-    pos: usize,
-}
-
-impl Scanner {
-    fn new() -> Self {
-        let mut input = String::new();
-        io::stdin().read_to_string(&mut input).unwrap();
-        let tokens: Vec<String> = input.split_whitespace().map(String::from).collect();
-        Self { tokens, pos: 0 }
+/// Format f32 exactly like C's printf("%.9g\n", (double)val)
+fn print_g9(val: f32) {
+    // Use libc snprintf for byte-identical output with C
+    let dval = val as f64;
+    let mut buf = [0u8; 64];
+    let fmt = b"%.9g\n\0";
+    unsafe {
+        libc::snprintf(
+            buf.as_mut_ptr() as *mut libc::c_char,
+            buf.len(),
+            fmt.as_ptr() as *const libc::c_char,
+            dval,
+        );
     }
-    fn next_i32(&mut self) -> i32 {
-        let t = &self.tokens[self.pos];
-        self.pos += 1;
-        t.parse().unwrap()
-    }
-    fn next_f32(&mut self) -> f32 {
-        let t = &self.tokens[self.pos];
-        self.pos += 1;
-        t.parse().unwrap()
-    }
+    let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    let s = std::str::from_utf8(&buf[..len]).unwrap();
+    print!("{}", s);
 }
 
 fn main() {
-    let mut sc = Scanner::new();
-    let which = sc.next_i32();
-    let x = sc.next_f32();
-    let y = sc.next_f32();
-    let z = sc.next_f32();
-    let x_wrap = sc.next_i32();
-    let y_wrap = sc.next_i32();
-    let z_wrap = sc.next_i32();
-    let seed = sc.next_i32();
-    let lacunarity = sc.next_f32();
-    let gain = sc.next_f32();
-    let offset = sc.next_f32();
-    let octaves = sc.next_i32();
+    // Read all stdin (scanf reads whitespace-delimited tokens)
+    let mut input = String::new();
+    io::stdin().read_to_string(&mut input).unwrap();
+    let mut tokens = input.split_whitespace();
+
+    macro_rules! next_i32 {
+        () => { tokens.next().unwrap().parse::<i32>().unwrap() }
+    }
+    macro_rules! next_f32 {
+        () => { tokens.next().unwrap().parse::<f32>().unwrap() }
+    }
+
+    let which = next_i32!();
+    let x = next_f32!();
+    let y = next_f32!();
+    let z = next_f32!();
+    let x_wrap = next_i32!();
+    let y_wrap = next_i32!();
+    let z_wrap = next_i32!();
+    let seed = next_i32!();
+    let lacunarity = next_f32!();
+    let gain = next_f32!();
+    let offset = next_f32!();
+    let octaves = next_i32!();
+
     let res = inner(which, x, y, z, x_wrap, y_wrap, z_wrap, seed, lacunarity, gain, offset, octaves);
-    // Match C's printf("%.9g\n", res)
-    println!("{}", format_g(res, 9));
-}
-
-/// Emulates C's %.*g printf format specifier.
-fn format_g(val: f32, precision: usize) -> String {
-    // Cast to f64 for formatting, matching C's float->double promotion in printf
-    let v = val as f64;
-    if v.is_nan() {
-        return "nan".to_string();
-    }
-    if v.is_infinite() {
-        return if v > 0.0 { "inf".to_string() } else { "-inf".to_string() };
-    }
-    // %g uses %e if exponent < -4 or >= precision, else %f
-    // with 'precision' meaning significant digits
-    if v == 0.0 {
-        return if v.is_sign_negative() { "-0".to_string() } else { "0".to_string() };
-    }
-    let exp = v.abs().log10().floor() as i32;
-    if exp < -4 || exp >= precision as i32 {
-        // Use %e style with (precision-1) digits after decimal
-        let s = format!("{:.prec$e}", v, prec = precision - 1);
-        // C uses e+XX or e-XX (two-digit minimum), Rust uses e0, e1, etc.
-        // Need to reformat the exponent part
-        let s = fix_exponent(&s);
-        trim_trailing_zeros_g(&s)
-    } else {
-        // Use %f style with (precision - 1 - exp) digits after decimal
-        let digits_after = if precision as i32 - 1 - exp > 0 {
-            (precision as i32 - 1 - exp) as usize
-        } else {
-            0
-        };
-        let s = format!("{:.prec$}", v, prec = digits_after);
-        trim_trailing_zeros_g(&s)
-    }
-}
-
-fn fix_exponent(s: &str) -> String {
-    // Rust formats as e.g. "1.23e-5", C wants "1.23e-05"
-    if let Some(e_pos) = s.find('e') {
-        let (mantissa, exp_part) = s.split_at(e_pos);
-        let exp_str = &exp_part[1..]; // skip 'e'
-        let (sign, digits) = if exp_str.starts_with('-') {
-            ("-", &exp_str[1..])
-        } else if exp_str.starts_with('+') {
-            ("+", &exp_str[1..])
-        } else {
-            ("+", exp_str)
-        };
-        let exp_num: i32 = digits.parse().unwrap();
-        if exp_num.abs() < 10 {
-            format!("{}e{}{:02}", mantissa, sign, exp_num.abs())
-        } else if exp_num.abs() < 100 {
-            format!("{}e{}{:02}", mantissa, sign, exp_num.abs())
-        } else {
-            format!("{}e{}{:03}", mantissa, sign, exp_num.abs())
-        }
-    } else {
-        s.to_string()
-    }
-}
-
-fn trim_trailing_zeros_g(s: &str) -> String {
-    // %g trims trailing zeros (and trailing decimal point)
-    if let Some(e_pos) = s.find('e') {
-        let mantissa = &s[..e_pos];
-        let exp_part = &s[e_pos..];
-        let trimmed = if mantissa.contains('.') {
-            mantissa.trim_end_matches('0').trim_end_matches('.')
-        } else {
-            mantissa
-        };
-        format!("{}{}", trimmed, exp_part)
-    } else if s.contains('.') {
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
-    } else {
-        s.to_string()
-    }
+    print_g9(res);
 }
