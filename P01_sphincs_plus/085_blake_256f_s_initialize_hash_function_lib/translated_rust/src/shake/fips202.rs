@@ -289,25 +289,25 @@ fn keccak_inc_squeeze(h: &mut [u8], mut outlen: usize, s_inc: &mut [u64; 26], r:
 
 // Public incremental SHAKE-256 API
 
-pub(crate) fn shake256_inc_init(s_inc: &mut [u64; 26]) {
+pub fn shake256_inc_init(s_inc: &mut [u64; 26]) {
     keccak_inc_init(s_inc);
 }
 
-pub(crate) fn shake256_inc_absorb(s_inc: &mut [u64; 26], input: &[u8]) {
+pub fn shake256_inc_absorb(s_inc: &mut [u64; 26], input: &[u8]) {
     keccak_inc_absorb(s_inc, SHAKE256_RATE, input);
 }
 
-pub(crate) fn shake256_inc_finalize(s_inc: &mut [u64; 26]) {
+pub fn shake256_inc_finalize(s_inc: &mut [u64; 26]) {
     keccak_inc_finalize(s_inc, SHAKE256_RATE, 0x1F);
 }
 
-pub(crate) fn shake256_inc_squeeze(output: &mut [u8], outlen: usize, s_inc: &mut [u64; 26]) {
+pub fn shake256_inc_squeeze(output: &mut [u8], outlen: usize, s_inc: &mut [u64; 26]) {
     keccak_inc_squeeze(output, outlen, s_inc, SHAKE256_RATE);
 }
 
 // Non-incremental SHAKE-256
 
-pub(crate) fn shake256(output: &mut [u8], outlen: usize, input: &[u8]) {
+pub fn shake256(output: &mut [u8], outlen: usize, input: &[u8]) {
     let nblocks = outlen / SHAKE256_RATE;
     let mut s = [0u64; 25];
 

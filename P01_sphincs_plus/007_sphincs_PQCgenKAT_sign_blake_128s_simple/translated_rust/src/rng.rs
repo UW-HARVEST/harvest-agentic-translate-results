@@ -36,14 +36,6 @@ fn aes256_ecb(key: &[u8; 32], ctr: &[u8; 16], buffer: &mut [u8; 16]) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn AES256_ECB(key: *mut u8, ctr: *mut u8, buffer: *mut u8) {
-    let k = &*(key as *const [u8; 32]);
-    let c = &*(ctr as *const [u8; 16]);
-    let b = &mut *(buffer as *mut [u8; 16]);
-    aes256_ecb(k, c, b);
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn seedexpander_init(
     ctx: *mut AesXofStruct,
     seed: *const u8,
@@ -217,4 +209,12 @@ pub unsafe extern "C" fn rng_randombytes(x: *mut u8, mut xlen: u64) -> i32 {
     DRBG_CTX.reseed_counter += 1;
 
     RNG_SUCCESS
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn AES256_ECB(key: *mut u8, ctr: *mut u8, buffer: *mut u8) {
+    let key_arr = &*(key as *const [u8; 32]);
+    let ctr_arr = &*(ctr as *const [u8; 16]);
+    let buf_arr = &mut *(buffer as *mut [u8; 16]);
+    aes256_ecb(key_arr, ctr_arr, buf_arr);
 }

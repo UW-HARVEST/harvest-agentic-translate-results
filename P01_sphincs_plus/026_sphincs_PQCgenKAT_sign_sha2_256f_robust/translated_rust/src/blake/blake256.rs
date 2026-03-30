@@ -303,4 +303,28 @@ pub unsafe extern "C" fn SPX_blake256_mgf1(
     }
 }
 
-// C-compatible no_mangle wrappers removed - see mod.rs for exports
+// C-compatible exports matching the C shared library symbols
+#[unsafe(export_name = "blake256_init")]
+pub unsafe extern "C" fn _export_blake256_init(s: *mut Blakestate256) {
+    crate::blake::blake256::blake256_init(&mut *s);
+}
+
+#[unsafe(export_name = "blake256_compress")]
+pub unsafe extern "C" fn _export_blake256_compress(s: *mut Blakestate256, block: *const u8) {
+    crate::blake::blake256::blake256_compress(&mut *s, block);
+}
+
+#[unsafe(export_name = "blake256_update")]
+pub unsafe extern "C" fn _export_blake256_update(s: *mut Blakestate256, data: *const u8, datalen: u64) {
+    crate::blake::blake256::blake256_update(&mut *s, data, datalen);
+}
+
+#[unsafe(export_name = "blake256_final")]
+pub unsafe extern "C" fn _export_blake256_final(s: *mut Blakestate256, digest: *mut u8) {
+    crate::blake::blake256::blake256_final(&mut *s, digest);
+}
+
+#[unsafe(export_name = "blake256")]
+pub unsafe extern "C" fn _export_blake256(out: *mut u8, in_: *const u8, inlen: u64) -> i32 {
+    crate::blake::blake256::blake256(out, in_, inlen)
+}

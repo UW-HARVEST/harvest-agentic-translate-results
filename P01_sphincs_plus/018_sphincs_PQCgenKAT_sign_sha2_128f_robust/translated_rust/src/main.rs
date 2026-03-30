@@ -166,7 +166,7 @@ mod kat_sha2 {
     pub fn kat_tr_final(ctx: &mut KatTrCtx) -> [u8; 32] {
         let mut outbuf = [0u8; 64];
         let final_block = [0u8; 128];
-        inc_finalize(&mut outbuf[..OUTPUT_BYTES], &mut ctx.s, &final_block[..BLOCK_BYTES], BLOCK_BYTES);
+        inc_finalize(&mut outbuf[..OUTPUT_BYTES], &mut ctx.s, &final_block[..BLOCK_BYTES], 1);
         let mut out32 = [0u8; 32];
         out32.copy_from_slice(&outbuf[..32]);
         out32
@@ -180,147 +180,37 @@ mod kat_sha2 {
 #[cfg(feature = "shake")]
 mod kat_shake {
     use super::*;
-
-    const SHAKE256_RATE: usize = 136;
-
-    fn rol(a: u64, offset: u32) -> u64 { a.rotate_left(offset) }
-
-    fn keccak_f1600(st: &mut [u64; 25]) {
-        const RC: [u64; 24] = [
-            0x0000000000000001, 0x0000000000008082, 0x800000000000808A,
-            0x8000000080008000, 0x000000000000808B, 0x0000000080000001,
-            0x8000000080008081, 0x8000000000008009, 0x000000000000008A,
-            0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
-            0x000000008000808B, 0x800000000000008B, 0x8000000000008089,
-            0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
-            0x000000000000800A, 0x800000008000000A, 0x8000000080008081,
-            0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
-        ];
-        for round in 0..24 {
-            // Theta
-            let mut c = [0u64; 5];
-            for x in 0..5 { c[x] = st[x] ^ st[x+5] ^ st[x+10] ^ st[x+15] ^ st[x+20]; }
-            let mut d = [0u64; 5];
-            for x in 0..5 { d[x] = c[(x+4)%5] ^ rol(c[(x+1)%5], 1); }
-            for x in 0..5 { for y in 0..5 { st[5*y+x] ^= d[x]; } }
-            // Rho + Pi
-            let mut b = [0u64; 25];
-            const PILN: [usize; 24] = [10,7,11,17,18,3,5,16,8,21,24,4,15,23,19,13,12,2,20,14,22,9,6,1];
-            const ROTC: [u32; 24] = [1,3,6,10,15,21,28,36,45,55,2,14,27,41,56,8,25,43,62,18,39,44,50,27];
-            b[0] = st[0];
-            let mut t = st[1];
-            for i in 0..24 { b[PILN[i]] = rol(t, ROTC[i]); t = st[PILN[i]]; }
-            // Chi
-            for y in 0..5 {
-                let base = 5*y;
-                let t0 = b[base]; let t1 = b[base+1]; let t2 = b[base+2]; let t3 = b[base+3]; let t4 = b[base+4];
-                st[base]   = t0 ^ (!t1 & t2);
-                st[base+1] = t1 ^ (!t2 & t3);
-                st[base+2] = t2 ^ (!t3 & t4);
-                st[base+3] = t3 ^ (!t4 & t0);
-                st[base+4] = t4 ^ (!t0 & t1);
-            }
-            // Iota
-            st[0] ^= RC[round];
-        }
-    }
+    use sphincsplus::shake::fips202::*;
 
     pub struct KatTrCtx { s: [u64; 26] }
 
-    fn inc_init(s: &mut [u64; 26]) {
-        *s = [0u64; 26];
-    }
-
-    fn inc_absorb(s: &mut [u64; 26], input: &[u8]) {
-        let r = SHAKE256_RATE;
-        let mut pos = s[25] as usize;
-        let mut off = 0;
-        let mut remaining = input.len();
-        while remaining > 0 {
-            let to_absorb = core::cmp::min(remaining, r - pos);
-            for i in 0..to_absorb {
-                let byte_idx = pos + i;
-                let word = byte_idx / 8;
-                let shift = (byte_idx % 8) * 8;
-                s[word] ^= (input[off + i] as u64) << shift;
-            }
-            pos += to_absorb;
-            off += to_absorb;
-            remaining -= to_absorb;
-            if pos == r {
-                keccak_f1600(unsafe { &mut *(s.as_mut_ptr() as *mut [u64; 25]) });
-                pos = 0;
-            }
-        }
-        s[25] = pos as u64;
-    }
-
-    fn inc_finalize(s: &mut [u64; 26]) {
-        let r = SHAKE256_RATE;
-        let pos = s[25] as usize;
-        let byte_idx = pos;
-        let word = byte_idx / 8;
-        let shift = (byte_idx % 8) * 8;
-        s[word] ^= 0x1Fu64 << shift;
-        let last_byte = r - 1;
-        let lw = last_byte / 8;
-        let ls = (last_byte % 8) * 8;
-        s[lw] ^= 128u64 << ls;
-        keccak_f1600(unsafe { &mut *(s.as_mut_ptr() as *mut [u64; 25]) });
-        s[25] = 0;
-    }
-
-    fn inc_squeeze(out: &mut [u8], outlen: usize, s: &mut [u64; 26]) {
-        let r = SHAKE256_RATE;
-        let mut pos = s[25] as usize;
-        let mut off = 0;
-        let mut remaining = outlen;
-        while remaining > 0 {
-            if pos == r {
-                keccak_f1600(unsafe { &mut *(s.as_mut_ptr() as *mut [u64; 25]) });
-                pos = 0;
-            }
-            let avail = core::cmp::min(remaining, r - pos);
-            for i in 0..avail {
-                let byte_idx = pos + i;
-                let word = byte_idx / 8;
-                let shift = (byte_idx % 8) * 8;
-                out[off + i] = (s[word] >> shift) as u8;
-            }
-            pos += avail;
-            off += avail;
-            remaining -= avail;
-        }
-        s[25] = pos as u64;
-    }
-
     pub fn kat_tr_init() -> KatTrCtx {
         let mut ctx = KatTrCtx { s: [0u64; 26] };
-        inc_init(&mut ctx.s);
-        inc_absorb(&mut ctx.s, b"KAT-TRANSCRIPT-v1-SHAKE");
-        inc_absorb(&mut ctx.s, &[0x00]);
+        shake256_inc_init(&mut ctx.s);
+        shake256_inc_absorb(&mut ctx.s, b"KAT-TRANSCRIPT-v1-SHAKE");
+        shake256_inc_absorb(&mut ctx.s, &[0x00]);
         ctx
     }
 
     pub fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &[u8]) {
-        inc_absorb(&mut ctx.s, label);
-        inc_absorb(&mut ctx.s, &[0x00]);
+        shake256_inc_absorb(&mut ctx.s, label);
+        shake256_inc_absorb(&mut ctx.s, &[0x00]);
     }
 
     pub fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
-        inc_absorb(&mut ctx.s, &to_le8(8));
-        inc_absorb(&mut ctx.s, &to_le8(x));
+        shake256_inc_absorb(&mut ctx.s, &to_le8(8));
+        shake256_inc_absorb(&mut ctx.s, &to_le8(x));
     }
 
     pub fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8]) {
-        inc_absorb(&mut ctx.s, &to_le8(buf.len() as u64));
-        if !buf.is_empty() { inc_absorb(&mut ctx.s, buf); }
+        shake256_inc_absorb(&mut ctx.s, &to_le8(buf.len() as u64));
+        if !buf.is_empty() { shake256_inc_absorb(&mut ctx.s, buf); }
     }
 
     pub fn kat_tr_final(ctx: &mut KatTrCtx) -> [u8; 32] {
         let mut out32 = [0u8; 32];
-        inc_finalize(&mut ctx.s);
-        inc_squeeze(&mut out32, 32, &mut ctx.s);
+        shake256_inc_finalize(&mut ctx.s);
+        shake256_inc_squeeze(&mut out32, 32, &mut ctx.s);
         out32
     }
 }

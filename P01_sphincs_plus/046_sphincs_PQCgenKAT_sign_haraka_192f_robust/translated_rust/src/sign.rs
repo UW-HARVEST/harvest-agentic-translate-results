@@ -3,7 +3,7 @@ use crate::context::SpxCtx;
 use crate::fors::{SPX_fors_pk_from_sig, SPX_fors_sign};
 use crate::merkle::{SPX_merkle_gen_root, SPX_merkle_sign};
 use crate::params::*;
-use crate::rng::rng_randombytes as randombytes;
+use crate::randombytes::randombytes;
 use crate::utils::compute_root;
 use crate::wots::SPX_wots_pk_from_sig;
 

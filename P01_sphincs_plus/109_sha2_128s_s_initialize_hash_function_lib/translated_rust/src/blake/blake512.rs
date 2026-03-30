@@ -310,3 +310,29 @@ pub unsafe extern "C" fn SPX_blake512_mgf1(
         core::ptr::copy_nonoverlapping(outbuf.as_ptr(), out, outlen - i * SPX_BLAKE512_OUTPUT_BYTES);
     }
 }
+
+// C-compatible exports matching the C shared library symbols
+#[unsafe(export_name = "blake512_init")]
+pub unsafe extern "C" fn _export_blake512_init(s: *mut Blakestate512) {
+    crate::blake::blake512::blake512_init(&mut *s);
+}
+
+#[unsafe(export_name = "blake512_compress")]
+pub unsafe extern "C" fn _export_blake512_compress(s: *mut Blakestate512, block: *const u8) {
+    crate::blake::blake512::blake512_compress(&mut *s, block);
+}
+
+#[unsafe(export_name = "blake512_update")]
+pub unsafe extern "C" fn _export_blake512_update(s: *mut Blakestate512, data: *const u8, datalen: u64) {
+    crate::blake::blake512::blake512_update(&mut *s, data, datalen);
+}
+
+#[unsafe(export_name = "blake512_final")]
+pub unsafe extern "C" fn _export_blake512_final(s: *mut Blakestate512, digest: *mut u8) {
+    crate::blake::blake512::blake512_final(&mut *s, digest);
+}
+
+#[unsafe(export_name = "blake512")]
+pub unsafe extern "C" fn _export_blake512(out: *mut u8, in_: *const u8, inlen: u64) -> i32 {
+    crate::blake::blake512::blake512(out, in_, inlen)
+}
