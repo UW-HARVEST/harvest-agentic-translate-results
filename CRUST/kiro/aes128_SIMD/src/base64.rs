@@ -1,0 +1,56 @@
+use crate::aes::NB;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::__m128i;
+#[cfg(target_arch = "x86")]
+use std::arch::x86::__m128i;
+
+const BASE64_TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+pub fn base64_encode(input: &[u8], len: usize) -> String {
+    let output_len = 4 * ((len + 2) / 3);
+    let mut output = Vec::with_capacity(output_len);
+    let mut i = 0;
+    while i < len {
+        let a = input[i] as u32; i += 1;
+        let b = if i < len { let v = input[i] as u32; i += 1; v } else { i += 1; 0 };
+        let c = if i < len { let v = input[i] as u32; i += 1; v } else { i += 1; 0 };
+        let triple = (a << 16) | (b << 8) | c;
+        output.push(BASE64_TABLE[((triple >> 18) & 0x3F) as usize]);
+        output.push(BASE64_TABLE[((triple >> 12) & 0x3F) as usize]);
+        output.push(BASE64_TABLE[((triple >> 6) & 0x3F) as usize]);
+        output.push(BASE64_TABLE[(triple & 0x3F) as usize]);
+    }
+    let pad_count = (3 - (len % 3)) % 3;
+    let final_len = output.len();
+    for k in 0..pad_count {
+        output[final_len - 1 - k] = b'=';
+    }
+    String::from_utf8(output).unwrap()
+}
+
+pub fn g_mult_sse_byte(first: u8, second: u8) -> u8 {
+    crate::cipher_utils::g_mult(first, second)
+}
+
+pub fn g_mult_sse(first: __m128i, second: __m128i) -> __m128i {
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::*;
+        #[cfg(target_arch = "x86")]
+        use std::arch::x86::*;
+
+        let mut a_bytes = [0u8; 16];
+        let mut b_bytes = [0u8; 16];
+        _mm_storeu_si128(a_bytes.as_mut_ptr() as *mut __m128i, first);
+        _mm_storeu_si128(b_bytes.as_mut_ptr() as *mut __m128i, second);
+        let mut result = [0u8; 16];
+        for i in 0..16 {
+            result[i] = crate::cipher_utils::g_mult(a_bytes[i], b_bytes[i]);
+        }
+        _mm_loadu_si128(result.as_ptr() as *const __m128i)
+    }
+}
+
+pub fn columns_sse(state: &mut [[u8; NB]; 4]) {
+    crate::matrix::columns(state);
+}
