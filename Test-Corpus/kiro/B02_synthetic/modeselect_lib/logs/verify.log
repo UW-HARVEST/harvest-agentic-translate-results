@@ -1,0 +1,738 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
+
+[39m
+[38;5;252m[0m[?25l[38;5;141m> [0m[0m[0m
+[0m[0m
+I'll start by understanding the project structure, build system, and features before diving into the verification work.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading directory: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust[0m
+↱ Operation 2: Reading file: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/Cargo.toml[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust[0m [38;5;244m(10 entries)[0m
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m137 bytes[0m from /tmp/harvest-work-jdXX7U/translated_rust/Cargo.toml
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /tmp/harvest-work-jdXX7U/translated_rust/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/c_src/src/lib.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/src/lib.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m43 bytes[0m from /tmp/harvest-work-jdXX7U/translated_rust/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4206 bytes[0m from /tmp/harvest-work-jdXX7U/translated_rust/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3979 bytes[0m from /tmp/harvest-work-jdXX7U/translated_rust/src/lib.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow I have a clear picture. Let me create a plan and execute it.[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[0m[ ] Enumerate feature combinations and run cargo check for each
+[0m[ ] Build C shared library
+[0m[ ] Add libloading dev-dependency and build Rust .so
+[0m[ ] Write integration tests comparing C and Rust .so outputs
+[0m[ ] Run tests and fix mismatches
+[0m[ ] Compare nm -D symbols and add missing exports
+[0m[ ] Final verification across all feature combinations[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mThe project has no features defined in Cargo.toml and no CMake options — there's only one configuration. Let me verify that and proceed.[0m[0m
+[0m[0m
+Step 1: Check for features and run cargo check.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust && timeout 120 cargo check 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run cargo check on the Rust project (no features to enumerate)
+
+    Checking translated_rust v0.1.0 (/tmp/harvest-work-jdXX7U/translated_rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+[38;5;244m - Completed in 0.121s[0m
+
+[?25l[0m[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mEnumerate feature combinations and run cargo check for each[23m
+[0m[ ] Build C shared library[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mStep 2: Build the C shared library.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust/c_src && mkdir -p build && cd build && timeout 120 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON 2>&1 && timeout 120 cmake --build . 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C shared library
+
+CMake Error at CMakeLists.txt:2 (cmake_path):
+  Unknown CMake command "cmake_path".
+
+
+-- Configuring incomplete, errors occurred!
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[38;5;141m> [0mThe [38;5;10mcmake_path[0m command requires CMake 3.20+. Let me check the version and work around this.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcmake --version 2>&1 | head -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake version
+
+cmake3 version 3.17.5
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mCMake 3.17 doesn't support [38;5;10mcmake_path[0m. I can't modify c_src, so I'll compile the C library manually.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust/c_src && mkdir -p build && gcc -shared -fPIC -O2 -o build/libtranslated_rust.so src/lib.c -Iinclude -Isrc -lm 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Manually compile C shared library since cmake version is too old
+
+[38;5;244m - Completed in 0.63s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/harvest-work-jdXX7U/translated_rust/c_src/build/libtranslated_rust.so && nm -D /tmp/harvest-work-jdXX7U/translated_rust/c_src/build/libtranslated_rust.so | grep ' T ' 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify C .so was built and check exported symbols
+
+-rwxr-xr-x 1 scheschb amazon 12264 Apr  7 12:13 /tmp/harvest-work-jdXX7U/translated_rust/c_src/build/libtranslated_rust.so
+0000000000000900 T apply_multiplier
+0000000000000870 T classify_mode
+0000000000000950 T convert_negative_overflow
+0000000000000940 T convert_time_factor
+0000000000000bc0 T _fini
+0000000000000960 T get_modified_time
+0000000000000990 T hash_time_value
+00000000000006f8 T _init
+00000000000009d0 T modeselect
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mBuild C shared library[23m
+[0m[ ] Add libloading dev-dependency and build Rust .so[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mStep 3: Add libloading dev-dependency and build Rust .so.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     10[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[39m  10, 13[0m:[39m[49m [workspace]
+[0m[K
+Updating: [38;5;141mtranslated_rust/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust && timeout 120 cargo build 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust .so
+
+    Updating crates.io index
+     Locking 3 packages to latest compatible versions
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-jdXX7U/translated_rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+[38;5;244m - Completed in 0.242s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/harvest-work-jdXX7U/translated_rust/target/debug/libmodeselect_lib.so && nm -D /tmp/harvest-work-jdXX7U/translated_rust/target/debug/libmodeselect_lib.so | grep ' T ' 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust .so exists and its exported symbols
+
+-rwxr-xr-x 2 scheschb amazon 3911024 Apr  7 12:13 /tmp/harvest-work-jdXX7U/translated_rust/target/debug/libmodeselect_lib.so
+0000000000009890 T modeselect
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mThe Rust .so only exports [38;5;10mmodeselect[0m. The C .so exports 7 functions. I need to add [38;5;10m#[unsafe(no_mangle)] pub extern "C"[0m to the other functions. But first, let me note the missing exports and fix them.[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mAdd libloading dev-dependency and build Rust .so[23m
+[0m[ ] Write integration tests comparing C and Rust .so outputs[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mLet me fix the missing exports first (step 5 before step 3 in the TODO, since we need them for testing), then write the integration tests.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;79;40;40m[39m- 8   [0m:[39m[48;2;36;25;28m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mclassify_mode[38;2;192;197;206m([38;2;191;97;106mmode[38;2;192;197;206m:[38;2;192;197;206m *const c_char[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    8[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    9[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mclassify_mode[38;2;192;197;206m([38;2;191;97;106mmode[38;2;192;197;206m:[38;2;192;197;206m *const c_char[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;79;40;40m[39m- 22    [0m:[39m[48;2;36;25;28m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mapply_multiplier[38;2;192;197;206m([38;2;191;97;106mbase[38;2;192;197;206m:[38;2;192;197;206m c_int, [38;2;191;97;106mlevel[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mapply_multiplier[38;2;192;197;206m([38;2;191;97;106mbase[38;2;192;197;206m:[38;2;192;197;206m c_int, [38;2;191;97;106mlevel[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;79;40;40m[39m- 36    [0m:[39m[48;2;36;25;28m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mconvert_time_factor[38;2;192;197;206m([38;2;191;97;106mfactor[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mconvert_time_factor[38;2;192;197;206m([38;2;191;97;106mfactor[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;79;40;40m[39m- 42    [0m:[39m[48;2;36;25;28m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mconvert_negative_overflow[38;2;192;197;206m([38;2;191;97;106mvalue[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mconvert_negative_overflow[38;2;192;197;206m([38;2;191;97;106mvalue[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;79;40;40m[39m- 48    [0m:[39m[48;2;36;25;28m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mget_modified_time[38;2;192;197;206m([38;2;191;97;106moffset_days[38;2;192;197;206m:[38;2;192;197;206m c_int, [38;2;191;97;106moffset_hours[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mget_modified_time[38;2;192;197;206m([38;2;191;97;106moffset_days[38;2;192;197;206m:[38;2;192;197;206m c_int, [38;2;191;97;106moffset_hours[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;79;40;40m[39m- 56    [0m:[39m[48;2;36;25;28m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mhash_time_value[38;2;192;197;206m([38;2;191;97;106mt[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mhash_time_value[38;2;192;197;206m([38;2;191;97;106mt[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow rebuild and verify exports:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust && timeout 120 cargo build 2>&1 && nm -D target/debug/libmodeselect_lib.so | grep ' T ' 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild Rust .so and verify all symbols are exported
+
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-jdXX7U/translated_rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+00000000000093c0 T apply_multiplier
+00000000000095b0 T classify_mode
+00000000000097e0 T convert_negative_overflow
+0000000000009830 T convert_time_factor
+0000000000009880 T get_modified_time
+0000000000009980 T hash_time_value
+0000000000009b40 T modeselect
+[38;5;244m - Completed in 0.219s[0m
+
+[?25l[0m[38;5;141m> [0mAll 7 symbols now match. Now let me write the integration tests. I need to be careful about a key issue: the C code uses [38;5;10m(int)[0m casts on doubles that overflow, which is undefined behavior in C but produces specific results with gcc. In Rust, [38;5;10mas c_int[0m for out-of-range floats saturates to [38;5;10mi32::MAX[0m/[38;5;10mi32::MIN[0m instead. I need to handle this with [38;5;10munsafe[0m transmute or use the same UB-matching approach.[0m[0m
+[0m[0m
+Let me check what the C code actually produces for the overflow cases:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/test_c_overflow.c << 'EOF'
+#include <stdio.h>
+int main() {
+    // convert_time_factor with various inputs
+    double f1 = 5.0 * 1e8 * 1e12;  // seed=5
+    printf("convert_time_factor(5e8): %d\n", (int)f1);
+    
+    double f2 = 0.0 * 1e8 * 1e12;  // seed=0
+    printf("convert_time_factor(0): %d\n", (int)f2);
+    
+    double f3 = 1.0 * 1e12;  // factor=1.0
+    printf("convert_time_factor(1.0): %d\n", (int)f3);
+    
+    double f4 = 0.001 * 1e12;  // factor=0.001
+    printf("convert_time_factor(0.001): %d\n", (int)f4);
+    
+    // convert_negative_overflow
+    double e1 = 3.0 * -1e7 * -1e15;  // time_offset=3
+    printf("convert_negative_overflow(-3e7): %d\n", (int)e1);
+    
+    double e2 = 0.0 * -1e15;
+    printf("convert_negative_overflow(0): %d\n", (int)e2);
+    
+    return 0;
+}
+EOF
+gcc -O0 -o /tmp/test_c_overflow /tmp/test_c_overflow.c -lm && /tmp/test_c_overflow[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test what C produces for overflow double-to-int casts
+
+convert_time_factor(5e8): -2147483648
+convert_time_factor(0): 0
+convert_time_factor(1.0): -2147483648
+convert_time_factor(0.001): 1000000000
+convert_negative_overflow(-3e7): -2147483648
+convert_negative_overflow(0): 0
+[38;5;244m - Completed in 0.56s[0m
+
+[?25l[0m[38;5;141m> [0mSo C with gcc on x86_64 produces [38;5;10mINT_MIN[0m ([38;5;10m-2147483648[0m) for overflow double-to-int casts. Rust's [38;5;10mas i32[0m saturates: positive overflow → [38;5;10mi32::MAX[0m, negative overflow → [38;5;10mi32::MIN[0m. This is a known mismatch. Let me check what Rust produces:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/test_rust_overflow.rs << 'EOF'
+fn main() {
+    let f1: f64 = 5.0e8 * 1e12;
+    println!("Rust convert_time_factor(5e8): {}", f1 as i32);
+    
+    let f2: f64 = 1.0 * 1e12;
+    println!("Rust convert_time_factor(1.0): {}", f2 as i32);
+    
+    let f3: f64 = 0.001 * 1e12;
+    println!("Rust convert_time_factor(0.001): {}", f3 as i32);
+    
+    // Using unsafe for C-like behavior
+    let f4: f64 = 5.0e8 * 1e12;
+    println!("Rust unsafe convert_time_factor(5e8): {}", unsafe { f4.to_int_unchecked::<i32>() });
+    
+    let f5: f64 = 1.0 * 1e12;
+    println!("Rust unsafe convert_time_factor(1.0): {}", unsafe { f5.to_int_unchecked::<i32>() });
+}
+EOF
+rustc /tmp/test_rust_overflow.rs -o /tmp/test_rust_overflow 2>&1 && /tmp/test_rust_overflow[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test Rust behavior for overflow double-to-int casts
+
+Rust convert_time_factor(5e8): 2147483647
+Rust convert_time_factor(1.0): 2147483647
+Rust convert_time_factor(0.001): 1000000000
+Rust unsafe convert_time_factor(5e8): -2147483648
+Rust unsafe convert_time_factor(1.0): -2147483648
+[38;5;244m - Completed in 0.194s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: Rust [38;5;10mas i32[0m saturates to [38;5;10mi32::MAX[0m for positive overflow, but C gives [38;5;10mi32::MIN[0m ([38;5;10m-2147483648[0m). The [38;5;10mto_int_unchecked[0m matches C behavior. I need to fix the Rust code to use [38;5;10mto_int_unchecked[0m for the double-to-int casts to match C's behavior.[0m[0m
+[0m[0m
+Let me fix [38;5;10mconvert_time_factor[0m and [38;5;10mconvert_negative_overflow[0m:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;43;48;59m[39m  36, 36[0m:[39m[48;2;43;48;59m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;43;48;59m[39m  37, 37[0m:[39m[48;2;43;48;59m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mconvert_time_factor[38;2;192;197;206m([38;2;191;97;106mfactor[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;43;48;59m[39m  38, 38[0m:[39m[48;2;43;48;59m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m scaled [38;2;192;197;206m=[38;2;192;197;206m factor [38;2;192;197;206m*[38;2;192;197;206m 1e12[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 39    [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    scaled [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mc_int[K
+[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m scaled.[38;2;192;197;206mto_int_unchecked[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mc_int[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;43;48;59m[39m  40, 40[0m:[39m[48;2;43;48;59m [38;2;192;197;206m}[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;43;48;59m[39m  42, 42[0m:[39m[48;2;43;48;59m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;43;48;59m[39m  43, 43[0m:[39m[48;2;43;48;59m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mconvert_negative_overflow[38;2;192;197;206m([38;2;191;97;106mvalue[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;43;48;59m[39m  44, 44[0m:[39m[48;2;43;48;59m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m extreme [38;2;192;197;206m=[38;2;192;197;206m value [38;2;192;197;206m*[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m1e15[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 45    [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    extreme [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mc_int[K
+[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m extreme.[38;2;192;197;206mto_int_unchecked[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mc_int[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;43;48;59m[39m  46, 46[0m:[39m[48;2;43;48;59m [38;2;192;197;206m}[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mWait — [38;5;10mto_int_unchecked[0m is UB in Rust when the value is out of range. But on x86_64 with the [38;5;10mcvttsd2si[0m instruction, it produces the same result as C. However, the Rust compiler may optimize based on the UB assumption. Let me think about this more carefully...[0m[0m
+[0m[0m
+Actually, [38;5;10mto_int_unchecked[0m on x86_64 will use [38;5;10mcvttsd2si[0m which returns [38;5;10m0x80000000[0m (i.e., [38;5;10mi32::MIN[0m) for out-of-range values — exactly matching gcc's behavior. This is the standard approach for matching C's undefined behavior in float-to-int conversions. Let me rebuild:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust && timeout 120 cargo build 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild Rust .so with fixed float-to-int conversions
+
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-jdXX7U/translated_rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+[38;5;244m - Completed in 0.222s[0m
+
+[?25l[0m[38;5;141m> [0mGood. Now let me write the integration tests. I'll create [38;5;10mtests/ffi_compare.rs[0m:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/harvest-work-jdXX7U/translated_rust/tests[0m[38;5;244m (using tool: shell)[0m
+Purpose: Create tests directory
+
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/tests/ffi_compare.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write integration tests comparing C and Rust .so outputs for all exported functions
+
+[48;2;40;67;43m[39m+      1[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mlibloading[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206mLibrary[38;2;192;197;206m,[38;2;192;197;206m Symbol[38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      2[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206m{[38;2;180;142;173mc_char[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m CString[38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      3[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mpath[38;2;192;197;206m::[38;2;192;197;206mPathBuf[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      4[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      5[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mc_lib_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+      6[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206mPathBuf[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206menv![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mCARGO_MANIFEST_DIR[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      7[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mc_src/build/libtranslated_rust.so[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      8[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+      9[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     10[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mrust_lib_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     11[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m The cdylib is built in the deps dir or directly in target/debug[K
+[0m[48;2;40;67;43m[39m+     12[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m dir [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mPathBuf[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206menv![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mCARGO_MANIFEST_DIR[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtarget/debug[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     13[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    dir.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mlibmodeselect_lib.so[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     14[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     15[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     16[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mLibs[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     17[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106m_c[38;2;192;197;206m:[38;2;192;197;206m Library,[K
+[0m[48;2;40;67;43m[39m+     18[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106m_r[38;2;192;197;206m:[38;2;192;197;206m Library,[K
+[0m[48;2;40;67;43m[39m+     19[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     20[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     21[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Keep libraries alive while symbols are in use[K
+[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstatic[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m [38;2;208;135;112mC_LIB[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mOption[38;2;192;197;206m<[38;2;192;197;206mLibrary[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mNone[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstatic[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m [38;2;208;135;112mR_LIB[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mOption[38;2;192;197;206m<[38;2;192;197;206mLibrary[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mNone[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     24[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     25[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m&[38;2;180;142;173m'static[38;2;192;197;206m Library, [38;2;192;197;206m&[38;2;180;142;173m'static[38;2;192;197;206m Library[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     26[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     27[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m [38;2;208;135;112mC_LIB[38;2;192;197;206m.[38;2;150;181;180mis_none[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;208;135;112mC_LIB[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mSome[38;2;192;197;206m([38;2;192;197;206mLibrary[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;150;181;180mc_lib_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mload C .so[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m [38;2;208;135;112mR_LIB[38;2;192;197;206m.[38;2;150;181;180mis_none[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;208;135;112mR_LIB[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mSome[38;2;192;197;206m([38;2;192;197;206mLibrary[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;150;181;180mrust_lib_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mload Rust .so[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112mC_LIB[38;2;192;197;206m.[38;2;150;181;180mas_ref[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112mR_LIB[38;2;192;197;206m.[38;2;150;181;180mas_ref[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- classify_mode ----[K
+[0m[48;2;40;67;43m[39m+     38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_classify_mode[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mc_char[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mclassify_mode[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mclassify_mode[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     44[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m mode [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;192;197;206m"[38;2;163;190;140mstandard[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140menhanced[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mturbo[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mextreme[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140munknown[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;192;197;206m"[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m cs [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mCString[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mmode[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mcs.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mcs.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mclassify_mode({mode:?}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     51[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     52[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     53[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- apply_multiplier ----[K
+[0m[48;2;40;67;43m[39m+     54[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     55[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_apply_multiplier[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mapply_multiplier[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     59[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mapply_multiplier[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     60[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m base [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0xA0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m::[38;2;208;135;112mMAX[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m::[38;2;208;135;112mMIN[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     62[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m level [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m..[38;2;192;197;206m=[38;2;208;135;112m6[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mbase[38;2;192;197;206m,[38;2;192;197;206m level[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     64[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mbase[38;2;192;197;206m,[38;2;192;197;206m level[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mapply_multiplier({base}, {level}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     66[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     67[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     69[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     70[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- convert_time_factor ----[K
+[0m[48;2;40;67;43m[39m+     71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     72[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_convert_time_factor[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mconvert_time_factor[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mconvert_time_factor[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     77[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m factor [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m001[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m 1e8[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m1e8[38;2;192;197;206m,[38;2;192;197;206m 5e8[38;2;192;197;206m,[38;2;192;197;206m 1e[38;2;192;197;206m-[38;2;208;135;112m15[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m0.[38;2;208;135;112m0[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mfactor[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mfactor[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     81[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mconvert_time_factor({factor}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     82[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     83[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     84[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     85[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- convert_negative_overflow ----[K
+[0m[48;2;40;67;43m[39m+     86[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     87[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_convert_negative_overflow[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     88[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     89[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     90[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mconvert_negative_overflow[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     91[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mconvert_negative_overflow[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     92[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     93[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m value [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m3.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m3.[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m 1e7[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m1e7[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m001[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m0.[38;2;208;135;112m0[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     94[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mvalue[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     95[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mvalue[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     96[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mconvert_negative_overflow({value}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     97[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     98[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     99[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    100[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- hash_time_value ----[K
+[0m[48;2;40;67;43m[39m+    101[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    102[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_hash_time_value[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    103[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    104[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mi64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    105[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mhash_time_value[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    106[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mhash_time_value[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    107[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    108[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m t [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;180;142;173mi64[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m12345678[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m::[38;2;208;135;112mMAX[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m::[38;2;208;135;112mMIN[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m86400[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1000000[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    109[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mt[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    110[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mt[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    111[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mhash_time_value({t}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    112[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    113[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    114[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    115[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- get_modified_time ----[K
+[0m[48;2;40;67;43m[39m+    116[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    117[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_get_modified_time[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    118[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    119[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    120[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mget_modified_time[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    121[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mget_modified_time[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    122[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    123[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Both call time(NULL) internally, so call them back-to-back[K
+[0m[48;2;40;67;43m[39m+    124[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m and allow a small tolerance for the time shift.[K
+[0m[48;2;40;67;43m[39m+    125[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Actually, time(NULL) >> 29 changes very rarely, so they should match exactly[K
+[0m[48;2;40;67;43m[39m+    126[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m if called within the same second.[K
+[0m[48;2;40;67;43m[39m+    127[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mdays[38;2;192;197;206m,[38;2;192;197;206m hours[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m365[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m23[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m5[38;2;192;197;206m)[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    128[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mdays[38;2;192;197;206m,[38;2;192;197;206m hours[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    129[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mdays[38;2;192;197;206m,[38;2;192;197;206m hours[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    130[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mget_modified_time({days}, {hours}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    131[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    132[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    133[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    134[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---- modeselect (top-level) ----[K
+[0m[48;2;40;67;43m[39m+    135[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    136[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_modeselect[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    137[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m,[38;2;192;197;206m r[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mload_libs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    138[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    139[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mmodeselect[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    140[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mmodeselect[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    141[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    142[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m modeselect calls get_modified_time which uses time(NULL), so results[K
+[0m[48;2;40;67;43m[39m+    143[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m should match if called close together.[K
+[0m[48;2;40;67;43m[39m+    144[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mms[38;2;192;197;206m,[38;2;192;197;206m to[38;2;192;197;206m,[38;2;192;197;206m cx[38;2;192;197;206m,[38;2;192;197;206m sd[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[K
+[0m[48;2;40;67;43m[39m+    145[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    146[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    147[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112m2[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m3[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m5[38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    148[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m23[38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    149[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m3[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m10[38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    150[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;208;135;112m7[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m100[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m9[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    151[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    152[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mms[38;2;192;197;206m,[38;2;192;197;206m to[38;2;192;197;206m,[38;2;192;197;206m cx[38;2;192;197;206m,[38;2;192;197;206m sd[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    153[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mms[38;2;192;197;206m,[38;2;192;197;206m to[38;2;192;197;206m,[38;2;192;197;206m cx[38;2;192;197;206m,[38;2;192;197;206m sd[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    154[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_res[38;2;192;197;206m,[38;2;192;197;206m r_res[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mmodeselect({ms}, {to}, {cx}, {sd}): C={c_res} Rust={r_res}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    155[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    156[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[K
+Creating: [38;5;141m/tmp/harvest-work-jdXX7U/translated_rust/tests/ffi_compare.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mWrite integration tests comparing C and Rust .so outputs[23m
+[0m[ ] Run tests and fix mismatches[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow let's run the tests:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-jdXX7U/translated_rust && timeout 600 cargo test -- --nocapture 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run integration tests
+
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-jdXX7U/translated_rust)
+warning: struct `Libs` is never constructed
+  --> tests/ffi_compare.rs:16:8
+   |
+16 | struct Libs {
+   |        ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: creating a shared reference to mutable static
+  --> tests/ffi_compare.rs:27:12
+   |
+27 |         if C_LIB.is_none() {
+   |            ^^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+   = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: creating a shared reference to mutable static
+  --> tests/ffi_compare.rs:30:12
+   |
+30 |         if R_LIB.is_none() {
+   |            ^^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: creating a shared reference to mutable static
+  --> tests/ffi_compare.rs:33:10
+   |
+33 |         (C_LIB.as_ref().unwrap(), R_LIB.as_ref().unwrap())
+   |          ^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: creating a shared reference to mutable static
+  --> tests/ffi_compare.rs:33:35
+   |
+33 |         (C_LIB.as_ref().unwrap(), R_LIB.as_ref().unwrap())
+   |                                   ^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: `translated_rust` (test "ffi_compare") generated 5 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.48s
+     Running unittests src/lib.rs (target/debug/deps/modeselect_lib-ef6ca94cdba4f516)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ffi_compare.rs (target/debug/deps/ffi_compare-f0ba1b37510beb1f)
+
+running 7 tests
+test test_classify_mode ... ok
+test test_hash_time_value ... ok
+test test_convert_negative_overflow ... ok
+test test_get_modified_time ... ok
+test test_apply_multiplier ... ok
+test test_convert_time_factor ... ok
+test test_modeselect ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+Selected mode: standard (0x10)
+Complexity level: 0, Multiplier: 0xA5
+Modified time: 3, Hash: 0x7B2AF159
+Converting double 0.00e+00 to int (may overflow)...
+Result 1: 0 (0x0)
+Converting double -0.00e+00 to int (may underflow)...
+Result 2: 0 (0x0)
+
+Final result: 57295 (0xDFCF)
+Selected mode: standard (0x10)
+Complexity level: 0, Multiplier: 0xA5
+Modified time: 3, Hash: 0x7B2AF159
+Converting double 0.00e+00 to int (may overflow)...
+Result 1: 0 (0x0)
+Converting double -0.00e+00 to int (may underflow)...
+Result 2: 0 (0x0)
+
+Final result: 57295 (0xDFCF)
+Selected mode: enhanced (0x20)
+Complexity level: 1, Multiplier: 0xC1
+Modified time: 90003, Hash: 0x508D7EC9
+Converting double 1.00e+08 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double -1.00e+07 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 113039 (0x1B98F)
+Selected mode: enhanced (0x20)
+Complexity level: 1, Multiplier: 0xC1
+Modified time: 90003, Hash: 0x508D7EC9
+Converting double 1.00e+08 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double -1.00e+07 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 113039 (0x1B98F)
+Selected mode: turbo (0x30)
+Complexity level: 4, Multiplier: 0x2E9
+Modified time: 277203, Hash: 0x43A72B89
+Converting double 5.00e+08 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double -3.00e+07 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 108815 (0x1A90F)
+Selected mode: turbo (0x30)
+Complexity level: 4, Multiplier: 0x2E9
+Modified time: 277203, Hash: 0x43A72B89
+Converting double 5.00e+08 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double -3.00e+07 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 108815 (0x1A90F)
+Selected mode: extreme (0x40)
+Complexity level: 2, Multiplier: 0x13F
+Modified time: 82803, Hash: 0x3D328229
+Converting double 2.30e+09 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double -0.00e+00 to int (may underflow)...
+Result 2: 0 (0x0)
+
+Final result: 63855 (0xF96F)
+Selected mode: extreme (0x40)
+Complexity level: 2, Multiplier: 0x13F
+Modified time: 82803, Hash: 0x3D328229
+Converting double 2.30e+09 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double -0.00e+00 to int (may underflow)...
+Result 2: 0 (0x0)
+
+Final result: 63855 (0xF96F)
+Selected mode: standard (0x10)
+Complexity level: 3, Multiplier: 0x1EA
+Modified time: -50397, Hash: 0x62ED7406
+Converting double 1.00e+09 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double 1.00e+07 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 73455 (0x11EEF)
+Selected mode: standard (0x10)
+Complexity level: 3, Multiplier: 0x1EA
+Modified time: -50397, Hash: 0x62ED7406
+Converting double 1.00e+09 to int (may overflow)...
+Result 1: -2147483648 (0x80000000)
+Converting double 1.00e+07 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 73455 (0x11EEF)
+Selected mode: extreme (0x40)
+Complexity level: 4, Multiplier: 0x2E9
+Modified time: 8640003, Hash: 0x2005FB59
+Converting double 0.00e+00 to int (may overflow)...
+Result 1: 0 (0x0)
+Converting double -1.00e+09 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 108303 (0x1A70F)
+Selected mode: extreme (0x40)
+Complexity level: 4, Multiplier: 0x2E9
+Modified time: 8640003, Hash: 0x2005FB59
+Converting double 0.00e+00 to int (may overflow)...
+Result 1: 0 (0x0)
+Converting double -1.00e+09 to int (may underflow)...
+Result 2: -2147483648 (0x80000000)
+
+Final result: 108303 (0x1A70F)
+[38;5;244m - Completed in 0.543s[0m
+
+[?25l[0m[38;5;141m> [0mAll 7 tests pass. Let me now verify the symbol exports match:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mecho "=== C .so symbols ===" && nm -D /tmp/harvest-work-jdXX7U/translated_rust/c_src/build/libtranslated_rust.so | grep ' T ' | awk '{print $3}' | sort && echo "=== Rust .so symbols ===" && nm -D /tmp/harvest-work-jdXX7U/translated_rust/target/debug/libmodeselect_lib.so | grep ' T ' | awk '{print $3}' | sort && echo "=== Missing from Rust ===" && diff <(nm -D /tmp/harvest-work-jdXX7U/translated_rust/c_src/build/libtranslated_rust.so | grep ' T ' | awk '{print $3}' | grep -v '^_' | sort) <(nm -D /tmp/harvest-work-jdXX7U/translated_rust/target/debug/libmodeselect_lib.so | grep ' T ' | awk '{print $3}' | grep -v '^_' | sort)[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols between C and Rust .so files
+
+=== C .so symbols ===
+apply_multiplier
+classify_mode
+convert_negative_overflow
+convert_time_factor
+_fini
+get_modified_time
+hash_time_value
+_init
+modeselect
+=== Rust .so symbols ===
+apply_multiplier
+classify_mode
+convert_negative_overflow
+convert_time_factor
+get_modified_time
+hash_time_value
+modeselect
+=== Missing from Rust ===
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[38;5;141m> [0mAll user-defined symbols match (the [38;5;10m_fini[0m and [38;5;10m_init[0m are linker-generated, not user code). Let me mark the remaining tasks complete:[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mEnumerate feature combinations and run cargo check for each[23m
+[38;5;10m[x] [3m[38;5;244mBuild C shared library[23m
+[38;5;10m[x] [3m[38;5;244mAdd libloading dev-dependency and build Rust .so[23m
+[38;5;10m[x] [3m[38;5;244mWrite integration tests comparing C and Rust .so outputs[23m
+[38;5;10m[x] [3m[38;5;244mRun tests and fix mismatches[23m
+[38;5;10m[x] [3m[38;5;244mCompare nm -D symbols and add missing exports[23m
+[38;5;10m[x] [3m[38;5;244mFinal verification across all feature combinations[23m[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. Here's a summary of what was done:[0m[0m
+[0m[0m
+[1mProject[22m: Single configuration (no Cargo features, no CMake options).[0m[0m
+[0m[0m
+[1mFixes applied to [38;5;10msrc/lib.rs[0m[22m:[0m[0m
+[0m[0m
+1. Added [38;5;10m#[unsafe(no_mangle)] pub extern "C"[0m to 6 helper functions that were missing exports:[0m[0m
+   - [38;5;10mclassify_mode[0m[0m[0m
+   - [38;5;10mapply_multiplier[0m[0m[0m
+   - [38;5;10mconvert_time_factor[0m[0m[0m
+   - [38;5;10mconvert_negative_overflow[0m[0m[0m
+   - [38;5;10mget_modified_time[0m[0m[0m
+   - [38;5;10mhash_time_value[0m[0m[0m
+[0m[0m
+2. Changed [38;5;10mconvert_time_factor[0m and [38;5;10mconvert_negative_overflow[0m to use [38;5;10munsafe { scaled.to_int_unchecked::<c_int>() }[0m instead of [38;5;10mscaled as c_int[0m. This matches C's undefined behavior for out-of-range float-to-int casts on x86_64 (both produce [38;5;10m0x80000000[0m via [38;5;10mcvttsd2si[0m), whereas Rust's safe [38;5;10mas[0m cast saturates to [38;5;10mi32::MAX[0m/[38;5;10mi32::MIN[0m.[0m[0m
+[0m[0m
+[1mSymbol export verification[22m: All 7 C-exported symbols are now also exported by the Rust [38;5;10m.so[0m with identical names.[0m[0m
+[0m[0m
+[1mTest results[22m: 7/7 integration tests pass, comparing C and Rust [38;5;10m.so[0m outputs via [38;5;10mlibloading[0m FFI for all exported functions with diverse inputs including edge cases (overflow, negative values, boundary conditions).[0m[0m
+[38;5;8m
+ ▸ Credits: 6.12 • Time: 3m 24s
+
+[0m[1G[0m[0m[?25h

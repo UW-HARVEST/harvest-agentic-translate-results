@@ -1,0 +1,184 @@
+#![allow(non_snake_case, non_upper_case_globals, unused)]
+
+// ============================================================
+// Parameter constants (mirrored from params.rs)
+// ============================================================
+#[cfg(any(feature = "128s", feature = "128f"))]
+const SPX_N: usize = 16;
+#[cfg(any(feature = "192s", feature = "192f"))]
+const SPX_N: usize = 24;
+#[cfg(any(feature = "256s", feature = "256f"))]
+const SPX_N: usize = 32;
+
+#[cfg(feature = "128s")] const SPX_FULL_HEIGHT: usize = 63;
+#[cfg(feature = "128f")] const SPX_FULL_HEIGHT: usize = 66;
+#[cfg(feature = "192s")] const SPX_FULL_HEIGHT: usize = 63;
+#[cfg(feature = "192f")] const SPX_FULL_HEIGHT: usize = 66;
+#[cfg(feature = "256s")] const SPX_FULL_HEIGHT: usize = 64;
+#[cfg(feature = "256f")] const SPX_FULL_HEIGHT: usize = 68;
+
+#[cfg(feature = "128s")] const SPX_D: usize = 7;
+#[cfg(feature = "128f")] const SPX_D: usize = 22;
+#[cfg(feature = "192s")] const SPX_D: usize = 7;
+#[cfg(feature = "192f")] const SPX_D: usize = 22;
+#[cfg(feature = "256s")] const SPX_D: usize = 8;
+#[cfg(feature = "256f")] const SPX_D: usize = 17;
+
+#[cfg(feature = "128s")] const SPX_FORS_HEIGHT: usize = 12;
+#[cfg(feature = "128f")] const SPX_FORS_HEIGHT: usize = 6;
+#[cfg(feature = "192s")] const SPX_FORS_HEIGHT: usize = 14;
+#[cfg(feature = "192f")] const SPX_FORS_HEIGHT: usize = 8;
+#[cfg(feature = "256s")] const SPX_FORS_HEIGHT: usize = 14;
+#[cfg(feature = "256f")] const SPX_FORS_HEIGHT: usize = 9;
+
+#[cfg(feature = "128s")] const SPX_FORS_TREES: usize = 14;
+#[cfg(feature = "128f")] const SPX_FORS_TREES: usize = 33;
+#[cfg(feature = "192s")] const SPX_FORS_TREES: usize = 17;
+#[cfg(feature = "192f")] const SPX_FORS_TREES: usize = 33;
+#[cfg(feature = "256s")] const SPX_FORS_TREES: usize = 22;
+#[cfg(feature = "256f")] const SPX_FORS_TREES: usize = 35;
+
+const SPX_WOTS_W: usize = 16;
+const SPX_WOTS_LOGW: usize = 4;
+const SPX_WOTS_LEN1: usize = 8 * SPX_N / SPX_WOTS_LOGW;
+const SPX_WOTS_LEN2: usize = 3;
+const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
+const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
+const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
+const SPX_FORS_BYTES: usize = (SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES * SPX_N;
+const SPX_BYTES: usize = SPX_N + SPX_FORS_BYTES + SPX_D * SPX_WOTS_BYTES + SPX_FULL_HEIGHT * SPX_N;
+const SPX_PK_BYTES: usize = 2 * SPX_N;
+const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
+
+const CRYPTO_SECRETKEYBYTES: usize = SPX_SK_BYTES;
+const CRYPTO_PUBLICKEYBYTES: usize = SPX_PK_BYTES;
+const CRYPTO_BYTES: usize = SPX_BYTES;
+
+// ============================================================
+// Extern C functions from the library
+// ============================================================
+extern "C" {
+    fn randombytes_init(entropy_input: *const u8, personalization_string: *const u8);
+    fn randombytes(x: *mut u8, xlen: u64) -> i32;
+    fn crypto_sign_keypair(pk: *mut u8, sk: *mut u8) -> i32;
+    fn crypto_sign(sm: *mut u8, smlen: *mut u64, m: *const u8, mlen: u64, sk: *const u8) -> i32;
+    fn crypto_sign_open(m: *mut u8, mlen: *mut u64, sm: *const u8, smlen: u64, pk: *const u8) -> i32;
+}
+
+fn rand_bytes(buf: &mut [u8]) {
+    unsafe { randombytes(buf.as_mut_ptr(), buf.len() as u64); }
+}
+
+// ============================================================
+// SHAKE transcript backend
+// ============================================================
+#[cfg(feature = "shake")]
+mod shake_tr {
+    const RATE: usize = 136;
+    const NROUNDS: usize = 24;
+    static RC: [u64; 24] = [
+        0x0000000000000001,0x0000000000008082,0x800000000000808a,0x8000000080008000,
+        0x000000000000808b,0x0000000080000001,0x8000000080008081,0x8000000000008009,
+        0x000000000000008a,0x0000000000000088,0x0000000080008009,0x000000008000000a,
+        0x000000008000808b,0x800000000000008b,0x8000000000008089,0x8000000000008003,
+        0x8000000000008002,0x8000000000000080,0x000000000000800a,0x800000008000000a,
+        0x8000000080008081,0x8000000000008080,0x0000000080000001,0x8000000080008008,
+    ];
+    #[inline] fn rol(a: u64, o: u32) -> u64 { (a << o) ^ (a >> (64 - o)) }
+
+    fn kf(s: &mut [u64; 25]) {
+        let (mut a0,mut a1,mut a2,mut a3,mut a4)=(s[0],s[1],s[2],s[3],s[4]);
+        let (mut a5,mut a6,mut a7,mut a8,mut a9)=(s[5],s[6],s[7],s[8],s[9]);
+        let (mut a10,mut a11,mut a12,mut a13,mut a14)=(s[10],s[11],s[12],s[13],s[14]);
+        let (mut a15,mut a16,mut a17,mut a18,mut a19)=(s[15],s[16],s[17],s[18],s[19]);
+        let (mut a20,mut a21,mut a22,mut a23,mut a24)=(s[20],s[21],s[22],s[23],s[24]);
+        let (mut b0,mut b1,mut b2,mut b3,mut b4);
+        let (mut d0,mut d1,mut d2,mut d3,mut d4);
+        let (mut e0,mut e1,mut e2,mut e3,mut e4,mut e5,mut e6,mut e7,mut e8,mut e9);
+        let (mut e10,mut e11,mut e12,mut e13,mut e14,mut e15,mut e16,mut e17,mut e18,mut e19);
+        let (mut e20,mut e21,mut e22,mut e23,mut e24);
+        let mut r = 0;
+        while r < NROUNDS {
+            b0=a0^a5^a10^a15^a20; b1=a1^a6^a11^a16^a21;
+            b2=a2^a7^a12^a17^a22; b3=a3^a8^a13^a18^a23; b4=a4^a9^a14^a19^a24;
+            d0=b4^rol(b1,1); d1=b0^rol(b2,1); d2=b1^rol(b3,1); d3=b2^rol(b4,1); d4=b3^rol(b0,1);
+            a0^=d0; let c0=a0;       a6^=d1; let c1=rol(a6,44);  a12^=d2; let c2=rol(a12,43);
+            a18^=d3; let c3=rol(a18,21); a24^=d4; let c4=rol(a24,14);
+            e0=c0^((!c1)&c2); e0^=RC[r]; e1=c1^((!c2)&c3); e2=c2^((!c3)&c4); e3=c3^((!c4)&c0); e4=c4^((!c0)&c1);
+            a3^=d3; let c0=rol(a3,28);  a9^=d4; let c1=rol(a9,20);  a10^=d0; let c2=rol(a10,3);
+            a16^=d1; let c3=rol(a16,45); a22^=d2; let c4=rol(a22,61);
+            e5=c0^((!c1)&c2); e6=c1^((!c2)&c3); e7=c2^((!c3)&c4); e8=c3^((!c4)&c0); e9=c4^((!c0)&c1);
+            a1^=d1; let c0=rol(a1,1);   a7^=d2; let c1=rol(a7,6);   a13^=d3; let c2=rol(a13,25);
+            a19^=d4; let c3=rol(a19,8);  a20^=d0; let c4=rol(a20,18);
+            e10=c0^((!c1)&c2); e11=c1^((!c2)&c3); e12=c2^((!c3)&c4); e13=c3^((!c4)&c0); e14=c4^((!c0)&c1);
+            a4^=d4; let c0=rol(a4,27);  a5^=d0; let c1=rol(a5,36);  a11^=d1; let c2=rol(a11,10);
+            a17^=d2; let c3=rol(a17,15); a23^=d3; let c4=rol(a23,56);
+            e15=c0^((!c1)&c2); e16=c1^((!c2)&c3); e17=c2^((!c3)&c4); e18=c3^((!c4)&c0); e19=c4^((!c0)&c1);
+            a2^=d2; let c0=rol(a2,62);  a8^=d3; let c1=rol(a8,55);  a14^=d4; let c2=rol(a14,39);
+            a15^=d0; let c3=rol(a15,41); a21^=d1; let c4=rol(a21,2);
+            e20=c0^((!c1)&c2); e21=c1^((!c2)&c3); e22=c2^((!c3)&c4); e23=c3^((!c4)&c0); e24=c4^((!c0)&c1);
+            // round r+1
+            b0=e0^e5^e10^e15^e20; b1=e1^e6^e11^e16^e21;
+            b2=e2^e7^e12^e17^e22; b3=e3^e8^e13^e18^e23; b4=e4^e9^e14^e19^e24;
+            d0=b4^rol(b1,1); d1=b0^rol(b2,1); d2=b1^rol(b3,1); d3=b2^rol(b4,1); d4=b3^rol(b0,1);
+            e0^=d0; let c0=e0;       e6^=d1; let c1=rol(e6,44);  e12^=d2; let c2=rol(e12,43);
+            e18^=d3; let c3=rol(e18,21); e24^=d4; let c4=rol(e24,14);
+            a0=c0^((!c1)&c2); a0^=RC[r+1]; a1=c1^((!c2)&c3); a2=c2^((!c3)&c4); a3=c3^((!c4)&c0); a4=c4^((!c0)&c1);
+            e3^=d3; let c0=rol(e3,28);  e9^=d4; let c1=rol(e9,20);  e10^=d0; let c2=rol(e10,3);
+            e16^=d1; let c3=rol(e16,45); e22^=d2; let c4=rol(e22,61);
+            a5=c0^((!c1)&c2); a6=c1^((!c2)&c3); a7=c2^((!c3)&c4); a8=c3^((!c4)&c0); a9=c4^((!c0)&c1);
+            e1^=d1; let c0=rol(e1,1);   e7^=d2; let c1=rol(e7,6);   e13^=d3; let c2=rol(e13,25);
+            e19^=d4; let c3=rol(e19,8);  e20^=d0; let c4=rol(e20,18);
+            a10=c0^((!c1)&c2); a11=c1^((!c2)&c3); a12=c2^((!c3)&c4); a13=c3^((!c4)&c0); a14=c4^((!c0)&c1);
+            e4^=d4; let c0=rol(e4,27);  e5^=d0; let c1=rol(e5,36);  e11^=d1; let c2=rol(e11,10);
+            e17^=d2; let c3=rol(e17,15); e23^=d3; let c4=rol(e23,56);
+            a15=c0^((!c1)&c2); a16=c1^((!c2)&c3); a17=c2^((!c3)&c4); a18=c3^((!c4)&c0); a19=c4^((!c0)&c1);
+            e2^=d2; let c0=rol(e2,62);  e8^=d3; let c1=rol(e8,55);  e14^=d4; let c2=rol(e14,39);
+            e15^=d0; let c3=rol(e15,41); e21^=d1; let c4=rol(e21,2);
+            a20=c0^((!c1)&c2); a21=c1^((!c2)&c3); a22=c2^((!c3)&c4); a23=c3^((!c4)&c0); a24=c4^((!c0)&c1);
+            r += 2;
+        }
+        s[0]=a0;s[1]=a1;s[2]=a2;s[3]=a3;s[4]=a4;s[5]=a5;s[6]=a6;s[7]=a7;s[8]=a8;s[9]=a9;
+        s[10]=a10;s[11]=a11;s[12]=a12;s[13]=a13;s[14]=a14;s[15]=a15;s[16]=a16;s[17]=a17;s[18]=a18;s[19]=a19;
+        s[20]=a20;s[21]=a21;s[22]=a22;s[23]=a23;s[24]=a24;
+    }
+
+    fn absorb(s: &mut [u64; 26], m: &[u8]) {
+        let mut off = 0; let mut rem = m.len();
+        while rem + (s[25] as usize) >= RATE {
+            let take = RATE - s[25] as usize;
+            for i in 0..take { let p = s[25] as usize + i; s[p>>3] ^= (m[off+i] as u64) << (8*(p&7)); }
+            rem -= take; off += take; s[25] = 0;
+            let st: &mut [u64; 25] = (&mut s[..25]).try_into().unwrap(); kf(st);
+        }
+        for i in 0..rem { let p = s[25] as usize + i; s[p>>3] ^= (m[off+i] as u64) << (8*(p&7)); }
+        s[25] += rem as u64;
+    }
+    fn finalize(s: &mut [u64; 26]) {
+        let p = s[25] as usize;
+        s[p>>3] ^= 0x1Fu64 << (8*(p&7));
+        s[(RATE-1)>>3] ^= 128u64 << (8*((RATE-1)&7));
+        s[25] = 0;
+    }
+    fn squeeze(h: &mut [u8], mut n: usize, s: &mut [u64; 26]) {
+        let mut off = 0; let mut i = 0;
+        while i < n && i < s[25] as usize {
+            let p = RATE - s[25] as usize + i; h[off+i] = (s[p>>3] >> (8*(p&7))) as u8; i += 1;
+        }
+        off += i; n -= i; s[25] -= i as u64;
+        while n > 0 {
+            let st: &mut [u64; 25] = (&mut s[..25]).try_into().unwrap(); kf(st);
+            let mut i = 0;
+            while i < n && i < RATE { h[off+i] = (s[i>>3] >> (8*(i&7))) as u8; i += 1; }
+            off += i; n -= i; s[25] = (RATE - i) as u64;
+        }
+    }
+
+    pub struct Ctx { s: [u64; 26] }
+    impl Ctx { pub fn new() -> Self { Ctx { s: [0u64; 26] } } }
+    pub fn init(c: &mut Ctx) { c.s = [0u64; 26]; absorb(&mut c.s, b"KAT-TRANSCRIPT-v1-SHAKE"); absorb(&mut c.s, &[0]); }
+    pub fn label(c: &mut Ctx, l: &str) { absorb(&mut c.s, l.as_bytes()); absorb(&mut c.s, &[0]); }
+    pub fn au64(c: &mut Ctx, x: u64) { absorb(&mut c.s, &8u64.to_le_bytes()); absorb(&mut c.s, &x.to_le_bytes()); }
+    pub fn abytes(c: &mut Ctx, b: &[u8]) { absorb(&mut c.s, &(b.len() as u64).to_le_bytes()); if !b.is_empty() { absorb(&mut c.s, b); } }
+    pub fn fin(c: &mut Ctx, out: &mut [u8; 32]) { finalize(&mut c.s); squeeze(out, 32, &mut c.s); }
+}
