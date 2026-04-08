@@ -1,0 +1,41 @@
+use aes128_SIMD::matrix;
+
+#[test]
+fn test_columns() {
+    let mut state = [
+        [0xdb, 0x13, 0x53, 0x45],
+        [0xf2, 0x0a, 0x22, 0x5c],
+        [0x01, 0x01, 0x01, 0x01],
+        [0xc6, 0xc6, 0xc6, 0xc6],
+    ];
+    matrix::columns(&mut state);
+    assert_eq!(state, [
+        [0x67, 0xFF, 0x07, 0xA9],
+        [0xE1, 0xC2, 0xD2, 0x38],
+        [0x7A, 0x4A, 0x22, 0x4A],
+        [0x12, 0xA9, 0x41, 0x05],
+    ]);
+}
+
+#[test]
+fn test_inv_columns_reverses_columns() {
+    let original = [
+        [0xdb, 0x13, 0x53, 0x45],
+        [0xf2, 0x0a, 0x22, 0x5c],
+        [0x01, 0x01, 0x01, 0x01],
+        [0xc6, 0xc6, 0xc6, 0xc6],
+    ];
+    let mut state = original;
+    matrix::columns(&mut state);
+    matrix::inv_columns(&mut state);
+    assert_eq!(state, original);
+}
+
+#[test]
+fn test_columns_zero() {
+    let mut state = [[0u8; 4]; 4];
+    matrix::columns(&mut state);
+    assert_eq!(state, [[0u8; 4]; 4]);
+}
+
+fn main() {}
