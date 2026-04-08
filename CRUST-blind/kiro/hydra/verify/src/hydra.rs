@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 
 pub const RED: &str = "\x1b[0;31m";
 pub const WHITE: &str = "\x1b[0;37m";
@@ -47,14 +47,11 @@ pub fn read_field(file: &mut &[u8], field: &str) -> String {
         i += 1;
     }
     if i >= file.len() || file[i] != b',' {
-        eprintln!(
-            "Found incorrect end after {}, found: {}",
-            field,
-            if i < file.len() { file[i] as char } else { '?' }
-        );
+        eprintln!("Found incorrect end after {}, found: {}", field,
+            if i < file.len() { file[i] as char } else { '\0' });
         std::process::exit(1);
     }
-    let key = std::str::from_utf8(&start[..i]).unwrap_or("").to_string();
+    let key = String::from_utf8_lossy(&start[..i]).to_string();
     *file = &file[i + 1..];
     key
 }
@@ -82,11 +79,8 @@ pub fn start(c: &Command) {
             if command_run(found_cmd) > 0 {
                 return;
             }
-            current = if found_cmd.children.is_some() {
-                Some(found_cmd)
-            } else {
-                None
-            };
+            // Navigate into the found command's subtree
+            current = Some(found_cmd);
         } else {
             current = None;
         }
@@ -94,34 +88,27 @@ pub fn start(c: &Command) {
 }
 
 pub fn tree_add_command(tree: &mut Command, keys: &str, name: &str, command: &str) {
-    let mut chars = keys.chars();
-    let first_key = match chars.next() {
-        Some(k) => k,
-        None => return,
-    };
-    let rest: String = chars.collect();
+    let key_bytes = keys.as_bytes();
+    let first_key = key_bytes[0] as char;
 
-    if rest.is_empty() {
+    if key_bytes.len() == 1 {
+        // Check if command already exists
         if let Some(existing) = find_command_mut(tree, first_key) {
             existing.name = name.to_string();
             existing.command = command.to_string();
         } else {
-            command_add_child(
-                tree,
-                Command::new(first_key, name.to_string(), command.to_string()),
-            );
+            command_add_child(tree, Command::new(first_key, name.to_string(), command.to_string()));
         }
         return;
     }
 
-    if find_command_mut(tree, first_key).is_none() {
-        command_add_child(
-            tree,
-            Command::new(first_key, DEFAULT_NAME.to_string(), String::new()),
-        );
+    // Need to find or create intermediate node
+    let has_child = find_command_mut(tree, first_key).is_some();
+    if !has_child {
+        command_add_child(tree, Command::new(first_key, DEFAULT_NAME.to_string(), String::new()));
     }
     let c = find_command_mut(tree, first_key).unwrap();
-    tree_add_command(c, &rest, name, command);
+    tree_add_command(c, &keys[1..], name, command);
 }
 
 pub fn read_line(c: &mut Command, file: &mut &[u8]) {
@@ -131,17 +118,15 @@ pub fn read_line(c: &mut Command, file: &mut &[u8]) {
     tree_add_command(c, &key, &name, &command);
 }
 
-pub fn command_add_child(c: &mut Command, child: Command) {
+pub fn command_add_child(c: &mut Command, mut child: Command) {
     if c.children.is_none() {
         c.children = Some(Box::new(child));
         return;
     }
 
     if c.children.as_ref().unwrap().key > child.key {
-        let old = c.children.take();
-        let mut new_child = Box::new(child);
-        new_child.next = old;
-        c.children = Some(new_child);
+        child.next = c.children.take();
+        c.children = Some(Box::new(child));
         return;
     }
 
@@ -149,58 +134,47 @@ pub fn command_add_child(c: &mut Command, child: Command) {
     while last.next.is_some() && last.next.as_ref().unwrap().key <= child.key {
         last = last.next.as_deref_mut().unwrap();
     }
-    let old_next = last.next.take();
-    let mut new_child = Box::new(child);
-    new_child.next = old_next;
-    last.next = Some(new_child);
+    child.next = last.next.take();
+    last.next = Some(Box::new(child));
 }
 
 pub fn getch() -> char {
-    crossterm::terminal::enable_raw_mode().ok();
-    let ch = if let crossterm::event::Event::Key(key_event) =
-        crossterm::event::read().unwrap_or(crossterm::event::Event::FocusLost)
-    {
-        match key_event.code {
-            crossterm::event::KeyCode::Char(c) => c,
-            _ => '\0',
-        }
-    } else {
-        '\0'
-    };
-    crossterm::terminal::disable_raw_mode().ok();
-    ch
+    use termion::raw::IntoRawMode;
+    let _raw = io::stdout().into_raw_mode().unwrap();
+    let mut buf = [0u8; 1];
+    io::stdin().read_exact(&mut buf).unwrap_or(());
+    buf[0] as char
 }
 
 pub fn print_command(c: &Command) -> i32 {
-    let width = crossterm::terminal::size().map(|(w, _)| w as i32).unwrap_or(80);
-    let mut lines = 0;
+    let width = terminal_size::terminal_size()
+        .map(|(w, _)| w.0 as usize)
+        .unwrap_or(80);
+
+    let mut lines: i32 = 0;
 
     if !c.name.is_empty() {
         eprint!("{}{}:{}\n", BLUE, c.name, COLOR_OFF);
         lines += 1;
     }
 
-    let mut max_line_width: i32 = 0;
+    // Find longest item name
+    let mut max_line_width: usize = 0;
     let mut child = c.children.as_deref();
     while let Some(node) = child {
-        let lw = node.name.len() as i32;
+        let lw = node.name.len();
         if lw > max_line_width {
             max_line_width = lw;
         }
         child = node.next.as_deref();
     }
 
-    max_line_width += RIGHT_MARGIN as i32;
+    max_line_width += RIGHT_MARGIN;
     if max_line_width > width {
         max_line_width = width;
     }
 
-    let items_per_row = if max_line_width + 5 > 0 {
-        width / (max_line_width + 5)
-    } else {
-        1
-    };
-    let items_per_row = if items_per_row == 0 { 1 } else { items_per_row };
+    let items_per_row = width / (max_line_width + 5);
 
     child = c.children.as_deref();
     let mut current_item = 0;
@@ -208,32 +182,20 @@ pub fn print_command(c: &Command) -> i32 {
         current_item += 1;
 
         if node.children.is_some() {
-            eprint!(
-                "{}{}{} {}➔{} {}+{:<w$}{}",
-                YELLOW,
-                node.key,
-                COLOR_OFF,
-                PURPLE,
-                COLOR_OFF,
-                BLUE,
-                node.name,
-                COLOR_OFF,
-                w = max_line_width as usize
-            );
+            eprint!("{}{}{} {}➔{} {}+{:<width$}{}",
+                YELLOW, node.key, COLOR_OFF,
+                PURPLE, COLOR_OFF,
+                BLUE, node.name, COLOR_OFF,
+                width = max_line_width);
         } else {
-            eprint!(
-                "{}{}{} {}➔{}  {:<w$}",
-                YELLOW,
-                node.key,
-                COLOR_OFF,
-                PURPLE,
-                COLOR_OFF,
+            eprint!("{}{}{} {}➔{}  {:<width$}",
+                YELLOW, node.key, COLOR_OFF,
+                PURPLE, COLOR_OFF,
                 node.name,
-                w = max_line_width as usize
-            );
+                width = max_line_width);
         }
 
-        if current_item % items_per_row == 0 {
+        if items_per_row > 0 && current_item % items_per_row == 0 {
             eprint!("\n");
             lines += 1;
         }
@@ -251,7 +213,7 @@ pub fn clear_lines(count: i32) {
     let stderr = io::stderr();
     let mut handle = stderr.lock();
     for _ in 0..count {
-        let _ = write!(handle, "\x1b[A\r\x1b[2K");
+        let _ = handle.write_all(b"\x1b[A\r\x1b[2K");
     }
     let _ = handle.flush();
 }
@@ -272,7 +234,7 @@ pub fn read_until_eol(file: &mut &[u8]) -> String {
     while i < file.len() && file[i] != b'\n' && file[i] != 0 {
         i += 1;
     }
-    let s = std::str::from_utf8(&file[..i]).unwrap_or("").to_string();
+    let s = String::from_utf8_lossy(&file[..i]).to_string();
     if i < file.len() && file[i] == b'\n' {
         *file = &file[i + 1..];
     } else {
@@ -295,7 +257,8 @@ pub fn command_run(c: &Command) -> i32 {
     if !c.command.is_empty() {
         print!("{}", c.command);
         let _ = io::stdout().flush();
-        return c.command.len() as i32;
+        c.command.len() as i32
+    } else {
+        0
     }
-    0
 }

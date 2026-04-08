@@ -31,10 +31,14 @@ impl MaxHeap {
     fn heapify_down(&mut self, mut idx: usize) {
         loop {
             let left = idx * 2 + 1;
-            if left >= self.data.len() { break; }
+            if left >= self.data.len() {
+                break;
+            }
             let right = idx * 2 + 2;
             let mut largest = left;
-            if right < self.data.len() && (self.comparator)(self.data[right], self.data[left]) > 0 {
+            if right < self.data.len()
+                && (self.comparator)(self.data[right], self.data[left]) > 0
+            {
                 largest = right;
             }
             if (self.comparator)(self.data[largest], self.data[idx]) > 0 {
@@ -46,25 +50,34 @@ impl MaxHeap {
         }
     }
     pub fn insert(&mut self, value: u32) -> bool {
-        if self.data.len() == self.capacity { return false; }
+        if self.data.len() == self.capacity {
+            return false;
+        }
         self.data.push(value);
-        self.heapify_up(self.data.len() - 1);
+        let idx = self.data.len() - 1;
+        self.heapify_up(idx);
         true
     }
     pub fn maximum(&self) -> Option<u32> {
         self.data.first().copied()
     }
     pub fn remove_maximum(&mut self) -> bool {
-        if self.data.is_empty() { return false; }
+        if self.data.is_empty() {
+            return false;
+        }
         let last = self.data.len() - 1;
         self.data.swap(0, last);
         self.data.pop();
-        if !self.data.is_empty() { self.heapify_down(0); }
+        if !self.data.is_empty() {
+            self.heapify_down(0);
+        }
         true
     }
     /// Assumes that the element at index 0 may have changed.
     pub fn update_maximum(&mut self) -> bool {
-        if self.data.is_empty() { return false; }
+        if self.data.is_empty() {
+            return false;
+        }
         self.heapify_down(0);
         true
     }

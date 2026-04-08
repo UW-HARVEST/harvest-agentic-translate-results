@@ -7,36 +7,58 @@ pub type Ascii = u8;
 pub fn utf8_validate(data: &[Utf8]) -> bool {
     let len = data.len();
     let mut pos = 0usize;
+
     while pos < len {
-        let b = data[pos];
-        if b < 0x80 {
+        // Fast path: check 16 ASCII bytes at once
+        if pos + 16 <= len {
+            let mut all_ascii = true;
+            for i in 0..16 {
+                if data[pos + i] & 0x80 != 0 {
+                    all_ascii = false;
+                    break;
+                }
+            }
+            if all_ascii {
+                pos += 16;
+                continue;
+            }
+        }
+
+        let word = data[pos];
+        if word < 0x80 {
             pos += 1;
-        } else if (b & 0xe0) == 0xc0 {
-            if pos + 2 > len { return false; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return false; }
-            let cp = ((b as u32 & 0x1f) << 6) | (data[pos + 1] as u32 & 0x3f);
+            continue;
+        }
+
+        if (word & 0b11100000) == 0b11000000 {
+            let next_pos = pos + 2;
+            if next_pos > len { return false; }
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return false; }
+            let cp = ((word as u32 & 0b00011111) << 6) | (data[pos + 1] as u32 & 0b00111111);
             if cp < 0x80 || cp > 0x7ff { return false; }
-            pos += 2;
-        } else if (b & 0xf0) == 0xe0 {
-            if pos + 3 > len { return false; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return false; }
-            if (data[pos + 2] & 0xc0) != 0x80 { return false; }
-            let cp = ((b as u32 & 0x0f) << 12)
-                | ((data[pos + 1] as u32 & 0x3f) << 6)
-                | (data[pos + 2] as u32 & 0x3f);
+            pos = next_pos;
+        } else if (word & 0b11110000) == 0b11100000 {
+            let next_pos = pos + 3;
+            if next_pos > len { return false; }
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return false; }
+            if (data[pos + 2] & 0b11000000) != 0b10000000 { return false; }
+            let cp = ((word as u32 & 0b00001111) << 12)
+                | ((data[pos + 1] as u32 & 0b00111111) << 6)
+                | (data[pos + 2] as u32 & 0b00111111);
             if cp < 0x800 || cp > 0xffff || (cp > 0xd7ff && cp < 0xe000) { return false; }
-            pos += 3;
-        } else if (b & 0xf8) == 0xf0 {
-            if pos + 4 > len { return false; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return false; }
-            if (data[pos + 2] & 0xc0) != 0x80 { return false; }
-            if (data[pos + 3] & 0xc0) != 0x80 { return false; }
-            let cp = ((b as u32 & 0x07) << 18)
-                | ((data[pos + 1] as u32 & 0x3f) << 12)
-                | ((data[pos + 2] as u32 & 0x3f) << 6)
-                | (data[pos + 3] as u32 & 0x3f);
+            pos = next_pos;
+        } else if (word & 0b11111000) == 0b11110000 {
+            let next_pos = pos + 4;
+            if next_pos > len { return false; }
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return false; }
+            if (data[pos + 2] & 0b11000000) != 0b10000000 { return false; }
+            if (data[pos + 3] & 0b11000000) != 0b10000000 { return false; }
+            let cp = ((word as u32 & 0b00000111) << 18)
+                | ((data[pos + 1] as u32 & 0b00111111) << 12)
+                | ((data[pos + 2] as u32 & 0b00111111) << 6)
+                | (data[pos + 3] as u32 & 0b00111111);
             if cp <= 0xffff || cp > 0x10ffff { return false; }
-            pos += 4;
+            pos = next_pos;
         } else {
             return false;
         }
@@ -81,34 +103,35 @@ pub fn utf8_length_from_latin1(data: &[Latin1]) -> usize {
 
 pub fn utf8_convert_to_utf16le(data: &[Utf8], result: &mut [Utf16]) -> usize {
     let len = data.len();
-    let mut pos = 0;
-    let mut out = 0;
+    let mut pos = 0usize;
+    let mut out = 0usize;
+
     while pos < len {
-        let b = data[pos];
-        if b < 0x80 {
-            result[out] = b as u16;
+        let leading = data[pos];
+        if leading < 0x80 {
+            result[out] = leading as u16;
             out += 1;
             pos += 1;
-        } else if (b & 0xe0) == 0xc0 {
+        } else if (leading & 0b11100000) == 0b11000000 {
             if pos + 1 >= len { break; }
-            let cp = ((b as u16 & 0x1f) << 6) | (data[pos + 1] as u16 & 0x3f);
+            let cp = ((leading as u16 & 0b00011111) << 6) | (data[pos + 1] as u16 & 0b00111111);
             result[out] = cp;
             out += 1;
             pos += 2;
-        } else if (b & 0xf0) == 0xe0 {
+        } else if (leading & 0b11110000) == 0b11100000 {
             if pos + 2 >= len { break; }
-            let cp = ((b as u16 & 0x0f) << 12)
-                | ((data[pos + 1] as u16 & 0x3f) << 6)
-                | (data[pos + 2] as u16 & 0x3f);
+            let cp = ((leading as u16 & 0b00001111) << 12)
+                | ((data[pos + 1] as u16 & 0b00111111) << 6)
+                | (data[pos + 2] as u16 & 0b00111111);
             result[out] = cp;
             out += 1;
             pos += 3;
-        } else if (b & 0xf8) == 0xf0 {
+        } else if (leading & 0b11111000) == 0b11110000 {
             if pos + 3 >= len { break; }
-            let cp = ((b as u32 & 0x07) << 18)
-                | ((data[pos + 1] as u32 & 0x3f) << 12)
-                | ((data[pos + 2] as u32 & 0x3f) << 6)
-                | (data[pos + 3] as u32 & 0x3f);
+            let cp = ((leading as u32 & 0b00000111) << 18)
+                | ((data[pos + 1] as u32 & 0b00111111) << 12)
+                | ((data[pos + 2] as u32 & 0b00111111) << 6)
+                | (data[pos + 3] as u32 & 0b00111111);
             let cp = cp - 0x10000;
             result[out] = (0xd800 + (cp >> 10)) as u16;
             result[out + 1] = (0xdc00 + (cp & 0x3ff)) as u16;
@@ -123,42 +146,43 @@ pub fn utf8_convert_to_utf16le(data: &[Utf8], result: &mut [Utf16]) -> usize {
 
 pub fn utf8_convert_to_utf32(data: &[Utf8], result: &mut [Utf32]) -> usize {
     let len = data.len();
-    let mut pos = 0;
-    let mut out = 0;
+    let mut pos = 0usize;
+    let mut out = 0usize;
+
     while pos < len {
-        let b = data[pos];
-        if b < 0x80 {
-            result[out] = b as u32;
+        let leading = data[pos];
+        if leading < 0x80 {
+            result[out] = leading as u32;
             out += 1;
             pos += 1;
-        } else if (b & 0xe0) == 0xc0 {
+        } else if (leading & 0b11100000) == 0b11000000 {
             if pos + 1 >= len { return 0; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return 0; }
-            let cp = ((b as u32 & 0x1f) << 6) | (data[pos + 1] as u32 & 0x3f);
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return 0; }
+            let cp = ((leading as u32 & 0b00011111) << 6) | (data[pos + 1] as u32 & 0b00111111);
             if cp < 0x80 || cp > 0x7ff { return 0; }
             result[out] = cp;
             out += 1;
             pos += 2;
-        } else if (b & 0xf0) == 0xe0 {
+        } else if (leading & 0b11110000) == 0b11100000 {
             if pos + 2 >= len { return 0; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return 0; }
-            if (data[pos + 2] & 0xc0) != 0x80 { return 0; }
-            let cp = ((b as u32 & 0x0f) << 12)
-                | ((data[pos + 1] as u32 & 0x3f) << 6)
-                | (data[pos + 2] as u32 & 0x3f);
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return 0; }
+            if (data[pos + 2] & 0b11000000) != 0b10000000 { return 0; }
+            let cp = ((leading as u32 & 0b00001111) << 12)
+                | ((data[pos + 1] as u32 & 0b00111111) << 6)
+                | (data[pos + 2] as u32 & 0b00111111);
             if cp < 0x800 || cp > 0xffff || (cp > 0xd7ff && cp < 0xe000) { return 0; }
             result[out] = cp;
             out += 1;
             pos += 3;
-        } else if (b & 0xf8) == 0xf0 {
+        } else if (leading & 0b11111000) == 0b11110000 {
             if pos + 3 >= len { return 0; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return 0; }
-            if (data[pos + 2] & 0xc0) != 0x80 { return 0; }
-            if (data[pos + 3] & 0xc0) != 0x80 { return 0; }
-            let cp = ((b as u32 & 0x07) << 18)
-                | ((data[pos + 1] as u32 & 0x3f) << 12)
-                | ((data[pos + 2] as u32 & 0x3f) << 6)
-                | (data[pos + 3] as u32 & 0x3f);
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return 0; }
+            if (data[pos + 2] & 0b11000000) != 0b10000000 { return 0; }
+            if (data[pos + 3] & 0b11000000) != 0b10000000 { return 0; }
+            let cp = ((leading as u32 & 0b00000111) << 18)
+                | ((data[pos + 1] as u32 & 0b00111111) << 12)
+                | ((data[pos + 2] as u32 & 0b00111111) << 6)
+                | (data[pos + 3] as u32 & 0b00111111);
             if cp <= 0xffff || cp > 0x10ffff { return 0; }
             result[out] = cp;
             out += 1;
@@ -172,18 +196,19 @@ pub fn utf8_convert_to_utf32(data: &[Utf8], result: &mut [Utf32]) -> usize {
 
 pub fn utf8_convert_to_latin1(data: &[Utf8], result: &mut [Latin1]) -> usize {
     let len = data.len();
-    let mut pos = 0;
-    let mut out = 0;
+    let mut pos = 0usize;
+    let mut out = 0usize;
+
     while pos < len {
-        let b = data[pos];
-        if b < 0x80 {
-            result[out] = b;
+        let leading = data[pos];
+        if leading < 0x80 {
+            result[out] = leading;
             out += 1;
             pos += 1;
-        } else if (b & 0xe0) == 0xc0 {
+        } else if (leading & 0b11100000) == 0b11000000 {
             if pos + 1 >= len { return 0; }
-            if (data[pos + 1] & 0xc0) != 0x80 { return 0; }
-            let cp = ((b as u32 & 0x1f) << 6) | (data[pos + 1] as u32 & 0x3f);
+            if (data[pos + 1] & 0b11000000) != 0b10000000 { return 0; }
+            let cp = ((leading as u32 & 0b00011111) << 6) | (data[pos + 1] as u32 & 0b00111111);
             if cp < 0x80 || cp > 0xff { return 0; }
             result[out] = cp as u8;
             out += 1;
@@ -197,7 +222,8 @@ pub fn utf8_convert_to_latin1(data: &[Utf8], result: &mut [Latin1]) -> usize {
 
 pub fn utf16le_validate(data: &[Utf16]) -> bool {
     let len = data.len();
-    let mut pos = 0;
+    let mut pos = 0usize;
+
     while pos < len {
         let word = data[pos];
         if (word & 0xf800) == 0xd800 {
@@ -237,14 +263,15 @@ pub fn utf16_length_from_utf32(data: &[Utf32]) -> usize {
     counter
 }
 
-pub fn utf16_length_from_latin1(_data: &[Latin1]) -> usize {
-    _data.len()
+pub fn utf16_length_from_latin1(data: &[Latin1]) -> usize {
+    data.len()
 }
 
 pub fn utf16le_convert_to_utf8(data: &[Utf16], result: &mut [Utf8]) -> usize {
     let len = data.len();
-    let mut pos = 0;
-    let mut out = 0;
+    let mut pos = 0usize;
+    let mut out = 0usize;
+
     while pos < len {
         let word = data[pos];
         if (word & 0xff80) == 0 {
@@ -252,14 +279,14 @@ pub fn utf16le_convert_to_utf8(data: &[Utf16], result: &mut [Utf8]) -> usize {
             out += 1;
             pos += 1;
         } else if (word & 0xf800) == 0 {
-            result[out] = ((word >> 6) as u8) | 0xc0;
-            result[out + 1] = (word as u8 & 0x3f) | 0x80;
+            result[out] = ((word >> 6) as u8) | 0b11000000;
+            result[out + 1] = (word as u8 & 0b111111) | 0b10000000;
             out += 2;
             pos += 1;
         } else if (word & 0xf800) != 0xd800 {
-            result[out] = ((word >> 12) as u8) | 0xe0;
-            result[out + 1] = (((word >> 6) & 0x3f) as u8) | 0x80;
-            result[out + 2] = (word as u8 & 0x3f) | 0x80;
+            result[out] = ((word >> 12) as u8) | 0b11100000;
+            result[out + 1] = (((word >> 6) & 0b111111) as u8) | 0b10000000;
+            result[out + 2] = (word as u8 & 0b111111) | 0b10000000;
             out += 3;
             pos += 1;
         } else {
@@ -267,10 +294,10 @@ pub fn utf16le_convert_to_utf8(data: &[Utf16], result: &mut [Utf8]) -> usize {
             if pos + 1 >= len { return 0; }
             let word2 = data[pos + 1];
             let value = ((diff as u32) << 10) + (word2 as u32).wrapping_sub(0xdc00) + 0x10000;
-            result[out] = ((value >> 18) as u8) | 0xf0;
-            result[out + 1] = (((value >> 12) & 0x3f) as u8) | 0x80;
-            result[out + 2] = (((value >> 6) & 0x3f) as u8) | 0x80;
-            result[out + 3] = ((value & 0x3f) as u8) | 0x80;
+            result[out] = ((value >> 18) as u8) | 0b11110000;
+            result[out + 1] = (((value >> 12) & 0b111111) as u8) | 0b10000000;
+            result[out + 2] = (((value >> 6) & 0b111111) as u8) | 0b10000000;
+            result[out + 3] = ((value & 0b111111) as u8) | 0b10000000;
             out += 4;
             pos += 2;
         }
@@ -280,8 +307,9 @@ pub fn utf16le_convert_to_utf8(data: &[Utf16], result: &mut [Utf8]) -> usize {
 
 pub fn utf16le_convert_to_utf32(data: &[Utf16], result: &mut [Utf32]) -> usize {
     let len = data.len();
-    let mut pos = 0;
-    let mut out = 0;
+    let mut pos = 0usize;
+    let mut out = 0usize;
+
     while pos < len {
         let word = data[pos];
         if (word & 0xf800) != 0xd800 {
@@ -310,7 +338,7 @@ pub fn utf16le_convert_to_latin1(data: &[Utf16], result: &mut [Latin1]) -> usize
         overflow |= word;
         result[i] = (word & 0xff) as u8;
     }
-    if (overflow & 0xff00) != 0 { return 0; }
+    if overflow & 0xff00 != 0 { return 0; }
     data.len()
 }
 
@@ -341,32 +369,32 @@ pub fn utf32_length_from_utf16le(data: &[Utf16]) -> usize {
     counter
 }
 
-pub fn utf32_length_from_latin1(_data: &[Latin1]) -> usize {
-    _data.len()
+pub fn utf32_length_from_latin1(data: &[Latin1]) -> usize {
+    data.len()
 }
 
 pub fn utf32_convert_to_utf8(data: &[Utf32], result: &mut [Utf8]) -> usize {
-    let mut out = 0;
+    let mut out = 0usize;
     for &word in data {
         if (word & 0xffffff80) == 0 {
             result[out] = word as u8;
             out += 1;
         } else if (word & 0xfffff800) == 0 {
-            result[out] = ((word >> 6) as u8) | 0xc0;
-            result[out + 1] = (word as u8 & 0x3f) | 0x80;
+            result[out] = ((word >> 6) as u8) | 0b11000000;
+            result[out + 1] = (word as u8 & 0b111111) | 0b10000000;
             out += 2;
         } else if (word & 0xffff0000) == 0 {
             if word >= 0xd800 && word <= 0xdfff { return 0; }
-            result[out] = ((word >> 12) as u8) | 0xe0;
-            result[out + 1] = (((word >> 6) & 0x3f) as u8) | 0x80;
-            result[out + 2] = (word as u8 & 0x3f) | 0x80;
+            result[out] = ((word >> 12) as u8) | 0b11100000;
+            result[out + 1] = (((word >> 6) & 0b111111) as u8) | 0b10000000;
+            result[out + 2] = (word as u8 & 0b111111) | 0b10000000;
             out += 3;
         } else {
             if word > 0x10ffff { return 0; }
-            result[out] = ((word >> 18) as u8) | 0xf0;
-            result[out + 1] = (((word >> 12) & 0x3f) as u8) | 0x80;
-            result[out + 2] = (((word >> 6) & 0x3f) as u8) | 0x80;
-            result[out + 3] = (word as u8 & 0x3f) | 0x80;
+            result[out] = ((word >> 18) as u8) | 0b11110000;
+            result[out + 1] = (((word >> 12) & 0b111111) as u8) | 0b10000000;
+            result[out + 2] = (((word >> 6) & 0b111111) as u8) | 0b10000000;
+            result[out + 3] = (word as u8 & 0b111111) | 0b10000000;
             out += 4;
         }
     }
@@ -374,7 +402,7 @@ pub fn utf32_convert_to_utf8(data: &[Utf32], result: &mut [Utf8]) -> usize {
 }
 
 pub fn utf32_convert_to_utf16le(data: &[Utf32], result: &mut [Utf16]) -> usize {
-    let mut out = 0;
+    let mut out = 0usize;
     for &word in data {
         if (word & 0xffff0000) == 0 {
             if word >= 0xd800 && word <= 0xdfff { return 0; }
@@ -397,7 +425,7 @@ pub fn utf32_convert_to_latin1(data: &[Utf32], result: &mut [Latin1]) -> usize {
         overflow |= word;
         result[i] = (word & 0xff) as u8;
     }
-    if (overflow & 0xffffff00) != 0 { return 0; }
+    if overflow & 0xffffff00 != 0 { return 0; }
     data.len()
 }
 
@@ -411,23 +439,23 @@ pub fn latin1_length_from_utf8(data: &[Utf8]) -> usize {
     counter
 }
 
-pub fn latin1_length_from_utf16le(_data: &[Utf16]) -> usize {
-    _data.len()
+pub fn latin1_length_from_utf16le(data: &[Utf16]) -> usize {
+    data.len()
 }
 
-pub fn latin1_length_from_utf32(_data: &[Utf32]) -> usize {
-    _data.len()
+pub fn latin1_length_from_utf32(data: &[Utf32]) -> usize {
+    data.len()
 }
 
 pub fn latin1_convert_to_utf8(data: &[Latin1], result: &mut [Utf8]) -> usize {
-    let mut out = 0;
+    let mut out = 0usize;
     for &byte in data {
         if (byte & 0x80) == 0 {
             result[out] = byte;
             out += 1;
         } else {
-            result[out] = (byte >> 6) | 0xc0;
-            result[out + 1] = (byte & 0x3f) | 0x80;
+            result[out] = (byte >> 6) | 0b11000000;
+            result[out + 1] = (byte & 0b111111) | 0b10000000;
             out += 2;
         }
     }
@@ -435,15 +463,15 @@ pub fn latin1_convert_to_utf8(data: &[Latin1], result: &mut [Utf8]) -> usize {
 }
 
 pub fn latin1_convert_to_utf16le(data: &[Latin1], result: &mut [Utf16]) -> usize {
-    for (i, &byte) in data.iter().enumerate() {
-        result[i] = byte as u16;
+    for (i, &b) in data.iter().enumerate() {
+        result[i] = b as u16;
     }
     data.len()
 }
 
 pub fn latin1_convert_to_utf32(data: &[Latin1], result: &mut [Utf32]) -> usize {
-    for (i, &byte) in data.iter().enumerate() {
-        result[i] = byte as u32;
+    for (i, &b) in data.iter().enumerate() {
+        result[i] = b as u32;
     }
     data.len()
 }

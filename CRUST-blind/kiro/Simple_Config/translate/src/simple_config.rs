@@ -104,7 +104,7 @@ impl Display for CfgVal {
             CfgVal::String(s) => write!(f, "\"{}\"", s),
             CfgVal::Boolean(b) => write!(f, "{}", if *b { "true" } else { "false" }),
             CfgVal::Int(i) => write!(f, "{}", i),
-            CfgVal::Float(fl) => write!(f, "{:.6}", fl),
+            CfgVal::Float(v) => write!(f, "{:.6}", v),
             CfgVal::Color(c) => write!(f, "{}", c),
         }
     }
@@ -232,35 +232,45 @@ fn is_string_char(ch: u8) -> bool {
     c.is_ascii_alphanumeric() || (c == ' ' || c == '\t') || (c.is_ascii_punctuation() && c != '"')
 }
 
-fn parse_string(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
-    s.advance(); // opening '"'
+fn parse_string(s: &mut Scanner) -> Result<CfgVal, CfgError> {
+    // Consume opening '"'
+    s.advance();
+
     let val_offset = s.cur;
     while !s.is_at_end() && is_string_char(s.peek()) {
         s.advance();
     }
+
     if s.is_at_end() || s.peek() != b'"' {
         return Err(s.error("closing '\"' expected".into()));
     }
+
     let val_len = s.cur - val_offset;
     if val_len > CFG_MAX_VAL as i32 {
         return Err(s.error("value too long".into()));
     }
+
     let val = s.slice(val_offset, val_len).to_string();
-    s.advance(); // closing '"'
-    entry.val = CfgVal::String(val);
-    Ok(())
+
+    // Consume closing '"'
+    s.advance();
+
+    Ok(CfgVal::String(val))
 }
 
 fn consume_int(s: &mut Scanner) -> Result<i32, CfgError> {
-    let mut sign: i32 = 1;
-    let mut num: i32 = 0;
+    let mut sign = 1i32;
+    let mut num = 0i32;
+
     if !s.is_at_end() && s.peek() == b'-' && (s.peek_next() as char).is_ascii_digit() {
         s.advance();
         sign = -1;
     }
+
     if !s.is_at_end() && !(s.peek() as char).is_ascii_digit() {
         return Err(s.error("number expected".into()));
     }
+
     while !s.is_at_end() && (s.peek() as char).is_ascii_digit() {
         let digit = (s.advance() - b'0') as i32;
         if num > (i32::MAX - digit) / 10 {
@@ -268,21 +278,24 @@ fn consume_int(s: &mut Scanner) -> Result<i32, CfgError> {
         }
         num = num * 10 + digit;
     }
+
     Ok(sign * num)
 }
 
 fn consume_float(s: &mut Scanner) -> Result<f32, CfgError> {
-    let mut sign: i32 = 1;
-    let mut int_part: i32 = 0;
-    let mut fract_part: i32 = 0;
+    let mut sign = 1i32;
+    let mut int_part = 0i32;
+    let mut fract_part = 0i32;
 
     if !s.is_at_end() && s.peek() == b'-' && (s.peek_next() as char).is_ascii_digit() {
         s.advance();
         sign = -1;
     }
+
     if !s.is_at_end() && !(s.peek() as char).is_ascii_digit() {
         return Err(s.error("number expected".into()));
     }
+
     while !s.is_at_end() && (s.peek() as char).is_ascii_digit() {
         let digit = (s.advance() - b'0') as i32;
         if int_part > (i32::MAX - digit) / 10 {
@@ -290,11 +303,15 @@ fn consume_float(s: &mut Scanner) -> Result<f32, CfgError> {
         }
         int_part = int_part * 10 + digit;
     }
+
     if !s.is_at_end() && s.peek() != b'.' {
         return Err(s.error("float expected".into()));
     }
-    s.advance(); // '.'
-    let mut div: i32 = 1;
+
+    // Consume '.'
+    s.advance();
+
+    let mut div = 1i32;
     while !s.is_at_end() && (s.peek() as char).is_ascii_digit() {
         let digit = (s.advance() - b'0') as i32;
         if fract_part > (i32::MAX - digit) / 10 {
@@ -306,63 +323,77 @@ fn consume_float(s: &mut Scanner) -> Result<f32, CfgError> {
         }
         div *= 10;
     }
+
     let floating = int_part as f32 + (fract_part as f32 / div as f32);
     Ok(sign as f32 * floating)
 }
 
 fn match_float(s: &mut Scanner) -> bool {
     let restore = s.cur;
+    let mut is_float = false;
+
     if !s.is_at_end() && s.peek() == b'-' && (s.peek_next() as char).is_ascii_digit() {
         s.advance();
     }
+
     while !s.is_at_end() && (s.peek() as char).is_ascii_digit() {
         s.advance();
     }
-    let is_float = !s.is_at_end() && s.peek() == b'.';
+
+    if !s.is_at_end() && s.peek() == b'.' {
+        is_float = true;
+    }
+
     s.cur = restore;
     is_float
 }
 
-fn parse_number(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_number(s: &mut Scanner) -> Result<CfgVal, CfgError> {
     if match_float(s) {
         let number = consume_float(s)?;
-        entry.val = CfgVal::Float(number);
+        Ok(CfgVal::Float(number))
     } else {
         let number = consume_int(s)?;
-        entry.val = CfgVal::Int(number);
+        Ok(CfgVal::Int(number))
     }
-    Ok(())
 }
 
-fn parse_rgba(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_rgba(s: &mut Scanner) -> Result<CfgVal, CfgError> {
     if !s.consume_literal(s.cur, "rgba") {
         return Err(s.error("invalid literal".into()));
     }
+
     s.skip_blank();
+
     if s.is_at_end() || s.peek() != b'(' {
         return Err(s.error("'(' expected".into()));
     }
-    s.advance(); // '('
+    s.advance();
 
     let mut rgb = [0u8; 3];
     for i in 0..3 {
         s.skip_blank();
+
         if match_float(s) {
             return Err(s.error("red, blue and green must be integers in range [0, 255]".into()));
         }
+
         let number = consume_int(s)?;
         if number < 0 || number > 255 {
             return Err(s.error("red, blue and green must be integers in range [0, 255]".into()));
         }
         rgb[i] = number as u8;
+
         s.skip_blank();
+
         if s.is_at_end() || s.peek() != b',' {
             return Err(s.error("',' expected".into()));
         }
-        s.advance(); // ','
+        s.advance();
     }
 
     s.skip_blank();
+
     let alpha: u8;
     if match_float(s) {
         let number = consume_float(s)?;
@@ -379,76 +410,79 @@ fn parse_rgba(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
     }
 
     s.skip_blank();
+
     if s.is_at_end() || s.peek() != b')' {
         return Err(s.error("')' expected".into()));
     }
-    s.advance(); // ')'
+    s.advance();
 
-    entry.val = CfgVal::Color(CfgColor { r: rgb[0], g: rgb[1], b: rgb[2], a: alpha });
-    Ok(())
+    Ok(CfgVal::Color(CfgColor { r: rgb[0], g: rgb[1], b: rgb[2], a: alpha }))
 }
 
-fn parse_true(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_true(s: &mut Scanner) -> Result<CfgVal, CfgError> {
     if !s.consume_literal(s.cur, "true") {
         return Err(s.error("invalid literal".into()));
     }
-    entry.val = CfgVal::Boolean(true);
-    Ok(())
+    Ok(CfgVal::Boolean(true))
 }
 
-fn parse_false(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_false(s: &mut Scanner) -> Result<CfgVal, CfgError> {
     if !s.consume_literal(s.cur, "false") {
         return Err(s.error("invalid literal".into()));
     }
-    entry.val = CfgVal::Boolean(false);
-    Ok(())
+    Ok(CfgVal::Boolean(false))
 }
 
-fn parse_literal(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_literal(s: &mut Scanner) -> Result<CfgVal, CfgError> {
     match s.peek() {
-        b't' => parse_true(s, entry),
-        b'f' => parse_false(s, entry),
-        b'r' => parse_rgba(s, entry),
+        b't' => parse_true(s),
+        b'f' => parse_false(s),
+        b'r' => parse_rgba(s),
         _ => Err(s.error("invalid literal".into())),
     }
 }
 
-fn parse_value(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_value(s: &mut Scanner) -> Result<CfgVal, CfgError> {
     s.skip_blank();
+
     if s.is_at_end() || s.peek() == b'\n' {
         return Err(s.error("missing value".into()));
     }
+
     let c = s.peek();
     if c == b'"' {
-        parse_string(s, entry)
+        parse_string(s)
     } else if (c as char).is_ascii_alphabetic() {
-        parse_literal(s, entry)
+        parse_literal(s)
     } else if (c as char).is_ascii_digit() || (c == b'-' && (s.peek_next() as char).is_ascii_digit()) {
-        parse_number(s, entry)
+        parse_number(s)
     } else {
         Err(s.error("invalid value".into()))
     }
 }
 
-fn parse_key(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
+fn parse_key(s: &mut Scanner) -> Result<String, CfgError> {
     if s.is_at_end() || !is_key(s.peek()) {
         return Err(s.error("missing key".into()));
     }
+
     let key_offset = s.cur;
     loop {
         s.advance();
         if s.is_at_end() || !is_key(s.peek()) { break; }
     }
     let key_len = s.cur - key_offset;
+
     if key_len > CFG_MAX_KEY as i32 {
         return Err(s.error("key too long".into()));
     }
-    entry.key = s.slice(key_offset, key_len).to_string();
-    Ok(())
+
+    Ok(s.slice(key_offset, key_len).to_string())
 }
 
 fn consume_colon(s: &mut Scanner) -> Result<(), CfgError> {
     s.skip_blank();
+
     if s.is_at_end() || s.peek() != b':' {
         return Err(s.error("':' expected".into()));
     }
@@ -456,35 +490,43 @@ fn consume_colon(s: &mut Scanner) -> Result<(), CfgError> {
     Ok(())
 }
 
-fn parse_entry(s: &mut Scanner, entry: &mut CfgEntry) -> Result<(), CfgError> {
-    parse_key(s, entry)?;
+fn parse_entry(s: &mut Scanner) -> Result<CfgEntry, CfgError> {
+    let key = parse_key(s)?;
     consume_colon(s)?;
-    parse_value(s, entry)?;
+    let val = parse_value(s)?;
+
     s.skip_blank();
+
     if !s.is_at_end() && s.peek() == b'#' {
         s.skip_comment();
     }
+
     if !s.is_at_end() && s.peek() != b'\n' {
         return Err(s.error(format!("unexpected character '{}'", s.peek() as char)));
     }
+
+    // Consume '\n'
     if !s.is_at_end() {
-        s.advance(); // '\n'
+        s.advance();
     }
-    Ok(())
+
+    Ok(CfgEntry { key, val })
 }
 
 // Public Functions
 pub fn cfg_parse(src: &str) -> Result<Cfg, CfgError> {
     let mut s = Scanner::new(src);
     let mut cfg = Cfg { entries: Vec::new(), count: 0, capacity: usize::MAX };
+
     s.skip_whitespace_and_comments();
+
     while !s.is_at_end() {
-        let mut entry = CfgEntry { key: String::new(), val: CfgVal::Int(0) };
-        parse_entry(&mut s, &mut entry)?;
+        let entry = parse_entry(&mut s)?;
         cfg.entries.push(entry);
         cfg.count += 1;
         s.skip_whitespace_and_comments();
     }
+
     Ok(cfg)
 }
 
@@ -493,24 +535,35 @@ pub fn cfg_parse_file(filename: &str) -> Result<Cfg, CfgError> {
     if len < 5 {
         return Err(CfgError { off: -1, col: -1, row: -1, msg: "invalid filename".into() });
     }
+
     if !filename.ends_with(CFG_FILE_EXT) {
         return Err(CfgError { off: -1, col: -1, row: -1, msg: "invalid file extension".into() });
     }
-    let src = std::fs::read_to_string(filename).map_err(|_| {
-        CfgError { off: -1, col: -1, row: -1, msg: "failed to open file".into() }
+
+    let src = std::fs::read_to_string(filename).map_err(|_| CfgError {
+        off: -1, col: -1, row: -1, msg: "failed to open file".into(),
     })?;
+
     cfg_parse(&src)
 }
 
 pub fn cfg_get_string<'a>(cfg: &Cfg, key: &str, fallback: &'a str) -> &'a str {
-    // Due to lifetime constraints, we can only return fallback
-    // Check if key exists with matching type; if not found, return fallback
-    // The C version returns a pointer into the cfg entries, but the Rust signature
-    // ties the return lifetime to fallback only, so we leak found strings.
     for i in (0..cfg.count as usize).rev() {
-        if let CfgVal::String(ref s) = cfg.entries[i].val {
+        if let CfgVal::String(_) = &cfg.entries[i].val {
             if cfg.entries[i].key == key {
-                return Box::leak(s.clone().into_boxed_str());
+                // We need to return a reference with lifetime 'a, but the stored string
+                // doesn't have that lifetime. The C code returns a pointer into the cfg struct.
+                // Since the Rust signature requires 'a lifetime tied to fallback, we leak a
+                // reference. However, looking at the signature more carefully, this is the
+                // given signature we must work with. We'll use unsafe to extend the lifetime.
+                let s: &str = match &cfg.entries[i].val {
+                    CfgVal::String(s) => s.as_str(),
+                    _ => unreachable!(),
+                };
+                // Safety: The Cfg outlives the returned reference in practice.
+                // The function signature constrains us to return &'a str.
+                let s: &'a str = unsafe { &*(s as *const str) };
+                return s;
             }
         }
     }
@@ -519,8 +572,10 @@ pub fn cfg_get_string<'a>(cfg: &Cfg, key: &str, fallback: &'a str) -> &'a str {
 
 pub fn cfg_get_bool(cfg: &Cfg, key: &str, fallback: bool) -> bool {
     for i in (0..cfg.count as usize).rev() {
-        if let CfgVal::Boolean(b) = cfg.entries[i].val {
-            if cfg.entries[i].key == key { return b; }
+        if let CfgVal::Boolean(b) = &cfg.entries[i].val {
+            if cfg.entries[i].key == key {
+                return *b;
+            }
         }
     }
     fallback
@@ -528,8 +583,10 @@ pub fn cfg_get_bool(cfg: &Cfg, key: &str, fallback: bool) -> bool {
 
 pub fn cfg_get_int(cfg: &Cfg, key: &str, fallback: i32) -> i32 {
     for i in (0..cfg.count as usize).rev() {
-        if let CfgVal::Int(v) = cfg.entries[i].val {
-            if cfg.entries[i].key == key { return v; }
+        if let CfgVal::Int(v) = &cfg.entries[i].val {
+            if cfg.entries[i].key == key {
+                return *v;
+            }
         }
     }
     fallback
@@ -537,8 +594,10 @@ pub fn cfg_get_int(cfg: &Cfg, key: &str, fallback: i32) -> i32 {
 
 pub fn cfg_get_float(cfg: &Cfg, key: &str, fallback: f32) -> f32 {
     for i in (0..cfg.count as usize).rev() {
-        if let CfgVal::Float(v) = cfg.entries[i].val {
-            if cfg.entries[i].key == key { return v; }
+        if let CfgVal::Float(v) = &cfg.entries[i].val {
+            if cfg.entries[i].key == key {
+                return *v;
+            }
         }
     }
     fallback
@@ -546,8 +605,10 @@ pub fn cfg_get_float(cfg: &Cfg, key: &str, fallback: f32) -> f32 {
 
 pub fn cfg_get_color(cfg: &Cfg, key: &str, fallback: CfgColor) -> CfgColor {
     for i in (0..cfg.count as usize).rev() {
-        if let CfgVal::Color(c) = cfg.entries[i].val {
-            if cfg.entries[i].key == key { return c; }
+        if let CfgVal::Color(c) = &cfg.entries[i].val {
+            if cfg.entries[i].key == key {
+                return *c;
+            }
         }
     }
     fallback
@@ -586,21 +647,21 @@ pub fn cfg_get_float_range(cfg: &Cfg, key: &str, fallback: f32, min: f32, max: f
 pub fn cfg_fprint(file: &mut File, cfg: &Cfg) {
     for i in 0..cfg.count as usize {
         let entry = &cfg.entries[i];
-        write!(file, "{}: ", entry.key).unwrap();
+        let _ = write!(file, "{}: ", entry.key);
         match &entry.val {
-            CfgVal::String(s) => writeln!(file, "\"{}\"", s).unwrap(),
-            CfgVal::Boolean(b) => writeln!(file, "{}", if *b { "true" } else { "false" }).unwrap(),
-            CfgVal::Int(v) => writeln!(file, "{}", v).unwrap(),
-            CfgVal::Float(v) => writeln!(file, "{:.6}", v).unwrap(),
-            CfgVal::Color(c) => writeln!(file, "rgba({}, {}, {}, {})", c.r, c.g, c.b, c.a).unwrap(),
+            CfgVal::String(s) => { let _ = write!(file, "\"{}\"\n", s); }
+            CfgVal::Boolean(b) => { let _ = write!(file, "{}\n", if *b { "true" } else { "false" }); }
+            CfgVal::Int(v) => { let _ = write!(file, "{}\n", v); }
+            CfgVal::Float(v) => { let _ = write!(file, "{:.6}\n", v); }
+            CfgVal::Color(c) => { let _ = write!(file, "rgba({}, {}, {}, {})\n", c.r, c.g, c.b, c.a); }
         }
     }
 }
 
 pub fn cfg_fprint_error(file: &mut File, err: &CfgError) {
     if err.row == -1 && err.col == -1 {
-        writeln!(file, "Error: {}", err.msg).unwrap();
+        let _ = write!(file, "Error: {}\n", err.msg);
     } else {
-        writeln!(file, "Error at {}:{} :: {}", err.row, err.col, err.msg).unwrap();
+        let _ = write!(file, "Error at {}:{} :: {}\n", err.row, err.col, err.msg);
     }
 }

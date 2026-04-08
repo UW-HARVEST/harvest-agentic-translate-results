@@ -44,33 +44,40 @@ impl Rect {
         }
     }
 }
+
+struct PackCtx {
+    max_w: i32,
+    max_h: i32,
+    page: i32,
+    next: usize,
+    last: usize,
+}
+
+struct PackRes {
+    all_fit: bool,
+    none_fit: bool,
+}
+
 /// Rectangle packer using a binary tree algorithm
 pub struct RectPacker;
 impl RectPacker {
     /// Pack rectangles into a bin of the given maximum dimensions
-    ///
-    /// # Arguments
-    ///
-    /// * `max_w` - Maximum width of the packing area
-    /// * `max_h` - Maximum height of the packing area
-    /// * `paging` - Whether to allow multiple pages for packing
-    /// * `rects` - Mutable slice of rectangles to pack
-    ///
-    /// # Returns
-    ///
-    /// `true` if all rectangles were successfully packed, `false` otherwise
     pub fn pack(max_w: i32, max_h: i32, paging: bool, rects: &mut [Rect]) -> bool {
         if rects.is_empty() {
             return true;
         }
 
+        // Sort by max side descending, then min side descending
         rects.sort_by(|a, b| {
-            let diff = a.w.max(a.h).cmp(&b.w.max(b.h)).reverse();
-            if diff == Ordering::Equal {
-                a.w.min(a.h).cmp(&b.w.min(b.h)).reverse()
-            } else {
-                diff
+            let max_a = a.w.max(a.h);
+            let max_b = b.w.max(b.h);
+            let diff = max_b.cmp(&max_a);
+            if diff != Ordering::Equal {
+                return diff;
             }
+            let min_a = a.w.min(a.h);
+            let min_b = b.w.min(b.h);
+            min_b.cmp(&min_a)
         });
 
         for r in rects.iter_mut() {
@@ -95,7 +102,6 @@ impl RectPacker {
             if ok || !paging || res.none_fit {
                 break;
             }
-
             ctx.page += 1;
         }
 
@@ -103,17 +109,58 @@ impl RectPacker {
     }
 }
 
-struct PackCtx {
-    max_w: i32,
-    max_h: i32,
-    page: i32,
-    next: usize,
-    last: usize,
-}
+fn pack_bin_tree(ctx: &mut PackCtx, rects: &mut [Rect]) -> PackRes {
+    let mut res = PackRes {
+        all_fit: true,
+        none_fit: true,
+    };
 
-struct PackRes {
-    all_fit: bool,
-    none_fit: bool,
+    let root_w = rects[ctx.next].w.min(ctx.max_w);
+    let root_h = rects[ctx.next].h.min(ctx.max_h);
+
+    let mut root = BinNode::new(0, 0, root_w, root_h);
+
+    let mut contiguous = true;
+    let mut last = ctx.last;
+
+    for i in ctx.next..=ctx.last {
+        if !rects[i].info.packed {
+            let w = rects[i].w;
+            let h = rects[i].h;
+
+            // Try find, then split
+            if let Some((x, y)) = root.find_and_split(w, h) {
+                rects[i].info.x = x;
+                rects[i].info.y = y;
+                rects[i].info.packed = true;
+                rects[i].info.page = ctx.page;
+                res.none_fit = false;
+            } else {
+                // Try grow
+                let rw = rects[i].w;
+                let rh = rects[i].h;
+                if let Some((x, y)) = root.grow_and_place(rw, rh, ctx.max_w, ctx.max_h) {
+                    rects[i].info.x = x;
+                    rects[i].info.y = y;
+                    rects[i].info.packed = true;
+                    rects[i].info.page = ctx.page;
+                    res.none_fit = false;
+                } else {
+                    rects[i].info.packed = false;
+                    res.all_fit = false;
+                    contiguous = false;
+                    last = i;
+                }
+            }
+        }
+
+        if contiguous {
+            ctx.next = i + 1;
+        }
+    }
+
+    ctx.last = last;
+    res
 }
 
 /// A node in the binary tree used for rectangle packing
@@ -139,6 +186,21 @@ impl BinNode {
             down: None,
         }
     }
+    /// Find a node in the tree that can fit a rectangle of the given dimensions
+    #[allow(dead_code)]
+    fn find(&self, w: i32, h: i32) -> Option<&BinNode> {
+        if self.used {
+            let right = self.right.as_ref().unwrap().find(w, h);
+            if right.is_some() {
+                return right;
+            }
+            self.down.as_ref().unwrap().find(w, h)
+        } else if w <= self.w && h <= self.h {
+            Some(self)
+        } else {
+            None
+        }
+    }
     /// Split this node after placing a rectangle of the given dimensions
     fn split(&mut self, w: i32, h: i32) -> &Self {
         self.used = true;
@@ -146,39 +208,75 @@ impl BinNode {
         self.right = Some(Box::new(BinNode::new(self.x + w, self.y, self.w - w, h)));
         self
     }
+
+    /// Find a fitting node and split it, returning (x, y) of placement
+    fn find_and_split(&mut self, w: i32, h: i32) -> Option<(i32, i32)> {
+        if self.used {
+            if let Some(pos) = self.right.as_mut().unwrap().find_and_split(w, h) {
+                return Some(pos);
+            }
+            return self.down.as_mut().unwrap().find_and_split(w, h);
+        } else if w <= self.w && h <= self.h {
+            let x = self.x;
+            let y = self.y;
+            self.split(w, h);
+            Some((x, y))
+        } else {
+            None
+        }
+    }
+
     /// Grow the bin to the right to accommodate a rectangle
-    fn grow_right(&mut self, rect: &Rect, _max_w: i32, _max_h: i32) -> Option<(i32, i32)> {
-        let old = std::mem::replace(self, BinNode::new(0, 0, 0, 0));
-        let new_w = old.w + rect.w;
-        let new_h = old.h;
+    #[allow(dead_code)]
+    fn grow_right(&mut self, rect: &Rect, _max_w: i32, _max_h: i32) -> Option<&BinNode> {
+        let mut old = BinNode::new(0, 0, 0, 0);
+        std::mem::swap(&mut old, self);
+
         self.used = true;
-        self.w = new_w;
-        self.h = new_h;
-        self.right = Some(Box::new(BinNode::new(old.w, 0, rect.w, new_h)));
+        self.x = 0;
+        self.y = 0;
+        self.w = old.w + rect.w;
+        self.h = old.h;
+        self.right = Some(Box::new(BinNode::new(old.w, 0, rect.w, old.h)));
         self.down = Some(Box::new(old));
 
-        find_and_place(self, rect.w, rect.h)
+        let node = self.find(rect.w, rect.h);
+        if node.is_some() {
+            // We know it exists, now split via mutable path
+            None // placeholder, handled by grow_and_place
+        } else {
+            None
+        }
     }
     /// Grow the bin downward to accommodate a rectangle
-    fn grow_down(&mut self, rect: &Rect, _max_w: i32, _max_h: i32) -> Option<(i32, i32)> {
-        let old = std::mem::replace(self, BinNode::new(0, 0, 0, 0));
-        let new_w = old.w;
-        let new_h = old.h + rect.h;
+    #[allow(dead_code)]
+    fn grow_down(&mut self, rect: &Rect, _max_w: i32, _max_h: i32) -> Option<&BinNode> {
+        let mut old = BinNode::new(0, 0, 0, 0);
+        std::mem::swap(&mut old, self);
+
         self.used = true;
-        self.w = new_w;
-        self.h = new_h;
-        self.down = Some(Box::new(BinNode::new(0, old.h, new_w, rect.h)));
+        self.x = 0;
+        self.y = 0;
+        self.w = old.w;
+        self.h = old.h + rect.h;
+        self.down = Some(Box::new(BinNode::new(0, old.h, old.w, rect.h)));
         self.right = Some(Box::new(old));
 
-        find_and_place(self, rect.w, rect.h)
+        let node = self.find(rect.w, rect.h);
+        if node.is_some() {
+            None // placeholder, handled by grow_and_place
+        } else {
+            None
+        }
     }
     /// Grow the bin in the optimal direction to fit a rectangle
-    fn grow(&mut self, rect: &Rect, max_w: i32, max_h: i32) -> Option<(i32, i32)> {
+    #[allow(dead_code)]
+    fn grow(&mut self, rect: &Rect, max_w: i32, max_h: i32) -> Option<&BinNode> {
         let can_grow_down = rect.w <= self.w && (rect.h + self.h) <= max_h;
         let can_grow_right = rect.h <= self.h && (rect.w + self.w) <= max_w;
 
-        let should_grow_right = can_grow_right && (self.h >= (self.w + rect.w));
-        let should_grow_down = can_grow_down && (self.w >= (self.h + rect.h));
+        let should_grow_right = can_grow_right && self.h >= (self.w + rect.w);
+        let should_grow_down = can_grow_down && self.w >= (self.h + rect.h);
 
         if should_grow_right {
             self.grow_right(rect, max_w, max_h)
@@ -192,72 +290,59 @@ impl BinNode {
             None
         }
     }
-}
 
-fn pack_bin_tree(ctx: &mut PackCtx, rects: &mut [Rect]) -> PackRes {
-    let mut res = PackRes {
-        all_fit: true,
-        none_fit: true,
-    };
+    /// Grow and then find+split, returning (x, y) of placement
+    fn grow_and_place(&mut self, w: i32, h: i32, max_w: i32, max_h: i32) -> Option<(i32, i32)> {
+        let can_grow_down = w <= self.w && (h + self.h) <= max_h;
+        let can_grow_right = h <= self.h && (w + self.w) <= max_w;
 
-    let root_w = rects[ctx.next].w.min(ctx.max_w);
-    let root_h = rects[ctx.next].h.min(ctx.max_h);
-    let mut root = BinNode::new(0, 0, root_w, root_h);
+        let should_grow_right = can_grow_right && self.h >= (self.w + w);
+        let should_grow_down = can_grow_down && self.w >= (self.h + h);
 
-    let mut contiguous = true;
-    let mut last = ctx.last;
+        let do_right = if should_grow_right {
+            true
+        } else if should_grow_down {
+            false
+        } else if can_grow_right {
+            true
+        } else if can_grow_down {
+            false
+        } else {
+            return None;
+        };
 
-    for i in ctx.next..=ctx.last {
-        if !rects[i].info.packed {
-            let w = rects[i].w;
-            let h = rects[i].h;
-
-            // Try find + split
-            let placed = if let Some(pos) = find_and_place(&mut root, w, h) {
-                Some(pos)
-            } else {
-                // Try growing
-                let rect_copy = rects[i].clone();
-                root.grow(&rect_copy, ctx.max_w, ctx.max_h)
-            };
-
-            if let Some((x, y)) = placed {
-                rects[i].info.x = x;
-                rects[i].info.y = y;
-                rects[i].info.packed = true;
-                rects[i].info.page = ctx.page;
-                res.none_fit = false;
-            } else {
-                rects[i].info.packed = false;
-                res.all_fit = false;
-                contiguous = false;
-                last = i;
-            }
+        if do_right {
+            self.do_grow_right(w, h);
+        } else {
+            self.do_grow_down(w, h);
         }
 
-        if contiguous {
-            ctx.next = i + 1;
-        }
+        self.find_and_split(w, h)
     }
 
-    ctx.last = last;
-    res
-}
+    fn do_grow_right(&mut self, rw: i32, _rh: i32) {
+        let mut old = BinNode::new(0, 0, 0, 0);
+        std::mem::swap(&mut old, self);
 
-/// Find a node that fits w,h, split it, and return its (x, y) coordinates.
-fn find_and_place(node: &mut BinNode, w: i32, h: i32) -> Option<(i32, i32)> {
-    if node.used {
-        if let Some(pos) = find_and_place(node.right.as_mut().unwrap(), w, h) {
-            Some(pos)
-        } else {
-            find_and_place(node.down.as_mut().unwrap(), w, h)
-        }
-    } else if w <= node.w && h <= node.h {
-        let x = node.x;
-        let y = node.y;
-        node.split(w, h);
-        Some((x, y))
-    } else {
-        None
+        self.used = true;
+        self.x = 0;
+        self.y = 0;
+        self.w = old.w + rw;
+        self.h = old.h;
+        self.right = Some(Box::new(BinNode::new(old.w, 0, rw, old.h)));
+        self.down = Some(Box::new(old));
+    }
+
+    fn do_grow_down(&mut self, _rw: i32, rh: i32) {
+        let mut old = BinNode::new(0, 0, 0, 0);
+        std::mem::swap(&mut old, self);
+
+        self.used = true;
+        self.x = 0;
+        self.y = 0;
+        self.w = old.w;
+        self.h = old.h + rh;
+        self.down = Some(Box::new(BinNode::new(0, old.h, old.w, rh)));
+        self.right = Some(Box::new(old));
     }
 }

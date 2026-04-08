@@ -1,4 +1,4 @@
-use crate::aes::NB;
+use crate::aes::{NB, NR};
 use crate::cipher_utils::g_mult;
 
 pub fn columns(state: &mut [[u8; NB]; 4]) {

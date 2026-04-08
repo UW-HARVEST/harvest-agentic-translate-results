@@ -1,12 +1,9 @@
 use crate::tx::*;
 use crate::compactsize::*;
-use crate::base64 as b64;
+use crate::base64::{base64_encode, base64_decode, base62_encode};
 use std::fmt;
-use std::any::Any;
-
 // Common constant from common.h
 pub const MAX_SERIALIZE_SIZE: u32 = 0x02000000;
-
 // --- Enum definitions ---
 #[derive(Debug, PartialEq, Eq)]
 pub enum PsbtResult {
@@ -80,7 +77,6 @@ pub enum PsbtTxElemType {
     Tx,
     WitnessItem,
 }
-
 // --- Struct definitions ---
 pub struct Psbt {
     pub state: PsbtState,
@@ -100,67 +96,27 @@ impl Psbt {
         }
     }
 }
-
 pub struct PsbtRecord {
     pub record_type: u8,
     pub key: Vec<u8>,
     pub val: Vec<u8>,
     pub scope: PsbtScope,
 }
-
 pub enum PsbtElem {
     Record { index: i32, record: PsbtRecord },
     TxElem { index: i32, txelem: PsbtTxElem },
 }
-
 pub type PsbtElemHandler = fn(elem: &mut PsbtElem, user_data: &mut dyn std::any::Any);
-
 // External constants
-pub const PSBT_MAGIC: [u8; 4] = [0x70, 0x73, 0x62, 0x74];
+pub const PSBT_MAGIC: [u8; 4] = [0x70, 0x73, 0x62, 0x74]; // "psbt"
 pub static PSBT_ERRMSG: &str = "psbt error";
-
-// --- Helper macros and functions ---
-
-macro_rules! assert_space {
-    ($psbt:expr, $s:expr) => {
-        if $psbt.write_pos + $s > $psbt.data.len() {
-            return PsbtResult::OobWrite;
-        }
-    };
-}
-
-fn hexdigit(hex: u8) -> u8 {
-    if hex <= b'9' {
-        hex - b'0'
-    } else {
-        (hex & !0x20) - b'A' + 10 // toupper then subtract
-    }
-}
-
-fn hexchar(val: u8) -> u8 {
-    if val < 10 {
-        b'0' + val
-    } else {
-        b'a' + val - 10
-    }
-}
-
-fn hex_encode(buf: &[u8], dest: &mut [u8], dest_size: usize) -> PsbtResult {
-    if dest_size < buf.len() * 2 + 1 {
-        return PsbtResult::OobWrite;
-    }
-    for (i, &b) in buf.iter().enumerate() {
-        dest[i * 2] = hexchar(b >> 4);
-        dest[i * 2 + 1] = hexchar(b & 0x0f);
-    }
-    dest[buf.len() * 2] = 0;
-    PsbtResult::Ok
-}
-
-// --- Simple tostr functions ---
 
 pub fn psbt_size(tx: &Psbt) -> usize {
     tx.data.len()
+}
+
+pub fn psbt_geterr() -> &'static str {
+    PSBT_ERRMSG
 }
 
 pub fn psbt_state_tostr(state: PsbtState) -> &'static str {
@@ -239,36 +195,66 @@ pub fn psbt_type_tostr(record_type: u8, scope: PsbtScope) -> &'static str {
     }
 }
 
-pub fn psbt_geterr() -> &'static str {
-    PSBT_ERRMSG
-}
-
-// --- Init / Finalize / Size ---
-
-pub fn psbt_init(psbt: &mut Psbt, _dest: &mut [u8], dest_size: usize) -> PsbtResult {
-    psbt.data = Vec::with_capacity(dest_size);
-    psbt.write_pos = 0;
-    psbt.data_capacity = dest_size;
-    psbt.state = PsbtState::Init;
+// --- Helper: check space for writes ---
+fn assert_space(psbt: &Psbt, needed: usize) -> PsbtResult {
+    if psbt.data.len() + needed > psbt.data_capacity {
+        return PsbtResult::OobWrite;
+    }
     PsbtResult::Ok
 }
 
 fn psbt_write_header(psbt: &mut Psbt) -> PsbtResult {
-    // Need 5 bytes: 4 magic + 1 separator (0xff)
-    if psbt.data.len() + 5 > psbt.data_capacity {
-        return PsbtResult::OobWrite;
-    }
+    if assert_space(psbt, 4) != PsbtResult::Ok { return PsbtResult::OobWrite; }
     psbt.data.extend_from_slice(&PSBT_MAGIC);
+    if assert_space(psbt, 1) != PsbtResult::Ok { return PsbtResult::OobWrite; }
     psbt.data.push(0xff);
     psbt.state = PsbtState::Global;
     PsbtResult::Ok
 }
 
 fn psbt_close_records(psbt: &mut Psbt) -> PsbtResult {
-    if psbt.data.len() + 1 > psbt.data_capacity {
-        return PsbtResult::OobWrite;
-    }
+    if assert_space(psbt, 1) != PsbtResult::Ok { return PsbtResult::OobWrite; }
     psbt.data.push(0x00);
+    PsbtResult::Ok
+}
+
+fn psbt_write_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult {
+    let key_size_with_type = rec.key.len() as u64 + 1;
+
+    // write key length
+    let size = compactsize_length(key_size_with_type) as usize;
+    if assert_space(psbt, size) != PsbtResult::Ok { return PsbtResult::OobWrite; }
+    let mut buf = [0u8; 9];
+    compactsize_write(&mut buf, key_size_with_type);
+    psbt.data.extend_from_slice(&buf[..size]);
+
+    // write type
+    if assert_space(psbt, 1) != PsbtResult::Ok { return PsbtResult::OobWrite; }
+    psbt.data.push(rec.record_type);
+
+    // write key
+    if assert_space(psbt, rec.key.len()) != PsbtResult::Ok { return PsbtResult::OobWrite; }
+    psbt.data.extend_from_slice(&rec.key);
+
+    // write value length
+    let val_size = rec.val.len() as u64;
+    let size = compactsize_length(val_size) as usize;
+    if assert_space(psbt, size) != PsbtResult::Ok { return PsbtResult::OobWrite; }
+    compactsize_write(&mut buf, val_size);
+    psbt.data.extend_from_slice(&buf[..size]);
+
+    // write value
+    if assert_space(psbt, rec.val.len()) != PsbtResult::Ok { return PsbtResult::OobWrite; }
+    psbt.data.extend_from_slice(&rec.val);
+
+    PsbtResult::Ok
+}
+
+pub fn psbt_init(psbt: &mut Psbt, _dest: &mut [u8], dest_size: usize) -> PsbtResult {
+    psbt.data.clear();
+    psbt.write_pos = 0;
+    psbt.data_capacity = dest_size;
+    psbt.state = PsbtState::Init;
     PsbtResult::Ok
 }
 
@@ -277,48 +263,14 @@ pub fn psbt_finalize(psbt: &mut Psbt) -> PsbtResult {
         return PsbtResult::InvalidState;
     }
     let res = psbt_close_records(psbt);
-    if res != PsbtResult::Ok {
-        return res;
-    }
+    if res != PsbtResult::Ok { return res; }
     psbt.state = PsbtState::Finalized;
-    PsbtResult::Ok
-}
-
-// --- Write record helpers ---
-
-fn psbt_write_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult {
-    let key_size_with_type = rec.key.len() as u64 + 1;
-
-    // write key length
-    let size = compactsize_length(key_size_with_type) as usize;
-    let mut buf = [0u8; 9];
-    compactsize_write(&mut buf, key_size_with_type);
-    psbt.data.extend_from_slice(&buf[..size]);
-
-    // write type
-    psbt.data.push(rec.record_type);
-
-    // write key
-    psbt.data.extend_from_slice(&rec.key);
-
-    // write value length
-    let val_size = rec.val.len() as u64;
-    let size = compactsize_length(val_size) as usize;
-    compactsize_write(&mut buf, val_size);
-    psbt.data.extend_from_slice(&buf[..size]);
-
-    // write value
-    psbt.data.extend_from_slice(&rec.val);
-
     PsbtResult::Ok
 }
 
 pub fn psbt_write_global_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult {
     if psbt.state == PsbtState::Init {
-        let res = psbt_write_header(psbt);
-        if res != PsbtResult::Ok {
-            return res;
-        }
+        psbt_write_header(psbt);
         psbt.state = PsbtState::Global;
     } else if psbt.state != PsbtState::Global {
         return PsbtResult::InvalidState;
@@ -326,12 +278,41 @@ pub fn psbt_write_global_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult
     psbt_write_record(psbt, rec)
 }
 
+pub fn psbt_new_input_record_set(psbt: &mut Psbt) -> PsbtResult {
+    if psbt.state == PsbtState::Global
+        || psbt.state == PsbtState::InputsNew
+        || psbt.state == PsbtState::Inputs
+    {
+        let res = psbt_close_records(psbt);
+        if res != PsbtResult::Ok { return res; }
+        psbt.state = PsbtState::InputsNew;
+        return PsbtResult::Ok;
+    } else if psbt.state != PsbtState::Inputs {
+        return PsbtResult::InvalidState;
+    }
+    psbt_close_records(psbt)
+}
+
+pub fn psbt_new_output_record_set(psbt: &mut Psbt) -> PsbtResult {
+    if psbt.state == PsbtState::Inputs
+        || psbt.state == PsbtState::InputsNew
+        || psbt.state == PsbtState::OutputsNew
+        || psbt.state == PsbtState::Outputs
+    {
+        let res = psbt_close_records(psbt);
+        if res != PsbtResult::Ok { return res; }
+        psbt.state = PsbtState::OutputsNew;
+        return PsbtResult::Ok;
+    } else if psbt.state != PsbtState::Outputs {
+        return PsbtResult::InvalidState;
+    }
+    psbt_close_records(psbt)
+}
+
 pub fn psbt_write_input_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult {
     if psbt.state == PsbtState::Global {
         let res = psbt_close_records(psbt);
-        if res != PsbtResult::Ok {
-            return res;
-        }
+        if res != PsbtResult::Ok { return res; }
         psbt.state = PsbtState::Inputs;
     } else if psbt.state != PsbtState::Inputs && psbt.state != PsbtState::InputsNew {
         return PsbtResult::InvalidState;
@@ -342,9 +323,7 @@ pub fn psbt_write_input_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult 
 pub fn psbt_write_output_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult {
     if psbt.state == PsbtState::Inputs {
         let res = psbt_close_records(psbt);
-        if res != PsbtResult::Ok {
-            return res;
-        }
+        if res != PsbtResult::Ok { return res; }
         psbt.state = PsbtState::Outputs;
     } else if psbt.state != PsbtState::Outputs && psbt.state != PsbtState::OutputsNew {
         return PsbtResult::InvalidState;
@@ -352,112 +331,44 @@ pub fn psbt_write_output_record(psbt: &mut Psbt, rec: &PsbtRecord) -> PsbtResult
     psbt_write_record(psbt, rec)
 }
 
-pub fn psbt_new_input_record_set(_psbt: &mut Psbt) -> PsbtResult {
-    if _psbt.state == PsbtState::Global
-        || _psbt.state == PsbtState::InputsNew
-        || _psbt.state == PsbtState::Inputs
-    {
-        let res = psbt_close_records(_psbt);
-        if res != PsbtResult::Ok {
-            return res;
-        }
-        _psbt.state = PsbtState::InputsNew;
-        return PsbtResult::Ok;
-    } else if _psbt.state != PsbtState::Inputs {
-        return PsbtResult::InvalidState;
-    }
-    psbt_close_records(_psbt)
-}
-
-pub fn psbt_new_output_record_set(psbt: &mut Psbt) -> PsbtResult {
-    if psbt.state == PsbtState::Inputs
-        || psbt.state == PsbtState::InputsNew
-        || psbt.state == PsbtState::OutputsNew
-        || psbt.state == PsbtState::Outputs
-    {
-        let res = psbt_close_records(psbt);
-        if res != PsbtResult::Ok {
-            return res;
-        }
-        psbt.state = PsbtState::OutputsNew;
-        return PsbtResult::Ok;
-    } else if psbt.state != PsbtState::Outputs {
-        return PsbtResult::InvalidState;
-    }
-    psbt_close_records(psbt)
-}
-
 pub fn psbt_print(psbt: &Psbt, stream: &mut dyn std::io::Write) -> PsbtResult {
     if psbt.state != PsbtState::Finalized {
         return PsbtResult::InvalidState;
     }
-    for &b in &psbt.data {
-        let _ = write!(stream, "{:02x}", b);
+    let size = psbt_size(psbt);
+    for i in 0..size {
+        let _ = write!(stream, "{:02x}", psbt.data[i]);
     }
     let _ = writeln!(stream);
     PsbtResult::Ok
 }
 
-// --- Encode / Decode ---
-
-pub fn psbt_encode_raw(
-    psbt_data: &[u8],
-    _psbt_len: usize,
-    encoding: PsbtEncoding,
-    dest: &mut [u8],
-    dest_size: usize,
-    out_len: &mut usize,
-) -> PsbtResult {
-    match encoding {
-        PsbtEncoding::Hex => {
-            let res = hex_encode(psbt_data, dest, dest_size);
-            *out_len = psbt_data.len() * 2 + 1;
-            res
-        }
-        PsbtEncoding::Base64 => {
-            match b64::base64_encode(psbt_data, dest) {
-                Some(n) => {
-                    *out_len = n;
-                    PsbtResult::Ok
-                }
-                None => PsbtResult::WriteError,
-            }
-        }
-        PsbtEncoding::Base62 => {
-            match b64::base62_encode(psbt_data, dest) {
-                Some(n) => {
-                    *out_len = n;
-                    PsbtResult::Ok
-                }
-                None => PsbtResult::WriteError,
-            }
-        }
-        PsbtEncoding::Protobuf => PsbtResult::NotImplemented,
-    }
+// --- Hex helpers ---
+fn hexdigit(hex: u8) -> u8 {
+    if hex <= b'9' { hex - b'0' }
+    else { hex.to_ascii_uppercase() - b'A' + 10 }
 }
 
-pub fn psbt_encode(
-    psbt: &Psbt,
-    encoding: PsbtEncoding,
-    dest: &mut [u8],
-    dest_size: usize,
-    out_len: &mut usize,
-) -> PsbtResult {
-    if psbt.state != PsbtState::Finalized {
-        return PsbtResult::WriteError;
-    }
-    psbt_encode_raw(&psbt.data, psbt.data.len(), encoding, dest, dest_size, out_len)
+fn hexchar(val: u8) -> u8 {
+    if val < 10 { b'0' + val }
+    else { b'a' + val - 10 }
 }
 
-fn psbt_hex_decode(src: &str, dest: &mut [u8]) -> PsbtResult {
+fn hex_encode(buf: &[u8], dest: &mut [u8], dest_size: usize) -> PsbtResult {
+    if dest_size < buf.len() * 2 + 1 { return PsbtResult::OobWrite; }
+    for (i, &b) in buf.iter().enumerate() {
+        dest[i * 2] = hexchar(b >> 4);
+        dest[i * 2 + 1] = hexchar(b & 0x0f);
+    }
+    dest[buf.len() * 2] = 0;
+    PsbtResult::Ok
+}
+
+fn psbt_hex_decode(src: &str, src_size: usize, dest: &mut [u8], dest_size: usize) -> PsbtResult {
+    if src_size % 2 != 0 { return PsbtResult::ReadError; }
+    if dest_size < src_size / 2 { return PsbtResult::ReadError; }
     let bytes = src.as_bytes();
-    if bytes.len() % 2 != 0 {
-        return PsbtResult::ReadError;
-    }
-    if dest.len() < bytes.len() / 2 {
-        return PsbtResult::ReadError;
-    }
-    for i in (0..bytes.len()).step_by(2) {
+    for i in (0..src_size).step_by(2) {
         let c1 = bytes[i];
         let c2 = bytes[i + 1];
         if !c1.is_ascii_hexdigit() || !c2.is_ascii_hexdigit() {
@@ -475,94 +386,101 @@ pub fn psbt_decode(
     dest_size: usize,
     psbt_len: &mut usize,
 ) -> PsbtResult {
+    let src_size = src.len();
     let b64_magic = b"cHNid";
-    let src_bytes = src.as_bytes();
+    if src_size < b64_magic.len() { return PsbtResult::ReadError; }
 
-    if src_bytes.len() < b64_magic.len() {
-        return PsbtResult::ReadError;
-    }
-
-    // base64 detection
-    if &src_bytes[..b64_magic.len()] == &b64_magic[..] {
-        match b64::base64_decode(src_bytes, dest) {
-            Some(n) => {
-                *psbt_len = n;
-                return PsbtResult::Ok;
-            }
+    if src.as_bytes()[..b64_magic.len()] == b64_magic[..] {
+        match base64_decode(src.as_bytes(), dest) {
+            Some(n) => { *psbt_len = n; return PsbtResult::Ok; }
             None => return PsbtResult::ReadError,
         }
     }
 
-    *psbt_len = src_bytes.len() / 2;
-    psbt_hex_decode(src, dest)
+    *psbt_len = src_size / 2;
+    psbt_hex_decode(src, src_size, dest, dest_size)
 }
 
-// --- psbt_read (the big state machine) ---
-
-struct TxCounter {
-    inputs: i32,
-    outputs: i32,
+pub fn psbt_encode_raw(
+    psbt_data: &[u8],
+    _psbt_len: usize,
+    encoding: PsbtEncoding,
+    dest: &mut [u8],
+    dest_size: usize,
+    out_len: &mut usize,
+) -> PsbtResult {
+    match encoding {
+        PsbtEncoding::Hex => {
+            let res = hex_encode(psbt_data, dest, dest_size);
+            *out_len = psbt_data.len() * 2 + 1;
+            res
+        }
+        PsbtEncoding::Base64 => {
+            match base64_encode(psbt_data, dest) {
+                Some(n) => { *out_len = n; PsbtResult::Ok }
+                None => PsbtResult::WriteError,
+            }
+        }
+        PsbtEncoding::Base62 => {
+            match base62_encode(psbt_data, dest) {
+                Some(n) => { *out_len = n; PsbtResult::Ok }
+                None => PsbtResult::WriteError,
+            }
+        }
+        PsbtEncoding::Protobuf => PsbtResult::NotImplemented,
+    }
 }
 
-fn tx_counter_handler(elem: &mut PsbtTxElem, user_data: &mut dyn Any) {
-    let counter = user_data.downcast_mut::<TxCounter>().unwrap();
+pub fn psbt_encode(
+    psbt: &Psbt,
+    encoding: PsbtEncoding,
+    dest: &mut [u8],
+    dest_size: usize,
+    out_len: &mut usize,
+) -> PsbtResult {
+    if psbt.state != PsbtState::Finalized {
+        return PsbtResult::WriteError;
+    }
+    psbt_encode_raw(&psbt.data, psbt_size(psbt), encoding, dest, dest_size, out_len)
+}
+
+// --- psbt_read ---
+
+struct ReadContext {
+    counter_inputs: i32,
+    counter_outputs: i32,
+    handler: Option<PsbtElemHandler>,
+    // We store a raw pointer to user_data so the tx_counter fn can forward events
+    user_data_ptr: *mut dyn std::any::Any,
+}
+
+fn tx_counter_fn(elem: &mut PsbtTxElem, user_data: &mut dyn std::any::Any) {
+    let ctx = user_data.downcast_mut::<ReadContext>().unwrap();
+
+    // Forward txelem events to user handler if present
+    if let Some(h) = ctx.handler {
+        let ud = unsafe { &mut *ctx.user_data_ptr };
+        let mut psbt_elem = PsbtElem::TxElem {
+            index: 0,
+            txelem: take_txelem(elem),
+        };
+        h(&mut psbt_elem, ud);
+        // put it back
+        if let PsbtElem::TxElem { txelem, .. } = psbt_elem {
+            *elem = txelem;
+        }
+    }
+
     match elem {
-        PsbtTxElem::TxIn(_) => counter.inputs += 1,
-        PsbtTxElem::TxOut(_) => counter.outputs += 1,
+        PsbtTxElem::TxIn(_) => ctx.counter_inputs += 1,
+        PsbtTxElem::TxOut(_) => ctx.counter_outputs += 1,
         _ => {}
     }
 }
 
-/// Read a single record from data at position pos, returning (record_type, key, val, new_pos)
-fn read_record_at(data: &[u8], pos: usize) -> Result<(u8, Vec<u8>, Vec<u8>, usize), PsbtResult> {
-    let mut p = pos;
-    if p >= data.len() {
-        return Err(PsbtResult::ReadError);
-    }
-    let size_len = compactsize_peek_length(data[p]) as usize;
-    if p + size_len > data.len() {
-        return Err(PsbtResult::OobWrite);
-    }
-    let (key_total_size, res) = compactsize_read(&data[p..]);
-    if res != PsbtResult::Ok {
-        return Err(res);
-    }
-    if key_total_size == 0 {
-        return Err(PsbtResult::ReadError);
-    }
-    p += size_len;
-
-    if p + key_total_size as usize > data.len() {
-        return Err(PsbtResult::ReadError);
-    }
-
-    let rec_type = data[p];
-    let key_size = key_total_size as usize - 1;
-    let key = data[p + 1..p + 1 + key_size].to_vec();
-    p += key_total_size as usize;
-
-    // read value
-    if p >= data.len() {
-        return Err(PsbtResult::ReadError);
-    }
-    let val_size_len = compactsize_peek_length(data[p]) as usize;
-    if p + val_size_len > data.len() {
-        return Err(PsbtResult::OobWrite);
-    }
-    let (val_size, res) = compactsize_read(&data[p..]);
-    if res != PsbtResult::Ok {
-        return Err(res);
-    }
-    p += val_size_len;
-
-    if p + val_size as usize > data.len() {
-        return Err(PsbtResult::ReadError);
-    }
-
-    let val = data[p..p + val_size as usize].to_vec();
-    p += val_size as usize;
-
-    Ok((rec_type, key, val, p))
+// Helper to temporarily take a PsbtTxElem out
+fn take_txelem(elem: &mut PsbtTxElem) -> PsbtTxElem {
+    std::mem::replace(elem, PsbtTxElem::Tx(PsbtTx { version: 0, lock_time: 0 }))
 }
 
 pub fn psbt_read(
@@ -572,107 +490,124 @@ pub fn psbt_read(
     elem_handler: Option<PsbtElemHandler>,
     user_data: &mut dyn std::any::Any,
 ) -> PsbtResult {
+    let src_size = src.len();
+
     if psbt.state != PsbtState::Init {
         return PsbtResult::InvalidState;
     }
 
-    if src.len() > psbt.data_capacity {
+    if src_size > psbt.data_capacity {
         return PsbtResult::OobWrite;
     }
 
-    psbt.data = src.to_vec();
+    psbt.data.clear();
+    psbt.data.extend_from_slice(src);
     psbt.state = PsbtState::Init;
     psbt.write_pos = 0;
-    psbt.data_capacity = src.len();
+    psbt.data_capacity = src_size;
 
-    let mut data = psbt.data.clone();
-    data.push(0); // C code relies on buffer being larger and zero-filled
-    let data_len = data.len();
-    let mut pos: usize = 0;
     let mut kvs: i32 = 0;
-    let mut state = PsbtState::Init;
-    let mut num_inputs: i32 = 0;
-    let mut num_outputs: i32 = 0;
+    let mut counter_inputs: i32 = 0;
+    let mut counter_outputs: i32 = 0;
 
-    while state != PsbtState::Finalized && pos <= data_len {
-        match state {
+    while psbt.state != PsbtState::Finalized && psbt.write_pos <= src_size {
+        match psbt.state {
             PsbtState::Init => {
-                if pos + 4 > data_len {
+                if psbt.write_pos + 4 > psbt.data_capacity {
                     return PsbtResult::OobWrite;
                 }
-                if data[pos..pos + 4] != PSBT_MAGIC {
+                if psbt.data[psbt.write_pos..psbt.write_pos + 4] != PSBT_MAGIC {
                     return PsbtResult::ReadError;
                 }
-                pos += 4;
-                if pos >= data_len || data[pos] != 0xff {
+                psbt.write_pos += 4;
+                if psbt.data[psbt.write_pos] != 0xff {
                     return PsbtResult::ReadError;
                 }
-                pos += 1;
-                state = PsbtState::Global;
+                psbt.write_pos += 1;
+                psbt.state = PsbtState::Global;
             }
 
             PsbtState::Global | PsbtState::Inputs | PsbtState::Outputs => {
-                if pos >= data_len {
-                    break;
-                }
-                if data[pos] == 0 {
-                    match state {
-                        PsbtState::Global => {
-                            state = PsbtState::InputsNew;
-                        }
+                if psbt.write_pos >= src_size { break; }
+                if psbt.data[psbt.write_pos] == 0 {
+                    match psbt.state {
+                        PsbtState::Global => psbt.state = PsbtState::InputsNew,
                         PsbtState::Inputs => {
                             kvs += 1;
-                            if kvs >= num_inputs {
-                                state = PsbtState::OutputsNew;
+                            if kvs >= counter_inputs {
+                                psbt.state = PsbtState::OutputsNew;
                                 kvs = 0;
                             } else {
-                                state = PsbtState::InputsNew;
+                                psbt.state = PsbtState::InputsNew;
                             }
                         }
                         PsbtState::Outputs => {
                             kvs += 1;
-                            if kvs >= num_outputs {
-                                state = PsbtState::Finalized;
+                            if kvs >= counter_outputs {
+                                psbt.state = PsbtState::Finalized;
                             } else {
-                                state = PsbtState::OutputsNew;
+                                psbt.state = PsbtState::OutputsNew;
                             }
                         }
                         _ => {}
                     }
                 } else {
-                    let (rec_type, key, val, new_pos) = match read_record_at(&data, pos) {
-                        Ok(r) => r,
-                        Err(e) => return e,
-                    };
-                    pos = new_pos;
+                    // read record
+                    let size_len = compactsize_peek_length(psbt.data[psbt.write_pos]) as usize;
+                    if psbt.write_pos + size_len > psbt.data_capacity {
+                        return PsbtResult::OobWrite;
+                    }
+                    let (size, res) = compactsize_read(&psbt.data[psbt.write_pos..]);
+                    psbt.write_pos += size_len;
+                    if res != PsbtResult::Ok { return res; }
 
-                    let scope = match state {
+                    let size = size as usize;
+                    if psbt.write_pos + size > src_size { return PsbtResult::ReadError; }
+                    if psbt.write_pos + size > psbt.data_capacity { return PsbtResult::OobWrite; }
+
+                    let key_size = size - 1;
+                    let rec_type = psbt.data[psbt.write_pos];
+                    let key = psbt.data[psbt.write_pos + 1..psbt.write_pos + 1 + key_size].to_vec();
+                    psbt.write_pos += size;
+
+                    let scope = match psbt.state {
                         PsbtState::Global => PsbtScope::Global,
                         PsbtState::Inputs => PsbtScope::Inputs,
                         PsbtState::Outputs => PsbtScope::Outputs,
                         _ => return PsbtResult::InvalidState,
                     };
 
-                    // If global unsigned tx, parse to count inputs/outputs
-                    if matches!(state, PsbtState::Global) && rec_type == 0 {
-                        let mut counter = TxCounter { inputs: 0, outputs: 0 };
-                        let tx_res = psbt_btc_tx_parse(
-                            &val,
-                            val.len(),
-                            &mut counter as &mut dyn Any,
-                            Some(tx_counter_handler),
-                        );
-                        if tx_res != PsbtResult::Ok {
-                            return tx_res;
-                        }
-                        num_inputs = counter.inputs;
-                        num_outputs = counter.outputs;
+                    let size_len = compactsize_peek_length(psbt.data[psbt.write_pos]) as usize;
+                    if psbt.write_pos + size_len > psbt.data_capacity {
+                        return PsbtResult::OobWrite;
+                    }
+                    let (val_size, res) = compactsize_read(&psbt.data[psbt.write_pos..]);
+                    if res != PsbtResult::Ok { return res; }
+                    psbt.write_pos += size_len;
 
-                        // Also forward txelem events to user handler
-                        // (The C code does this via tx_counter callback)
+                    let val_size = val_size as usize;
+                    if psbt.write_pos + val_size > src_size { return PsbtResult::ReadError; }
+                    if psbt.write_pos + val_size > psbt.data_capacity { return PsbtResult::OobWrite; }
+
+                    let val = psbt.data[psbt.write_pos..psbt.write_pos + val_size].to_vec();
+                    psbt.write_pos += val_size;
+
+                    // If global unsigned tx, parse for input/output counts
+                    if matches!(psbt.state, PsbtState::Global) && rec_type == 0 {
+                        let mut ctx = ReadContext {
+                            counter_inputs: 0,
+                            counter_outputs: 0,
+                            handler: elem_handler,
+                            user_data_ptr: user_data as *mut dyn std::any::Any,
+                        };
+                        let tx_res = psbt_btc_tx_parse(
+                            &val, val.len(), &mut ctx, Some(tx_counter_fn),
+                        );
+                        if tx_res != PsbtResult::Ok { return tx_res; }
+                        counter_inputs = ctx.counter_inputs;
+                        counter_outputs = ctx.counter_outputs;
                     }
 
-                    // record callback
                     if let Some(handler) = elem_handler {
                         let rec = PsbtRecord {
                             record_type: rec_type,
@@ -686,37 +621,28 @@ pub fn psbt_read(
                 }
             }
 
-            PsbtState::InputsNew => {
-                if pos >= data_len || data[pos] != 0 {
-                    return PsbtResult::InvalidState;
-                }
-                pos += 1;
-                state = PsbtState::Inputs;
+            PsbtState::OutputsNew => {
+                psbt.write_pos += 1;
+                psbt.state = PsbtState::Outputs;
             }
 
-            PsbtState::OutputsNew => {
-                if pos >= data_len || data[pos] != 0 {
-                    return PsbtResult::InvalidState;
-                }
-                pos += 1;
-                state = PsbtState::Outputs;
+            PsbtState::InputsNew => {
+                psbt.write_pos += 1;
+                psbt.state = PsbtState::Inputs;
             }
 
             PsbtState::Finalized => break,
         }
     }
 
-    if state != PsbtState::Finalized {
+    if psbt.state != PsbtState::Finalized {
         return PsbtResult::InvalidState;
     }
 
-    if pos >= data_len || data[pos] != 0 {
+    if psbt.write_pos < src_size && psbt.data[psbt.write_pos] != 0 {
         return PsbtResult::ReadError;
     }
-    pos += 1;
 
-    psbt.state = PsbtState::Finalized;
-    psbt.write_pos = pos;
-
+    psbt.write_pos += 1;
     PsbtResult::Ok
 }

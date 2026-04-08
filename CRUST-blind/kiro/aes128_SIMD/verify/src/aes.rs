@@ -16,7 +16,7 @@ pub fn inv_shift(state: &mut [[u8; NB]; 4]) {
     for i in 1..4 {
         let mut temp = [0u8; NB];
         for j in 0..NB {
-            temp[j] = state[i][((j as isize - i as isize).rem_euclid(NB as isize)) as usize];
+            temp[j] = state[i][((j as isize - i as isize + NB as isize) as usize) % NB];
         }
         state[i] = temp;
     }

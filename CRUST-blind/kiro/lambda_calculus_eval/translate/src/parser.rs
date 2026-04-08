@@ -1,71 +1,70 @@
-use crate::{common, hash_table, reducer, io as cio};
+use crate::{common, hash_table};
+use crate::common::{AstNode, AstNodeType, AstNodeUnion, LambdaExpression, Application, Variable, tokens_t};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI32, Ordering};
 
-static N: AtomicUsize = AtomicUsize::new(1);
+static N: AtomicI32 = AtomicI32::new(1);
 
 pub fn parse_token(token: char) -> common::tokens_t {
     match token {
-        '(' => common::tokens_t::L_PAREN,
-        ')' => common::tokens_t::R_PAREN,
-        '@' => common::tokens_t::LAMBDA,
-        '.' => common::tokens_t::DOT,
-        ' ' => common::tokens_t::WHITESPACE,
-        '\n' => common::tokens_t::NEWLINE,
-        '=' => common::tokens_t::EQ,
-        '"' => common::tokens_t::QUOTE,
-        ':' => common::tokens_t::COLON,
-        c if is_variable(c) => common::tokens_t::VARIABLE,
-        _ => common::tokens_t::ERROR,
+        '(' => tokens_t::L_PAREN,
+        ')' => tokens_t::R_PAREN,
+        '@' => tokens_t::LAMBDA,
+        '.' => tokens_t::DOT,
+        ' ' => tokens_t::WHITESPACE,
+        '\n' => tokens_t::NEWLINE,
+        '=' => tokens_t::EQ,
+        '"' => tokens_t::QUOTE,
+        ':' => tokens_t::COLON,
+        c if is_variable(c) => tokens_t::VARIABLE,
+        _ => tokens_t::ERROR,
     }
 }
 pub fn p_print_token(token: common::tokens_t) {
     match token {
-        common::tokens_t::L_PAREN => print!("( "),
-        common::tokens_t::R_PAREN => print!(") "),
-        common::tokens_t::LAMBDA => print!("@ "),
-        common::tokens_t::DOT => print!(". "),
-        common::tokens_t::VARIABLE => print!("VARIABLE "),
-        common::tokens_t::WHITESPACE => print!("WHITESPACE "),
-        common::tokens_t::NEWLINE => print!("NEWLINE "),
-        common::tokens_t::EQ => print!("= "),
+        tokens_t::L_PAREN => print!("( "),
+        tokens_t::R_PAREN => print!(") "),
+        tokens_t::LAMBDA => print!("@ "),
+        tokens_t::DOT => print!(". "),
+        tokens_t::VARIABLE => print!("VARIABLE "),
+        tokens_t::WHITESPACE => print!("WHITESPACE "),
+        tokens_t::NEWLINE => print!("NEWLINE "),
+        tokens_t::EQ => print!("= "),
         _ => print!("ERROR "),
     }
 }
 pub fn p_print_astNode_type(n: &common::AstNode) {
     match n.type_ {
-        common::AstNodeType::LAMBDA_EXPR => println!("AstNode Type: LAMBDA_EXPR"),
-        common::AstNodeType::APPLICATION => println!("AstNode Type: APPLICATION"),
-        common::AstNodeType::VAR => println!("AstNode Type: VAR"),
-        common::AstNodeType::DEFINITION => println!("AstNode Type: DEFINITION"),
+        AstNodeType::LAMBDA_EXPR => println!("AstNode Type: LAMBDA_EXPR"),
+        AstNodeType::APPLICATION => println!("AstNode Type: APPLICATION"),
+        AstNodeType::VAR => println!("AstNode Type: VAR"),
+        AstNodeType::DEFINITION => println!("AstNode Type: DEFINITION"),
     }
 }
 pub fn print_ast(node: &common::AstNode) {
-    match &node.type_ {
-        common::AstNodeType::LAMBDA_EXPR => {
-            if let common::AstNodeUnion::LambdaExpr(ref le) = node.node {
-                print!("(LAMBDA {} : {}", le.parameter, le.type_);
-                if let Some(ref body) = le.body {
-                    print_ast(body);
-                }
-                print!(") ");
+    match &node.node {
+        AstNodeUnion::LambdaExpr(le) => {
+            print!("(LAMBDA {} : {}", le.parameter, le.type_);
+            if let Some(body) = &le.body {
+                print_ast(body);
             }
+            print!(") ");
         }
-        common::AstNodeType::APPLICATION => {
-            if let common::AstNodeUnion::Application(ref app) = node.node {
-                print!("(APP ");
-                if let Some(ref f) = app.function {
-                    print_ast(f);
-                }
-                if let Some(ref a) = app.argument {
-                    print_ast(a);
-                }
-                print!(") ");
+        AstNodeUnion::Application(app) => {
+            print!("(APP ");
+            if let Some(f) = &app.function {
+                print_ast(f);
             }
+            if let Some(a) = &app.argument {
+                print_ast(a);
+            }
+            print!(") ");
         }
-        common::AstNodeType::VAR => {
-            if let common::AstNodeUnion::Variable(ref var) = node.node {
+        AstNodeUnion::Variable(var) => {
+            if node.type_ == AstNodeType::DEFINITION {
+                print!("(DEFINITION {}) ", var.name);
+            } else {
                 print!("(VAR {} ", var.name);
                 if !var.type_.is_empty() {
                     print!(": {}", var.type_);
@@ -73,32 +72,35 @@ pub fn print_ast(node: &common::AstNode) {
                 print!(")");
             }
         }
-        common::AstNodeType::DEFINITION => {
-            if let common::AstNodeUnion::Variable(ref var) = node.node {
-                print!("(DEFINITION {}) ", var.name);
-            }
-        }
     }
 }
 pub fn is_variable(token: char) -> bool {
     let c = token as u32;
-    if c == '_' as u32 { return true; }
+    if token == '_' { return true; }
     (c >= 97 && c <= 122) || (c >= 65 && c <= 90)
 }
 pub fn peek(in_: &mut File) -> char {
     let mut buf = [0u8; 1];
     let n = in_.read(&mut buf).unwrap_or(0);
     if n == 0 {
-        return char::from(0xff_u8); // EOF
+        return (-1i8 as u8) as char; // EOF
     }
     in_.seek(SeekFrom::Current(-1)).unwrap();
     buf[0] as char
 }
 pub fn peek_print(in_: &mut File, n: usize) {
     let mut buffer = vec![0u8; n];
-    let read = in_.read(&mut buffer).unwrap_or(0);
+    let mut read = 0;
+    for i in 0..n {
+        let mut b = [0u8; 1];
+        let r = in_.read(&mut b).unwrap_or(0);
+        if r == 0 { break; }
+        buffer[i] = b[0];
+        read += 1;
+    }
     let s = String::from_utf8_lossy(&buffer[..read]);
     print!("{}", s);
+    // put chars back
     if read > 0 {
         in_.seek(SeekFrom::Current(-(read as i64))).unwrap();
     }
@@ -112,40 +114,34 @@ pub fn consume(t: common::tokens_t, in_: &mut File, expected: &str) {
 }
 
 fn next_char(in_: &mut File) -> char {
-    let mut buf = [0u8; 1];
-    let n = in_.read(&mut buf).unwrap_or(0);
-    if n == 0 {
-        char::from(0xff_u8)
-    } else {
-        buf[0] as char
-    }
+    crate::io::next(in_).unwrap_or((-1i8 as u8) as char)
 }
 
 pub fn create_variable(name: &str, type_: &str) -> common::AstNode {
-    common::AstNode {
-        type_: common::AstNodeType::VAR,
-        node: common::AstNodeUnion::Variable(common::Variable {
+    AstNode {
+        type_: AstNodeType::VAR,
+        node: AstNodeUnion::Variable(Variable {
             name: name.to_string(),
             type_: type_.to_string(),
         }),
     }
 }
 pub fn create_application(function: &common::AstNode, argument: &common::AstNode) -> common::AstNode {
-    common::AstNode {
-        type_: common::AstNodeType::APPLICATION,
-        node: common::AstNodeUnion::Application(common::Application {
-            function: Some(Box::new(function.clone())),
-            argument: Some(Box::new(argument.clone())),
+    AstNode {
+        type_: AstNodeType::APPLICATION,
+        node: AstNodeUnion::Application(Application {
+            function: Some(Box::new(crate::reducer::deepcopy(function))),
+            argument: Some(Box::new(crate::reducer::deepcopy(argument))),
         }),
     }
 }
 pub fn create_lambda(variable: &str, body: &common::AstNode, type_: &str) -> common::AstNode {
-    common::AstNode {
-        type_: common::AstNodeType::LAMBDA_EXPR,
-        node: common::AstNodeUnion::LambdaExpr(common::LambdaExpression {
+    AstNode {
+        type_: AstNodeType::LAMBDA_EXPR,
+        node: AstNodeUnion::LambdaExpr(LambdaExpression {
             parameter: variable.to_string(),
             type_: type_.to_string(),
-            body: Some(Box::new(body.clone())),
+            body: Some(Box::new(crate::reducer::deepcopy(body))),
         }),
     }
 }
@@ -164,7 +160,7 @@ pub fn parse_space_chars(in_: &mut File) {
     }
 }
 pub fn parse_lambda(table: &mut hash_table::HashTable, in_: &mut File) -> common::AstNode {
-    if parse_token(peek(in_)) != common::tokens_t::VARIABLE {
+    if parse_token(peek(in_)) != tokens_t::VARIABLE {
         expect("A variable", peek(in_));
     }
 
@@ -178,129 +174,144 @@ pub fn parse_lambda(table: &mut hash_table::HashTable, in_: &mut File) -> common
             );
         }
         let nv = alpha_convert(&var);
-        table.insert(&nv, common::AstNode::default());
+        table.insert(&nv, AstNode::default());
         new_var = Some(nv);
     } else {
-        table.insert(&var, common::AstNode::default());
+        table.insert(&var, AstNode::default());
     }
 
     parse_space_chars(in_);
-    consume(common::tokens_t::COLON, in_, ":");
+    consume(tokens_t::COLON, in_, ":");
     parse_space_chars(in_);
 
-    if parse_token(peek(in_)) != common::tokens_t::VARIABLE {
+    if parse_token(peek(in_)) != tokens_t::VARIABLE {
         common::error("Lambda abstractions should be typed.", file!(), line!() as i32, "parse_lambda");
     }
     let type_ = parse_type(table, in_);
 
-    consume(common::tokens_t::DOT, in_, ".");
+    consume(tokens_t::DOT, in_, ".");
 
     let mut body = parse_expression(table, in_);
 
-    if let Some(ref nv) = new_var {
-        reducer::replace(&mut body, &var, nv);
+    if let Some(nv) = new_var {
+        crate::reducer::replace(&mut body, &var, &nv);
         common::print_verbose("Alpha converted", format_args!("Alpha converted {} to {}\n", var, nv));
-        return create_lambda(nv, &body, &type_);
+        AstNode {
+            type_: AstNodeType::LAMBDA_EXPR,
+            node: AstNodeUnion::LambdaExpr(LambdaExpression {
+                parameter: nv,
+                type_: type_,
+                body: Some(Box::new(body)),
+            }),
+        }
+    } else {
+        AstNode {
+            type_: AstNodeType::LAMBDA_EXPR,
+            node: AstNodeUnion::LambdaExpr(LambdaExpression {
+                parameter: var,
+                type_: type_,
+                body: Some(Box::new(body)),
+            }),
+        }
     }
-    create_lambda(&var, &body, &type_)
 }
 pub fn parse_expression(table: &mut hash_table::HashTable, in_: &mut File) -> common::AstNode {
     loop {
         let t = parse_token(peek(in_));
-        if t != common::tokens_t::WHITESPACE && t != common::tokens_t::NEWLINE {
+        if t == tokens_t::WHITESPACE || t == tokens_t::NEWLINE {
+            next_char(in_);
+        } else {
             break;
         }
-        next_char(in_);
     }
-
     let scanned = parse_token(peek(in_));
 
-    if scanned == common::tokens_t::ERROR {
+    if scanned == tokens_t::ERROR {
         println!("Error: {} is  a valid token", peek(in_));
         std::process::exit(1);
     }
 
-    if scanned == common::tokens_t::LAMBDA {
+    if scanned == tokens_t::LAMBDA {
         next_char(in_);
         return parse_lambda(table, in_);
-    } else if scanned == common::tokens_t::L_PAREN {
+    } else if scanned == tokens_t::L_PAREN {
         next_char(in_);
         let expr = parse_expression(table, in_);
         print_ast(&expr);
         let next_token = parse_token(peek(in_));
 
-        if next_token == common::tokens_t::WHITESPACE {
+        if next_token == tokens_t::WHITESPACE {
             let expr_2 = parse_expression(table, in_);
-            let application = common::AstNode {
-                type_: common::AstNodeType::APPLICATION,
-                node: common::AstNodeUnion::Application(common::Application {
+            let application = AstNode {
+                type_: AstNodeType::APPLICATION,
+                node: AstNodeUnion::Application(Application {
                     function: Some(Box::new(expr)),
                     argument: Some(Box::new(expr_2)),
                 }),
             };
-            consume(common::tokens_t::R_PAREN, in_, ")");
+            consume(tokens_t::R_PAREN, in_, ")");
             return application;
         }
-        consume(common::tokens_t::R_PAREN, in_, ")");
+        consume(tokens_t::R_PAREN, in_, ")");
         return expr;
-    } else if scanned == common::tokens_t::VARIABLE {
+    } else if scanned == tokens_t::VARIABLE {
         let var_name = parse_variable(in_);
 
         if var_name == "def" {
             parse_definition(table, in_);
-            let p = peek(in_);
-            if p as u8 != 0xff {
+            let eof_char = (-1i8 as u8) as char;
+            if peek(in_) != eof_char {
                 return parse_expression(table, in_);
             }
-            return common::AstNode::default();
+            return AstNode::default();
         } else if var_name == "import" {
             parse_import(table, in_);
-            let p = peek(in_);
-            if p as u8 != 0xff {
+            let eof_char = (-1i8 as u8) as char;
+            if peek(in_) != eof_char {
                 return parse_expression(table, in_);
             }
-            return common::AstNode::default();
+            return AstNode::default();
         } else if var_name == "type" {
             parse_type_definition(table, in_);
-            let p = peek(in_);
-            if p as u8 != 0xff {
+            let eof_char = (-1i8 as u8) as char;
+            if peek(in_) != eof_char {
                 return parse_expression(table, in_);
             }
-            return common::AstNode::default();
+            return AstNode::default();
         }
 
         let mut type_ = String::new();
         parse_space_chars(in_);
 
         if !table.table_exists(&var_name) {
-            if parse_token(peek(in_)) != common::tokens_t::COLON {
+            if parse_token(peek(in_)) != tokens_t::COLON {
                 common::error(
                     &format!("Constant Variable {} is not typed. Please provide a type.\n", var_name),
                     file!(), line!() as i32, "parse_expression",
                 );
             }
-            consume(common::tokens_t::COLON, in_, ":");
+            consume(tokens_t::COLON, in_, ":");
             parse_space_chars(in_);
             type_ = parse_type(table, in_);
         }
 
         let mut variable = create_variable(&var_name, &type_);
         if table.search(&var_name).is_some() {
-            variable.type_ = common::AstNodeType::DEFINITION;
+            variable.type_ = AstNodeType::DEFINITION;
         }
         return variable;
     }
-    common::AstNode::default()
+    AstNode::default()
 }
 pub fn parse_import(table: &mut hash_table::HashTable, in_: &mut File) {
-    consume(common::tokens_t::WHITESPACE, in_, "a whitespace");
-    consume(common::tokens_t::QUOTE, in_, "\"");
+    consume(tokens_t::WHITESPACE, in_, "a whitespace");
+    consume(tokens_t::QUOTE, in_, "\"");
 
     let mut file_path = String::new();
     let mut next_token = next_char(in_);
     let mut n = parse_token(next_token);
 
-    while n != common::tokens_t::QUOTE {
+    while n != tokens_t::QUOTE {
         if file_path.len() < 99 {
             file_path.push(next_token);
         } else {
@@ -313,11 +324,11 @@ pub fn parse_import(table: &mut hash_table::HashTable, in_: &mut File) {
         n = parse_token(next_token);
     }
 
-    if n != common::tokens_t::QUOTE {
+    if n != tokens_t::QUOTE {
         expect("a closing quote", next_token);
     }
 
-    let mut imported_file = cio::get_file(&file_path, "r").unwrap_or_else(|_| {
+    let mut imported_file = crate::io::get_file(&file_path, "r").unwrap_or_else(|_| {
         common::error(
             &format!("ERROR: Could not open file {}\n", file_path),
             file!(), line!() as i32, "parse_import",
@@ -325,14 +336,11 @@ pub fn parse_import(table: &mut hash_table::HashTable, in_: &mut File) {
         unreachable!()
     });
 
-    loop {
-        let imported_tkn = peek(&mut imported_file);
-        if imported_tkn as u8 == 0xff {
-            break;
-        }
-        let scanned = parse_token(imported_tkn);
+    let eof_char = (-1i8 as u8) as char;
+    while peek(&mut imported_file) != eof_char {
+        let scanned = parse_token(peek(&mut imported_file));
         parse_space_chars(&mut imported_file);
-        if scanned == common::tokens_t::VARIABLE || parse_token(peek(&mut imported_file)) == common::tokens_t::VARIABLE {
+        if scanned == tokens_t::VARIABLE || parse_token(peek(&mut imported_file)) == tokens_t::VARIABLE {
             let var_name = parse_variable(&mut imported_file);
             if var_name == "def" {
                 parse_definition(table, &mut imported_file);
@@ -348,16 +356,16 @@ pub fn parse_import(table: &mut hash_table::HashTable, in_: &mut File) {
     }
 }
 pub fn parse_definition(table: &mut hash_table::HashTable, in_: &mut File) {
-    consume(common::tokens_t::WHITESPACE, in_, "a whitespace");
+    consume(tokens_t::WHITESPACE, in_, "a whitespace");
 
-    if parse_token(peek(in_)) != common::tokens_t::VARIABLE {
+    if parse_token(peek(in_)) != tokens_t::VARIABLE {
         expect("a variable", peek(in_));
     }
 
     let def_name = parse_variable(in_);
-    consume(common::tokens_t::WHITESPACE, in_, "a whitespace");
-    consume(common::tokens_t::EQ, in_, "=");
-    consume(common::tokens_t::WHITESPACE, in_, "a whitespace");
+    consume(tokens_t::WHITESPACE, in_, "a whitespace");
+    consume(tokens_t::EQ, in_, "=");
+    consume(tokens_t::WHITESPACE, in_, "a whitespace");
 
     let definition = parse_expression(table, in_);
     table.insert(&def_name, definition);
@@ -368,13 +376,13 @@ pub fn is_uppercase(c: char) -> bool {
 pub fn parse_type_definition(types_table: &mut hash_table::HashTable, in_: &mut File) {
     let next_token = next_char(in_);
     let n = parse_token(next_token);
-    if n != common::tokens_t::WHITESPACE {
+    if n != tokens_t::WHITESPACE {
         expect(" ", next_token);
     }
 
     let next_token = peek(in_);
     let n = parse_token(next_token);
-    if n != common::tokens_t::VARIABLE {
+    if n != tokens_t::VARIABLE {
         expect("a type definition", next_token);
     }
 
@@ -389,7 +397,7 @@ pub fn parse_type_definition(types_table: &mut hash_table::HashTable, in_: &mut 
             file!(), line!() as i32, "parse_type_definition",
         );
     }
-    types_table.insert(&type_name, common::AstNode::default());
+    types_table.insert(&type_name, AstNode::default());
 }
 pub fn parse_type(types_table: &mut hash_table::HashTable, in_: &mut File) -> String {
     let mut type_name = String::new();

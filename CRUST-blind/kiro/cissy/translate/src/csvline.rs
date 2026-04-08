@@ -22,19 +22,19 @@ pub fn get_field_count(&self) -> usize {
 }
 pub fn get_field(&self, idx: usize) -> Option<&str> {
     if idx >= self.current_idx {
-        return Some("");
+        return None;
     }
     Some(&self.field[idx].data)
 }
 pub fn reset(&mut self) {
-    for f in self.field.iter_mut() {
+    for f in &mut self.field {
         f.reset();
     }
     self.current_idx = 0;
     self.eol_str = "\n".to_string();
 }
 pub fn add_field(&mut self, txtfield: &str, fieldstartidx: usize, fieldlen: usize) {
-    if self.fieldsize <= self.current_idx {
+    while self.fieldsize <= self.current_idx {
         for _ in 0..10 {
             self.field.push(CsvField::new());
         }
@@ -49,12 +49,11 @@ pub fn append_field(&mut self, txtfield: &str, fieldstartidx: usize, fieldlen: u
 pub fn print_to_file(&self, fp: &mut File) {
     let _ = write!(fp, "[[");
     for i in 0..self.fieldsize {
-        // C code prints to stderr for the inner loop
-        let _ = eprint!("[{}:{}]", self.field[i].data, self.field[i].len);
+        let _ = write!(fp, "[{}:{}]", self.field[i].data, self.field[i].data.len());
     }
     let _ = write!(fp, "]");
     let _ = write!(fp, "fs({}):", self.fieldsize);
     let _ = write!(fp, "i({})", self.current_idx);
-    let _ = writeln!(fp, "]");
+    let _ = write!(fp, "]\n");
 }
 }

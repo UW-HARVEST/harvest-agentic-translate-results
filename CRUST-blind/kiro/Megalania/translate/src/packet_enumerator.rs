@@ -11,20 +11,27 @@ pub struct PacketEnumerator<'a> {
     /// An owned substring enumerator built on the same data.
     pub substring_enumerator: Box<SubstringEnumerator<'a>>,
 }
+
 impl<'a> PacketEnumerator<'a> {
     pub fn memory_usage(data_size: usize) -> usize {
         std::mem::size_of::<PacketEnumerator>() + SubstringEnumerator::memory_usage(data_size)
     }
+
     pub fn new(data: &'a [u8]) -> Self {
-        let se = SubstringEnumerator::new(data, MIN_SUBSTRING, MAX_SUBSTRING);
-        PacketEnumerator { data, substring_enumerator: Box::new(se) }
+        PacketEnumerator {
+            data,
+            substring_enumerator: Box::new(SubstringEnumerator::new(
+                data,
+                MIN_SUBSTRING,
+                MAX_SUBSTRING,
+            )),
+        }
     }
+
     pub fn for_each<F>(&self, state: &LZMAState, mut callback: F)
     where
         F: FnMut(&LZMAState, LZMAPacket),
     {
-        assert!(std::ptr::eq(self.data, state.data));
-
         callback(state, LZMAPacket::literal_packet());
 
         if state.position > 0 {
@@ -37,9 +44,9 @@ impl<'a> PacketEnumerator<'a> {
         self.substring_enumerator.for_each(state.position, |offset, length| {
             let dist = (state.position - offset - 1) as u32;
             callback(state, LZMAPacket::match_packet(dist, length as u32));
-            for i in 0..4u32 {
-                if dist == state.dists[i as usize] {
-                    callback(state, LZMAPacket::long_rep_packet(i, length as u32));
+            for i in 0..4 {
+                if dist == state.dists[i] {
+                    callback(state, LZMAPacket::long_rep_packet(i as u32, length as u32));
                 }
             }
         });

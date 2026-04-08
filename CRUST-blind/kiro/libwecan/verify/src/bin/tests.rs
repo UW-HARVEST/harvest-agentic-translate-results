@@ -2,11 +2,12 @@ use libwecan::libwecan::*;
 
 const PRECISION: f64 = 0.00001;
 
-fn cmp_float(f1: f32, f2: f32) -> bool {
-    ((f1 as f64 - PRECISION) < f2 as f64) && ((f1 as f64 + PRECISION) > f2 as f64)
+fn cmp_double(d1: f64, d2: f64) -> bool {
+    (d1 - PRECISION) < d2 && (d1 + PRECISION) > d2
 }
 
-fn cmp_double(d1: f64, d2: f64) -> bool {
+fn cmp_float(f1: f32, f2: f32) -> bool {
+    let (d1, d2) = (f1 as f64, f2 as f64);
     (d1 - PRECISION) < d2 && (d1 + PRECISION) > d2
 }
 
@@ -15,42 +16,44 @@ fn cmp_double(d1: f64, d2: f64) -> bool {
 // ==========================================================================
 
 #[test]
-fn test_extract_motorola_1byte_unsigned_full() {
+fn test_extract_motorola_1_1_one_byte_unsigned() {
     let mut frame = [0u8; 8];
     frame[0] = 0xFF;
     assert_eq!(extract(&frame, 7, 8, UNSIGNED, MOTOROLA), 255);
 }
 
 #[test]
-fn test_extract_motorola_1byte_signed() {
+fn test_extract_motorola_1_2_one_byte_signed() {
     let mut frame = [0u8; 8];
     frame[1] = 0xFD;
-    assert_eq!(extract(&frame, 15, 8, SIGNED, MOTOROLA) as i64, -3);
+    let val = extract(&frame, 15, 8, SIGNED, MOTOROLA) as i64;
+    assert_eq!(val, -3);
 }
 
 #[test]
-fn test_extract_motorola_1byte_lsb_middle_unsigned() {
+fn test_extract_motorola_1_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     frame[3] = 0x0E;
     assert_eq!(extract(&frame, 27, 3, UNSIGNED, MOTOROLA), 7);
 }
 
 #[test]
-fn test_extract_motorola_1byte_lsb_start_unsigned() {
+fn test_extract_motorola_1_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     frame[2] = 0x3F;
     assert_eq!(extract(&frame, 21, 6, UNSIGNED, MOTOROLA), 63);
 }
 
 #[test]
-fn test_extract_motorola_1byte_lsb_start_signed() {
+fn test_extract_motorola_1_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     frame[4] = 0x0B;
-    assert_eq!(extract(&frame, 35, 4, SIGNED, MOTOROLA) as i64, -5);
+    let val = extract(&frame, 35, 4, SIGNED, MOTOROLA) as i64;
+    assert_eq!(val, -5);
 }
 
 #[test]
-fn test_extract_motorola_2bytes_unsigned() {
+fn test_extract_motorola_2_1_two_bytes_unsigned() {
     let mut frame = [0u8; 8];
     frame[6] = 0xCD;
     frame[7] = 0xAB;
@@ -58,15 +61,16 @@ fn test_extract_motorola_2bytes_unsigned() {
 }
 
 #[test]
-fn test_extract_motorola_2bytes_signed() {
+fn test_extract_motorola_2_2_two_bytes_signed() {
     let mut frame = [0u8; 8];
     frame[4] = 0xFF;
     frame[5] = 0xF7;
-    assert_eq!(extract(&frame, 39, 16, SIGNED, MOTOROLA) as i64, -9);
+    let val = extract(&frame, 39, 16, SIGNED, MOTOROLA) as i64;
+    assert_eq!(val, -9);
 }
 
 #[test]
-fn test_extract_motorola_2bytes_lsb_middle_unsigned() {
+fn test_extract_motorola_2_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     frame[3] = 0x07;
     frame[4] = 0xFC;
@@ -74,7 +78,7 @@ fn test_extract_motorola_2bytes_lsb_middle_unsigned() {
 }
 
 #[test]
-fn test_extract_motorola_2bytes_lsb_start_unsigned() {
+fn test_extract_motorola_2_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     frame[3] = 0x3F;
     frame[4] = 0xFF;
@@ -82,28 +86,30 @@ fn test_extract_motorola_2bytes_lsb_start_unsigned() {
 }
 
 #[test]
-fn test_extract_motorola_2bytes_lsb_start_signed() {
+fn test_extract_motorola_2_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     frame[2] = 0x04;
     frame[3] = 0xEB;
-    assert_eq!(extract(&frame, 18, 11, SIGNED, MOTOROLA) as i64, -789);
+    let val = extract(&frame, 18, 11, SIGNED, MOTOROLA) as i64;
+    assert_eq!(val, -789);
 }
 
 #[test]
-fn test_extract_motorola_7bytes_unsigned() {
-    let mut frame = [0xFFu8; 8];
-    // 7 bytes all 0xFF
+fn test_extract_motorola_2_6_seven_bytes_unsigned() {
+    let mut frame = [0u8; 8];
+    for i in 0..7 { frame[i] = 0xFF; }
     assert_eq!(extract(&frame, 7, 56, UNSIGNED, MOTOROLA), 72057594037927935);
 }
 
 #[test]
-fn test_extract_motorola_4bytes_signed() {
+fn test_extract_motorola_2_7_four_bytes_signed() {
     let mut frame = [0u8; 8];
     frame[4] = 0xFF;
     frame[5] = 0xDC;
     frame[6] = 0x35;
     frame[7] = 0x5E;
-    assert_eq!(extract(&frame, 39, 32, SIGNED, MOTOROLA) as i64, -2345634);
+    let val = extract(&frame, 39, 32, SIGNED, MOTOROLA) as i64;
+    assert_eq!(val, -2345634);
 }
 
 // ==========================================================================
@@ -111,42 +117,44 @@ fn test_extract_motorola_4bytes_signed() {
 // ==========================================================================
 
 #[test]
-fn test_extract_intel_1byte_unsigned_full() {
+fn test_extract_intel_3_1_one_byte_unsigned() {
     let mut frame = [0u8; 8];
     frame[0] = 0xFF;
     assert_eq!(extract(&frame, 0, 8, UNSIGNED, INTEL), 255);
 }
 
 #[test]
-fn test_extract_intel_1byte_signed() {
+fn test_extract_intel_3_2_one_byte_signed() {
     let mut frame = [0u8; 8];
     frame[5] = 0xDF;
-    assert_eq!(extract(&frame, 40, 8, SIGNED, INTEL) as i64, -33);
+    let val = extract(&frame, 40, 8, SIGNED, INTEL) as i64;
+    assert_eq!(val, -33);
 }
 
 #[test]
-fn test_extract_intel_1byte_lsb_middle_unsigned() {
+fn test_extract_intel_3_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     frame[2] = 0x5E;
     assert_eq!(extract(&frame, 17, 7, UNSIGNED, INTEL), 47);
 }
 
 #[test]
-fn test_extract_intel_1byte_lsb_start_unsigned() {
+fn test_extract_intel_3_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     frame[6] = 0x76;
     assert_eq!(extract(&frame, 48, 7, UNSIGNED, INTEL), 118);
 }
 
 #[test]
-fn test_extract_intel_1byte_lsb_start_signed() {
+fn test_extract_intel_3_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     frame[4] = 0xD3;
-    assert_eq!(extract(&frame, 32, 8, SIGNED, INTEL) as i64, -45);
+    let val = extract(&frame, 32, 8, SIGNED, INTEL) as i64;
+    assert_eq!(val, -45);
 }
 
 #[test]
-fn test_extract_intel_2bytes_unsigned() {
+fn test_extract_intel_4_1_two_bytes_unsigned() {
     let mut frame = [0u8; 8];
     frame[3] = 0xFA;
     frame[4] = 0xD1;
@@ -154,15 +162,16 @@ fn test_extract_intel_2bytes_unsigned() {
 }
 
 #[test]
-fn test_extract_intel_2bytes_signed() {
+fn test_extract_intel_4_2_two_bytes_signed() {
     let mut frame = [0u8; 8];
     frame[6] = 0x19;
     frame[7] = 0xFC;
-    assert_eq!(extract(&frame, 48, 16, SIGNED, INTEL) as i64, -999);
+    let val = extract(&frame, 48, 16, SIGNED, INTEL) as i64;
+    assert_eq!(val, -999);
 }
 
 #[test]
-fn test_extract_intel_2bytes_lsb_middle_unsigned() {
+fn test_extract_intel_4_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     frame[0] = 0xEC;
     frame[1] = 0x34;
@@ -170,7 +179,7 @@ fn test_extract_intel_2bytes_lsb_middle_unsigned() {
 }
 
 #[test]
-fn test_extract_intel_2bytes_lsb_start_unsigned() {
+fn test_extract_intel_4_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     frame[2] = 0x75;
     frame[3] = 0x03;
@@ -178,26 +187,25 @@ fn test_extract_intel_2bytes_lsb_start_unsigned() {
 }
 
 #[test]
-fn test_extract_intel_2bytes_lsb_start_signed() {
+fn test_extract_intel_4_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     frame[5] = 0xF6;
     frame[6] = 0xE5;
-    assert_eq!(extract(&frame, 40, 16, SIGNED, INTEL) as i64, -6666);
+    let val = extract(&frame, 40, 16, SIGNED, INTEL) as i64;
+    assert_eq!(val, -6666);
 }
 
 #[test]
-fn test_extract_intel_7bytes_unsigned() {
-    let mut frame = [0u8; 8];
-    frame[0] = 0xAB; frame[1] = 0xFF; frame[2] = 0xAB; frame[3] = 0xFF;
-    frame[4] = 0xAB; frame[5] = 0xFF; frame[6] = 0xAB;
+fn test_extract_intel_4_6_seven_bytes_unsigned() {
+    let frame: [u8; 8] = [0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0x00];
     assert_eq!(extract(&frame, 0, 56, UNSIGNED, INTEL), 48413335211474859);
 }
 
 #[test]
-fn test_extract_intel_4bytes_signed() {
-    let mut frame = [0u8; 8];
-    frame[0] = 0x96; frame[1] = 0x91; frame[2] = 0xE6; frame[3] = 0xFF;
-    assert_eq!(extract(&frame, 0, 32, SIGNED, INTEL) as i64, -1666666);
+fn test_extract_intel_4_7_four_bytes_signed() {
+    let frame: [u8; 8] = [0x96, 0x91, 0xE6, 0xFF, 0x00, 0x00, 0x00, 0x00];
+    let val = extract(&frame, 0, 32, SIGNED, INTEL) as i64;
+    assert_eq!(val, -1666666);
 }
 
 // ==========================================================================
@@ -205,87 +213,87 @@ fn test_extract_intel_4bytes_signed() {
 // ==========================================================================
 
 #[test]
-fn test_insert_motorola_1byte_unsigned() {
+fn test_insert_motorola_5_1_one_byte_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 31, 8, 6, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0x06, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_1byte_signed() {
+fn test_insert_motorola_5_2_one_byte_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 31, 8, -15i64 as u64, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0xF1, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0xF1, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_lsb_middle_unsigned() {
+fn test_insert_motorola_5_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 7, 6, 63, MOTOROLA);
-    assert_eq!(frame, [0xFC, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0xFC, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_lsb_start_unsigned() {
+fn test_insert_motorola_5_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 47, 8, 113, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0, 0, 0x71, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x00, 0x71, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_lsb_start_signed() {
+fn test_insert_motorola_5_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 23, 8, -113i64 as u64, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0x8F, 0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x8F, 0x00, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_2bytes_unsigned() {
+fn test_insert_motorola_6_1_two_bytes_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 55, 16, 30126, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0, 0, 0, 0x75, 0xAE]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0xAE]);
 }
 
 #[test]
-fn test_insert_motorola_2bytes_signed() {
+fn test_insert_motorola_6_2_two_bytes_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 39, 16, -59595i64 as u64, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0, 0x17, 0x35, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x17, 0x35, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_2bytes_lsb_middle_unsigned() {
+fn test_insert_motorola_6_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 21, 9, 189, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0x17, 0xA0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x17, 0xA0, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_2bytes_lsb_start_unsigned() {
+fn test_insert_motorola_6_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 34, 11, 1390, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0, 0x05, 0x6E, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x05, 0x6E, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_2bytes_lsb_start_signed() {
+fn test_insert_motorola_6_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 7, 16, -24244i64 as u64, MOTOROLA);
-    assert_eq!(frame, [0xA1, 0x4C, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0xA1, 0x4C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_7bytes_unsigned() {
+fn test_insert_motorola_6_6_seven_bytes_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 7, 56, 48413335211474859, MOTOROLA);
-    assert_eq!(frame, [0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0]);
+    assert_eq!(frame, [0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0x00]);
 }
 
 #[test]
-fn test_insert_motorola_4bytes_signed() {
+fn test_insert_motorola_6_7_four_bytes_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 39, 32, -489i64 as u64, MOTOROLA);
-    assert_eq!(frame, [0, 0, 0, 0, 0xFF, 0xFF, 0xFE, 0x17]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFE, 0x17]);
 }
 
 // ==========================================================================
@@ -293,215 +301,220 @@ fn test_insert_motorola_4bytes_signed() {
 // ==========================================================================
 
 #[test]
-fn test_insert_intel_1byte_unsigned() {
+fn test_insert_intel_7_1_one_byte_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 16, 8, 240, INTEL);
-    assert_eq!(frame, [0, 0, 0xF0, 0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_1byte_signed() {
+fn test_insert_intel_7_2_one_byte_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 32, 8, -202i64 as u64, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0, 0x36, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_lsb_middle_unsigned() {
+fn test_insert_intel_7_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 29, 3, 7, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0xE0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0xE0, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_lsb_start_unsigned() {
+fn test_insert_intel_7_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 56, 5, 23, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0, 0, 0, 0, 0x17]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17]);
 }
 
 #[test]
-fn test_insert_intel_lsb_start_signed() {
+fn test_insert_intel_7_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 40, 8, -199i64 as u64, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0, 0, 0x39, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_2bytes_unsigned() {
+fn test_insert_intel_8_1_two_bytes_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 16, 16, 52077, INTEL);
-    assert_eq!(frame, [0, 0, 0x6D, 0xCB, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x6D, 0xCB, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_2bytes_signed() {
+fn test_insert_intel_8_2_two_bytes_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 32, 16, -48666i64 as u64, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0, 0xE6, 0x41, 0, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0xE6, 0x41, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_2bytes_lsb_middle_unsigned() {
+fn test_insert_intel_8_3_lsb_middle_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 44, 11, 1707, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0, 0, 0xB0, 0x6A, 0]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x00, 0xB0, 0x6A, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_2bytes_lsb_start_unsigned() {
+fn test_insert_intel_8_4_lsb_start_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 8, 10, 1023, INTEL);
-    assert_eq!(frame, [0, 0xFF, 0x03, 0, 0, 0, 0, 0]);
+    assert_eq!(frame, [0x00, 0xFF, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_2bytes_lsb_start_signed() {
+fn test_insert_intel_8_5_lsb_start_signed() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 48, 16, -59821i64 as u64, INTEL);
-    assert_eq!(frame, [0, 0, 0, 0, 0, 0, 0x53, 0x16]);
+    assert_eq!(frame, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x53, 0x16]);
 }
 
 #[test]
-fn test_insert_intel_7bytes_unsigned() {
+fn test_insert_intel_8_6_seven_bytes_unsigned() {
     let mut frame = [0u8; 8];
     insert(&mut frame, 0, 56, 48413335211474859, INTEL);
-    assert_eq!(frame, [0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0]);
+    assert_eq!(frame, [0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0xFF, 0xAB, 0x00]);
 }
 
 #[test]
-fn test_insert_intel_4bytes_signed_motorola() {
-    // Note: C test step 8.7 actually uses MOTOROLA despite being in the INTEL section
+fn test_insert_intel_8_7_four_bytes_motorola() {
+    // Note: C test 8.7 actually uses MOTOROLA endianness
     let mut frame = [0u8; 8];
     insert(&mut frame, 7, 32, -1339i64 as u64, MOTOROLA);
-    assert_eq!(frame, [0xFF, 0xFF, 0xFA, 0xC5, 0, 0, 0, 0]);
+    assert_eq!(frame, [0xFF, 0xFF, 0xFA, 0xC5, 0x00, 0x00, 0x00, 0x00]);
 }
 
 // ==========================================================================
-// ENCODE/DECODE MOTOROLA double
+// ENCODE/DECODE ROUNDTRIPS
 // ==========================================================================
 
 #[test]
-fn test_encode_decode_motorola_double() {
+fn test_encode_decode_9_1_motorola_double() {
     let mut frame = [0u8; 8];
-    let val = 66.66666;
-    encode_double(&mut frame, val, 7, 32, MOTOROLA, 0.0000001, 0.0);
+    encode_double(&mut frame, 66.66666, 7, 32, MOTOROLA, 0.0000001, 0.0);
+    assert_eq!(&frame[..4], &[0x27, 0xBC, 0x86, 0x68]);
     let decoded = decode_double(&frame, 7, 32, MOTOROLA, 0.0000001, 0.0);
-    assert!(cmp_double(decoded, val));
+    assert!(cmp_double(decoded, 66.66666));
 }
 
 #[test]
-fn test_encode_decode_motorola_double_negative() {
+fn test_encode_decode_9_2_motorola_double_negative() {
     let mut frame = [0u8; 8];
-    let val = -50.6164129;
-    encode_double(&mut frame, val, 7, 32, MOTOROLA, 0.0000001, 0.0);
+    encode_double(&mut frame, -50.6164129, 7, 32, MOTOROLA, 0.0000001, 0.0);
+    assert_eq!(&frame[..4], &[0xE1, 0xD4, 0x8C, 0x5F]);
     let decoded = decode_double(&frame, 7, 32, MOTOROLA, 0.0000001, 0.0);
-    assert!(cmp_double(decoded, val));
+    assert!(cmp_double(decoded, -50.6164129));
 }
 
 #[test]
-fn test_encode_decode_motorola_uint() {
+fn test_encode_decode_9_3_motorola_uint() {
     let mut frame = [0u8; 8];
-    let val: u64 = 666666666;
-    encode_uint64_t(&mut frame, val, 7, 32, MOTOROLA, 1.0, 0.0);
-    assert_eq!(decode_uint64_t(&frame, 7, 32, MOTOROLA, 1.0, 0.0), val);
+    encode_uint64_t(&mut frame, 666666666, 7, 32, MOTOROLA, 1.0, 0.0);
+    assert_eq!(&frame[..4], &[0x27, 0xBC, 0x86, 0xAA]);
+    assert_eq!(decode_uint64_t(&frame, 7, 32, MOTOROLA, 1.0, 0.0), 666666666);
 }
 
-// ==========================================================================
-// ENCODE/DECODE INTEL double
-// ==========================================================================
-
 #[test]
-fn test_encode_decode_intel_double() {
+fn test_encode_decode_9_4_intel_double() {
     let mut frame = [0u8; 8];
-    let val = 8.4939123;
-    encode_double(&mut frame, val, 0, 32, INTEL, 0.0000001, 0.0);
+    encode_double(&mut frame, 8.4939123, 0, 32, INTEL, 0.0000001, 0.0);
+    assert_eq!(&frame[..4], &[0x73, 0x11, 0x10, 0x05]);
     let decoded = decode_double(&frame, 0, 32, INTEL, 0.0000001, 0.0);
-    assert!(cmp_double(decoded, val));
+    assert!(cmp_double(decoded, 8.4939123));
 }
 
 #[test]
-fn test_encode_decode_intel_double_negative() {
+fn test_encode_decode_9_5_intel_double_negative() {
     let mut frame = [0u8; 8];
-    let val = -7.7979897;
-    encode_double(&mut frame, val, 0, 32, INTEL, 0.0000001, 0.0);
+    encode_double(&mut frame, -7.7979897, 0, 32, INTEL, 0.0000001, 0.0);
+    assert_eq!(&frame[..4], &[0x07, 0x1F, 0x5A, 0xFB]);
     let decoded = decode_double(&frame, 0, 32, INTEL, 0.0000001, 0.0);
-    assert!(cmp_double(decoded, val));
+    assert!(cmp_double(decoded, -7.7979897));
 }
 
 #[test]
-fn test_encode_decode_intel_uint() {
+fn test_encode_decode_9_6_intel_uint() {
     let mut frame = [0u8; 8];
-    let val: u64 = 999999999;
-    encode_uint64_t(&mut frame, val, 0, 32, INTEL, 1.0, 0.0);
-    assert_eq!(decode_uint64_t(&frame, 0, 32, INTEL, 1.0, 0.0), val);
+    encode_uint64_t(&mut frame, 999999999, 0, 32, INTEL, 1.0, 0.0);
+    assert_eq!(&frame[..4], &[0xFF, 0xC9, 0x9A, 0x3B]);
+    assert_eq!(decode_uint64_t(&frame, 0, 32, INTEL, 1.0, 0.0), 999999999);
 }
 
 #[test]
-fn test_encode_decode_intel_int_negative() {
+fn test_encode_decode_9_7_intel_int_negative() {
     let mut frame = [0u8; 8];
-    let val: i64 = -1029384756;
-    encode_int64_t(&mut frame, val, 0, 32, INTEL, 1.0, 0.0);
-    assert_eq!(decode_int64_t(&frame, 0, 32, INTEL, 1.0, 0.0), val);
+    encode_int64_t(&mut frame, -1029384756, 0, 32, INTEL, 1.0, 0.0);
+    assert_eq!(&frame[..4], &[0xCC, 0xD5, 0xA4, 0xC2]);
+    assert_eq!(decode_int64_t(&frame, 0, 32, INTEL, 1.0, 0.0), -1029384756);
 }
 
-// ==========================================================================
-// ENCODE/DECODE MOTOROLA float negative
-// ==========================================================================
-
 #[test]
-fn test_encode_decode_motorola_float_negative() {
+fn test_encode_decode_9_8_motorola_float_negative() {
     let mut frame = [0u8; 8];
-    let val: f32 = -2938.345666;
-    encode_float(&mut frame, val, 7, 40, MOTOROLA, 0.0000001, 0.0);
+    encode_float(&mut frame, -2938.345666f32, 7, 40, MOTOROLA, 0.0000001, 0.0);
+    assert_eq!(&frame[..5], &[0xF9, 0x28, 0x9C, 0x06, 0xF9]);
     let decoded = decode_float(&frame, 7, 40, MOTOROLA, 0.0000001, 0.0);
-    assert!(cmp_float(decoded, val));
+    assert!(cmp_float(decoded, -2938.345666f32));
 }
 
 // ==========================================================================
-// FDFRAME tests
+// ENCODE/DECODE FDFRAME ROUNDTRIPS
 // ==========================================================================
 
 #[test]
-fn test_fdframe_intel_uint() {
+fn test_encode_decode_9_9_intel_uint_fdframe() {
     let mut frame = [0u8; 40];
-    let val: u64 = 999999999;
-    encode_uint64_t(&mut frame, val, 288, 32, INTEL, 1.0, 0.0);
-    assert_eq!(decode_uint64_t(&frame, 288, 32, INTEL, 1.0, 0.0), val);
+    encode_uint64_t(&mut frame, 999999999, 288, 32, INTEL, 1.0, 0.0);
+    assert_eq!(frame[36], 0xFF);
+    assert_eq!(frame[37], 0xC9);
+    assert_eq!(frame[38], 0x9A);
+    assert_eq!(frame[39], 0x3B);
+    assert_eq!(decode_uint64_t(&frame, 288, 32, INTEL, 1.0, 0.0), 999999999);
 }
 
 #[test]
-fn test_fdframe_motorola_int_signed() {
+fn test_encode_decode_10_0_motorola_int_fdframe() {
     let mut frame = [0u8; 56];
-    let val: i64 = -7777;
-    encode_int64_t(&mut frame, val, 431, 16, MOTOROLA, 1.0, 0.0);
-    assert_eq!(decode_int64_t(&frame, 431, 16, MOTOROLA, 1.0, 0.0), val);
+    encode_int64_t(&mut frame, -7777, 431, 16, MOTOROLA, 1.0, 0.0);
+    assert_eq!(frame[53], 0xE1);
+    assert_eq!(frame[54], 0x9F);
+    assert_eq!(decode_int64_t(&frame, 431, 16, MOTOROLA, 1.0, 0.0), -7777);
 }
 
 #[test]
-fn test_fdframe_intel_int_negative() {
+fn test_encode_decode_10_1_intel_int_negative_fdframe() {
     let mut frame = [0u8; 48];
-    let val: i64 = -1029384756;
-    encode_int64_t(&mut frame, val, 184, 32, INTEL, 1.0, 0.0);
-    assert_eq!(decode_int64_t(&frame, 184, 32, INTEL, 1.0, 0.0), val);
+    encode_int64_t(&mut frame, -1029384756, 184, 32, INTEL, 1.0, 0.0);
+    assert_eq!(frame[23], 0xCC);
+    assert_eq!(frame[24], 0xD5);
+    assert_eq!(frame[25], 0xA4);
+    assert_eq!(frame[26], 0xC2);
+    assert_eq!(decode_int64_t(&frame, 184, 32, INTEL, 1.0, 0.0), -1029384756);
 }
 
 #[test]
-fn test_fdframe_motorola_float() {
+fn test_encode_decode_10_2_motorola_float_fdframe() {
     let mut frame = [0u8; 64];
-    let val: f32 = 8.49391;
-    encode_float(&mut frame, val, 383, 32, MOTOROLA, 0.0000001, 0.0);
+    encode_float(&mut frame, 8.49391f32, 383, 32, MOTOROLA, 0.0000001, 0.0);
+    assert_eq!(frame[47], 0x05);
+    assert_eq!(frame[48], 0x10);
+    assert_eq!(frame[49], 0x11);
+    assert_eq!(frame[50], 0x5A);
     let decoded = decode_float(&frame, 383, 32, MOTOROLA, 0.0000001, 0.0);
-    assert!(cmp_float(decoded, val));
+    assert!(cmp_float(decoded, 8.49391f32));
 }
 
 #[test]
-fn test_fdframe_intel_double_negative() {
+fn test_encode_decode_10_3_intel_double_negative_fdframe() {
     let mut frame = [0u8; 24];
-    let val = -7.7979897;
-    encode_double(&mut frame, val, 32, 32, INTEL, 0.0000001, 0.0);
+    encode_double(&mut frame, -7.7979897, 32, 32, INTEL, 0.0000001, 0.0);
+    assert_eq!(frame[4], 0x07);
+    assert_eq!(frame[5], 0x1F);
+    assert_eq!(frame[6], 0x5A);
+    assert_eq!(frame[7], 0xFB);
     let decoded = decode_double(&frame, 32, 32, INTEL, 0.0000001, 0.0);
-    assert!(cmp_double(decoded, val));
+    assert!(cmp_double(decoded, -7.7979897));
 }
 
 fn main() {}

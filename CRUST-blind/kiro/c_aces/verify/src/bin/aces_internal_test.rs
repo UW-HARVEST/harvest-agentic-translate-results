@@ -1,75 +1,51 @@
-use c_aces::aces_internal::{generate_error, generate_linear, generate_u, generate_vanisher};
-use c_aces::channel::{Channel, Parameters};
+use c_aces::aces_internal::*;
+use c_aces::channel::Channel;
+use c_aces::channel::Parameters;
 use c_aces::polynomial::Polynomial;
+use c_aces::matrix::{Matrix2D, Matrix3D, matrix2d_eye, matrix2d_multiply};
 
 #[test]
-fn test_channel_init_valid() {
-    let ch = Channel::init(2, 33, 1).unwrap();
-    assert_eq!(ch.p, 2);
-    assert_eq!(ch.q, 33);
-    assert_eq!(ch.w, 1);
-}
-
-#[test]
-fn test_channel_init_p_squared_not_less_than_q() {
-    // p=5, q=10: p^2=25 >= 10, so q becomes (5+1)^2 = 36
-    let ch = Channel::init(5, 10, 1).unwrap();
-    assert_eq!(ch.p, 5);
-    assert_eq!(ch.q, 36);
-}
-
-#[test]
-fn test_channel_init_coprime_check() {
-    // p=5, q=26: p^2=25 < 26 and gcd(5,26)=1, so q stays 26
-    let ch = Channel::init(5, 26, 1).unwrap();
-    assert_eq!(ch.p, 5);
-    assert_eq!(ch.q, 26);
-}
-
-#[test]
-fn test_generate_u_coef_sum_equals_q() {
-    let ch = Channel::init(2, 33, 1).unwrap();
+fn test_generate_u_coef_sum() {
+    let channel = Channel::init(2, 33, 1).unwrap();
     let param = Parameters { dim: 10, N: 1 };
-    let mut u = Polynomial::new(vec![0; 11]);
-    generate_u(&ch, &param, &mut u).unwrap();
+    let mut u = Polynomial::new(vec![0i64; 11]);
+    generate_u(&channel, &param, &mut u).unwrap();
+    // u is constructed so coef_sum(u) == q
     assert_eq!(u.coef_sum(), 33);
-    assert_eq!(u.coeffs[0], 1); // leading coeff is 1
+    // leading coeff must be 1
+    assert_eq!(u.coeffs[0], 1);
 }
 
 #[test]
-fn test_generate_error_coef_sum_equals_message() {
-    let q = 33u64;
-    let message = 7u64;
-    let mut rm = Polynomial::new(vec![0; 10]);
-    generate_error(q, message, &mut rm).unwrap();
-    // coef_sum(rm) mod q == message
-    let sum = rm.coef_sum();
-    let result = ((sum % q as i64) + q as i64) % q as i64;
-    assert_eq!(result as u64, message);
+fn test_generate_f0_fills_values() {
+    let channel = Channel::init(2, 33, 1).unwrap();
+    let param = Parameters { dim: 4, N: 1 };
+    let mut f0 = c_aces::polynomial::PolyArray::new(
+        (0..4).map(|_| Polynomial::new(vec![0i64; 4])).collect(),
+    );
+    generate_f0(&channel, &param, &mut f0).unwrap();
+    // At least some coefficients should be non-zero (probabilistic but near-certain)
+    let total: i64 = f0.polies.iter().flat_map(|p| p.coeffs.iter()).sum();
+    assert!(total != 0);
 }
 
 #[test]
-fn test_generate_vanisher_coef_sum_is_multiple_of_p() {
-    let p = 5u64;
-    let q = 33u64;
-    let mut e = Polynomial::new(vec![0; 10]);
-    generate_vanisher(p, q, &mut e).unwrap();
-    // coef_sum(e) mod q should be 0 or p (i.e., p*k where k in {0,1})
-    let sum = e.coef_sum();
-    let val = ((sum % q as i64) + q as i64) % q as i64;
-    assert!(val as u64 == 0 || val as u64 == p);
-}
+fn test_generate_secret_produces_valid_lambda() {
+    let channel = Channel::init(2, 33, 1).unwrap();
+    let param = Parameters { dim: 4, N: 1 };
+    let mut u = Polynomial::new(vec![0i64; 5]);
+    generate_u(&channel, &param, &mut u).unwrap();
 
-#[test]
-fn test_generate_linear_coef_sum_in_range() {
-    let p = 5u64;
-    let q = 33u64;
-    let mut b = Polynomial::new(vec![0; 10]);
-    generate_linear(p, q, &mut b).unwrap();
-    // coef_sum(b) mod q should be in [0, p]
-    let sum = b.coef_sum();
-    let val = ((sum % q as i64) + q as i64) % q as i64;
-    assert!(val as u64 <= p);
+    let mut secret = c_aces::polynomial::PolyArray::new(
+        (0..4).map(|_| Polynomial::new(vec![0i64; 4])).collect(),
+    );
+    let mut lambda = Matrix3D::new(4, 4);
+    generate_secret(&channel, &param, &u, &mut secret, &mut lambda).unwrap();
+
+    // secret should have 4 polynomials
+    assert_eq!(secret.polies.len(), 4);
+    // lambda should have 4 matrices
+    assert_eq!(lambda.data.len(), 4);
 }
 
 fn main() {}

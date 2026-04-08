@@ -12,8 +12,8 @@ impl Polynomial {
         if self.coeffs.is_empty() {
             return 0;
         }
-        for (i, &c) in self.coeffs.iter().enumerate() {
-            if c != 0 {
+        for i in 0..self.coeffs.len() {
+            if self.coeffs[i] != 0 {
                 return self.coeffs.len() - i - 1;
             }
         }
@@ -33,13 +33,15 @@ impl Polynomial {
         }
         let degree = self.degree();
         let idx = self.coeffs.len() - 1 - degree;
-        let new_coeffs: Vec<Coeff> = self.coeffs[idx..].iter().map(|&c| (c as u64 % modulus) as Coeff).collect();
+        let new_coeffs: Vec<Coeff> = (0..self.coeffs.len() - idx)
+            .map(|i| self.coeffs[i + idx] % modulus as i64)
+            .collect();
         self.coeffs = new_coeffs;
         Ok(())
     }
     pub fn add(&self, other: &Polynomial, modulus: u64) -> Result<Polynomial> {
         if modulus == 0 {
-            return Err(AcesError::GenericError("modulus is zero".into()));
+            return Err(AcesError::GenericError("mod is 0".into()));
         }
         let size = self.coeffs.len().max(other.coeffs.len());
         let diff1 = size - self.coeffs.len();
@@ -48,13 +50,13 @@ impl Polynomial {
         for i in 0..size {
             let a = if i >= diff1 { self.coeffs[i - diff1] } else { 0 };
             let b = if i >= diff2 { other.coeffs[i - diff2] } else { 0 };
-            result[i] = ((a + b) as u64 % modulus) as Coeff;
+            result[i] = (a + b) % modulus as i64;
         }
         Ok(Polynomial { coeffs: result })
     }
     pub fn sub(&self, other: &Polynomial, modulus: u64) -> Result<Polynomial> {
         if modulus == 0 {
-            return Err(AcesError::GenericError("modulus is zero".into()));
+            return Err(AcesError::GenericError("mod is 0".into()));
         }
         let size = self.coeffs.len().max(other.coeffs.len());
         let diff1 = size - self.coeffs.len();
@@ -63,16 +65,19 @@ impl Polynomial {
         for i in 0..size {
             let a = if i >= diff1 { self.coeffs[i - diff1] } else { 0 };
             let b = if i >= diff2 { other.coeffs[i - diff2] } else { 0 };
-            result[i] = ((a - b) as u64 % modulus) as Coeff;
+            result[i] = (a - b) % modulus as i64;
         }
         Ok(Polynomial { coeffs: result })
     }
     pub fn mul(&self, other: &Polynomial, modulus: u64) -> Result<Polynomial> {
-        let result_size = self.coeffs.len() + other.coeffs.len() - 1;
+        let result_size = self.coeffs.len() + other.coeffs.len();
         let mut result = vec![0i64; result_size];
+        let deg1 = self.coeffs.len() - 1;
+        let deg2 = other.coeffs.len() - 1;
+        let res_deg = result_size - deg2 - deg1 - 1;
         for i in 0..self.coeffs.len() {
             for j in 0..other.coeffs.len() {
-                result[i + j] += ((self.coeffs[i] * other.coeffs[j]) as u64 % modulus) as Coeff;
+                result[res_deg + i + j] += (self.coeffs[i] * other.coeffs[j]) % modulus as i64;
             }
         }
         let mut p = Polynomial { coeffs: result };
@@ -80,8 +85,8 @@ impl Polynomial {
         Ok(p)
     }
     pub fn lshift(&self, _other: &Polynomial, _modulus: u64) -> Result<Polynomial> {
-        if _other.coeffs[0] != 1 {
-            return Err(AcesError::GenericError("leading coeff not 1".into()));
+        if _other.coeffs.is_empty() || _other.coeffs[0] != 1 {
+            return Err(AcesError::GenericError("leading coeff must be 1".into()));
         }
         let degree1 = self.degree();
         let degree2 = _other.degree();
@@ -104,20 +109,27 @@ impl Polynomial {
         Ok(p)
     }
     pub fn poly_mod(&mut self, _divisor: &Polynomial, _modulus: u64) -> Result<()> {
-        while let Ok(shifted) = self.lshift(_divisor, _modulus) {
-            self.coeffs = shifted.coeffs;
+        loop {
+            match self.lshift(_divisor, _modulus) {
+                Ok(shifted) => {
+                    *self = shifted;
+                }
+                Err(_) => break,
+            }
         }
         Ok(())
     }
     pub fn sub_scaler(&self, scaler: u64, modulus: u64) -> Result<Polynomial> {
         let s = scaler as i64;
-        let result: Vec<Coeff> = self.coeffs.iter().map(|&c| ((c - s) as u64 % modulus) as Coeff).collect();
-        Ok(Polynomial { coeffs: result })
+        let m = modulus as i64;
+        let coeffs = self.coeffs.iter().map(|&c| (c - s) % m).collect();
+        Ok(Polynomial { coeffs })
     }
     pub fn add_scaler(&self, scaler: u64, modulus: u64) -> Result<Polynomial> {
         let s = scaler as i64;
-        let result: Vec<Coeff> = self.coeffs.iter().map(|&c| ((c + s) as u64 % modulus) as Coeff).collect();
-        Ok(Polynomial { coeffs: result })
+        let m = modulus as i64;
+        let coeffs = self.coeffs.iter().map(|&c| (c + s) % m).collect();
+        Ok(Polynomial { coeffs })
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]

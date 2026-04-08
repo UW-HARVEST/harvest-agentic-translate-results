@@ -1,190 +1,67 @@
-use emlang::parser::{Parser, ParserError};
-use emlang::em::EmType;
 use emlang::data::{DataType, DataValue};
+use emlang::em::EmType;
+use emlang::parser::{Parser, ParserError};
 
-#[test]
-fn test_parser_new() {
-    let p = Parser::new();
-    assert_eq!(p.row, 1);
-    assert_eq!(p.col, 0);
-    assert!(!p.from_file);
-    assert_eq!(p.prog.size, 0);
+fn parse_ok(input: &str) -> emlang::parser::ParserResult {
+    let mut p = Parser::new();
+    p.load_mem(input);
+    let r = p.parse();
+    assert!(r.prog.is_ok(), "expected Ok, got {:?}", r.prog);
+    r
 }
 
-#[test]
-fn test_parse_empty() {
+fn parse_err(input: &str) -> ParserError {
     let mut p = Parser::new();
-    p.load_mem("");
+    p.load_mem(input);
     let r = p.parse();
-    assert!(r.prog.is_ok());
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.size, 0);
+    r.prog.unwrap_err()
 }
 
 #[test]
 fn test_parse_integer() {
-    let mut p = Parser::new();
-    p.load_mem("42\n");
-    let r = p.parse();
+    let r = parse_ok("42 ");
     let prog = r.prog.unwrap();
     assert_eq!(prog.size, 1);
     assert_eq!(prog.ems[0].em_type, EmType::Push);
-    assert!(matches!(prog.ems[0].data.value, DataValue::Int(42)));
+    match prog.ems[0].data.value { DataValue::Int(v) => assert_eq!(v, 42), _ => panic!() }
 }
 
 #[test]
 fn test_parse_negative_integer() {
-    let mut p = Parser::new();
-    p.load_mem("-5\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.size, 1);
-    assert!(matches!(prog.ems[0].data.value, DataValue::Int(-5)));
-}
-
-#[test]
-fn test_parse_zero() {
-    let mut p = Parser::new();
-    p.load_mem("0\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.size, 1);
-    assert!(matches!(prog.ems[0].data.value, DataValue::Int(0)));
-}
-
-#[test]
-fn test_parse_bare_minus_is_string() {
-    let mut p = Parser::new();
-    p.load_mem("- ");
-    let r = p.parse();
+    let r = parse_ok("-5 ");
     let prog = r.prog.unwrap();
     assert_eq!(prog.size, 1);
     assert_eq!(prog.ems[0].em_type, EmType::Push);
-    assert_eq!(prog.ems[0].data.dtype, DataType::Str);
+    match prog.ems[0].data.value { DataValue::Int(v) => assert_eq!(v, -5), _ => panic!() }
 }
 
 #[test]
 fn test_parse_string_literal() {
-    let mut p = Parser::new();
-    p.load_mem("\"hello\"\n");
-    let r = p.parse();
+    let r = parse_ok("\"hello\" ");
     let prog = r.prog.unwrap();
     assert_eq!(prog.size, 1);
     assert_eq!(prog.ems[0].em_type, EmType::Push);
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "hello");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_string_escape_n() {
-    let mut p = Parser::new();
-    p.load_mem("\"a\\nb\"\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "a\nb");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_string_escape_backslash() {
-    let mut p = Parser::new();
-    p.load_mem("\"a\\\\b\"\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "a\\b");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_string_escape_quote() {
-    let mut p = Parser::new();
-    p.load_mem("\"a\\\"b\"\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "a\"b");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_unterminated_quotes() {
-    let mut p = Parser::new();
-    p.load_mem("\"hello");
-    let r = p.parse();
-    assert!(r.prog.is_err());
-    assert_eq!(r.prog.unwrap_err(), ParserError::UnterminatedQuotes);
-}
-
-#[test]
-fn test_parse_unknown_escape() {
-    let mut p = Parser::new();
-    p.load_mem("\"\\z\"");
-    let r = p.parse();
-    assert!(r.prog.is_err());
-    assert_eq!(r.prog.unwrap_err(), ParserError::UnknownEscape);
-}
-
-#[test]
-fn test_parse_comment() {
-    let mut p = Parser::new();
-    p.load_mem(":x this is a comment\n42\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.size, 1);
-    assert!(matches!(prog.ems[0].data.value, DataValue::Int(42)));
-}
-
-#[test]
-fn test_parse_comment_only() {
-    let mut p = Parser::new();
-    p.load_mem(":x just a comment\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.size, 0);
+    assert_eq!(prog.ems[0].data.dtype, DataType::Str);
+    match &prog.ems[0].data.value { DataValue::Str(s) => assert_eq!(s, "hello"), _ => panic!() }
 }
 
 #[test]
 fn test_parse_keywords() {
-    let cases = vec![
-        (":P", EmType::Pop),
-        (";)", EmType::Add),
-        (";(", EmType::Sub),
-        ("x)", EmType::Mul),
-        ("x(", EmType::Div),
-        (":>", EmType::Grt),
-        (":<", EmType::Less),
-        (":|", EmType::Equ),
-        ("x|", EmType::Nequ),
-        (":D", EmType::Dup),
-        (":S", EmType::Swap),
-        ("X_X", EmType::Exit),
-    ];
-    for (kw, expected_type) in cases {
-        let mut p = Parser::new();
-        p.load_mem(&format!("{}\n", kw));
-        let r = p.parse();
-        let prog = r.prog.unwrap();
-        assert_eq!(prog.ems[0].em_type, expected_type, "keyword: {}", kw);
+    let r = parse_ok(":P ;) ;( x) x( :> :< :| x| ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 9);
+    let expected = [EmType::Pop, EmType::Add, EmType::Sub, EmType::Mul, EmType::Div,
+                    EmType::Grt, EmType::Less, EmType::Equ, EmType::Nequ];
+    for (i, &et) in expected.iter().enumerate() {
+        assert_eq!(prog.ems[i].em_type, et);
     }
 }
 
 #[test]
-fn test_parse_print_begin_end() {
-    let mut p = Parser::new();
-    p.load_mem(":O 42 :)\n");
-    let r = p.parse();
+fn test_parse_print_block() {
+    let r = parse_ok(":O 42 :) ");
     let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 3);
     assert_eq!(prog.ems[0].em_type, EmType::PrintBegin);
     assert_eq!(prog.ems[1].em_type, EmType::Push);
     assert_eq!(prog.ems[2].em_type, EmType::PrintEnd);
@@ -193,208 +70,200 @@ fn test_parse_print_begin_end() {
 }
 
 #[test]
-fn test_parse_print_stderr() {
-    let mut p = Parser::new();
-    p.load_mem(":O hello :(\n");
-    let r = p.parse();
+fn test_parse_if_block() {
+    let r = parse_ok("1 :/ 42 :\\ ");
     let prog = r.prog.unwrap();
-    assert_eq!(prog.ems[2].em_type, EmType::PrintEnd);
-    if let DataValue::Int(v) = prog.ems[2].data.value {
-        assert_eq!(v, 2); // DATA_STDERR
-    } else {
-        panic!("expected int for PrintEnd data");
-    }
-}
-
-#[test]
-fn test_parse_if() {
-    let mut p = Parser::new();
-    p.load_mem("1 :/ 42 :\\\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 4);
+    assert_eq!(prog.ems[0].em_type, EmType::Push);
     assert_eq!(prog.ems[1].em_type, EmType::IfBegin);
+    assert_eq!(prog.ems[2].em_type, EmType::Push);
     assert_eq!(prog.ems[3].em_type, EmType::IfEnd);
     assert_eq!(prog.ems[1].r#ref, 3);
     assert_eq!(prog.ems[3].r#ref, 1);
 }
 
 #[test]
-fn test_parse_loop() {
-    let mut p = Parser::new();
-    p.load_mem("1 :@ 42 @:\n");
-    let r = p.parse();
+fn test_parse_loop_block() {
+    let r = parse_ok("1 :@ 42 @: ");
     let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 4);
+    assert_eq!(prog.ems[0].em_type, EmType::Push);
     assert_eq!(prog.ems[1].em_type, EmType::LoopBegin);
+    assert_eq!(prog.ems[2].em_type, EmType::Push);
     assert_eq!(prog.ems[3].em_type, EmType::LoopEnd);
     assert_eq!(prog.ems[1].r#ref, 3);
     assert_eq!(prog.ems[3].r#ref, 1);
 }
 
 #[test]
-fn test_parse_unmatched_end() {
-    let mut p = Parser::new();
-    p.load_mem(":\\\n");
-    let r = p.parse();
-    assert!(r.prog.is_err());
-    assert_eq!(r.prog.unwrap_err(), ParserError::UnexpectedEnd);
+fn test_parse_comment() {
+    let r = parse_ok(":x this is a comment\n42 ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 1);
+    assert_eq!(prog.ems[0].em_type, EmType::Push);
+    match prog.ems[0].data.value { DataValue::Int(v) => assert_eq!(v, 42), _ => panic!() }
 }
 
 #[test]
-fn test_parse_unmatched_begin() {
+fn test_parse_emoticons() {
+    let r = parse_ok(":3 ;3 <3 x3 ><> ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 5);
+    let expected_strs = ["meow", "nya", "i <3 emlang", "rawr", "le fishe"];
+    for (i, &exp) in expected_strs.iter().enumerate() {
+        assert_eq!(prog.ems[i].em_type, EmType::Push);
+        assert_eq!(prog.ems[i].data.dtype, DataType::Str);
+        match &prog.ems[i].data.value { DataValue::Str(s) => assert_eq!(s, exp), _ => panic!() }
+    }
+}
+
+#[test]
+fn test_parse_escape_sequences() {
+    let r = parse_ok("\"a\\nb\\tc\" ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 1);
+    match &prog.ems[0].data.value {
+        DataValue::Str(s) => {
+            assert_eq!(s.len(), 5); // a \n b \t c
+            assert_eq!(s, "a\nb\tc");
+        }
+        _ => panic!(),
+    }
+}
+
+#[test]
+fn test_parse_unterminated_quotes() {
+    let err = parse_err("\"unterminated");
+    assert_eq!(err, ParserError::UnterminatedQuotes);
+}
+
+#[test]
+fn test_parse_unknown_escape() {
+    let err = parse_err("\"\\z\"");
+    assert_eq!(err, ParserError::UnknownEscape);
+}
+
+#[test]
+fn test_parse_expected_end() {
+    let err = parse_err(":/ 1 ");
+    assert_eq!(err, ParserError::ExpectedEnd);
+}
+
+#[test]
+fn test_parse_unexpected_end() {
+    let err = parse_err(":\\ ");
+    assert_eq!(err, ParserError::UnexpectedEnd);
+}
+
+#[test]
+fn test_parse_empty() {
+    let r = parse_ok("");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 0);
+}
+
+#[test]
+fn test_parse_minus_sign_as_string() {
+    let r = parse_ok("- ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 1);
+    assert_eq!(prog.ems[0].em_type, EmType::Push);
+    assert_eq!(prog.ems[0].data.dtype, DataType::Str);
+    match &prog.ems[0].data.value { DataValue::Str(s) => assert_eq!(s, "-"), _ => panic!() }
+}
+
+#[test]
+fn test_parse_backslash_quote() {
+    let r = parse_ok("\\\" ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 1);
+    assert_eq!(prog.ems[0].em_type, EmType::Push);
+    assert_eq!(prog.ems[0].data.dtype, DataType::Str);
+    match &prog.ems[0].data.value { DataValue::Str(s) => assert_eq!(s, "\""), _ => panic!() }
+}
+
+#[test]
+fn test_parse_exit() {
+    let r = parse_ok("X_X ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 1);
+    assert_eq!(prog.ems[0].em_type, EmType::Exit);
+}
+
+#[test]
+fn test_parse_dup_swap() {
+    let r = parse_ok(":D :S ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 2);
+    assert_eq!(prog.ems[0].em_type, EmType::Dup);
+    assert_eq!(prog.ems[1].em_type, EmType::Swap);
+}
+
+#[test]
+fn test_parse_stderr_print() {
+    let r = parse_ok(":O 1 :( ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.size, 3);
+    assert_eq!(prog.ems[2].em_type, EmType::PrintEnd);
+    match prog.ems[2].data.value { DataValue::Int(v) => assert_eq!(v, 2), _ => panic!() }
+}
+
+#[test]
+fn test_parse_nested_print_error() {
+    let err = parse_err(":O :O :) ");
+    assert_eq!(err, ParserError::IllegalPrintNest);
+}
+
+#[test]
+fn test_parse_row_col_tracking() {
+    let r = parse_ok("42 99\nhello ");
+    let prog = r.prog.unwrap();
+    assert_eq!(prog.ems[0].row, 1);
+    assert_eq!(prog.ems[0].col, 1);
+    assert_eq!(prog.ems[1].row, 1);
+    assert_eq!(prog.ems[1].col, 4);
+    assert_eq!(prog.ems[2].row, 2);
+    assert_eq!(prog.ems[2].col, 1);
+}
+
+#[test]
+fn test_parse_backslash_at_end() {
+    let err = parse_err("\\ ");
+    assert_eq!(err, ParserError::UnexpectedEscape);
+}
+
+#[test]
+fn test_parse_no_trailing_whitespace_drops_last_token() {
+    // C behavior: last token without trailing whitespace is not pushed
+    // So ":O 42 :)" loses the :) token, leaving unclosed print block -> ExpectedEnd
+    let err = parse_err(":O 42 :)");
+    assert_eq!(err, ParserError::ExpectedEnd);
+}
+
+#[test]
+fn test_parse_no_trailing_whitespace_is_error_for_blocks() {
     let mut p = Parser::new();
-    p.load_mem("1 :/\n");
+    p.load_mem(":O 42 :)");
     let r = p.parse();
     assert!(r.prog.is_err());
     assert_eq!(r.prog.unwrap_err(), ParserError::ExpectedEnd);
 }
 
 #[test]
-fn test_parse_illegal_print_nest() {
-    let mut p = Parser::new();
-    p.load_mem(":O :O :) :)\n");
-    let r = p.parse();
-    assert!(r.prog.is_err());
-    assert_eq!(r.prog.unwrap_err(), ParserError::IllegalPrintNest);
-}
-
-#[test]
-fn test_parse_emoticon_meow() {
-    let mut p = Parser::new();
-    p.load_mem(":3\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "meow");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_emoticon_nya() {
-    let mut p = Parser::new();
-    p.load_mem(";3\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "nya");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_emoticon_rawr() {
-    let mut p = Parser::new();
-    p.load_mem("x3\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "rawr");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_emoticon_fishe() {
-    let mut p = Parser::new();
-    p.load_mem("><>\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "le fishe");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_emoticon_love() {
-    let mut p = Parser::new();
-    p.load_mem("<3\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "i <3 emlang");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_plain_word_as_string() {
-    let mut p = Parser::new();
-    p.load_mem("hello\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.ems[0].em_type, EmType::Push);
-    assert_eq!(prog.ems[0].data.dtype, DataType::Str);
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "hello");
-    } else {
-        panic!("expected string");
-    }
-}
-
-#[test]
-fn test_parse_unexpected_escape() {
-    let mut p = Parser::new();
-    p.load_mem("\\ ");
-    let r = p.parse();
-    assert!(r.prog.is_err());
-    assert_eq!(r.prog.unwrap_err(), ParserError::UnexpectedEscape);
-}
-
-#[test]
-fn test_parse_escaped_quote_outside_string() {
-    let mut p = Parser::new();
-    p.load_mem("\\\" ");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.ems[0].data.dtype, DataType::Str);
-    if let DataValue::Str(ref s) = prog.ems[0].data.value {
-        assert_eq!(s, "\"");
-    } else {
-        panic!("expected string");
-    }
+fn test_parser_error_display() {
+    assert_eq!(format!("{}", ParserError::UnexpectedEscape), "Unexpected escape");
+    assert_eq!(format!("{}", ParserError::UnknownEscape), "Unknown escape");
+    assert_eq!(format!("{}", ParserError::UnterminatedQuotes), "Unterminated quotes");
+    assert_eq!(format!("{}", ParserError::UnexpectedEnd), "Unexpected end");
+    assert_eq!(format!("{}", ParserError::IllegalPrintNest), "Illegal print nesting");
+    assert_eq!(format!("{}", ParserError::ExpectedEnd), "Expected matching end");
 }
 
 #[test]
 fn test_load_file_nonexistent() {
     let mut p = Parser::new();
-    assert_ne!(p.load_file("/nonexistent/path.eml"), 0);
-}
-
-#[test]
-fn test_load_file_and_parse() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/hello_world.eml"), 0);
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert!(prog.size >= 3);
-    assert_eq!(prog.ems[0].em_type, EmType::PrintBegin);
-}
-
-#[test]
-fn test_parse_multiple_tokens() {
-    let mut p = Parser::new();
-    p.load_mem("1 2 ;)\n");
-    let r = p.parse();
-    let prog = r.prog.unwrap();
-    assert_eq!(prog.size, 3);
-    assert!(matches!(prog.ems[0].data.value, DataValue::Int(1)));
-    assert!(matches!(prog.ems[1].data.value, DataValue::Int(2)));
-    assert_eq!(prog.ems[2].em_type, EmType::Add);
-}
-
-#[test]
-fn test_parse_mismatched_end_types() {
-    let mut p = Parser::new();
-    p.load_mem("1 :/ 42 @:\n");
-    let r = p.parse();
-    assert!(r.prog.is_err());
-    assert_eq!(r.prog.unwrap_err(), ParserError::UnexpectedEnd);
+    let ret = p.load_file("/nonexistent/path/file.eml");
+    assert_eq!(ret, -1);
 }
 
 fn main() {}

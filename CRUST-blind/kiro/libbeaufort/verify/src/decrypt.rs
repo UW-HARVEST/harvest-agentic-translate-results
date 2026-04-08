@@ -7,38 +7,24 @@ pub fn beaufort_decrypt(src: &[u8], key: &[u8], mat: &[&[u8]]) -> Vec<u8> {
     let mut j = 0usize;
 
     for &ch in src {
-        // find row where first column matches ch
-        let mut found_y = None;
-        for y in 0..rsize {
-            if ch == mat[y][0] {
-                found_y = Some(y);
-                break;
-            }
-        }
-
-        let y = match found_y {
+        // find row where leftmost column has ch
+        let row = (0..rsize).find(|&y| ch == mat[y][0]);
+        let y = match row {
             Some(y) => y,
             None => { dec.push(ch); continue; }
         };
 
-        // determine key char
         let k = key[j % ksize];
         j += 1;
 
         // find column in that row matching key char
-        let mut found_x = None;
-        for x in 0..rsize {
-            if k == mat[y][x] {
-                found_x = Some(x);
-                break;
-            }
-        }
+        let col = (0..rsize).find(|&x| k == mat[y][x]);
+        let x = match col {
+            Some(x) => x,
+            None => { dec.push(ch); j -= 1; continue; }
+        };
 
-        match found_x {
-            Some(x) => dec.push(mat[0][x]),
-            None => { dec.push(ch); j -= 1; }
-        }
+        dec.push(mat[0][x]);
     }
-
     dec
 }

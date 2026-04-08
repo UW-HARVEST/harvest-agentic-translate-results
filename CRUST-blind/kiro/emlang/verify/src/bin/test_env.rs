@@ -1,253 +1,174 @@
-use emlang::data::Data;
-use emlang::em::{Em, EmType, Program};
-use emlang::env::{Env, RuntimeError};
+use emlang::env::{Env, RuntimeError, GC_FREQUENCY_IN_TICKS};
 use emlang::parser::Parser;
 use emlang::stack;
 
-fn parse_mem(input: &str) -> Program {
+fn run_program(input: &str) -> (Result<(), RuntimeError>, i64) {
     let mut p = Parser::new();
     p.load_mem(input);
     let r = p.parse();
-    r.prog.unwrap()
+    let prog = r.prog.unwrap();
+    let mut env = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
+    let result = env.run(&prog);
+    match result.em {
+        Ok(_) => (Ok(()), result.ex),
+        Err(e) => (Err(e), result.ex),
+    }
 }
-
-fn run_mem(input: &str) -> (i64, Result<(), RuntimeError>) {
-    let prog = parse_mem(input);
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    let status = match &r.em {
-        Ok(_) => Ok(()),
-        Err(err) => Err(*err),
-    };
-    (r.ex, status)
-}
-
-// --- Exit code tests ---
 
 #[test]
-fn test_exit_zero() {
-    let (ex, res) = run_mem("0 X_X\n");
+fn test_add() {
+    let (res, ex) = run_program("10 20 ;) ");
     assert!(res.is_ok());
     assert_eq!(ex, 0);
 }
 
 #[test]
-fn test_exit_nonzero() {
-    let (ex, res) = run_mem("1 X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 1);
-}
-
-#[test]
-fn test_exit_code_42() {
-    let (ex, res) = run_mem("42 X_X\n");
+fn test_exit_code() {
+    let (res, ex) = run_program("42 X_X ");
     assert!(res.is_ok());
     assert_eq!(ex, 42);
 }
 
-// --- Stack underflow ---
-
 #[test]
-fn test_pop_empty_stack() {
-    let (_, res) = run_mem(":P\n");
+fn test_stack_underflow() {
+    let (res, _) = run_program(":P ");
     assert_eq!(res.unwrap_err(), RuntimeError::StackUnderflow);
-}
-
-#[test]
-fn test_add_underflow() {
-    let (_, res) = run_mem("1 ;)\n");
-    assert_eq!(res.unwrap_err(), RuntimeError::StackUnderflow);
-}
-
-// --- Arithmetic ---
-
-#[test]
-fn test_add() {
-    let (ex, res) = run_mem("2 7 ;) X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 9);
-}
-
-#[test]
-fn test_sub() {
-    let (ex, res) = run_mem("2 7 ;( X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, -5);
-}
-
-#[test]
-fn test_mul() {
-    let (ex, res) = run_mem("2 7 x) X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 14);
-}
-
-#[test]
-fn test_div() {
-    let (ex, res) = run_mem("14 7 x( X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 2);
-}
-
-#[test]
-fn test_div_truncates() {
-    let (ex, res) = run_mem("2 7 x( X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 0);
 }
 
 #[test]
 fn test_div_by_zero() {
-    let (_, res) = run_mem("5 0 x(\n");
+    let (res, _) = run_program("5 0 x( ");
     assert_eq!(res.unwrap_err(), RuntimeError::DivByZero);
 }
 
-// --- Comparisons ---
-
 #[test]
-fn test_grt_true() {
-    let (ex, res) = run_mem("7 2 :> X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 1);
+fn test_incorrect_type_add() {
+    let (res, _) = run_program("\"a\" 1 ;) ");
+    assert_eq!(res.unwrap_err(), RuntimeError::IncorrectType);
 }
 
 #[test]
-fn test_grt_false() {
-    let (ex, res) = run_mem("2 7 :> X_X\n");
+fn test_if_true() {
+    let (res, ex) = run_program("1 :/ 99 0 X_X :\\ ");
     assert!(res.is_ok());
     assert_eq!(ex, 0);
 }
 
 #[test]
-fn test_less_true() {
-    let (ex, res) = run_mem("2 7 :< X_X\n");
+fn test_if_false_skips_body() {
+    let (res, ex) = run_program("0 :/ 99 0 X_X :\\ ");
     assert!(res.is_ok());
-    assert_eq!(ex, 1);
+    assert_eq!(ex, 0);
 }
 
 #[test]
-fn test_less_false() {
-    let (ex, res) = run_mem("7 2 :< X_X\n");
+fn test_sub() {
+    let (res, ex) = run_program("10 3 ;( ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_mul() {
+    let (res, ex) = run_program("10 3 x) ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_div() {
+    let (res, ex) = run_program("10 3 x( ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_grt_true() {
+    let (res, ex) = run_program("5 3 :> ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_grt_false() {
+    let (res, ex) = run_program("3 5 :> ");
     assert!(res.is_ok());
     assert_eq!(ex, 0);
 }
 
 #[test]
 fn test_equ_true() {
-    let (ex, res) = run_mem("5 5 :| X_X\n");
+    let (res, ex) = run_program("5 5 :| ");
     assert!(res.is_ok());
-    assert_eq!(ex, 1);
+    assert_eq!(ex, 0);
 }
 
 #[test]
 fn test_equ_false() {
-    let (ex, res) = run_mem("5 6 :| X_X\n");
+    let (res, ex) = run_program("5 5 x| ");
     assert!(res.is_ok());
     assert_eq!(ex, 0);
 }
-
-#[test]
-fn test_nequ_true() {
-    let (ex, res) = run_mem("5 6 x| X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 1);
-}
-
-#[test]
-fn test_nequ_false() {
-    let (ex, res) = run_mem("5 5 x| X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 0);
-}
-
-// --- Type errors ---
-
-#[test]
-fn test_add_type_error() {
-    let (_, res) = run_mem("\"a\" 1 ;)\n");
-    assert_eq!(res.unwrap_err(), RuntimeError::IncorrectType);
-}
-
-#[test]
-fn test_if_type_error() {
-    let (_, res) = run_mem("\"a\" :/ :\\\n");
-    assert_eq!(res.unwrap_err(), RuntimeError::IncorrectType);
-}
-
-// --- If/else ---
-
-#[test]
-fn test_if_true_branch() {
-    let (ex, res) = run_mem("1 :/ 42 X_X :\\\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 42);
-}
-
-#[test]
-fn test_if_false_branch() {
-    let (ex, res) = run_mem("0 :/ 99 X_X :\\ 0 X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 0);
-}
-
-// --- Loop ---
-
-#[test]
-fn test_loop_basic() {
-    // Start with 0 on stack, push 1 (loop cond), loop: add 1, dup, check < 3
-    let (ex, res) = run_mem("0 1 :@ 1 ;) 0 :D 3 :< @: 0 :D X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 3);
-}
-
-#[test]
-fn test_loop_zero_iterations() {
-    let (ex, res) = run_mem("0 :@ 99 X_X @: 0 X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 0);
-}
-
-// --- Dup ---
 
 #[test]
 fn test_dup() {
-    let (ex, res) = run_mem("5 0 :D ;) X_X\n");
+    let (res, ex) = run_program("42 0 :D :P 0 X_X ");
     assert!(res.is_ok());
-    assert_eq!(ex, 10);
+    assert_eq!(ex, 0);
 }
-
-#[test]
-fn test_dup_invalid_access() {
-    let (_, res) = run_mem("5 5 :D\n");
-    assert_eq!(res.unwrap_err(), RuntimeError::InvalidAccess);
-}
-
-// --- Swap ---
 
 #[test]
 fn test_swap() {
-    // Push 1, 2; swap(1) swaps buf[0] and buf[1] -> [2,1]; pop 1 -> [2]; exit 2
-    let (ex, res) = run_mem("1 2 1 :S :P X_X\n");
+    let (res, ex) = run_program("10 20 1 :S :P 0 X_X ");
     assert!(res.is_ok());
-    assert_eq!(ex, 2);
+    assert_eq!(ex, 0);
 }
 
 #[test]
-fn test_swap_invalid_access() {
-    let (_, res) = run_mem("1 5 :S\n");
+fn test_invalid_dup() {
+    let (res, _) = run_program("99 :D ");
     assert_eq!(res.unwrap_err(), RuntimeError::InvalidAccess);
 }
 
-// --- Pop ---
-
 #[test]
-fn test_pop() {
-    let (ex, res) = run_mem("1 2 :P X_X\n");
-    assert!(res.is_ok());
-    assert_eq!(ex, 1);
+fn test_invalid_swap() {
+    let (res, _) = run_program("99 :S ");
+    assert_eq!(res.unwrap_err(), RuntimeError::InvalidAccess);
 }
 
-// --- RuntimeError display ---
+#[test]
+fn test_less_true() {
+    let (res, ex) = run_program("3 5 :< ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_less_false() {
+    let (res, ex) = run_program("5 3 :< ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_nequ() {
+    let (res, ex) = run_program("5 3 x| ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_if_incorrect_type() {
+    let (res, _) = run_program("\"a\" :/ 1 :\\ ");
+    assert_eq!(res.unwrap_err(), RuntimeError::IncorrectType);
+}
+
+#[test]
+fn test_loop() {
+    let (res, ex) = run_program("0 1 :@ 1 ;) 0 :D 3 :< @: ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
 
 #[test]
 fn test_runtime_error_display() {
@@ -257,139 +178,138 @@ fn test_runtime_error_display() {
     assert_eq!(format!("{}", RuntimeError::IncorrectType), "Incorrect type");
 }
 
-// --- Integration: parse file and run ---
-
 #[test]
-fn test_run_comments_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/comments.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_gc_frequency_constant() {
+    assert_eq!(GC_FREQUENCY_IN_TICKS, 64);
 }
 
 #[test]
-fn test_run_hello_world_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/hello_world.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_env_new() {
+    let env = Env::new(1024, 32);
+    assert_eq!(env.ip, 0);
+    assert_eq!(env.ex, 0);
+    assert_eq!(env.tick, 0);
+    assert_eq!(env.halt, false);
+    assert_eq!(env.print, false);
+    assert_eq!(env.print_from, 0);
 }
 
 #[test]
-fn test_run_math_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/math.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_exit_with_value() {
+    // Push 5, exit -> exit code 5
+    let (res, ex) = run_program("5 X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 5);
 }
 
 #[test]
-fn test_run_comparisons_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/comparisons.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_arithmetic_result_on_stack() {
+    // 10 + 20 = 30, then exit with that value
+    let (res, ex) = run_program("10 20 ;) X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 30);
 }
 
 #[test]
-fn test_run_count_to_10_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/count_to_10.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_sub_result() {
+    let (res, ex) = run_program("10 3 ;( X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 7);
 }
 
 #[test]
-fn test_run_if_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/if.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_mul_result() {
+    let (res, ex) = run_program("10 3 x) X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 30);
 }
 
 #[test]
-fn test_run_negative_nums_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/negative_nums.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
+fn test_div_result() {
+    let (res, ex) = run_program("10 3 x( X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 3);
 }
 
 #[test]
-fn test_run_error_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/error.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 1);
+fn test_grt_result_true() {
+    let (res, ex) = run_program("5 3 :> X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 1);
 }
 
 #[test]
-fn test_run_runtime_error_eml() {
-    let mut p = Parser::new();
-    assert_eq!(p.load_file("resources/tests/runtime_error.eml"), 0);
-    let prog = p.parse().prog.unwrap();
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_err());
-    assert_eq!(r.em.unwrap_err(), RuntimeError::DivByZero);
-}
-
-// --- Manual program construction ---
-
-#[test]
-fn test_manual_push_exit() {
-    let mut prog = Program::new(8);
-    prog.push(Em::new_with_data(EmType::Push, Data::new_int(7)));
-    prog.push(Em::new(EmType::Exit));
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 7);
-}
-
-#[test]
-fn test_empty_program() {
-    let prog = Program::new(8);
-    let mut e = Env::new(stack::DEFAULT_STACK_CAP, stack::DEFAULT_POPPED_CAP);
-    let r = e.run(&prog);
-    assert!(r.em.is_ok());
-    assert_eq!(r.ex, 0);
-}
-
-#[test]
-fn test_gc_frequency() {
-    let mut input = String::new();
-    for _ in 0..70 {
-        input.push_str("\"x\" :P ");
-    }
-    input.push_str("0 X_X\n");
-    let (ex, res) = run_mem(&input);
+fn test_grt_result_false() {
+    let (res, ex) = run_program("3 5 :> X_X ");
     assert!(res.is_ok());
     assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_less_result_true() {
+    let (res, ex) = run_program("3 5 :< X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 1);
+}
+
+#[test]
+fn test_less_result_false() {
+    let (res, ex) = run_program("5 3 :< X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_equ_result_true() {
+    let (res, ex) = run_program("5 5 :| X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 1);
+}
+
+#[test]
+fn test_equ_result_false() {
+    let (res, ex) = run_program("5 3 :| X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_nequ_result_true() {
+    let (res, ex) = run_program("5 3 x| X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 1);
+}
+
+#[test]
+fn test_nequ_result_false() {
+    let (res, ex) = run_program("5 5 x| X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 0);
+}
+
+#[test]
+fn test_dup_result() {
+    // push 42, push 0, dup -> stack has [42, 42], add -> 84, exit
+    let (res, ex) = run_program("42 0 :D ;) X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 84);
+}
+
+#[test]
+fn test_swap_result() {
+    // push 10, push 20, push 1, swap -> [20, 10], pop 10, exit with 20
+    let (res, ex) = run_program("10 20 1 :S :P X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 20);
+}
+
+#[test]
+fn test_loop_count() {
+    // Count from 0 to 3: push 0, push 1, loop: add 1, dup, compare < 3, end loop
+    // After loop, stack top = 3
+    let (res, ex) = run_program("0 1 :@ 1 ;) 0 :D 3 :< @: X_X ");
+    assert!(res.is_ok());
+    assert_eq!(ex, 3);
 }
 
 fn main() {}

@@ -1,8 +1,6 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
-use crate::common;
-use crate::io as cio;
 pub const CONFIG_PATH: &str = "config";
 #[derive(Debug)]
 pub enum reduction_order_t {
@@ -31,7 +29,7 @@ pub fn get_config_type(key: &str) -> option_type_t {
         "step_by_step_reduction" => option_type_t::STEP_REDUCTION,
         "reduction_order" => option_type_t::REDUCTION_ORDER,
         _ => {
-            common::error(
+            crate::common::error(
                 &format!("ERROR: Invalid key '{}' at config file.", key),
                 file!(), line!() as i32, "get_config_type",
             );
@@ -40,21 +38,21 @@ pub fn get_config_type(key: &str) -> option_type_t {
     }
 }
 pub fn parse_config(line: &str, key: &mut String, value: &mut String) {
-    if !line.contains('=') {
-        common::error(
+    if let Some(pos) = line.find('=') {
+        *key = line[..pos].to_string();
+        *value = line[pos + 1..].to_string();
+        trim(key);
+        trim(value);
+    } else {
+        crate::common::error(
             &format!("Malformed config file at line: {} . Expected = sign.\n", line),
             file!(), line!() as i32, "parse_config",
         );
     }
-    let mut parts = line.splitn(2, '=');
-    *key = parts.next().unwrap_or("").to_string();
-    trim(key);
-    *value = parts.next().unwrap_or("").to_string();
-    trim(value);
 }
 pub fn get_config_from_file() -> Options {
     let config_file = File::open(CONFIG_PATH).unwrap_or_else(|_| {
-        common::error(
+        crate::common::error(
             &format!("ERROR: Could not open file {}\n", CONFIG_PATH),
             file!(), line!() as i32, "get_config_from_file",
         );
@@ -62,9 +60,9 @@ pub fn get_config_from_file() -> Options {
     });
     let reader = io::BufReader::new(config_file);
 
-    let mut file: Option<File> = None;
-    let mut step_by_step_reduction = false;
     let mut reduction_order = reduction_order_t::APPLICATIVE;
+    let mut step_by_step_reduction = false;
+    let mut file: Option<File> = None;
 
     for line in reader.lines() {
         let line = line.unwrap();
@@ -75,8 +73,8 @@ pub fn get_config_from_file() -> Options {
 
         match cfg {
             option_type_t::FILENAME => {
-                file = Some(cio::get_file(&value, "r").unwrap_or_else(|_| {
-                    common::error(
+                file = Some(crate::io::get_file(&value, "r").unwrap_or_else(|_| {
+                    crate::common::error(
                         &format!("ERROR: Could not open file {}\n", value),
                         file!(), line!() as i32, "get_config_from_file",
                     );
@@ -92,14 +90,14 @@ pub fn get_config_from_file() -> Options {
                 } else if value == "normal" {
                     reduction_order = reduction_order_t::NORMAL;
                 } else {
-                    common::error(
+                    crate::common::error(
                         "ERROR: reduction order in cfg file should be 'normal' or 'applicative'.",
                         file!(), line!() as i32, "get_config_from_file",
                     );
                 }
             }
             option_type_t::CONFIG_ERROR => {
-                common::error(
+                crate::common::error(
                     &format!("Unrecognized key: {}", key),
                     file!(), line!() as i32, "get_config_from_file",
                 );
@@ -108,7 +106,7 @@ pub fn get_config_from_file() -> Options {
     }
 
     if file.is_none() {
-        common::error(
+        crate::common::error(
             "ERROR: File cannot be null in cfg file.\n",
             file!(), line!() as i32, "get_config_from_file",
         );

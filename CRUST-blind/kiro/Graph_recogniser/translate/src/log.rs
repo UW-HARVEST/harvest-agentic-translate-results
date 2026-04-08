@@ -27,21 +27,18 @@ impl Logger {
         Arc::new(Self { log_info_table: RwLock::new(table) })
     }
     pub fn insert_log(&self, log_type: LogType, priority: u8, format: fmt::Arguments) {
+        check!(priority <= 10);
         let table = self.log_info_table.read().unwrap();
-        if let Some(info) = table.get(&log_type) {
-            if info.priority <= priority {
-                print!("{}{}{}", info.prefix, format, info.suffix);
-            }
+        let info = table.get(&log_type).unwrap();
+        if info.priority <= priority {
+            print!("{}{}{}", info.prefix, format, info.suffix);
         }
     }
     pub fn change_log_priority(&self, log_type: LogType, new_priority: u8) -> u8 {
         let mut table = self.log_info_table.write().unwrap();
-        if let Some(info) = table.get_mut(&log_type) {
-            let old = info.priority;
-            info.priority = new_priority;
-            old
-        } else {
-            0
-        }
+        let info = table.get_mut(&log_type).unwrap();
+        let old = info.priority;
+        info.priority = new_priority;
+        old
     }
 }

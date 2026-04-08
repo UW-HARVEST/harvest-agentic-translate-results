@@ -17,15 +17,31 @@ impl LZMAPacket {
         a.packet_type == b.packet_type && a.len == b.len && a.dist == b.dist
     }
     pub fn literal_packet() -> LZMAPacket {
-        LZMAPacket { packet_type: LZMAPacketType::Literal, dist: 0, len: 1 }
+        LZMAPacket {
+            packet_type: LZMAPacketType::Literal,
+            dist: 0,
+            len: 1,
+        }
     }
     pub fn match_packet(dist: u32, len: u32) -> LZMAPacket {
-        LZMAPacket { packet_type: LZMAPacketType::Match, dist, len: len as u16 }
+        LZMAPacket {
+            packet_type: LZMAPacketType::Match,
+            dist,
+            len: len as u16,
+        }
     }
     pub fn short_rep_packet() -> LZMAPacket {
-        LZMAPacket { packet_type: LZMAPacketType::ShortRep, dist: 0, len: 1 }
+        LZMAPacket {
+            packet_type: LZMAPacketType::ShortRep,
+            dist: 0,
+            len: 1,
+        }
     }
     pub fn long_rep_packet(dist_index: u32, len: u32) -> LZMAPacket {
-        LZMAPacket { packet_type: LZMAPacketType::LongRep, dist: dist_index, len: len as u16 }
+        LZMAPacket {
+            packet_type: LZMAPacketType::LongRep,
+            dist: dist_index,
+            len: len as u16,
+        }
     }
 }

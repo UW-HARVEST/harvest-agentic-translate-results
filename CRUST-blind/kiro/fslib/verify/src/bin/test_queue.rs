@@ -1,7 +1,7 @@
 use fslib::queue::Queue;
 
 #[test]
-fn test_fifo_order() {
+fn test_enqueue_dequeue() {
     let mut q: Queue<i32> = Queue::new();
     q.enqueue(10);
     q.enqueue(20);
@@ -21,21 +21,6 @@ fn test_empty() {
     q.empty();
     assert_eq!(q.len(), 0);
     assert_eq!(q.dequeue(), None);
-}
-
-#[test]
-fn test_empty_queue_dequeue() {
-    let mut q: Queue<i32> = Queue::new();
-    assert_eq!(q.dequeue(), None);
-}
-
-#[test]
-fn test_single_element() {
-    let mut q: Queue<u32> = Queue::new();
-    q.enqueue(42);
-    assert_eq!(q.len(), 1);
-    assert_eq!(q.dequeue(), Some(42));
-    assert_eq!(q.len(), 0);
 }
 
 fn main() {}

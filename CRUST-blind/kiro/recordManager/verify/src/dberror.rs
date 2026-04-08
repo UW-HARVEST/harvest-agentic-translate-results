@@ -36,49 +36,42 @@ pub enum RC {
     LoggingSetupFailure = 430,
 }
 
-static mut RC_MESSAGE: Option<String> = None;
+use std::sync::Mutex;
+static RC_MESSAGE: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn throw(rc: RC, message: &str) -> i32 {
-    unsafe {
-        RC_MESSAGE = Some(message.to_string());
-    }
+    *RC_MESSAGE.lock().unwrap() = Some(message.to_string());
     rc as i32
 }
 
 pub fn check(code: i32) {
     if code != 0 {
-        let message = error_message_from_code(code);
-        println!("[check] ERROR: Operation returned error: {}", message);
+        let msg = error_message_from_code(code);
+        println!("{}", msg);
         std::process::exit(1);
     }
 }
 
 pub fn print_error(error: RC) {
-    unsafe {
-        if let Some(ref msg) = RC_MESSAGE {
-            println!("EC ({}), \"{}\"", error as i32, msg);
-        } else {
-            println!("EC ({})", error as i32);
-        }
+    let guard = RC_MESSAGE.lock().unwrap();
+    match &*guard {
+        Some(msg) => println!("EC ({}), \"{}\"", error as i32, msg),
+        None => println!("EC ({})", error as i32),
     }
 }
 
 pub fn error_message(error: RC) -> String {
-    unsafe {
-        if let Some(ref msg) = RC_MESSAGE {
-            format!("EC ({}), \"{}\"\n", error as i32, msg)
-        } else {
-            format!("EC ({})\n", error as i32)
-        }
+    let guard = RC_MESSAGE.lock().unwrap();
+    match &*guard {
+        Some(msg) => format!("EC ({}), \"{}\"\n", error as i32, msg),
+        None => format!("EC ({})\n", error as i32),
     }
 }
 
 fn error_message_from_code(code: i32) -> String {
-    unsafe {
-        if let Some(ref msg) = RC_MESSAGE {
-            format!("EC ({}), \"{}\"\n", code, msg)
-        } else {
-            format!("EC ({})\n", code)
-        }
+    let guard = RC_MESSAGE.lock().unwrap();
+    match &*guard {
+        Some(msg) => format!("EC ({}), \"{}\"\n", code, msg),
+        None => format!("EC ({})\n", code),
     }
 }

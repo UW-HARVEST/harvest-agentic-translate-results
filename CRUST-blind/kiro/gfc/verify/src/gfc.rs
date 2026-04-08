@@ -1,13 +1,15 @@
-use std::f64::consts::SQRT_2;
 /// Constants for Speck encryption
 const SPECK_ROUNDS: usize = 27;
 const SPECK_KEY_LEN: usize = 4;
+
 fn ror(x: u32, r: u32) -> u32 {
     x.rotate_right(r)
 }
+
 fn rol(x: u32, r: u32) -> u32 {
     x.rotate_left(r)
 }
+
 fn round(x: &mut u32, y: &mut u32, k: u32) {
     *x = ror(*x, 8);
     *x = x.wrapping_add(*y);
@@ -15,38 +17,36 @@ fn round(x: &mut u32, y: &mut u32, k: u32) {
     *y = rol(*y, 3);
     *y ^= *x;
 }
+
 #[derive(Debug)]
 pub struct GFC {
-    m: u64,       // Range
-    r: u64,       // Number of Feistel rounds
+    m: u64,
+    r: u64,
     a: u64,
     b: u64,
     speck_exp: Vec<u32>,
 }
+
 impl GFC {
-    /// Initialize the GFC structure
     pub fn new(range: u64, rounds: u64, seed: u64) -> Self {
         let tmp = (range as f64).sqrt().ceil() as u64;
         let a = tmp;
         let b = tmp;
-        let mut speck_exp = vec![0u32; (rounds as usize) * SPECK_ROUNDS];
-        for i in 0..rounds {
-            // Reinterpret seed and i as [u32; SPECK_KEY_LEN] via little-endian bytes
-            let mut key_bytes = [0u8; 16];
-            key_bytes[0..8].copy_from_slice(&seed.to_le_bytes());
-            key_bytes[8..16].copy_from_slice(&i.to_le_bytes());
+        let mut speck_exp = vec![0u32; rounds as usize * SPECK_ROUNDS];
+        for i in 0..rounds as usize {
+            // Reinterpret two u64s as four u32s (little-endian)
+            let key_u64 = [seed, i as u64];
             let key = [
-                u32::from_le_bytes(key_bytes[0..4].try_into().unwrap()),
-                u32::from_le_bytes(key_bytes[4..8].try_into().unwrap()),
-                u32::from_le_bytes(key_bytes[8..12].try_into().unwrap()),
-                u32::from_le_bytes(key_bytes[12..16].try_into().unwrap()),
+                key_u64[0] as u32,
+                (key_u64[0] >> 32) as u32,
+                key_u64[1] as u32,
+                (key_u64[1] >> 32) as u32,
             ];
-            let offset = (i as usize) * SPECK_ROUNDS;
-            speck_expand(&key, &mut speck_exp[offset..offset + SPECK_ROUNDS]);
+            speck_expand(&key, &mut speck_exp[i * SPECK_ROUNDS..(i + 1) * SPECK_ROUNDS]);
         }
         GFC { m: range, r: rounds, a, b, speck_exp }
     }
-    /// Encrypt using the Feistel cipher
+
     pub fn encrypt(&self, m: u64) -> u64 {
         let mut c = self.fe(m);
         while c >= self.m {
@@ -54,7 +54,7 @@ impl GFC {
         }
         c
     }
-    /// Decrypt using the Feistel cipher
+
     pub fn decrypt(&self, m: u64) -> u64 {
         let mut c = self.fe_inv(m);
         while c >= self.m {
@@ -62,23 +62,15 @@ impl GFC {
         }
         c
     }
-    /// Function F for Feistel cipher using Speck encryption
+
     fn f(&self, j: u64, r: u64) -> u64 {
-        let offset = ((j - 1) as usize) * SPECK_ROUNDS;
-        let key = &self.speck_exp[offset..offset + SPECK_ROUNDS];
-        let r_bytes = r.to_le_bytes();
-        let pt = [
-            u32::from_le_bytes(r_bytes[0..4].try_into().unwrap()),
-            u32::from_le_bytes(r_bytes[4..8].try_into().unwrap()),
-        ];
+        let key = &self.speck_exp[(j as usize - 1) * SPECK_ROUNDS..j as usize * SPECK_ROUNDS];
+        let pt = [r as u32, (r >> 32) as u32];
         let mut ct = [0u32; 2];
         speck_encrypt(&pt, &mut ct, key);
-        u64::from_le_bytes([
-            ct[0].to_le_bytes()[0], ct[0].to_le_bytes()[1], ct[0].to_le_bytes()[2], ct[0].to_le_bytes()[3],
-            ct[1].to_le_bytes()[0], ct[1].to_le_bytes()[1], ct[1].to_le_bytes()[2], ct[1].to_le_bytes()[3],
-        ])
+        ct[0] as u64 | ((ct[1] as u64) << 32)
     }
-    /// Function fe[r, a, b] for encryption
+
     fn fe(&self, m: u64) -> u64 {
         let mut l = m % self.a;
         let mut r = m / self.a;
@@ -97,14 +89,16 @@ impl GFC {
             self.a * r + l
         }
     }
-    /// Function fe^-1[r, a, b] for decryption
+
     fn fe_inv(&self, m: u64) -> u64 {
         let (mut l, mut r) = if self.r & 1 != 0 {
             (m / self.a, m % self.a)
         } else {
             (m % self.a, m / self.a)
         };
-        for j in (1..=self.r).rev() {
+
+        let mut j = self.r;
+        while j >= 1 {
             let tmp = if j & 1 != 0 {
                 (r.wrapping_add(self.a).wrapping_sub(self.f(j, l) % self.a)) % self.a
             } else {
@@ -112,26 +106,28 @@ impl GFC {
             };
             r = l;
             l = tmp;
+            j -= 1;
         }
         self.a * r + l
     }
 }
-/// Speck key expansion
+
 fn speck_expand(key: &[u32; SPECK_KEY_LEN], round_keys: &mut [u32]) {
     let mut b = key[0];
     let mut a = [key[1], key[2], key[3]];
     round_keys[0] = b;
-    for i in 0..(SPECK_ROUNDS - 1) {
-        round(&mut a[i % (SPECK_KEY_LEN - 1)], &mut b, i as u32);
-        round_keys[i + 1] = b;
+    for i in 0..(SPECK_ROUNDS - 1) as u32 {
+        round(&mut a[i as usize % (SPECK_KEY_LEN - 1)], &mut b, i);
+        round_keys[i as usize + 1] = b;
     }
 }
-/// Speck encryption function
+
 fn speck_encrypt(pt: &[u32; 2], ct: &mut [u32; 2], key: &[u32]) {
-    ct[0] = pt[0];
-    ct[1] = pt[1];
+    let mut a = pt[1];
+    let mut b = pt[0];
     for i in 0..SPECK_ROUNDS {
-        let (left, right) = ct.split_at_mut(1);
-        round(&mut right[0], &mut left[0], key[i]);
+        round(&mut a, &mut b, key[i]);
     }
+    ct[0] = b;
+    ct[1] = a;
 }

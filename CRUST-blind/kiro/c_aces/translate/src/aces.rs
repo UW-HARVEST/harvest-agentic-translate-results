@@ -1,7 +1,4 @@
-use crate::aces_internal::{
-    generate_error, generate_f0, generate_f1, generate_linear, generate_secret, generate_u,
-    generate_vanisher,
-};
+use crate::aces_internal::*;
 use crate::channel::{Channel, Parameters};
 use crate::error::{AcesError, Result};
 use crate::matrix::Matrix3D;
@@ -39,49 +36,30 @@ pub struct CipherMessage {
     pub c2: Polynomial,
     pub level: u64,
 }
-/// Set up the ACES instance (using external memory, for example).
+/// Set up the ACES instance.
 pub fn set_aces(aces: &mut Aces, dim: usize, _mem: &mut [u8]) -> Result<()> {
+    // In Rust we use Vec-based allocation, so we just initialize the structures
+    // with the right dimensions. The C code uses a flat memory buffer; we don't need that.
     let required = std::mem::size_of::<Coeff>() * (2 * dim + 1 + 2 * dim * dim)
-        + 24 * dim  // Matrix2D structs (approximation)
-        + 24 * 2 * dim  // Polynomial structs
+        + std::mem::size_of::<Polynomial>() * 2 * dim
         + std::mem::size_of::<u64>() * dim * dim * dim;
-
     if _mem.len() < required {
         return Err(AcesError::GenericError("insufficient memory".into()));
     }
 
-    // Initialize U
-    aces.shared_info.pk.u = Polynomial::new(vec![0; dim + 1]);
-
-    // Initialize lambda
+    aces.shared_info.pk.u = Polynomial::new(vec![0i64; dim + 1]);
     aces.shared_info.pk.lambda = Matrix3D::new(dim, dim);
-
-    // Initialize x
-    aces.private_key.x = PolyArray::new(
-        (0..dim).map(|_| Polynomial::new(vec![0; dim])).collect(),
-    );
-
-    // Initialize f0
-    aces.private_key.f0 = PolyArray::new(
-        (0..dim).map(|_| Polynomial::new(vec![0; dim])).collect(),
-    );
-
-    // Initialize f1
-    aces.private_key.f1 = Polynomial::new(vec![0; dim]);
-
+    aces.private_key.x = PolyArray::new((0..dim).map(|_| Polynomial::new(vec![0i64; dim])).collect());
+    aces.private_key.f0 = PolyArray::new((0..dim).map(|_| Polynomial::new(vec![0i64; dim])).collect());
+    aces.private_key.f1 = Polynomial::new(vec![0i64; dim]);
     Ok(())
 }
 /// Initialize an instance of ACES.
 pub fn init_aces(p: u64, q: u64, dim: u64, aces: &mut Aces) -> Result<()> {
     aces.shared_info.param.dim = dim;
     aces.shared_info.param.N = 1;
-
     aces.shared_info.channel = Channel::init(p, q, 1)?;
-    generate_u(
-        &aces.shared_info.channel,
-        &aces.shared_info.param,
-        &mut aces.shared_info.pk.u,
-    )?;
+    generate_u(&aces.shared_info.channel, &aces.shared_info.param, &mut aces.shared_info.pk.u)?;
     generate_secret(
         &aces.shared_info.channel,
         &aces.shared_info.param,
@@ -89,11 +67,7 @@ pub fn init_aces(p: u64, q: u64, dim: u64, aces: &mut Aces) -> Result<()> {
         &mut aces.private_key.x,
         &mut aces.shared_info.pk.lambda,
     )?;
-    generate_f0(
-        &aces.shared_info.channel,
-        &aces.shared_info.param,
-        &mut aces.private_key.f0,
-    )?;
+    generate_f0(&aces.shared_info.channel, &aces.shared_info.param, &mut aces.private_key.f0)?;
     generate_f1(
         &aces.shared_info.channel,
         &aces.shared_info.param,
@@ -107,37 +81,45 @@ pub fn init_aces(p: u64, q: u64, dim: u64, aces: &mut Aces) -> Result<()> {
 /// Encrypt a message.
 pub fn aces_encrypt(aces: &Aces, message: &[u64], result: &mut CipherMessage) -> Result<()> {
     if message.len() > 1 {
-        return Err(AcesError::GenericError("message size > 1".into()));
+        return Err(AcesError::GenericError("size > 1".into()));
     }
     let dim = aces.shared_info.param.dim as usize;
     let q = aces.shared_info.channel.q;
     let p = aces.shared_info.channel.p;
 
-    let mut r_m = Polynomial::new(vec![0; dim]);
-    let mut e = Polynomial::new(vec![0; dim]);
-    let mut b = Polynomial::new(vec![0; dim]);
+    let mut r_m = Polynomial::new(vec![0i64; dim]);
+    let mut e = Polynomial::new(vec![0i64; dim]);
+    let mut b = Polynomial::new(vec![0i64; dim]);
 
     generate_error(q, message[0], &mut r_m)?;
     generate_vanisher(p, q, &mut e)?;
     generate_linear(p, q, &mut b)?;
 
-    // C1: for each i, c1[i] = b * f0[i] mod u
+    // C1
+    result.c1.polies = Vec::with_capacity(dim);
     for i in 0..dim {
         let mut tmp = b.mul(&aces.private_key.f0.polies[i], q)?;
         tmp.poly_mod(&aces.shared_info.pk.u, q)?;
-        result.c1.polies[i].coeffs = tmp.coeffs;
+        // Pad/truncate to dim size
+        let mut coeffs = vec![0i64; dim];
+        let src_len = tmp.coeffs.len().min(dim);
+        let offset = dim - src_len;
+        coeffs[offset..].copy_from_slice(&tmp.coeffs[..src_len]);
+        result.c1.polies.push(Polynomial::new(coeffs));
     }
 
-    // C2: c2 = (f1 + e) * b + r_m mod u
+    // C2
     let f1_plus_e = aces.private_key.f1.add(&e, q)?;
     let mut tmp = f1_plus_e.mul(&b, q)?;
     tmp = tmp.add(&r_m, q)?;
     tmp.poly_mod(&aces.shared_info.pk.u, q)?;
-    result.c2.coeffs = tmp.coeffs;
+    let mut coeffs = vec![0i64; dim];
+    let src_len = tmp.coeffs.len().min(dim);
+    let offset = dim - src_len;
+    coeffs[offset..].copy_from_slice(&tmp.coeffs[..src_len]);
+    result.c2 = Polynomial::new(coeffs);
 
-    // Level
     result.level = p;
-
     Ok(())
 }
 /// Decrypt a ciphertext.
@@ -149,7 +131,7 @@ pub fn aces_decrypt(aces: &Aces, message: &CipherMessage, result: &mut [u64]) ->
     let q = aces.shared_info.channel.q;
     let p = aces.shared_info.channel.p;
 
-    let mut c0tx = Polynomial::new(vec![0; dim * 2]);
+    let mut c0tx = Polynomial::new(vec![0i64; dim * 2]);
 
     for i in 0..dim {
         let tmp = message.c1.polies[i].mul(&aces.private_key.x.polies[i], q)?;
@@ -159,8 +141,7 @@ pub fn aces_decrypt(aces: &Aces, message: &CipherMessage, result: &mut [u64]) ->
     c0tx.fit(q)?;
     c0tx = message.c2.sub(&c0tx, q)?;
 
-    let sum = c0tx.coef_sum();
-    result[0] = ((sum % q as i64) % p as i64) as u64;
+    result[0] = ((c0tx.coef_sum() % q as i64) % p as i64) as u64;
     Ok(())
 }
 /// Perform homomorphic addition on two ciphertexts.
@@ -173,15 +154,16 @@ pub fn aces_add(
     let dim = info.param.dim as usize;
     let q = info.channel.q;
 
+    result.c1.polies = Vec::with_capacity(dim);
     for i in 0..dim {
-        let mut r = a.c1.polies[i].add(&b.c1.polies[i], q)?;
-        r.poly_mod(&info.pk.u, q)?;
-        result.c1.polies[i].coeffs = r.coeffs;
+        let mut p = a.c1.polies[i].add(&b.c1.polies[i], q)?;
+        p.poly_mod(&info.pk.u, q)?;
+        result.c1.polies.push(p);
     }
 
     let mut c2 = a.c2.add(&b.c2, q)?;
     c2.poly_mod(&info.pk.u, q)?;
-    result.c2.coeffs = c2.coeffs;
+    result.c2 = c2;
     result.level = a.level + b.level;
     Ok(())
 }
@@ -192,7 +174,7 @@ pub fn aces_mul(
     _info: &SharedInfo,
     _result: &mut CipherMessage,
 ) -> Result<()> {
-    // TODO: not implemented in C either
+    // C code: TODO: Implement it (returns 0 with no-op)
     Ok(())
 }
 /// Refresh a ciphertext to mitigate level increase.

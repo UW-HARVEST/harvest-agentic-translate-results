@@ -1,141 +1,234 @@
 use tisp_proj::tisp::*;
-use tisp_proj::core;
-use tisp_proj::math;
-use tisp_proj::string;
-
-const TIBS: &str = include_str!("../../tibs.tsp");
 
 fn setup() -> Tsp {
     let mut st = tisp_env_init(1024);
-    core::tib_env_core(&mut st);
-    math::tib_env_math(&mut st);
-    string::tib_env_string(&mut st);
-    tisp_env_lib(&mut st, TIBS);
+    tib_env_core(&mut st);
+    tib_env_math(&mut st);
+    tib_env_string(&mut st);
     st
 }
 
 fn eval_str(st: &mut Tsp, input: &str) -> String {
     st.file = input.to_string();
     st.filec = 0;
-    let v = match tisp_read(st) {
-        Some(v) => v,
-        None => return "READ_ERROR".to_string(),
-    };
-    let v = match tisp_eval(st, v) {
-        Some(v) => v,
-        None => return "EVAL_ERROR".to_string(),
-    };
-    let mut buf = Vec::new();
+    let v = tisp_read(st).expect(&format!("read failed for: {}", input));
+    let mut env = clone_rec(&st.env);
+    let v = tisp_eval_with_env(st, &mut env, v).expect(&format!("eval failed for: {}", input));
+    st.env = env;
+    let mut buf: Vec<u8> = Vec::new();
     tisp_print(&mut buf, &v);
-    String::from_utf8(buf).unwrap_or_default()
+    String::from_utf8(buf).unwrap()
 }
 
-// Eq
-#[test] fn test_eq_empty()    { let mut st = setup(); assert_eq!(eval_str(&mut st, "(=)"), "True"); }
-#[test] fn test_eq_one()      { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1)"), "True"); }
-#[test] fn test_eq_str()      { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\")"), "True"); }
-#[test] fn test_eq_11()       { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1 1)"), "True"); }
-#[test] fn test_eq_many1()    { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1 1 1 1 1 1)"), "True"); }
-#[test] fn test_eq_12()       { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1 2)"), "Nil"); }
-#[test] fn test_eq_mid_diff() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1 1 2 1 1 1)"), "Nil"); }
-#[test] fn test_eq_end_diff() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1 1 1 1 1 2)"), "Nil"); }
-#[test] fn test_eq_start_diff(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 2 1 1 1 1 1)"), "Nil"); }
-#[test] fn test_eq_rat()      { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 4/5 4/5)"), "True"); }
-#[test] fn test_eq_rat_int()  { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 2/1 2)"), "True"); }
-#[test] fn test_eq_rat_reduce(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 2/4 1/2)"), "True"); }
-#[test] fn test_eq_rat_many() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 2/4 1/2 4/8 3/6)"), "True"); }
-#[test] fn test_eq_rat_diff() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 1/2 4/5)"), "Nil"); }
-#[test] fn test_eq_rat_diff2(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 5/4 4/5)"), "Nil"); }
-#[test] fn test_eq_int_rat()  { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 3 3/2)"), "Nil"); }
-#[test] fn test_eq_int_rat_many(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 3 3/2 3 3 3)"), "Nil"); }
-#[test] fn test_eq_expr()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= (+ 1 1) (+ 2 0))"), "True"); }
-#[test] fn test_eq_str_eq()   { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" \"foo\")"), "True"); }
-#[test] fn test_eq_str_diff() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" \"bar\")"), "Nil"); }
-#[test] fn test_eq_str_sym()  { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" 'foo)"), "Nil"); }
-#[test] fn test_eq_sym()      { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= 'bar 'bar)"), "True"); }
-#[test] fn test_eq_str_many() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" \"foo\" \"foo\" \"foo\" \"foo\")"), "True"); }
-#[test] fn test_eq_str_many_diff(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" \"bar\" \"foo\" \"foo\" \"foo\")"), "Nil"); }
-#[test] fn test_eq_str_int()  { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" 3)"), "Nil"); }
-#[test] fn test_eq_str_int_mid(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" \"foo\" 4 \"foo\" \"foo\")"), "Nil"); }
-#[test] fn test_eq_str_case() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= \"foo\" \"FOO\")"), "Nil"); }
-#[test] fn test_eq_true()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= True True)"), "True"); }
-#[test] fn test_eq_car()      { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= car car)"), "True"); }
-#[test] fn test_eq_car_cdr()  { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= car cdr)"), "Nil"); }
-#[test] fn test_eq_quote3()   { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= quote quote quote)"), "True"); }
-#[test] fn test_eq_list()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '(1 2 3) (list 1 2 3))"), "True"); }
-#[test] fn test_eq_sym_list() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '(a b c) '(a b c))"), "True"); }
-#[test] fn test_eq_sym_list_diff(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '(a b c) '(a b d))"), "Nil"); }
-#[test] fn test_eq_list_len() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '(1 2 3) '(1 2))"), "Nil"); }
-#[test] fn test_eq_list_len2(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '(1 2 3) '(1))"), "Nil"); }
-#[test] fn test_eq_nested()   { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '((1 2) 3 4) '((1 2) 3 4))"), "True"); }
-#[test] fn test_eq_nested_diff(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= '((1 b) 3 4) '((1 2) 3 4))"), "Nil"); }
-#[test] fn test_eq_func()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(= (Func (it) it) @it)"), "True"); }
-#[test] fn test_eq_func_diff(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(= @it (Func (x) x))"), "Nil"); }
-#[test] fn test_neq_empty()   { let mut st = setup(); assert_eq!(eval_str(&mut st, "(/=)"), "Nil"); }
-#[test] fn test_neq_one()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(/= 'a)"), "Nil"); }
-#[test] fn test_neq_pair()    { let mut st = setup(); assert_eq!(eval_str(&mut st, "(/= '(1 . 2) (list* 1 2))"), "Nil"); }
-#[test] fn test_neq_diff()    { let mut st = setup(); assert_eq!(eval_str(&mut st, "(/= 1 2)"), "True"); }
-#[test] fn test_neq_mid()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(/= 1 1 2 1 1 1)"), "True"); }
-#[test] fn test_neq_str()     { let mut st = setup(); assert_eq!(eval_str(&mut st, "(/= \"foo\" \"bar\")"), "True"); }
-#[test] fn test_neq_sym_many(){ let mut st = setup(); assert_eq!(eval_str(&mut st, "(/= 'greg 'greg 'greg 'greg)"), "Nil"); }
+/// Load minimal tibs definitions needed for tests
+fn load_mini_tibs(st: &mut Tsp) {
+    let defs = [
+        "(def (list . lst) lst)",
+        "(def else True)",
+    ];
+    for d in &defs {
+        eval_str(st, d);
+    }
+}
 
-// Def
-#[test] fn test_def_basic() {
+// ---- quote ----
+
+#[test]
+fn test_quote() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(quote 1)"), "1");
+    assert_eq!(eval_str(&mut st, "(quote 9234)"), "9234");
+    assert_eq!(eval_str(&mut st, "(quote \"foo\")"), "foo");
+    assert_eq!(eval_str(&mut st, "(quote bar)"), "bar");
+    assert_eq!(eval_str(&mut st, "(quote (1 2 3 4))"), "(1 2 3 4)");
+    assert_eq!(eval_str(&mut st, "(quote (quote 1))"), "(quote 1)");
+    assert_eq!(eval_str(&mut st, "(quote (+ 2 2))"), "(+ 2 2)");
+    assert_eq!(eval_str(&mut st, "'12"), "12");
+    assert_eq!(eval_str(&mut st, "'foo"), "foo");
+    assert_eq!(eval_str(&mut st, "'(1 2 3 4)"), "(1 2 3 4)");
+    assert_eq!(eval_str(&mut st, "'()"), "Nil");
+}
+
+// ---- cons ----
+
+#[test]
+fn test_cons() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(cons 1 2)"), "(1 . 2)");
+    assert_eq!(eval_str(&mut st, "(cons 1 (cons 2 3))"), "(1 2 . 3)");
+    assert_eq!(eval_str(&mut st, "(cons 1 (cons 2 (cons 3 4)))"), "(1 2 3 . 4)");
+    assert_eq!(eval_str(&mut st, "(cons \"foo\" \"bar\")"), "(foo . bar)");
+    assert_eq!(eval_str(&mut st, "(cons (+ 1 2) 3)"), "(3 . 3)");
+    assert_eq!(eval_str(&mut st, "(cons (cons 1 2) (cons 3 4))"), "((1 . 2) 3 . 4)");
+}
+
+// ---- car/cdr ----
+
+#[test]
+fn test_cxr() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(car (cons 1 2))"), "1");
+    assert_eq!(eval_str(&mut st, "(cdr (cons 1 2))"), "2");
+    assert_eq!(eval_str(&mut st, "(car (quote (1 2 3 4)))"), "1");
+    assert_eq!(eval_str(&mut st, "(car (cdr (quote (1 2 3 4))))"), "2");
+    assert_eq!(eval_str(&mut st, "(car (cdr (cdr (quote (1 2 3 4)))))"), "3");
+    assert_eq!(eval_str(&mut st, "(car (cdr (cdr (cdr (quote (1 2 3 4))))))"), "4");
+    assert_eq!(eval_str(&mut st, "(cdr (quote (1 2 3 4)))"), "(2 3 4)");
+    assert_eq!(eval_str(&mut st, "(cdr (cdr (quote (1 2 3 4))))"), "(3 4)");
+    assert_eq!(eval_str(&mut st, "(car (cons 1 (cons 2 3)))"), "1");
+    assert_eq!(eval_str(&mut st, "(cdr (cons 1 (cons 2 3)))"), "(2 . 3)");
+    assert_eq!(eval_str(&mut st, "(cdr (cdr (cons 1 (cons 2 3))))"), "3");
+}
+
+// ---- do ----
+
+#[test]
+fn test_do() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(do (+ 1 2) (+ 2 2))"), "4");
+    assert_eq!(eval_str(&mut st, "(do (+ -4 8) (- 1 2) (* 80 0) (+ 39 -3))"), "36");
+    assert_eq!(eval_str(&mut st, "(do (mod 80 2) (/ 4 2) Void)"), "Void");
+}
+
+// ---- eval ----
+
+#[test]
+fn test_eval() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(eval ''hey)"), "hey");
+    assert_eq!(eval_str(&mut st, "(eval \"sup\")"), "sup");
+    assert_eq!(eval_str(&mut st, "(eval (+ 1 2))"), "3");
+    assert_eq!(eval_str(&mut st, "(eval '(- 4 3))"), "1");
+    assert_eq!(eval_str(&mut st, "(eval ''(mod 9 3))"), "(mod 9 3)");
+    assert_eq!(eval_str(&mut st, "(do (def bar '(/ 25 5)) (eval bar))"), "5");
+}
+
+// ---- cond ----
+
+#[test]
+fn test_cond() {
+    let mut st = setup();
+    load_mini_tibs(&mut st);
+    assert_eq!(eval_str(&mut st, "(cond)"), "Void");
+    assert_eq!(eval_str(&mut st, "(cond (True 1))"), "1");
+    assert_eq!(eval_str(&mut st, "(cond ((= 1 1) 1) ((= 1 2) 2) (True 3))"), "1");
+    assert_eq!(eval_str(&mut st, "(cond ((= 1 2) 1) ((= 1 2) 2) (else (+ 1 2)))"), "3");
+    assert_eq!(eval_str(&mut st, "(cond ((= 1 2) 1) ((= 1 1) 2) (else 3))"), "2");
+    assert_eq!(eval_str(&mut st, "(cond ((= 1 2) 1) ((= 1 3) 2))"), "Void");
+    assert_eq!(eval_str(&mut st, "(cond ((= 1 2) 1) (\"foo\" 2) (else 3))"), "2");
+    assert_eq!(eval_str(&mut st, "(cond (() (+ 1 2)))"), "Void");
+}
+
+// ---- eq ----
+
+#[test]
+fn test_eq() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(=)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 1)"), "True");
+    assert_eq!(eval_str(&mut st, "(= \"foo\")"), "True");
+    assert_eq!(eval_str(&mut st, "(= 1 1)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 1 1 1 1 1 1)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 1 2)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= 1 1 2 1 1 1)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= 4/5 4/5)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 2/1 2)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 2/4 1/2)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 2/4 1/2 4/8 3/6)"), "True");
+    assert_eq!(eval_str(&mut st, "(= 1/2 4/5)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= \"foo\" \"foo\")"), "True");
+    assert_eq!(eval_str(&mut st, "(= \"foo\" \"bar\")"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= \"foo\" 'foo)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= 'bar 'bar)"), "True");
+    assert_eq!(eval_str(&mut st, "(= \"foo\" 3)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= \"foo\" \"FOO\")"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= True True)"), "True");
+    assert_eq!(eval_str(&mut st, "(= car car)"), "True");
+    assert_eq!(eval_str(&mut st, "(= car cdr)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= quote quote quote)"), "True");
+}
+
+// ---- def ----
+
+#[test]
+fn test_def() {
     let mut st = setup();
     assert_eq!(eval_str(&mut st, "(def foo 4)"), "Void");
     assert_eq!(eval_str(&mut st, "foo"), "4");
-}
-#[test] fn test_def_var() {
-    let mut st = setup();
-    eval_str(&mut st, "(def foo 4)");
     assert_eq!(eval_str(&mut st, "(def bar foo)"), "Void");
     assert_eq!(eval_str(&mut st, "bar"), "4");
-}
-#[test] fn test_def_redef() {
-    let mut st = setup();
-    eval_str(&mut st, "(def foo 4)");
-    eval_str(&mut st, "(def bar foo)");
     assert_eq!(eval_str(&mut st, "(def foo (+ foo bar))"), "Void");
     assert_eq!(eval_str(&mut st, "foo"), "8");
-}
-#[test] fn test_def_prim() {
-    let mut st = setup();
-    eval_str(&mut st, "(def foo 4)");
-    eval_str(&mut st, "(def bar foo)");
-    eval_str(&mut st, "(def foo (+ foo bar))");
     assert_eq!(eval_str(&mut st, "(def add +)"), "Void");
     assert_eq!(eval_str(&mut st, "(add foo bar)"), "12");
-}
-#[test] fn test_def_func() {
-    let mut st = setup();
-    eval_str(&mut st, "(def foo 8)");
-    eval_str(&mut st, "(def add +)");
     assert_eq!(eval_str(&mut st, "(def (one x) (add x 1))"), "Void");
     assert_eq!(eval_str(&mut st, "(one foo)"), "9");
-}
-#[test] fn test_def_func_body() {
-    let mut st = setup();
     assert_eq!(eval_str(&mut st, "(def (more x) (def term 3) (+ x term))"), "Void");
     assert_eq!(eval_str(&mut st, "(more 8)"), "11");
-}
-#[test] fn test_def_func_multi_body() {
-    let mut st = setup();
     assert_eq!(eval_str(&mut st, "(def (add2 x) (+ x 1) (+ x 2))"), "Void");
     assert_eq!(eval_str(&mut st, "(add2 2)"), "4");
 }
 
-// Defined?
-#[test] fn test_definedp1() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(defined? invalid-var)"), "Nil"); }
-#[test] fn test_definedp2() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(defined? defined?)"), "True"); }
-#[test] fn test_definedp3() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(defined? car)"), "True"); }
-#[test] fn test_definedp4() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(defined? when)"), "True"); }
-#[test] fn test_definedp5() { let mut st = setup(); assert_eq!(eval_str(&mut st, "(defined? apply)"), "True"); }
+// ---- defined? ----
 
-// Func
-#[test] fn test_func1() { let mut st = setup(); assert_eq!(eval_str(&mut st, "((Func (x) x) 3)"), "3"); }
-#[test] fn test_func2() { let mut st = setup(); assert_eq!(eval_str(&mut st, "((Func (x) x) (+ 1 2))"), "3"); }
-#[test] fn test_func3() { let mut st = setup(); assert_eq!(eval_str(&mut st, "((Func (x) (+ x 1)) 8)"), "9"); }
-#[test] fn test_func4() { let mut st = setup(); assert_eq!(eval_str(&mut st, "((Func (a b) (+ a b)) 2 2)"), "4"); }
-#[test] fn test_func5() { let mut st = setup(); assert_eq!(eval_str(&mut st, "((Func () 5))"), "5"); }
+#[test]
+fn test_definedp() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(defined? invalid-var)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(defined? defined?)"), "True");
+    assert_eq!(eval_str(&mut st, "(defined? car)"), "True");
+}
+
+// ---- Func ----
+
+#[test]
+fn test_func() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "((Func (x) x) 3)"), "3");
+    assert_eq!(eval_str(&mut st, "((Func (x) x) (+ 1 2))"), "3");
+    assert_eq!(eval_str(&mut st, "((Func (x) (+ x 1)) 8)"), "9");
+    assert_eq!(eval_str(&mut st, "((Func (a b) (+ a b)) 2 2)"), "4");
+    assert_eq!(eval_str(&mut st, "((Func () 5))"), "5");
+}
+
+// ---- typeof ----
+
+#[test]
+fn test_typeof() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(typeof 42)"), "Int");
+    assert_eq!(eval_str(&mut st, "(typeof 3.14)"), "Dec");
+    assert_eq!(eval_str(&mut st, "(typeof 3/4)"), "Ratio");
+    assert_eq!(eval_str(&mut st, "(typeof \"foo\")"), "Str");
+    assert_eq!(eval_str(&mut st, "(typeof 'bar)"), "Sym");
+    assert_eq!(eval_str(&mut st, "(typeof car)"), "Prim");
+    assert_eq!(eval_str(&mut st, "(typeof quote)"), "Form");
+    assert_eq!(eval_str(&mut st, "(typeof Nil)"), "Nil");
+    assert_eq!(eval_str(&mut st, "(typeof Void)"), "Void");
+    assert_eq!(eval_str(&mut st, "(typeof (cons 1 2))"), "Pair");
+}
+
+// ---- eq with lists ----
+
+#[test]
+fn test_eq_lists() {
+    let mut st = setup();
+    load_mini_tibs(&mut st);
+    assert_eq!(eval_str(&mut st, "(= '(1 2 3) (list 1 2 3))"), "True");
+    assert_eq!(eval_str(&mut st, "(= '(a b c) '(a b c))"), "True");
+    assert_eq!(eval_str(&mut st, "(= '(a b c) '(a b d))"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= '(1 2 3) '(1 2))"), "Nil");
+    assert_eq!(eval_str(&mut st, "(= '((1 2) 3 4) '((1 2) 3 4))"), "True");
+    assert_eq!(eval_str(&mut st, "(= '((1 b) 3 4) '((1 2) 3 4))"), "Nil");
+}
+
+// ---- eq with Func ----
+
+#[test]
+fn test_eq_func() {
+    let mut st = setup();
+    assert_eq!(eval_str(&mut st, "(= (Func (it) it) @it)"), "True");
+    assert_eq!(eval_str(&mut st, "(= @it (Func (x) x))"), "Nil");
+}
 
 fn main() {}

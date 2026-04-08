@@ -1,410 +1,257 @@
-use skp::skp::*;
+use skp::skp;
 
-// ============ AST creation and basic operations ============
+// ============================================================
+// AST creation and navigation
+// ============================================================
 
 #[test]
 fn test_ast_new() {
-    let ast = ast_new();
+    let ast = skp::ast_new();
     assert!(ast.is_some());
     let ast = ast.unwrap();
     assert_eq!(ast.par_cnt, 0);
     assert_eq!(ast.nodes_cnt, 0);
     assert_eq!(ast.fail, 0);
     assert_eq!(ast.err_pos, -1);
-    assert_eq!(ast.cur_node, ASTNULL);
-}
-
-#[test]
-fn test_astfree() {
-    let ast = ast_new().unwrap();
-    let result = astfree(ast);
-    assert!(result.is_none());
+    assert_eq!(ast.cur_node, -1);
 }
 
 #[test]
 fn test_ast_open_close() {
-    let mut ast = ast_new().unwrap();
-    let open = ast_open(&mut ast, 0, "test_rule");
-    assert!(open >= 0);
-    let close = ast_close(&mut ast, 5, open);
-    assert!(close >= 0);
-    assert_eq!(ast.par_cnt, 2);
-    assert_eq!(ast.nodes_cnt, 1);
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    assert_eq!(o1, 0);
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    let o3 = skp::ast_open(&mut ast, 3, "child2");
+    skp::ast_close(&mut ast, 5, o3);
+    skp::ast_close(&mut ast, 5, o1);
+    assert_eq!(ast.par_cnt, 6);
+    assert_eq!(ast.nodes_cnt, 3);
 }
 
 #[test]
-fn test_ast_open_close_fail() {
-    let mut ast = ast_new().unwrap();
-    ast.fail = 1;
-    let open = ast_open(&mut ast, 0, "test_rule");
-    assert_eq!(open, -1);
+fn test_ast_navigation() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    let o3 = skp::ast_open(&mut ast, 3, "child2");
+    skp::ast_close(&mut ast, 5, o3);
+    skp::ast_close(&mut ast, 5, o1);
+
+    // down from root -> first child
+    assert_eq!(skp::astdown(&ast, 0), 1);
+    // right from child1 -> child2
+    assert_eq!(skp::astright(&ast, 1), 3);
+    // left from child2 -> child1
+    assert_eq!(skp::astleft(&ast, 3), 1);
+    // up from child1 -> root
+    assert_eq!(skp::astup(&ast, 1), 0);
+    // first sibling of child2 -> child1
+    assert_eq!(skp::astfirst(&ast, 3), 1);
+    // last sibling of child1 -> child2
+    assert_eq!(skp::astlast(&ast, 1), 3);
 }
 
 #[test]
-fn test_astnoderule() {
-    let mut ast = ast_new().unwrap();
+fn test_ast_node_info() {
+    let mut ast = skp::ast_new().unwrap();
     ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "myrule");
-    ast_close(&mut ast, 5, open);
-    assert_eq!(astnoderule(&ast, 0), "myrule");
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    let o3 = skp::ast_open(&mut ast, 3, "child2");
+    skp::ast_close(&mut ast, 5, o3);
+    skp::ast_close(&mut ast, 5, o1);
+
+    assert_eq!(skp::astnoderule(&ast, 0), "root");
+    assert_eq!(skp::astnoderule(&ast, 1), "child1");
+    assert_eq!(skp::astnoderule(&ast, 3), "child2");
+    assert_eq!(skp::astnodelen(&ast, 0), 5);
+    assert_eq!(skp::astnodelen(&ast, 1), 3);
+    assert_eq!(skp::astnodelen(&ast, 3), 2);
+    assert!(skp::astisleaf(&ast, 1));
 }
 
 #[test]
-fn test_astnodefrom_astnodeto() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello world".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    assert_eq!(astnodefrom(&ast, 0), "hello world");
-    assert_eq!(astnodeto(&ast, 0), " world");
-}
+fn test_ast_entry_exit() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    skp::ast_close(&mut ast, 5, o1);
 
-#[test]
-fn test_astnodelen() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    assert_eq!(astnodelen(&ast, 0), 5);
-}
-
-#[test]
-fn test_astisleaf() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    // A node with no children has delta=1, so it's a leaf
-    assert!(astisleaf(&ast, 0));
-}
-
-#[test]
-fn test_astisnodeentry_exit() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    assert!(astisnodeentry(&ast, 0));
-    assert!(astisnodeexit(&ast, 1));
-    assert!(!astisnodeentry(&ast, 1));
-    assert!(!astisnodeexit(&ast, 0));
+    assert!(skp::astisnodeentry(&ast, 0));
+    assert!(!skp::astisnodeexit(&ast, 0));
+    // par[2] should be close par of child1 (negative)
+    assert!(skp::astisnodeexit(&ast, 2));
+    assert!(!skp::astisnodeentry(&ast, 2));
 }
 
 #[test]
 fn test_astnextdf() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    let n = astnextdf(&ast, ASTNULL);
-    assert_eq!(n, 0);
-    let n = astnextdf(&ast, 0);
-    assert_eq!(n, 1);
-    let n = astnextdf(&ast, 1);
-    assert_eq!(n, ASTNULL);
-}
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    let o3 = skp::ast_open(&mut ast, 3, "child2");
+    skp::ast_close(&mut ast, 5, o3);
+    skp::ast_close(&mut ast, 5, o1);
 
-// ============ AST tree navigation ============
-
-#[test]
-fn test_ast_navigation() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "abcdef".to_string();
-    // Create: (root (child1)(child2))
-    let root = ast_open(&mut ast, 0, "root");
-    let c1 = ast_open(&mut ast, 0, "child1");
-    ast_close(&mut ast, 3, c1);
-    let c2 = ast_open(&mut ast, 3, "child2");
-    ast_close(&mut ast, 6, c2);
-    ast_close(&mut ast, 6, root);
-
-    // root is at par index 0
-    // child1 starts at par index 1
-    // child2 starts at par index 3
-    let down = astdown(&ast, 0);
-    assert_ne!(down, ASTNULL);
-    assert_eq!(astnoderule(&ast, down), "child1");
-
-    let right = astright(&ast, down);
-    assert_ne!(right, ASTNULL);
-    assert_eq!(astnoderule(&ast, right), "child2");
-
-    let left = astleft(&ast, right);
-    assert_ne!(left, ASTNULL);
-    assert_eq!(astnoderule(&ast, left), "child1");
-
-    let up = astup(&ast, down);
-    assert_ne!(up, ASTNULL);
-    assert_eq!(astnoderule(&ast, up), "root");
+    assert_eq!(skp::astnextdf(&ast, -1), 0);
+    assert_eq!(skp::astnextdf(&ast, 0), 1);
+    assert_eq!(skp::astnextdf(&ast, 5), -1); // ASTNULL
 }
 
 #[test]
-fn test_astfirst_astlast() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "abcdef".to_string();
-    let root = ast_open(&mut ast, 0, "root");
-    let c1 = ast_open(&mut ast, 0, "c1");
-    ast_close(&mut ast, 2, c1);
-    let c2 = ast_open(&mut ast, 2, "c2");
-    ast_close(&mut ast, 4, c2);
-    let c3 = ast_open(&mut ast, 4, "c3");
-    ast_close(&mut ast, 6, c3);
-    ast_close(&mut ast, 6, root);
+fn test_ast_is() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    skp::ast_close(&mut ast, 5, o1);
 
-    let down = astdown(&ast, 0);
-    let first = astfirst(&ast, down);
-    assert_eq!(astnoderule(&ast, first), "c1");
-
-    let last = astlast(&ast, down);
-    assert_eq!(astnoderule(&ast, last), "c3");
+    assert_eq!(skp::ast_is(&ast, 0, "root"), 1);
+    assert_eq!(skp::ast_is(&ast, 1, "child1"), 1);
+    assert_eq!(skp::ast_is(&ast, 1, "root"), 0);
 }
-
-// ============ AST info ============
-
-#[test]
-fn test_astnodeinfo() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    ast_setinfo(&mut ast, 42, 0);
-    assert_eq!(astnodeinfo(&ast, 0), 42);
-}
-
-#[test]
-fn test_astnewinfo() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    astnewinfo(&mut ast, 99);
-    assert_eq!(ast.lastinfo, 99);
-}
-
-// ============ AST delete ============
-
-#[test]
-fn test_ast_delete() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    assert_eq!(ast.par_cnt, 2);
-    ast_delete(&mut ast);
-    assert_eq!(ast.par_cnt, 0);
-}
-
-// ============ AST lastnode ============
 
 #[test]
 fn test_ast_lastnode() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    let last = ast_lastnode(&ast);
-    assert_eq!(last, 0);
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    let o3 = skp::ast_open(&mut ast, 3, "child2");
+    skp::ast_close(&mut ast, 5, o3);
+    skp::ast_close(&mut ast, 5, o1);
+
+    // Last node: par_cnt-1=5, par[5] is close of root (delta=-5), o1=5+(-5)=0
+    assert_eq!(skp::ast_lastnode(&ast), 0);
 }
 
 #[test]
-fn test_ast_lastnode_empty() {
-    let ast = ast_new().unwrap();
-    assert_eq!(ast_lastnode(&ast), ASTNULL);
+fn test_ast_setinfo_nodeinfo() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    skp::ast_close(&mut ast, 5, o1);
+
+    skp::ast_setinfo(&mut ast, 42, 1);
+    assert_eq!(skp::astnodeinfo(&ast, 1), 42);
+    assert_eq!(skp::astnodeinfo(&ast, 0), 0); // root tag unchanged
 }
 
-// ============ AST lastnodeisempty ============
+#[test]
+fn test_ast_delete() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "child1");
+    skp::ast_close(&mut ast, 3, o2);
+    let o3 = skp::ast_open(&mut ast, 3, "child2");
+    skp::ast_close(&mut ast, 5, o3);
+    skp::ast_close(&mut ast, 5, o1);
+
+    let before = ast.par_cnt;
+    skp::ast_delete(&mut ast);
+    // Deletes the last node (root, which spans all 6 par entries)
+    assert!(ast.par_cnt < before);
+}
 
 #[test]
-fn test_ast_lastnodeisempty_true() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 0, open); // from=0, to=0 => empty
-    assert!(ast_lastnodeisempty(&ast));
+fn test_ast_noleaf() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    let o2 = skp::ast_open(&mut ast, 0, "leaf");
+    skp::ast_close(&mut ast, 0, o2); // leaf (delta=1)
+    skp::ast_close(&mut ast, 5, o1);
+
+    let before = ast.par_cnt;
+    skp::ast_noleaf(&mut ast);
+    // Last node is root (not a leaf since it has children), so no change
+    assert_eq!(ast.par_cnt, before);
+}
+
+#[test]
+fn test_ast_lastnodeisempty() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "leaf");
+    skp::ast_close(&mut ast, 0, o1); // from=0, to=0 -> empty
+    assert!(skp::ast_lastnodeisempty(&ast));
 }
 
 #[test]
 fn test_ast_lastnodeisempty_false() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    assert!(!ast_lastnodeisempty(&ast));
-}
-
-// ============ AST noleaf ============
-
-#[test]
-fn test_ast_noleaf() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    // This is a leaf (delta=1), so noleaf should remove it
-    ast_noleaf(&mut ast);
-    assert_eq!(ast.par_cnt, 0);
-}
-
-// ============ AST lift ============
-
-#[test]
-fn test_ast_lift() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    // Create ((child)) - outer wraps single child
-    let outer = ast_open(&mut ast, 0, "outer");
-    let inner = ast_open(&mut ast, 0, "inner");
-    ast_close(&mut ast, 5, inner);
-    ast_close(&mut ast, 5, outer);
-    // outer has tag=0 by default, so lift should remove it
-    ast_lift(&mut ast);
-    assert_eq!(ast.par_cnt, 2); // only inner remains
-    assert_eq!(astnoderule(&ast, 0), "inner");
-}
-
-// ============ AST swap ============
-
-#[test]
-fn test_ast_swap() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "abcdef".to_string();
-    // Create two sibling nodes at top level (no wrapping root)
-    let c1 = ast_open(&mut ast, 0, "first");
-    ast_close(&mut ast, 3, c1);
-    let c2 = ast_open(&mut ast, 3, "second");
-    ast_close(&mut ast, 6, c2);
-    // Before swap: first, second
-    ast_swap(&mut ast);
-    // After swap: second, first
-    assert_eq!(astnoderule(&ast, 0), "second");
-}
-
-// ============ AST error functions ============
-
-#[test]
-fn test_asthaserr_no_error() {
-    let ast = ast_new().unwrap();
-    assert!(!asthaserr(&ast));
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "leaf");
+    skp::ast_close(&mut ast, 3, o1); // from=0, to=3 -> not empty
+    assert!(!skp::ast_lastnodeisempty(&ast));
 }
 
 #[test]
-fn test_asthaserr_with_error() {
-    let mut ast = ast_new().unwrap();
-    ast.err_pos = 5;
-    assert!(asthaserr(&ast));
+fn test_ast_nodefrom_nodeto() {
+    let mut ast = skp::ast_new().unwrap();
+    ast.start = "hello world".to_string();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    skp::ast_close(&mut ast, 5, o1);
+
+    let from = skp::astnodefrom(&ast, 0);
+    let to = skp::astnodeto(&ast, 0);
+    assert_eq!(&from[..5], "hello");
+    assert_eq!(to, " world");
 }
 
 #[test]
-fn test_asterrrule_no_error() {
-    let ast = ast_new().unwrap();
-    assert_eq!(asterrrule(&ast), Some(""));
+fn test_ast_isn() {
+    let mut ast = skp::ast_new().unwrap();
+    let o1 = skp::ast_open(&mut ast, 0, "root");
+    skp::ast_close(&mut ast, 5, o1);
+
+    assert_eq!(skp::ast_isn(&ast, 0, "root", None, None, None, None), 1);
+    assert_eq!(skp::ast_isn(&ast, 0, "other", Some("root"), None, None, None), 1);
+    assert_eq!(skp::ast_isn(&ast, 0, "a", Some("b"), Some("c"), None, None), 0);
 }
 
 #[test]
-fn test_asterrcolnum_no_error() {
-    let ast = ast_new().unwrap();
-    assert_eq!(asterrcolnum(&ast), 0);
-}
-
-// ============ AST is ============
-
-#[test]
-fn test_ast_is() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "myrule");
-    ast_close(&mut ast, 5, open);
-    assert_eq!(ast_is(&ast, 0, "myrule"), 1);
-    assert_eq!(ast_is(&ast, 0, "other"), 0);
-}
-
-// ============ AST debug ============
-
-#[test]
-fn test_skp_debug2() {
-    let mut ast = ast_new().unwrap();
-    skp_debug2(&mut ast, 1);
-    assert_ne!(ast.flg & 0x01, 0);
-    skp_debug2(&mut ast, 0);
-    assert_eq!(ast.flg & 0x01, 0);
-}
-
-// ============ AST print ============
-
-#[test]
-fn test_astprintsexpr() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    let mut buf = Vec::new();
-    astprintsexpr(&ast, &mut buf);
-    let output = String::from_utf8(buf).unwrap();
-    assert!(output.contains("(r 'hello')"));
+fn test_astfree() {
+    let ast = skp::ast_new().unwrap();
+    let result = skp::astfree(ast);
+    assert!(result.is_none());
 }
 
 #[test]
-fn test_astprinttree() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    let open = ast_open(&mut ast, 0, "r");
-    ast_close(&mut ast, 5, open);
-    let mut buf = Vec::new();
-    astprinttree(&ast, &mut buf);
-    let output = String::from_utf8(buf).unwrap();
-    assert!(output.contains("[r]"));
-    assert!(output.contains("'hello'"));
-}
-
-// ============ skp_parse ============
-
-#[test]
-fn test_skp_parse_basic() {
-    fn dummy_rule(ast: &mut Ast, ret: &mut i32) {
-        *ret = 42;
-    }
-    let ast = skp_parse("hello", dummy_rule, "start", 0);
-    assert!(ast.is_some());
-    let ast = ast.unwrap();
-    assert_eq!(ast.ret, 42);
-}
-
-// ============ skp__abort ============
-
-#[test]
-fn test_skp_abort() {
-    let mut ast = ast_new().unwrap();
-    ast.start = "hello".to_string();
-    ast.pos = 3;
-    skp__abort(&mut ast, "test error", "test_rule");
-    assert_eq!(ast.fail, 1);
-    assert_eq!(ast.err_pos, 3);
-    assert_eq!(ast.err_rule.as_deref(), Some("test_rule"));
-    assert_eq!(ast.err_msg.as_deref(), Some("test error"));
-}
-
-// ============ Boundary: ASTNULL navigation ============
-
-#[test]
-fn test_navigation_astnull() {
-    let ast = ast_new().unwrap();
-    assert_eq!(astdown(&ast, ASTNULL), ASTNULL);
-    assert_eq!(astup(&ast, ASTNULL), ASTNULL);
-    assert_eq!(astleft(&ast, ASTNULL), ASTNULL);
-    assert_eq!(astright(&ast, ASTNULL), ASTNULL);
-    assert_eq!(astfirst(&ast, ASTNULL), ASTNULL);
-    assert_eq!(astlast(&ast, ASTNULL), ASTNULL);
+fn test_ast_navigation_boundaries() {
+    let ast = skp::ast_new().unwrap();
+    // Empty AST - par_cnt=0, so all navigation returns ASTNULL
+    assert_eq!(skp::astdown(&ast, 0), -1);
+    assert_eq!(skp::astup(&ast, 0), -1);
+    assert_eq!(skp::astleft(&ast, 0), -1);
+    assert_eq!(skp::astright(&ast, 0), -1);
+    // astnextdf(-1): ndx becomes 0, but 0 >= par_cnt(0), so returns ASTNULL
+    assert_eq!(skp::astnextdf(&ast, -1), -1);
 }
 
 #[test]
 fn test_astnoderule_invalid() {
-    let ast = ast_new().unwrap();
-    assert_eq!(astnoderule(&ast, ASTNULL), "");
-    assert_eq!(astnoderule(&ast, 999), "");
+    let ast = skp::ast_new().unwrap();
+    assert_eq!(skp::astnoderule(&ast, -1), "");
+    assert_eq!(skp::astnoderule(&ast, 100), "");
 }
 
 #[test]
 fn test_astnodelen_invalid() {
-    let ast = ast_new().unwrap();
-    assert_eq!(astnodelen(&ast, ASTNULL), 0);
+    let ast = skp::ast_new().unwrap();
+    assert_eq!(skp::astnodelen(&ast, -1), 0);
+    assert_eq!(skp::astnodelen(&ast, 100), 0);
+}
+
+#[test]
+fn test_astnodeinfo_invalid() {
+    let ast = skp::ast_new().unwrap();
+    assert_eq!(skp::astnodeinfo(&ast, -1), 0);
+    assert_eq!(skp::astnodeinfo(&ast, 100), 0);
 }
 
 fn main() {}

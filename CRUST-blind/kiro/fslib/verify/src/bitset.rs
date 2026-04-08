@@ -29,20 +29,30 @@ impl BitSet {
         (self.words[bindex(b)] & (1 << boffset(b))) != 0
     }
     pub fn clear_all(&mut self) {
-        for w in self.words.iter_mut() { *w = 0; }
+        for w in self.words.iter_mut() {
+            *w = 0;
+        }
     }
     pub fn set_all(&mut self) {
-        for w in self.words.iter_mut() { *w = !0; }
+        for w in self.words.iter_mut() {
+            *w = !0;
+        }
     }
     pub fn union(&mut self, other: &BitSet) {
         assert_eq!(self.words.len(), other.words.len());
-        for (a, b) in self.words.iter_mut().zip(other.words.iter()) { *a |= *b; }
+        for (a, b) in self.words.iter_mut().zip(other.words.iter()) {
+            *a |= *b;
+        }
     }
     pub fn intersect(&mut self, other: &BitSet) {
         assert_eq!(self.words.len(), other.words.len());
-        for (a, b) in self.words.iter_mut().zip(other.words.iter()) { *a &= *b; }
+        for (a, b) in self.words.iter_mut().zip(other.words.iter()) {
+            *a &= *b;
+        }
     }
     pub fn toggle_all(&self) -> Self {
-        BitSet { words: self.words.iter().map(|w| w ^ !0).collect() }
+        BitSet {
+            words: self.words.iter().map(|w| !w).collect(),
+        }
     }
 }

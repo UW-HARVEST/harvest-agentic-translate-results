@@ -1,35 +1,8 @@
-use emlang::data::{Data, DataType, DataValue};
+use emlang::data::{Data, DataValue};
 use emlang::em::{Em, EmType, Program, DEFAULT_PROGRAM_CAP, DATA_STDOUT, DATA_STDERR};
 
 #[test]
-fn test_em_new() {
-    let e = Em::new(EmType::Push);
-    assert_eq!(e.em_type, EmType::Push);
-    assert_eq!(e.row, 0);
-    assert_eq!(e.col, 0);
-    assert_eq!(e.r#ref, 0);
-    assert!(!e.ran);
-    assert_eq!(e.path, "");
-    // Default data is Int(0)
-    assert_eq!(e.data.dtype, DataType::Int);
-}
-
-#[test]
-fn test_em_new_with_data_int() {
-    let e = Em::new_with_data(EmType::Push, Data::new_int(42));
-    assert_eq!(e.em_type, EmType::Push);
-    assert!(matches!(e.data.value, DataValue::Int(42)));
-}
-
-#[test]
-fn test_em_new_with_data_str() {
-    let e = Em::new_with_data(EmType::Push, Data::new_str("hello".to_string()));
-    assert_eq!(e.em_type, EmType::Push);
-    assert_eq!(e.data.dtype, DataType::Str);
-}
-
-#[test]
-fn test_em_types_display() {
+fn test_em_type_display() {
     assert_eq!(format!("{}", EmType::Push), "push");
     assert_eq!(format!("{}", EmType::Pop), "pop");
     assert_eq!(format!("{}", EmType::Add), "add");
@@ -52,39 +25,61 @@ fn test_em_types_display() {
 }
 
 #[test]
+fn test_em_new() {
+    let e = Em::new(EmType::Pop);
+    assert_eq!(e.em_type, EmType::Pop);
+    assert_eq!(e.row, 0);
+    assert_eq!(e.col, 0);
+    assert_eq!(e.r#ref, 0);
+    assert_eq!(e.ran, false);
+    assert_eq!(e.path, "");
+}
+
+#[test]
+fn test_em_new_with_data() {
+    let e = Em::new_with_data(EmType::Push, Data::new_int(42));
+    assert_eq!(e.em_type, EmType::Push);
+    match e.data.value { DataValue::Int(v) => assert_eq!(v, 42), _ => panic!() }
+    assert_eq!(e.row, 0);
+    assert_eq!(e.col, 0);
+    assert_eq!(e.r#ref, 0);
+    assert_eq!(e.ran, false);
+}
+
+#[test]
 fn test_program_new() {
-    let p = Program::new(DEFAULT_PROGRAM_CAP);
+    let p = Program::new(4);
+    assert_eq!(p.cap, 4);
     assert_eq!(p.size, 0);
-    assert_eq!(p.cap, DEFAULT_PROGRAM_CAP);
 }
 
 #[test]
 fn test_program_push() {
     let mut p = Program::new(4);
-    p.push(Em::new(EmType::Push));
-    assert_eq!(p.size, 1);
     p.push(Em::new(EmType::Pop));
+    p.push(Em::new(EmType::Add));
     assert_eq!(p.size, 2);
-    assert_eq!(p.ems[0].em_type, EmType::Push);
-    assert_eq!(p.ems[1].em_type, EmType::Pop);
+    assert_eq!(p.ems[0].em_type, EmType::Pop);
+    assert_eq!(p.ems[1].em_type, EmType::Add);
 }
 
 #[test]
-fn test_data_stdout_stderr_constants() {
+fn test_constants() {
+    assert_eq!(DEFAULT_PROGRAM_CAP, 256);
     assert_eq!(DATA_STDOUT, 1);
     assert_eq!(DATA_STDERR, 2);
 }
 
 #[test]
 fn test_em_display_push_int() {
-    let mut e = Em::new_with_data(EmType::Push, Data::new_int(5));
+    let mut e = Em::new_with_data(EmType::Push, Data::new_int(42));
     e.path = "test.eml".to_string();
     e.row = 1;
-    e.col = 2;
+    e.col = 1;
     let s = format!("{}", e);
-    assert!(s.contains("push"));
-    assert!(s.contains("5"));
-    assert!(s.contains("test.eml"));
+    assert!(s.contains("<push"));
+    assert!(s.contains("42"));
+    assert!(s.contains("test.eml:1:1>"));
 }
 
 #[test]

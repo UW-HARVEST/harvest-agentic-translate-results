@@ -19,22 +19,25 @@ pub mod dht {
             assert!(new_upper_bound > new_lower_bound);
 
             let new_size = (new_upper_bound - new_lower_bound) as usize;
-            let mut new_table: Vec<Option<T>> = (0..new_size).map(|_| None).collect();
+            let mut new_hash_table: Vec<Option<T>> = Vec::with_capacity(new_size);
+            for _ in 0..new_size {
+                new_hash_table.push(None);
+            }
 
             if self.dht_is_initialised() {
-                let old_lb = self.lower_bound as u32;
-                let old_table: Vec<Option<T>> = self.hash_table.drain(..).collect();
-                for (i, item) in old_table.into_iter().enumerate() {
-                    if item.is_some() {
-                        let abs_pos = i as u32 + old_lb;
-                        if migrate && abs_pos >= new_lower_bound && abs_pos < new_upper_bound {
-                            new_table[(abs_pos - new_lower_bound) as usize] = item;
+                let old_size = self.dht_get_size() as usize;
+                for i in 0..old_size {
+                    if self.hash_table[i].is_some() {
+                        let absolute_position = i as u32 + self.lower_bound as u32;
+                        if migrate && absolute_position >= new_lower_bound && absolute_position < new_upper_bound {
+                            let idx = (absolute_position - new_lower_bound) as usize;
+                            new_hash_table[idx] = self.hash_table[i].take();
                         }
                     }
                 }
             }
 
-            self.hash_table = new_table;
+            self.hash_table = new_hash_table;
             self.lower_bound = new_lower_bound as i32;
             self.higher_bound = new_upper_bound as i32;
             true

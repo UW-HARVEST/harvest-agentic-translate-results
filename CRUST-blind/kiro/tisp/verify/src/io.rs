@@ -1,37 +1,36 @@
 use crate::tisp::*;
 use std::io::{Read, Write};
 
-fn tsp_arg_check(args: &Val, name: &str, n: i32) {
-    let len = tsp_lstlen(args);
-    if n > -1 && len != n {
+fn tsp_arg_num_check(args: &Val, name: &str, nargs: i32) -> bool {
+    if nargs > -1 && tsp_lstlen(args) != nargs {
         eprintln!("; tisp: error: {}: expected {} argument{}, received {}",
-            name, n, if n > 1 { "s" } else { "" }, len);
-    }
+            name, nargs, if nargs > 1 { "s" } else { "" }, tsp_lstlen(args));
+        false
+    } else { true }
 }
-fn tsp_arg_min_check(args: &Val, name: &str, n: i32) {
-    let len = tsp_lstlen(args);
-    if len < n {
+
+fn tsp_arg_min_check(args: &Val, name: &str, nargs: i32) -> bool {
+    if tsp_lstlen(args) < nargs {
         eprintln!("; tisp: error: {}: expected at least {} argument{}, received {}",
-            name, n, if n > 1 { "s" } else { "" }, len);
-    }
+            name, nargs, if nargs > 1 { "s" } else { "" }, tsp_lstlen(args));
+        false
+    } else { true }
 }
-fn tsp_arg_max_check(args: &Val, name: &str, n: i32) {
-    let len = tsp_lstlen(args);
-    if len > n {
+
+fn tsp_arg_max_check(args: &Val, name: &str, nargs: i32) -> bool {
+    if tsp_lstlen(args) > nargs {
         eprintln!("; tisp: error: {}: expected at no more than {} argument{}, received {}",
-            name, n, if n > 1 { "s" } else { "" }, len);
-    }
+            name, nargs, if nargs > 1 { "s" } else { "" }, tsp_lstlen(args));
+        false
+    } else { true }
 }
-fn tsp_type_check(v: &Val, name: &str, type_mask: u32) {
-    if (v.t as u32) & type_mask == 0 {
+
+fn tsp_arg_type_check(arg: &Val, name: &str, type_bits: u32) -> bool {
+    if (arg.t as u32) & type_bits == 0 {
         eprintln!("; tisp: error: {}: expected {}, received {}",
-            name, tsp_type_str_mask(type_mask), tsp_type_str(v.t));
-    }
-}
-fn tsp_type_str_mask(t: u32) -> &'static str {
-    if t == TspType::TspStr as u32 { return "Str"; }
-    if t == TspType::TspSym as u32 { return "Sym"; }
-    "Invalid"
+            name, tsp_type_str_bits(type_bits), tsp_type_str(arg.t));
+        false
+    } else { true }
 }
 
 pub fn count_parens(s: &str, len: i32) -> i32 {
@@ -56,7 +55,7 @@ pub fn read_file(fname: &str) -> String {
     if fname.is_empty() {
         // Read from stdin
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf).unwrap_or(0);
+        let _ = std::io::stdin().read_to_string(&mut buf);
         return buf;
     }
     match std::fs::read_to_string(fname) {
@@ -69,134 +68,157 @@ pub fn read_file(fname: &str) -> String {
 }
 
 pub fn prim_write(st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_min_check(&args, "write", 2);
-    let first = car_ref(&args);
-    let second = car_ref(cdr_ref(&args));
+    if !tsp_arg_min_check(&args, "write", 2) { return mk_err(); }
+
+    let first = car(&args);
+    let second = car(cdr(&args));
     let append = !nilp(second);
 
     enum Target { Stdout, Stderr, File(String, bool) }
+
     let target = if first.t == TspType::TspSym {
-        let s = sym_str(first);
+        let s = vs(first);
         if s == "stdout" { Target::Stdout }
         else if s == "stderr" { Target::Stderr }
         else {
             eprintln!("; tisp: error: write: expected file name as string, or symbol stdout/stderr");
-            return mk_val(TspType::TspNone);
+            return mk_err();
         }
     } else if first.t == TspType::TspStr {
-        Target::File(sym_str(first).to_string(), append)
+        Target::File(vs(first).to_string(), append)
     } else {
         eprintln!("; tisp: error: write: expected file name as string, received {}", tsp_type_str(first.t));
-        return mk_val(TspType::TspNone);
+        return mk_err();
     };
 
-    // Collect output
-    let mut output = Vec::new();
-    let mut cur = cdr_ref(cdr_ref(&args));
-    while !nilp(cur) {
-        tisp_print(&mut output, car_ref(cur));
-        cur = cdr_ref(cur);
-    }
-
+    // Get args after first two
+    let mut cur = cdr(cdr(&args));
     match target {
         Target::Stdout => {
-            std::io::stdout().write_all(&output).ok();
-            std::io::stdout().flush().ok();
+            let mut out = std::io::stdout();
+            while !nilp(cur) {
+                tisp_print(&mut out, car(cur));
+                cur = cdr(cur);
+            }
+            let _ = out.flush();
         }
         Target::Stderr => {
-            std::io::stderr().write_all(&output).ok();
-            std::io::stderr().flush().ok();
+            let mut out = std::io::stderr();
+            while !nilp(cur) {
+                tisp_print(&mut out, car(cur));
+                cur = cdr(cur);
+            }
+            let _ = out.flush();
         }
-        Target::File(path, append) => {
+        Target::File(fname, append) => {
             let file = if append {
-                std::fs::OpenOptions::new().append(true).create(true).open(&path)
+                std::fs::OpenOptions::new().append(true).create(true).open(&fname)
             } else {
-                std::fs::File::create(&path)
+                std::fs::File::create(&fname)
             };
             match file {
-                Ok(mut f) => { f.write_all(&output).ok(); }
+                Ok(mut f) => {
+                    while !nilp(cur) {
+                        tisp_print(&mut f, car(cur));
+                        cur = cdr(cur);
+                    }
+                }
                 Err(_) => {
-                    eprintln!("; tisp: error: write: could not load file '{}'", path);
-                    return mk_val(TspType::TspNone);
+                    eprintln!("; tisp: error: write: could not load file '{}'", fname);
+                    return mk_err();
                 }
             }
         }
     }
-    val_clone(&st.none)
+    clone_val(&st.none)
 }
 
 pub fn prim_read(st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_max_check(&args, "read", 1);
+    if !tsp_arg_max_check(&args, "read", 1) { return mk_err(); }
     let fname = if tsp_lstlen(&args) == 1 {
-        tsp_type_check(car_ref(&args), "read", TspType::TspStr as u32);
-        sym_str(car_ref(&args)).to_string()
+        if !tsp_arg_type_check(car(&args), "read", TspType::TspStr as u32) { return mk_err(); }
+        vs(car(&args)).to_string()
     } else {
         String::new()
     };
     let file = read_file(&fname);
     if file.is_empty() && !fname.is_empty() {
-        return val_clone(&st.nil);
+        return clone_val(&st.nil);
     }
-    mk_str(st, &file).unwrap()
+    mk_str(st, &file).unwrap_or_else(|| mk_err())
 }
 
 pub fn prim_parse(st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "parse", 1);
-    let expr = car_ref(&args);
+    if !tsp_arg_num_check(&args, "parse", 1) { return mk_err(); }
+    let expr = car(&args);
     if nilp(expr) {
-        return mk_sym(st, "quit").unwrap();
+        return mk_sym_val(st, "quit");
     }
-    tsp_type_check(expr, "parse", TspType::TspStr as u32);
+    if !tsp_arg_type_check(expr, "parse", TspType::TspStr as u32) { return mk_err(); }
+
     let old_file = st.file.clone();
     let old_filec = st.filec;
-    st.file = sym_str(expr).to_string();
+    st.file = vs(expr).to_string();
     st.filec = 0;
 
-    let do_sym = mk_sym(st, "do").unwrap();
-    let mut items: Vec<Val> = vec![do_sym];
+    let do_sym = mk_sym_val(st, "do");
+    let nil = clone_val(&st.nil);
+    let mut elements: Vec<Val> = vec![do_sym];
+
     while st.filec < st.file.len() {
-        if let Some(e) = tisp_read_line(st, 0) {
-            items.push(e);
-        } else {
-            break;
+        if let Some(c) = st.file.as_bytes().get(st.filec) {
+            if *c == 0 { break; }
+        }
+        match tisp_read_line(st, 0) {
+            Some(e) => elements.push(e),
+            None => break,
         }
     }
+
     st.file = old_file;
     st.filec = old_filec;
 
-    if items.len() == 2 {
-        // Only 1 expression parsed, return just it
-        return items.pop().unwrap();
+    if elements.len() == 2 {
+        // Only 1 expression parsed (plus "do"), return just it
+        return elements.pop().unwrap();
     }
-    // Build list
-    let mut result = mk_nil_val();
-    for item in items.into_iter().rev() {
-        result = mk_pair_val(item, result);
+
+    // Build (do expr1 expr2 ...)
+    let mut result = nil;
+    for elem in elements.into_iter().rev() {
+        result = mk_pair(elem, result).unwrap();
     }
     result
 }
 
 pub fn prim_load(st: &mut Tsp, env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "load", 1);
-    let tib = car_ref(&args);
-    tsp_type_check(tib, "load", TspType::TspStr as u32);
-    let name = sym_str(tib).to_string();
+    if !tsp_arg_num_check(&args, "load", 1) { return mk_err(); }
+    let tib = car(&args);
+    if !tsp_arg_type_check(tib, "load", TspType::TspStr as u32) { return mk_err(); }
+    let tib_name = vs(tib).to_string();
 
     let paths = ["/usr/local/lib/tisp/pkgs/", "/usr/lib/tisp/pkgs/", "./"];
     for path in &paths {
-        let fname = format!("{}{}.tsp", path, name);
+        let fname = format!("{}{}.tsp", path, tib_name);
         if std::path::Path::new(&fname).exists() {
             let file = read_file(&fname);
-            let file_sym = mk_sym(st, &file).unwrap();
-            let parse_args = mk_pair_val(file_sym, mk_nil_val());
+            if file.is_empty() { continue; }
+            let file_sym = mk_sym_val(st, &file);
+            let nil = clone_val(&st.nil);
+            let parse_args = mk_pair(file_sym, nil).unwrap();
             let body = prim_parse(st, env, parse_args);
-            tisp_eval_body(st, env, body);
-            return val_clone(&st.none);
+            if is_err_val(&body) { return body; }
+            match tisp_eval_body(st, env, body) {
+                Some(_) => {}
+                None => {}
+            }
+            return clone_val(&st.none);
         }
     }
 
-    eprintln!("; tisp: error: load: could not load '{}'", name);
-    mk_val(TspType::TspNone)
+    // Dynamic library loading not supported in pure Rust
+    eprintln!("; tisp: error: load: could not load '{}'", tib_name);
+    mk_err()
 }
 
 pub fn tib_env_io(st: &mut Tsp) {

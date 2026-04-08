@@ -1,71 +1,85 @@
 use kairoCompiler::compiler::{
-    CompileProcess, Pos, CompileProcessInputFile,
+    CompileProcess, compile_file, compile_process_create,
     COMPILER_FILE_COMPILED_OK, COMPILER_FAILED_WITH_ERRORS,
-    LEXICAL_ANALYSIS_ALL_OK, LEXICAL_ANALYSIS_INPUT_ERROR,
-    TOKEN_TYPE_IDENTIFIER, TOKEN_TYPE_KEYWORD, TOKEN_TYPE_OPERATOR,
-    TOKEN_TYPE_SYMBOL, TOKEN_TYPE_NUMBER, TOKEN_TYPE_STRING,
-    TOKEN_TYPE_COMMENT, TOKEN_TYPE_NEWLINE,
-    NUMBER_TYPE_NORMAL, NUMBER_TYPE_LONG, NUMBER_TYPE_FLOAT, NUMBER_TYPE_DOUBLE,
-    NODE_TYPE_EXPRESSION, NODE_TYPE_NUMBER, NODE_TYPE_IDENTIFIER, NODE_TYPE_STRING,
-    NODE_TYPE_BLANK,
-    PARSE_ALL_OK, PARSE_GENERAL_ERROR,
+    TOKEN_TYPE_NUMBER, TOKEN_TYPE_IDENTIFIER,
+    tokens_build_for_string, token_is_keyword, token_is_symbol,
+    token_is_nl_or_comment_or_newline_separator,
+    Token, TOKEN_TYPE_KEYWORD, TOKEN_TYPE_SYMBOL, TOKEN_TYPE_NEWLINE,
+    PARSE_ALL_OK,
 };
+use std::io::Write;
 
-#[test]
-fn test_compiler_constants_token_types() {
-    assert_eq!(TOKEN_TYPE_IDENTIFIER, 0);
-    assert_eq!(TOKEN_TYPE_KEYWORD, 1);
-    assert_eq!(TOKEN_TYPE_OPERATOR, 2);
-    assert_eq!(TOKEN_TYPE_SYMBOL, 3);
-    assert_eq!(TOKEN_TYPE_NUMBER, 4);
-    assert_eq!(TOKEN_TYPE_STRING, 5);
-    assert_eq!(TOKEN_TYPE_COMMENT, 6);
-    assert_eq!(TOKEN_TYPE_NEWLINE, 7);
+fn create_temp_file(name: &str, content: &str) -> String {
+    let path = format!("/tmp/crust_test_compiler_{}", name);
+    let mut f = std::fs::File::create(&path).unwrap();
+    f.write_all(content.as_bytes()).unwrap();
+    path
 }
 
 #[test]
-fn test_compiler_constants_number_types() {
-    assert_eq!(NUMBER_TYPE_NORMAL, 0);
-    assert_eq!(NUMBER_TYPE_LONG, 1);
-    assert_eq!(NUMBER_TYPE_FLOAT, 2);
-    assert_eq!(NUMBER_TYPE_DOUBLE, 3);
+fn test_compile_file_valid() {
+    let path = create_temp_file("valid.txt", "5467 abcd $");
+    let out_path = create_temp_file("valid_out.txt", "");
+    let result = compile_file(&path, &out_path, 0);
+    assert_eq!(result, COMPILER_FILE_COMPILED_OK);
 }
 
 #[test]
-fn test_compiler_constants_node_types() {
-    assert_eq!(NODE_TYPE_EXPRESSION, 0);
-    assert_eq!(NODE_TYPE_NUMBER, 2);
-    assert_eq!(NODE_TYPE_IDENTIFIER, 3);
-    assert_eq!(NODE_TYPE_STRING, 4);
-    assert_eq!(NODE_TYPE_BLANK, 28);
+fn test_compile_file_invalid() {
+    let result = compile_file("/nonexistent/file.txt", "/tmp/out.txt", 0);
+    assert_eq!(result, COMPILER_FAILED_WITH_ERRORS);
 }
 
 #[test]
-fn test_compiler_constants_results() {
-    assert_eq!(COMPILER_FILE_COMPILED_OK, 0);
-    assert_eq!(COMPILER_FAILED_WITH_ERRORS, 1);
-    assert_eq!(LEXICAL_ANALYSIS_ALL_OK, 0);
-    assert_eq!(LEXICAL_ANALYSIS_INPUT_ERROR, 1);
-    assert_eq!(PARSE_ALL_OK, 0);
-    assert_eq!(PARSE_GENERAL_ERROR, 1);
+fn test_compile_process_create_fn() {
+    let path = create_temp_file("cp.txt", "test$");
+    let cp = compile_process_create(&path, "", 0);
+    assert!(cp.cfile.fp.is_some());
 }
 
 #[test]
-fn test_compile_process_default() {
+fn test_compiler_tokens_build_for_string() {
     let cp = CompileProcess::default();
-    assert_eq!(cp.flags, 0);
-    assert_eq!(cp.pos.line, 0);
-    assert_eq!(cp.pos.col, 0);
+    let lp = tokens_build_for_string(cp, "42$");
+    assert!(lp.token_vec.is_some());
 }
 
 #[test]
-fn test_token_default() {
-    let t = kairoCompiler::compiler::Token::default();
-    assert_eq!(t.r#type, 0);
-    assert_eq!(t.flags, 0);
-    assert!(!t.whitespace);
-    assert!(t.sval.is_none());
-    assert!(t.cval.is_none());
+fn test_compiler_token_is_keyword() {
+    // The compiler module's token_is_keyword is the "correct" version (uses ==)
+    let t = Token {
+        r#type: TOKEN_TYPE_KEYWORD,
+        sval: Some("int".to_string()),
+        ..Default::default()
+    };
+    assert!(token_is_keyword(&t, "int"));
+}
+
+#[test]
+fn test_compiler_token_is_keyword_wrong() {
+    let t = Token {
+        r#type: TOKEN_TYPE_NUMBER,
+        sval: Some("int".to_string()),
+        ..Default::default()
+    };
+    assert!(!token_is_keyword(&t, "int"));
+}
+
+#[test]
+fn test_compiler_token_is_symbol() {
+    let t = Token {
+        r#type: TOKEN_TYPE_SYMBOL,
+        cval: Some('{'),
+        ..Default::default()
+    };
+    assert!(token_is_symbol(&t, '{'));
+    assert!(!token_is_symbol(&t, '}'));
+}
+
+#[test]
+fn test_compiler_token_is_nl() {
+    let t = Token { r#type: TOKEN_TYPE_NEWLINE, ..Default::default() };
+    assert!(token_is_nl_or_comment_or_newline_separator(&t));
 }
 
 fn main() {}

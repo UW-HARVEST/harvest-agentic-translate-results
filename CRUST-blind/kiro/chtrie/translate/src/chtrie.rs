@@ -19,22 +19,20 @@ pub struct Chtrie {
 }
 impl Chtrie {
     pub fn new(n: usize, m: usize) -> Option<Self> {
-        let n = n.max(1);
-        let m = m.max(1);
+        let n = if n < 1 { 1 } else { n };
+        let m = if m < 1 { 1 } else { m };
         if n > i32::MAX as usize || m > i32::MAX as usize {
             return None;
         }
-        let int_max = i32::MAX as usize;
-        let sz_max = usize::MAX;
-        let limit = int_max.min(sz_max);
-        if limit - (n - 1) < (n - 1) / 3 {
+        let n_minus_1 = n - 1;
+        // overflow check: (n-1) + (n-1)/3 must not overflow
+        let limit = std::cmp::min(i32::MAX as usize, SZ_MAX);
+        if limit - n_minus_1 < n_minus_1 / 3 {
             return None;
         }
-        let ecap = (n - 1) + (n - 1) / 3;
+        let ecap = n_minus_1 + n_minus_1 / 3;
         let mut etab = Vec::with_capacity(ecap);
-        for _ in 0..ecap {
-            etab.push(None);
-        }
+        etab.resize_with(ecap, || None);
         Some(Chtrie {
             etab,
             idxpool: VecDeque::new(),
@@ -46,15 +44,23 @@ impl Chtrie {
         })
     }
     pub fn walk(&mut self, from: i32, sym: i32, creat: i32) -> i32 {
+        if self.ecap == 0 {
+            return -1;
+        }
         let h = ((from as u64) * (self.alphsz as u64) + (sym as u64)) % (self.ecap as u64);
         let h = h as usize;
         // Search existing edges
-        let mut cur = &self.etab[h];
-        while let Some(edge) = cur {
-            if edge.from == from && edge.sym == sym {
-                return edge.to;
+        let mut p = &self.etab[h];
+        loop {
+            match p {
+                Some(edge) => {
+                    if edge.from == from && edge.sym == sym {
+                        return edge.to;
+                    }
+                    p = &edge.next;
+                }
+                None => break,
             }
-            cur = &edge.next;
         }
         if creat != 0 {
             if self.idxpool.is_empty() && self.idxmax >= self.maxn {
@@ -79,44 +85,36 @@ impl Chtrie {
         -1
     }
     pub fn del(&mut self, from: i32, sym: i32) {
-        let h = ((from as u64) * (self.alphsz as u64) + (sym as u64)) % (self.ecap as u64);
-        let h = h as usize;
-        // Check if head matches
-        let head_matches = if let Some(ref edge) = self.etab[h] {
-            edge.from == from && edge.sym == sym
-        } else {
-            false
-        };
-        if head_matches {
-            // C code: etab[h] = NULL when removing head (drops rest of chain)
-            let removed = self.etab[h].take().unwrap();
-            self.idxpool.push_back(removed.to);
+        if self.ecap == 0 {
             return;
         }
-        // Search deeper in the chain
-        let mut cur = &mut self.etab[h];
-        loop {
-            let should_remove_next = if let Some(ref edge) = cur {
-                if let Some(ref next) = edge.next {
-                    next.from == from && next.sym == sym
-                } else {
-                    return;
-                }
+        let h = ((from as u64) * (self.alphsz as u64) + (sym as u64)) % (self.ecap as u64);
+        let h = h as usize;
+        // Walk the linked list to find and remove the matching edge
+        let mut cur = self.etab[h].take();
+        let mut prev: Vec<Box<ChtrieEdge>> = Vec::new();
+        let mut found_to: Option<i32> = None;
+        while let Some(mut edge) = cur {
+            cur = edge.next.take();
+            if found_to.is_none() && edge.from == from && edge.sym == sym {
+                found_to = Some(edge.to);
+                // skip this edge (don't push to prev)
             } else {
-                return;
-            };
-            if should_remove_next {
-                let edge = cur.as_mut().unwrap();
-                let removed = edge.next.take().unwrap();
-                edge.next = removed.next;
-                self.idxpool.push_back(removed.to);
-                return;
+                prev.push(edge);
             }
-            cur = &mut cur.as_mut().unwrap().next;
+        }
+        // Rebuild the chain
+        let mut head: Option<Box<ChtrieEdge>> = None;
+        for mut edge in prev.into_iter().rev() {
+            edge.next = head;
+            head = Some(edge);
+        }
+        self.etab[h] = head;
+        if let Some(to) = found_to {
+            self.idxpool.push_back(to);
         }
     }
     pub fn free(&mut self) {
-        // Rust handles deallocation via Drop; clear data structures
         self.etab.clear();
         self.idxpool.clear();
     }
@@ -125,5 +123,5 @@ pub fn chtrie_walk(trie: &mut Chtrie, from: i32, sym: i32, creat: i32) -> i32 {
     trie.walk(from, sym, creat)
 }
 pub fn chtrie_del(trie: &mut Chtrie, from: i32, sym: i32) {
-    trie.del(from, sym)
+    trie.del(from, sym);
 }

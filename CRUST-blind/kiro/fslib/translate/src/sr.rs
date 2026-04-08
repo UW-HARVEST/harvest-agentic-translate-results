@@ -15,8 +15,8 @@ pub type SrSum = fn(Weight, Weight) -> Weight;
 pub type SrProd = fn(Weight, Weight) -> Weight;
 pub fn sr_get(sr_type: u8) -> Sr {
     match sr_type {
-        1 => SR_REAL,
-        _ => SR_TROPICAL,
+        1 => Sr { sum: real_sum, prod: real_product, zero: 0.0, one: 1.0 },
+        _ => Sr { sum: tropical_sum, prod: tropical_product, zero: f32::MAX, one: 0.0 },
     }
 }
 pub struct Sr {

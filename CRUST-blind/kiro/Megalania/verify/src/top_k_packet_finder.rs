@@ -10,10 +10,11 @@ pub struct TopKEntry {
     pub packet: LZMAPacket,
     pub cost: f32,
 }
+
 /// Finds the top-K best packets for encoding.
 pub struct TopKPacketFinder<'a> {
     pub size: usize,
-    pub entries: Vec<TopKEntry>,
+    pub entries: Box<[TopKEntry]>,
     pub next_packets: Vec<LZMAPacket>,
     pub heap: Box<MaxHeap>,
     pub packet_enumerator: &'a PacketEnumerator<'a>,
@@ -21,30 +22,42 @@ pub struct TopKPacketFinder<'a> {
 
 impl<'a> TopKPacketFinder<'a> {
     pub fn new(size: usize, packet_enumerator: &'a PacketEnumerator<'a>) -> Self {
-        let entries: Vec<TopKEntry> = Vec::with_capacity(size);
-        let heap = Box::new(MaxHeap::new(size, Box::new(|_a: u32, _b: u32| -> i32 { 0 })));
+        let mut entries_vec: Vec<TopKEntry> = Vec::with_capacity(size);
+        for _ in 0..size {
+            entries_vec.push(TopKEntry {
+                packet: LZMAPacket::literal_packet(),
+                cost: 0.0,
+            });
+        }
+        let entries: Box<[TopKEntry]> = entries_vec.into_boxed_slice();
 
-        let mut finder = TopKPacketFinder {
+        // Get a stable pointer to the boxed slice data
+        let entries_data_ptr = entries.as_ptr() as usize;
+
+        let heap = Box::new(MaxHeap::new(
+            size,
+            Box::new(move |a: u32, b: u32| {
+                let entry_a = unsafe { &*(entries_data_ptr as *const TopKEntry).add(a as usize) };
+                let entry_b = unsafe { &*(entries_data_ptr as *const TopKEntry).add(b as usize) };
+                if entry_a.cost < entry_b.cost {
+                    -1
+                } else if entry_a.cost > entry_b.cost {
+                    1
+                } else {
+                    0
+                }
+            }),
+        ));
+
+        TopKPacketFinder {
             size,
             entries,
             next_packets: Vec::new(),
             heap,
             packet_enumerator,
-        };
-
-        // Create the real heap with a comparator that uses a raw pointer to entries
-        let entries_ptr = &finder.entries as *const Vec<TopKEntry>;
-        finder.heap = Box::new(MaxHeap::new(size, Box::new(move |a: u32, b: u32| -> i32 {
-            let entries = unsafe { &*entries_ptr };
-            let cost_a = entries[a as usize].cost;
-            let cost_b = entries[b as usize].cost;
-            if cost_a < cost_b { -1 }
-            else if cost_a > cost_b { 1 }
-            else { 0 }
-        })));
-
-        finder
+        }
     }
+
     pub fn count(&self) -> usize {
         self.heap.count()
     }
@@ -53,62 +66,47 @@ impl<'a> TopKPacketFinder<'a> {
         let count = self.heap.count();
         if count < self.size {
             let pos = count;
-            if pos < self.entries.len() {
-                self.entries[pos] = entry;
-            } else {
-                self.entries.push(entry);
-            }
+            self.entries[pos] = entry;
             self.heap.insert(pos as u32);
             return;
         }
 
         if let Some(maximum) = self.heap.maximum() {
-            if entry.cost <= self.entries[maximum as usize].cost {
-                self.entries[maximum as usize] = entry;
+            let max_idx = maximum as usize;
+            if entry.cost <= self.entries[max_idx].cost {
+                self.entries[max_idx] = entry;
                 self.heap.update_maximum();
             }
         }
     }
 
     pub fn find(&mut self, lzma_state: &LZMAState, next_packets: &mut [LZMAPacket]) {
-        self.next_packets = next_packets.to_vec();
-        self.entries.clear();
-        
-        // Rebuild heap with fresh comparator pointing to current entries
-        let entries_ptr = &self.entries as *const Vec<TopKEntry>;
-        self.heap = Box::new(MaxHeap::new(self.size, Box::new(move |a: u32, b: u32| -> i32 {
-            let entries = unsafe { &*entries_ptr };
-            let cost_a = entries[a as usize].cost;
-            let cost_b = entries[b as usize].cost;
-            if cost_a < cost_b { -1 }
-            else if cost_a > cost_b { 1 }
-            else { 0 }
-        })));
+        self.heap.clear();
 
-        // Collect all candidate packets first
-        let mut candidates: Vec<LZMAPacket> = Vec::new();
-        self.packet_enumerator.for_each(lzma_state, |_state, packet| {
-            candidates.push(packet);
-        });
+        let mut candidates: Vec<(LZMAPacket, f32)> = Vec::new();
 
-        for packet in candidates {
-            if LZMAPacket::cmp(&packet, &self.next_packets[lzma_state.position]) {
-                continue;
+        self.packet_enumerator.for_each(lzma_state, |state, packet| {
+            if LZMAPacket::cmp(&packet, &next_packets[state.position]) {
+                return;
             }
 
-            let mut new_state = lzma_state.clone();
+            let mut new_state = state.clone();
             let mut perplexity: u64 = 0;
             let start_position = new_state.position;
             {
-                let mut enc = PerplexityEncoder { perplexity: &mut perplexity };
+                let mut enc = PerplexityEncoder::new(&mut perplexity);
                 lzma_encode_packet(&mut new_state, &mut enc, packet);
             }
-
             let length = new_state.position - start_position;
-            let entry = TopKEntry { packet, cost: perplexity as f32 / length as f32 };
-            self.insert_entry(entry);
+            let cost = perplexity as f32 / length as f32;
+            candidates.push((packet, cost));
+        });
+
+        for (packet, cost) in candidates {
+            self.insert_entry(TopKEntry { packet, cost });
         }
     }
+
     pub fn pop(&mut self) -> Option<LZMAPacket> {
         let maximum = self.heap.maximum()?;
         let packet = self.entries[maximum as usize].packet;

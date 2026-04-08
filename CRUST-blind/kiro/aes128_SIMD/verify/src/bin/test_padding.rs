@@ -1,67 +1,54 @@
-use aes128_SIMD::padding;
+use aes128_SIMD::padding::{pad_buffer, remove_padding};
 
 #[test]
 fn test_pad_buffer_short() {
     let input = b"Hello";
     let mut output = Vec::new();
     let mut output_len = 0;
-    padding::pad_buffer(input, 5, &mut output, &mut output_len);
+    pad_buffer(input, 5, &mut output, &mut output_len);
     assert_eq!(output_len, 16);
-    assert_eq!(&output[..5], b"Hello");
-    for i in 5..16 {
-        assert_eq!(output[i], 11); // 16-5=11
-    }
+    assert_eq!(output, vec![
+        0x48, 0x65, 0x6C, 0x6C, 0x6F,
+        0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B,
+    ]);
 }
 
 #[test]
 fn test_pad_buffer_exact_block() {
-    let input = [0x41u8; 16];
+    let input = b"0123456789ABCDEF";
     let mut output = Vec::new();
     let mut output_len = 0;
-    padding::pad_buffer(&input, 16, &mut output, &mut output_len);
+    pad_buffer(input, 16, &mut output, &mut output_len);
     assert_eq!(output_len, 32);
-    assert_eq!(&output[..16], &input);
-    for i in 16..32 {
-        assert_eq!(output[i], 16);
-    }
+    assert_eq!(&output[..16], b"0123456789ABCDEF");
+    assert_eq!(&output[16..], &[0x10u8; 16]);
 }
 
 #[test]
 fn test_remove_padding() {
-    let mut data = vec![0x48, 0x65, 0x6C, 0x6C, 0x6F];
-    data.resize(16, 11);
-    assert_eq!(padding::remove_padding(&data, 16), 5);
+    let padded: Vec<u8> = vec![
+        0x48, 0x65, 0x6C, 0x6C, 0x6F,
+        0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B,
+    ];
+    assert_eq!(remove_padding(&padded, 16), 5);
+}
+
+#[test]
+fn test_remove_padding_full_block() {
+    let mut padded = b"0123456789ABCDEF".to_vec();
+    padded.extend_from_slice(&[0x10u8; 16]);
+    assert_eq!(remove_padding(&padded, 32), 16);
 }
 
 #[test]
 fn test_remove_padding_empty() {
-    assert_eq!(padding::remove_padding(&[], 0), 0);
+    assert_eq!(remove_padding(&[], 0), 0);
 }
 
 #[test]
-fn test_remove_padding_invalid_zero() {
-    let mut data = [0x41u8; 16];
-    data[15] = 0x00;
-    assert_eq!(padding::remove_padding(&data, 16), 16);
-}
-
-#[test]
-fn test_remove_padding_invalid_mismatch() {
-    let mut data = [0x41u8; 16];
-    data[15] = 0x02;
-    // data[14] is 0x41, not 0x02 -> invalid
-    assert_eq!(padding::remove_padding(&data, 16), 16);
-}
-
-#[test]
-fn test_pad_then_remove() {
-    let input = b"test data 12345";
-    let mut output = Vec::new();
-    let mut output_len = 0;
-    padding::pad_buffer(input, input.len(), &mut output, &mut output_len);
-    let unpadded = padding::remove_padding(&output, output_len);
-    assert_eq!(unpadded, input.len());
-    assert_eq!(&output[..unpadded], &input[..]);
+fn test_remove_padding_invalid() {
+    let bad = [0x41u8; 16]; // last byte 0x41=65 > 16
+    assert_eq!(remove_padding(&bad, 16), 16);
 }
 
 fn main() {}

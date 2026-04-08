@@ -1,6 +1,5 @@
-use crate::probability::Prob;
-use crate::probability::PROB_INIT_VAL;
 use crate::lzma_packet::LZMAPacketType;
+use crate::probability::{Prob, PROB_INIT_VAL};
 pub const NUM_POS_BITS_MAX: usize = 4;
 pub const LOW_CODER_BITS: usize = 3;
 pub const LOW_CODER_SYMBOLS: usize = 1 << LOW_CODER_BITS;
@@ -63,35 +62,29 @@ pub struct LZMAState<'a> {
 }
 
 fn init_probs() -> LZMAProbabilityModel {
-    let init = PROB_INIT_VAL;
+    let len_model = LengthProbabilityModel {
+        choice_1: PROB_INIT_VAL,
+        choice_2: PROB_INIT_VAL,
+        low_coder: [[PROB_INIT_VAL; LOW_CODER_SYMBOLS]; 1 << NUM_POS_BITS_MAX],
+        mid_coder: [[PROB_INIT_VAL; MID_CODER_SYMBOLS]; 1 << NUM_POS_BITS_MAX],
+        high_coder: [PROB_INIT_VAL; HIGH_CODER_SYMBOLS],
+    };
     LZMAProbabilityModel {
-        lit: [init; LIT_PROBS_SIZE],
-        len: LengthProbabilityModel {
-            choice_1: init,
-            choice_2: init,
-            low_coder: [[init; LOW_CODER_SYMBOLS]; 1 << NUM_POS_BITS_MAX],
-            mid_coder: [[init; MID_CODER_SYMBOLS]; 1 << NUM_POS_BITS_MAX],
-            high_coder: [init; HIGH_CODER_SYMBOLS],
-        },
-        rep_len: LengthProbabilityModel {
-            choice_1: init,
-            choice_2: init,
-            low_coder: [[init; LOW_CODER_SYMBOLS]; 1 << NUM_POS_BITS_MAX],
-            mid_coder: [[init; MID_CODER_SYMBOLS]; 1 << NUM_POS_BITS_MAX],
-            high_coder: [init; HIGH_CODER_SYMBOLS],
-        },
+        lit: [PROB_INIT_VAL; LIT_PROBS_SIZE],
+        len: len_model.clone(),
+        rep_len: len_model,
         dist: DistanceProbabilityModel {
-            pos_slot_coder: [[init; 1 << POS_SLOT_BITS]; NUM_LEN_TO_POS_STATES],
-            align_coder: [init; 1 << ALIGN_BITS],
-            pos_coder: vec![init; 1 + NUM_FULL_DISTANCES - END_POS_MODEL_INDEX],
+            pos_slot_coder: [[PROB_INIT_VAL; 1 << POS_SLOT_BITS]; NUM_LEN_TO_POS_STATES],
+            align_coder: [PROB_INIT_VAL; 1 << ALIGN_BITS],
+            pos_coder: vec![PROB_INIT_VAL; 1 + NUM_FULL_DISTANCES - END_POS_MODEL_INDEX],
         },
         ctx_state: ContextStateProbabilityModel {
-            is_match: [init; NUM_STATES << NUM_POS_BITS_MAX],
-            is_rep: [init; NUM_STATES],
-            is_rep_g0: [init; NUM_STATES],
-            is_rep_g1: [init; NUM_STATES],
-            is_rep_g2: [init; NUM_STATES],
-            is_rep0_long: [init; NUM_STATES << NUM_POS_BITS_MAX],
+            is_match: [PROB_INIT_VAL; NUM_STATES << NUM_POS_BITS_MAX],
+            is_rep: [PROB_INIT_VAL; NUM_STATES],
+            is_rep_g0: [PROB_INIT_VAL; NUM_STATES],
+            is_rep_g1: [PROB_INIT_VAL; NUM_STATES],
+            is_rep_g2: [PROB_INIT_VAL; NUM_STATES],
+            is_rep0_long: [PROB_INIT_VAL; NUM_STATES << NUM_POS_BITS_MAX],
         },
     }
 }
@@ -108,35 +101,57 @@ pub fn lzma_state_init<'a>(
     lzma_state.probs = init_probs();
     lzma_state.position = 0;
 }
+
 pub fn lzma_state_update_ctx_state(lzma_state: &mut LZMAState, packet_type: u32) {
     let s = lzma_state.ctx_state;
     lzma_state.ctx_state = match packet_type {
-        t if t == LZMAPacketType::Literal as u32 => {
+        x if x == LZMAPacketType::Literal as u32 => {
             if s < 4 { 0 } else if s < 10 { s - 3 } else { s - 6 }
         }
-        t if t == LZMAPacketType::Match as u32 => {
+        x if x == LZMAPacketType::Match as u32 => {
             if s < 7 { 7 } else { 10 }
         }
-        t if t == LZMAPacketType::ShortRep as u32 => {
+        x if x == LZMAPacketType::ShortRep as u32 => {
             if s < 7 { 9 } else { 11 }
         }
-        t if t == LZMAPacketType::LongRep as u32 => {
+        x if x == LZMAPacketType::LongRep as u32 => {
             if s < 7 { 8 } else { 11 }
         }
-        _ => s, // INVALID - shouldn't happen
+        _ => s, // INVALID — shouldn't happen
     };
 }
+
 pub fn lzma_state_push_distance(lzma_state: &mut LZMAState, dist: u32) {
     lzma_state.dists[3] = lzma_state.dists[2];
     lzma_state.dists[2] = lzma_state.dists[1];
     lzma_state.dists[1] = lzma_state.dists[0];
     lzma_state.dists[0] = dist;
 }
+
 pub fn lzma_state_promote_distance_at(lzma_state: &mut LZMAState, dist_index: u32) {
     let di = dist_index as usize;
     let dist = lzma_state.dists[di];
-    if di > 2 { lzma_state.dists[3] = lzma_state.dists[2]; }
-    if di > 1 { lzma_state.dists[2] = lzma_state.dists[1]; }
-    if di > 0 { lzma_state.dists[1] = lzma_state.dists[0]; }
+    if di > 2 {
+        lzma_state.dists[3] = lzma_state.dists[2];
+    }
+    if di > 1 {
+        lzma_state.dists[2] = lzma_state.dists[1];
+    }
+    if di > 0 {
+        lzma_state.dists[1] = lzma_state.dists[0];
+    }
     lzma_state.dists[0] = dist;
+}
+
+impl<'a> LZMAState<'a> {
+    pub fn new(data: &'a [u8], properties: LZMAProperties) -> Self {
+        LZMAState {
+            data,
+            properties,
+            ctx_state: 0,
+            dists: [0; 4],
+            probs: init_probs(),
+            position: 0,
+        }
+    }
 }

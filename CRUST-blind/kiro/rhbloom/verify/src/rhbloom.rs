@@ -1,3 +1,8 @@
+// Helper functions for key/dib encoding in u64 buckets
+fn rhbloom_key(x: u64) -> u64 { (x << 8) >> 8 }
+fn rhbloom_dib(x: u64) -> i32 { (x >> 56) as i32 }
+fn rhbloom_setkeydib(key: u64, dib: i32) -> u64 { rhbloom_key(key) | ((dib as u64) << 56) }
+
 // Define the RHBloom struct
 pub struct RHBloom {
     count: usize,
@@ -7,55 +12,26 @@ pub struct RHBloom {
     m: usize,
     bits: Vec<u8>,
 }
-
-fn rhbloom_key(x: u64) -> u64 {
-    (x << 8) >> 8
-}
-
-fn rhbloom_dib(x: u64) -> i32 {
-    (x >> 56) as i32
-}
-
-fn rhbloom_setkeydib(key: u64, dib: i32) -> u64 {
-    rhbloom_key(key) | ((dib as u64) << 56)
-}
-
 // Implement the RHBloom struct
 impl RHBloom {
     pub fn new(n: usize, p: f64) -> Self {
         let n = if n < 16 { 16 } else { n };
-
         let m = (n as f64 * p.ln() / (1.0 / 2.0_f64.powf(2.0_f64.ln())).ln()) as usize;
         let k = ((m as f64 / n as f64) * 2.0_f64.ln()).round() as usize;
-
         let mut m0: usize = 2;
-        while m0 < m {
-            m0 *= 2;
-        }
+        while m0 < m { m0 *= 2; }
         let k0 = (m as f64 / m0 as f64 * k as f64).round() as usize;
-
-        RHBloom {
-            count: 0,
-            nbuckets: 0,
-            buckets: Vec::new(),
-            k: k0,
-            m: m0,
-            bits: Vec::new(),
-        }
+        RHBloom { count: 0, nbuckets: 0, buckets: Vec::new(), k: k0, m: m0, bits: Vec::new() }
     }
     pub fn memsize(&self) -> usize {
         let base = std::mem::size_of::<RHBloom>();
-        base + if !self.bits.is_empty() {
-            self.m >> 3
-        } else {
-            self.nbuckets << 3
-        }
+        base + if !self.bits.is_empty() { self.m >> 3 } else { self.nbuckets << 3 }
     }
     pub fn clear(&mut self) {
         if !self.bits.is_empty() {
-            self.bits.fill(0);
+            self.bits.iter_mut().for_each(|b| *b = 0);
         } else if !self.buckets.is_empty() {
-            self.buckets.fill(0);
+            self.buckets.iter_mut().for_each(|b| *b = 0);
             self.count = 0;
         }
     }
@@ -65,19 +41,19 @@ impl RHBloom {
     pub fn testadd(&mut self, key: u64, add: bool) -> bool {
         let key_init = rhbloom_key(key);
         let mut key = key_init;
+        let mut i = 0usize;
         let mut j = (key as usize) & (self.m - 1);
-        for i in 0..self.k {
+        loop {
             if add {
                 self.bits[j >> 3] |= 1 << (j & 7);
             } else if (self.bits[j >> 3] >> (j & 7)) & 1 == 0 {
                 return false;
             }
-            if i == self.k - 1 {
-                break;
-            }
+            if i == self.k - 1 { break; }
             key = key.wrapping_mul(0x94d049bb133111eb);
             key ^= key >> 31;
             j = (key as usize) & (self.m - 1);
+            i += 1;
         }
         true
     }
@@ -100,7 +76,6 @@ impl RHBloom {
         let nbuckets_old = self.nbuckets;
         let buckets_old = std::mem::take(&mut self.buckets);
         let nbuckets_new = if nbuckets_old == 0 { 16 } else { nbuckets_old * 2 };
-
         if nbuckets_new * 8 >= self.m >> 3 {
             // Upgrade to bloom filter
             self.bits = vec![0u8; self.m >> 3];
@@ -131,9 +106,7 @@ impl RHBloom {
                 return true;
             }
             if self.count == self.nbuckets >> 1 {
-                if !self.grow() {
-                    return false;
-                }
+                if !self.grow() { return false; }
                 continue;
             }
             break;
@@ -142,7 +115,7 @@ impl RHBloom {
     }
     pub fn addkey(&mut self, key: u64) -> bool {
         let mut key = rhbloom_key(key);
-        let mut dib: i32 = 1;
+        let mut dib = 1i32;
         let mut i = (key as usize) & (self.nbuckets - 1);
         loop {
             if rhbloom_dib(self.buckets[i]) == 0 {
@@ -166,35 +139,29 @@ impl RHBloom {
     pub fn test(&self, key: u64) -> bool {
         let key = Self::mix(key);
         if !self.bits.is_empty() {
-            // Inline bloom test (read-only version of testadd)
-            let key_init = rhbloom_key(key);
-            let mut k = key_init;
+            // Need mutable self for testadd, but test is &self.
+            // For test (add=false), we only read bits, so replicate inline.
+            let mut k = rhbloom_key(key);
+            let mut i = 0usize;
             let mut j = (k as usize) & (self.m - 1);
-            for i in 0..self.k {
-                if (self.bits[j >> 3] >> (j & 7)) & 1 == 0 {
-                    return false;
-                }
-                if i == self.k - 1 {
-                    break;
-                }
+            loop {
+                if (self.bits[j >> 3] >> (j & 7)) & 1 == 0 { return false; }
+                if i == self.k - 1 { break; }
                 k = k.wrapping_mul(0x94d049bb133111eb);
                 k ^= k >> 31;
                 j = (k as usize) & (self.m - 1);
+                i += 1;
             }
             return true;
         }
-        if self.buckets.is_empty() {
-            return false;
-        }
+        if self.buckets.is_empty() { return false; }
         let key = rhbloom_key(key);
-        let mut dib: i32 = 1;
+        let mut dib = 1i32;
         let mut i = (key as usize) & (self.nbuckets - 1);
         loop {
             let yes = rhbloom_key(self.buckets[i]) == key;
             let no = rhbloom_dib(self.buckets[i]) < dib;
-            if yes || no {
-                return yes;
-            }
+            if yes || no { return yes; }
             dib += 1;
             i = (i + 1) & (self.nbuckets - 1);
         }

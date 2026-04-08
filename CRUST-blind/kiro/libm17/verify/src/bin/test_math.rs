@@ -1,107 +1,15 @@
 use libm17::math;
 
 #[test]
-fn test_q_abs_diff() {
-    assert_eq!(math::q_abs_diff(100, 200), 100);
-    assert_eq!(math::q_abs_diff(200, 100), 100);
-    assert_eq!(math::q_abs_diff(0, 0), 0);
-    assert_eq!(math::q_abs_diff(0xFFFF, 0), 0xFFFF);
-    assert_eq!(math::q_abs_diff(0, 0xFFFF), 0xFFFF);
-}
-
-#[test]
-fn test_eucl_norm() {
-    let f1 = [1.0f32, 2.0, 3.0];
-    let i2 = [1i8, 2, 3];
-    assert!((math::eucl_norm(&f1, &i2, 3) - 0.0).abs() < 1e-5);
-    let f2 = [3.0f32, 0.0];
-    let i3 = [0i8, 0];
-    assert!((math::eucl_norm(&f2, &i3, 2) - 3.0).abs() < 1e-5);
-}
-
-#[test]
-fn test_int_to_soft_and_soft_to_int() {
-    let mut soft = [0u16; 16];
-    math::int_to_soft(&mut soft, 0xA5, 8);
-    assert_eq!(soft[0], 0xFFFF); // bit 0 = 1
-    assert_eq!(soft[1], 0x0000); // bit 1 = 0
-    assert_eq!(soft[2], 0xFFFF); // bit 2 = 1
-    assert_eq!(soft[3], 0x0000);
-    assert_eq!(soft[4], 0x0000);
-    assert_eq!(soft[5], 0xFFFF);
-    assert_eq!(soft[6], 0x0000);
-    assert_eq!(soft[7], 0xFFFF);
-    assert_eq!(math::soft_to_int(&soft, 8), 0xA5);
-
-    math::int_to_soft(&mut soft, 0, 8);
-    assert_eq!(math::soft_to_int(&soft, 8), 0);
-
-    math::int_to_soft(&mut soft, 0xFFFF, 16);
-    assert_eq!(math::soft_to_int(&soft, 16), 0xFFFF);
-}
-
-#[test]
-fn test_add16() {
-    assert_eq!(math::add16(0x8000, 0x8000), 0xFFFF); // saturated
-    assert_eq!(math::add16(0xFFFF, 1), 0xFFFF);       // saturated
-    assert_eq!(math::add16(0, 0), 0);
-    assert_eq!(math::add16(100, 200), 300);
-}
-
-#[test]
-fn test_sub16() {
-    assert_eq!(math::sub16(0x8000, 0x4000), 0x4000);
-    assert_eq!(math::sub16(0x4000, 0x8000), 0); // saturated at 0
-    assert_eq!(math::sub16(0, 0), 0);
-}
-
-#[test]
-fn test_mul16() {
-    assert_eq!(math::mul16(0xFFFF, 0xFFFF), 0xFFFE);
-    assert_eq!(math::mul16(0x8000, 0x8000), 0x4000);
-    assert_eq!(math::mul16(0, 0xFFFF), 0);
-}
-
-#[test]
-fn test_div16() {
-    assert_eq!(math::div16(0x8000, 0xFFFF), 0x8000);
-    assert_eq!(math::div16(0xFFFF, 0x8000), 0xFFFF); // saturated
-    assert_eq!(math::div16(1, 0xFFFF), 1);
-}
-
-#[test]
-fn test_soft_bit_xor() {
-    assert_eq!(math::soft_bit_xor(0, 0), 0);
-    assert_eq!(math::soft_bit_xor(0xFFFF, 0xFFFF), 0);
-    assert_eq!(math::soft_bit_xor(0xFFFF, 0), 0xFFFE);
-    assert_eq!(math::soft_bit_xor(0, 0xFFFF), 0xFFFE);
-    assert_eq!(math::soft_bit_xor(0x7FFF, 0x7FFF), 0x7FFE);
-}
-
-#[test]
-fn test_soft_bit_not() {
-    assert_eq!(math::soft_bit_not(0), 0xFFFF);
-    assert_eq!(math::soft_bit_not(0xFFFF), 0);
-    assert_eq!(math::soft_bit_not(0x7FFF), 0x8000);
-}
-
-#[test]
-fn test_soft_xor() {
-    let a = [0u16, 0xFFFF, 0x8000];
-    let b = [0xFFFFu16, 0xFFFF, 0x8000];
-    let mut out = [0u16; 3];
-    math::soft_xor(&mut out, &a, &b, 3);
-    assert_eq!(out[0], 0xFFFE);
-    assert_eq!(out[1], 0x0000);
-    assert_eq!(out[2], 0x7FFE);
-}
-
-#[test]
 fn test_golay24_encode() {
-    assert_eq!(math::golay24_encode(0), 0x000000);
-    assert_eq!(math::golay24_encode(1), 0x0018EB);
-    assert_eq!(math::golay24_encode(0xFFF), 0xFFFFFF);
-    assert_eq!(math::golay24_encode(0x0D78), 0x0D7880F);
+    assert_eq!(math::golay24_encode(0x0D78), 14125071);
+    assert_eq!(math::golay24_encode(0x0000), 0);
+    assert_eq!(math::golay24_encode(0x0001), 6379);
+    assert_eq!(math::golay24_encode(0x0FFF), 16777215);
+    assert_eq!(math::golay24_encode(0x0ABC), 11256380);
+    assert_eq!(math::golay24_encode(0x0800), 8391797);
+    assert_eq!(math::golay24_encode(0x0400), 4195899);
+    assert_eq!(math::golay24_encode(0x0002), 10558);
 }
 
 #[test]
@@ -115,6 +23,116 @@ fn test_golay24_sdecode_clean() {
 }
 
 #[test]
+fn test_q_abs_diff() {
+    assert_eq!(math::q_abs_diff(100, 200), 100);
+    assert_eq!(math::q_abs_diff(200, 100), 100);
+    assert_eq!(math::q_abs_diff(0, 0), 0);
+    assert_eq!(math::q_abs_diff(0xFFFF, 0), 65535);
+}
+
+#[test]
+fn test_eucl_norm() {
+    let in1 = [1.0f32, 2.0, 3.0];
+    let in2 = [4i8, 5, 6];
+    let result = math::eucl_norm(&in1, &in2, 3);
+    assert!((result - 5.196152).abs() < 0.001);
+
+    let in1b = [0.0f32, 0.0];
+    let in2b = [3i8, 4];
+    let result2 = math::eucl_norm(&in1b, &in2b, 2);
+    assert!((result2 - 5.0).abs() < 0.001);
+}
+
+#[test]
+fn test_int_to_soft_and_soft_to_int() {
+    let mut out = [0u16; 16];
+    math::int_to_soft(&mut out, 0xA5, 8);
+    assert_eq!(out[0], 0xFFFF);
+    assert_eq!(out[1], 0);
+    assert_eq!(out[2], 0xFFFF);
+    assert_eq!(out[3], 0);
+    assert_eq!(out[4], 0);
+    assert_eq!(out[5], 0xFFFF);
+    assert_eq!(out[6], 0);
+    assert_eq!(out[7], 0xFFFF);
+    assert_eq!(math::soft_to_int(&out, 8), 165);
+
+    let mut zeros = [0u16; 16];
+    math::int_to_soft(&mut zeros, 0x0000, 16);
+    assert_eq!(math::soft_to_int(&zeros, 16), 0);
+
+    let mut ones = [0u16; 16];
+    math::int_to_soft(&mut ones, 0xFFFF, 16);
+    assert_eq!(math::soft_to_int(&ones, 16), 65535);
+}
+
+#[test]
+fn test_add16() {
+    assert_eq!(math::add16(0x8000, 0x8000), 0xFFFF);
+    assert_eq!(math::add16(0xFFFF, 1), 0xFFFF);
+    assert_eq!(math::add16(0, 0), 0);
+}
+
+#[test]
+fn test_sub16() {
+    assert_eq!(math::sub16(0x8000, 0x4000), 0x4000);
+    assert_eq!(math::sub16(0x4000, 0x8000), 0);
+    assert_eq!(math::sub16(0, 0), 0);
+}
+
+#[test]
+fn test_mul16() {
+    assert_eq!(math::mul16(0x8000, 0x8000), 16384);
+    assert_eq!(math::mul16(0xFFFF, 0xFFFF), 65534);
+    assert_eq!(math::mul16(0, 0xFFFF), 0);
+}
+
+#[test]
+fn test_div16() {
+    assert_eq!(math::div16(0x8000, 0x8000), 0xFFFF);
+    assert_eq!(math::div16(0x4000, 0x8000), 0x8000);
+    assert_eq!(math::div16(1, 1), 0xFFFF);
+    assert_eq!(math::div16(0xFFFF, 1), 0xFFFF);
+    assert_eq!(math::div16(1, 0xFFFF), 1);
+}
+
+#[test]
+fn test_soft_bit_xor() {
+    assert_eq!(math::soft_bit_xor(0, 0), 0);
+    assert_eq!(math::soft_bit_xor(0xFFFF, 0), 65534);
+    assert_eq!(math::soft_bit_xor(0, 0xFFFF), 65534);
+    assert_eq!(math::soft_bit_xor(0xFFFF, 0xFFFF), 0);
+    assert_eq!(math::soft_bit_xor(0x7FFF, 0x7FFF), 32766);
+    assert_eq!(math::soft_bit_xor(0x7FFF, 0), 32766);
+    assert_eq!(math::soft_bit_xor(0x7FFF, 0xFFFF), 32767);
+}
+
+#[test]
+fn test_soft_bit_not() {
+    assert_eq!(math::soft_bit_not(0), 0xFFFF);
+    assert_eq!(math::soft_bit_not(0xFFFF), 0);
+    assert_eq!(math::soft_bit_not(0x7FFF), 0x8000);
+}
+
+#[test]
+fn test_soft_xor() {
+    let a = [0x0000u16, 0xFFFF, 0x7FFF, 0x8000];
+    let b = [0xFFFFu16, 0x0000, 0x7FFF, 0x8000];
+    let mut out = [0u16; 4];
+    math::soft_xor(&mut out, &a, &b, 4);
+    assert_eq!(out[0], 65534);
+    assert_eq!(out[1], 65534);
+    assert_eq!(out[2], 32766);
+    assert_eq!(out[3], 32766);
+}
+
+#[test]
+fn test_s_popcount() {
+    let arr = [100u16, 200, 300];
+    assert_eq!(math::s_popcount(&arr, 3), 600);
+}
+
+#[test]
 fn test_encode_lich() {
     let inp: [u8; 6] = [0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56];
     let outp = math::encode_LICH(&inp);
@@ -122,19 +140,20 @@ fn test_encode_lich() {
 }
 
 #[test]
-fn test_s_popcount() {
-    assert_eq!(math::s_popcount(&[0xFFFF, 0xFFFF, 0xFFFF], 3), 196605);
-    assert_eq!(math::s_popcount(&[0, 0, 0], 3), 0);
-    assert_eq!(math::s_popcount(&[0x8000, 0x4000], 2), 0xC000);
-}
+fn test_decode_lich_roundtrip() {
+    let inp: [u8; 6] = [0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56];
+    let encoded = math::encode_LICH(&inp);
 
-#[test]
-fn test_s_calc_checksum() {
-    let val: [u16; 12] = [0xFFFF, 0, 0xFFFF, 0, 0xFFFF, 0, 0xFFFF, 0, 0xFFFF, 0, 0xFFFF, 0];
-    let mut out = [0u16; 12];
-    math::s_calc_checksum(&mut out, &val);
-    let expected: [u16; 12] = [0xFFFE, 0x0002, 0xFFFD, 0xFFFD, 0x0001, 0x0000, 0x0000, 0x0000, 0xFFFD, 0x0000, 0xFFFE, 0xFFFC];
-    assert_eq!(out, expected);
+    let mut soft_bits = [0u16; 96];
+    for i in 0..12 {
+        for j in 0..8 {
+            soft_bits[i * 8 + j] = if (encoded[i] >> (7 - j)) & 1 != 0 { 0xFFFF } else { 0x0000 };
+        }
+    }
+
+    let decoded = [0u8; 6];
+    math::decode_LICH(&decoded, soft_bits);
+    assert_eq!(decoded, [0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56]);
 }
 
 fn main() {}

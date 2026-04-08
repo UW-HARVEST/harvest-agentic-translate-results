@@ -1,5 +1,7 @@
 pub mod murmurhash;
 
+use std::io::{self, BufRead, IsTerminal};
+
 pub fn usage() {
     eprint!("usage: murmur [-hV] [options]\n");
 }
@@ -11,8 +13,10 @@ pub fn help() {
 }
 
 pub fn read_stdin() -> Vec<u8> {
+    let stdin = io::stdin();
     let mut buf = String::new();
-    match std::io::stdin().read_line(&mut buf) {
+    let mut reader = stdin.lock();
+    match reader.read_line(&mut buf) {
         Ok(0) => Vec::new(),
         Ok(_) => buf.into_bytes(),
         Err(_) => Vec::new(),
@@ -20,32 +24,59 @@ pub fn read_stdin() -> Vec<u8> {
 }
 
 pub fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut seed = String::from("0");
+    let args: Vec<String> = std::env::args().collect();
+    let mut seed: Option<String> = None;
 
-    for arg in &args {
-        if arg == "-h" {
-            usage();
-            help();
-            return;
-        } else if arg == "-V" {
-            eprintln!("{}", murmurhash::MURMURHASH_VERSION);
-            return;
-        } else if arg.starts_with("--seed=") {
-            seed = arg["--seed=".len()..].to_string();
-        } else if arg.starts_with("-") {
-            let flag = &arg[1..];
-            eprintln!("unknown option: `{}'", flag);
-            usage();
-            return;
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg.starts_with('-') {
+            let rest = &arg[1..];
+            if rest.starts_with('-') {
+                // long option
+                let long = &rest[1..];
+                if long.starts_with("seed=") {
+                    seed = Some(long["seed=".len()..].to_string());
+                }
+            } else {
+                match rest.chars().next() {
+                    Some('h') => {
+                        usage();
+                        help();
+                        return;
+                    }
+                    Some('V') => {
+                        eprintln!("{}", murmurhash::MURMURHASH_VERSION);
+                        return;
+                    }
+                    Some(_) => {
+                        eprintln!("unknown option: `{}'", &rest[0..]);
+                        usage();
+                        std::process::exit(1);
+                    }
+                    None => {}
+                }
+            }
         }
+        i += 1;
     }
 
-    let seed_val: u32 = seed.parse().unwrap_or(0);
+    let seed_val: u32 = seed
+        .as_deref()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
+
+    let stdin = io::stdin();
+    if stdin.lock().is_terminal() {
+        std::process::exit(1);
+    }
+
     let buf = read_stdin();
     if buf.is_empty() {
-        return;
+        std::process::exit(1);
     }
+
     let h = murmurhash::murmurhash(&buf, seed_val);
     println!("{}", h);
 

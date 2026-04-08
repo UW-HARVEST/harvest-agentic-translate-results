@@ -1,7 +1,6 @@
 use std::collections::LinkedList;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-const HASH_ALPHA: f64 = 0.75;
 #[derive(Default)]
 pub struct Bucket<K, V> {
     items: LinkedList<HashItem<K, V>>,
@@ -20,11 +19,12 @@ where
     pub n_items: usize,
     pub _marker: PhantomData<K>,
 }
+const HASH_ALPHA: f64 = 0.75;
 impl<K, V, F> HashTable<K, V, F>
 where
     K: Eq + Hash + Clone,
     V: Clone,
-    F: Fn(&K) -> usize,
+    F: Fn(&K) -> usize + Clone,
 {
     pub fn new(hash_f: F, size: usize) -> Self {
         let mut buckets = Vec::with_capacity(size);
@@ -75,12 +75,17 @@ where
             new_list.push_back(HashItem { key: item.key.clone(), value: item.value.clone() });
         }
         bucket.items = new_list;
-        if found { self.n_items -= 1; }
+        if found {
+            self.n_items -= 1;
+        }
     }
     pub fn resize(&mut self) {
-        let new_size = self.buckets.len() * 2;
+        let old_size = self.buckets.len();
+        let new_size = old_size * 2;
         let mut new_buckets = Vec::with_capacity(new_size);
-        for _ in 0..new_size { new_buckets.push(Bucket { items: LinkedList::new() }); }
+        for _ in 0..new_size {
+            new_buckets.push(Bucket { items: LinkedList::new() });
+        }
         let old_buckets = std::mem::replace(&mut self.buckets, new_buckets);
         self.n_items = 0;
         for bucket in old_buckets {

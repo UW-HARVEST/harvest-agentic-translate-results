@@ -26,72 +26,71 @@ pub fn bhshell_parse(line: &str) -> Command {
     let mut args: Vec<String> = Vec::new();
     let mut pipe_args: Vec<String> = Vec::new();
     let mut redirect: Option<String> = None;
-    let mut current_token = String::new();
+    let mut current_word = String::new();
     let mut current = ArgType::Arg;
+    let mut cmd = new_command();
 
     for ch in line.chars() {
         if ch == '\n' || ch == '\t' || ch == ' ' {
-            if !current_token.is_empty() {
-                let token = std::mem::take(&mut current_token);
+            if !current_word.is_empty() {
+                let word = std::mem::take(&mut current_word);
                 match current {
-                    ArgType::Arg => args.push(token),
-                    ArgType::PipeArg => pipe_args.push(token),
-                    ArgType::Redirect => redirect = Some(token),
+                    ArgType::Arg => args.push(word),
+                    ArgType::PipeArg => pipe_args.push(word),
+                    ArgType::Redirect => redirect = Some(word),
                 }
             }
             continue;
         } else if ch == '|' {
-            if !current_token.is_empty() {
-                let token = std::mem::take(&mut current_token);
+            if !current_word.is_empty() {
+                let word = std::mem::take(&mut current_word);
                 if current == ArgType::Arg {
-                    args.push(token);
+                    args.push(word);
                 } else {
-                    // invalid: pipe after pipe or redirect
                     return Command::default();
                 }
             }
             current = ArgType::PipeArg;
         } else if ch == '>' {
-            if !current_token.is_empty() {
-                let token = std::mem::take(&mut current_token);
+            if !current_word.is_empty() {
+                let word = std::mem::take(&mut current_word);
                 match current {
-                    ArgType::Arg => args.push(token),
-                    ArgType::PipeArg => pipe_args.push(token),
+                    ArgType::Arg => args.push(word),
+                    ArgType::PipeArg => pipe_args.push(word),
                     ArgType::Redirect => {}
                 }
             }
             current = ArgType::Redirect;
         } else {
-            current_token.push(ch);
+            current_word.push(ch);
         }
     }
 
-    // End of line: if no token accumulated, it's invalid
-    if current_token.is_empty() {
+    // End of line: if no word accumulated, invalid
+    if current_word.is_empty() {
         return Command::default();
     }
 
-    let token = current_token;
+    let word = current_word;
     match current {
-        ArgType::Arg => args.push(token),
-        ArgType::PipeArg => pipe_args.push(token),
-        ArgType::Redirect => redirect = Some(token),
+        ArgType::Arg => args.push(word),
+        ArgType::PipeArg => pipe_args.push(word),
+        ArgType::Redirect => redirect = Some(word),
     }
 
     if args.is_empty() {
         return Command::default();
     }
 
-    Command {
-        args,
-        pipe_args,
-        redirect_file_name: redirect,
-    }
+    cmd.args = args;
+    cmd.pipe_args = pipe_args;
+    cmd.redirect_file_name = redirect;
+    cmd
 }
 /// Cleans up and destroys a Command structure.
 /// In C, this took 'command* cmd' and freed its data.
 pub fn destroy_command(_cmd: Command) {
-    // Rust drops automatically
+    // Rust automatically drops the Command and its owned data.
 }
 /// Creates and returns a new Command structure.
 /// In C, this was returning a 'command*'.

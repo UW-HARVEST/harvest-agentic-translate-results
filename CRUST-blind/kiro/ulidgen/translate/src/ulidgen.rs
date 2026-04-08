@@ -1,19 +1,20 @@
 // Import statements
 use crate::ulid;
-use std::io::{self, BufRead, Write, BufWriter};
+use std::io::{self, BufRead, Write};
+
 // Function Declarations
 pub fn main(argc: i32, argv: &[&str]) -> i32 {
+    let _ = argc;
     let mut ulid_buf = ['\0'; ulid::ULID_LENGTH];
     let mut n: i64 = 1;
     let mut tflag = false;
 
-    // Parse options (simple getopt-style)
     let mut i = 1usize;
-    while i < argc as usize {
+    while i < argv.len() {
         match argv[i] {
             "-n" => {
                 i += 1;
-                if i < argc as usize {
+                if i < argv.len() {
                     n = argv[i].parse().unwrap_or(0);
                 }
             }
@@ -24,8 +25,7 @@ pub fn main(argc: i32, argv: &[&str]) -> i32 {
     }
 
     let stdout = io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-    let mut had_error = false;
+    let mut out = io::BufWriter::new(stdout.lock());
 
     if tflag {
         let stdin = io::stdin();
@@ -34,10 +34,8 @@ pub fn main(argc: i32, argv: &[&str]) -> i32 {
                 Ok(l) => {
                     ulid::ulidgen_r(&mut ulid_buf);
                     let s: String = ulid_buf[..26].iter().collect();
-                    if writeln!(out, "{} {}", s, l).is_err() {
-                        had_error = true;
-                        break;
-                    }
+                    let _ = write!(out, "{} {}\n", s, l);
+                    let _ = out.flush();
                 }
                 Err(_) => break,
             }
@@ -46,16 +44,12 @@ pub fn main(argc: i32, argv: &[&str]) -> i32 {
         for _ in 0..n {
             ulid::ulidgen_r(&mut ulid_buf);
             let s: String = ulid_buf[..26].iter().collect();
-            if writeln!(out, "{}", s).is_err() {
-                had_error = true;
-                break;
-            }
+            let _ = writeln!(out, "{}", s);
         }
     }
 
-    if out.flush().is_err() {
-        had_error = true;
+    match out.flush() {
+        Ok(_) => 0,
+        Err(_) => 1,
     }
-
-    if had_error { 1 } else { 0 }
 }

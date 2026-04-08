@@ -1,4 +1,4 @@
-use crate::utils::cursor::pgn_cursor_skip_whitespace;
+use crate::utils::cursor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PgnCommentPosition {
@@ -26,7 +26,7 @@ impl PgnComment {
         &self.value
     }
     pub fn cleanup(&mut self) {
-        self.value.clear();
+        // No-op in Rust - Drop handles cleanup
     }
     pub fn from_string(str: &str, consumed: &mut usize) -> Self {
         let bytes = str.as_bytes();
@@ -40,11 +40,14 @@ impl PgnComment {
         let mut right_brace_count = 0u32;
         loop {
             assert!(cursor < bytes.len(), "unexpected end of string in comment");
+
             left_brace_count += (bytes[cursor] == b'{') as u32;
             right_brace_count += (bytes[cursor] == b'}') as u32;
+
             if right_brace_count == left_brace_count {
                 break;
             }
+
             comment.value.push(bytes[cursor] as char);
             cursor += 1;
         }
@@ -69,31 +72,32 @@ impl PgnComments {
     }
     pub fn poll(&mut self, pos: PgnCommentPosition, str: &str) -> usize {
         let bytes = str.as_bytes();
-        let mut cursor = 0usize;
+        let mut cursor_pos = 0usize;
 
-        if cursor < bytes.len() && bytes[cursor] == b'{' {
-            while cursor < bytes.len() && bytes[cursor] == b'{' {
-                let mut comment = PgnComment::from_string(&str[cursor..], &mut cursor);
+        if cursor_pos < bytes.len() && bytes[cursor_pos] == b'{' {
+            while cursor_pos < bytes.len() && bytes[cursor_pos] == b'{' {
+                let mut comment = PgnComment::from_string(&str[cursor_pos..], &mut cursor_pos);
                 comment.position = pos;
                 self.push(comment);
-                pgn_cursor_skip_whitespace(str, &mut cursor);
+                cursor::pgn_cursor_skip_whitespace(str, &mut cursor_pos);
             }
-            assert!(cursor >= bytes.len() || bytes[cursor] != b'{');
-            assert!(cursor >= bytes.len() || bytes[cursor] != b'}');
-            pgn_cursor_skip_whitespace(str, &mut cursor);
+
+            assert!(cursor_pos >= bytes.len() || bytes[cursor_pos] != b'{');
+            assert!(cursor_pos >= bytes.len() || bytes[cursor_pos] != b'}');
+            cursor::pgn_cursor_skip_whitespace(str, &mut cursor_pos);
         }
 
-        cursor
+        cursor_pos
     }
     pub fn get_first_after_alternative_index(&self) -> Option<usize> {
-        for (i, c) in self.values.iter().enumerate() {
-            if c.position == PgnCommentPosition::AfterAlternative {
+        for (i, comment) in self.values.iter().enumerate() {
+            if comment.position == PgnCommentPosition::AfterAlternative {
                 return Some(i);
             }
         }
         None
     }
     pub fn cleanup(self) {
-        // Drop happens automatically in Rust
+        // No-op in Rust - Drop handles cleanup
     }
 }

@@ -26,7 +26,7 @@ impl<T> Hash<T> {
         let ix = (self.hash_function)(&element);
         assert!(ix <= self.max_key);
         let bucket = &self.buckets[ix as usize];
-        for existing in bucket {
+        for existing in bucket.iter() {
             if compare_equal(existing, &element) {
                 return false;
             }
@@ -38,7 +38,7 @@ impl<T> Hash<T> {
     pub fn element_exists(&self, element: &T, compare_equal: impl Fn(&T, &T) -> bool) -> bool {
         let ix = (self.hash_function)(element);
         assert!(ix <= self.max_key);
-        for existing in &self.buckets[ix as usize] {
+        for existing in self.buckets[ix as usize].iter() {
             if compare_equal(existing, element) {
                 return true;
             }
@@ -53,9 +53,8 @@ impl<T> Hash<T> {
         let bucket = &self.buckets[ix as usize];
         if let Some(pos) = bucket.iter().position(|e| compare_equal(e, element)) {
             self.buckets[ix as usize].remove(pos);
-            true
-        } else {
-            false
+            return true;
         }
+        false
     }
 }

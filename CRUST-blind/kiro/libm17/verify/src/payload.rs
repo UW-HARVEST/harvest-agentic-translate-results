@@ -8,9 +8,8 @@ pub fn decode_callsign_value(outp: &mut [u8], inp: u64) {
 
     if encoded >= U40_9 {
         if encoded == 0xFFFFFFFFFFFF {
-            let s = b"@ALL";
-            outp[..s.len()].copy_from_slice(s);
-            outp[s.len()] = 0;
+            outp[..4].copy_from_slice(b"@ALL");
+            outp[4] = 0;
             return;
         } else if encoded <= U40_9_8 {
             start = 1;
@@ -33,20 +32,20 @@ pub fn decode_callsign_value(outp: &mut [u8], inp: u64) {
 
 pub fn decode_callsign_bytes(outp: &mut [u8], inp: &[u8; 6]) {
     let mut encoded: u64 = 0;
-    for i in 0..6usize {
+    for i in 0..6 {
         encoded |= (inp[5 - i] as u64) << (8 * i);
     }
     decode_callsign_value(outp, encoded);
 }
 
 pub fn encode_callsign_value(inp: &[u8]) -> Option<u64> {
-    // Find length (null-terminated or full slice)
+    // Find the length (null-terminated or full slice)
     let len = inp.iter().position(|&b| b == 0).unwrap_or(inp.len());
+    let s = &inp[..len];
+
     if len > 9 {
         return None;
     }
-
-    let s = &inp[..len];
 
     if s == b"@ALL" {
         return Some(0xFFFFFFFFFFFF);
@@ -60,7 +59,7 @@ pub fn encode_callsign_value(inp: &[u8]) -> Option<u64> {
 
     let mut tmp: u64 = 0;
     for i in (start..len).rev() {
-        for j in 0..40usize {
+        for j in 0..40 {
             if s[i] == char_map[j] {
                 tmp = tmp * 40 + j as u64;
                 break;
@@ -78,7 +77,7 @@ pub fn encode_callsign_value(inp: &[u8]) -> Option<u64> {
 pub fn encode_callsign_bytes(inp: &[u8]) -> Option<[u8; 6]> {
     let tmp = encode_callsign_value(inp)?;
     let mut out = [0u8; 6];
-    for i in 0..6usize {
+    for i in 0..6 {
         out[5 - i] = ((tmp >> (8 * i)) & 0xFF) as u8;
     }
     Some(out)
@@ -88,8 +87,8 @@ const M17_CRC_POLY: u16 = 0x5935;
 
 pub fn crc_m17(input: &[u8]) -> u16 {
     let mut crc: u32 = 0xFFFF;
-    for &byte in input {
-        crc ^= (byte as u32) << 8;
+    for i in 0..input.len() {
+        crc ^= (input[i] as u32) << 8;
         for _ in 0..8 {
             crc <<= 1;
             if crc & 0x10000 != 0 {
@@ -159,8 +158,8 @@ pub fn extract_lich(outp: &mut [u8; 6], cnt: u8, inp: &LSF) {
 }
 
 pub fn unpack_lich(out: &mut [u8], input: &[u8; 12]) {
-    for i in 0..12usize {
-        for j in 0..8usize {
+    for i in 0..12 {
+        for j in 0..8 {
             out[i * 8 + j] = (input[i] >> (7 - j)) & 1;
         }
     }

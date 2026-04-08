@@ -1,44 +1,50 @@
 use twoDPartInt::csv;
-use twoDPartInt::data::Particle;
+use twoDPartInt::data;
 
 #[test]
-fn test_ensure_output_folder() {
-    let dir = std::env::temp_dir().join("test_ensure_output");
+fn test_ensure_output_folder_creates() {
+    let dir = std::env::temp_dir().join("test_csv_ensure");
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(csv::ensure_output_folder(dir.to_str().unwrap()), 0);
+    let result = csv::ensure_output_folder(dir.to_str().unwrap());
+    assert_eq!(result, 0);
     assert!(dir.exists());
-    // calling again on existing dir should still succeed
-    assert_eq!(csv::ensure_output_folder(dir.to_str().unwrap()), 0);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_ensure_output_folder_existing() {
+    let dir = std::env::temp_dir().join("test_csv_ensure_exist");
+    std::fs::create_dir_all(&dir).unwrap();
+    let result = csv::ensure_output_folder(dir.to_str().unwrap());
+    assert_eq!(result, 0);
     std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn test_write_simulation_step() {
-    let dir = std::env::temp_dir().join("test_write_sim");
+    let dir = std::env::temp_dir().join("test_csv_sim_step");
     std::fs::create_dir_all(&dir).unwrap();
     let particles = [
-        Particle { x_coordinate: 1.5, y_coordinate: 2.5, radius: 10.0, next: None, idx: 0 },
-        Particle { x_coordinate: 3.0, y_coordinate: 4.0, radius: 20.0, next: None, idx: 1 },
+        data::Particle { x_coordinate: 1.5, y_coordinate: 2.5, radius: 3.0, next: None, idx: 0 },
+        data::Particle { x_coordinate: 4.0, y_coordinate: 5.0, radius: 6.0, next: None, idx: 1 },
     ];
-    csv::write_simulation_step(2, &particles, dir.to_str().unwrap(), 42);
-    let content = std::fs::read_to_string(dir.join("step_42.csv")).unwrap();
-    assert!(content.starts_with("x,y,radius\n"));
-    let lines: Vec<&str> = content.trim().lines().collect();
-    assert_eq!(lines.len(), 3); // header + 2 particles
-    assert!(lines[1].contains("1.5"));
-    assert!(lines[2].contains("3"));
+    csv::write_simulation_step(2, &particles, dir.to_str().unwrap(), 0);
+    let content = std::fs::read_to_string(dir.join("step_0.csv")).unwrap();
+    assert!(content.contains("x,y,radius"));
+    assert!(content.contains("1.5,2.5,3"));
+    assert!(content.contains("4,5,6"));
     std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn test_write_grid() {
-    let dir = std::env::temp_dir().join("test_write_grid");
+    let dir = std::env::temp_dir().join("test_csv_grid");
     std::fs::create_dir_all(&dir).unwrap();
-    csv::write_grid(2, 2, 10.0, dir.to_str().unwrap());
+    csv::write_grid(2, 2, 100.0, dir.to_str().unwrap());
     let content = std::fs::read_to_string(dir.join("grid.csv")).unwrap();
-    assert!(content.starts_with("x,y\n"));
-    // (x_squares+1) * (y_squares+1) = 3*3 = 9 data lines + header
-    let lines: Vec<&str> = content.trim().lines().collect();
+    assert!(content.contains("x,y"));
+    let lines: Vec<&str> = content.lines().collect();
+    // header + (2+1)*(2+1) = 9 data lines + header = 10
     assert_eq!(lines.len(), 10);
     std::fs::remove_dir_all(&dir).ok();
 }

@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::fs;
 
 pub struct Config {
@@ -55,6 +56,6 @@ impl Config {
         (self.x_particles * self.y_particles) as usize
     }
     pub fn compute_mass(&self) -> f64 {
-        self.rho * std::f64::consts::PI * self.radius * self.radius * self.thickness
+        self.rho * PI * self.radius * self.radius * self.thickness
     }
 }

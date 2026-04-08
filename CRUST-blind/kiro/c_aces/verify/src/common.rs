@@ -1,5 +1,4 @@
 use rand::Rng;
-use rand_distr::{Distribution, Normal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Xgcd {
@@ -46,7 +45,7 @@ pub fn xgcd(mut a: u64, mut b: u64) -> Xgcd {
     Xgcd { gcd: a, a: prev_a, b: prev_b }
 }
 pub fn are_coprime(x: u64, y: u64) -> bool {
-    gcd(x, y) == 1
+    !(gcd(x, y) > 1)
 }
 pub fn randinverse(value: u64) -> Pair {
     let mut a = randrange(2, value - 1);
@@ -66,8 +65,9 @@ pub fn randrange(lower: u64, upper: u64) -> u64 {
     rng.random_range(lower..=upper)
 }
 pub fn normal_rand(mean: f64, stddev: f64) -> f64 {
-    let mut rng = rand::rng();
+    use rand_distr::{Distribution, Normal};
     let normal = Normal::new(mean, stddev).unwrap();
+    let mut rng = rand::rng();
     normal.sample(&mut rng)
 }
 pub fn max(a: u64, b: u64) -> u64 {

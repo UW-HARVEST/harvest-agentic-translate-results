@@ -3,7 +3,7 @@ pub struct Vector<T>{
     pub size: usize,
     pub data: Vec<T>,
 }
-impl<T> Vector<T>{
+impl<T: PartialEq> Vector<T>{
     pub fn new(capacity: usize) -> Self {
         Vector {
             capacity,
@@ -59,14 +59,8 @@ impl<T> Vector<T>{
         self.index_of_with_start(value, 0)
     }
     pub fn index_of_with_start(&self, value: &T, start: usize) -> Option<usize> {
-        // Pointer-based comparison to match C behavior (comparing addresses)
-        // Fall back: since Rust doesn't do pointer comparison on references the same way,
-        // we use std::ptr::eq for the generic case. But the signature takes &T,
-        // so we compare by pointer identity.
         for i in start..self.size {
-            if std::ptr::eq(&self.data[i], value) {
-                return Some(i);
-            }
+            if &self.data[i] == value { return Some(i); }
         }
         None
     }

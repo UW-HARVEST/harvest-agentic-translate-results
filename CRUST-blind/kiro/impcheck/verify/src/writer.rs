@@ -1,39 +1,35 @@
 use std::fs::File;
-use std::io::Write;
+use crate::trusted_utils;
 pub struct Writer {
     file: File,
 }
 impl Writer {
     pub fn write_char(&mut self, c_int: i32) {
-        let _ = self.file.write_all(&[c_int as u8]);
+        trusted_utils::trusted_utils_write_char(c_int as u8 as char, &mut self.file);
     }
     pub fn write_int(&mut self, i: i32) {
-        let _ = self.file.write_all(&i.to_ne_bytes());
+        trusted_utils::trusted_utils_write_int(i, &mut self.file);
     }
     pub fn write_ints(&mut self, data: &[i32], nb_ints: u64) {
-        let nb = nb_ints as usize;
-        for j in 0..nb {
-            let _ = self.file.write_all(&data[j].to_ne_bytes());
-        }
+        trusted_utils::trusted_utils_write_ints(data, nb_ints, &mut self.file);
     }
     pub fn write_sig(&mut self, sig: &[u8]) {
-        let _ = self.file.write_all(&sig[..crate::trusted_utils::SIG_SIZE_BYTES]);
+        trusted_utils::trusted_utils_write_sig(sig, &mut self.file);
     }
     pub fn writer_init(output_path: &str) -> Self {
-        let file = File::create(output_path).expect("Failed to open writer output");
+        let file = File::create(output_path).unwrap_or_else(|_| {
+            trusted_utils::trusted_utils_exit_eof();
+            unreachable!()
+        });
         Writer { file }
     }
     pub fn write_bool(&mut self, b: bool) {
-        let byte = if b { 1u8 } else { 0u8 };
-        let _ = self.file.write_all(&[byte]);
+        trusted_utils::trusted_utils_write_bool(b, &mut self.file);
     }
     pub fn write_uls(&mut self, data: &[u64], nb_uls: u64) {
-        let nb = nb_uls as usize;
-        for j in 0..nb {
-            let _ = self.file.write_all(&data[j].to_ne_bytes());
-        }
+        trusted_utils::trusted_utils_write_uls(data, nb_uls, &mut self.file);
     }
     pub fn write_ul(&mut self, ul: u64) {
-        let _ = self.file.write_all(&ul.to_ne_bytes());
+        trusted_utils::trusted_utils_write_ul(ul, &mut self.file);
     }
 }

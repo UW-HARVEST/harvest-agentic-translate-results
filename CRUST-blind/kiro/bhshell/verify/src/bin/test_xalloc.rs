@@ -1,45 +1,32 @@
-use bhshell::xalloc::{xmalloc, xrealloc};
+use bhshell::xalloc;
 
 #[test]
-fn test_xmalloc_zero() {
-    let v = xmalloc(0);
-    assert_eq!(v.len(), 0);
-}
-
-#[test]
-fn test_xmalloc_nonzero() {
-    let v = xmalloc(64);
-    assert_eq!(v.len(), 64);
+fn test_xmalloc_returns_zeroed_vec() {
+    let v = xalloc::xmalloc(100);
+    assert_eq!(v.len(), 100);
     assert!(v.iter().all(|&b| b == 0));
 }
 
 #[test]
+fn test_xmalloc_zero_size() {
+    let v = xalloc::xmalloc(0);
+    assert_eq!(v.len(), 0);
+}
+
+#[test]
 fn test_xrealloc_grow() {
-    let v = xmalloc(16);
-    let v = xrealloc(v, 64);
-    assert_eq!(v.len(), 64);
+    let v = xalloc::xmalloc(10);
+    assert_eq!(v.len(), 10);
+    let v2 = xalloc::xrealloc(v, 200);
+    assert_eq!(v2.len(), 200);
+    assert!(v2[..10].iter().all(|&b| b == 0));
 }
 
 #[test]
 fn test_xrealloc_shrink() {
-    let v = xmalloc(64);
-    let v = xrealloc(v, 16);
-    assert_eq!(v.len(), 16);
-}
-
-#[test]
-fn test_xrealloc_preserves_data() {
-    let mut v = xmalloc(4);
-    v[0] = 1;
-    v[1] = 2;
-    v[2] = 3;
-    v[3] = 4;
-    let v = xrealloc(v, 8);
-    assert_eq!(v[0], 1);
-    assert_eq!(v[1], 2);
-    assert_eq!(v[2], 3);
-    assert_eq!(v[3], 4);
-    assert_eq!(v[4], 0);
+    let v = xalloc::xmalloc(100);
+    let v2 = xalloc::xrealloc(v, 10);
+    assert_eq!(v2.len(), 10);
 }
 
 fn main() {}

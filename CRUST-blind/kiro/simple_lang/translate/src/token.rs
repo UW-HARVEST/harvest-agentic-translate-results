@@ -42,5 +42,5 @@ pub fn new_token(type_: TokenType, value: &str) -> Token {
 }
 /// Replicates: void free_token(Token* token);
 pub fn free_token(_token: Token) {
-    // Rust handles memory automatically via Drop
+    // In Rust, dropping is automatic. Nothing to do.
 }

@@ -1,5 +1,6 @@
 use crate::utils::buffer::PgnBuffer;
-use crate::utils::cursor::pgn_cursor_skip_newline;
+use crate::utils::cursor;
+
 const PGN_METADATA_INITIAL_SIZE: usize = 8;
 const PGN_METADATA_GROW_SIZE: usize = 8;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,49 +29,51 @@ impl PgnMetadata {
     }
     pub fn from_string_with_consumption(s: &str, consumed: &mut usize) -> Self {
         let bytes = s.as_bytes();
-        let mut cursor = 0usize;
+        let mut cursor_pos = 0usize;
 
-        if cursor >= bytes.len() || bytes[cursor] != b'[' {
-            *consumed += cursor;
+        if cursor_pos >= bytes.len() || bytes[cursor_pos] != b'[' {
             return PgnMetadata::new();
         }
 
         let mut metadata = PgnMetadata::new();
 
         loop {
-            if cursor >= bytes.len() || bytes[cursor] != b'[' {
+            if cursor_pos >= bytes.len() || bytes[cursor_pos] != b'[' {
                 break;
             }
-            cursor += 1;
+            cursor_pos += 1;
 
+            // Parse key
             let mut key = String::new();
-            while cursor < bytes.len() && bytes[cursor] != b' ' {
-                key.push(bytes[cursor] as char);
-                cursor += 1;
+            while cursor_pos < bytes.len() && bytes[cursor_pos] != b' ' {
+                key.push(bytes[cursor_pos] as char);
+                cursor_pos += 1;
             }
 
-            // skip space before opening quote
-            cursor += 1;
-            assert!(cursor < bytes.len() && bytes[cursor] == b'"');
-            cursor += 1;
+            // Skip space and opening quote
+            cursor_pos += 1; // space
+            assert!(cursor_pos < bytes.len() && bytes[cursor_pos] == b'"');
+            cursor_pos += 1;
 
+            // Parse value
             let mut value = String::new();
-            while cursor < bytes.len() && bytes[cursor] != b'"' {
-                value.push(bytes[cursor] as char);
-                cursor += 1;
+            while cursor_pos < bytes.len() && bytes[cursor_pos] != b'"' {
+                value.push(bytes[cursor_pos] as char);
+                cursor_pos += 1;
             }
 
-            // skip closing quote
-            cursor += 1;
-            assert!(cursor < bytes.len() && bytes[cursor] == b']');
-            cursor += 1;
+            // Skip closing quote
+            cursor_pos += 1;
 
             metadata.insert(&key, &value);
 
-            pgn_cursor_skip_newline(s, &mut cursor);
+            assert!(cursor_pos < bytes.len() && bytes[cursor_pos] == b']');
+            cursor_pos += 1;
+
+            cursor::pgn_cursor_skip_newline(s, &mut cursor_pos);
         }
 
-        *consumed += cursor;
+        *consumed += cursor_pos;
         metadata
     }
     pub fn from_string(s: &str) -> Self {

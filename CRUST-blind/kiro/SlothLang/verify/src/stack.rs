@@ -46,8 +46,6 @@ pub fn print(&self) {
 }
 impl Drop for Stack {
 fn drop(&mut self) {
-    while self.top.is_some() {
-        self.pop();
-    }
+    while self.pop().is_some() {}
 }
 }

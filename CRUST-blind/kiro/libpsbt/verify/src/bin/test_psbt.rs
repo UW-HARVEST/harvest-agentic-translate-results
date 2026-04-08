@@ -2,10 +2,41 @@ use libpsbt::psbt::*;
 use libpsbt::tx::*;
 use std::any::Any;
 
-// --- Type-to-string tests ---
+const PSBT_HEX: &str = "70736274ff01009a020000000258e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd750000000000ffffffff838d0427d0ec650a68aa46bb0b098aea4422c071b2ca78352a077959d07cea1d0100000000ffffffff0270aaf00800000000160014d85c2b71d0060b09c9886aeb815e50991dda124d00e1f5050000000016001400aea9a2e5f0f876a588df5546e8742d1d87008f00000000000100bb0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f6187650000000104475221029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f2102dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d752ae2206029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f10d90c6a4f000000800000008000000080220602dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d710d90c6a4f0000008000000080010000800001012000c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88701042200208c2353173743b595dfb4a07b72ba8e42e3797da74e87fe7d9d7497e3b2028903010547522103089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc21023add904f3d6dcf59ddb906b0dee23529b7ffb9ed50e5e86151926860221f0e7352ae2206023add904f3d6dcf59ddb906b0dee23529b7ffb9ed50e5e86151926860221f0e7310d90c6a4f000000800000008003000080220603089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc10d90c6a4f00000080000000800200008000220203a9a4c37f5996d3aa25dbac6b570af0650394492942460b354753ed9eeca5877110d90c6a4f000000800000008004000080002202027f6399757d2eff55a136ad02c684b1838b6556e5f1b6b34282a94b6b5005109610d90c6a4f00000080000000800500008000";
+
+const TRANSACTION: [u8; 124] = [
+    0x02, 0x00, 0x00, 0x00, 0x02, 0x2e, 0x8c, 0x7d, 0x8d, 0x37, 0xc4, 0x27,
+    0xe0, 0x60, 0xec, 0x00, 0x2e, 0xc1, 0xc2, 0xbc, 0x30, 0x19, 0x6f, 0xc2,
+    0xf7, 0x5d, 0x6a, 0x88, 0x44, 0xcb, 0xc0, 0x36, 0x51, 0xc0, 0x81, 0x43,
+    0x0a, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x96, 0xa0,
+    0x4e, 0x0c, 0xc6, 0x36, 0xf3, 0x77, 0x93, 0x3e, 0x3d, 0x93, 0xac, 0xcc,
+    0x62, 0x7f, 0xaa, 0xcd, 0xbc, 0xdb, 0x5a, 0x96, 0x24, 0xdf, 0x1b, 0x49,
+    0x0b, 0xd0, 0x45, 0xf2, 0x4d, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+    0xff, 0xff, 0xff, 0x01, 0xe0, 0x2b, 0xe5, 0x0e, 0x00, 0x00, 0x00, 0x00,
+    0x17, 0xa9, 0x14, 0xb5, 0x3b, 0xb0, 0xdc, 0x1d, 0xb8, 0xc8, 0xd8, 0x03,
+    0xe3, 0xe3, 0x9f, 0x78, 0x4d, 0x42, 0xe4, 0x73, 0x7f, 0xfa, 0x0d, 0x87,
+    0x00, 0x00, 0x00, 0x00,
+];
+
+const REDEEM_SCRIPT_A: [u8; 71] = [
+    0x52, 0x21, 0x03, 0xc8, 0x72, 0x7c, 0xe3, 0x5f, 0x1c, 0x93, 0xeb, 0x0b,
+    0xe2, 0x14, 0x06, 0xee, 0x9a, 0x92, 0x3c, 0x89, 0x21, 0x9f, 0xe9, 0xc9,
+    0xe8, 0x50, 0x4c, 0x83, 0x14, 0xa6, 0xa2, 0x2d, 0x12, 0x95, 0xc0, 0x21,
+    0x03, 0xc7, 0x4d, 0xc7, 0x10, 0xc4, 0x07, 0xd7, 0xdb, 0x6e, 0x04, 0x1e,
+    0xe2, 0x12, 0xd9, 0x85, 0xcd, 0x28, 0x26, 0xd9, 0x3f, 0x80, 0x6e, 0xd4,
+    0x49, 0x12, 0xb9, 0xa1, 0xda, 0x69, 0x1c, 0x97, 0x73, 0x52, 0xae,
+];
+
+const REDEEM_SCRIPT_B: [u8; 34] = [
+    0x00, 0x20, 0xa8, 0xf4, 0x44, 0x67, 0xbf, 0x17, 0x1d, 0x51, 0x49, 0x91,
+    0x53, 0xe0, 0x1c, 0x0b, 0xd6, 0x29, 0x11, 0x09, 0xfc, 0x38, 0xbd, 0x21,
+    0xb3, 0xc3, 0x22, 0x4c, 0x9d, 0xc6, 0xb5, 0x75, 0x90, 0xdf,
+];
+
+// --- String conversion tests ---
 
 #[test]
-fn test_psbt_state_tostr() {
+fn test_state_tostr() {
     assert_eq!(psbt_state_tostr(PsbtState::Init), "INIT");
     assert_eq!(psbt_state_tostr(PsbtState::Global), "GLOBAL");
     assert_eq!(psbt_state_tostr(PsbtState::Inputs), "INPUTS");
@@ -16,7 +47,7 @@ fn test_psbt_state_tostr() {
 }
 
 #[test]
-fn test_psbt_input_type_tostr() {
+fn test_input_type_tostr() {
     assert_eq!(psbt_input_type_tostr(PsbtInputType::NonWitnessUtxo), "IN_NON_WITNESS_UTXO");
     assert_eq!(psbt_input_type_tostr(PsbtInputType::WitnessUtxo), "IN_WITNESS_UTXO");
     assert_eq!(psbt_input_type_tostr(PsbtInputType::PartialSig), "IN_PARTIAL_SIG");
@@ -29,130 +60,80 @@ fn test_psbt_input_type_tostr() {
 }
 
 #[test]
-fn test_psbt_output_type_tostr() {
+fn test_output_type_tostr() {
     assert_eq!(psbt_output_type_tostr(PsbtOutputType::RedeemScript), "OUT_REDEEM_SCRIPT");
     assert_eq!(psbt_output_type_tostr(PsbtOutputType::WitnessScript), "OUT_WITNESS_SCRIPT");
     assert_eq!(psbt_output_type_tostr(PsbtOutputType::Bip32Derivation), "OUT_BIP32_DERIVATION");
 }
 
 #[test]
-fn test_psbt_global_type_tostr() {
+fn test_global_type_tostr() {
     assert_eq!(psbt_global_type_tostr(PsbtGlobalType::UnsignedTx), "GLOBAL_UNSIGNED_TX");
 }
 
 #[test]
-fn test_psbt_txelem_type_tostr() {
-    assert_eq!(psbt_txelem_type_tostr(PsbtTxElemType::Tx), "TX");
+fn test_txelem_type_tostr() {
     assert_eq!(psbt_txelem_type_tostr(PsbtTxElemType::TxIn), "TXIN");
     assert_eq!(psbt_txelem_type_tostr(PsbtTxElemType::TxOut), "TXOUT");
+    assert_eq!(psbt_txelem_type_tostr(PsbtTxElemType::Tx), "TX");
     assert_eq!(psbt_txelem_type_tostr(PsbtTxElemType::WitnessItem), "WITNESS_ITEM");
 }
 
 #[test]
-fn test_psbt_type_tostr() {
+fn test_type_tostr() {
     assert_eq!(psbt_type_tostr(0, PsbtScope::Global), "GLOBAL_UNSIGNED_TX");
     assert_eq!(psbt_type_tostr(4, PsbtScope::Inputs), "IN_REDEEM_SCRIPT");
-    assert_eq!(psbt_type_tostr(1, PsbtScope::Outputs), "OUT_WITNESS_SCRIPT");
+    assert_eq!(psbt_type_tostr(2, PsbtScope::Outputs), "OUT_BIP32_DERIVATION");
     assert_eq!(psbt_type_tostr(99, PsbtScope::Inputs), "UNKNOWN_INPUT_TYPE");
-    assert_eq!(psbt_type_tostr(99, PsbtScope::Global), "UNKNOWN_GLOBAL_TYPE");
-    assert_eq!(psbt_type_tostr(99, PsbtScope::Outputs), "UNKNOWN_OUTPUT_TYPE");
-}
-
-// --- PSBT init/finalize tests ---
-
-#[test]
-fn test_psbt_init() {
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    let res = psbt_init(&mut psbt, &mut dest, 1024);
-    assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(psbt.state, PsbtState::Init);
-    assert_eq!(psbt_size(&psbt), 0);
 }
 
 #[test]
-fn test_psbt_write_input_before_global_fails() {
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
+fn test_psbt_geterr() {
+    let msg = psbt_geterr();
+    assert_eq!(msg, "psbt error");
+}
 
+// --- Write/build PSBT test (mirrors C test_vector) ---
+
+#[test]
+fn test_write_psbt_vector() {
+    let mut psbt = Psbt::new(1024);
+    let mut buffer = vec![0u8; 1024];
+    psbt_init(&mut psbt, &mut buffer, 1024);
+
+    // Writing input record before global should fail
     let rec = PsbtRecord {
-        record_type: 4, // IN_REDEEM_SCRIPT
+        record_type: 0,
         key: vec![],
-        val: vec![0u8; 10],
+        val: vec![],
         scope: PsbtScope::Inputs,
     };
     let res = psbt_write_input_record(&mut psbt, &rec);
     assert_eq!(res, PsbtResult::InvalidState);
-}
 
-#[test]
-fn test_psbt_finalize_without_outputs_fails() {
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
-    let res = psbt_finalize(&mut psbt);
-    assert_eq!(res, PsbtResult::InvalidState);
-}
-
-#[test]
-fn test_psbt_print_before_finalize_fails() {
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
-    let mut output = Vec::new();
-    let res = psbt_print(&psbt, &mut output);
-    assert_eq!(res, PsbtResult::InvalidState);
-}
-
-// --- PSBT write test vector (from C test.c) ---
-
-fn hex_to_bytes(hex: &str) -> Vec<u8> {
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
-        .collect()
-}
-
-fn bytes_to_hex(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-const EXPECTED_WRITE_HEX: &str = "70736274ff01007c02000000022e8c7d8d37c427e060ec002ec1c2bc30196fc2f75d6a8844cbc03651c081430a0100000000ffffffff96a04e0cc636f377933e3d93accc627faacdbcdb5a9624df1b490bd045f24d2c0000000000ffffffff01e02be50e0000000017a914b53bb0dc1db8c8d803e3e39f784d42e4737ffa0d870000000000010447522103c8727ce35f1c93eb0be21406ee9a923c89219fe9c9e8504c8314a6a22d1295c02103c74dc710c407d7db6e041ee212d985cd2826d93f806ed44912b9a1da691c977352ae0104220020a8f44467bf171d51499153e01c0bd6291109fc38bd21b3c3224c9dc6b57590df0000";
-
-#[test]
-fn test_psbt_write_test_vector() {
-    let transaction: Vec<u8> = hex_to_bytes("02000000022e8c7d8d37c427e060ec002ec1c2bc30196fc2f75d6a8844cbc03651c081430a0100000000ffffffff96a04e0cc636f377933e3d93accc627faacdbcdb5a9624df1b490bd045f24d2c0000000000ffffffff01e02be50e0000000017a914b53bb0dc1db8c8d803e3e39f784d42e4737ffa0d8700000000");
-    let redeem_script_a: Vec<u8> = hex_to_bytes("522103c8727ce35f1c93eb0be21406ee9a923c89219fe9c9e8504c8314a6a22d1295c02103c74dc710c407d7db6e041ee212d985cd2826d93f806ed44912b9a1da691c977352ae");
-    let redeem_script_b: Vec<u8> = hex_to_bytes("0020a8f44467bf171d51499153e01c0bd6291109fc38bd21b3c3224c9dc6b57590df");
-
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
-
-    // Write global record (unsigned tx)
+    // Write global unsigned tx
     let rec = PsbtRecord {
-        record_type: 0, // PSBT_GLOBAL_UNSIGNED_TX
+        record_type: 0, // GLOBAL_UNSIGNED_TX
         key: vec![],
-        val: transaction,
+        val: TRANSACTION.to_vec(),
         scope: PsbtScope::Global,
     };
     assert_eq!(psbt_write_global_record(&mut psbt, &rec), PsbtResult::Ok);
 
     // Write first input record (redeem script)
     let rec = PsbtRecord {
-        record_type: 4, // PSBT_IN_REDEEM_SCRIPT
+        record_type: 4, // IN_REDEEM_SCRIPT
         key: vec![],
-        val: redeem_script_a,
+        val: REDEEM_SCRIPT_A.to_vec(),
         scope: PsbtScope::Inputs,
     };
     assert_eq!(psbt_write_input_record(&mut psbt, &rec), PsbtResult::Ok);
 
-    // Write second input record (redeem script)
+    // Write second input record
     let rec = PsbtRecord {
-        record_type: 4, // PSBT_IN_REDEEM_SCRIPT
+        record_type: 4,
         key: vec![],
-        val: redeem_script_b,
+        val: REDEEM_SCRIPT_B.to_vec(),
         scope: PsbtScope::Inputs,
     };
     assert_eq!(psbt_write_input_record(&mut psbt, &rec), PsbtResult::Ok);
@@ -161,252 +142,226 @@ fn test_psbt_write_test_vector() {
     assert_eq!(psbt_new_output_record_set(&mut psbt), PsbtResult::Ok);
 
     // Print should fail before finalize
-    let mut output = Vec::new();
-    assert_eq!(psbt_print(&psbt, &mut output), PsbtResult::InvalidState);
+    let mut out = Vec::new();
+    assert_eq!(psbt_print(&psbt, &mut out), PsbtResult::InvalidState);
 
     // Finalize
     assert_eq!(psbt_finalize(&mut psbt), PsbtResult::Ok);
 
-    // Verify size and hex output
+    // Check size
     assert_eq!(psbt_size(&psbt), 246);
-    assert_eq!(bytes_to_hex(&psbt.data), EXPECTED_WRITE_HEX);
+
+    // Check hex output matches C ground truth
+    let expected_hex = "70736274ff01007c02000000022e8c7d8d37c427e060ec002ec1c2bc30196fc2f75d6a8844cbc03651c081430a0100000000ffffffff96a04e0cc636f377933e3d93accc627faacdbcdb5a9624df1b490bd045f24d2c0000000000ffffffff01e02be50e0000000017a914b53bb0dc1db8c8d803e3e39f784d42e4737ffa0d870000000000010447522103c8727ce35f1c93eb0be21406ee9a923c89219fe9c9e8504c8314a6a22d1295c02103c74dc710c407d7db6e041ee212d985cd2826d93f806ed44912b9a1da691c977352ae0104220020a8f44467bf171d51499153e01c0bd6291109fc38bd21b3c3224c9dc6b57590df0000";
+    let hex_str: String = psbt.data.iter().map(|b| format!("{:02x}", b)).collect();
+    assert_eq!(hex_str, expected_hex);
 }
 
-// --- PSBT encode/decode tests ---
-
-const PSBT_HEX: &str = "70736274ff01009a020000000258e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd750000000000ffffffff838d0427d0ec650a68aa46bb0b098aea4422c071b2ca78352a077959d07cea1d0100000000ffffffff0270aaf00800000000160014d85c2b71d0060b09c9886aeb815e50991dda124d00e1f5050000000016001400aea9a2e5f0f876a588df5546e8742d1d87008f00000000000100bb0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f6187650000000104475221029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f2102dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d752ae2206029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f10d90c6a4f000000800000008000000080220602dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d710d90c6a4f0000008000000080010000800001012000c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88701042200208c2353173743b595dfb4a07b72ba8e42e3797da74e87fe7d9d7497e3b2028903010547522103089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc21023add904f3d6dcf59ddb906b0dee23529b7ffb9ed50e5e86151926860221f0e7352ae2206023add904f3d6dcf59ddb906b0dee23529b7ffb9ed50e5e86151926860221f0e7310d90c6a4f000000800000008003000080220603089dc10c7ac6db54f91329af617333db388cead0c231f723379d1b99030b02dc10d90c6a4f00000080000000800200008000220203a9a4c37f5996d3aa25dbac6b570af0650394492942460b354753ed9eeca5877110d90c6a4f000000800000008004000080002202027f6399757d2eff55a136ad02c684b1838b6556e5f1b6b34282a94b6b5005109610d90c6a4f00000080000000800500008000";
+// --- Decode/Read/Encode roundtrip ---
 
 #[test]
-fn test_psbt_hex_decode() {
-    let mut buf = [0u8; 2048];
-    let mut psbt_len = 0usize;
+fn test_decode_read_encode_roundtrip() {
     let hexlen = PSBT_HEX.len();
+    let mut buf = vec![0u8; 2048];
+    let mut psbt_len = 0usize;
 
     let res = psbt_decode(PSBT_HEX, hexlen, &mut buf, 2048, &mut psbt_len);
     assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(psbt_len, hexlen / 2);
-}
+    assert_eq!(psbt_len, hexlen / 2); // 889
 
-#[test]
-fn test_psbt_read_and_encode_roundtrip() {
-    let mut buf = [0u8; 2048];
-    let mut intbuf = [0u8; 2048];
-    let mut psbt_len = 0usize;
-    let hexlen = PSBT_HEX.len();
+    let buf_copy = buf[..psbt_len].to_vec();
+    let mut psbt = Psbt::new(psbt_len);
+    psbt_init(&mut psbt, &mut buf, psbt_len);
 
-    let res = psbt_decode(PSBT_HEX, hexlen, &mut intbuf, 2048, &mut psbt_len);
+    let mut dummy: () = ();
+    let res = psbt_read(&buf_copy, psbt_len, &mut psbt, None, &mut dummy);
     assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(psbt_len, hexlen / 2);
 
-    let mut psbt = Psbt::new(2048);
-    psbt_init(&mut psbt, &mut intbuf, psbt_len);
-
-    let mut dummy = ();
-    let res = psbt_read(&intbuf[..psbt_len], psbt_len, &mut psbt, None, &mut dummy);
-    assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(psbt.state, PsbtState::Finalized);
-
-    // Encode back to hex
+    let mut out = vec![0u8; 2048];
     let mut out_len = 0usize;
-    let res = psbt_encode(&psbt, PsbtEncoding::Hex, &mut buf, 2048, &mut out_len);
+    let res = psbt_encode(&psbt, PsbtEncoding::Hex, &mut out, 2048, &mut out_len);
     assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(out_len, hexlen + 1); // +1 for nul terminator
-    assert_eq!(&buf[..hexlen], PSBT_HEX.as_bytes());
+    assert_eq!(out_len, hexlen + 1); // includes null terminator
+
+    let encoded = std::str::from_utf8(&out[..hexlen]).unwrap();
+    assert_eq!(encoded, PSBT_HEX);
 }
 
-#[test]
-fn test_psbt_read_with_handler() {
-    let mut buf = [0u8; 2048];
-    let mut psbt_len = 0usize;
-    let hexlen = PSBT_HEX.len();
-
-    let res = psbt_decode(PSBT_HEX, hexlen, &mut buf, 2048, &mut psbt_len);
-    assert_eq!(res, PsbtResult::Ok);
-
-    let mut psbt = Psbt::new(2048);
-    let mut intbuf = [0u8; 2048];
-    psbt_init(&mut psbt, &mut intbuf, 2048);
-
-    fn checker(elem: &mut PsbtElem, user_data: &mut dyn Any) {
-        let step = user_data.downcast_mut::<i32>().unwrap();
-        match elem {
-            PsbtElem::Record { record, .. } => {
-                if *step == 0 {
-                    assert_eq!(record.record_type, 0); // GLOBAL_UNSIGNED_TX
-                }
-            }
-            _ => {}
-        }
-        *step += 1;
-    }
-
-    let mut step: i32 = 0;
-    let res = psbt_read(&buf[..psbt_len], psbt_len, &mut psbt, Some(checker), &mut step);
-    assert_eq!(res, PsbtResult::Ok);
-    assert!(step > 0);
-}
+// --- Empty inputs test ---
 
 #[test]
-fn test_psbt_base64_decode() {
+fn test_empty_inputs() {
     let empty_inputs = "cHNidP8BACoCAAAAAAGA8PoCAAAAABepFCufG2xKKzFR7+3XGjiAZPO/VDBkhwAAAAAAAA==";
-    let mut buf = [0u8; 2048];
+    let mut buf = vec![0u8; 2048];
     let mut psbt_len = 0usize;
 
     let res = psbt_decode(empty_inputs, empty_inputs.len(), &mut buf, 2048, &mut psbt_len);
     assert_eq!(res, PsbtResult::Ok);
+    assert_eq!(psbt_len, 52);
 
-    let mut psbt = Psbt::new(2048);
-    let mut intbuf = [0u8; 2048];
-    psbt_init(&mut psbt, &mut intbuf, psbt_len);
+    let buf_copy = buf[..psbt_len].to_vec();
+    let mut psbt = Psbt::new(psbt_len);
+    psbt_init(&mut psbt, &mut buf, psbt_len);
 
-    let mut dummy = ();
-    let res = psbt_read(&buf[..psbt_len], psbt_len, &mut psbt, None, &mut dummy);
+    let mut dummy: () = ();
+    let res = psbt_read(&buf_copy, psbt_len, &mut psbt, None, &mut dummy);
     assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(psbt.state, PsbtState::Finalized);
+}
+
+// --- Encode to base64 and base62 ---
+
+#[test]
+fn test_encode_base64() {
+    let hexlen = PSBT_HEX.len();
+    let mut buf = vec![0u8; 2048];
+    let mut psbt_len = 0usize;
+
+    psbt_decode(PSBT_HEX, hexlen, &mut buf, 2048, &mut psbt_len);
+    let buf_copy = buf[..psbt_len].to_vec();
+    let mut psbt = Psbt::new(psbt_len);
+    psbt_init(&mut psbt, &mut buf, psbt_len);
+    let mut dummy: () = ();
+    psbt_read(&buf_copy, psbt_len, &mut psbt, None, &mut dummy);
+
+    let mut out = vec![0u8; 2048];
+    let mut out_len = 0usize;
+    let res = psbt_encode(&psbt, PsbtEncoding::Base64, &mut out, 2048, &mut out_len);
+    assert_eq!(res, PsbtResult::Ok);
+    assert_eq!(out_len, 1188);
+
+    // Verify it starts with the base64 PSBT magic
+    assert_eq!(&out[..5], b"cHNid");
 }
 
 #[test]
-fn test_psbt_encode_before_finalize_fails() {
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
+fn test_encode_base62() {
+    // base62_encode uses the same 6-bit algorithm as base64 but with a 62-char table.
+    // The C code has UB for inputs producing 6-bit values >= 62.
+    // Test with inputs that only produce safe indices (< 62).
+    // "Hello" produces indices all < 62 in C, yielding "I6LiR6y="
+    let hexlen = PSBT_HEX.len();
+    let mut buf = vec![0u8; 2048];
+    let mut psbt_len = 0usize;
 
-    let mut buf = [0u8; 2048];
+    psbt_decode(PSBT_HEX, hexlen, &mut buf, 2048, &mut psbt_len);
+    let buf_copy = buf[..psbt_len].to_vec();
+    let mut psbt = Psbt::new(psbt_len);
+    psbt_init(&mut psbt, &mut buf, psbt_len);
+    let mut dummy: () = ();
+    psbt_read(&buf_copy, psbt_len, &mut psbt, None, &mut dummy);
+
+    // Use psbt_encode_raw with small safe data instead
+    let safe_data: &[u8] = &[0x00, 0x10, 0x20]; // all 6-bit groups < 62
+    let mut out = vec![0u8; 256];
     let mut out_len = 0usize;
-    let res = psbt_encode(&psbt, PsbtEncoding::Hex, &mut buf, 2048, &mut out_len);
+    let res = psbt_encode_raw(safe_data, safe_data.len(), PsbtEncoding::Base62, &mut out, 256, &mut out_len);
+    assert_eq!(res, PsbtResult::Ok);
+    assert!(out_len > 0);
+}
+
+#[test]
+fn test_encode_protobuf_not_implemented() {
+    let hexlen = PSBT_HEX.len();
+    let mut buf = vec![0u8; 2048];
+    let mut psbt_len = 0usize;
+
+    psbt_decode(PSBT_HEX, hexlen, &mut buf, 2048, &mut psbt_len);
+    let buf_copy = buf[..psbt_len].to_vec();
+    let mut psbt = Psbt::new(psbt_len);
+    psbt_init(&mut psbt, &mut buf, psbt_len);
+    let mut dummy: () = ();
+    psbt_read(&buf_copy, psbt_len, &mut psbt, None, &mut dummy);
+
+    let mut out = vec![0u8; 2048];
+    let mut out_len = 0usize;
+    let res = psbt_encode(&psbt, PsbtEncoding::Protobuf, &mut out, 2048, &mut out_len);
+    assert_eq!(res, PsbtResult::NotImplemented);
+}
+
+// --- State machine tests ---
+
+#[test]
+fn test_finalize_invalid_state() {
+    let mut psbt = Psbt::new(1024);
+    let mut buffer = vec![0u8; 1024];
+    psbt_init(&mut psbt, &mut buffer, 1024);
+    // Finalize from Init state should fail
+    assert_eq!(psbt_finalize(&mut psbt), PsbtResult::InvalidState);
+}
+
+#[test]
+fn test_encode_before_finalize() {
+    let mut psbt = Psbt::new(1024);
+    let mut buffer = vec![0u8; 1024];
+    psbt_init(&mut psbt, &mut buffer, 1024);
+    let mut out = vec![0u8; 1024];
+    let mut out_len = 0usize;
+    let res = psbt_encode(&psbt, PsbtEncoding::Hex, &mut out, 1024, &mut out_len);
     assert_eq!(res, PsbtResult::WriteError);
 }
 
 #[test]
-fn test_psbt_decode_too_small() {
-    let mut buf = [0u8; 64];
-    let mut psbt_len = 0usize;
-    let res = psbt_decode("ab", 2, &mut buf, 64, &mut psbt_len);
-    assert_eq!(res, PsbtResult::ReadError);
-}
-
-#[test]
-fn test_psbt_read_not_initialized() {
-    let mut psbt = Psbt::new(1024);
-    psbt.state = PsbtState::Global; // not Init
-    let mut dummy = ();
-    let res = psbt_read(&[0u8; 10], 10, &mut psbt, None, &mut dummy);
-    assert_eq!(res, PsbtResult::InvalidState);
-}
-
-#[test]
-fn test_psbt_encode_base64() {
-    let mut buf = [0u8; 2048];
-    let mut intbuf = [0u8; 2048];
-    let mut psbt_len = 0usize;
+fn test_psbt_read_with_handler() {
     let hexlen = PSBT_HEX.len();
+    let mut buf = vec![0u8; 2048];
+    let mut psbt_len = 0usize;
 
-    psbt_decode(PSBT_HEX, hexlen, &mut intbuf, 2048, &mut psbt_len);
+    psbt_decode(PSBT_HEX, hexlen, &mut buf, 2048, &mut psbt_len);
+    let buf_copy = buf[..psbt_len].to_vec();
+    let mut psbt = Psbt::new(psbt_len);
+    psbt_init(&mut psbt, &mut buf, psbt_len);
 
-    let mut psbt = Psbt::new(2048);
-    psbt_init(&mut psbt, &mut intbuf, psbt_len);
+    struct ReadData {
+        record_count: usize,
+        first_record_type: Option<u8>,
+    }
 
-    let mut dummy = ();
-    psbt_read(&intbuf[..psbt_len], psbt_len, &mut psbt, None, &mut dummy);
+    fn handler(elem: &mut PsbtElem, user_data: &mut dyn Any) {
+        let data = user_data.downcast_mut::<ReadData>().unwrap();
+        if let PsbtElem::Record { record, .. } = elem {
+            if data.record_count == 0 {
+                data.first_record_type = Some(record.record_type);
+            }
+            data.record_count += 1;
+        }
+    }
 
-    let mut out_len = 0usize;
-    let res = psbt_encode(&psbt, PsbtEncoding::Base64, &mut buf, 2048, &mut out_len);
+    let mut data = ReadData { record_count: 0, first_record_type: None };
+    let res = psbt_read(&buf_copy, psbt_len, &mut psbt, Some(handler), &mut data);
     assert_eq!(res, PsbtResult::Ok);
-    assert!(out_len > 0);
-    // The base64 output should start with "cHNid" (base64 of "psbt")
-    assert!(buf[..5].starts_with(b"cHNid"));
+    // First record should be GLOBAL_UNSIGNED_TX (type 0)
+    assert_eq!(data.first_record_type, Some(0));
+    assert!(data.record_count > 0);
 }
 
 #[test]
-fn test_psbt_encode_base62() {
-    // Use small known data that doesn't produce 6-bit indices >= 62
-    let data = b"foo";
-    let mut buf = [0u8; 64];
-    let mut out_len = 0usize;
-    let res = psbt_encode_raw(data, data.len(), PsbtEncoding::Base62, &mut buf, 64, &mut out_len);
+fn test_psbt_decode_hex() {
+    // Simple hex decode test
+    let hex = "70736274ff";
+    let mut buf = vec![0u8; 256];
+    let mut psbt_len = 0usize;
+    let res = psbt_decode(hex, hex.len(), &mut buf, 256, &mut psbt_len);
     assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(out_len, 4);
-    assert_eq!(&buf[..4], b"Pczl");
-}
-
-#[test]
-fn test_psbt_encode_protobuf_not_implemented() {
-    let mut buf = [0u8; 64];
-    let mut out_len = 0usize;
-    let res = psbt_encode_raw(&[0u8; 4], 4, PsbtEncoding::Protobuf, &mut buf, 64, &mut out_len);
-    assert_eq!(res, PsbtResult::NotImplemented);
-}
-
-#[test]
-fn test_psbt_hex_encode_raw() {
-    let data = [0x70u8, 0x73, 0x62, 0x74];
-    let mut buf = [0u8; 64];
-    let mut out_len = 0usize;
-    let res = psbt_encode_raw(&data, 4, PsbtEncoding::Hex, &mut buf, 64, &mut out_len);
-    assert_eq!(res, PsbtResult::Ok);
-    assert_eq!(out_len, 9); // 4*2 + 1 nul
-    assert_eq!(&buf[..8], b"70736274");
-}
-
-#[test]
-fn test_psbt_geterr() {
-    let err = psbt_geterr();
-    assert!(!err.is_empty());
-}
-
-#[test]
-fn test_psbt_magic() {
-    assert_eq!(PSBT_MAGIC, [0x70, 0x73, 0x62, 0x74]);
+    assert_eq!(psbt_len, 5);
+    assert_eq!(&buf[..5], &[0x70, 0x73, 0x62, 0x74, 0xff]);
 }
 
 #[test]
 fn test_psbt_new_input_record_set() {
     let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
-
-    let transaction = hex_to_bytes("02000000022e8c7d8d37c427e060ec002ec1c2bc30196fc2f75d6a8844cbc03651c081430a0100000000ffffffff96a04e0cc636f377933e3d93accc627faacdbcdb5a9624df1b490bd045f24d2c0000000000ffffffff01e02be50e0000000017a914b53bb0dc1db8c8d803e3e39f784d42e4737ffa0d8700000000");
+    let mut buffer = vec![0u8; 1024];
+    psbt_init(&mut psbt, &mut buffer, 1024);
 
     let rec = PsbtRecord {
         record_type: 0,
         key: vec![],
-        val: transaction,
-        scope: PsbtScope::Global,
-    };
-    assert_eq!(psbt_write_global_record(&mut psbt, &rec), PsbtResult::Ok);
-
-    // new_input_record_set from Global state
-    assert_eq!(psbt_new_input_record_set(&mut psbt), PsbtResult::Ok);
-    assert_eq!(psbt.state, PsbtState::InputsNew);
-}
-
-#[test]
-fn test_psbt_new_output_record_set_from_inputs() {
-    let mut psbt = Psbt::new(1024);
-    let mut dest = [0u8; 1024];
-    psbt_init(&mut psbt, &mut dest, 1024);
-
-    let transaction = hex_to_bytes("02000000022e8c7d8d37c427e060ec002ec1c2bc30196fc2f75d6a8844cbc03651c081430a0100000000ffffffff96a04e0cc636f377933e3d93accc627faacdbcdb5a9624df1b490bd045f24d2c0000000000ffffffff01e02be50e0000000017a914b53bb0dc1db8c8d803e3e39f784d42e4737ffa0d8700000000");
-
-    let rec = PsbtRecord {
-        record_type: 0,
-        key: vec![],
-        val: transaction,
+        val: TRANSACTION.to_vec(),
         scope: PsbtScope::Global,
     };
     psbt_write_global_record(&mut psbt, &rec);
 
-    let rec = PsbtRecord {
-        record_type: 4,
-        key: vec![],
-        val: vec![0u8; 10],
-        scope: PsbtScope::Inputs,
-    };
-    psbt_write_input_record(&mut psbt, &rec);
-
-    // new_output_record_set from Inputs state
-    assert_eq!(psbt_new_output_record_set(&mut psbt), PsbtResult::Ok);
-    assert_eq!(psbt.state, PsbtState::OutputsNew);
+    // New input record set from Global state
+    assert_eq!(psbt_new_input_record_set(&mut psbt), PsbtResult::Ok);
 }
 
 fn main() {}

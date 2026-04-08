@@ -39,14 +39,14 @@ pub fn gca_calc_gcd(mut a: u32, mut b: u32) -> u32 {
 }
 pub fn gca_capacity<'a>(ptr: &'a mut Vec<u8>, size: &'a mut usize, es: usize, new_size: usize) -> Option<&'a mut Vec<u8>> {
     if new_size > *size {
-        let new_cap = gca_roundup64(new_size as u64) as usize;
-        ptr.resize(new_cap * es, 0);
-        *size = new_cap;
+        let new_size = gca_roundup64(new_size as u64) as usize;
+        ptr.resize(new_size * es, 0);
+        *size = new_size;
     }
     Some(ptr)
 }
 pub fn gca_swapm(a: &mut [u8], b: &mut [u8]) {
-    for i in 0..a.len().min(b.len()) {
+    for i in 0..a.len() {
         let tmp = a[i];
         a[i] = b[i];
         b[i] = tmp;
@@ -86,16 +86,18 @@ pub fn gca_cycle_right(ptr: &mut [u8], n: usize, es: usize, shift: usize) {
 }
 pub fn gca_reverse(ptr: &mut [u8], n: usize, es: usize) {
     if n <= 1 || es == 0 { return; }
-    let mut i = 0;
-    let mut j = n - 1;
-    while i < j {
-        let (a_start, b_start) = (es * i, es * j);
+    let mut a = 0;
+    let mut b = n - 1;
+    while a < b {
+        let (a_start, b_start) = (a * es, b * es);
         let (left, right) = ptr.split_at_mut(b_start);
-        let a = &mut left[a_start..a_start + es];
-        let b = &mut right[..es];
-        gca_swapm(a, b);
-        i += 1;
-        j -= 1;
+        for i in 0..es {
+            let tmp = left[a_start + i];
+            left[a_start + i] = right[i];
+            right[i] = tmp;
+        }
+        a += 1;
+        b -= 1;
     }
 }
 pub fn gca_is_sorted<T, F>(base: &[T], compar: F) -> bool
@@ -114,11 +116,11 @@ pub fn gca_max<T, F>(base: &[T], compar: F) -> Option<&T>
 where
 F: Fn(&T, &T) -> Ordering,
 {
-    base.iter().reduce(|max, x| if compar(max, x) == Ordering::Less { x } else { max })
+    base.iter().reduce(|a, b| if compar(a, b) == Ordering::Less { b } else { a })
 }
 pub fn gca_min<T, F>(base: &[T], compar: F) -> Option<&T>
 where
 F: Fn(&T, &T) -> Ordering,
 {
-    base.iter().reduce(|min, x| if compar(min, x) == Ordering::Greater { x } else { min })
+    base.iter().reduce(|a, b| if compar(a, b) == Ordering::Greater { b } else { a })
 }

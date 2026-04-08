@@ -13,24 +13,15 @@ pub struct InversionList {
 impl InversionList {
     pub fn new(capacity: u32, values: &[u32]) -> Result<Self, InversionListError> {
         if values.is_empty() {
-            return Ok(InversionList {
-                capacity,
-                support: 0,
-                intervals: Vec::new(),
-            });
+            return Ok(InversionList { capacity, support: 0, intervals: Vec::new() });
         }
-        let mut sorted: Vec<u32> = values.to_vec();
+        let mut sorted = values.to_vec();
         sorted.sort();
         if *sorted.last().unwrap() >= capacity {
-            return Err(InversionListError::ValueOutOfRange(
-                *sorted.last().unwrap(),
-                capacity,
-            ));
+            return Err(InversionListError::ValueOutOfRange(*sorted.last().unwrap(), capacity));
         }
-        // deduplicate
         sorted.dedup();
         let support = sorted.len() as u32;
-        // build intervals [start, end) from sorted unique values
         let mut intervals = Vec::new();
         let mut start = sorted[0];
         let mut end = sorted[0] + 1;
@@ -44,11 +35,7 @@ impl InversionList {
             }
         }
         intervals.push((start, end));
-        Ok(InversionList {
-            capacity,
-            support,
-            intervals,
-        })
+        Ok(InversionList { capacity, support, intervals })
     }
     pub fn capacity(&self) -> u32 {
         self.capacity
@@ -57,20 +44,9 @@ impl InversionList {
         self.support
     }
     pub fn contains(&self, value: u32) -> bool {
-        // Binary search: find the interval where value could belong
-        // Each interval is [start, end), value is a member if start <= value < end
-        let mut lo = 0usize;
-        let mut hi = self.intervals.len();
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            let (s, e) = self.intervals[mid];
-            if value < s {
-                hi = mid;
-            } else if value >= e {
-                lo = mid + 1;
-            } else {
-                return true;
-            }
+        for &(lo, hi) in &self.intervals {
+            if value < lo { return false; }
+            if value < hi { return true; }
         }
         false
     }
@@ -79,42 +55,30 @@ impl InversionList {
     }
     pub fn complement(&self) -> Self {
         let mut intervals = Vec::new();
-        let mut pos = 0u32;
-        for &(s, e) in &self.intervals {
-            if pos < s {
-                intervals.push((pos, s));
+        let mut prev = 0u32;
+        for &(lo, hi) in &self.intervals {
+            if lo > prev {
+                intervals.push((prev, lo));
             }
-            pos = e;
+            prev = hi;
         }
-        if pos < self.capacity {
-            intervals.push((pos, self.capacity));
+        if prev < self.capacity {
+            intervals.push((prev, self.capacity));
         }
-        InversionList {
-            capacity: self.capacity,
-            support: self.capacity - self.support,
-            intervals,
-        }
+        InversionList { capacity: self.capacity, support: self.capacity - self.support, intervals }
     }
     pub fn to_str(&self) -> String {
-        format!("{}", self)
+        self.to_string()
     }
     pub fn equal(&self, other: &Self) -> bool {
         self.support == other.support && self.intervals == other.intervals
     }
     pub fn is_strict_subset_of(&self, other: &Self) -> bool {
-        if self.support >= other.support {
-            return false;
-        }
-        // Match C behavior: support(self) < support(other) AND
-        // other has at least one member in [0, last_interval_end)
-        if self.intervals.is_empty() {
-            return other.support > 0;
-        }
-        let upper = self.intervals.last().unwrap().1;
-        for i in 0..upper {
-            if other.contains(i) {
-                return true;
-            }
+        if self.support >= other.support { return false; }
+        if self.intervals.is_empty() { return other.support > 0; }
+        let max_self = self.intervals.last().unwrap().1;
+        for i in 0..max_self {
+            if other.contains(i) { return true; }
         }
         false
     }
@@ -127,26 +91,20 @@ impl InversionList {
     pub fn union(&self, other: &Self) -> Self {
         let cap = self.capacity.max(other.capacity);
         let mut vals = Vec::new();
-        for &(s, e) in &self.intervals {
-            for v in s..e {
-                vals.push(v);
-            }
+        for &(lo, hi) in &self.intervals {
+            for v in lo..hi { vals.push(v); }
         }
-        for &(s, e) in &other.intervals {
-            for v in s..e {
-                vals.push(v);
-            }
+        for &(lo, hi) in &other.intervals {
+            for v in lo..hi { vals.push(v); }
         }
         InversionList::new(cap, &vals).unwrap()
     }
     pub fn intersection(&self, other: &Self) -> Self {
         let cap = self.capacity.max(other.capacity);
         let mut vals = Vec::new();
-        for &(s, e) in &self.intervals {
-            for v in s..e {
-                if other.contains(v) {
-                    vals.push(v);
-                }
+        for &(lo, hi) in &self.intervals {
+            for v in lo..hi {
+                if other.contains(v) { vals.push(v); }
             }
         }
         InversionList::new(cap, &vals).unwrap()
@@ -154,11 +112,9 @@ impl InversionList {
     pub fn difference(&self, other: &Self) -> Self {
         let cap = self.capacity.max(other.capacity);
         let mut vals = Vec::new();
-        for &(s, e) in &self.intervals {
-            for v in s..e {
-                if !other.contains(v) {
-                    vals.push(v);
-                }
+        for &(lo, hi) in &self.intervals {
+            for v in lo..hi {
+                if !other.contains(v) { vals.push(v); }
             }
         }
         InversionList::new(cap, &vals).unwrap()
@@ -177,12 +133,9 @@ impl PartialEq for InversionList {
 impl Eq for InversionList {}
 impl fmt::Display for InversionList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut vals = Vec::new();
-        for &(s, e) in &self.intervals {
-            for v in s..e {
-                vals.push(v.to_string());
-            }
-        }
+        let vals: Vec<String> = self.intervals.iter()
+            .flat_map(|&(lo, hi)| (lo..hi).map(|v| v.to_string()))
+            .collect();
         write!(f, "[{}]", vals.join(", "))
     }
 }
@@ -193,16 +146,8 @@ pub struct InversionListIterator<'a> {
 }
 impl<'a> InversionListIterator<'a> {
     pub fn new(list: &'a InversionList) -> Self {
-        let current_value = if list.intervals.is_empty() {
-            0
-        } else {
-            list.intervals[0].0
-        };
-        InversionListIterator {
-            list,
-            interval_index: 0,
-            current_value,
-        }
+        let current_value = list.intervals.first().map_or(0, |&(lo, _)| lo);
+        InversionListIterator { list, interval_index: 0, current_value }
     }
 }
 impl<'a> Iterator for InversionListIterator<'a> {
@@ -211,11 +156,11 @@ impl<'a> Iterator for InversionListIterator<'a> {
         if self.interval_index >= self.list.intervals.len() {
             return None;
         }
-        let (_, end) = self.list.intervals[self.interval_index];
-        if self.current_value < end {
+        let (_, hi) = self.list.intervals[self.interval_index];
+        if self.current_value < hi {
             let val = self.current_value;
             self.current_value += 1;
-            if self.current_value >= end {
+            if self.current_value >= hi {
                 self.interval_index += 1;
                 if self.interval_index < self.list.intervals.len() {
                     self.current_value = self.list.intervals[self.interval_index].0;
@@ -239,10 +184,7 @@ pub struct InversionListCoupleIterator<'a> {
 }
 impl<'a> InversionListCoupleIterator<'a> {
     pub fn new(list: &'a InversionList) -> Self {
-        InversionListCoupleIterator {
-            list,
-            couple_index: 0,
-        }
+        InversionListCoupleIterator { list, couple_index: 0 }
     }
 }
 impl<'a> Iterator for InversionListCoupleIterator<'a> {
@@ -251,8 +193,8 @@ impl<'a> Iterator for InversionListCoupleIterator<'a> {
         if self.couple_index >= self.list.intervals.len() {
             return None;
         }
-        let interval = self.list.intervals[self.couple_index];
+        let pair = self.list.intervals[self.couple_index];
         self.couple_index += 1;
-        Some(interval)
+        Some(pair)
     }
 }

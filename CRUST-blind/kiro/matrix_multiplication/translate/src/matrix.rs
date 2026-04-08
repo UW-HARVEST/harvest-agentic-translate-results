@@ -1,27 +1,16 @@
-use rand::Rng;
-
 pub fn generate_matrix(x: usize, y: usize, random: bool) -> Vec<Vec<f32>> {
-    let mut rng = rand::rng();
-    (0..x)
-        .map(|i| {
-            (0..y)
-                .map(|j| {
-                    if random {
-                        rng.random::<i32>() as f32
-                    } else {
-                        (j + i * x) as f32
-                    }
-                })
-                .collect()
-        })
-        .collect()
+    if random {
+        use rand::Rng;
+        let mut rng = rand::rng();
+        (0..x).map(|_| (0..y).map(|_| rng.random::<i32>() as f32).collect()).collect()
+    } else {
+        (0..x).map(|i| (0..y).map(|j| (j + i * x) as f32).collect()).collect()
+    }
 }
-
 pub fn free_matrix(matrix: &mut Vec<Vec<f32>>) -> i32 {
     matrix.clear();
     0
 }
-
 pub fn multiply(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>], method: i32) -> i32 {
     let x1 = m1.len();
     let y1 = if x1 > 0 { m1[0].len() } else { 0 };
@@ -42,7 +31,6 @@ pub fn multiply(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>], metho
     }
     0
 }
-
 pub fn algorithm1(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>]) {
     let x1 = m1.len();
     let y1 = if x1 > 0 { m1[0].len() } else { 0 };
@@ -56,7 +44,6 @@ pub fn algorithm1(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>]) {
         }
     }
 }
-
 pub fn algorithm3(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>]) {
     let x1 = m1.len();
     let y1 = if x1 > 0 { m1[0].len() } else { 0 };
@@ -74,7 +61,6 @@ pub fn algorithm3(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>]) {
         }
     }
 }
-
 pub fn algorithm2(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>]) {
     let size = m1.len();
     // Transpose m2 into b
@@ -85,7 +71,7 @@ pub fn algorithm2(m1: &[Vec<f32>], m2: &[Vec<f32>], result: &mut [Vec<f32>]) {
             result[i][j] = 0.0;
         }
     }
-    // Multiply: for each row of a, compute dot product with each row of b (transposed m2)
+    // Multiply using dot products: result[i][k] = sum_j(m1[i][j] * b[k][j])
     for i in 0..size {
         for k in 0..size {
             let mut sum = 0.0f32;

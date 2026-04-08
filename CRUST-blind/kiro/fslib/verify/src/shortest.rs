@@ -13,23 +13,24 @@ impl ShortestPath {
         let sr = crate::sr::sr_get(fst.sr_type);
         let n = fst.n_states as usize;
         ShortestPath {
-            sr,
-            weights: vec![f32::MAX; n],
+            weights: vec![sr.zero; n],
             backtrack: vec![None; n],
+            sr,
         }
     }
     fn backtrace(&self, path: &mut Fst, final_state: u32) {
+        // Count path length
         let mut n: u32 = 0;
         let mut s = final_state;
         path.add_state();
         while s != 0 {
+            path.add_state();
             if let Some(ref arc) = self.backtrack[s as usize] {
                 s = arc.state;
-                n += 1;
-                path.add_state();
             } else {
                 break;
             }
+            n += 1;
         }
         path.set_final(n, self.sr.one);
         s = final_state;
@@ -44,41 +45,39 @@ impl ShortestPath {
         }
     }
     pub fn find_shortest_path(fst: &Fst, path: &mut Fst) {
-        assert!(fst.sr_type == 0); // SR_TROPICAL
         let mut sp = ShortestPath::new(fst);
-        let sr = crate::sr::sr_get(fst.sr_type);
-
-        // We need a wrapper for the heap that uses the weights array for comparison
-        // Since the C code uses global statics, we'll use a different approach
+        // Use a simple BinaryHeap-like approach with Vec
+        // The C code uses a min-heap where comparison is based on weights
         let weights_ptr = &sp.weights as *const Vec<f32>;
+        let sr_sum = sp.sr.sum;
 
         let cmp_fn: fn(&u32, &u32) -> Ordering = |a: &u32, b: &u32| -> Ordering {
-            // We can't access weights here directly in a fn pointer
-            // Use natural ordering as placeholder - actual comparison done differently
+            // This is a placeholder - we need the weights accessible
             a.cmp(b)
         };
 
-        // Use a simple priority approach: Vec-based with manual extraction
+        // We'll use a simpler approach: manual priority queue with Vec
         let mut queue: Vec<u32> = Vec::new();
-        let mut in_queue: HashMap<u32, bool> = HashMap::new();
+        let mut in_queue: Vec<bool> = vec![false; fst.n_states as usize];
 
-        sp.weights[fst.start as usize] = sr.one;
-        queue.push(fst.start);
-        in_queue.insert(fst.start, true);
+        let start = fst.start;
+        sp.weights[start as usize] = sp.sr.one;
+        queue.push(start);
+        in_queue[start as usize] = true;
 
         while !queue.is_empty() {
-            // Find minimum weight element
+            // Find min weight element in queue
             let mut min_idx = 0;
             for i in 1..queue.len() {
-                if sp.weights[queue[i] as usize] == (sr.sum)(sp.weights[queue[i] as usize], sp.weights[queue[min_idx] as usize]) {
-                    // queue[i] has smaller or equal weight (tropical: min)
-                    if sp.weights[queue[i] as usize] < sp.weights[queue[min_idx] as usize] {
-                        min_idx = i;
-                    }
+                let wi = sp.weights[queue[i] as usize];
+                let wm = sp.weights[queue[min_idx] as usize];
+                if (sp.sr.sum)(wi, wm) == wi {
+                    // wi is "better" (smaller in tropical)
+                    min_idx = i;
                 }
             }
             let p = queue.swap_remove(min_idx);
-            in_queue.remove(&p);
+            in_queue[p as usize] = false;
 
             let state = &fst.states[p as usize];
             if state.final_state {
@@ -88,23 +87,29 @@ impl ShortestPath {
 
             for arc in &state.arcs {
                 let q = arc.state;
-                if arc.weight == sr.zero { continue; }
-
-                let new_w = (sr.prod)(sp.weights[p as usize], arc.weight);
-
-                if sp.weights[q as usize] == sr.zero {
-                    // Unexplored
+                if arc.weight == sp.sr.zero {
+                    continue;
+                }
+                let new_w = (sp.sr.prod)(sp.weights[p as usize], arc.weight);
+                if sp.weights[q as usize] == sp.sr.zero {
                     sp.weights[q as usize] = new_w;
                     let mut r_arc = arc.clone();
                     r_arc.state = p;
                     sp.backtrack[q as usize] = Some(r_arc);
-                    queue.push(q);
-                    in_queue.insert(q, true);
-                } else if sp.weights[q as usize] != (sr.sum)(sp.weights[q as usize], new_w) {
+                    if !in_queue[q as usize] {
+                        queue.push(q);
+                        in_queue[q as usize] = true;
+                    }
+                } else if sp.weights[q as usize] != (sp.sr.sum)(sp.weights[q as usize], new_w) {
                     sp.weights[q as usize] = new_w;
                     let mut r_arc = arc.clone();
                     r_arc.state = p;
                     sp.backtrack[q as usize] = Some(r_arc);
+                    // already in queue or will be re-added
+                    if !in_queue[q as usize] {
+                        queue.push(q);
+                        in_queue[q as usize] = true;
+                    }
                 }
             }
         }
@@ -112,12 +117,16 @@ impl ShortestPath {
     fn states_cmp(&self, a: &u32, b: &u32) -> Ordering {
         let wa = self.weights[*a as usize];
         let wb = self.weights[*b as usize];
-        wa.partial_cmp(&wb).unwrap_or(Ordering::Equal)
+        if wa == (self.sr.sum)(wa, wb) {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }
     }
 }
 fn states_hash(a: &u32) -> u64 {
     *a as u64
 }
 fn states_key_eq(a: &u32, b: &u32) -> bool {
-    *a == *b
+    a == b
 }

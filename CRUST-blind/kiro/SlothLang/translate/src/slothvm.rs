@@ -1,6 +1,5 @@
 use crate::{parser, throw};
 use crate::stack::Stack;
-use std::io::{self, Read, Write};
 pub type UByte = u8;
 pub enum Opcodes {
 Exit = 0x00,
@@ -32,43 +31,41 @@ pub codes: Vec<UByte>,
 pub pc: usize,
 }
 pub fn execute(sbin: &mut Option<SlothProgram>) -> i32 {
-    let program = sbin.as_ref().expect("No program");
-    let p = &program.codes;
+    let sbin = sbin.as_mut().unwrap();
     let mut s = Stack::new();
     let mut pc: usize = 0;
+    let p = &sbin.codes;
 
     loop {
         match p[pc] {
-            0x00 => { // EXIT
-                if s.is_empty() {
-                    return 0;
-                }
+            0x00 => {
+                if s.is_empty() { return 0; }
                 return s.pop().unwrap();
             }
-            0x01 => { // PUSH
+            0x01 => {
                 pc += 1;
                 s.push(p[pc] as i32);
                 pc += 1;
             }
-            0x02 => { // ADD
+            0x02 => {
                 let b = s.pop().unwrap();
                 let a = s.pop().unwrap();
-                s.push(a.wrapping_add(b));
+                s.push(a + b);
                 pc += 1;
             }
-            0x03 => { // SUB
+            0x03 => {
                 let b = s.pop().unwrap();
                 let a = s.pop().unwrap();
-                s.push(a.wrapping_sub(b));
+                s.push(a - b);
                 pc += 1;
             }
-            0x04 => { // MULT
+            0x04 => {
                 let b = s.pop().unwrap();
                 let a = s.pop().unwrap();
-                s.push(a.wrapping_mul(b));
+                s.push(a * b);
                 pc += 1;
             }
-            0x05 => { // DIV
+            0x05 => {
                 let b = s.pop().unwrap();
                 let a = s.pop().unwrap();
                 if b == 0 { throw::math_err("division by zero"); }
@@ -76,7 +73,7 @@ pub fn execute(sbin: &mut Option<SlothProgram>) -> i32 {
                 s.push(a / b);
                 pc += 1;
             }
-            0x06 => { // COMP
+            0x06 => {
                 let b = s.pop().unwrap();
                 let a = s.pop().unwrap();
                 pc += 1;
@@ -92,45 +89,50 @@ pub fn execute(sbin: &mut Option<SlothProgram>) -> i32 {
                 s.push(res as i32);
                 pc += 1;
             }
-            0x07 => { // INP
+            0x07 => {
                 pc += 1;
                 match p[pc] {
-                    0x01 => { // INT
+                    0x01 => {
                         print!(">");
-                        io::stdout().flush().ok();
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input).ok();
-                        let x: i32 = input.trim().parse().unwrap_or(0);
+                        use std::io::Write;
+                        std::io::stdout().flush().ok();
+                        let mut line = String::new();
+                        std::io::stdin().read_line(&mut line).ok();
+                        let x: i32 = line.trim().parse().unwrap_or(0);
                         s.push(x);
                     }
-                    0x02 => { // CHR
-                        let mut buf = [0u8; 1];
-                        // C code: scanf(">%c", &x) — reads '>' then a char
-                        // skip '>'
-                        let _ = io::stdin().read_exact(&mut buf);
-                        let _ = io::stdin().read_exact(&mut buf);
-                        s.push(buf[0] as i32);
+                    0x02 => {
+                        print!(">");
+                        use std::io::Write;
+                        std::io::stdout().flush().ok();
+                        let mut line = String::new();
+                        std::io::stdin().read_line(&mut line).ok();
+                        if let Some(c) = line.chars().next() {
+                            s.push(c as i32);
+                        } else {
+                            s.push(0);
+                        }
                     }
                     _ => { throw::op_err("input type", p[pc]); }
                 }
                 pc += 1;
             }
-            0x08 => { // OUT
+            0x08 => {
                 pc += 1;
                 match p[pc] {
-                    0x01 => { // INT
+                    0x01 => {
                         let x = s.pop().unwrap();
                         print!("{}", x);
                     }
-                    0x02 => { // CHR
-                        let x = s.pop().unwrap() as u8;
-                        print!("{}", x as char);
+                    0x02 => {
+                        let x = s.pop().unwrap();
+                        print!("{}", (x as u8) as char);
                     }
                     _ => { throw::op_err("output type", p[pc]); }
                 }
                 pc += 1;
             }
-            0x09 => { // GOTO
+            0x09 => {
                 pc += 1;
                 if s.pop().unwrap() == 1 {
                     pc = p[pc] as usize;
@@ -138,7 +140,7 @@ pub fn execute(sbin: &mut Option<SlothProgram>) -> i32 {
                     pc += 1;
                 }
             }
-            0x0A => { // DUP
+            0x0A => {
                 let x = s.pop().unwrap();
                 s.push(x);
                 s.push(x);

@@ -1,5 +1,6 @@
-#[allow(invalid_reference_casting, static_mut_refs)]
 pub mod quadtree {
+    use std::ptr;
+
     #[derive(Default)]
     pub struct QuadtreePoint {
         pub x: f64,
@@ -28,18 +29,16 @@ pub mod quadtree {
             }
         }
         pub fn quadtree_bounds_extend(&self, x: f64, y: f64) {
-            let s = unsafe { &mut *(self as *const Self as *mut Self) };
-            if let Some(ref mut nw) = s.nw {
+            let p = ptr::from_ref(self) as *mut Self;
+            unsafe {
+                let nw = (*p).nw.as_mut().unwrap();
                 nw.x = nw.x.min(x);
                 nw.y = nw.y.max(y);
-            }
-            if let Some(ref mut se) = s.se {
+                let se = (*p).se.as_mut().unwrap();
                 se.x = se.x.max(x);
                 se.y = se.y.min(y);
-            }
-            if let (Some(ref nw), Some(ref se)) = (&s.nw, &s.se) {
-                s.width = (nw.x - se.x).abs();
-                s.height = (nw.y - se.y).abs();
+                (*p).width = ((*p).nw.as_ref().unwrap().x - (*p).se.as_ref().unwrap().x).abs();
+                (*p).height = ((*p).nw.as_ref().unwrap().y - (*p).se.as_ref().unwrap().y).abs();
             }
         }
         pub fn quadtree_bounds_free(&self) {}
@@ -77,12 +76,12 @@ pub mod quadtree {
             self.point.is_some()
         }
         pub fn quadtree_node_reset(&self, value_free: Option<fn(Option<T>)>) {
-            let s = unsafe { &mut *(self as *const Self as *mut Self) };
-            let pt = s.point.take();
-            let k = s.key.take();
-            drop(pt);
-            if let Some(f) = value_free {
-                f(k);
+            let p = ptr::from_ref(self) as *mut Self;
+            unsafe {
+                let pt = (*p).point.take();
+                let k = (*p).key.take();
+                drop(pt);
+                if let Some(f) = value_free { f(k); }
             }
         }
         pub fn quadtree_node_with_bounds(minx: f64, miny: f64, maxx: f64, maxy: f64) -> QuadtreeNode<T> {
@@ -95,38 +94,97 @@ pub mod quadtree {
         }
     }
 
-    fn node_contains_check<T>(outer: &QuadtreeNode<T>, it: &QuadtreePoint) -> bool {
+    fn node_contains_check<T>(outer: &QuadtreeNode<T>, pt: &QuadtreePoint) -> bool {
         if let Some(ref b) = outer.bounds {
-            if let (Some(ref nw), Some(ref se)) = (&b.nw, &b.se) {
-                return nw.x <= it.x && nw.y >= it.y && se.x >= it.x && se.y <= it.y;
-            }
+            let nw = b.nw.as_ref().unwrap();
+            let se = b.se.as_ref().unwrap();
+            nw.x <= pt.x && nw.y >= pt.y && se.x >= pt.x && se.y <= pt.y
+        } else {
+            false
         }
-        false
     }
 
-    fn get_quadrant_mut<'a, T>(root: &'a mut QuadtreeNode<T>, point: &QuadtreePoint) -> Option<&'a mut QuadtreeNode<T>> {
-        let nw_ok = root.nw.as_ref().map_or(false, |n| node_contains_check(n, point));
-        let ne_ok = root.ne.as_ref().map_or(false, |n| node_contains_check(n, point));
-        let sw_ok = root.sw.as_ref().map_or(false, |n| node_contains_check(n, point));
-        let se_ok = root.se.as_ref().map_or(false, |n| node_contains_check(n, point));
-        if nw_ok { root.nw.as_deref_mut() }
-        else if ne_ok { root.ne.as_deref_mut() }
-        else if sw_ok { root.sw.as_deref_mut() }
-        else if se_ok { root.se.as_deref_mut() }
-        else { None }
+    fn get_quadrant_ref<'a, T>(root: &'a mut QuadtreeNode<T>, point: &QuadtreePoint) -> Option<&'a mut QuadtreeNode<T>> {
+        if root.nw.as_ref().map_or(false, |n| node_contains_check(n, point)) {
+            return root.nw.as_deref_mut();
+        }
+        if root.ne.as_ref().map_or(false, |n| node_contains_check(n, point)) {
+            return root.ne.as_deref_mut();
+        }
+        if root.sw.as_ref().map_or(false, |n| node_contains_check(n, point)) {
+            return root.sw.as_deref_mut();
+        }
+        if root.se.as_ref().map_or(false, |n| node_contains_check(n, point)) {
+            return root.se.as_deref_mut();
+        }
+        None
     }
 
-    fn insert_impl<T>(root: &mut QuadtreeNode<T>, point: Box<QuadtreePoint>, key: Option<T>, key_free: &Option<fn(Option<T>)>) -> i32 {
+    fn find_impl<T>(node: &QuadtreeNode<T>, x: f64, y: f64) -> bool {
+        if node.quadtree_node_isleaf() {
+            let pt = node.point.as_ref().unwrap();
+            pt.x == x && pt.y == y
+        } else if node.quadtree_node_ispointer() {
+            let test = QuadtreePoint { x, y };
+            for child in [&node.nw, &node.ne, &node.sw, &node.se] {
+                if let Some(ref c) = child {
+                    if node_contains_check(c, &test) {
+                        return find_impl(c, x, y);
+                    }
+                }
+            }
+            false
+        } else {
+            false
+        }
+    }
+
+    fn find_node_mut<'a, T>(node: &'a mut QuadtreeNode<T>, x: f64, y: f64) -> Option<&'a mut QuadtreeNode<T>> {
+        if node.quadtree_node_isleaf() {
+            let pt = node.point.as_ref().unwrap();
+            if pt.x == x && pt.y == y {
+                return Some(node);
+            }
+        } else if node.quadtree_node_ispointer() {
+            let test = QuadtreePoint { x, y };
+            let contains_nw = node.nw.as_ref().map_or(false, |n| node_contains_check(n, &test));
+            let contains_ne = node.ne.as_ref().map_or(false, |n| node_contains_check(n, &test));
+            let contains_sw = node.sw.as_ref().map_or(false, |n| node_contains_check(n, &test));
+            let contains_se = node.se.as_ref().map_or(false, |n| node_contains_check(n, &test));
+            if contains_nw { return find_node_mut(node.nw.as_deref_mut().unwrap(), x, y); }
+            if contains_ne { return find_node_mut(node.ne.as_deref_mut().unwrap(), x, y); }
+            if contains_sw { return find_node_mut(node.sw.as_deref_mut().unwrap(), x, y); }
+            if contains_se { return find_node_mut(node.se.as_deref_mut().unwrap(), x, y); }
+        }
+        None
+    }
+
+    fn split_node_mut<T>(node: &mut QuadtreeNode<T>, key_free: Option<fn(Option<T>)>) -> bool {
+        let b = node.bounds.as_ref().unwrap();
+        let x = b.nw.as_ref().unwrap().x;
+        let y = b.nw.as_ref().unwrap().y;
+        let hw = b.width / 2.0;
+        let hh = b.height / 2.0;
+
+        node.nw = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x, y - hh, x + hw, y)));
+        node.ne = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x + hw, y - hh, x + hw * 2.0, y)));
+        node.sw = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x, y - hh * 2.0, x + hw, y - hh)));
+        node.se = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x + hw, y - hh * 2.0, x + hw * 2.0, y - hh)));
+
+        let old_point = node.point.take().unwrap();
+        let old_key = node.key.take();
+
+        insert_impl(node, old_point, old_key, key_free) != 0
+    }
+
+    fn insert_impl<T>(root: &mut QuadtreeNode<T>, point: Box<QuadtreePoint>, key: Option<T>, key_free: Option<fn(Option<T>)>) -> i32 {
         if root.quadtree_node_isempty() {
             root.point = Some(point);
             root.key = key;
             1
         } else if root.quadtree_node_isleaf() {
-            let same = {
-                let rp = root.point.as_ref().unwrap();
-                rp.x == point.x && rp.y == point.y
-            };
-            if same {
+            let rp = root.point.as_ref().unwrap();
+            if rp.x == point.x && rp.y == point.y {
                 let old_pt = root.point.take();
                 let old_key = root.key.take();
                 drop(old_pt);
@@ -135,11 +193,14 @@ pub mod quadtree {
                 root.key = key;
                 2
             } else {
-                if !split_node_impl(root, key_free) { return 0; }
+                if !split_node_mut(root, key_free) {
+                    return 0;
+                }
                 insert_impl(root, point, key, key_free)
             }
         } else if root.quadtree_node_ispointer() {
-            match get_quadrant_mut(root, &point) {
+            let test_pt = QuadtreePoint { x: point.x, y: point.y };
+            match get_quadrant_ref(root, &test_pt) {
                 Some(q) => insert_impl(q, point, key, key_free),
                 None => 0,
             }
@@ -148,19 +209,15 @@ pub mod quadtree {
         }
     }
 
-    fn split_node_impl<T>(node: &mut QuadtreeNode<T>, key_free: &Option<fn(Option<T>)>) -> bool {
-        let (x, y, hw, hh) = {
-            let b = node.bounds.as_ref().unwrap();
-            let nw = b.nw.as_ref().unwrap();
-            (nw.x, nw.y, b.width / 2.0, b.height / 2.0)
-        };
-        node.nw = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x, y - hh, x + hw, y)));
-        node.ne = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x + hw, y - hh, x + hw * 2.0, y)));
-        node.sw = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x, y - hh * 2.0, x + hw, y - hh)));
-        node.se = Some(Box::new(QuadtreeNode::quadtree_node_with_bounds(x + hw, y - hh * 2.0, x + hw * 2.0, y - hh)));
-        let old_point = node.point.take().unwrap();
-        let old_key = node.key.take();
-        insert_impl(node, old_point, old_key, key_free) != 0
+    fn walk_impl<T>(node_opt: &mut Option<Box<QuadtreeNode<T>>>, descent: fn(&mut Option<Box<QuadtreeNode<T>>>), ascent: fn(&mut Option<Box<QuadtreeNode<T>>>)) {
+        if node_opt.is_none() { return; }
+        descent(node_opt);
+        let node = node_opt.as_deref_mut().unwrap();
+        if node.nw.is_some() { walk_impl(&mut node.nw, descent, ascent); }
+        if node.ne.is_some() { walk_impl(&mut node.ne, descent, ascent); }
+        if node.sw.is_some() { walk_impl(&mut node.sw, descent, ascent); }
+        if node.se.is_some() { walk_impl(&mut node.se, descent, ascent); }
+        ascent(node_opt);
     }
 
     #[derive(Default)]
@@ -180,67 +237,43 @@ pub mod quadtree {
             }
         }
         pub fn quadtree_free(&mut self) {
-            self.root = None;
+            self.root.take();
         }
         pub fn quadtree_search(&self, x: f64, y: f64) -> &mut Option<Box<QuadtreePoint>> {
-            let s = unsafe { &mut *(self as *const Self as *mut Self) };
-            fn search_mut<T>(node: &mut QuadtreeNode<T>, x: f64, y: f64) -> *mut Option<Box<QuadtreePoint>> {
-                if node.quadtree_node_isleaf() {
-                    if let Some(ref pt) = node.point {
-                        if pt.x == x && pt.y == y {
-                            return &mut node.point as *mut _;
-                        }
-                    }
-                } else if node.quadtree_node_ispointer() {
-                    let test = QuadtreePoint { x, y };
-                    let nw_ok = node.nw.as_ref().map_or(false, |n| node_contains_check(n, &test));
-                    let ne_ok = node.ne.as_ref().map_or(false, |n| node_contains_check(n, &test));
-                    let sw_ok = node.sw.as_ref().map_or(false, |n| node_contains_check(n, &test));
-                    let se_ok = node.se.as_ref().map_or(false, |n| node_contains_check(n, &test));
-                    if nw_ok { if let Some(ref mut c) = node.nw { return search_mut(c, x, y); } }
-                    else if ne_ok { if let Some(ref mut c) = node.ne { return search_mut(c, x, y); } }
-                    else if sw_ok { if let Some(ref mut c) = node.sw { return search_mut(c, x, y); } }
-                    else if se_ok { if let Some(ref mut c) = node.se { return search_mut(c, x, y); } }
-                }
-                std::ptr::null_mut()
-            }
-            static mut NONE_POINT: Option<Box<QuadtreePoint>> = None;
-            if let Some(ref mut root) = s.root {
-                let ptr = search_mut(root, x, y);
-                if !ptr.is_null() {
-                    return unsafe { &mut *ptr };
+            let p = ptr::from_ref(self) as *mut Self;
+            unsafe {
+                let root = (*p).root.as_deref_mut().unwrap();
+                if find_impl(root, x, y) {
+                    let node = find_node_mut((*p).root.as_deref_mut().unwrap(), x, y).unwrap();
+                    &mut node.point
+                } else {
+                    static mut NONE_POINT: Option<Box<QuadtreePoint>> = None;
+                    NONE_POINT = None;
+                    &mut *(&raw mut NONE_POINT as *mut Option<Box<QuadtreePoint>>)
                 }
             }
-            unsafe { &mut NONE_POINT }
         }
         pub fn quadtree_insert(&self, x: f64, y: f64, key: Option<T>) -> bool {
-            let s = unsafe { &mut *(self as *const Self as *mut Self) };
-            let point = Box::new(QuadtreePoint::quadtree_point_new(x, y));
-            if let Some(ref root) = s.root {
-                if !node_contains_check(root, &point) { return false; }
-            } else {
-                return false;
+            let p = ptr::from_ref(self) as *mut Self;
+            unsafe {
+                let point = Box::new(QuadtreePoint::quadtree_point_new(x, y));
+                let root = (*p).root.as_ref().unwrap();
+                if !node_contains_check(root, &point) {
+                    return false;
+                }
+                let root_mut = (*p).root.as_deref_mut().unwrap();
+                let status = insert_impl(root_mut, point, key, (*p).key_free);
+                if status == 1 { (*p).length += 1; }
+                status != 0
             }
-            let root = s.root.as_deref_mut().unwrap();
-            let status = insert_impl(root, point, key, &s.key_free);
-            if status == 0 { return false; }
-            if status == 1 { s.length += 1; }
-            true
         }
         pub fn quadtree_walk(&self, descent: fn(&mut Option<Box<QuadtreeNode<T>>>), ascent: fn(&mut Option<Box<QuadtreeNode<T>>>)) {
-            let s = unsafe { &mut *(self as *const Self as *mut Self) };
-            fn walk_impl<T>(node: &mut Option<Box<QuadtreeNode<T>>>, descent: fn(&mut Option<Box<QuadtreeNode<T>>>), ascent: fn(&mut Option<Box<QuadtreeNode<T>>>)) {
-                descent(node);
-                if let Some(ref mut n) = node {
-                    if n.nw.is_some() { walk_impl(&mut n.nw, descent, ascent); }
-                    if n.ne.is_some() { walk_impl(&mut n.ne, descent, ascent); }
-                    if n.sw.is_some() { walk_impl(&mut n.sw, descent, ascent); }
-                    if n.se.is_some() { walk_impl(&mut n.se, descent, ascent); }
-                }
-                ascent(node);
-            }
-            walk_impl(&mut s.root, descent, ascent);
+            let p = ptr::from_ref(self) as *mut Self;
+            unsafe { walk_impl(&mut (*p).root, descent, ascent); }
         }
     }
 }
-pub fn elision_<T>(key: Option<Box<T>>) { drop(key); }
+
+pub fn elision_<T>(key: Option<Box<T>>) {
+    drop(key);
+}

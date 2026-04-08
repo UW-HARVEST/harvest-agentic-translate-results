@@ -38,8 +38,8 @@ fn frame_to_local(frame: &[u8], byte_idx_lsb: u16, byte_idx_msb: u16, endianness
             i -= 1;
         }
     } else {
-        let mut i = byte_idx_lsb as i32 + 1;
-        while i <= byte_idx_msb as i32 {
+        let mut i = byte_idx_lsb + 1;
+        while i <= byte_idx_msb {
             target |= (frame[i as usize] as u64) << (shift * 8);
             shift += 1;
             i += 1;
@@ -100,8 +100,8 @@ pub fn insert(frame: &mut [u8], startbit: u16, len: u8, can_value: u64, endianne
         }
     } else {
         let mut src_idx = 0usize;
-        let mut i = byte_idx_lsb as i32;
-        while i <= byte_idx_msb as i32 {
+        let mut i = byte_idx_lsb;
+        while i <= byte_idx_msb {
             frame[i as usize] = bytes[src_idx];
             src_idx += 1;
             i += 1;

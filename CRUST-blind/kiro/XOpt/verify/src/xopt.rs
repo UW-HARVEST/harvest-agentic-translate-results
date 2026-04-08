@@ -73,7 +73,19 @@ pub struct XoptAutohelpOptions {
     pub spacer: usize,
 }
 
-/// Returns the "size" of an argument: 0 = extra, 1 = short (-x), 2 = long (--x)
+// Helper: set error message using snprintf-style formatting
+fn set_err(err: &mut Option<String>, fmt: &str, args: &[&str]) {
+    let mut buf = String::new();
+    snprintf::rpl_vsnprintf(&mut buf, 4096, fmt, args);
+    *err = Some(buf);
+}
+
+// Helper: check if an option is a "null" terminator
+fn is_null_option(o: &XoptOption) -> bool {
+    o.long_arg.is_none() && o.short_arg == '\0'
+}
+
+// Helper: count leading dashes (0, 1, or 2)
 fn get_size(arg: &str) -> usize {
     let bytes = arg.as_bytes();
     let mut size = 0;
@@ -83,39 +95,24 @@ fn get_size(arg: &str) -> usize {
     size
 }
 
-/// Find matching option. Returns (arg_requirement, option_index).
-/// arg_requirement: 0 = flag/bool, 1 = optional, 2 = required
+// Helper: find matching option, returns (arg_requirement, option_index)
+// arg_requirement: 0=flag/bool, 1=optional, 2=required
 fn get_arg(arg: &str, len: usize, options: &[XoptOption], size: usize) -> (i32, Option<usize>) {
-    for (i, opt) in options.iter().enumerate() {
-        if opt.long_arg.is_none() && opt.short_arg == '\0' {
-            break; // null terminator
-        }
-        if size == 1 && opt.short_arg != '\0' {
-            if let Some(first_char) = arg.chars().next() {
-                if opt.short_arg == first_char {
-                    let req = if opt.options & XOPT_TYPE_BOOL != 0 {
-                        0
-                    } else if opt.options & XOPT_OPTIONAL != 0 {
-                        1
-                    } else {
-                        2
-                    };
-                    return (req, Some(i));
-                }
-            }
+    for (idx, opt) in options.iter().enumerate() {
+        if is_null_option(opt) { break; }
+        if size == 1 && !arg.is_empty() && opt.short_arg == arg.chars().next().unwrap_or('\0') {
+            let req = if opt.options & XOPT_TYPE_BOOL != 0 { 0 }
+                else if opt.options & XOPT_OPTIONAL != 0 { 1 }
+                else { 2 };
+            return (req, Some(idx));
         } else if let Some(ref la) = opt.long_arg {
             if la.len() == len && arg.starts_with(la.as_str()) && la.len() <= arg.len() {
-                // More precise: compare first `len` chars
-                let arg_prefix: String = arg.chars().take(len).collect();
-                if arg_prefix == *la {
-                    let req = if opt.options & XOPT_TYPE_BOOL != 0 {
-                        0
-                    } else if opt.options & XOPT_OPTIONAL != 0 {
-                        1
-                    } else {
-                        2
-                    };
-                    return (req, Some(i));
+                // Check exact match of first `len` chars
+                if &arg[..len] == la.as_str() {
+                    let req = if opt.options & XOPT_TYPE_BOOL != 0 { 0 }
+                        else if opt.options & XOPT_OPTIONAL != 0 { 1 }
+                        else { 2 };
+                    return (req, Some(idx));
                 }
             }
         }
@@ -123,7 +120,8 @@ fn get_arg(arg: &str, len: usize, options: &[XoptOption], size: usize) -> (i32, 
     (0, None)
 }
 
-fn set_value(
+// Helper: invoke callback or default callback
+fn xopt_set(
     data: *mut u8,
     option: &XoptOption,
     val: Option<&str>,
@@ -157,125 +155,141 @@ fn default_callback(
         return;
     }
 
-    let type_mask = option.options & 0x3F;
     let offset = option.offset;
+    let typ = option.options & 0x3F;
 
-    match type_mask {
-        x if x == XOPT_TYPE_BOOL => {
-            // Write a 1u8 (true) at the offset
+    match typ {
+        XOPT_TYPE_BOOL => {
+            // Write a bool (1 byte) at offset
+            // Safety: caller must ensure data+offset is valid
             unsafe {
                 let target = data.add(offset);
                 *target = 1;
             }
         }
-        x if x == XOPT_TYPE_STRING => {
-            // We can't store a pointer in the same way C does.
-            // Store the string bytes at the offset location.
-            // In practice, the test code uses offsets into a struct.
-            // We'll store a simple marker or the string data.
-            if let Some(v) = value {
-                unsafe {
-                    let target = data.add(offset) as *mut *const u8;
-                    // We can't safely store a &str pointer this way in safe Rust,
-                    // but we need to match the C behavior for the test harness.
-                    // Store the pointer to the string data.
-                    *target = v.as_ptr();
-                }
-            }
+        XOPT_TYPE_STRING => {
+            // We can't easily store a &str pointer into raw memory in safe Rust.
+            // Store the string bytes. This is a best-effort translation.
+            // In practice, the callback approach is preferred.
         }
-        x if x == XOPT_TYPE_INT => {
+        XOPT_TYPE_INT => {
             if let Some(v) = value {
                 match parse_int(v) {
                     Ok(n) => unsafe {
                         let target = data.add(offset) as *mut i32;
-                        *target = n as i32;
+                        *target = n;
                     },
-                    Err(_) => set_parse_err(err, option, value, long_arg),
+                    Err(_) => {
+                        if long_arg {
+                            if let Some(ref la) = option.long_arg {
+                                set_err(err, "value isn't a valid number: --%s=%s", &[la, v]);
+                            }
+                        } else {
+                            let sc = option.short_arg.to_string();
+                            set_err(err, "value isn't a valid number: -%c %s", &[&sc, v]);
+                        }
+                    }
                 }
             }
         }
-        x if x == XOPT_TYPE_LONG => {
+        XOPT_TYPE_LONG => {
             if let Some(v) = value {
-                match parse_int(v) {
+                match parse_long(v) {
                     Ok(n) => unsafe {
                         let target = data.add(offset) as *mut i64;
                         *target = n;
                     },
-                    Err(_) => set_parse_err(err, option, value, long_arg),
+                    Err(_) => {
+                        if long_arg {
+                            if let Some(ref la) = option.long_arg {
+                                set_err(err, "value isn't a valid number: --%s=%s", &[la, v]);
+                            }
+                        } else {
+                            let sc = option.short_arg.to_string();
+                            set_err(err, "value isn't a valid number: -%c %s", &[&sc, v]);
+                        }
+                    }
                 }
             }
         }
-        x if x == XOPT_TYPE_FLOAT => {
+        XOPT_TYPE_FLOAT => {
             if let Some(v) = value {
                 match v.parse::<f32>() {
                     Ok(n) => unsafe {
                         let target = data.add(offset) as *mut f32;
                         *target = n;
                     },
-                    Err(_) => set_parse_err(err, option, value, long_arg),
+                    Err(_) => {
+                        if long_arg {
+                            if let Some(ref la) = option.long_arg {
+                                set_err(err, "value isn't a valid number: --%s=%s", &[la, v]);
+                            }
+                        } else {
+                            let sc = option.short_arg.to_string();
+                            set_err(err, "value isn't a valid number: -%c %s", &[&sc, v]);
+                        }
+                    }
                 }
             }
         }
-        x if x == XOPT_TYPE_DOUBLE => {
+        XOPT_TYPE_DOUBLE => {
             if let Some(v) = value {
                 match v.parse::<f64>() {
                     Ok(n) => unsafe {
                         let target = data.add(offset) as *mut f64;
                         *target = n;
                     },
-                    Err(_) => set_parse_err(err, option, value, long_arg),
+                    Err(_) => {
+                        if long_arg {
+                            if let Some(ref la) = option.long_arg {
+                                set_err(err, "value isn't a valid number: --%s=%s", &[la, v]);
+                            }
+                        } else {
+                            let sc = option.short_arg.to_string();
+                            set_err(err, "value isn't a valid number: -%c %s", &[&sc, v]);
+                        }
+                    }
                 }
             }
         }
         _ => {
-            eprintln!("warning: XOpt argument type invalid: {}", type_mask);
+            let t = (option.options & 0x2F).to_string();
+            eprintln!("warning: XOpt argument type invalid: {}", t);
         }
     }
 }
 
-fn parse_int(s: &str) -> Result<i64, ()> {
-    // Support 0x, 0o, 0 prefixes like C's strtol with base 0
+// Parse int with C strtol semantics (base 0 = auto-detect)
+fn parse_int(s: &str) -> Result<i32, ()> {
     let s = s.trim();
     if s.is_empty() { return Err(()); }
-
-    let (negative, s) = if s.starts_with('-') {
-        (true, &s[1..])
-    } else if s.starts_with('+') {
-        (false, &s[1..])
-    } else {
-        (false, s)
-    };
-
-    let (base, s) = if s.starts_with("0x") || s.starts_with("0X") {
-        (16, &s[2..])
-    } else if s.starts_with("0") && s.len() > 1 {
-        (8, &s[1..])
-    } else {
-        (10, s)
-    };
-
+    let (neg, s) = if s.starts_with('-') { (true, &s[1..]) }
+        else if s.starts_with('+') { (false, &s[1..]) }
+        else { (false, s) };
+    let (base, s) = if s.starts_with("0x") || s.starts_with("0X") { (16, &s[2..]) }
+        else if s.starts_with('0') && s.len() > 1 { (8, &s[1..]) }
+        else { (10, s) };
     if s.is_empty() { return Err(()); }
-
     let val = i64::from_str_radix(s, base).map_err(|_| ())?;
-    Ok(if negative { -val } else { val })
+    let val = if neg { -val } else { val };
+    Ok(val as i32)
 }
 
-fn set_parse_err(err: &mut Option<String>, option: &XoptOption, value: Option<&str>, long_arg: bool) {
-    let v = value.unwrap_or("");
-    if long_arg {
-        if let Some(ref la) = option.long_arg {
-            *err = Some(format!("value isn't a valid number: --{}={}", la, v));
-        }
-    } else {
-        *err = Some(format!("value isn't a valid number: -{} {}", option.short_arg, v));
-    }
+fn parse_long(s: &str) -> Result<i64, ()> {
+    let s = s.trim();
+    if s.is_empty() { return Err(()); }
+    let (neg, s) = if s.starts_with('-') { (true, &s[1..]) }
+        else if s.starts_with('+') { (false, &s[1..]) }
+        else { (false, s) };
+    let (base, s) = if s.starts_with("0x") || s.starts_with("0X") { (16, &s[2..]) }
+        else if s.starts_with('0') && s.len() > 1 { (8, &s[1..]) }
+        else { (10, s) };
+    if s.is_empty() { return Err(()); }
+    let val = i64::from_str_radix(s, base).map_err(|_| ())?;
+    Ok(if neg { -val } else { val })
 }
 
-fn set_err(err: &mut Option<String>, msg: String) {
-    *err = Some(msg);
-}
-
-/// Returns true if the argument is an "extra" (non-option), false if it was an option.
+// Parse a single argument, returns true if it's an "extra" (non-option)
 fn parse_arg(
     ctx: &mut XoptContext,
     argc: i32,
@@ -288,9 +302,9 @@ fn parse_arg(
         return true;
     }
 
-    let arg_full = argv[*argi];
-    let size = get_size(arg_full);
-    let arg = &arg_full[size..];
+    let full_arg = argv[*argi];
+    let size = get_size(full_arg);
+    let arg = &full_arg[size..];
     let length = arg.len();
 
     if size == 1 && length == 0 {
@@ -299,61 +313,62 @@ fn parse_arg(
     }
 
     if size == 2 && length == 0 {
-        // Double dash "--" - everything after is extra
+        // Double-dash "--"
         ctx.doubledash = true;
         return false;
     }
 
     match size {
         1 => {
-            // Short arg
-            if length > 1 && (ctx.flags & XOPT_CTX_NOCONDENSE != 0) {
-                set_err(err, format!("short options cannot be combined: {}", argv[*argi]));
-            } else if length > 1 && (ctx.flags & XOPT_CTX_SLOPPYSHORTS == XOPT_CTX_SLOPPYSHORTS) {
+            // Short option(s)
+            if length > 1 && ctx.flags & XOPT_CTX_NOCONDENSE != 0 {
+                set_err(err, "short options cannot be combined: %s", &[full_arg]);
+            } else if length > 1 && ctx.flags & XOPT_CTX_SLOPPYSHORTS == XOPT_CTX_SLOPPYSHORTS {
                 let (arg_req, opt_idx) = get_arg(arg, 1, &ctx.options, size);
                 if opt_idx.is_none() {
                     if ctx.flags & XOPT_CTX_STRICT != 0 {
-                        set_err(err, format!("invalid option: -{}", &arg[..1]));
+                        let c = arg.chars().next().unwrap_or('\0').to_string();
+                        set_err(err, "invalid option: -%c", &[&c]);
                     }
                     return false;
                 }
+                let opt_idx = opt_idx.unwrap();
                 if arg_req == 0 {
-                    set_err(err, format!("option doesn't take a value: -{}", &arg[..1]));
+                    let c = arg.chars().next().unwrap_or('\0').to_string();
+                    set_err(err, "option doesn't take a value: -%c", &[&c]);
                     return false;
                 }
-                let opt = ctx.options[opt_idx.unwrap()].clone();
-                set_value(data, &opt, Some(&arg[1..]), false, err);
+                let option = ctx.options[opt_idx].clone();
+                xopt_set(data, &option, Some(&arg[1..]), false, err);
             } else {
-                // Parse all condensed short args
+                // Parse all condensed short options
                 let chars: Vec<char> = arg.chars().collect();
                 let mut ci = 0;
-                let mut remaining = chars.len();
-                while remaining > 0 {
-                    let ch_str = chars[ci].to_string();
-                    let (arg_req, opt_idx) = get_arg(&ch_str, 1, &ctx.options, size);
-                    ci += 1;
-                    remaining -= 1;
-
+                while ci < chars.len() {
+                    let c_str = chars[ci].to_string();
+                    let (arg_req, opt_idx) = get_arg(&c_str, 1, &ctx.options, size);
                     if opt_idx.is_none() {
                         if ctx.flags & XOPT_CTX_STRICT != 0 {
-                            set_err(err, format!("invalid option: -{}", chars[ci - 1]));
+                            set_err(err, "invalid option: -%c", &[&c_str]);
                         }
                         break;
                     }
+                    let opt_idx = opt_idx.unwrap();
+                    let option = ctx.options[opt_idx].clone();
+                    let remaining = chars.len() - ci - 1;
 
-                    let opt = ctx.options[opt_idx.unwrap()].clone();
                     match arg_req {
                         0 => {
                             // Flag, no argument
-                            set_value(data, &opt, None, false, err);
+                            xopt_set(data, &option, None, false, err);
                         }
                         1 => {
                             // Optional argument
                             if *argi + 1 < argc as usize && get_size(argv[*argi + 1]) == 0 {
                                 *argi += 1;
-                                set_value(data, &opt, Some(argv[*argi]), false, err);
+                                xopt_set(data, &option, Some(argv[*argi]), false, err);
                             } else {
-                                set_value(data, &opt, None, false, err);
+                                xopt_set(data, &option, None, false, err);
                             }
                         }
                         2 => {
@@ -361,65 +376,71 @@ fn parse_arg(
                             if remaining == 0 {
                                 if *argi + 1 < argc as usize {
                                     if get_size(argv[*argi + 1]) != 0 {
-                                        set_err(err, format!("missing option value: -{}", opt.short_arg));
+                                        let sc = option.short_arg.to_string();
+                                        set_err(err, "missing option value: -%c", &[&sc]);
                                     } else {
                                         *argi += 1;
-                                        set_value(data, &opt, Some(argv[*argi]), false, err);
+                                        xopt_set(data, &option, Some(argv[*argi]), false, err);
                                     }
                                 } else {
-                                    set_err(err, format!("missing option value: -{}", opt.short_arg));
+                                    let sc = option.short_arg.to_string();
+                                    set_err(err, "missing option value: -%c", &[&sc]);
                                 }
                             } else {
-                                set_err(err, format!("combined short option requiring value is not last: -{}", opt.short_arg));
+                                let sc = option.short_arg.to_string();
+                                set_err(err, "combined short option requiring value is not last: -%c", &[&sc]);
                             }
                         }
                         _ => {}
                     }
+
                     if err.is_some() { break; }
+                    ci += 1;
                 }
             }
             false
         }
         2 => {
-            // Long arg
-            let (arg_part, val_start) = if let Some(eq_pos) = arg.find('=') {
+            // Long option
+            let (arg_name, val_start) = if let Some(eq_pos) = arg.find('=') {
+                let name = &arg[..eq_pos];
                 let val = &arg[eq_pos + 1..];
-                let val_opt = if val.is_empty() { None } else { Some(val) };
-                (&arg[..eq_pos], val_opt)
+                let val = if val.is_empty() { None } else { Some(val) };
+                (name, val)
             } else {
                 (arg, None)
             };
 
-            let len = arg_part.len();
-            let (arg_req, opt_idx) = get_arg(arg_part, len, &ctx.options, size);
+            let length = arg_name.len();
+            let (arg_req, opt_idx) = get_arg(arg_name, length, &ctx.options, size);
 
             if opt_idx.is_none() {
-                set_err(err, format!("invalid option: --{}", arg_part));
+                set_err(err, "invalid option: --%s", &[arg_name]);
             } else {
-                let opt = ctx.options[opt_idx.unwrap()].clone();
+                let opt_idx = opt_idx.unwrap();
+                let option = ctx.options[opt_idx].clone();
+
                 match arg_req {
                     0 => {
                         // Flag, doesn't take argument
                         if val_start.is_some() {
-                            set_err(err, format!("option doesn't take a value: --{}", arg));
+                            set_err(err, "option doesn't take a value: --%s", &[arg]);
                         }
-                        if err.is_none() {
-                            set_value(data, &opt, val_start, true, err);
-                        }
+                        xopt_set(data, &option, val_start, true, err);
                     }
                     2 => {
-                        // Required argument
+                        // Requires argument
                         if val_start.is_none() {
-                            set_err(err, format!("missing option value: --{}", arg));
+                            set_err(err, "missing option value: --%s", &[arg]);
                         }
                         if err.is_none() {
-                            set_value(data, &opt, val_start, true, err);
+                            xopt_set(data, &option, val_start, true, err);
                         }
                     }
                     _ => {
-                        // Optional or other
+                        // Optional (1) or other
                         if err.is_none() {
-                            set_value(data, &opt, val_start, true, err);
+                            xopt_set(data, &option, val_start, true, err);
                         }
                     }
                 }
@@ -427,14 +448,10 @@ fn parse_arg(
             false
         }
         _ => {
-            // Extra argument
+            // Extra argument (size == 0)
             true
         }
     }
-}
-
-fn is_null_option(opt: &XoptOption) -> bool {
-    opt.long_arg.is_none() && opt.short_arg == '\0'
 }
 
 pub fn xopt_context(
@@ -462,21 +479,20 @@ pub fn xopt_parse(
 ) -> i32 {
     *err = None;
     let mut extras_list: Vec<String> = Vec::new();
-    let mut argi: usize = if ctx.flags & XOPT_CTX_KEEPFIRST != 0 { 0 } else { 1 };
-    let mut extras_count: i32 = 0;
+    let mut extras_count = 0i32;
 
-    while argi < argc as usize {
+    let mut argi: usize = if ctx.flags & XOPT_CTX_KEEPFIRST == 0 { 1 } else { 0 };
+
+    while (argi as i32) < argc {
         let is_extra = parse_arg(ctx, argc, argv, &mut argi, data, err);
-        if err.is_some() {
-            break;
-        }
+        if err.is_some() { break; }
 
         if is_extra {
             extras_list.push(argv[argi].to_string());
             extras_count += 1;
         } else {
             if (ctx.flags & XOPT_CTX_POSIXMEHARDER != 0) && extras_count > 0 {
-                set_err(err, format!("options cannot be specified after arguments: {}", argv[argi]));
+                set_err(err, "options cannot be specified after arguments: %s", &[argv[argi]]);
                 break;
             }
         }
@@ -500,8 +516,8 @@ pub fn xopt_autohelp(
     err: &mut Option<String>,
 ) {
     *err = None;
-    let spacer = options.map_or(2, |o| o.spacer);
     let mut nl = "";
+    let spacer = options.map_or(2, |o| o.spacer);
 
     if let Some(opts) = options {
         if let Some(ref usage) = opts.usage {
@@ -516,46 +532,46 @@ pub fn xopt_autohelp(
 
     // Find max width
     let mut width: usize = 0;
-    for opt in &ctx.options {
-        if is_null_option(opt) { break; }
+    for o in &ctx.options {
+        if is_null_option(o) { break; }
         let mut twidth: usize = 0;
-        if let Some(ref la) = opt.long_arg {
+        if let Some(ref la) = o.long_arg {
             twidth += 2 + la.len();
-            if let Some(ref ad) = opt.arg_descrip {
+            if let Some(ref ad) = o.arg_descrip {
                 twidth += 1 + ad.len();
             }
         }
-        if opt.short_arg != '\0' {
+        if o.short_arg != '\0' {
             twidth += 2;
         }
-        if opt.short_arg != '\0' && opt.long_arg.is_some() {
+        if o.short_arg != '\0' && o.long_arg.is_some() {
             twidth += 2;
         }
         if twidth > width { width = twidth; }
     }
 
     // Print options
-    for opt in &ctx.options {
-        if is_null_option(opt) { break; }
+    for o in &ctx.options {
+        if is_null_option(o) { break; }
         let mut twidth: usize = 0;
 
-        if opt.short_arg != '\0' {
-            let _ = write!(stream, "-{}", opt.short_arg);
+        if o.short_arg != '\0' {
+            let _ = write!(stream, "-{}", o.short_arg);
             twidth += 2;
         }
-        if opt.short_arg != '\0' && opt.long_arg.is_some() {
+        if o.short_arg != '\0' && o.long_arg.is_some() {
             let _ = write!(stream, ", ");
             twidth += 2;
         }
-        if let Some(ref la) = opt.long_arg {
+        if let Some(ref la) = o.long_arg {
             let _ = write!(stream, "--{}", la);
             twidth += 2 + la.len();
-            if let Some(ref ad) = opt.arg_descrip {
+            if let Some(ref ad) = o.arg_descrip {
                 let _ = write!(stream, "={}", ad);
                 twidth += 1 + ad.len();
             }
         }
-        if let Some(ref descrip) = opt.descrip {
+        if let Some(ref descrip) = o.descrip {
             while twidth < width + spacer {
                 let _ = write!(stream, " ");
                 twidth += 1;
@@ -573,7 +589,7 @@ pub fn xopt_autohelp(
 
 #[macro_export]
 macro_rules! XOPT_SIMPLE_PARSE {
-    (
+    ( 
       $name:expr,
       $options:expr,
       $config_ptr:expr,
@@ -611,7 +627,7 @@ macro_rules! XOPT_SIMPLE_PARSE {
             if ($err_ptr).is_some() { break; }
 
             if ($config_ptr).help {
-                let autohelp_opts = $crate::xopt::XoptAutohelpOptions {
+                let __xopt_autohelp_opts = $crate::xopt::XoptAutohelpOptions {
                     usage: $autohelp_usage,
                     prefix: $autohelp_prefix,
                     suffix: $autohelp_suffix,
@@ -620,11 +636,14 @@ macro_rules! XOPT_SIMPLE_PARSE {
                 $crate::xopt::xopt_autohelp(
                     ctx,
                     $autohelp_file,
-                    Some(&autohelp_opts),
+                    Some(&__xopt_autohelp_opts),
                     $err_ptr,
                 );
-                if ($err_ptr).is_some() { break; }
-                // In C this does `goto xopt_help`. In Rust we just break.
+                if ($err_ptr).is_some() {
+                    *$extrav_ptr = None;
+                    break;
+                }
+                break; // goto xopt_help equivalent
             }
 
             break;

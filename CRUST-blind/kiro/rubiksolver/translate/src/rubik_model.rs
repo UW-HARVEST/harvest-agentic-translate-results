@@ -1,4 +1,3 @@
-use std::fmt;
 /// The six colors (and faces) of the cube.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -81,18 +80,25 @@ pub fn populate_specific(data: &Cube) -> Cube {
 }
 /// Compares two cubes for equality.
 pub fn cube_compare_equal(c1: &Cube, c2: &Cube) -> bool {
-    c1 == c2
+    for face in 0..6 {
+        for pos in 0..8 {
+            if c1[face][pos] != c2[face][pos] {
+                return false;
+            }
+        }
+    }
+    true
 }
 /// Computes a hash value for a cube.
 pub fn cube_hash(cube: &Cube) -> u32 {
     let mut hash: u32 = 0;
-    for face in 0..6usize {
+    for face in 0..6 {
         let c = Color::from_usize(face);
         for pos in 0..4 {
             if cube[face][2 * pos] != c || cube[face][2 * pos + 1] != c {
                 hash += 1;
             }
-            hash <<= 1;
+            hash = hash << 1;
         }
     }
     hash
@@ -100,7 +106,7 @@ pub fn cube_hash(cube: &Cube) -> u32 {
 /// Counts the number of "misplaced" positions.
 pub fn find_entropy(cube: &Cube) -> i32 {
     let mut count = 0;
-    for face in 0..6usize {
+    for face in 0..6 {
         let c = Color::from_usize(face);
         for pos in 0..8 {
             if cube[face][pos] != c {
@@ -112,13 +118,13 @@ pub fn find_entropy(cube: &Cube) -> i32 {
 }
 // --- Helper functions for adjacent faces and rotations ---
 fn cycle_l(color: Color) -> Color {
-    Color::from_usize(((color as usize) + 5) % 6)
+    Color::from_usize(((color as u8 + 5) % 6) as usize)
 }
 fn cycle_r(color: Color) -> Color {
-    Color::from_usize(((color as usize) + 1) % 6)
+    Color::from_usize(((color as u8 + 1) % 6) as usize)
 }
 pub fn rear(color: Color) -> Color {
-    Color::from_usize(((color as usize) + 3) % 6)
+    Color::from_usize(((color as u8 + 3) % 6) as usize)
 }
 /// Returns the "adjacent left" face.
 pub fn adjacent_left(rotating_face: Color, around: Color) -> Color {
@@ -140,6 +146,7 @@ pub fn adjacent_right(rotating_face: Color, around: Color) -> Color {
 }
 /// Computes the adjacent face in the clockwise direction.
 pub fn adjacent_cw(rotating_face: Color, around: Color) -> Color {
+    assert!(around != rear(rotating_face));
     if (rotating_face as u8) % 2 == 1 {
         adjacent_right(rotating_face, around)
     } else {
@@ -148,6 +155,7 @@ pub fn adjacent_cw(rotating_face: Color, around: Color) -> Color {
 }
 /// Computes the adjacent face in the counter‑clockwise direction.
 pub fn adjacent_ccw(rotating_face: Color, around: Color) -> Color {
+    assert!(around != rear(rotating_face));
     if (rotating_face as u8) % 2 == 1 {
         adjacent_left(rotating_face, around)
     } else {
@@ -156,75 +164,67 @@ pub fn adjacent_ccw(rotating_face: Color, around: Color) -> Color {
 }
 /// Rotates a face of the cube in place.
 pub fn rotate_face(cube: &mut Cube, face: Color, direction: Rotation) {
-    let fi = face as usize;
-    let g = TOP[fi];
-    let w = adjacent_cw(face, g);
-    let y = adjacent_cw(face, w);
-    let b = adjacent_cw(face, y);
-    let gi = g as usize;
-    let wi = w as usize;
-    let yi = y as usize;
-    let bi = b as usize;
+    let f = face as usize;
+    let g = TOP[f] as usize;
+    let w = adjacent_cw(face, TOP[f]) as usize;
+    let y = adjacent_cw(face, Color::from_usize(w)) as usize;
+    let b = adjacent_cw(face, Color::from_usize(y)) as usize;
 
     if direction == Rotation::CW {
         // Swap G's (0,7,6) with W's (4,3,2)
-        swap2(cube, gi, 0, wi, 4);
-        swap2(cube, gi, 7, wi, 3);
-        swap2(cube, gi, 6, wi, 2);
+        swap_pos(cube, g, 0, w, 4);
+        swap_pos(cube, g, 7, w, 3);
+        swap_pos(cube, g, 6, w, 2);
         // Swap B's (2,1,0) with G's (0,7,6)
-        swap2(cube, bi, 2, gi, 0);
-        swap2(cube, bi, 1, gi, 7);
-        swap2(cube, bi, 0, gi, 6);
+        swap_pos(cube, b, 2, g, 0);
+        swap_pos(cube, b, 1, g, 7);
+        swap_pos(cube, b, 0, g, 6);
         // Swap Y's (6,5,4) with B's (2,1,0)
-        swap2(cube, yi, 6, bi, 2);
-        swap2(cube, yi, 5, bi, 1);
-        swap2(cube, yi, 4, bi, 0);
-        // Rotate face CW
-        let temp = cube[fi][0];
-        cube[fi][0] = cube[fi][6];
-        cube[fi][6] = cube[fi][4];
-        cube[fi][4] = cube[fi][2];
-        cube[fi][2] = temp;
-        let temp = cube[fi][1];
-        cube[fi][1] = cube[fi][7];
-        cube[fi][7] = cube[fi][5];
-        cube[fi][5] = cube[fi][3];
-        cube[fi][3] = temp;
+        swap_pos(cube, y, 6, b, 2);
+        swap_pos(cube, y, 5, b, 1);
+        swap_pos(cube, y, 4, b, 0);
+        // Rotating face CW
+        let temp = cube[f][0];
+        cube[f][0] = cube[f][6];
+        cube[f][6] = cube[f][4];
+        cube[f][4] = cube[f][2];
+        cube[f][2] = temp;
+        let temp = cube[f][1];
+        cube[f][1] = cube[f][7];
+        cube[f][7] = cube[f][5];
+        cube[f][5] = cube[f][3];
+        cube[f][3] = temp;
     } else {
         // Swap G's (0,7,6) with B's (2,1,0)
-        swap2(cube, gi, 0, bi, 2);
-        swap2(cube, gi, 7, bi, 1);
-        swap2(cube, gi, 6, bi, 0);
+        swap_pos(cube, g, 0, b, 2);
+        swap_pos(cube, g, 7, b, 1);
+        swap_pos(cube, g, 6, b, 0);
         // Swap W's (4,3,2) with G's (0,7,6)
-        swap2(cube, wi, 4, gi, 0);
-        swap2(cube, wi, 3, gi, 7);
-        swap2(cube, wi, 2, gi, 6);
+        swap_pos(cube, w, 4, g, 0);
+        swap_pos(cube, w, 3, g, 7);
+        swap_pos(cube, w, 2, g, 6);
         // Swap Y's (6,5,4) with W's (4,3,2)
-        swap2(cube, yi, 6, wi, 4);
-        swap2(cube, yi, 5, wi, 3);
-        swap2(cube, yi, 4, wi, 2);
-        // Rotate face CCW
-        let temp = cube[fi][0];
-        cube[fi][0] = cube[fi][2];
-        cube[fi][2] = cube[fi][4];
-        cube[fi][4] = cube[fi][6];
-        cube[fi][6] = temp;
-        let temp = cube[fi][1];
-        cube[fi][1] = cube[fi][3];
-        cube[fi][3] = cube[fi][5];
-        cube[fi][5] = cube[fi][7];
-        cube[fi][7] = temp;
+        swap_pos(cube, y, 6, w, 4);
+        swap_pos(cube, y, 5, w, 3);
+        swap_pos(cube, y, 4, w, 2);
+        // Rotating face CCW
+        let temp = cube[f][0];
+        cube[f][0] = cube[f][2];
+        cube[f][2] = cube[f][4];
+        cube[f][4] = cube[f][6];
+        cube[f][6] = temp;
+        let temp = cube[f][1];
+        cube[f][1] = cube[f][3];
+        cube[f][3] = cube[f][5];
+        cube[f][5] = cube[f][7];
+        cube[f][7] = temp;
     }
 }
 
-fn swap2(cube: &mut Cube, f1: usize, p1: usize, f2: usize, p2: usize) {
-    if f1 == f2 {
-        cube[f1].swap(p1, p2);
-    } else {
-        let tmp = cube[f1][p1];
-        cube[f1][p1] = cube[f2][p2];
-        cube[f2][p2] = tmp;
-    }
+fn swap_pos(cube: &mut Cube, f1: usize, p1: usize, f2: usize, p2: usize) {
+    let tmp = cube[f1][p1];
+    cube[f1][p1] = cube[f2][p2];
+    cube[f2][p2] = tmp;
 }
 
 /// Returns a new cube that is the result of rotating a face.
@@ -235,19 +235,18 @@ pub fn new_cube_rotate_face(cube: &Cube, face: Color, direction: Rotation) -> Cu
 }
 /// Prints the cube in a formatted way.
 pub fn print_cube(cube: &Cube) {
-    for face in 0..6usize {
-        println!("{} {} {}",
+    for face in 0..6 {
+        println!("{} {} {}\n{} {} {}\n{} {} {}",
             COLOR_CODE[cube[face][0] as usize],
             COLOR_CODE[cube[face][1] as usize],
-            COLOR_CODE[cube[face][2] as usize]);
-        println!("{} {} {}",
+            COLOR_CODE[cube[face][2] as usize],
             COLOR_CODE[cube[face][7] as usize],
             COLOR_CODE[face],
-            COLOR_CODE[cube[face][3] as usize]);
-        println!("{} {} {}",
+            COLOR_CODE[cube[face][3] as usize],
             COLOR_CODE[cube[face][6] as usize],
             COLOR_CODE[cube[face][5] as usize],
-            COLOR_CODE[cube[face][4] as usize]);
+            COLOR_CODE[cube[face][4] as usize],
+        );
         println!("-----");
     }
 }

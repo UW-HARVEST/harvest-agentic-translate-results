@@ -34,26 +34,30 @@ impl SymTable {
         &self.rev
     }
     pub fn read(&mut self, fin: &mut dyn BufRead) -> io::Result<()> {
-        for line in fin.lines() {
-            let line = line?;
+        for line_result in fin.lines() {
+            let line = line_result?;
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() == 2 {
-                if let Ok(id) = parts[1].trim().parse::<i32>() {
-                    self.add(id, parts[0]);
+                if let Ok(id) = parts[1].parse::<usize>() {
+                    self.add(id as i32, parts[0]);
+                } else {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid input: {}", line)));
                 }
+            } else {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid input: {}", line)));
             }
         }
         Ok(())
     }
     pub fn fread(&mut self, filename: &str) -> io::Result<()> {
-        let f = File::open(filename)?;
-        let mut reader = BufReader::new(f);
+        let file = File::open(filename)?;
+        let mut reader = BufReader::new(file);
         self.read(&mut reader)
     }
     pub fn print(&self) {
         for (i, s) in self.sym.iter().enumerate() {
-            if let Some(tok) = s {
-                println!("{}\t{}", tok, i);
+            if let Some(token) = s {
+                println!("{}\t{}", token, i);
             }
         }
     }
@@ -62,26 +66,31 @@ impl SymTable {
         while self.n_max <= id {
             self.n_max *= 2;
         }
-        self.sym.resize(self.n_max, None);
-        self.sym[id] = Some(token.to_string());
-        self.rev.insert(token.to_string(), id);
+        if self.sym.len() < self.n_max {
+            self.sym.resize(self.n_max, None);
+        }
+        let t = token.to_string();
+        self.sym[id] = Some(t.clone());
+        self.rev.insert(t.clone(), id);
         self.n_items += 1;
-        self.sym[id].clone()
+        Some(t)
     }
     pub fn getr(&self, token: &str) -> Option<i32> {
-        self.rev.get(token).map(|&v| v as i32)
+        self.rev.get(token).map(|&id| id as i32)
     }
     pub fn get(&self, id: i32) -> Option<&str> {
         let id = id as usize;
-        if id >= self.sym.len() { return None; }
+        if id >= self.sym.len() {
+            return None;
+        }
         self.sym[id].as_deref()
     }
     pub fn compile(&mut self, token: &str) {
         for line in token.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() == 2 {
-                if let Ok(id) = parts[1].trim().parse::<i32>() {
-                    self.add(id, parts[0]);
+                if let Ok(id) = parts[1].parse::<usize>() {
+                    self.add(id as i32, parts[0]);
                 }
             }
         }

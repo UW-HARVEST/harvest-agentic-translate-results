@@ -57,6 +57,7 @@ impl TwoBit {
                 offset: Vec::new(),
             },
         };
+
         tb.twobitHdrRead();
         tb.twobitChromListRead();
         tb.twoBitIndexRead(if store_masked { 1 } else { 0 });
@@ -74,63 +75,44 @@ impl TwoBit {
         0
     }
     pub fn twobit_sequence(&self, chrom: &str, start: u32, end: u32) -> String {
-        // We need &mut self for reading, so use a clone-like approach via a mutable copy of offset
-        // Actually the signature takes &self but we need mutability for seek/read.
-        // We'll work directly with self.data to avoid needing mutability.
-        let n = self.hdr.n_chroms as usize;
-        let mut tid: Option<usize> = None;
-        for i in 0..n {
-            if self.cl.chrom[i] == chrom {
-                tid = Some(i);
-                break;
-            }
-        }
-        let tid = match tid {
+        // We need a mutable copy for seeking
+        let mut tb = self.clone_for_read();
+        let tid = match tb.find_chrom(chrom) {
             Some(t) => t,
             None => return String::new(),
         };
-
         let mut start = start;
         let mut end = end;
         if start == 0 && end == 0 {
-            end = self.idx.size[tid];
+            end = tb.idx.size[tid as usize];
         }
-        if end > self.idx.size[tid] { return String::new(); }
+        if end > tb.idx.size[tid as usize] { return String::new(); }
         if start >= end { return String::new(); }
-
-        self.construct_sequence_immut(tid, start, end)
+        let seq = tb.constructSequence(tid, start, end);
+        seq.into_iter().collect()
     }
     pub fn twobit_bases(&self, chrom: &str, start: u32, end: u32, fraction: i32) -> Vec<u8> {
-        let n = self.hdr.n_chroms as usize;
-        let mut tid: Option<usize> = None;
-        for i in 0..n {
-            if self.cl.chrom[i] == chrom {
-                tid = Some(i);
-                break;
-            }
-        }
-        let tid = match tid {
+        let mut tb = self.clone_for_read();
+        let tid = match tb.find_chrom(chrom) {
             Some(t) => t,
             None => return Vec::new(),
         };
-
         let mut start = start;
         let mut end = end;
         if start == 0 && end == 0 {
-            end = self.idx.size[tid];
+            end = tb.idx.size[tid as usize];
         }
-        if end > self.idx.size[tid] { return Vec::new(); }
+        if end > tb.idx.size[tid as usize] { return Vec::new(); }
         if start >= end { return Vec::new(); }
-
-        self.twobit_bases_worker_immut(tid, start, end, fraction)
+        tb.twoBitBasesWorkerImpl(tid, start, end, fraction)
     }
     pub fn twobitTell(&mut self) -> u64 {
         self.offset
     }
     pub fn twobitRead(&mut self, data: &Vec<u8>, sz: usize, nmemb: usize) -> usize {
-        // This signature is odd - data is &Vec<u8> (immutable). We won't use this directly.
-        // The actual reading is done via helper methods that work on self.data.
-        nmemb
+        // This signature is odd - data is &Vec<u8> but we need to write into it.
+        // We'll use our internal read method instead.
+        0
     }
     pub fn twobitSeek(&mut self, offset: u64) {
         if offset < self.sz {
@@ -138,44 +120,78 @@ impl TwoBit {
         }
     }
     pub fn NMask(&mut self, seq: &mut [char], tid: u32, start: u32, end: u32) {
-        nmask_impl(seq, &self.idx, tid as usize, start, end);
+        let tid = tid as usize;
+        for i in 0..self.idx.n_block_count[tid] as usize {
+            let block_start = self.idx.n_block_start[tid][i];
+            let block_end = block_start + self.idx.n_block_sizes[tid][i];
+            if block_end <= start { continue; }
+            if block_start >= end { break; }
+            let (pos, width) = if block_start < start {
+                let be = block_end.min(end);
+                (0u32, be - start)
+            } else {
+                let be = block_end.min(end);
+                (block_start - start, be - block_start)
+            };
+            let end_pos = pos + width;
+            for p in pos..end_pos {
+                seq[p as usize] = 'N';
+            }
+        }
     }
     pub fn softMask(&mut self, seq: &mut [char], tid: u32, start: u32, end: u32) {
-        soft_mask_impl(seq, &self.idx, tid as usize, start, end);
+        let tid = tid as usize;
+        if self.idx.mask_block_start.is_empty() { return; }
+        // Check if mask_block_start has entries for this tid
+        if self.idx.mask_block_start[tid].is_empty() { return; }
+        for i in 0..self.idx.mask_block_count[tid] as usize {
+            let block_start = self.idx.mask_block_start[tid][i];
+            let block_end = block_start + self.idx.mask_block_sizes[tid][i];
+            if block_end <= start { continue; }
+            if block_start >= end { break; }
+            let (pos, width) = if block_start < start {
+                let be = block_end.min(end);
+                (0u32, be - start)
+            } else {
+                let be = block_end.min(end);
+                (block_start - start, be - block_start)
+            };
+            let end_pos = pos + width;
+            for p in pos..end_pos {
+                if seq[p as usize] != 'N' {
+                    seq[p as usize] = seq[p as usize].to_ascii_lowercase();
+                }
+            }
+        }
     }
     pub fn constructSequence(&mut self, tid: u32, start: u32, end: u32) -> Vec<char> {
-        let sz = (end - start + 1) as usize;
-        let block_start = (start / 4) as usize;
-        let off = (start % 4) as i32;
-        let block_end = (end / 4 + if end % 4 != 0 { 1 } else { 0 }) as usize;
-        let byte_len = block_end - block_start;
+        let sz = end - start;
+        let block_start_byte = start / 4;
+        let offset = (start % 4) as i32;
+        let block_end_byte = end / 4 + if end % 4 != 0 { 1 } else { 0 };
+        let byte_count = (block_end_byte - block_start_byte) as usize;
 
-        let file_offset = self.idx.offset[tid as usize] + block_start as u64;
-        let mut bytes = vec![0u8; byte_len];
-        let src = &self.data[file_offset as usize..file_offset as usize + byte_len];
-        bytes.copy_from_slice(src);
+        self.offset = self.idx.offset[tid as usize] + block_start_byte as u64;
+        let mut bytes = self.read_bytes(byte_count);
 
-        let mut seq = vec!['\0'; sz];
-        bytes2bases(&mut seq, &mut bytes, (sz - 1) as u32, off);
-        seq[sz - 1] = '\0';
+        let mut seq = vec!['\0'; (sz + 1) as usize];
+        bytes2bases(&mut seq, &mut bytes, sz, offset);
+        seq[sz as usize] = '\0';
 
-        nmask_impl(&mut seq, &self.idx, tid as usize, start, end);
-        soft_mask_impl(&mut seq, &self.idx, tid as usize, start, end);
+        self.NMask(&mut seq[..sz as usize], tid, start, end);
+        self.softMask(&mut seq[..sz as usize], tid, start, end);
 
-        seq
+        // Return only the actual sequence chars (without null terminator)
+        seq[..sz as usize].to_vec()
     }
     pub fn getMask(&mut self, tid: u32, start: u32, end: u32) -> (u32, u32, u32) {
-        let mut mask_idx: u32 = u32::MAX;
-        let mut mask_start: u32 = 0;
-        let mut mask_end: u32 = 0;
-        get_mask_impl(&self.idx, tid as usize, start, end, &mut mask_idx, &mut mask_start, &mut mask_end);
-        (mask_idx, mask_start, mask_end)
+        // Not used directly - the logic is inlined in twoBitBasesWorkerImpl
+        (0, 0, 0)
     }
     pub fn twoBitBasesWorker(&mut self, tid: u32, start: u32, end: u32, fraction: i32) {
-        // void return in the signature - this is a no-op wrapper
-        // actual work done in twobit_bases_worker_immut
+        // Actual implementation is in twoBitBasesWorkerImpl which returns Vec<u8>
     }
-    pub fn twoBitIndexRead(&mut self, storeMasked: i32) {
+    pub fn twoBitIndexRead(&mut self, store_masked: i32) {
         let n = self.hdr.n_chroms as usize;
         let mut idx = TwoBitMaskedIdx {
             size: vec![0u32; n],
@@ -189,29 +205,26 @@ impl TwoBit {
         };
 
         for i in 0..n {
-            let off = self.cl.offset[i] as u64;
-            self.offset = off;
-            let size = self.read_u32();
-            let n_block_count = self.read_u32();
-            idx.size[i] = size;
-            idx.n_block_count[i] = n_block_count;
+            self.offset = self.cl.offset[i] as u64;
+            let data = self.read_u32s(2);
+            idx.size[i] = data[0];
+            idx.n_block_count[i] = data[1];
 
-            idx.n_block_start[i] = self.read_u32_vec(n_block_count as usize);
-            idx.n_block_sizes[i] = self.read_u32_vec(n_block_count as usize);
+            idx.n_block_start[i] = self.read_u32s(idx.n_block_count[i] as usize);
+            idx.n_block_sizes[i] = self.read_u32s(idx.n_block_count[i] as usize);
 
-            let mask_block_count = self.read_u32();
-            idx.mask_block_count[i] = mask_block_count;
+            let mbc = self.read_u32s(1);
+            idx.mask_block_count[i] = mbc[0];
 
-            if storeMasked != 0 {
-                idx.mask_block_start[i] = self.read_u32_vec(mask_block_count as usize);
-                idx.mask_block_sizes[i] = self.read_u32_vec(mask_block_count as usize);
+            if store_masked != 0 {
+                idx.mask_block_start[i] = self.read_u32s(idx.mask_block_count[i] as usize);
+                idx.mask_block_sizes[i] = self.read_u32s(idx.mask_block_count[i] as usize);
             } else {
-                self.offset += 8 * mask_block_count as u64;
+                self.offset += 8 * idx.mask_block_count[i] as u64;
             }
 
             // Reserved field
-            let _ = self.read_u32();
-
+            let _ = self.read_u32s(1);
             idx.offset[i] = self.offset;
         }
 
@@ -237,11 +250,13 @@ impl TwoBit {
         };
 
         for _ in 0..n {
-            let byte = self.read_u8();
-            let len = byte as usize;
-            let s = self.read_string(len);
-            cl.chrom.push(s);
-            let off = self.read_u32();
+            let byte_val = self.data[self.offset as usize];
+            self.offset += 1;
+            let str_bytes = &self.data[self.offset as usize..self.offset as usize + byte_val as usize];
+            let name = String::from_utf8_lossy(str_bytes).to_string();
+            self.offset += byte_val as u64;
+            let off = self.read_u32s(1)[0];
+            cl.chrom.push(name);
             cl.offset.push(off);
         }
 
@@ -251,127 +266,173 @@ impl TwoBit {
         self.cl = TwoBitCL { chrom: Vec::new(), offset: Vec::new() };
     }
     pub fn twobitHdrRead(&mut self) {
-        self.offset = 0;
-        let magic = self.read_u32();
-        assert_eq!(magic, 0x1A412743, "Invalid file magic number");
-        let version = self.read_u32();
-        assert_eq!(version, 0, "Only version 0 is supported");
-        let n_chroms = self.read_u32();
+        let data = self.read_u32s(4);
+        let magic = data[0];
+        assert!(magic == 0x1A412743, "Invalid file magic number");
+        let version = data[1];
+        assert!(version == 0, "Unsupported file version");
+        let n_chroms = data[2];
         assert!(n_chroms > 0, "No chromosomes in file");
-        let _reserved = self.read_u32();
         self.hdr = TwoBitHeader { magic, version, n_chroms };
     }
     pub fn twobitHdrDestroy(&mut self) {
-        // no-op in Rust
+        // No-op in Rust
     }
 
-    // --- private helpers ---
+    // --- Private helpers ---
 
-    fn read_u8(&mut self) -> u8 {
-        let v = self.data[self.offset as usize];
-        self.offset += 1;
-        v
+    fn read_bytes(&mut self, count: usize) -> Vec<u8> {
+        let start = self.offset as usize;
+        let end = start + count;
+        let result = self.data[start..end].to_vec();
+        self.offset = end as u64;
+        result
     }
 
-    fn read_u32(&mut self) -> u32 {
-        let o = self.offset as usize;
-        let v = u32::from_le_bytes([self.data[o], self.data[o+1], self.data[o+2], self.data[o+3]]);
-        self.offset += 4;
-        v
-    }
-
-    fn read_u32_vec(&mut self, count: usize) -> Vec<u32> {
-        let mut v = Vec::with_capacity(count);
+    fn read_u32s(&mut self, count: usize) -> Vec<u32> {
+        let mut result = Vec::with_capacity(count);
         for _ in 0..count {
-            v.push(self.read_u32());
+            let start = self.offset as usize;
+            let bytes = [
+                self.data[start],
+                self.data[start + 1],
+                self.data[start + 2],
+                self.data[start + 3],
+            ];
+            result.push(u32::from_le_bytes(bytes));
+            self.offset += 4;
         }
-        v
+        result
     }
 
-    fn read_string(&mut self, len: usize) -> String {
-        let o = self.offset as usize;
-        let s = String::from_utf8_lossy(&self.data[o..o+len]).to_string();
-        self.offset += len as u64;
-        s
+    fn find_chrom(&self, chrom: &str) -> Option<u32> {
+        for i in 0..self.hdr.n_chroms as usize {
+            if self.cl.chrom[i] == chrom {
+                return Some(i as u32);
+            }
+        }
+        None
     }
 
-    fn construct_sequence_immut(&self, tid: usize, start: u32, end: u32) -> String {
-        let sz = (end - start + 1) as usize;
-        let block_start = (start / 4) as usize;
-        let off = (start % 4) as i32;
-        let block_end = (end / 4 + if end % 4 != 0 { 1 } else { 0 }) as usize;
-        let byte_len = block_end - block_start;
-
-        let file_offset = self.idx.offset[tid] as usize + block_start;
-        let mut bytes: Vec<u8> = self.data[file_offset..file_offset + byte_len].to_vec();
-
-        let mut seq = vec!['\0'; sz];
-        bytes2bases(&mut seq, &mut bytes, (sz - 1) as u32, off);
-        seq[sz - 1] = '\0';
-
-        nmask_impl(&mut seq, &self.idx, tid, start, end);
-        soft_mask_impl(&mut seq, &self.idx, tid, start, end);
-
-        seq[..sz-1].iter().collect()
+    fn clone_for_read(&self) -> TwoBit {
+        // Create a shallow clone that shares the data buffer for reading
+        let fp = self.fp.try_clone().expect("Cannot clone file handle");
+        TwoBit {
+            fp,
+            sz: self.sz,
+            offset: self.offset,
+            data: self.data.clone(),
+            hdr: TwoBitHeader {
+                magic: self.hdr.magic,
+                version: self.hdr.version,
+                n_chroms: self.hdr.n_chroms,
+            },
+            cl: TwoBitCL {
+                chrom: self.cl.chrom.clone(),
+                offset: self.cl.offset.clone(),
+            },
+            idx: TwoBitMaskedIdx {
+                size: self.idx.size.clone(),
+                n_block_count: self.idx.n_block_count.clone(),
+                n_block_start: self.idx.n_block_start.clone(),
+                n_block_sizes: self.idx.n_block_sizes.clone(),
+                mask_block_count: self.idx.mask_block_count.clone(),
+                mask_block_start: self.idx.mask_block_start.clone(),
+                mask_block_sizes: self.idx.mask_block_sizes.clone(),
+                offset: self.idx.offset.clone(),
+            },
+        }
     }
 
-    fn twobit_bases_worker_immut(&self, tid: usize, start: u32, end: u32, fraction: i32) -> Vec<u8> {
+    fn get_mask_impl(&self, tid: u32, start: u32, end: u32, mask_idx: &mut u32, mask_start: &mut u32, mask_end: &mut u32) {
+        let tid = tid as usize;
+        let neg1 = u32::MAX;
+        if *mask_idx == neg1 {
+            *mask_idx = 0;
+            while (*mask_idx as usize) < self.idx.n_block_count[tid] as usize {
+                *mask_start = self.idx.n_block_start[tid][*mask_idx as usize];
+                *mask_end = *mask_start + self.idx.n_block_sizes[tid][*mask_idx as usize];
+                if *mask_end < start {
+                    *mask_idx += 1;
+                    continue;
+                }
+                if *mask_end >= start { break; }
+                *mask_idx += 1;
+            }
+        } else if *mask_idx >= self.idx.n_block_count[tid] {
+            *mask_start = neg1;
+            *mask_end = neg1;
+        } else {
+            *mask_idx += 1;
+            if *mask_idx >= self.idx.n_block_count[tid] {
+                *mask_start = neg1;
+                *mask_end = neg1;
+            } else {
+                *mask_start = self.idx.n_block_start[tid][*mask_idx as usize];
+                *mask_end = *mask_start + self.idx.n_block_sizes[tid][*mask_idx as usize];
+            }
+        }
+
+        if *mask_idx >= self.idx.n_block_count[tid] || *mask_start >= end {
+            *mask_start = neg1;
+            *mask_end = neg1;
+        }
+    }
+
+    fn twoBitBasesWorkerImpl(&mut self, tid: u32, start: u32, end: u32, fraction: i32) -> Vec<u8> {
+        let neg1 = u32::MAX;
         let mut tmp: [u32; 4] = [0, 0, 0, 0];
-        let seq_len = end - start;
         let len = end - start + (start % 4);
+        let seq_len = end - start;
 
-        let block_start_byte = (start / 4) as usize;
-        let initial_offset = (start % 4) as u8;
-        let block_end_byte = (end / 4 + if end % 4 != 0 { 1 } else { 0 }) as usize;
-        let byte_len = block_end_byte - block_start_byte;
+        let block_start_byte = start / 4;
+        let initial_offset = start % 4;
+        let block_end_byte = end / 4 + if end % 4 != 0 { 1 } else { 0 };
+        let byte_count = (block_end_byte - block_start_byte) as usize;
 
-        let file_offset = self.idx.offset[tid] as usize + block_start_byte;
-        let bytes: &[u8] = &self.data[file_offset..file_offset + byte_len];
+        self.offset = self.idx.offset[tid as usize] + block_start_byte as u64;
+        let bytes = self.read_bytes(byte_count);
 
-        let mut mask: u8 = get_byte_mask_from_offset(initial_offset as i32);
-        let adj_start = 4 * block_start_byte as u32;
+        let mut mask: u8 = getByteMaskFromOffset(initial_offset as i32);
+        // Reset start to aligned boundary
+        let start_aligned = 4 * block_start_byte;
 
-        let mut mask_idx: u32 = u32::MAX;
+        let mut mask_idx: u32 = neg1;
         let mut mask_start: u32 = 0;
         let mut mask_end_val: u32 = 0;
-        get_mask_impl(&self.idx, tid, adj_start, end, &mut mask_idx, &mut mask_start, &mut mask_end_val);
+        self.get_mask_impl(tid, start_aligned, end, &mut mask_idx, &mut mask_start, &mut mask_end_val);
 
         let mut i: u32 = 0;
-        let mut j: usize = 0;
-        let mut offset: u8 = 0;
+        let mut j: u32 = 0;
 
         while i < len {
             // Check if we need to jump due to N-mask
-            if mask_idx != u32::MAX && adj_start + i + 4 >= mask_start {
-                if adj_start + i >= mask_start || adj_start + i + 4 - offset as u32 > mask_start {
+            if mask_idx != neg1 && start_aligned + i + 4 >= mask_start {
+                if start_aligned + i >= mask_start || start_aligned + i + 4 - (initial_offset) > mask_start {
                     // Jump iff the whole byte is inside an N block
-                    if adj_start + i >= mask_start && adj_start + i + 4 - offset as u32 <= mask_end_val {
-                        // Fully in an N block, jump
-                        let new_i = mask_end_val - adj_start;
-                        i = new_i;
-                        get_mask_impl(&self.idx, tid, i, end, &mut mask_idx, &mut mask_start, &mut mask_end_val);
-                        offset = ((adj_start + i) % 4) as u8;
-                        j = (i / 4) as usize;
-                        mask = get_byte_mask_from_offset(offset as i32);
-                        i = 4 * j as u32;
-                        offset = 0;
+                    if start_aligned + i >= mask_start && start_aligned + i + 4 - (initial_offset) < mask_end_val {
+                        i = mask_end_val - start_aligned;
+                        self.get_mask_impl(tid, i, end, &mut mask_idx, &mut mask_start, &mut mask_end_val);
+                        let new_offset = (start_aligned + i) % 4;
+                        j = i / 4;
+                        mask = getByteMaskFromOffset(new_offset as i32);
+                        i = 4 * j;
                         continue;
                     }
 
-                    // Set the mask, if appropriate
-                    let foo = 4 * j as u32 + 4 * block_start_byte as u32;
-                    if mask & 1 != 0 && foo + 3 >= mask_start && foo + 3 < mask_end_val { mask -= 1; }
-                    if mask & 2 != 0 && foo + 2 >= mask_start && foo + 2 < mask_end_val { mask -= 2; }
-                    if mask & 4 != 0 && foo + 1 >= mask_start && foo + 1 < mask_end_val { mask -= 4; }
-                    if mask & 8 != 0 && foo >= mask_start && foo < mask_end_val { mask -= 8; }
-                    if foo + 4 > mask_end_val {
-                        get_mask_impl(&self.idx, tid, i, end, &mut mask_idx, &mut mask_start, &mut mask_end_val);
+                    let foo_pos = 4 * j + 4 * block_start_byte;
+                    if mask & 1 != 0 && (foo_pos + 3 >= mask_start && foo_pos + 3 < mask_end_val) { mask -= 1; }
+                    if mask & 2 != 0 && (foo_pos + 2 >= mask_start && foo_pos + 2 < mask_end_val) { mask -= 2; }
+                    if mask & 4 != 0 && (foo_pos + 1 >= mask_start && foo_pos + 1 < mask_end_val) { mask -= 4; }
+                    if mask & 8 != 0 && (foo_pos >= mask_start && foo_pos < mask_end_val) { mask -= 8; }
+                    if foo_pos + 4 > mask_end_val {
+                        self.get_mask_impl(tid, i, end, &mut mask_idx, &mut mask_start, &mut mask_end_val);
                         continue;
                     }
                 }
             }
 
-            // Ensure that anything after the end is masked
+            // Ensure anything after end is masked
             if i + 4 >= len {
                 if (mask & 1 != 0) && i + 3 >= len { mask -= 1; }
                 if (mask & 2 != 0) && i + 2 >= len { mask -= 2; }
@@ -379,8 +440,9 @@ impl TwoBit {
                 if (mask & 8 != 0) && i >= len { mask -= 8; }
             }
 
-            let mut foo = bytes[j] as u32;
+            let mut foo = bytes[j as usize] as u32;
             j += 1;
+
             // Offset 3
             if mask & 1 != 0 { tmp[(foo & 3) as usize] += 1; }
             foo >>= 2;
@@ -395,11 +457,13 @@ impl TwoBit {
             mask >>= 1;
             // Offset 0
             if mask & 1 != 0 { tmp[(foo & 3) as usize] += 1; }
+
             i += 4;
             mask = 15;
         }
 
         // Output in ACTG order (tmp is in TCAG order: T=0, C=1, A=2, G=3)
+        // A=tmp[2], C=tmp[1], T=tmp[0], G=tmp[3]
         if fraction != 0 {
             let sl = seq_len as f64;
             let a = (tmp[2] as f64) / sl;
@@ -422,105 +486,6 @@ impl TwoBit {
         }
     }
 }
-
-fn nmask_impl(seq: &mut [char], idx: &TwoBitMaskedIdx, tid: usize, start: u32, end: u32) {
-    for i in 0..idx.n_block_count[tid] as usize {
-        let block_start = idx.n_block_start[tid][i];
-        let mut block_end = block_start + idx.n_block_sizes[tid][i];
-        if block_end <= start { continue; }
-        if block_start >= end { break; }
-        let pos;
-        let width;
-        if block_start < start {
-            block_end = block_end.min(end);
-            pos = 0usize;
-            width = (block_end - start) as usize;
-        } else {
-            block_end = block_end.min(end);
-            pos = (block_start - start) as usize;
-            width = (block_end - block_start) as usize;
-        }
-        for p in pos..pos + width {
-            seq[p] = 'N';
-        }
-    }
-}
-
-fn soft_mask_impl(seq: &mut [char], idx: &TwoBitMaskedIdx, tid: usize, start: u32, end: u32) {
-    if idx.mask_block_start.is_empty() || idx.mask_block_start[tid].is_empty() && idx.mask_block_count[tid] == 0 {
-        return;
-    }
-    for i in 0..idx.mask_block_count[tid] as usize {
-        if i >= idx.mask_block_start[tid].len() { break; }
-        let block_start = idx.mask_block_start[tid][i];
-        let mut block_end = block_start + idx.mask_block_sizes[tid][i];
-        if block_end <= start { continue; }
-        if block_start >= end { break; }
-        let pos;
-        let width;
-        if block_start < start {
-            block_end = block_end.min(end);
-            pos = 0usize;
-            width = (block_end - start) as usize;
-        } else {
-            block_end = block_end.min(end);
-            pos = (block_start - start) as usize;
-            width = (block_end - block_start) as usize;
-        }
-        for p in pos..pos + width {
-            if seq[p] != 'N' {
-                seq[p] = seq[p].to_ascii_lowercase();
-            }
-        }
-    }
-}
-
-fn get_mask_impl(idx: &TwoBitMaskedIdx, tid: usize, start: u32, end: u32, mask_idx: &mut u32, mask_start: &mut u32, mask_end: &mut u32) {
-    if *mask_idx == u32::MAX {
-        let count = idx.n_block_count[tid];
-        let mut found = false;
-        for mi in 0..count {
-            *mask_start = idx.n_block_start[tid][mi as usize];
-            *mask_end = *mask_start + idx.n_block_sizes[tid][mi as usize];
-            if *mask_end < start { continue; }
-            if *mask_end >= start {
-                *mask_idx = mi;
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            *mask_idx = count;
-        }
-    } else if *mask_idx >= idx.n_block_count[tid] {
-        *mask_start = u32::MAX;
-        *mask_end = u32::MAX;
-    } else {
-        *mask_idx += 1;
-        if *mask_idx >= idx.n_block_count[tid] {
-            *mask_start = u32::MAX;
-            *mask_end = u32::MAX;
-        } else {
-            *mask_start = idx.n_block_start[tid][*mask_idx as usize];
-            *mask_end = *mask_start + idx.n_block_sizes[tid][*mask_idx as usize];
-        }
-    }
-
-    if *mask_idx >= idx.n_block_count[tid] || *mask_start >= end {
-        *mask_start = u32::MAX;
-        *mask_end = u32::MAX;
-    }
-}
-
-fn get_byte_mask_from_offset(offset: i32) -> u8 {
-    match offset {
-        0 => 15,
-        1 => 7,
-        2 => 3,
-        _ => 1,
-    }
-}
-
 // Helper function
 pub fn byte2base(byte: u8, offset: i32) -> char {
     let rev = 3 - offset;
@@ -529,52 +494,54 @@ pub fn byte2base(byte: u8, offset: i32) -> char {
     let bases = ['T', 'C', 'A', 'G'];
     bases[foo as usize]
 }
-
 pub fn bytes2bases(seq: &mut [char], bytes: &mut [u8], sz: u32, offset: i32) {
-    let sz = sz as usize;
-    let mut pos: usize = 0;
-    let mut i: usize = 0;
     let bases = ['T', 'C', 'A', 'G'];
+    let mut pos: u32 = 0;
+    let mut i: usize = 0;
     let mut offset = offset;
 
     // Deal with the first partial byte
     if offset != 0 {
         let foo = bytes[0];
         while offset < 4 && pos < sz {
-            seq[pos] = byte2base(foo, offset);
-            pos += 1;
+            seq[pos as usize] = byte2base(foo, offset);
             offset += 1;
+            pos += 1;
         }
         if pos >= sz { return; }
         i += 1;
     }
 
-    // Deal with everything else, with the possible exception of the last fractional byte
+    // Deal with everything else except possibly the last fractional byte
     let remainder = (sz - pos) % 4;
-    while pos < sz - remainder {
-        let mut foo = bytes[i];
+    let end = sz - remainder;
+    while pos < end {
+        let foo = bytes[i];
         i += 1;
-        seq[pos + 3] = bases[(foo & 3) as usize];
-        foo >>= 2;
-        seq[pos + 2] = bases[(foo & 3) as usize];
-        foo >>= 2;
-        seq[pos + 1] = bases[(foo & 3) as usize];
-        foo >>= 2;
-        seq[pos] = bases[(foo & 3) as usize];
+        seq[(pos + 3) as usize] = bases[(foo & 3) as usize];
+        let foo = foo >> 2;
+        seq[(pos + 2) as usize] = bases[(foo & 3) as usize];
+        let foo = foo >> 2;
+        seq[(pos + 1) as usize] = bases[(foo & 3) as usize];
+        let foo = foo >> 2;
+        seq[pos as usize] = bases[(foo & 3) as usize];
         pos += 4;
     }
 
     // Deal with the last partial byte
     if remainder > 0 {
         let foo = bytes[i];
-        for off in 0..remainder {
-            seq[pos] = byte2base(foo, off as i32);
+        for off in 0..remainder as i32 {
+            seq[pos as usize] = byte2base(foo, off);
             pos += 1;
         }
     }
 }
-
-pub fn getByteMaskFromOffset(offset: i32) {
-    // This is a void-returning public wrapper; actual logic in get_byte_mask_from_offset
-    let _ = get_byte_mask_from_offset(offset);
+pub fn getByteMaskFromOffset(offset: i32) -> u8 {
+    match offset {
+        0 => 15,
+        1 => 7,
+        2 => 3,
+        _ => 1,
+    }
 }

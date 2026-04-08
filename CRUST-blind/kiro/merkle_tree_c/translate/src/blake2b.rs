@@ -62,6 +62,10 @@ fn load64(src: &[u8]) -> u64 {
     u64::from_le_bytes(src[..8].try_into().unwrap())
 }
 
+fn store32(dst: &mut [u8], w: u32) {
+    dst[..4].copy_from_slice(&w.to_le_bytes());
+}
+
 fn store64(dst: &mut [u8], w: u64) {
     dst[..8].copy_from_slice(&w.to_le_bytes());
 }
@@ -190,13 +194,12 @@ pub fn blake2b_init_key(state: &mut Blake2bState, outlen: usize, key: &[u8]) -> 
     if outlen == 0 || outlen > BLAKE2B_OUTBYTES {
         return -1;
     }
-    let keylen = key.len();
-    if keylen == 0 || keylen > BLAKE2B_KEYBYTES {
+    if key.is_empty() || key.len() > BLAKE2B_KEYBYTES {
         return -1;
     }
     let p = Blake2bParam {
         digest_length: outlen as u8,
-        key_length: keylen as u8,
+        key_length: key.len() as u8,
         fanout: 1,
         depth: 1,
         leaf_length: 0,
@@ -212,7 +215,7 @@ pub fn blake2b_init_key(state: &mut Blake2bState, outlen: usize, key: &[u8]) -> 
         return -1;
     }
     let mut block = [0u8; BLAKE2B_BLOCKBYTES];
-    block[..keylen].copy_from_slice(key);
+    block[..key.len()].copy_from_slice(key);
     blake2b_update(state, &block);
     0
 }
@@ -224,7 +227,7 @@ pub fn blake2b_init_param(state: &mut Blake2bState, param: &Blake2bParam) -> i32
     for i in 0..8 {
         state.h[i] ^= load64(&p[i * 8..]);
     }
-    state.outlen = param.digest_length as usize;
+    state.outlen = { param.digest_length } as usize;
     0
 }
 
@@ -288,6 +291,11 @@ pub fn blake2b(out: &mut [u8], input: &[u8], key: Option<&[u8]>) -> i32 {
     if outlen == 0 || outlen > BLAKE2B_OUTBYTES {
         return -1;
     }
+    let keylen = key.map_or(0, |k| k.len());
+    if keylen > BLAKE2B_KEYBYTES {
+        return -1;
+    }
+
     let mut s = Blake2bState {
         h: [0; 8],
         t: [0; 2],
@@ -297,21 +305,15 @@ pub fn blake2b(out: &mut [u8], input: &[u8], key: Option<&[u8]>) -> i32 {
         outlen: 0,
         last_node: 0,
     };
-    match key {
-        Some(k) if !k.is_empty() => {
-            if k.len() > BLAKE2B_KEYBYTES {
-                return -1;
-            }
-            if blake2b_init_key(&mut s, outlen, k) < 0 {
-                return -1;
-            }
+
+    if keylen > 0 {
+        if blake2b_init_key(&mut s, outlen, key.unwrap()) < 0 {
+            return -1;
         }
-        _ => {
-            if blake2b_init(&mut s, outlen) < 0 {
-                return -1;
-            }
-        }
+    } else if blake2b_init(&mut s, outlen) < 0 {
+        return -1;
     }
+
     blake2b_update(&mut s, input);
     blake2b_final(&mut s, out);
     0

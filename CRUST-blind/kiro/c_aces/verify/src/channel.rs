@@ -18,7 +18,7 @@ impl Channel {
     pub fn new(p: u64, q: u64, w: u64) -> Self {
         Channel { p, q, w }
     }
-    /// Initializes a channel and checks that `p^2 < q` and p,q are coprime.
+    /// Initializes a channel and checks that `p^2 < q` and coprime.
     pub fn init(p: u64, q: u64, w: u64) -> Result<Self> {
         let mut ch = Channel { w, p, q };
         if !(p * p < q && are_coprime(p, q)) {

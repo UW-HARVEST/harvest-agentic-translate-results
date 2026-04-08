@@ -3,7 +3,13 @@ use std::fs::File;
 use std::io::Write;
 
 pub struct FileOutput {
-    pub file: File,
+    file: File,
+}
+
+impl FileOutput {
+    pub fn from_file(file: File) -> Self {
+        FileOutput { file }
+    }
 }
 
 impl OutputInterface for FileOutput {
@@ -13,5 +19,5 @@ impl OutputInterface for FileOutput {
 }
 
 pub fn file_output_new(_output: &mut dyn OutputInterface, _file: File) {
-    // In Rust, use FileOutput struct directly instead.
+    // In Rust, use FileOutput::from_file() directly instead.
 }

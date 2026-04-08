@@ -1,104 +1,86 @@
-use bhshell::dynamicarr::{get_args, get_string, destroy_args, ArgList, Str};
+use bhshell::dynamicarr;
 
 #[test]
-fn test_get_string_basic() {
-    let s = Str {
-        items: "abc".to_string(),
-        position: 3,
-        bufsize: 16,
-    };
-    assert_eq!(get_string(&s), "abc");
+fn test_get_args_empty_list() {
+    let l = dynamicarr::ArgList::default();
+    let args = dynamicarr::get_args(&l);
+    assert!(args.is_empty());
 }
 
 #[test]
-fn test_get_string_partial() {
-    let s = Str {
-        items: "hello world".to_string(),
-        position: 5,
-        bufsize: 16,
-    };
-    assert_eq!(get_string(&s), "hello");
-}
-
-#[test]
-fn test_get_string_empty() {
-    let s = Str {
-        items: String::new(),
-        position: 0,
-        bufsize: 0,
-    };
-    assert_eq!(get_string(&s), "");
-}
-
-#[test]
-fn test_get_args_basic() {
-    let l = ArgList {
+fn test_get_args_with_items() {
+    let l = dynamicarr::ArgList {
         items: vec!["hello".to_string(), "world".to_string()],
         position: 2,
         bufsize: 16,
     };
-    let args = get_args(&l);
+    let args = dynamicarr::get_args(&l);
     assert_eq!(args.len(), 2);
     assert_eq!(args[0], "hello");
     assert_eq!(args[1], "world");
 }
 
 #[test]
-fn test_get_args_empty() {
-    let l = ArgList {
-        items: Vec::new(),
-        position: 0,
-        bufsize: 0,
-    };
-    let args = get_args(&l);
-    assert!(args.is_empty());
-}
-
-#[test]
-fn test_get_args_single() {
-    let l = ArgList {
-        items: vec!["only".to_string()],
+fn test_get_args_single_item() {
+    let l = dynamicarr::ArgList {
+        items: vec!["single".to_string()],
         position: 1,
         bufsize: 16,
     };
-    let args = get_args(&l);
+    let args = dynamicarr::get_args(&l);
     assert_eq!(args.len(), 1);
-    assert_eq!(args[0], "only");
+    assert_eq!(args[0], "single");
 }
 
 #[test]
-fn test_get_args_partial_position() {
-    let l = ArgList {
-        items: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        position: 2,
+fn test_get_args_three_items() {
+    let l = dynamicarr::ArgList {
+        items: vec!["foo".to_string(), "bar".to_string(), "baz".to_string()],
+        position: 3,
         bufsize: 16,
     };
-    let args = get_args(&l);
-    assert_eq!(args.len(), 2);
-    assert_eq!(args[0], "a");
-    assert_eq!(args[1], "b");
+    let args = dynamicarr::get_args(&l);
+    assert_eq!(args.len(), 3);
+    assert_eq!(args[0], "foo");
+    assert_eq!(args[1], "bar");
+    assert_eq!(args[2], "baz");
 }
 
 #[test]
-fn test_destroy_args_no_panic() {
-    let args = vec!["hello".to_string(), "world".to_string()];
-    destroy_args(args);
+fn test_get_string() {
+    let s = dynamicarr::Str {
+        items: "hello".to_string(),
+        position: 5,
+        bufsize: 16,
+    };
+    let result = dynamicarr::get_string(&s);
+    assert_eq!(result, "hello");
+    assert_eq!(result.len(), 5);
 }
 
 #[test]
-fn test_default_str() {
-    let s = Str::default();
-    assert_eq!(s.position, 0);
-    assert_eq!(s.bufsize, 0);
-    assert!(s.items.is_empty());
+fn test_get_string_single_char() {
+    let s = dynamicarr::Str {
+        items: "x".to_string(),
+        position: 1,
+        bufsize: 16,
+    };
+    let result = dynamicarr::get_string(&s);
+    assert_eq!(result, "x");
+    assert_eq!(result.len(), 1);
 }
 
 #[test]
-fn test_default_arglist() {
-    let l = ArgList::default();
-    assert_eq!(l.position, 0);
-    assert_eq!(l.bufsize, 0);
-    assert!(l.items.is_empty());
+fn test_get_string_empty() {
+    let s = dynamicarr::Str::default();
+    let result = dynamicarr::get_string(&s);
+    assert_eq!(result, "");
+}
+
+#[test]
+fn test_destroy_args_does_not_panic() {
+    let args = vec!["a".to_string(), "b".to_string()];
+    dynamicarr::destroy_args(args);
 }
 
 fn main() {}

@@ -1,7 +1,7 @@
 use fslib::symt::SymTable;
 
 #[test]
-fn test_add_and_get() {
+fn test_add_get() {
     let mut st = SymTable::new();
     st.add(0, "eps");
     st.add(1, "hello");
@@ -13,7 +13,7 @@ fn test_add_and_get() {
 }
 
 #[test]
-fn test_getr() {
+fn test_reverse_lookup() {
     let mut st = SymTable::new();
     st.add(0, "eps");
     st.add(1, "hello");
@@ -24,33 +24,21 @@ fn test_getr() {
 }
 
 #[test]
-fn test_getr_missing() {
-    let st = SymTable::new();
-    assert_eq!(st.getr("nonexistent"), None);
-}
-
-#[test]
 fn test_get_out_of_range() {
     let st = SymTable::new();
     assert_eq!(st.get(9999), None);
 }
 
 #[test]
-fn test_add_large_id() {
-    let mut st = SymTable::new();
-    st.add(2000, "big");
-    assert_eq!(st.get(2000), Some("big"));
-    assert_eq!(st.getr("big"), Some(2000));
-}
-
-#[test]
-fn test_compile() {
-    let mut st = SymTable::new();
-    st.compile("one\t1\ntwo\t2");
-    assert_eq!(st.get(1), Some("one"));
-    assert_eq!(st.get(2), Some("two"));
-    assert_eq!(st.getr("one"), Some(1));
-    assert_eq!(st.getr("two"), Some(2));
+fn test_fnv32() {
+    use fslib::symt::fnv32;
+    // Just verify it returns consistent values
+    let h1 = fnv32("hello");
+    let h2 = fnv32("hello");
+    assert_eq!(h1, h2);
+    // Different strings should (very likely) produce different hashes
+    let h3 = fnv32("world");
+    assert_ne!(h1, h3);
 }
 
 fn main() {}

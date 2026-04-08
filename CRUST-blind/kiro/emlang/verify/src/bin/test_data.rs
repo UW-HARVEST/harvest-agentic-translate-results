@@ -1,107 +1,80 @@
 use emlang::data::{Data, DataType, DataValue};
 
 #[test]
-fn test_new_default_int() {
+fn test_data_new_int_default() {
     let d = Data::new(DataType::Int);
     assert_eq!(d.dtype, DataType::Int);
-    assert!(matches!(d.value, DataValue::Int(0)));
+    match d.value {
+        DataValue::Int(v) => assert_eq!(v, 0),
+        _ => panic!("expected Int"),
+    }
 }
 
 #[test]
-fn test_new_default_str() {
+fn test_data_new_str_default() {
     let d = Data::new(DataType::Str);
     assert_eq!(d.dtype, DataType::Str);
-    if let DataValue::Str(ref s) = d.value {
-        assert_eq!(s, "");
-    } else {
-        panic!("expected Str variant");
+    match d.value {
+        DataValue::Str(ref s) => assert_eq!(s, ""),
+        _ => panic!("expected Str"),
     }
 }
 
 #[test]
-fn test_new_int() {
+fn test_data_new_int_positive() {
     let d = Data::new_int(42);
     assert_eq!(d.dtype, DataType::Int);
-    assert!(matches!(d.value, DataValue::Int(42)));
+    match d.value {
+        DataValue::Int(v) => assert_eq!(v, 42),
+        _ => panic!("expected Int"),
+    }
 }
 
 #[test]
-fn test_new_int_negative() {
+fn test_data_new_int_negative() {
     let d = Data::new_int(-100);
-    assert!(matches!(d.value, DataValue::Int(-100)));
+    assert_eq!(d.dtype, DataType::Int);
+    match d.value {
+        DataValue::Int(v) => assert_eq!(v, -100),
+        _ => panic!("expected Int"),
+    }
 }
 
 #[test]
-fn test_new_int_zero() {
-    let d = Data::new_int(0);
-    assert!(matches!(d.value, DataValue::Int(0)));
-}
-
-#[test]
-fn test_new_str() {
+fn test_data_new_str() {
     let d = Data::new_str("hello".to_string());
     assert_eq!(d.dtype, DataType::Str);
-    if let DataValue::Str(ref s) = d.value {
-        assert_eq!(s, "hello");
-    } else {
-        panic!("expected Str variant");
+    match d.value {
+        DataValue::Str(ref s) => assert_eq!(s, "hello"),
+        _ => panic!("expected Str"),
     }
 }
 
 #[test]
-fn test_new_str_empty() {
-    let d = Data::new_str(String::new());
-    if let DataValue::Str(ref s) = d.value {
-        assert_eq!(s, "");
-    } else {
-        panic!("expected Str variant");
-    }
-}
-
-#[test]
-fn test_display_int_as_i32() {
-    // C code casts int64_t to (int) for printing, Rust should cast to i32
-    let d = Data::new_int(42);
-    assert_eq!(format!("{}", d), "42");
-
-    let d = Data::new_int(-5);
-    assert_eq!(format!("{}", d), "-5");
-
-    let d = Data::new_int(0);
-    assert_eq!(format!("{}", d), "0");
-}
-
-#[test]
-fn test_display_int_i32_overflow() {
-    // i64 value that overflows i32 should wrap
-    let d = Data::new_int(0x1_0000_0000); // 2^32
-    assert_eq!(format!("{}", d), "0");
-
-    let d = Data::new_int(0x1_0000_0001);
-    assert_eq!(format!("{}", d), "1");
-}
-
-#[test]
-fn test_display_str() {
-    let d = Data::new_str("Hello, world!".to_string());
-    assert_eq!(format!("{}", d), "Hello, world!");
-}
-
-#[test]
-fn test_display_datatype() {
+fn test_data_type_display() {
     assert_eq!(format!("{}", DataType::Int), "int");
     assert_eq!(format!("{}", DataType::Str), "str");
 }
 
 #[test]
-fn test_clone() {
-    let d = Data::new_int(7);
-    let d2 = d.clone();
-    assert_eq!(format!("{}", d), format!("{}", d2));
+fn test_data_display_int() {
+    // C uses (int) cast, so i64 displayed as i32
+    assert_eq!(format!("{}", Data::new_int(123)), "123");
+    assert_eq!(format!("{}", Data::new_int(-999)), "-999");
+    assert_eq!(format!("{}", Data::new_int(0)), "0");
+    assert_eq!(format!("{}", Data::new_int(2147483647)), "2147483647");
+    assert_eq!(format!("{}", Data::new_int(-2147483648)), "-2147483648");
+}
 
-    let d = Data::new_str("test".to_string());
-    let d2 = d.clone();
-    assert_eq!(format!("{}", d), format!("{}", d2));
+#[test]
+fn test_data_display_int_overflow() {
+    // 3000000000 as i64 cast to i32 = -1294967296
+    assert_eq!(format!("{}", Data::new_int(3000000000)), "-1294967296");
+}
+
+#[test]
+fn test_data_display_str() {
+    assert_eq!(format!("{}", Data::new_str("hello".to_string())), "hello");
 }
 
 fn main() {}

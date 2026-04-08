@@ -47,8 +47,8 @@ pub fn fst_print_sym(
     let mut finals: Vec<u32> = Vec::new();
     for s in 0..fst.n_states {
         let state = &fst.states[s as usize];
+        let sa = strans(s);
         for arc in &state.arcs {
-            let sa = strans(s);
             let sb = strans(arc.state);
             let li = itrans(arc.ilabel);
             let lo = otrans(arc.olabel);

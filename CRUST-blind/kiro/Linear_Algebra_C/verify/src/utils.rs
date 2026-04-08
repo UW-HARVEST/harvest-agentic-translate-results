@@ -20,6 +20,6 @@ pub fn custom_assert(condition: i32) {
 /// Prints the call stack up until an assertion failure.
 pub fn print_call_stack() {
     println!("----------------------------- STACK TRACE ------------------------------");
-    println!("  (stack trace not available in pure Rust without external crates)");
+    println!("  (stack trace not available in safe Rust)");
     println!("------------------------------------------------------------------------");
 }

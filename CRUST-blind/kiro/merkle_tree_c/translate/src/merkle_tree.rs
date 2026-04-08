@@ -54,6 +54,18 @@ pub struct CbmtNodePair {
 // (In an idiomatic Rust implementation you might use generics or traits.)
 pub type CbmtNodeMergeFn<Ctx> = fn(ctx: &mut Ctx, left: &CbmtNode, right: &CbmtNode) -> CbmtNode;
 
+fn cbmt_is_left(index: u32) -> bool {
+    (index & 1) == 1
+}
+
+fn cbmt_parent(index: u32) -> u32 {
+    if index == 0 { 0 } else { (index - 1) >> 1 }
+}
+
+fn cbmt_sibling(index: u32) -> u32 {
+    if index == 0 { 0 } else { ((index + 1) ^ 1) - 1 }
+}
+
 pub fn cbmt_universal_swap(left: &mut [u8], right: &mut [u8], width: usize) {
     for i in 0..width {
         let tmp = left[i];
@@ -74,7 +86,6 @@ pub fn cbmt_simple_bubble_sort<T>(slice: &mut [T], cmp: fn(&T, &T) -> i32) {
 }
 
 pub fn cbmt_uint32_reverse_cmp(left: &u32, right: &u32) -> i32 {
-    // reverse order: right - left, but careful with wrapping
     (*right as i32).wrapping_sub(*left as i32)
 }
 
@@ -155,31 +166,18 @@ pub fn cbmt_queue_front<'a>(queue: &'a CbmtQueue<'a>) -> Option<&'a [u8]> {
 }
 
 pub fn cbmt_node_copy(dest: &mut CbmtNode, src: &CbmtNode) {
-    dest.bytes = src.bytes;
+    dest.bytes.copy_from_slice(&src.bytes);
 }
 
 pub fn cbmt_node_cmp(left: &CbmtNode, right: &CbmtNode) -> i32 {
     // CBMT_NODE_I32 mode: interpret as i32
-    let left_value = i32::from_ne_bytes(left.bytes);
-    let right_value = i32::from_ne_bytes(right.bytes);
-    left_value.wrapping_sub(right_value)
+    let lv = i32::from_le_bytes(left.bytes);
+    let rv = i32::from_le_bytes(right.bytes);
+    lv.wrapping_sub(rv)
 }
 
 pub fn cbmt_node_pair_reverse_cmp(left: &CbmtNodePair, right: &CbmtNodePair) -> i32 {
-    // reverse order
     (right.index as i32).wrapping_sub(left.index as i32)
-}
-
-fn cbmt_is_left(index: u32) -> bool {
-    (index & 1) == 1
-}
-
-fn cbmt_parent(index: u32) -> u32 {
-    if index == 0 { 0 } else { (index - 1) >> 1 }
-}
-
-fn cbmt_sibling(index: u32) -> u32 {
-    if index == 0 { 0 } else { ((index + 1) ^ 1) - 1 }
 }
 
 pub fn cbmt_tree_build_proof(
@@ -193,64 +191,67 @@ pub fn cbmt_tree_build_proof(
     let leaves_count = (tree.length >> 1) + 1;
 
     // Build queue of tree-indices (leaf_index + leaves_count - 1)
-    let mut queue_values: Vec<u32> = leaf_indices
+    let mut queue: Vec<u32> = leaf_indices
         .values
         .iter()
         .map(|&v| v + (leaves_count as u32 - 1))
         .collect();
 
     // Sort in reverse (descending) order
-    cbmt_simple_bubble_sort(&mut queue_values, cbmt_uint32_reverse_cmp);
+    cbmt_simple_bubble_sort(&mut queue, cbmt_uint32_reverse_cmp);
 
-    if queue_values[0] >= ((leaves_count as u32) << 1) - 1 {
+    if *queue.first().unwrap() >= ((leaves_count as u32) << 1) - 1 {
         return Err(CBMT_ERROR_BUILD_PROOF);
     }
 
     let mut lemmas: Vec<CbmtNode> = Vec::new();
-    let mut q = std::collections::VecDeque::from(queue_values);
 
-    while let Some(index) = q.pop_front() {
+    while !queue.is_empty() {
+        let index = queue.remove(0);
         if index == 0 {
-            if !q.is_empty() {
+            if !queue.is_empty() {
                 return Err(CBMT_FATAL_BUILD_PROOF);
             }
             break;
         }
 
         let sibling = cbmt_sibling(index);
-        if q.front() == Some(&sibling) {
-            q.pop_front();
+        if !queue.is_empty() && queue[0] == sibling {
+            queue.remove(0);
         } else {
             lemmas.push(tree.nodes[sibling as usize].clone());
         }
 
         let parent = cbmt_parent(index);
         if parent != 0 {
-            q.push_back(parent);
+            queue.push(parent);
         }
     }
 
-    // Build sorted indices for the proof
-    let mut proof_indices: Vec<u32> = leaf_indices
+    // Build sorted indices: leaf_index + leaves_count - 1, sorted by node value
+    let mut index_node_pairs: Vec<(u32, CbmtNode)> = leaf_indices
         .values
         .iter()
-        .map(|&v| v + (leaves_count as u32 - 1))
+        .map(|&v| {
+            let tree_idx = v + (leaves_count as u32 - 1);
+            (tree_idx, tree.nodes[tree_idx as usize].clone())
+        })
         .collect();
 
-    // Sort indices by the node values at those positions
-    for i in 0..proof_indices.len().saturating_sub(1) {
-        for j in (i + 1)..proof_indices.len() {
-            let li = proof_indices[i] as usize;
-            let ri = proof_indices[j] as usize;
-            if cbmt_node_cmp(&tree.nodes[li], &tree.nodes[ri]) > 0 {
-                proof_indices.swap(i, j);
+    // Bubble sort by node comparison
+    for i in 0..index_node_pairs.len().saturating_sub(1) {
+        for j in (i + 1)..index_node_pairs.len() {
+            if cbmt_node_cmp(&index_node_pairs[i].1, &index_node_pairs[j].1) > 0 {
+                index_node_pairs.swap(i, j);
             }
         }
     }
 
+    let sorted_indices: Vec<u32> = index_node_pairs.iter().map(|(idx, _)| *idx).collect();
+
     Ok(CbmtProof {
         indices: CbmtIndices {
-            values: proof_indices,
+            values: sorted_indices,
             capacity: leaf_indices.values.len(),
         },
         lemmas,
@@ -259,7 +260,9 @@ pub fn cbmt_tree_build_proof(
 
 pub fn cbmt_tree_root(tree: &CbmtTree) -> CbmtNode {
     if tree.length == 0 {
-        CbmtNode { bytes: [0; CBMT_NODE_SIZE] }
+        CbmtNode {
+            bytes: [0; CBMT_NODE_SIZE],
+        }
     } else {
         tree.nodes[0].clone()
     }
@@ -282,24 +285,20 @@ pub fn cbmt_proof_root<Ctx>(
     let mut sorted_leaves = leaves.nodes.clone();
     cbmt_simple_bubble_sort(&mut sorted_leaves, cbmt_node_cmp);
 
-    // Build (index, node) pairs
-    let mut queue: std::collections::VecDeque<CbmtNodePair> = sorted_leaves
-        .iter()
-        .enumerate()
-        .map(|(i, node)| CbmtNodePair {
+    // Build queue of (index, node) pairs
+    let mut queue: Vec<CbmtNodePair> = Vec::new();
+    for i in 0..sorted_leaves.len() {
+        queue.push(CbmtNodePair {
             index: proof.indices.values[i],
-            node: node.clone(),
-        })
-        .collect();
-
-    // Sort pairs in reverse order by index (descending)
-    let mut pairs_vec: Vec<CbmtNodePair> = queue.into_iter().collect();
-    cbmt_simple_bubble_sort(&mut pairs_vec, cbmt_node_pair_reverse_cmp);
-    queue = std::collections::VecDeque::from(pairs_vec);
+            node: sorted_leaves[i].clone(),
+        });
+    }
+    cbmt_simple_bubble_sort(&mut queue, cbmt_node_pair_reverse_cmp);
 
     let mut lemmas_offset = 0usize;
 
-    while let Some(pair_current) = queue.pop_front() {
+    while !queue.is_empty() {
+        let pair_current = queue.remove(0);
         let index = pair_current.index;
         let node = pair_current.node;
 
@@ -312,28 +311,27 @@ pub fn cbmt_proof_root<Ctx>(
             }
         }
 
-        let sibling_idx = cbmt_sibling(index);
-        let sibling = if queue.front().map(|p| p.index) == Some(sibling_idx) {
-            Some(queue.pop_front().unwrap().node)
+        let sibling_node;
+        if !queue.is_empty() && queue[0].index == cbmt_sibling(index) {
+            let pair_sibling = queue.remove(0);
+            sibling_node = pair_sibling.node;
         } else if lemmas_offset < proof.lemmas.len() {
-            let s = proof.lemmas[lemmas_offset].clone();
+            sibling_node = proof.lemmas[lemmas_offset].clone();
             lemmas_offset += 1;
-            Some(s)
         } else {
-            None
+            continue;
+        }
+
+        let parent_node = if cbmt_is_left(index) {
+            merge(merge_ctx, &node, &sibling_node)
+        } else {
+            merge(merge_ctx, &sibling_node, &node)
         };
 
-        if let Some(sib) = sibling {
-            let parent_node = if cbmt_is_left(index) {
-                merge(merge_ctx, &node, &sib)
-            } else {
-                merge(merge_ctx, &sib, &node)
-            };
-            queue.push_back(CbmtNodePair {
-                index: cbmt_parent(index),
-                node: parent_node,
-            });
-        }
+        queue.push(CbmtNodePair {
+            index: cbmt_parent(index),
+            node: parent_node,
+        });
     }
     0
 }
@@ -351,67 +349,56 @@ pub fn cbmt_proof_verify(
     let mut sorted_leaves = leaves.nodes.clone();
     cbmt_simple_bubble_sort(&mut sorted_leaves, cbmt_node_cmp);
 
-    let mut queue: std::collections::VecDeque<CbmtNodePair> = sorted_leaves
-        .iter()
-        .enumerate()
-        .map(|(i, node)| CbmtNodePair {
+    let mut queue: Vec<CbmtNodePair> = Vec::new();
+    for i in 0..sorted_leaves.len() {
+        queue.push(CbmtNodePair {
             index: proof.indices.values[i],
-            node: node.clone(),
-        })
-        .collect();
-
-    let mut pairs_vec: Vec<CbmtNodePair> = queue.into_iter().collect();
-    cbmt_simple_bubble_sort(&mut pairs_vec, cbmt_node_pair_reverse_cmp);
-    queue = std::collections::VecDeque::from(pairs_vec);
+            node: sorted_leaves[i].clone(),
+        });
+    }
+    cbmt_simple_bubble_sort(&mut queue, cbmt_node_pair_reverse_cmp);
 
     let mut lemmas_offset = 0usize;
     let mut target_root = CbmtNode::default();
-    let mut found_root = false;
 
-    while let Some(pair_current) = queue.pop_front() {
+    while !queue.is_empty() {
+        let pair_current = queue.remove(0);
         let index = pair_current.index;
         let node = pair_current.node;
 
         if index == 0 {
             if proof.lemmas.len() == lemmas_offset && queue.is_empty() {
                 target_root = node;
-                found_root = true;
-                break;
+                if target_root.bytes != expected_root.bytes {
+                    return CBMT_ERROR_VERIFY_FAILED;
+                }
+                return 0;
             } else {
                 return CBMT_ERROR_PROOF_ROOT;
             }
         }
 
-        let sibling_idx = cbmt_sibling(index);
-        let sibling = if queue.front().map(|p| p.index) == Some(sibling_idx) {
-            Some(queue.pop_front().unwrap().node)
+        let sibling_node;
+        if !queue.is_empty() && queue[0].index == cbmt_sibling(index) {
+            let pair_sibling = queue.remove(0);
+            sibling_node = pair_sibling.node;
         } else if lemmas_offset < proof.lemmas.len() {
-            let s = proof.lemmas[lemmas_offset].clone();
+            sibling_node = proof.lemmas[lemmas_offset].clone();
             lemmas_offset += 1;
-            Some(s)
         } else {
-            None
+            continue;
+        }
+
+        let parent_node = if cbmt_is_left(index) {
+            merge(None, &node, &sibling_node)
+        } else {
+            merge(None, &sibling_node, &node)
         };
 
-        if let Some(sib) = sibling {
-            let parent_node = if cbmt_is_left(index) {
-                merge(None, &node, &sib)
-            } else {
-                merge(None, &sib, &node)
-            };
-            queue.push_back(CbmtNodePair {
-                index: cbmt_parent(index),
-                node: parent_node,
-            });
-        }
-    }
-
-    if !found_root {
-        return CBMT_ERROR_PROOF_ROOT;
-    }
-
-    if target_root.bytes != expected_root.bytes {
-        return CBMT_ERROR_VERIFY_FAILED;
+        queue.push(CbmtNodePair {
+            index: cbmt_parent(index),
+            node: parent_node,
+        });
     }
     0
 }
@@ -422,33 +409,37 @@ pub fn cbmt_build_merkle_root(
 ) -> Result<CbmtNode, i32> {
     let length = leaves.nodes.len();
     if length == 0 {
-        return Ok(CbmtNode { bytes: [0; CBMT_NODE_SIZE] });
+        return Ok(CbmtNode {
+            bytes: [0; CBMT_NODE_SIZE],
+        });
     }
 
-    let mut queue: std::collections::VecDeque<CbmtNode> = std::collections::VecDeque::new();
+    let mut queue: Vec<CbmtNode> = Vec::new();
 
-    // Process pairs from the end
+    // Process pairs from end
     let mut i = length as i64 - 1;
     while i > 0 {
-        let left = &leaves.nodes[i as usize - 1];
+        let left = &leaves.nodes[(i - 1) as usize];
         let right = &leaves.nodes[i as usize];
         let merged = merge(None, left, right);
-        queue.push_back(merged);
+        queue.push(merged);
         i -= 2;
     }
-    // If odd number of leaves, push first leaf to front
+
+    // If odd number of leaves, prepend the first leaf
     if length % 2 == 1 {
-        queue.push_front(leaves.nodes[0].clone());
+        queue.insert(0, leaves.nodes[0].clone());
     }
 
     while queue.len() > 1 {
-        let right = queue.pop_front().unwrap();
-        let left = queue.pop_front().unwrap();
+        // Pop front two (right first, then left, matching C code)
+        let right = queue.remove(0);
+        let left = queue.remove(0);
         let merged = merge(None, &left, &right);
-        queue.push_back(merged);
+        queue.push(merged);
     }
 
-    Ok(queue.pop_front().unwrap())
+    Ok(queue.remove(0))
 }
 
 pub fn cbmt_build_merkle_tree(
@@ -471,11 +462,15 @@ pub fn cbmt_build_merkle_tree(
         tree.nodes[offset + i] = leaves.nodes[i].clone();
     }
 
-    for i in (0..leaves.nodes.len() - 1).rev() {
-        let left = tree.nodes[i * 2 + 1].clone();
-        let right = tree.nodes[i * 2 + 2].clone();
-        tree.nodes[i] = merge(None, &left, &right);
+    for i in 0..leaves.nodes.len() - 1 {
+        let rev_idx = leaves.nodes.len() - 2 - i;
+        let left_idx = (rev_idx << 1) + 1;
+        let right_idx = (rev_idx << 1) + 2;
+        let left = tree.nodes[left_idx].clone();
+        let right = tree.nodes[right_idx].clone();
+        tree.nodes[rev_idx] = merge(None, &left, &right);
     }
+
     0
 }
 
@@ -489,10 +484,10 @@ pub fn cbmt_build_merkle_proof<Ctx>(
     _indices_buffer: CbmtBuffer,
     _lemmas_buffer: CbmtBuffer,
 ) -> i32 {
-    // Build tree first using a wrapper
+    // Build tree first using an adapter
     let mut tree = CbmtTree::default();
 
-    // We need to build the tree. Since merge signature differs, build manually.
+    // We need to build the tree using the generic merge fn
     if leaves.nodes.is_empty() {
         tree.length = 0;
     } else {
@@ -504,10 +499,14 @@ pub fn cbmt_build_merkle_proof<Ctx>(
         for i in 0..leaves.nodes.len() {
             tree.nodes[offset + i] = leaves.nodes[i].clone();
         }
-        for i in (0..leaves.nodes.len() - 1).rev() {
-            let left = tree.nodes[i * 2 + 1].clone();
-            let right = tree.nodes[i * 2 + 2].clone();
-            tree.nodes[i] = merge(merge_ctx, &left, &right);
+
+        for i in 0..leaves.nodes.len() - 1 {
+            let rev_idx = leaves.nodes.len() - 2 - i;
+            let left_idx = (rev_idx << 1) + 1;
+            let right_idx = (rev_idx << 1) + 2;
+            let left = tree.nodes[left_idx].clone();
+            let right = tree.nodes[right_idx].clone();
+            tree.nodes[rev_idx] = merge(merge_ctx, &left, &right);
         }
     }
 

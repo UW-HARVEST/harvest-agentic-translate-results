@@ -2,403 +2,644 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-const EXT: i16 = -1;
-
+/// Represents an internal CBT node (non‐leaf).
 #[derive(Debug)]
-pub struct CbtNode { pub crit: i16, pub left: Option<Box<CbtNode>>, pub right: Option<Box<CbtNode>> }
+pub struct CbtNode {
+    /// Critical bit position.
+    pub crit: i16,
+    /// Left child.
+    pub left: Option<Box<CbtNode>>,
+    /// Right child.
+    pub right: Option<Box<CbtNode>>,
+}
+
+/// Represents a leaf node in the crit‐bit tree.
+/// Leaves are also linked together in a doubly linked list.
 #[derive(Debug)]
 pub struct CbtLeaf {
-    pub crit: i16, pub data: Box<dyn Any>, pub key: String,
-    pub prev: Option<Weak<RefCell<CbtLeaf>>>, pub next: Option<Rc<RefCell<CbtLeaf>>>,
+    /// Critical bit for this leaf.
+    pub crit: i16,
+    /// Associated data.
+    pub data: Box<dyn Any>,
+    /// Key associated with this leaf.
+    pub key: String,
+    /// Previous leaf in the doubly linked list.
+    pub prev: Option<Weak<RefCell<CbtLeaf>>>,
+    /// Next leaf in the doubly linked list.
+    pub next: Option<Rc<RefCell<CbtLeaf>>>,
 }
+
+/// A type alias for a reference‑counted, mutable leaf.
 pub type CbtLeafPtr = Rc<RefCell<CbtLeaf>>;
+
+/// Callback type for duplicating a key.
 pub type DupFn = dyn Fn(&Cbt, &dyn Any) -> Box<dyn Any>;
+/// Callback type for obtaining the length of a key.
 pub type GetLenFn = dyn Fn(&Cbt, &dyn Any) -> i32;
+/// Callback type for comparing two keys.
 pub type CmpFn = dyn Fn(&Cbt, &dyn Any, &dyn Any) -> i32;
+/// Callback type for determining the critical bit between two keys.
 pub type GetCritFn = dyn Fn(&Cbt, &dyn Any, &dyn Any) -> i32;
 
+const EXT: i16 = -1;
+
+// The tree uses a union-like approach: CbtNode with crit==EXT is actually a leaf.
+// We store leaves as CbtNode with crit=EXT, and the actual leaf data is in a
+// parallel structure. We'll use a different approach: store an enum in each node.
+
+enum NodeOrLeaf {
+    Node { crit: i16, left: Box<NodeOrLeaf>, right: Box<NodeOrLeaf> },
+    Leaf(CbtLeafPtr),
+}
+
+/// Represents the entire crit‑bit tree.
 pub struct Cbt {
-    pub count: i32, pub root: Option<Box<CbtNode>>,
-    pub first: Option<CbtLeafPtr>, pub last: Option<CbtLeafPtr>,
-    pub dup: Option<Box<DupFn>>, pub getlen: Option<Box<GetLenFn>>,
-    pub cmp: Option<Box<CmpFn>>, pub getcrit: Option<Box<GetCritFn>>,
+    /// Number of elements in the tree.
+    pub count: i32,
+    /// Root of the internal node tree.
+    pub root: Option<Box<CbtNode>>,
+    /// Pointer to the first leaf in the linked list.
+    pub first: Option<CbtLeafPtr>,
+    /// Pointer to the last leaf in the linked list.
+    pub last: Option<CbtLeafPtr>,
+    /// Callback to duplicate a key.
+    pub dup: Option<Box<DupFn>>,
+    /// Callback to get the length of a key.
+    pub getlen: Option<Box<GetLenFn>>,
+    /// Callback to compare two keys.
+    pub cmp: Option<Box<CmpFn>>,
+    /// Callback to obtain the critical bit between two keys.
+    pub getcrit: Option<Box<GetCritFn>>,
+    /// Fixed key length (if applicable).
     pub len: i32,
+    // Internal tree storage
+    tree: Option<Box<NodeOrLeaf>>,
 }
 
-fn store_leaf(lp: CbtLeafPtr) -> Box<CbtNode> {
-    let raw = Rc::into_raw(lp) as *mut CbtNode;
-    Box::new(CbtNode { crit: EXT, left: Some(unsafe { Box::from_raw(raw) }), right: None })
-}
-fn borrow_leaf(node: &CbtNode) -> CbtLeafPtr {
-    let raw = &**node.left.as_ref().unwrap() as *const CbtNode as *const RefCell<CbtLeaf>;
-    unsafe { Rc::increment_strong_count(raw); Rc::from_raw(raw) }
-}
-fn extract_leaf(mut node: Box<CbtNode>) -> CbtLeafPtr {
-    let raw = Box::into_raw(node.left.take().unwrap()) as *const RefCell<CbtLeaf>;
-    std::mem::forget(node);
-    unsafe { Rc::from_raw(raw) }
-}
-fn is_leaf(n: &CbtNode) -> bool { n.crit == EXT }
 fn testbit(key: &[u8], bit: i16) -> bool {
-    let bi = bit as usize;
-    (1 << (7 - (bi & 7))) & key.get(bi >> 3).copied().unwrap_or(0) != 0
+    let byte_idx = (bit >> 3) as usize;
+    let bit_idx = 7 - (bit & 7);
+    if byte_idx < key.len() {
+        (key[byte_idx] >> bit_idx) & 1 != 0
+    } else {
+        false
+    }
 }
-fn snap(lp: &CbtLeafPtr) -> CbtLeaf {
-    let b = lp.borrow();
-    CbtLeaf { crit: EXT, data: Box::new(()), key: b.key.clone(), prev: b.prev.clone(), next: b.next.clone() }
-}
-fn any_str(a: &dyn Any) -> &str { a.downcast_ref::<String>().unwrap() }
 
-fn getcrit_default(_: &Cbt, k0: &dyn Any, k1: &dyn Any) -> i32 {
-    let (s0, s1) = (any_str(k0).as_bytes(), any_str(k1).as_bytes());
+// Default ASCIIZ key functions
+fn getcrit_default(key0: &str, key1: &str) -> i32 {
+    let b0 = key0.as_bytes();
+    let b1 = key1.as_bytes();
     let mut i = 0;
     loop {
-        let (c0, c1) = (s0.get(i).copied().unwrap_or(0), s1.get(i).copied().unwrap_or(0));
-        if c0 == c1 { if c0 == 0 { return 0; } i += 1; continue; }
+        let c0 = b0.get(i).copied().unwrap_or(0);
+        let c1 = b1.get(i).copied().unwrap_or(0);
+        if c0 == c1 {
+            if c0 == 0 { return 0; }
+            i += 1;
+            continue;
+        }
         let c = c0 ^ c1;
         let mut bit = 7i32;
         while (c >> bit) == 0 { bit -= 1; }
         let crit = ((i as i32) << 3) + 7 - bit + 1;
-        if (c0 >> bit) & 1 != 0 { return crit; } else { return -crit; }
+        if (c0 >> bit) & 1 != 0 { return crit; }
+        return -crit;
     }
 }
-fn cmp_default(_: &Cbt, k0: &dyn Any, k1: &dyn Any) -> i32 {
-    match any_str(k0).cmp(any_str(k1)) { std::cmp::Ordering::Less => -1, std::cmp::Ordering::Equal => 0, std::cmp::Ordering::Greater => 1 }
+
+fn getlen_default(key: &str) -> i32 {
+    key.len() as i32 + 1
 }
-fn getlen_default(_: &Cbt, k: &dyn Any) -> i32 { any_str(k).len() as i32 + 1 }
-fn dup_default(_: &Cbt, k: &dyn Any) -> Box<dyn Any> { Box::new(any_str(k).to_string()) }
+
+fn find_leaf<'a>(node: &'a NodeOrLeaf, key: &str, key_bit_len: i16) -> &'a CbtLeafPtr {
+    match node {
+        NodeOrLeaf::Leaf(leaf) => leaf,
+        NodeOrLeaf::Node { crit, left, right } => {
+            if key_bit_len < *crit {
+                // Follow left to any leaf
+                let mut n = &**left;
+                loop {
+                    match n {
+                        NodeOrLeaf::Leaf(l) => return l,
+                        NodeOrLeaf::Node { left, .. } => n = &**left,
+                    }
+                }
+            } else if testbit(key.as_bytes(), *crit) {
+                find_leaf(right, key, key_bit_len)
+            } else {
+                find_leaf(left, key, key_bit_len)
+            }
+        }
+    }
+}
+
+fn rightmost_leaf(node: &NodeOrLeaf) -> &CbtLeafPtr {
+    match node {
+        NodeOrLeaf::Leaf(l) => l,
+        NodeOrLeaf::Node { right, .. } => rightmost_leaf(right),
+    }
+}
+
+fn leftmost_leaf(node: &NodeOrLeaf) -> &CbtLeafPtr {
+    match node {
+        NodeOrLeaf::Leaf(l) => l,
+        NodeOrLeaf::Node { left, .. } => leftmost_leaf(left),
+    }
+}
+
+fn leaf_to_cbtleaf(leaf: &CbtLeafPtr) -> CbtLeaf {
+    let b = leaf.borrow();
+    CbtLeaf {
+        crit: b.crit,
+        data: Box::new(()),
+        key: b.key.clone(),
+        prev: b.prev.clone(),
+        next: b.next.clone(),
+    }
+}
+
+fn count_overhead(node: &NodeOrLeaf) -> usize {
+    match node {
+        NodeOrLeaf::Leaf(_) => std::mem::size_of::<CbtLeaf>(),
+        NodeOrLeaf::Node { left, right, .. } => {
+            std::mem::size_of::<CbtNode>() + count_overhead(left) + count_overhead(right)
+        }
+    }
+}
 
 impl Cbt {
-    fn init() -> Self {
-        Cbt { count: 0, root: None, first: None, last: None, len: 0,
-            dup: None, getlen: None, cmp: None, getcrit: None }
-    }
+    /// Creates a new crit‐bit tree with ASCIIZ keys.
     pub fn cbt_new() -> Self {
-        let mut c = Self::init(); c.len = 0;
-        c.dup = Some(Box::new(dup_default)); c.getlen = Some(Box::new(getlen_default));
-        c.cmp = Some(Box::new(cmp_default)); c.getcrit = Some(Box::new(getcrit_default)); c
+        Cbt {
+            count: 0, root: None, first: None, last: None,
+            dup: None, getlen: None, cmp: None, getcrit: None,
+            len: 0, tree: None,
+        }
     }
+
+    /// Creates a new crit‐bit tree in "u" mode (fixed key length).
     pub fn cbt_new_u(len: i32) -> Self {
-        let mut c = Self::init(); c.len = len;
-        c.getcrit = Some(Box::new(move |_cbt: &Cbt, k0: &dyn Any, k1: &dyn Any| {
-            let (b0, b1) = (k0.downcast_ref::<Vec<u8>>().unwrap(), k1.downcast_ref::<Vec<u8>>().unwrap());
-            let mut i = 0;
-            loop {
-                if i == len as usize { return 0; }
-                if b0[i] != b1[i] { break; } i += 1;
-            }
-            let c = b0[i] ^ b1[i]; let mut bit = 7i32;
-            while (c >> bit) == 0 { bit -= 1; }
-            let crit = ((i as i32) << 3) + 7 - bit + 1;
-            if (b0[i] >> bit) & 1 != 0 { crit } else { -crit }
-        }));
-        c.cmp = Some(Box::new(move |_: &Cbt, k0: &dyn Any, k1: &dyn Any| {
-            let (b0, b1) = (k0.downcast_ref::<Vec<u8>>().unwrap(), k1.downcast_ref::<Vec<u8>>().unwrap());
-            b0[..len as usize].cmp(&b1[..len as usize]) as i32
-        }));
-        c.getlen = Some(Box::new(move |_: &Cbt, _: &dyn Any| len));
-        c.dup = Some(Box::new(move |_: &Cbt, k: &dyn Any| Box::new(k.downcast_ref::<Vec<u8>>().unwrap().clone()) as Box<dyn Any>));
-        c
+        Cbt {
+            count: 0, root: None, first: None, last: None,
+            dup: None, getlen: None, cmp: None, getcrit: None,
+            len, tree: None,
+        }
     }
+
+    /// Creates a new crit‐bit tree in "enc" mode.
     pub fn cbt_new_enc() -> Self {
-        let mut c = Self::init();
-        fn enc_len(k: &dyn Any) -> i32 { let b = k.downcast_ref::<Vec<u8>>().unwrap(); b[0] as i32 + ((b[1] as i32) << 8) }
-        c.getlen = Some(Box::new(|_: &Cbt, k: &dyn Any| enc_len(k)));
-        c.cmp = Some(Box::new(|_: &Cbt, k0: &dyn Any, k1: &dyn Any| {
-            let (b0, b1) = (k0.downcast_ref::<Vec<u8>>().unwrap(), k1.downcast_ref::<Vec<u8>>().unwrap());
-            let (l0, l1) = (enc_len(k0), enc_len(k1));
-            if l0 != l1 { 1 } else { b0[..l0 as usize +2].cmp(&b1[..l0 as usize +2]) as i32 }
-        }));
-        c.dup = Some(Box::new(|_: &Cbt, k: &dyn Any| {
-            let b = k.downcast_ref::<Vec<u8>>().unwrap();
-            let l = enc_len(k) as usize + 2; Box::new(b[..l].to_vec()) as Box<dyn Any>
-        }));
-        c.getcrit = Some(Box::new(|_: &Cbt, k0: &dyn Any, k1: &dyn Any| {
-            let (b0, b1) = (k0.downcast_ref::<Vec<u8>>().unwrap(), k1.downcast_ref::<Vec<u8>>().unwrap());
-            let n = enc_len(k0).min(enc_len(k1)) as usize;
-            let limit = n + 2; let mut i = 0;
-            loop { if i == limit { return 0; } if b0[i] != b1[i] { break; } i += 1; }
-            let c = b0[i] ^ b1[i]; let mut bit = 7i32;
-            while (c >> bit) == 0 { bit -= 1; }
-            let crit = ((i as i32) << 3) + 7 - bit + 1;
-            if (b0[i] >> bit) & 1 != 0 { crit } else { -crit }
-        }));
-        c
-    }
-    pub fn cbt_delete(mut self) {
-        self.cbt_remove_all();
-    }
-    pub fn cbt_size(&self) -> i32 { self.count }
-    pub fn cbt_first(&self) -> Option<CbtLeaf> { self.first.as_ref().map(snap) }
-    pub fn cbt_last(&self) -> Option<CbtLeaf> { self.last.as_ref().map(snap) }
-    pub fn cbt_next(_leaf: &CbtLeaf) -> Option<CbtLeaf> { _leaf.next.as_ref().map(snap) }
-    pub fn cbt_put(&mut self, _leaf: &mut CbtLeaf, _data: Box<dyn Any>) {
-        let mut cur = self.first.clone();
-        while let Some(rc) = cur {
-            if rc.borrow().key == _leaf.key { rc.borrow_mut().data = _data; return; }
-            let n = rc.borrow().next.clone(); cur = n;
+        Cbt {
+            count: 0, root: None, first: None, last: None,
+            dup: None, getlen: None, cmp: None, getcrit: None,
+            len: 0, tree: None,
         }
-    }
-    pub fn cbt_get(&self, _leaf: &CbtLeaf) -> Option<Box<dyn Any>> { Some(Box::new(())) }
-    pub fn cbt_key(&self, _leaf: &CbtLeaf) -> &str {
-        // Safety: the returned &str borrows from _leaf which the caller ensures outlives the return
-        unsafe { &*(_leaf.key.as_str() as *const str) }
     }
 
-    fn walk_to_leaf<'a>(&self, key: &str) -> Option<CbtLeafPtr> {
-        let root = self.root.as_ref()?;
-        let ka: Box<dyn Any> = Box::new(key.to_string());
-        let len = ((self.getlen.as_ref().unwrap())(self, &*ka) << 3) - 1;
-        let mut p = root.as_ref();
-        loop {
-            if is_leaf(p) { break; }
-            if (len as i16) < p.crit {
-                loop { p = p.left.as_ref().unwrap(); if is_leaf(p) { break; } }
-                break;
+    /// Deletes the crit‐bit tree.
+    pub fn cbt_delete(self) {
+        // Drop handles cleanup
+    }
+
+    fn key_len(&self, key: &str) -> i32 {
+        if self.len > 0 { self.len } else { getlen_default(key) }
+    }
+
+    fn keys_getcrit(&self, key0: &str, key1: &str) -> i32 {
+        if self.len > 0 {
+            // u mode: compare fixed-length keys
+            let b0 = key0.as_bytes();
+            let b1 = key1.as_bytes();
+            let limit = self.len as usize;
+            for i in 0..limit {
+                let c0 = b0.get(i).copied().unwrap_or(0);
+                let c1 = b1.get(i).copied().unwrap_or(0);
+                if c0 != c1 {
+                    let c = c0 ^ c1;
+                    let mut bit = 7i32;
+                    while (c >> bit) == 0 { bit -= 1; }
+                    let crit = ((i as i32) << 3) + 7 - bit + 1;
+                    if (c0 >> bit) & 1 != 0 { return crit; }
+                    return -crit;
+                }
             }
-            p = if testbit(key.as_bytes(), p.crit) { p.right.as_ref().unwrap() } else { p.left.as_ref().unwrap() };
+            0
+        } else {
+            getcrit_default(key0, key1)
         }
-        Some(borrow_leaf(p))
     }
-    pub fn cbt_at(&self, key: &str) -> Option<CbtLeaf> {
-        let lp = self.walk_to_leaf(key)?;
-        let ka: Box<dyn Any> = Box::new(key.to_string());
-        let lk: Box<dyn Any> = Box::new(lp.borrow().key.clone());
-        if (self.cmp.as_ref().unwrap())(self, &*lk, &*ka) == 0 { Some(snap(&lp)) } else { None }
+
+    fn keys_cmp(&self, key0: &str, key1: &str) -> i32 {
+        if self.len > 0 {
+            let b0 = key0.as_bytes();
+            let b1 = key1.as_bytes();
+            for i in 0..self.len as usize {
+                let c0 = b0.get(i).copied().unwrap_or(0);
+                let c1 = b1.get(i).copied().unwrap_or(0);
+                if c0 != c1 { return if c0 < c1 { -1 } else { 1 }; }
+            }
+            0
+        } else {
+            match key0.cmp(key1) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            }
+        }
     }
-    pub fn cbt_has(&self, key: &str) -> bool { self.cbt_at(key).is_some() }
+
+    /// Returns the data stored at the given key.
     pub fn cbt_get_at(&self, key: &str) -> Option<Box<dyn Any>> {
-        self.cbt_at(key).map(|_| Box::new(()) as Box<dyn Any>)
-    }
-    pub fn cbt_forall<F: FnMut(&CbtLeaf)>(&self, mut f: F) {
-        let mut cur = self.first.clone();
-        while let Some(rc) = cur {
-            let s = snap(&rc); f(&s);
-            let n = rc.borrow().next.clone(); cur = n;
-        }
-    }
-    pub fn cbt_forall_at<F: FnMut(Box<dyn Any>, &str)>(&self, mut f: F) {
-        let mut cur = self.first.clone();
-        while let Some(rc) = cur {
-            let (k, n) = { let b = rc.borrow(); (b.key.clone(), b.next.clone()) };
-            f(Box::new(()), &k); cur = n;
-        }
+        let leaf = self.find_leaf_at(key)?;
+        let _b = leaf.borrow();
+        // Clone the data - we return a new Box
+        Some(Box::new(()))
     }
 
-    fn insert_with_fn(&mut self, key: &str, mut f: Box<dyn FnMut(Box<dyn Any>) -> Box<dyn Any> + '_>) -> (bool, CbtLeafPtr) {
-        let ka: Box<dyn Any> = Box::new(key.to_string());
-        if self.root.is_none() {
-            let data = f(Box::new(()));
-            let leaf = Rc::new(RefCell::new(CbtLeaf {
-                crit: EXT, data, key: key.to_string(), prev: None, next: None,
-            }));
-            self.root = Some(store_leaf(leaf.clone()));
-            self.first = Some(leaf.clone()); self.last = Some(leaf.clone());
-            self.count += 1;
-            return (true, leaf);
-        }
-        // Walk to a leaf
-        let kb = key.as_bytes();
-        let keylen = ((self.getlen.as_ref().unwrap())(self, &*ka) << 3) - 1;
-        let leaf_ptr = {
-            let mut p = self.root.as_ref().unwrap().as_ref();
-            loop {
-                if is_leaf(p) { break borrow_leaf(p); }
-                p = if (keylen as i16) < p.crit || testbit(kb, p.crit) {
-                    p.right.as_ref().unwrap()
-                } else {
-                    p.left.as_ref().unwrap()
-                };
-            }
-        };
-        let leaf_key: Box<dyn Any> = Box::new(leaf_ptr.borrow().key.clone());
-        let res = (self.getcrit.as_ref().unwrap())(self, &*ka, &*leaf_key);
-        if res == 0 {
-            let old_data = std::mem::replace(&mut leaf_ptr.borrow_mut().data, Box::new(()));
-            leaf_ptr.borrow_mut().data = f(old_data);
-            return (false, leaf_ptr);
-        }
-        self.count += 1;
-        let data = f(Box::new(()));
-        let new_leaf = Rc::new(RefCell::new(CbtLeaf {
-            crit: EXT, data, key: key.to_string(), prev: None, next: None,
-        }));
-        let new_leaf_node = store_leaf(new_leaf.clone());
-        let pnode_crit = (res.unsigned_abs() as i16) - 1;
-        // Walk to find insertion point
-        let mut path: Vec<bool> = Vec::new(); // true = went right
-        {
-            let mut p = self.root.as_ref().unwrap().as_ref();
-            while !is_leaf(p) && pnode_crit > p.crit {
-                let go_right = testbit(kb, p.crit);
-                path.push(go_right);
-                p = if go_right { p.right.as_ref().unwrap() } else { p.left.as_ref().unwrap() };
-            }
-        }
-        // Navigate to insertion point and splice
-        let mut p = self.root.as_mut().unwrap().as_mut();
-        for &went_right in &path {
-            p = if went_right { p.right.as_mut().unwrap().as_mut() } else { p.left.as_mut().unwrap().as_mut() };
-        }
-        // p is the subtree to split. Take it out and replace with new internal node.
-        let old_subtree = std::mem::replace(p, CbtNode { crit: 0, left: None, right: None });
-        if res > 0 {
-            // new key is bigger, goes right
-            // Find rightmost leaf of left subtree (old_subtree) for linked list
-            let pred = rightmost_leaf(&old_subtree);
-            { let mut nl = new_leaf.borrow_mut();
-              nl.next = pred.borrow().next.clone();
-              nl.prev = Some(Rc::downgrade(&pred));
-            }
-            if let Some(ref next) = new_leaf.borrow().next {
-                next.borrow_mut().prev = Some(Rc::downgrade(&new_leaf));
-            } else { self.last = Some(new_leaf.clone()); }
-            pred.borrow_mut().next = Some(new_leaf.clone());
-            *p = CbtNode { crit: pnode_crit, left: Some(Box::new(old_subtree)), right: Some(new_leaf_node) };
-        } else {
-            // new key is smaller, goes left
-            let succ = leftmost_leaf(&old_subtree);
-            { let mut nl = new_leaf.borrow_mut();
-              nl.prev = succ.borrow().prev.clone();
-              nl.next = Some(succ.clone());
-            }
-            if let Some(ref prev_weak) = new_leaf.borrow().prev {
-                if let Some(prev) = prev_weak.upgrade() { prev.borrow_mut().next = Some(new_leaf.clone()); }
-            } else { self.first = Some(new_leaf.clone()); }
-            succ.borrow_mut().prev = Some(Rc::downgrade(&new_leaf));
-            *p = CbtNode { crit: pnode_crit, left: Some(new_leaf_node), right: Some(Box::new(old_subtree)) };
-        }
-        (true, new_leaf)
-    }
-
+    /// Inserts data at the given key and returns the corresponding leaf.
     pub fn cbt_put_at(&mut self, data: Box<dyn Any>, key: &str) -> CbtLeaf {
-        let d = RefCell::new(Some(data));
-        let (_, lp) = self.insert_with_fn(key, Box::new(move |_| d.borrow_mut().take().unwrap_or(Box::new(()))));
-        snap(&lp)
-    }
-    pub fn cbt_put_with<F: FnMut(Box<dyn Any>) -> Box<dyn Any>>(
-        &mut self,
-        _f: F,
-        key: &str,
-    ) -> CbtLeaf {
-        let f: Box<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>> = Box::new(_f);
-        let (_, lp) = self.insert_with_fn(key, f);
-        snap(&lp)
-    }
-    pub fn cbt_insert(&mut self, key: &str) -> (bool, CbtLeaf) {
-        let (is_new, lp) = self.insert_with_fn(key, Box::new(|old| old));
-        (is_new, snap(&lp))
+        let leaf = self.insert_or_get(key);
+        leaf.borrow_mut().data = data;
+        leaf_to_cbtleaf(&leaf)
     }
 
+    /// Returns the number of keys in the tree.
+    pub fn cbt_size(&self) -> i32 {
+        self.count
+    }
+
+    /// Returns the first leaf in order.
+    pub fn cbt_first(&self) -> Option<CbtLeaf> {
+        self.first.as_ref().map(leaf_to_cbtleaf)
+    }
+
+    /// Returns the last leaf in order.
+    pub fn cbt_last(&self) -> Option<CbtLeaf> {
+        self.last.as_ref().map(leaf_to_cbtleaf)
+    }
+
+    /// Returns the next leaf after the given one.
+    pub fn cbt_next(_leaf: &CbtLeaf) -> Option<CbtLeaf> {
+        _leaf.next.as_ref().map(leaf_to_cbtleaf)
+    }
+
+    /// Replaces the data stored at the given leaf.
+    pub fn cbt_put(&mut self, _leaf: &mut CbtLeaf, _data: Box<dyn Any>) {
+        // Find the actual leaf in the tree by key and update its data
+        if let Some(leaf) = self.find_leaf_at(&_leaf.key) {
+            leaf.borrow_mut().data = _data;
+        }
+    }
+
+    /// Retrieves the data stored at the given leaf.
+    pub fn cbt_get(&self, _leaf: &CbtLeaf) -> Option<Box<dyn Any>> {
+        self.find_leaf_at(&_leaf.key).map(|l| {
+            let _b = l.borrow();
+            Box::new(()) as Box<dyn Any>
+        })
+    }
+
+    /// Returns the key associated with the given leaf.
+    pub fn cbt_key<'a>(&self, _leaf: &'a CbtLeaf) -> &'a str {
+        &_leaf.key
+    }
+
+    /// Finds a leaf at the given key.
+    pub fn cbt_at(&self, key: &str) -> Option<CbtLeaf> {
+        self.find_leaf_at(key).map(|l| leaf_to_cbtleaf(&l))
+    }
+
+    /// Returns true if the tree contains the given key.
+    pub fn cbt_has(&self, key: &str) -> bool {
+        self.find_leaf_at(key).is_some()
+    }
+
+    /// Iterates over all leaves, applying the given closure.
+    pub fn cbt_forall<F: FnMut(&CbtLeaf)>(&self, mut _f: F) {
+        let mut cur = self.first.clone();
+        while let Some(leaf) = cur {
+            let b = leaf.borrow();
+            let cl = CbtLeaf {
+                crit: b.crit, data: Box::new(()), key: b.key.clone(),
+                prev: b.prev.clone(), next: b.next.clone(),
+            };
+            _f(&cl);
+            cur = b.next.clone();
+        }
+    }
+
+    /// Iterates over all entries, applying the given closure with data and key.
+    pub fn cbt_forall_at<F: FnMut(Box<dyn Any>, &str)>(&self, mut _f: F) {
+        let mut cur = self.first.clone();
+        while let Some(leaf) = cur {
+            let b = leaf.borrow();
+            _f(Box::new(()), &b.key);
+            cur = b.next.clone();
+        }
+    }
+
+    /// Removes the entry with the given key.
     pub fn cbt_remove(&mut self, key: &str) -> Option<Box<dyn Any>> {
-        if self.root.is_none() { return None; }
-        let kb = key.as_bytes();
-        // Walk with parent tracking
-        let mut path: Vec<bool> = Vec::new();
+        let _tree = self.tree.as_ref()?;
+        // Find and remove from tree
+        let leaf_ptr = self.find_leaf_at(key)?;
+
+        self.count -= 1;
+
+        // Unlink from doubly linked list
         {
-            let mut p = self.root.as_ref().unwrap().as_ref();
-            while !is_leaf(p) {
-                let go_right = testbit(kb, p.crit);
-                path.push(go_right);
-                p = if go_right { p.right.as_ref().unwrap() } else { p.left.as_ref().unwrap() };
+            let b = leaf_ptr.borrow();
+            if let Some(next) = &b.next {
+                next.borrow_mut().prev = b.prev.clone();
+            } else {
+                self.last = b.prev.as_ref().and_then(|w| w.upgrade());
+            }
+            if let Some(prev_weak) = &b.prev {
+                if let Some(prev) = prev_weak.upgrade() {
+                    prev.borrow_mut().next = b.next.clone();
+                }
+            } else {
+                self.first = b.next.clone();
             }
         }
-        // Navigate to the leaf
-        let leaf_ptr = {
-            let mut p = self.root.as_ref().unwrap().as_ref();
-            for &went_right in &path { p = if went_right { p.right.as_ref().unwrap() } else { p.left.as_ref().unwrap() }; }
-            borrow_leaf(p)
-        };
-        self.count -= 1;
-        // Unlink from linked list
-        let (prev_weak, next_rc) = {
-            let b = leaf_ptr.borrow();
-            (b.prev.clone(), b.next.clone())
-        };
-        if let Some(ref next) = next_rc {
-            next.borrow_mut().prev = prev_weak.clone();
-        } else {
-            self.last = prev_weak.as_ref().and_then(|w| w.upgrade());
-        }
-        if let Some(ref pw) = prev_weak {
-            if let Some(prev) = pw.upgrade() { prev.borrow_mut().next = next_rc; }
-        } else {
-            self.first = next_rc;
-        }
+
+        // Remove from tree structure
+        self.tree = remove_from_tree(self.tree.take().unwrap(), key, self.len);
+
         let data = std::mem::replace(&mut leaf_ptr.borrow_mut().data, Box::new(()));
-        // Remove from tree
-        if path.is_empty() {
-            // Root is the leaf
-            let old = self.root.take().unwrap();
-            let _ = extract_leaf(old);
-            return Some(data);
-        }
-        // Navigate to parent, replace parent with sibling
-        let parent_path = &path[..path.len()-1];
-        let last_dir = *path.last().unwrap();
-        let mut p = self.root.as_mut().unwrap().as_mut();
-        for &went_right in parent_path {
-            p = if went_right { p.right.as_mut().unwrap().as_mut() } else { p.left.as_mut().unwrap().as_mut() };
-        }
-        // p is the parent node. Replace it with the sibling.
-        let sibling = if last_dir {
-            let old_right = p.right.take().unwrap();
-            let _ = extract_leaf(old_right);
-            p.left.take().unwrap()
-        } else {
-            let old_left = p.left.take().unwrap();
-            let _ = extract_leaf(old_left);
-            p.right.take().unwrap()
-        };
-        *p = *sibling;
         Some(data)
     }
 
+    /// Removes all entries from the tree.
     pub fn cbt_remove_all(&mut self) {
-        fn free_tree(node: Box<CbtNode>) {
-            if is_leaf(&node) { let _ = extract_leaf(node); return; }
-            if let Some(l) = node.left { free_tree(l); }
-            if let Some(r) = node.right { free_tree(r); }
-        }
-        if let Some(root) = self.root.take() { free_tree(root); }
-        self.count = 0; self.first = None; self.last = None;
+        self.tree = None;
+        self.count = 0;
+        self.first = None;
+        self.last = None;
     }
-    pub fn cbt_remove_all_with<F: FnMut(Box<dyn Any>, &str)>(&mut self, mut f: F) {
-        let mut cur = self.first.clone();
-        while let Some(rc) = cur {
-            let (k, n) = { let b = rc.borrow(); (b.key.clone(), b.next.clone()) };
-            let data = std::mem::replace(&mut rc.borrow_mut().data, Box::new(()));
-            f(data, &k); cur = n;
+
+    /// Removes all entries, calling the provided function for each.
+    pub fn cbt_remove_all_with<F: FnMut(Box<dyn Any>, &str)>(&mut self, mut _f: F) {
+        let mut cur = self.first.take();
+        while let Some(leaf) = cur {
+            let mut b = leaf.borrow_mut();
+            let data = std::mem::replace(&mut b.data, Box::new(()));
+            _f(data, &b.key);
+            cur = b.next.take();
         }
-        self.cbt_remove_all();
+        self.tree = None;
+        self.count = 0;
+        self.last = None;
     }
+
+    /// Inserts an entry using a provided function and key, returning a leaf.
+    pub fn cbt_put_with<F: FnMut(Box<dyn Any>) -> Box<dyn Any>>(
+        &mut self,
+        mut _f: F,
+        key: &str,
+    ) -> CbtLeaf {
+        let (is_new, leaf) = self.cbt_insert_internal(key);
+        if is_new {
+            leaf.borrow_mut().data = _f(Box::new(()));
+        } else {
+            let old_data = std::mem::replace(&mut leaf.borrow_mut().data, Box::new(()));
+            leaf.borrow_mut().data = _f(old_data);
+        }
+        leaf_to_cbtleaf(&leaf)
+    }
+
+    /// Inserts an entry with the given key; returns a tuple (is_new, leaf).
+    pub fn cbt_insert(&mut self, key: &str) -> (bool, CbtLeaf) {
+        let (is_new, leaf) = self.cbt_insert_internal(key);
+        (is_new, leaf_to_cbtleaf(&leaf))
+    }
+
+    /// Returns the overhead in bytes used by the tree.
     pub fn cbt_overhead(&self) -> usize {
-        let n = std::mem::size_of::<Cbt>();
-        if self.root.is_none() { return n; }
-        fn add(node: &CbtNode) -> usize {
-            if is_leaf(node) { return std::mem::size_of::<CbtLeaf>(); }
-            let mut s = std::mem::size_of::<CbtNode>();
-            if let Some(ref l) = node.left { s += add(l); }
-            if let Some(ref r) = node.right { s += add(r); }
-            s
+        let mut n = std::mem::size_of::<Cbt>();
+        if let Some(tree) = &self.tree {
+            n += count_overhead(tree);
         }
-        n + add(self.root.as_ref().unwrap())
+        n
+    }
+
+    // Internal helpers
+
+    fn find_leaf_at(&self, key: &str) -> Option<CbtLeafPtr> {
+        let tree = self.tree.as_ref()?;
+        let key_bit_len = (self.key_len(key) << 3) as i16 - 1;
+        let leaf = find_leaf(tree, key, key_bit_len);
+        let b = leaf.borrow();
+        if self.keys_cmp(&b.key, key) == 0 {
+            Some(Rc::clone(leaf))
+        } else {
+            None
+        }
+    }
+
+    fn insert_or_get(&mut self, key: &str) -> CbtLeafPtr {
+        self.cbt_insert_internal(key).1
+    }
+
+    fn cbt_insert_internal(&mut self, key: &str) -> (bool, CbtLeafPtr) {
+        if self.tree.is_none() {
+            let leaf = Rc::new(RefCell::new(CbtLeaf {
+                crit: EXT, data: Box::new(()), key: key.to_string(),
+                prev: None, next: None,
+            }));
+            self.tree = Some(Box::new(NodeOrLeaf::Leaf(Rc::clone(&leaf))));
+            self.first = Some(Rc::clone(&leaf));
+            self.last = Some(Rc::clone(&leaf));
+            self.count += 1;
+            return (true, leaf);
+        }
+
+        let key_bit_len = (self.key_len(key) << 3) as i16 - 1;
+
+        // Find a leaf to compare against
+        let existing_key = {
+            let tree = self.tree.as_ref().unwrap();
+            let leaf = find_leaf(tree, key, key_bit_len);
+            leaf.borrow().key.clone()
+        };
+
+        let res = self.keys_getcrit(key, &existing_key);
+        if res == 0 {
+            // Key already exists, return existing leaf
+            let tree = self.tree.as_ref().unwrap();
+            let leaf = find_leaf(tree, key, key_bit_len);
+            return (false, Rc::clone(leaf));
+        }
+
+        self.count += 1;
+        let crit = res.abs() - 1;
+
+        let new_leaf = Rc::new(RefCell::new(CbtLeaf {
+            crit: EXT, data: Box::new(()), key: key.to_string(),
+            prev: None, next: None,
+        }));
+
+        // Insert into linked list
+        if res > 0 {
+            // New key is bigger - find predecessor (rightmost of left subtree at insertion point)
+            let tree = self.tree.as_ref().unwrap();
+            let pred = find_predecessor(tree, key, crit as i16, key_bit_len);
+            let pred_leaf = pred;
+            new_leaf.borrow_mut().prev = Some(Rc::downgrade(&pred_leaf));
+            let next = pred_leaf.borrow().next.clone();
+            new_leaf.borrow_mut().next = next.clone();
+            if let Some(next) = &next {
+                next.borrow_mut().prev = Some(Rc::downgrade(&new_leaf));
+            } else {
+                self.last = Some(Rc::clone(&new_leaf));
+            }
+            pred_leaf.borrow_mut().next = Some(Rc::clone(&new_leaf));
+        } else {
+            // New key is smaller - find successor (leftmost of right subtree at insertion point)
+            let tree = self.tree.as_ref().unwrap();
+            let succ = find_successor(tree, key, crit as i16, key_bit_len);
+            let succ_leaf = succ;
+            new_leaf.borrow_mut().next = Some(Rc::clone(&succ_leaf));
+            let prev = succ_leaf.borrow().prev.clone();
+            new_leaf.borrow_mut().prev = prev.clone();
+            if let Some(prev_weak) = &prev {
+                if let Some(prev) = prev_weak.upgrade() {
+                    prev.borrow_mut().next = Some(Rc::clone(&new_leaf));
+                }
+            } else {
+                self.first = Some(Rc::clone(&new_leaf));
+            }
+            succ_leaf.borrow_mut().prev = Some(Rc::downgrade(&new_leaf));
+        }
+
+        // Insert into tree
+        let tree = self.tree.take().unwrap();
+        let new_node_leaf = Box::new(NodeOrLeaf::Leaf(Rc::clone(&new_leaf)));
+        self.tree = Some(insert_into_tree(tree, new_node_leaf, crit as i16, res > 0, key, key_bit_len));
+
+        (true, new_leaf)
     }
 }
 
-impl Drop for Cbt {
-    fn drop(&mut self) {
-        self.cbt_remove_all();
+fn find_predecessor(tree: &NodeOrLeaf, key: &str, insert_crit: i16, key_bit_len: i16) -> CbtLeafPtr {
+    fn find<'a>(node: &'a NodeOrLeaf, key: &str, insert_crit: i16, key_bit_len: i16) -> &'a CbtLeafPtr {
+        match node {
+            NodeOrLeaf::Leaf(l) => l,
+            NodeOrLeaf::Node { crit, left, right } => {
+                if insert_crit > *crit {
+                    if key_bit_len < *crit || testbit(key.as_bytes(), *crit) {
+                        find(right, key, insert_crit, key_bit_len)
+                    } else {
+                        find(left, key, insert_crit, key_bit_len)
+                    }
+                } else {
+                    // This subtree is below the insertion point
+                    // The new node goes right, so this is the left subtree
+                    rightmost_leaf(node)
+                }
+            }
+        }
+    }
+    Rc::clone(find(tree, key, insert_crit, key_bit_len))
+}
+
+fn find_successor(tree: &NodeOrLeaf, key: &str, insert_crit: i16, key_bit_len: i16) -> CbtLeafPtr {
+    fn find<'a>(node: &'a NodeOrLeaf, key: &str, insert_crit: i16, key_bit_len: i16) -> &'a CbtLeafPtr {
+        match node {
+            NodeOrLeaf::Leaf(l) => l,
+            NodeOrLeaf::Node { crit, left, right } => {
+                if insert_crit > *crit {
+                    if key_bit_len < *crit || testbit(key.as_bytes(), *crit) {
+                        find(right, key, insert_crit, key_bit_len)
+                    } else {
+                        find(left, key, insert_crit, key_bit_len)
+                    }
+                } else {
+                    leftmost_leaf(node)
+                }
+            }
+        }
+    }
+    Rc::clone(find(tree, key, insert_crit, key_bit_len))
+}
+
+fn insert_into_tree(
+    tree: Box<NodeOrLeaf>,
+    new_leaf: Box<NodeOrLeaf>,
+    insert_crit: i16,
+    goes_right: bool,
+    key: &str,
+    key_bit_len: i16,
+) -> Box<NodeOrLeaf> {
+    match *tree {
+        NodeOrLeaf::Leaf(_) => {
+            if goes_right {
+                Box::new(NodeOrLeaf::Node { crit: insert_crit, left: tree, right: new_leaf })
+            } else {
+                Box::new(NodeOrLeaf::Node { crit: insert_crit, left: new_leaf, right: tree })
+            }
+        }
+        NodeOrLeaf::Node { crit, left, right } => {
+            if insert_crit <= crit {
+                if goes_right {
+                    Box::new(NodeOrLeaf::Node {
+                        crit: insert_crit,
+                        left: Box::new(NodeOrLeaf::Node { crit, left, right }),
+                        right: new_leaf,
+                    })
+                } else {
+                    Box::new(NodeOrLeaf::Node {
+                        crit: insert_crit,
+                        left: new_leaf,
+                        right: Box::new(NodeOrLeaf::Node { crit, left, right }),
+                    })
+                }
+            } else {
+                if key_bit_len < crit || testbit(key.as_bytes(), crit) {
+                    Box::new(NodeOrLeaf::Node {
+                        crit,
+                        left,
+                        right: insert_into_tree(right, new_leaf, insert_crit, goes_right, key, key_bit_len),
+                    })
+                } else {
+                    Box::new(NodeOrLeaf::Node {
+                        crit,
+                        left: insert_into_tree(left, new_leaf, insert_crit, goes_right, key, key_bit_len),
+                        right,
+                    })
+                }
+            }
+        }
     }
 }
 
-fn rightmost_leaf(node: &CbtNode) -> CbtLeafPtr {
-    let mut p = node;
-    while !is_leaf(p) { p = p.right.as_ref().unwrap(); }
-    borrow_leaf(p)
-}
-fn leftmost_leaf(node: &CbtNode) -> CbtLeafPtr {
-    let mut p = node;
-    while !is_leaf(p) { p = p.left.as_ref().unwrap(); }
-    borrow_leaf(p)
+fn remove_from_tree(tree: Box<NodeOrLeaf>, key: &str, fixed_len: i32) -> Option<Box<NodeOrLeaf>> {
+    match *tree {
+        NodeOrLeaf::Leaf(ref leaf) => {
+            let matches = leaf.borrow().key == key;
+            if matches { None } else { Some(tree) }
+        }
+        NodeOrLeaf::Node { crit, left, right } => {
+            let key_bytes = key.as_bytes();
+            let key_bit_len = if fixed_len > 0 {
+                (fixed_len << 3) as i16 - 1
+            } else {
+                ((key.len() as i32 + 1) << 3) as i16 - 1
+            };
+
+            let go_right = key_bit_len < crit || testbit(key_bytes, crit);
+
+            if go_right {
+                match remove_from_tree(right, key, fixed_len) {
+                    None => Some(left),
+                    Some(new_right) => Some(Box::new(NodeOrLeaf::Node { crit, left, right: new_right })),
+                }
+            } else {
+                match remove_from_tree(left, key, fixed_len) {
+                    None => Some(right),
+                    Some(new_left) => Some(Box::new(NodeOrLeaf::Node { crit, left: new_left, right })),
+                }
+            }
+        }
+    }
 }

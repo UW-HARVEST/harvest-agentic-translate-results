@@ -3,15 +3,14 @@ pub const SIMPLE_LANG_COMPILER_H: bool = true;
 /// Replicates: Instruction* compile_asts(ASTNode** asts, int* instr_count);
 /// In Rust: returns a vector of Instructions, updates an integer by reference.
 pub fn compile_asts(asts: &[Box<ast::ASTNode>], instr_count: &mut i32) -> Vec<vm::Instruction> {
-    let mut all: Vec<vm::Instruction> = Vec::new();
-    *instr_count = 0;
+    let mut all_instr = Vec::new();
     for a in asts {
         let mut count = 0i32;
         let instrs = compile_statement(a, &mut count);
-        all.extend(instrs);
-        *instr_count += count;
+        all_instr.extend(instrs);
     }
-    all
+    *instr_count = all_instr.len() as i32;
+    all_instr
 }
 /// Replicates: Instruction* compile(const char* source, int* instr_count);
 pub fn compile(source: &str, instr_count: &mut i32) -> Vec<vm::Instruction> {

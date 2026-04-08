@@ -1,9 +1,11 @@
 use crate::fst::ArcData;
 use crate::queue::Queue;
 
-fn _match(a: &[ArcData], _b: &[ArcData], i: usize, j: usize) -> bool {
+const EPS: u32 = 0;
+
+fn _match(a: &[ArcData], b: &[ArcData], i: usize, j: usize) -> bool {
     let al = a[i].olabel;
-    if al == 0 {
+    if al == EPS {
         if (i != 0 && j != 0) || (i == 0 && j == 0) {
             return false;
         }
@@ -23,13 +25,14 @@ pub fn match_unsorted(a: &[ArcData], b: &[ArcData], q: &mut Queue<(ArcData, ArcD
 pub fn match_half_sorted(a: &[ArcData], b: &[ArcData], q: &mut Queue<(ArcData, ArcData)>) {
     let n = b.len();
     for i in 0..a.len() {
-        let mut l: usize = 0;
-        let mut h: usize = n.wrapping_sub(1);
         if n == 0 { continue; }
+        let mut l: usize = 0;
+        let mut h: usize = n - 1;
         while l <= h {
             let mid = (l + h) >> 1;
-            if a[i].olabel > b[mid].ilabel { l = mid + 1; }
-            else if a[i].olabel < b[mid].ilabel {
+            if a[i].olabel > b[mid].ilabel {
+                l = mid + 1;
+            } else if a[i].olabel < b[mid].ilabel {
                 if mid == 0 { break; }
                 h = mid - 1;
             } else {
@@ -51,13 +54,14 @@ pub fn match_half_sorted(a: &[ArcData], b: &[ArcData], q: &mut Queue<(ArcData, A
 pub fn match_half_sorted_rev(a: &[ArcData], b: &[ArcData], q: &mut Queue<(ArcData, ArcData)>) {
     let m = a.len();
     for i in 0..b.len() {
-        let mut l: usize = 0;
-        let mut h: usize = m.wrapping_sub(1);
         if m == 0 { continue; }
+        let mut l: usize = 0;
+        let mut h: usize = m - 1;
         while l <= h {
             let mid = (l + h) >> 1;
-            if b[i].ilabel > a[mid].olabel { l = mid + 1; }
-            else if b[i].ilabel < a[mid].olabel {
+            if b[i].ilabel > a[mid].olabel {
+                l = mid + 1;
+            } else if b[i].ilabel < a[mid].olabel {
                 if mid == 0 { break; }
                 h = mid - 1;
             } else {
@@ -77,12 +81,16 @@ pub fn match_half_sorted_rev(a: &[ArcData], b: &[ArcData], q: &mut Queue<(ArcDat
     }
 }
 pub fn match_full_sorted(a: &[ArcData], b: &[ArcData], q: &mut Queue<(ArcData, ArcData)>) {
-    let (m, n) = (a.len(), b.len());
-    let (mut i, mut j) = (0usize, 0usize);
+    let m = a.len();
+    let n = b.len();
+    let mut i = 0;
+    let mut j = 0;
     while i < m && j < n {
-        if a[i].olabel < b[j].ilabel { i += 1; }
-        else if a[i].olabel > b[j].ilabel { j += 1; }
-        else {
+        if a[i].olabel < b[j].ilabel {
+            i += 1;
+        } else if a[i].olabel > b[j].ilabel {
+            j += 1;
+        } else {
             let mut t = j;
             while t < n && a[i].olabel == b[t].ilabel {
                 if _match(a, b, i, t) {

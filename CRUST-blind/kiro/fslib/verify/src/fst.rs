@@ -15,6 +15,7 @@ const OSORT: u8 = 0x02;
 const EPS: u32 = 0;
 const EPS_L: i32 = -1;
 pub const START_STATE: &str = "<start>";
+#[derive(Clone)]
 pub struct Fst {
     pub start: State,
     pub n_states: State,
@@ -23,6 +24,7 @@ pub struct Fst {
     pub flags: u8,
     pub states: Vec<StateData>,
 }
+#[derive(Clone)]
 pub struct StateData {
     pub n_arcs: Arc,
     pub n_max: Arc,
@@ -91,7 +93,12 @@ impl Fst {
     }
     pub fn add_arc(&mut self, src: State, dst: State, il: Label, ol: Label, weight: Weight) -> Arc {
         let state = &mut self.states[src as usize];
-        state.arcs.push(ArcData { state: dst, weight, ilabel: il, olabel: ol });
+        state.arcs.push(ArcData {
+            state: dst,
+            ilabel: il,
+            olabel: ol,
+            weight,
+        });
         state.n_arcs += 1;
         state.n_arcs - 1
     }
@@ -100,10 +107,10 @@ impl Fst {
         self.states[s as usize].weight = w;
     }
     pub fn print(&self) {
-        crate::print::fst_print(self, &mut io::stdout()).ok();
+        crate::print::fst_print(self, &mut std::io::stdout()).ok();
     }
     pub fn print_sym(&self, ist: &SymTable, ost: &SymTable, sst: &SymTable) {
-        crate::print::fst_print_sym(self, Some(ist), Some(ost), Some(sst), &mut io::stdout()).ok();
+        crate::print::fst_print_sym(self, Some(ist), Some(ost), Some(sst), &mut std::io::stdout()).ok();
     }
     pub fn write(&self, fout: &mut File) -> io::Result<()> {
         fout.write_all(&FST_HEADER.to_le_bytes())?;
@@ -127,7 +134,6 @@ impl Fst {
     }
     pub fn read(&mut self, fin: &mut File) -> io::Result<()> {
         let mut buf4 = [0u8; 4];
-        let mut buf1 = [0u8; 1];
         fin.read_exact(&mut buf4)?;
         let header = u32::from_le_bytes(buf4);
         if header != FST_HEADER {
@@ -137,6 +143,7 @@ impl Fst {
         self.start = u32::from_le_bytes(buf4);
         fin.read_exact(&mut buf4)?;
         self.n_states = u32::from_le_bytes(buf4);
+        let mut buf1 = [0u8; 1];
         fin.read_exact(&mut buf1)?;
         self.sr_type = buf1[0];
         fin.read_exact(&mut buf1)?;
@@ -152,15 +159,14 @@ impl Fst {
             let final_int = i32::from_le_bytes(buf4);
             let mut arcs = Vec::with_capacity(n_arcs as usize);
             for _ in 0..n_arcs {
-                let mut abuf = [0u8; 4];
-                fin.read_exact(&mut abuf)?;
-                let astate = u32::from_le_bytes(abuf);
-                fin.read_exact(&mut abuf)?;
-                let aweight = f32::from_le_bytes(abuf);
-                fin.read_exact(&mut abuf)?;
-                let ailabel = u32::from_le_bytes(abuf);
-                fin.read_exact(&mut abuf)?;
-                let aolabel = u32::from_le_bytes(abuf);
+                fin.read_exact(&mut buf4)?;
+                let astate = u32::from_le_bytes(buf4);
+                fin.read_exact(&mut buf4)?;
+                let aweight = f32::from_le_bytes(buf4);
+                fin.read_exact(&mut buf4)?;
+                let ailabel = u32::from_le_bytes(buf4);
+                fin.read_exact(&mut buf4)?;
+                let aolabel = u32::from_le_bytes(buf4);
                 arcs.push(ArcData { state: astate, weight: aweight, ilabel: ailabel, olabel: aolabel });
             }
             self.states.push(StateData {
@@ -174,64 +180,41 @@ impl Fst {
         Ok(())
     }
     pub fn fwrite(&self, filename: &str) -> io::Result<()> {
-        let mut f = File::create(filename)?;
-        self.write(&mut f)
+        let mut fout = File::create(filename)?;
+        self.write(&mut fout)
     }
     pub fn fread(&mut self, filename: &str) -> io::Result<()> {
-        let mut f = File::open(filename)?;
-        self.read(&mut f)
+        let mut fin = File::open(filename)?;
+        self.read(&mut fin)
     }
     pub fn compile(&mut self, fin: &mut File, ist: &SymTable, ost: &SymTable, sst: &SymTable, is_acc: bool) -> Self {
-        // Delegate to compile module - but signature returns Self, so we build in place
-        // This is a stub that matches the signature; real work is in compile.rs
-        let mut fst = Fst::new();
-        std::mem::swap(self, &mut fst);
-        fst
+        // Delegate to compile module
+        let mut reader = io::BufReader::new(fin);
+        crate::compile::fst_compile(self, &mut reader, ist, ost, sst, is_acc)
     }
     pub fn compile_str(&mut self, str_data: &str) -> Self {
-        let mut fst = Fst::new();
-        std::mem::swap(self, &mut fst);
-        fst
+        crate::compile::fst_compile_str(self, str_data)
     }
     pub fn get_n_arcs(&self) -> Arc {
         self.states.iter().map(|s| s.n_arcs).sum()
     }
     pub fn arc_sort(&mut self, sort_outer: i32) {
-        if sort_outer == 0 {
-            self.flags |= ISORT;
-            for state in self.states.iter_mut() {
-                state.arcs.sort_by(|a, b| a.ilabel.cmp(&b.ilabel));
-            }
-        } else {
-            self.flags |= OSORT;
-            for state in self.states.iter_mut() {
-                state.arcs.sort_by(|a, b| a.olabel.cmp(&b.olabel));
-            }
-        }
+        crate::sort::fst_arc_sort(self, sort_outer != 0);
     }
     pub fn stack(&mut self, other: &Fst) {
         let offset = self.n_states;
-        for state in &other.states {
-            let mut new_arcs: Vec<ArcData> = state.arcs.iter().map(|a| {
-                ArcData { state: a.state + offset, weight: a.weight, ilabel: a.ilabel, olabel: a.olabel }
-            }).collect();
-            self.states.push(StateData {
-                n_arcs: state.n_arcs,
-                n_max: state.n_max,
-                weight: state.weight,
-                final_state: state.final_state,
-                arcs: new_arcs,
-            });
+        for s in &other.states {
+            let mut new_state = s.clone();
+            for arc in new_state.arcs.iter_mut() {
+                arc.state += offset;
+            }
+            self.states.push(new_state);
         }
         self.n_states += other.n_states;
     }
     pub fn union(&mut self, other: &Fst) -> Self {
-        // The C code doesn't have a union implementation shown, but the signature exists
-        // Stack and return self
         self.stack(other);
-        let mut result = Fst::new();
-        std::mem::swap(self, &mut result);
-        result
+        self.clone()
     }
     pub fn draw(&self, fout: &mut File) -> io::Result<i32> {
         crate::draw::fst_draw(self, fout)?;
@@ -247,86 +230,70 @@ impl Fst {
         copy.n_max = self.n_max;
         copy.sr_type = self.sr_type;
         copy.flags = self.flags;
-        copy.states = self.states.iter().map(|s| StateData {
-            n_arcs: s.n_arcs,
-            n_max: s.n_max,
-            weight: s.weight,
-            final_state: s.final_state,
-            arcs: s.arcs.clone(),
-        }).collect();
+        copy.states = self.states.clone();
     }
     pub fn reverse(&mut self) {
         crate::trim::fst_reverse(self);
     }
     pub fn shortest(&self, path: &mut Fst) -> Self {
         crate::shortest::ShortestPath::find_shortest_path(self, path);
-        let mut result = Fst::new();
-        std::mem::swap(path, &mut result);
-        result
+        path.clone()
     }
     pub fn rm_states(&mut self, visited: &BitSet) -> Self {
         crate::trim::fst_rm_states(self, visited);
-        let mut result = Fst::new();
-        std::mem::swap(self, &mut result);
-        result
+        self.clone()
     }
     pub fn trim(&mut self) -> Self {
         crate::trim::fst_trim(self);
-        let mut result = Fst::new();
-        std::mem::swap(self, &mut result);
-        result
+        self.clone()
     }
     pub fn compose(&self, fst_b: &Fst, fst_c: &mut Fst) {
         use crate::sr::sr_get;
-        use crate::queue::Queue;
         use std::collections::HashMap;
-
         let sr = sr_get(self.sr_type);
-        let mut q: Queue<(State, State)> = Queue::new();
-        let mut mq: Queue<(ArcData, ArcData)> = Queue::new();
+        let mut q: VecDeque<(State, State)> = VecDeque::new();
         let mut marked: HashMap<(State, State), State> = HashMap::new();
+        let mut mq: Queue<(ArcData, ArcData)> = Queue::new();
 
-        q.enqueue((self.start, fst_b.start));
+        let pair = (self.start, fst_b.start);
+        q.push_back(pair);
 
-        while let Some(pair) = q.dequeue() {
-            let state_a = &self.states[pair.0 as usize];
-            let state_b = &fst_b.states[pair.1 as usize];
-
+        while let Some(pair) = q.pop_front() {
+            let (pa, pb) = pair;
             let sc = if let Some(&existing) = marked.get(&pair) {
                 existing
             } else {
                 let sc = fst_c.add_state();
-                if state_a.final_state && state_b.final_state {
+                let sa = &self.states[pa as usize];
+                let sb = &fst_b.states[pb as usize];
+                if sa.final_state && sb.final_state {
                     fst_c.set_final(sc, sr.one);
                 }
-                if pair.0 == self.start && pair.1 == fst_b.start {
+                if pa == self.start && pb == fst_b.start {
                     fst_c.start = sc;
                 }
                 marked.insert(pair, sc);
                 sc
             };
 
-            let spair = Spair { a: pair.0, b: pair.1 };
+            let spair = Spair { a: pa, b: pb };
             match_arcs(self, fst_b, &spair, &sr, &mut mq);
 
-            while let Some(mi) = mq.dequeue() {
-                let (arc_a, arc_b) = mi;
+            while let Some((arc_a, arc_b)) = mq.dequeue() {
                 let dst_pair = (arc_a.state, arc_b.state);
-
                 let dst_sc = if let Some(&existing) = marked.get(&dst_pair) {
                     existing
                 } else {
-                    let dst_state_a = &self.states[dst_pair.0 as usize];
-                    let dst_state_b = &fst_b.states[dst_pair.1 as usize];
                     let dst_sc = fst_c.add_state();
-                    if dst_state_a.final_state && dst_state_b.final_state {
+                    let dsa = &self.states[arc_a.state as usize];
+                    let dsb = &fst_b.states[arc_b.state as usize];
+                    if dsa.final_state && dsb.final_state {
                         fst_c.set_final(dst_sc, sr.one);
                     }
-                    q.enqueue(dst_pair);
+                    q.push_back(dst_pair);
                     marked.insert(dst_pair, dst_sc);
                     dst_sc
                 };
-
                 fst_c.add_arc(sc, dst_sc, arc_a.ilabel, arc_b.olabel, (sr.prod)(arc_a.weight, arc_b.weight));
             }
         }
@@ -426,8 +393,8 @@ pub fn match_half_sorted_rev(a: &[ArcData], b: &[ArcData], m: Arc, n: Arc, q: &m
 pub fn match_full_sorted(a: &[ArcData], b: &[ArcData], m: Arc, n: Arc, q: &mut Queue<(ArcData, ArcData)>) {
     let m = m as usize;
     let n = n as usize;
-    let mut i = 0usize;
-    let mut j = 0usize;
+    let mut i = 0;
+    let mut j = 0;
     while i < m && j < n {
         if a[i].olabel < b[j].ilabel {
             i += 1;

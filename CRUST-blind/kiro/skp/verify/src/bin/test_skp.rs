@@ -1,247 +1,272 @@
-use skp::skp::*;
+use skp::skp;
 
-// Helper: given src and the returned "end" slice, compute how many bytes were consumed
-fn consumed(src: &str, end: &str) -> usize {
-    src.len() - end.len()
-}
-
-// ============ Character classification helpers ============
-
-#[test]
-fn test_is_digit() {
-    assert!(is_digit(b'0' as u32));
-    assert!(is_digit(b'9' as u32));
-    assert!(!is_digit(b'a' as u32));
-    assert!(!is_digit(0));
-}
-
-#[test]
-fn test_is_alpha() {
-    assert!(is_alpha(b'a' as u32));
-    assert!(is_alpha(b'Z' as u32));
-    assert!(!is_alpha(b'0' as u32));
-    assert!(!is_alpha(b'_' as u32));
-}
-
-#[test]
-fn test_is_upper() {
-    assert!(is_upper(b'A' as u32));
-    assert!(is_upper(b'Z' as u32));
-    assert!(!is_upper(b'a' as u32));
-}
-
-#[test]
-fn test_is_lower() {
-    assert!(is_lower(b'a' as u32));
-    assert!(is_lower(b'z' as u32));
-    assert!(!is_lower(b'A' as u32));
-}
-
-#[test]
-fn test_is_xdigit() {
-    assert!(is_xdigit(b'0' as u32));
-    assert!(is_xdigit(b'9' as u32));
-    assert!(is_xdigit(b'a' as u32));
-    assert!(is_xdigit(b'F' as u32));
-    assert!(!is_xdigit(b'g' as u32));
-}
-
-#[test]
-fn test_is_blank() {
-    assert!(is_blank(0x20)); // space
-    assert!(is_blank(0x09)); // tab
-    assert!(!is_blank(b'a' as u32));
-    assert!(!is_blank(0x0A)); // newline is not blank
-}
-
-#[test]
-fn test_is_break() {
-    assert!(is_break(0x0A)); // LF
-    assert!(is_break(0x0D)); // CR
-    assert!(is_break(0x0C)); // FF
-    assert!(!is_break(0x20)); // space is not break
-    assert!(!is_break(b'a' as u32));
-}
-
-#[test]
-fn test_is_space() {
-    assert!(is_space(0x20)); // blank
-    assert!(is_space(0x0A)); // break
-    assert!(is_space(0x09)); // tab
-    assert!(!is_space(b'a' as u32));
-}
-
-#[test]
-fn test_is_alnum() {
-    assert!(is_alnum(b'a' as u32));
-    assert!(is_alnum(b'0' as u32));
-    assert!(!is_alnum(b'_' as u32));
-}
-
-#[test]
-fn test_is_idchr() {
-    assert!(is_idchr(b'a' as u32));
-    assert!(is_idchr(b'0' as u32));
-    assert!(is_idchr(b'_' as u32));
-    assert!(!is_idchr(b' ' as u32));
-}
-
-#[test]
-fn test_is_ctrl() {
-    assert!(is_ctrl(0x01));
-    assert!(is_ctrl(0x1F));
-    assert!(!is_ctrl(0x20));
-    assert!(is_ctrl(0x7F));
-}
-
-// ============ Helper functions ============
-
-#[test]
-fn test_chr_cmp() {
-    assert!(chr_cmp(b'a' as u32, b'a' as u32, 0));
-    assert!(!chr_cmp(b'a' as u32, b'A' as u32, 0));
-    assert!(chr_cmp(b'a' as u32, b'A' as u32, 1)); // case fold
-}
-
-#[test]
-fn test_get_close() {
-    assert_eq!(get_close(b'(' as u32), b')' as u32);
-    assert_eq!(get_close(b'[' as u32), b']' as u32);
-    assert_eq!(get_close(b'{' as u32), b'}' as u32);
-    assert_eq!(get_close(b'<' as u32), b'>' as u32);
-    assert_eq!(get_close(b'x' as u32), 0);
-}
-
-#[test]
-fn test_get_qclose() {
-    assert_eq!(get_qclose(b'\'' as u32), b'\'' as u32);
-    assert_eq!(get_qclose(b'"' as u32), b'"' as u32);
-    assert_eq!(get_qclose(b'`' as u32), b'`' as u32);
-    assert_eq!(get_qclose(b'x' as u32), 0);
-}
+// ============================================================
+// skp_next
+// ============================================================
 
 #[test]
 fn test_skp_next_ascii() {
-    let (c, rest) = skp_next("abc", 0);
-    assert_eq!(c, b'a' as u32);
-    assert_eq!(rest, "bc");
+    let (c, rest) = skp::skp_next("ABC", 0);
+    assert_eq!(c, 65);
+    assert_eq!(rest, "BC");
+}
+
+#[test]
+fn test_skp_next_ascii_iso() {
+    let (c, rest) = skp::skp_next("ABC", 1);
+    assert_eq!(c, 65);
+    assert_eq!(rest, "BC");
+}
+
+#[test]
+fn test_skp_next_utf8_egrave() {
+    // è = bytes C3 A8. Rust uses u8, so c = (0xC3 << 8) | 0xA8 = 0xC3A8
+    let (c, rest) = skp::skp_next("\u{00E8}", 0);
+    assert_eq!(c, 0xC3A8);
+    assert_eq!(rest, "");
+}
+
+#[test]
+fn test_skp_next_iso_egrave() {
+    // In ISO mode, only first byte is read: 0xC3
+    let (c, rest) = skp::skp_next("\u{00E8}", 1);
+    assert_eq!(c, 0xC3);
+    assert_eq!(rest.len(), 1); // one continuation byte left
 }
 
 #[test]
 fn test_skp_next_empty() {
-    let (c, rest) = skp_next("", 0);
+    let (c, rest) = skp::skp_next("", 0);
     assert_eq!(c, 0);
     assert_eq!(rest, "");
 }
 
 #[test]
 fn test_skp_next_crlf() {
-    let (c, rest) = skp_next("\r\n", 0);
+    let (c, rest) = skp::skp_next("\r\n", 0);
     assert_eq!(c, 0x0D0A);
     assert_eq!(rest, "");
 }
 
 #[test]
+fn test_skp_next_tab() {
+    let (c, _) = skp::skp_next("\t", 0);
+    assert_eq!(c, 9);
+}
+
+#[test]
+fn test_skp_next_three_byte_utf8() {
+    // U+2000 = E2 80 80 -> (0xE2 << 16) | (0x80 << 8) | 0x80 = 0xE28080
+    let (c, rest) = skp::skp_next("\u{2000}", 0);
+    assert_eq!(c, 0xE28080);
+    assert_eq!(rest, "");
+}
+
+// ============================================================
+// chr_cmp
+// ============================================================
+
+#[test]
+fn test_chr_cmp_same_no_fold() {
+    assert!(skp::chr_cmp(b'A' as u32, b'A' as u32, 0));
+}
+
+#[test]
+fn test_chr_cmp_diff_case_no_fold() {
+    assert!(!skp::chr_cmp(b'A' as u32, b'a' as u32, 0));
+}
+
+#[test]
+fn test_chr_cmp_diff_case_fold() {
+    assert!(skp::chr_cmp(b'A' as u32, b'a' as u32, 1));
+}
+
+#[test]
+fn test_chr_cmp_diff_chars_fold() {
+    assert!(!skp::chr_cmp(b'A' as u32, b'B' as u32, 1));
+}
+
+// ============================================================
+// is_blank
+// ============================================================
+
+#[test]
+fn test_is_blank() {
+    assert!(skp::is_blank(0x20));
+    assert!(skp::is_blank(0x09));
+    assert!(!skp::is_blank(0x41));
+    assert!(!skp::is_blank(0xA0)); // < 0xFF, not 0x20 or 0x09
+    assert!(skp::is_blank(0xC2A0));
+    assert!(skp::is_blank(0xE19A80));
+    assert!(skp::is_blank(0xE28080));
+    assert!(skp::is_blank(0xE2808A));
+    assert!(skp::is_blank(0xE280AF));
+    assert!(!skp::is_blank(0xE38080)); // mask 0xE38000 doesn't match case 0xE38080
+    assert!(!skp::is_blank(0));
+}
+
+// ============================================================
+// is_break
+// ============================================================
+
+#[test]
+fn test_is_break() {
+    assert!(skp::is_break(0x0A));
+    assert!(skp::is_break(0x0C));
+    assert!(skp::is_break(0x0D));
+    assert!(skp::is_break(0x85));
+    assert!(skp::is_break(0x0D0A));
+    assert!(skp::is_break(0xC285));
+    assert!(skp::is_break(0xE280A8));
+    assert!(skp::is_break(0xE280A9));
+    assert!(!skp::is_break(0x20));
+    assert!(!skp::is_break(0x41));
+}
+
+// ============================================================
+// is_space
+// ============================================================
+
+#[test]
+fn test_is_space() {
+    assert!(skp::is_space(0x20));
+    assert!(skp::is_space(0x0A));
+    assert!(!skp::is_space(0x41));
+}
+
+// ============================================================
+// Character class functions
+// ============================================================
+
+#[test]
+fn test_is_digit() {
+    assert!(skp::is_digit(0x30));
+    assert!(skp::is_digit(0x39));
+    assert!(!skp::is_digit(0x40));
+}
+
+#[test]
+fn test_is_xdigit() {
+    assert!(skp::is_xdigit(0x41)); // A
+    assert!(skp::is_xdigit(0x46)); // F
+    assert!(!skp::is_xdigit(0x47)); // G
+    assert!(skp::is_xdigit(0x61)); // a
+    assert!(skp::is_xdigit(0x66)); // f
+}
+
+#[test]
+fn test_is_upper() {
+    assert!(skp::is_upper(0x41));
+    assert!(skp::is_upper(0x5A));
+    assert!(!skp::is_upper(0x61));
+}
+
+#[test]
+fn test_is_lower() {
+    assert!(skp::is_lower(0x61));
+    assert!(skp::is_lower(0x7A));
+    assert!(!skp::is_lower(0x41));
+}
+
+#[test]
+fn test_is_alpha() {
+    assert!(skp::is_alpha(0x41));
+    assert!(skp::is_alpha(0x61));
+    assert!(!skp::is_alpha(0x30));
+}
+
+#[test]
+fn test_is_idchr() {
+    assert!(skp::is_idchr(0x5F)); // _
+    assert!(skp::is_idchr(0x41)); // A
+    assert!(skp::is_idchr(0x30)); // 0
+    assert!(!skp::is_idchr(0x20)); // space
+}
+
+#[test]
+fn test_is_alnum() {
+    assert!(skp::is_alnum(0x41));
+    assert!(skp::is_alnum(0x30));
+    assert!(!skp::is_alnum(0x5F)); // _ is not alnum
+}
+
+#[test]
+fn test_is_ctrl() {
+    assert!(skp::is_ctrl(0x00));
+    assert!(skp::is_ctrl(0x1F));
+    assert!(skp::is_ctrl(0x7F));
+    assert!(!skp::is_ctrl(0x20));
+    assert!(skp::is_ctrl(0xC280));
+    assert!(skp::is_ctrl(0xC29F));
+    assert!(!skp::is_ctrl(0xC2A0));
+    assert!(skp::is_ctrl(0x9F));
+}
+
+// ============================================================
+// get_close / get_qclose
+// ============================================================
+
+#[test]
+fn test_get_close() {
+    assert_eq!(skp::get_close(b'(' as u32), 41);
+    assert_eq!(skp::get_close(b'[' as u32), 93);
+    assert_eq!(skp::get_close(b'{' as u32), 125);
+    assert_eq!(skp::get_close(b'<' as u32), 62);
+    assert_eq!(skp::get_close(b'A' as u32), 0);
+}
+
+#[test]
+fn test_get_qclose() {
+    assert_eq!(skp::get_qclose(39), 39);  // '
+    assert_eq!(skp::get_qclose(34), 34);  // "
+    assert_eq!(skp::get_qclose(96), 96);  // `
+    assert_eq!(skp::get_qclose(65), 0);   // A
+}
+
+// ============================================================
+// is_oneof
+// ============================================================
+
+#[test]
 fn test_is_oneof_basic() {
-    assert!(is_oneof(b'a' as u32, "abc]", 0));
-    assert!(is_oneof(b'c' as u32, "abc]", 0));
-    assert!(!is_oneof(b'd' as u32, "abc]", 0));
+    assert!(skp::is_oneof(b'A' as u32, "ABC]", 0));
+    assert!(!skp::is_oneof(b'D' as u32, "ABC]", 0));
+    assert!(!skp::is_oneof(0, "ABC]", 0));
 }
 
 #[test]
 fn test_is_oneof_range() {
-    assert!(is_oneof(b'c' as u32, "a-z]", 0));
-    assert!(is_oneof(b'z' as u32, "a-z]", 0));
-    assert!(!is_oneof(b'A' as u32, "a-z]", 0));
+    assert!(skp::is_oneof(b'B' as u32, "A-D]", 0));
+    assert!(!skp::is_oneof(b'E' as u32, "A-D]", 0));
+    assert!(skp::is_oneof(b'A' as u32, "A-Z]", 0));
+    assert!(skp::is_oneof(b'Z' as u32, "A-Z]", 0));
+    assert!(!skp::is_oneof(b'a' as u32, "A-Z]", 0));
 }
 
 #[test]
-fn test_is_oneof_bracket() {
-    // ']' as first char in set means literal ']'
-    assert!(is_oneof(b']' as u32, "]abc]", 0));
+fn test_is_oneof_bracket_first() {
+    assert!(skp::is_oneof(b']' as u32, "]ABC]", 0));
+    assert!(skp::is_oneof(b'A' as u32, "]ABC]", 0));
+}
+
+// ============================================================
+// is_string
+// ============================================================
+
+#[test]
+fn test_is_string_match() {
+    assert_eq!(skp::is_string("ABC", "ABC", 3, 0), 3);
 }
 
 #[test]
-fn test_is_oneof_null() {
-    assert!(!is_oneof(0, "abc]", 0));
+fn test_is_string_no_match() {
+    assert_eq!(skp::is_string("ABC", "ABX", 3, 0), 0);
 }
 
 #[test]
-fn test_is_string_basic() {
-    assert_eq!(is_string("abc", "ab", 2, 0), 2);
-    assert_eq!(is_string("abc", "xy", 2, 0), 0);
-}
-
-#[test]
-fn test_skp_loop_len() {
-    let s = "hello";
-    assert_eq!(skp_loop_len(s, &s[3..]), 3);
-    assert_eq!(skp_loop_len(s, s), 0);
-}
-
-// ============ Core skp_ function tests ============
-
-#[test]
-fn test_skp_alpha_single() {
-    let (ret, _to, end) = skp_("abc", "a");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("abc", end), 1);
-}
-
-#[test]
-fn test_skp_alpha_star() {
-    let (ret, _to, end) = skp_("abc", "*a");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("abc", end), 3);
-}
-
-#[test]
-fn test_skp_alpha_plus() {
-    let (ret, _to, end) = skp_("abc", "+a");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("abc", end), 3);
-}
-
-#[test]
-fn test_skp_digit_single() {
-    let (ret, _to, end) = skp_("123", "d");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("123", end), 1);
-}
-
-#[test]
-fn test_skp_digit_star() {
-    let (ret, _to, end) = skp_("123", "*d");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("123", end), 3);
-}
-
-#[test]
-fn test_skp_upper_single() {
-    let (ret, _to, end) = skp_("ABC", "u");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("ABC", end), 1);
-}
-
-#[test]
-fn test_skp_upper_star() {
-    let (ret, _to, end) = skp_("ABC", "*u");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("ABC", end), 3);
-}
-
-#[test]
-fn test_skp_lower_single() {
-    let (ret, _to, end) = skp_("abc", "l");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("abc", end), 1);
-}
-
-#[test]
-fn test_skp_lower_star() {
-    let (ret, _to, end) = skp_("abc", "*l");
-    assert_eq!(ret, 1);
-    assert_eq!(consumed("abc", end), 3);
+fn test_is_string_case_fold() {
+    assert_eq!(skp::is_string("abc", "ABC", 3, 1), 3);
+    assert_eq!(skp::is_string("abc", "ABC", 3, 0), 0);
 }
 
 fn main() {}

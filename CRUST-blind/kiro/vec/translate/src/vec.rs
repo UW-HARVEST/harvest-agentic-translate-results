@@ -1,7 +1,7 @@
 // Constants
 pub const VEC_VERSION: &str = "0.2.1";
 // Function Declarations
-pub fn vec_insert<T>(data: &mut Vec<T>, idx: usize, value:T) -> i32 {
+pub fn vec_insert<T>(data: &mut Vec<T>, idx: usize, value: T) -> i32 {
     data.insert(idx, value);
     0
 }
@@ -16,9 +16,13 @@ pub fn vec_swapsplice<T>(data: &mut Vec<T>, start: usize, count: usize) {
     data.truncate(len - count);
 }
 pub fn vec_reserve_po2<T>(data: &mut Vec<T>, n: usize) -> i32 {
-    if n == 0 { return 0; }
+    if n == 0 {
+        return 0;
+    }
     let mut n2 = 1;
-    while n2 < n { n2 <<= 1; }
+    while n2 < n {
+        n2 <<= 1;
+    }
     vec_reserve(data, n2)
 }
 pub fn vec_expand<T>(data: &mut Vec<T>) -> i32 {

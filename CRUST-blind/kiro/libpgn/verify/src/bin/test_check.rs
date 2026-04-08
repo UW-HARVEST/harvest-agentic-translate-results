@@ -1,56 +1,30 @@
 use libpgn::check::PgnCheck;
 
 #[test]
-fn test_check_none() {
-    assert_eq!(PgnCheck::from(""), PgnCheck::None);
-    assert_eq!(PgnCheck::from("e4"), PgnCheck::None);
-}
-
-#[test]
-fn test_check_single() {
-    assert_eq!(PgnCheck::from("+"), PgnCheck::Single);
-}
-
-#[test]
-fn test_check_double() {
-    assert_eq!(PgnCheck::from("++"), PgnCheck::Double);
-}
-
-#[test]
-fn test_check_mate() {
-    assert_eq!(PgnCheck::from("#"), PgnCheck::Mate);
-}
-
-#[test]
-fn test_check_from_string_consumed() {
+fn test_check_from_string() {
     let mut consumed = 0;
-    let result = PgnCheck::__pgn_check_from_string("+rest", &mut consumed);
-    assert_eq!(result, PgnCheck::Single);
+    assert_eq!(PgnCheck::__pgn_check_from_string("+", &mut consumed), PgnCheck::Single);
     assert_eq!(consumed, 1);
-}
 
-#[test]
-fn test_check_double_consumed() {
-    let mut consumed = 0;
-    let result = PgnCheck::__pgn_check_from_string("++rest", &mut consumed);
-    assert_eq!(result, PgnCheck::Double);
+    consumed = 0;
+    assert_eq!(PgnCheck::__pgn_check_from_string("++", &mut consumed), PgnCheck::Double);
     assert_eq!(consumed, 2);
-}
 
-#[test]
-fn test_check_mate_consumed() {
-    let mut consumed = 0;
-    let result = PgnCheck::__pgn_check_from_string("#rest", &mut consumed);
-    assert_eq!(result, PgnCheck::Mate);
+    consumed = 0;
+    assert_eq!(PgnCheck::__pgn_check_from_string("#", &mut consumed), PgnCheck::Mate);
     assert_eq!(consumed, 1);
+
+    consumed = 0;
+    assert_eq!(PgnCheck::__pgn_check_from_string("e4", &mut consumed), PgnCheck::None);
+    assert_eq!(consumed, 0);
 }
 
 #[test]
-fn test_check_none_consumed() {
-    let mut consumed = 0;
-    let result = PgnCheck::__pgn_check_from_string("abc", &mut consumed);
-    assert_eq!(result, PgnCheck::None);
-    assert_eq!(consumed, 0);
+fn test_check_from_str_trait() {
+    assert_eq!(PgnCheck::from("+"), PgnCheck::Single);
+    assert_eq!(PgnCheck::from("++"), PgnCheck::Double);
+    assert_eq!(PgnCheck::from("#"), PgnCheck::Mate);
+    assert_eq!(PgnCheck::from("e4"), PgnCheck::None);
 }
 
 fn main() {}

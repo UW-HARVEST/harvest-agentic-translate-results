@@ -11,13 +11,13 @@ impl Matrix2D {
     }
     pub fn row(&self, row: usize) -> Option<&[u64]> {
         if row >= self.dim { return None; }
-        let start = row * self.dim;
-        Some(&self.data[start..start + self.dim])
+        Some(&self.data[row * self.dim..(row + 1) * self.dim])
     }
     pub fn row_mut(&mut self, row: usize) -> Option<&mut [u64]> {
         if row >= self.dim { return None; }
         let start = row * self.dim;
-        Some(&mut self.data[start..start + self.dim])
+        let end = start + self.dim;
+        Some(&mut self.data[start..end])
     }
     pub fn get(&self, row: usize, col: usize) -> Option<u64> {
         if row >= self.dim || col >= self.dim { return None; }
@@ -25,7 +25,7 @@ impl Matrix2D {
     }
     pub fn set(&mut self, row: usize, col: usize, value: u64) -> Result<()> {
         if row >= self.dim || col >= self.dim {
-            return Err(AcesError::GenericError("index out of bounds".into()));
+            return Err(AcesError::GenericError("out of bounds".into()));
         }
         self.data[row * self.dim + col] = value;
         Ok(())
@@ -61,23 +61,20 @@ pub fn swap_transform(m: &mut Matrix2D, invm: &mut Matrix2D, _modulus: u64) -> R
     let dim = m.dim;
     let source = randrange(1, (dim - 1) as u64) as usize;
     let target = randrange(0, (source - 1) as u64) as usize;
-
-    // Swap columns source and target in m
+    // swap columns source and target in m
     for row in 0..dim {
-        let tmp = m.data[row * dim + source];
-        m.data[row * dim + source] = m.data[row * dim + target];
-        m.data[row * dim + target] = tmp;
+        let a = m.data[row * dim + source];
+        let b = m.data[row * dim + target];
+        m.data[row * dim + source] = b;
+        m.data[row * dim + target] = a;
     }
-
-    // Swap rows source and target in invm
-    let src_start = source * dim;
-    let tgt_start = target * dim;
+    // swap rows source and target in invm
     for col in 0..dim {
-        let tmp = invm.data[src_start + col];
-        invm.data[src_start + col] = invm.data[tgt_start + col];
-        invm.data[tgt_start + col] = tmp;
+        let a = invm.data[source * dim + col];
+        let b = invm.data[target * dim + col];
+        invm.data[source * dim + col] = b;
+        invm.data[target * dim + col] = a;
     }
-
     Ok(())
 }
 pub fn linear_mix_transform(m: &mut Matrix2D, invm: &mut Matrix2D, modulus: u64) -> Result<()> {
@@ -85,32 +82,28 @@ pub fn linear_mix_transform(m: &mut Matrix2D, invm: &mut Matrix2D, modulus: u64)
     let scale = randrange(1, modulus - 1);
     let source = randrange(1, (dim - 1) as u64) as usize;
     let target = randrange(0, (source - 1) as u64) as usize;
-
     for row in 0..dim {
         m.data[row * dim + target] =
             (m.data[row * dim + target] + m.data[row * dim + source] * scale) % modulus;
         invm.data[source * dim + row] =
             (invm.data[source * dim + row] + invm.data[target * dim + row] * (modulus - scale)) % modulus;
     }
-
     Ok(())
 }
 pub fn scale_transform(m: &mut Matrix2D, invm: &mut Matrix2D, modulus: u64) -> Result<()> {
-    let dim = m.dim;
     let scale = randinverse(modulus);
-    for idx in 0..dim * dim {
-        m.data[idx] = (m.data[idx] * scale.first) % modulus;
-        invm.data[idx] = (invm.data[idx] * scale.second) % modulus;
+    for val in m.data.iter_mut() {
+        *val = (*val * scale.first) % modulus;
+    }
+    for val in invm.data.iter_mut() {
+        *val = (*val * scale.second) % modulus;
     }
     Ok(())
 }
 pub fn matrix2d_eye(m: &mut Matrix2D) -> Result<()> {
-    let dim = m.dim;
-    for v in m.data.iter_mut() {
-        *v = 0;
-    }
-    for row in 0..dim {
-        m.data[row * dim + row] = 1;
+    m.data.fill(0);
+    for i in 0..m.dim {
+        m.data[i * m.dim + i] = 1;
     }
     Ok(())
 }
@@ -122,13 +115,11 @@ pub fn fill_random_invertible_pairs(
 ) -> Result<()> {
     matrix2d_eye(m)?;
     matrix2d_eye(invm)?;
-
-    let transforms: [fn(&mut Matrix2D, &mut Matrix2D, u64) -> Result<()>; 3] =
+    let transformers: [fn(&mut Matrix2D, &mut Matrix2D, u64) -> Result<()>; 3] =
         [swap_transform, scale_transform, linear_mix_transform];
-
     for _ in 0..iterations {
         let select = randrange(0, 2) as usize;
-        transforms[select](m, invm, modulus)?;
+        transformers[select](m, invm, modulus)?;
     }
     Ok(())
 }

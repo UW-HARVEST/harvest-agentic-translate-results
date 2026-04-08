@@ -1,4 +1,4 @@
-use recordManager::dberror::{PAGE_SIZE, RC};
+use recordManager::dberror::{RC, PAGE_SIZE, throw, error_message, print_error};
 
 #[test]
 fn test_page_size() {
@@ -38,21 +38,16 @@ fn test_rc_values() {
 }
 
 #[test]
-fn test_rc_equality() {
-    assert_eq!(RC::Ok, RC::Ok);
-    assert_ne!(RC::Ok, RC::FileNotFound);
+fn test_throw() {
+    let code = throw(RC::Error, "test error");
+    assert_eq!(code, 404);
 }
 
 #[test]
-fn test_error_message_no_context() {
-    let msg = recordManager::dberror::error_message(RC::Ok);
-    assert!(msg.contains("EC (0)"));
-}
-
-#[test]
-fn test_error_message_with_code() {
-    let msg = recordManager::dberror::error_message(RC::FileNotFound);
-    assert!(msg.contains("EC (1)"));
+fn test_error_message_with_msg() {
+    throw(RC::RmCompareValueOfDifferentDatatype, "test error");
+    let msg = error_message(RC::RmCompareValueOfDifferentDatatype);
+    assert_eq!(msg, "EC (200), \"test error\"\n");
 }
 
 fn main() {}

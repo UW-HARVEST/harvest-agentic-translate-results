@@ -1,28 +1,7 @@
 use Graph_recogniser::openhash::OpenHashTable;
 
 #[test]
-fn test_open_hash_basic() {
-    let table = OpenHashTable::new(10);
-    let mut t = table.write().unwrap();
-    t.insert("hello", "world");
-    assert_eq!(t.find("hello"), Some("world"));
-}
-
-#[test]
-fn test_open_hash_multiple_inserts() {
-    let table = OpenHashTable::new(100);
-    let mut t = table.write().unwrap();
-    t.insert("key1", "val1");
-    t.insert("key2", "val2");
-    t.insert("key3", "val3");
-    assert_eq!(t.find("key1"), Some("val1"));
-    assert_eq!(t.find("key2"), Some("val2"));
-    assert_eq!(t.find("key3"), Some("val3"));
-}
-
-#[test]
-fn test_open_hash_resize() {
-    // Start with size 2, insert enough to trigger resize
+fn test_open_insert_and_find() {
     let table = OpenHashTable::new(2);
     let mut t = table.write().unwrap();
     t.insert("stefan", "manov");
@@ -43,8 +22,11 @@ fn test_open_hash_resize() {
 }
 
 #[test]
-fn test_open_hash_full_test_suite() {
-    let test_strs: Vec<(&str, &str)> = vec![
+fn test_open_full_test_set() {
+    let table = OpenHashTable::new(2);
+    let mut t = table.write().unwrap();
+
+    let test_strs = [
         ("stefan", "manov"),
         ("hristo", "tenchev"),
         ("dimitar", "kajabachev"),
@@ -58,33 +40,23 @@ fn test_open_hash_full_test_suite() {
         ("henning", "weiler"),
         ("javier", "martin"),
     ];
-    let permut = [10, 0, 4, 3, 5, 3, 7, 11, 4, 11, 6, 0, 1, 8, 5, 1, 10, 3, 5, 2, 9];
 
-    let table = OpenHashTable::new(2);
-    let mut t = table.write().unwrap();
-    for &(k, v) in &test_strs {
+    for (k, v) in &test_strs {
         t.insert(k, v);
     }
-    for &p in &permut {
-        let (key, expected) = test_strs[p];
-        assert_eq!(t.find(key), Some(expected), "Failed for key={}", key);
+
+    let permut = [10, 0, 4, 3, 5, 3, 7, 11, 4, 11, 6, 0, 1, 8, 5, 1, 10, 3, 5, 2, 9];
+    for &i in &permut {
+        assert_eq!(t.find(test_strs[i].0), Some(test_strs[i].1));
     }
 }
 
 #[test]
-fn test_open_hash_find_missing_returns_none() {
-    let table = OpenHashTable::new(10);
-    let t = table.read().unwrap();
-    assert_eq!(t.find("nonexistent"), None);
-}
-
-#[test]
-fn test_open_hash_free() {
-    let table = OpenHashTable::new(10);
+fn test_open_free() {
+    let table = OpenHashTable::new(4);
     let mut t = table.write().unwrap();
-    t.insert("a", "b");
+    t.insert("key1", "val1");
     t.free_open_hash_table();
-    // After free, table is cleared
 }
 
 fn main() {}

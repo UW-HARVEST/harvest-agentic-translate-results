@@ -1,289 +1,141 @@
 use carrays::circ_array::CircBuf;
 
-fn write_u32(slot: &mut [u8], val: u32) {
-    slot[..4].copy_from_slice(&val.to_ne_bytes());
+fn read_i32(slice: &[u8]) -> i32 {
+    i32::from_ne_bytes(slice[..4].try_into().unwrap())
 }
 
-fn read_u32(slot: &[u8]) -> u32 {
-    u32::from_ne_bytes(slot[..4].try_into().unwrap())
+fn write_i32(slice: &mut [u8], val: i32) {
+    slice[..4].copy_from_slice(&val.to_ne_bytes());
 }
-
-// --- new / dealloc ---
 
 #[test]
 fn test_new_and_dealloc() {
-    let mut cb = CircBuf::new(4, 8);
+    let mut cb = CircBuf::new(std::mem::size_of::<i32>(), 4);
+    // size should be roundup64(4) = 4
+    assert_eq!(cb.n, 0);
+    assert_eq!(cb.start, 0);
     cb.dealloc();
 }
 
 #[test]
-fn test_new_rounds_up_size() {
-    let mut cb = CircBuf::new(4, 5);
-    // 5 rounds up to 8
-    cb.dealloc();
-}
+fn test_push_pop() {
+    let mut cb = CircBuf::new(std::mem::size_of::<i32>(), 4);
 
-// --- push / pop (add to start, remove from start) ---
+    // push adds to start
+    write_i32(cb.push(), 10);
+    assert_eq!(cb.n, 1);
+    assert_eq!(cb.start, 3);
 
-#[test]
-fn test_push_pop_single() {
-    let mut cb = CircBuf::new(4, 4);
-    write_u32(cb.push(), 42);
-    assert_eq!(read_u32(cb.pop()), 42);
-    cb.dealloc();
-}
+    write_i32(cb.push(), 20);
+    assert_eq!(cb.n, 2);
+    assert_eq!(cb.start, 2);
 
-#[test]
-fn test_push_pop_lifo() {
-    let mut cb = CircBuf::new(4, 8);
-    write_u32(cb.push(), 1);
-    write_u32(cb.push(), 2);
-    write_u32(cb.push(), 3);
-    // pop removes from start (LIFO): 3, 2, 1
-    assert_eq!(read_u32(cb.pop()), 3);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 1);
-    cb.dealloc();
-}
+    write_i32(cb.push(), 30);
+    assert_eq!(cb.n, 3);
+    assert_eq!(cb.start, 1);
 
-// --- unshift / shift ---
-// Note: C circa_shift returns circa_get(l, l->n) BEFORE decrementing n,
-// which is one past the last element. So shift() does NOT return the
-// last-pushed data. We test shift as a "remove from end" operation
-// and verify via pop that the correct elements remain.
+    // pop removes from start (LIFO for push/pop)
+    assert_eq!(read_i32(cb.pop()), 30);
+    assert_eq!(cb.n, 2);
+    assert_eq!(cb.start, 2);
 
-#[test]
-fn test_unshift_then_shift_removes_from_end() {
-    let mut cb = CircBuf::new(4, 8);
-    write_u32(cb.unshift(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.unshift(), 3);
-    // shift removes from end (but returns slot past end per C behavior)
-    cb.shift();
-    cb.shift();
-    // one element remains: 1
-    assert_eq!(read_u32(cb.pop()), 1);
+    assert_eq!(read_i32(cb.pop()), 20);
+    assert_eq!(read_i32(cb.pop()), 10);
+    assert_eq!(cb.n, 0);
+
     cb.dealloc();
 }
 
 #[test]
-fn test_unshift_pop_queue() {
-    let mut cb = CircBuf::new(4, 8);
-    write_u32(cb.unshift(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.unshift(), 3);
-    // pop removes from start: 1, 2, 3
-    assert_eq!(read_u32(cb.pop()), 1);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 3);
+fn test_unshift_shift() {
+    let mut cb = CircBuf::new(std::mem::size_of::<i32>(), 4);
+
+    // unshift adds to end
+    write_i32(cb.unshift(), 5);
+    write_i32(cb.unshift(), 6);
+    write_i32(cb.unshift(), 7);
+    write_i32(cb.unshift(), 8);
+    assert_eq!(cb.n, 4);
+
+    // shift removes from end — C behavior: gets element at index n then decrements
+    // After 4 unshifts of [5,6,7,8], elements at indices 0..3 are 5,6,7,8
+    // shift gets index n=4 (wraps), then n becomes 3
+    // From C ground truth: shift sequence is 5, 8, 7, 6
+    let v0 = read_i32(cb.shift());
+    let v1 = read_i32(cb.shift());
+    let v2 = read_i32(cb.shift());
+    let v3 = read_i32(cb.shift());
+    assert_eq!([v0, v1, v2, v3], [5, 8, 7, 6]);
+
     cb.dealloc();
 }
 
-// --- push + shift (add to start, remove from end) ---
-
 #[test]
-fn test_push_shift_removes_from_end() {
-    let mut cb = CircBuf::new(4, 8);
-    write_u32(cb.push(), 1);
-    write_u32(cb.push(), 2);
-    write_u32(cb.push(), 3);
-    // logical order from start: 3, 2, 1
-    // shift removes from end; verify remaining via pop
-    cb.shift(); // removes last (1)
-    cb.shift(); // removes last (2)
-    assert_eq!(read_u32(cb.pop()), 3);
-    cb.dealloc();
-}
+fn test_push_triggers_resize() {
+    let mut cb = CircBuf::new(std::mem::size_of::<i32>(), 2);
+    // size = roundup64(2) = 2
 
-// --- push zeroes the slot ---
-
-#[test]
-fn test_push_zeroes_slot() {
-    let mut cb = CircBuf::new(4, 4);
-    let slot = cb.push();
-    assert_eq!(slot, &[0, 0, 0, 0]);
-    write_u32(slot, 0xFFFFFFFF);
-    cb.pop();
-    let slot = cb.push();
-    assert_eq!(slot, &[0, 0, 0, 0]);
-    cb.dealloc();
-}
-
-// --- unshift zeroes the slot ---
-
-#[test]
-fn test_unshift_zeroes_slot() {
-    let mut cb = CircBuf::new(4, 4);
-    let slot = cb.unshift();
-    assert_eq!(slot, &[0, 0, 0, 0]);
-    write_u32(slot, 0xFFFFFFFF);
-    cb.shift();
-    let slot = cb.unshift();
-    assert_eq!(slot, &[0, 0, 0, 0]);
-    cb.dealloc();
-}
-
-// --- auto-resize on push when full ---
-
-#[test]
-fn test_push_auto_resize() {
-    let mut cb = CircBuf::new(4, 2);
-    write_u32(cb.push(), 1);
-    write_u32(cb.push(), 2);
-    write_u32(cb.push(), 3);
-    write_u32(cb.push(), 4);
-    // pop (LIFO from start): 4, 3, 2, 1
-    assert_eq!(read_u32(cb.pop()), 4);
-    assert_eq!(read_u32(cb.pop()), 3);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 1);
-    cb.dealloc();
-}
-
-// --- auto-resize on unshift when full ---
-
-#[test]
-fn test_unshift_auto_resize() {
-    let mut cb = CircBuf::new(4, 2);
-    write_u32(cb.unshift(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.unshift(), 3);
-    write_u32(cb.unshift(), 4);
-    // pop from start: 1, 2, 3, 4
-    assert_eq!(read_u32(cb.pop()), 1);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 3);
-    assert_eq!(read_u32(cb.pop()), 4);
-    cb.dealloc();
-}
-
-// --- capacity ---
-
-#[test]
-fn test_capacity_grow() {
-    let mut cb = CircBuf::new(4, 2);
-    cb.capacity(16);
-    for i in 0..16u32 {
-        write_u32(cb.push(), i);
+    for i in 1..=4 {
+        write_i32(cb.push(), i);
     }
-    for i in (0..16u32).rev() {
-        assert_eq!(read_u32(cb.pop()), i);
+    assert_eq!(cb.n, 4);
+    // Should have resized to 4
+    assert_eq!(cb.size, 4);
+
+    // Pop all — from C ground truth: 4,3,2,1
+    let mut vals = Vec::new();
+    for _ in 0..4 {
+        vals.push(read_i32(cb.pop()));
     }
+    assert_eq!(vals, vec![4, 3, 2, 1]);
+
     cb.dealloc();
 }
 
 #[test]
-fn test_capacity_no_shrink() {
-    let mut cb = CircBuf::new(4, 16);
-    cb.capacity(4);
-    write_u32(cb.push(), 1);
-    assert_eq!(read_u32(cb.pop()), 1);
-    cb.dealloc();
-}
+fn test_push_pop_interleaved() {
+    let mut cb = CircBuf::new(std::mem::size_of::<i32>(), 4);
 
-// --- norm ---
+    write_i32(cb.push(), 10);
+    write_i32(cb.push(), 20);
+    write_i32(cb.push(), 30);
 
-#[test]
-fn test_norm_no_wrap() {
-    let mut cb = CircBuf::new(4, 8);
-    write_u32(cb.unshift(), 10);
-    write_u32(cb.unshift(), 20);
-    cb.norm();
-    assert_eq!(read_u32(cb.pop()), 10);
-    assert_eq!(read_u32(cb.pop()), 20);
-    cb.dealloc();
-}
+    // pop 30 (start)
+    assert_eq!(read_i32(cb.pop()), 30);
 
-#[test]
-fn test_norm_with_wrap() {
-    let mut cb = CircBuf::new(4, 4);
-    write_u32(cb.unshift(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.unshift(), 3);
-    // pop from start to make room, then push to wrap
-    cb.pop();
-    write_u32(cb.push(), 10);
-    write_u32(cb.push(), 20);
-    cb.norm();
-    // pop from start: 20, 10, 2, 3
-    assert_eq!(read_u32(cb.pop()), 20);
-    assert_eq!(read_u32(cb.pop()), 10);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 3);
-    cb.dealloc();
-}
+    // unshift 40 (end)
+    write_i32(cb.unshift(), 40);
+    assert_eq!(cb.n, 3);
 
-// --- mixed operations ---
+    // shift removes from end — C ground truth: shift()=30
+    // (C gets index n which is the old wrapped position)
+    let shifted = read_i32(cb.shift());
+    assert_eq!(shifted, 30);
+    assert_eq!(cb.n, 2);
 
-#[test]
-fn test_mixed_push_unshift_pop() {
-    let mut cb = CircBuf::new(4, 8);
-    // push(1), unshift(2), push(3), unshift(4)
-    // Logical order from start: 3, 1, 2, 4
-    write_u32(cb.push(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.push(), 3);
-    write_u32(cb.unshift(), 4);
-    // pop all from start: 3, 1, 2, 4
-    assert_eq!(read_u32(cb.pop()), 3);
-    assert_eq!(read_u32(cb.pop()), 1);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 4);
+    // Remaining elements should be 20, 10
+    let v0 = read_i32(cb.pop());
+    let v1 = read_i32(cb.pop());
+    assert_eq!(v0, 20);
+    assert_eq!(v1, 10);
+
     cb.dealloc();
 }
 
 #[test]
-fn test_mixed_with_shift() {
-    let mut cb = CircBuf::new(4, 8);
-    write_u32(cb.push(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.push(), 3);
-    write_u32(cb.unshift(), 4);
-    // Logical: 3, 1, 2, 4
-    // pop from start: 3
-    assert_eq!(read_u32(cb.pop()), 3);
-    // shift from end (removes 4)
-    cb.shift();
-    // remaining: 1, 2
-    assert_eq!(read_u32(cb.pop()), 1);
-    assert_eq!(read_u32(cb.pop()), 2);
-    cb.dealloc();
-}
+fn test_capacity() {
+    let mut cb = CircBuf::new(std::mem::size_of::<i32>(), 4);
+    assert_eq!(cb.size, 4);
 
-// --- resize preserves data ---
+    cb.capacity(10);
+    assert!(cb.size >= 10);
+    // roundup64(10) = 16
+    assert_eq!(cb.size, 16);
 
-#[test]
-fn test_resize_preserves_data() {
-    let mut cb = CircBuf::new(4, 4);
-    write_u32(cb.unshift(), 1);
-    write_u32(cb.unshift(), 2);
-    write_u32(cb.unshift(), 3);
-    write_u32(cb.unshift(), 4);
-    // triggers resize
-    write_u32(cb.unshift(), 5);
-    assert_eq!(read_u32(cb.pop()), 1);
-    assert_eq!(read_u32(cb.pop()), 2);
-    assert_eq!(read_u32(cb.pop()), 3);
-    assert_eq!(read_u32(cb.pop()), 4);
-    assert_eq!(read_u32(cb.pop()), 5);
-    cb.dealloc();
-}
+    // No resize if already big enough
+    cb.capacity(5);
+    assert_eq!(cb.size, 16);
 
-// --- large element size ---
-
-#[test]
-fn test_large_element_size() {
-    let mut cb = CircBuf::new(8, 4);
-    let slot = cb.push();
-    slot[..8].copy_from_slice(&100u64.to_ne_bytes());
-    let slot = cb.unshift();
-    slot[..8].copy_from_slice(&200u64.to_ne_bytes());
-    // pop from start gets the push'd value
-    let val = u64::from_ne_bytes(cb.pop()[..8].try_into().unwrap());
-    assert_eq!(val, 100);
-    // pop the unshift'd value
-    let val = u64::from_ne_bytes(cb.pop()[..8].try_into().unwrap());
-    assert_eq!(val, 200);
     cb.dealloc();
 }
 

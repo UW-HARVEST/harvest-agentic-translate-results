@@ -1,35 +1,39 @@
-use Bostree::bostree::BOSTree;
-use Bostree::test_tree_sanity;
+use std::time::{Duration, Instant};
+use std::{env, process};
 
-fn strcmp_cmp(a: &str, b: &str) -> i32 {
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use Bostree::bostree::*;
+use Bostree::test_tree_sanity;
+fn cmp(a: &str, b: &str) -> i32 {
     a.cmp(b) as i32
 }
 
+/// Create a test tree by inserting keys from 'A' to 'Y' (i.e. 'A' .. 'Z').
 fn test_tree() -> BOSTree {
-    let mut t = BOSTree::bostree_new(strcmp_cmp, None);
-    for c in b'A'..b'Z' {
-        let key = String::from(c as char);
-        t.bostree_insert(key, None);
+    let mut tree = BOSTree::bostree_new(cmp, None);
+    for c in 'A'..'Z' {
+        let key = c.to_string();
+        let _node = tree.bostree_insert(key, None);
     }
-    t
-}
-
-fn main() {
-    for c in b'A'..b'Z' {
-        let remove_key = String::from(c as char);
-        let mut t = test_tree();
-        let node = t.bostree_lookup(&remove_key).expect("node not found");
-        t.bostree_remove(&node);
-        test_tree_sanity(&t);
-        assert_eq!(
-            t.bostree_node_count(),
-            (b'Z' - b'A' - 1) as u32,
-            "Removed one node from a tree, but the node count did not decrease properly."
-        );
-    }
+    tree
 }
 
 #[test]
-fn test_remove_bug() {
-    main();
+fn test() {
+    // For each removal key from 'A' to 'Y'
+    for c in 'A'..'Z' {
+        let mut tree = test_tree();
+        let key = c.to_string();
+        if let Some(node) = tree.bostree_lookup(&key) {
+            tree.bostree_remove(&node);
+        }
+        test_tree_sanity(&tree);
+        let expected_count = 'Z' as u32 - 'A' as u32 - 1;
+        if tree.bostree_node_count() != expected_count {
+            println!("Removed one node from a tree, but the node count did not decrease properly.");
+            process::exit(1);
+        }
+    }
 }
+fn main() {}

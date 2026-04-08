@@ -22,33 +22,28 @@ impl<T> Queue<T> {
     }
     /// Adds a value to the back of the queue.
     pub fn push(&mut self, value: T) {
-        let mut new_node = Box::new(QueueNode {
-            value,
-            next: None,
-        });
+        let mut new_node = Box::new(QueueNode { value, next: None });
         let raw: *mut QueueNode<T> = &mut *new_node;
+
         if self.is_empty() {
             self.head = Some(new_node);
             self.tail = Some(raw);
         } else {
-            // SAFETY: tail is always a valid pointer to the last node when queue is non-empty
-            unsafe { (*self.tail.unwrap()).next = Some(new_node) };
+            unsafe { (*self.tail.unwrap()).next = Some(new_node); }
             self.tail = Some(raw);
         }
         self.size += 1;
     }
     /// Removes and returns the value at the front of the queue.
     pub fn pop(&mut self) -> Option<T> {
-        if self.is_empty() {
-            return None;
-        }
-        let mut old_head = self.head.take()?;
-        self.head = old_head.next.take();
-        if self.size == 1 {
-            self.tail = None;
-        }
-        self.size -= 1;
-        Some(old_head.value)
+        self.head.take().map(|node| {
+            self.head = node.next;
+            if self.size == 1 {
+                self.tail = None;
+            }
+            self.size -= 1;
+            node.value
+        })
     }
     /// Returns a reference to the value at the front of the queue.
     pub fn front(&self) -> Option<&T> {

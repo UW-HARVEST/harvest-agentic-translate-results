@@ -50,16 +50,20 @@ impl<T: Ord + Clone + std::hash::Hash + Eq> Heap<T> {
         self.n_items = 0;
     }
     pub fn pop(&mut self) -> Option<T> {
-        if self.n_items == 0 { return None; }
-        let top = self.items[0].clone();
+        if self.n_items == 0 {
+            return None;
+        }
+        let item = self.items[0].clone();
         self.n_items -= 1;
         if self.n_items > 0 {
             self.items[0] = self.items[self.n_items].clone();
             self.ht.insert(self.items[0].clone(), 0);
+            if self.n_items > 1 {
+                self.heapify(0);
+            }
         }
         self.items.truncate(self.n_items);
-        if self.n_items > 1 { self.heapify(0); }
-        Some(top)
+        Some(item)
     }
     pub fn heapify(&mut self, mut i: usize) {
         loop {
@@ -82,10 +86,13 @@ impl<T: Ord + Clone + std::hash::Hash + Eq> Heap<T> {
         }
     }
     pub fn insert(&mut self, item: T) {
-        if self.n_items >= self.items.len() {
-            self.items.push(item.clone());
-        } else {
+        if self.limit == 0 && self.items.len() == self.n_items {
+            // just push, Vec handles growth
+        }
+        if self.n_items < self.items.len() {
             self.items[self.n_items] = item.clone();
+        } else {
+            self.items.push(item.clone());
         }
         self.ht.insert(item, self.n_items);
         if self.limit == 0 || self.n_items < self.limit {
@@ -123,7 +130,8 @@ impl<T: Ord + Clone + std::hash::Hash + Eq> Heap<T> {
         }
     }
     fn delete_max(&mut self) {
-        let mut m = 0usize;
+        // linear search for max element
+        let mut m = 0;
         for i in 1..=self.n_items {
             if (self.cmp)(&self.items[m], &self.items[i]) == Ordering::Less {
                 m = i;
@@ -134,7 +142,6 @@ impl<T: Ord + Clone + std::hash::Hash + Eq> Heap<T> {
             self.ht.insert(self.items[m].clone(), m);
             let idx = m;
             self.bubble_up(idx);
-            self.heapify(idx);
         }
     }
 }

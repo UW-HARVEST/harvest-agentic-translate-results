@@ -1,30 +1,25 @@
 // Function Declarations
 pub fn leftpad(str: &str, padding: &str, min_len: usize, dest: &mut [u8]) -> usize {
-    let str_bytes = str.as_bytes();
-    let str_len = str_bytes.len();
     let padding = if padding.is_empty() { " " } else { padding };
-    let pad_bytes = padding.as_bytes();
-    let npad = if str_len < min_len { min_len - str_len } else { 0 };
+    let npad = if str.len() < min_len { min_len - str.len() } else { 0 };
+    let dest_sz = dest.len();
 
-    if dest.is_empty() {
-        return str_len + npad;
+    if dest_sz == 0 {
+        return str.len() + npad;
     }
 
-    let max = dest.len() - 1;
+    let pad_bytes = padding.as_bytes();
     let mut dest_len = 0;
-    let mut pi = 0;
 
-    while dest_len < npad && dest_len < max {
-        dest[dest_len] = pad_bytes[pi];
-        pi = (pi + 1) % pad_bytes.len();
+    for i in 0..npad {
+        if dest_len >= dest_sz - 1 { break; }
+        dest[dest_len] = pad_bytes[i % pad_bytes.len()];
         dest_len += 1;
     }
 
-    for i in 0..str_len {
-        if dest_len >= max {
-            break;
-        }
-        dest[dest_len] = str_bytes[i];
+    for &b in str.as_bytes() {
+        if dest_len >= dest_sz - 1 { break; }
+        dest[dest_len] = b;
         dest_len += 1;
     }
 

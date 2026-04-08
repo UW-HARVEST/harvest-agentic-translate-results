@@ -1,5 +1,5 @@
 /// Represents different token types recognized by the lexer.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
 TT_LITERAL,
 TT_IDENTIFIER,
@@ -87,6 +87,10 @@ TT_VOID,
 TT_VOLATILE,
 TT_WHILE,
 }
+impl Default for TokenType {
+    fn default() -> Self { TokenType::TT_NO_TOKEN }
+}
+
 /// The maximum length of a token in C code; here it serves as a reference.
 pub const TOKEN_LENGTH: usize = 256;
 /// Represents a token with its type, contents, position, and the file it came from.

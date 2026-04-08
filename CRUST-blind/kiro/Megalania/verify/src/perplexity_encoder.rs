@@ -8,6 +8,12 @@ pub struct PerplexityEncoder<'a> {
     pub perplexity: &'a mut u64,
 }
 
+impl<'a> PerplexityEncoder<'a> {
+    pub fn new(perplexity: &'a mut u64) -> Self {
+        PerplexityEncoder { perplexity }
+    }
+}
+
 impl<'a> EncoderInterface for PerplexityEncoder<'a> {
     fn encode_bit(&mut self, bit: bool, prob: Prob) {
         let idx = if bit { 2048 - prob as usize } else { prob as usize };
@@ -19,5 +25,5 @@ impl<'a> EncoderInterface for PerplexityEncoder<'a> {
 }
 
 pub fn perplexity_encoder_new(_enc: &mut dyn EncoderInterface, _perplexity: &mut u64) {
-    // In Rust, use PerplexityEncoder struct directly instead.
+    // In Rust, use PerplexityEncoder::new() directly instead.
 }

@@ -1,5 +1,5 @@
 use std::{fmt, fs::File};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write, Seek, SeekFrom};
 const M: u64 = 18446744073709551557;
 const G: u64 = 18446744073709550147;
 const FNV_PRIME: u64 = 1099511628211;
@@ -45,14 +45,14 @@ impl fmt::Display for BloomFilter {
 }
 impl BloomFilter {
     pub fn fingerprint(&self, buf: &[u8]) -> Vec<u64> {
-        let mut tmp = vec![0u64; self.h.k as usize];
         let h = fnv1(buf);
-        let mut hn = h % M;
+        let mut hn = h.wrapping_rem(M);
+        let mut fp = vec![0u64; self.h.k as usize];
         for i in 0..self.h.k as usize {
-            hn = hn.wrapping_mul(G) % M;
-            tmp[i] = hn % self.h.m;
+            hn = hn.wrapping_mul(G).wrapping_rem(M);
+            fp[i] = hn % self.h.m;
         }
-        tmp
+        fp
     }
     pub fn add(&mut self, buf: &[u8]) -> i32 {
         if (self.h.n_value + 1) <= self.h.n {
@@ -79,11 +79,8 @@ impl BloomFilter {
         }
     }
     pub fn join(&mut self, bf: &BloomFilter) -> i32 {
-        if bf.h.n != self.h.n
-            || bf.h.p != self.h.p
-            || bf.h.k != self.h.k
-            || bf.h.m != self.h.m
-            || bf.m != self.m
+        if self.h.n != bf.h.n || self.h.p != bf.h.p || self.h.k != bf.h.k
+            || self.h.m != bf.h.m || self.m != bf.m
         {
             eprintln!("[ERROR] Filters characteristics mismatch - cannot join.");
             return 0;
@@ -126,6 +123,7 @@ impl BloomFilter {
         for val in &self.v {
             ok = ok && file.write_all(&val.to_le_bytes()).is_ok();
         }
+        // Data can be empty
         let _ = file.write_all(&self.data);
         if !ok {
             eprintln!("[ERROR] writing filter file.");
@@ -135,39 +133,50 @@ impl BloomFilter {
         }
     }
     pub fn initialize(n: u64, p: f64, buf: &[u8]) -> BloomFilter {
-        let m_bits = f64::abs(f64::ceil((n as f64) * f64::ln(p) / f64::powi(f64::ln(2.0), 2))) as u64;
-        let k = f64::ceil(f64::ln(2.0) * m_bits as f64 / n as f64) as u64;
-        let big_m = f64::ceil(m_bits as f64 / 64.0) as u64;
+        let m_bits = ((n as f64) * p.ln() / (2.0f64.ln().powi(2))).ceil().abs() as u64;
+        let k = (2.0f64.ln() * m_bits as f64 / n as f64).ceil() as u64;
+        let big_m = ((m_bits as f64) / 64.0).ceil() as u64;
+        let v = vec![0u64; big_m as usize];
+        let h = Header {
+            version: 1,
+            n,
+            p,
+            k,
+            m: m_bits,
+            n_value: 0,
+        };
         BloomFilter {
             version: 1,
             datasize: 0,
-            h: Header { version: 1, n, p, k, m: m_bits, n_value: 0 },
+            h,
             m: big_m,
-            v: vec![0u64; big_m as usize],
+            v,
             data: buf.to_vec(),
             modified: 0,
             error: 0,
         }
     }
     pub fn from_file(mut file: File) -> BloomFilter {
-        let err_bf = || BloomFilter {
-            version: 0, datasize: 0,
-            h: Header { version: 0, n: 0, p: 0.0, k: 0, m: 0, n_value: 0 },
-            m: 0, v: vec![], data: vec![], modified: 0, error: 1,
+        let err_bf = || -> BloomFilter {
+            BloomFilter {
+                version: 0, datasize: 0,
+                h: Header { version: 0, n: 0, p: 0.0, k: 0, m: 0, n_value: 0 },
+                m: 0, v: vec![], data: vec![], modified: 0, error: 1,
+            }
         };
 
-        let read_u64 = |f: &mut File| -> Option<u64> {
+        let read_u64 = |file: &mut File| -> Option<u64> {
             let mut buf = [0u8; 8];
-            f.read_exact(&mut buf).ok()?;
+            file.read_exact(&mut buf).ok()?;
             Some(u64::from_le_bytes(buf))
         };
-        let read_f64 = |f: &mut File| -> Option<f64> {
+        let read_f64 = |file: &mut File| -> Option<f64> {
             let mut buf = [0u8; 8];
-            f.read_exact(&mut buf).ok()?;
+            file.read_exact(&mut buf).ok()?;
             Some(f64::from_le_bytes(buf))
         };
 
-        // Read header (48 bytes: 6 x u64, with p as f64)
+        // Read header (6 fields = 48 bytes)
         let version = match read_u64(&mut file) { Some(v) => v, None => { eprintln!("[ERROR] reading filter file."); return err_bf(); } };
         let n = match read_u64(&mut file) { Some(v) => v, None => { eprintln!("[ERROR] reading filter file."); return err_bf(); } };
         let p = match read_f64(&mut file) { Some(v) => v, None => { eprintln!("[ERROR] reading filter file."); return err_bf(); } };
@@ -182,46 +191,42 @@ impl BloomFilter {
             return err_bf();
         }
 
-        let big_m = f64::ceil(m_bits as f64 / 64.0) as u64;
+        let big_m = (m_bits as f64 / 64.0).ceil() as u64;
 
         // Get file size
         let size = match file.seek(SeekFrom::End(0)) {
             Ok(s) => s as i64,
             Err(_) => { eprintln!("[ERROR] Cannot seek in binary file."); return err_bf(); }
         };
-        if file.seek(SeekFrom::Start(48)).is_err() {
-            eprintln!("[ERROR] Cannot seek in binary file.");
-            return err_bf();
-        }
+        file.seek(SeekFrom::Start(48)).unwrap();
 
         if big_m <= (size - 48) as u64 {
-            let datasize = (size - (f64::ceil((big_m as f64 * 64.0) / 8.0) as i64) - 48) as u64;
+            let datasize = size - ((big_m * 64) as f64 / 8.0).ceil() as i64 - 48;
+            let datasize = datasize as u64;
 
-            // Read bit array
+            // Load bitarray
             let mut v = vec![0u64; big_m as usize];
-            for val in v.iter_mut() {
-                let mut buf = [0u8; 8];
-                if file.read_exact(&mut buf).is_err() {
-                    eprintln!("[ERROR] Cannot load bitarray.");
-                    return err_bf();
-                }
-                *val = u64::from_le_bytes(buf);
+            for i in 0..big_m as usize {
+                v[i] = match read_u64(&mut file) {
+                    Some(val) => val,
+                    None => { eprintln!("[ERROR] Cannot load bitarray."); return err_bf(); }
+                };
             }
 
-            // Read remaining data
+            // Load remaining data
             let data = if datasize > 0 {
-                let mut d = vec![0u8; datasize as usize];
-                if file.read_exact(&mut d).is_err() {
+                let mut buf = vec![0u8; datasize as usize];
+                if file.read_exact(&mut buf).is_err() {
                     eprintln!("[ERROR] Cannot load bloom filter metadata.");
                     return err_bf();
                 }
-                d
+                buf
             } else {
                 vec![]
             };
 
             BloomFilter {
-                version,
+                version: h.version,
                 datasize,
                 h,
                 m: big_m,
@@ -258,12 +263,12 @@ impl Header {
             eprintln!("[ERROR] incoherent filter.");
             return false;
         }
-        let tmp_m = f64::abs(f64::ceil((self.n as f64) * f64::ln(self.p) / f64::powi(f64::ln(2.0), 2))) as u64;
+        let tmp_m = ((self.n as f64) * self.p.ln() / (2.0f64.ln().powi(2))).ceil().abs() as u64;
         if tmp_m != self.m {
             eprintln!("[ERROR] incoherent filter.");
             return false;
         }
-        let tmp_k = f64::ceil(f64::ln(2.0) * self.m as f64 / self.n as f64) as u64;
+        let tmp_k = (2.0f64.ln() * self.m as f64 / self.n as f64).ceil() as u64;
         if tmp_k != self.k {
             eprintln!("[ERROR] incoherent filter values.");
             return false;
@@ -273,7 +278,7 @@ impl Header {
 }
 
 fn fnv1(buf: &[u8]) -> u64 {
-    let mut h = FNV_OFFSET_BASIS;
+    let mut h: u64 = FNV_OFFSET_BASIS;
     for &b in buf {
         h = h.wrapping_mul(FNV_PRIME);
         h ^= b as u64;

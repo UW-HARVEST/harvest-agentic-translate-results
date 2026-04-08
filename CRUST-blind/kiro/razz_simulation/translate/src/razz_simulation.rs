@@ -1,9 +1,7 @@
 use crate::card::card::{Card, CardDeck, CardHand, CardRank};
 pub mod razz_simulation {
     use super::*;
-    use crate::card::card::{ItrAction, sort_card_by_rank};
-
-    const RAZZ_CARD_IN_HAND_COUNT: u8 = 7;
+    use crate::card::card::{CardIterator, CardSuitRank, ItrAction, sort_card_by_rank};
 
     pub struct DecidedCards {
         pub my_card_count: u8,
@@ -13,16 +11,18 @@ pub mod razz_simulation {
     }
     pub type RankListener<T> = fn(&mut T, CardRank);
 
+    const RAZZ_CARD_IN_HAND_COUNT: u8 = 7;
+
     pub fn simulate_razz_game<T>(decided_cards: &DecidedCards, game_count: u64, arg: &mut T, listener: RankListener<T>) -> i32 {
         let mut my_hand = match CardHand::create_hand(RAZZ_CARD_IN_HAND_COUNT, sort_card_by_rank) {
             Some(h) => h,
-            None => return 1,
+            None => { eprintln!("Cannot create a hand"); return 1; }
         };
 
         for _ in 0..game_count {
             let mut deck = match CardDeck::create_shuffled_deck() {
                 Some(d) => d,
-                None => return 1,
+                None => { eprintln!("Cannot create a shuffled deck"); return 1; }
             };
             strip_deck(&mut deck, decided_cards);
             complete_hand(&mut my_hand, decided_cards, &mut deck);
@@ -56,40 +56,36 @@ pub mod razz_simulation {
         }
     }
 
-    fn duplicated_rank_remover(_len: u64, pos: u64, c: &Option<Card>) -> ItrAction {
-        // We need static state across calls within one iterate_hand invocation.
-        // Use a thread-local to mirror the C static variable.
+    fn duplicated_rank_remover(len: u64, pos: u64, c: &Option<Card>) -> ItrAction {
+        use std::cell::Cell;
         thread_local! {
-            static PREV_RANK: std::cell::Cell<CardRank> = std::cell::Cell::new(CardRank::InvalidRank);
+            static PREV_RANK: Cell<CardRank> = Cell::new(CardRank::InvalidRank);
         }
-        let curr_rank = c.as_ref().map(|card| card.get_card_rank()).unwrap_or(CardRank::InvalidRank);
+        let curr_rank = match c {
+            Some(card) => card.get_card_rank(),
+            None => CardRank::InvalidRank,
+        };
         if pos == 0 {
-            PREV_RANK.with(|pr| pr.set(curr_rank));
+            PREV_RANK.with(|p| p.set(curr_rank));
             return ItrAction::Continue;
         }
-        let prev = PREV_RANK.with(|pr| pr.get());
+        let prev = PREV_RANK.with(|p| p.get());
         if prev == curr_rank {
             return ItrAction::RemoveAndContinue;
         }
-        PREV_RANK.with(|pr| pr.set(curr_rank));
+        PREV_RANK.with(|p| p.set(curr_rank));
         ItrAction::Continue
     }
 
     fn length_trimmer(_len: u64, pos: u64, _c: &Option<Card>) -> ItrAction {
-        if pos >= 5 {
-            ItrAction::RemoveAndContinue
-        } else {
-            ItrAction::Continue
-        }
+        if pos >= 5 { ItrAction::RemoveAndContinue } else { ItrAction::Continue }
     }
 
     fn get_razz_rank(hand: &mut CardHand) -> CardRank {
-        hand.iterate_hand(duplicated_rank_remover);
+        hand.iterate_hand(duplicated_rank_remover as CardIterator);
         let cards_count = hand.count_cards_in_hand();
-        if cards_count < 5 {
-            return CardRank::InvalidRank;
-        }
-        hand.iterate_hand(length_trimmer);
+        if cards_count < 5 { return CardRank::InvalidRank; }
+        hand.iterate_hand(length_trimmer as CardIterator);
         hand.get_max_rank_of_hand()
     }
 }

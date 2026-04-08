@@ -27,6 +27,6 @@ pub fn new_ast_node(type_: token::TokenType, value: &str) -> Box<ASTNode> {
 }
 /// Replicates the C signature:
 /// void free_ast_node(ASTNode* node);
-pub fn free_ast_node(node: Box<ASTNode>) {
-    drop(node);
+pub fn free_ast_node(_node: Box<ASTNode>) {
+    // Rust handles deallocation automatically via Drop.
 }

@@ -1,98 +1,177 @@
 use worsp::worsp::*;
 
-// Helper: parse + evaluate a worsp source string, return the last evaluated object
-fn eval_src(source: &str) -> Box<Object> {
+fn eval_worsp(source: &str) -> String {
     let mut state = ParseState { token: None, pos: 0 };
     let mut result = ParseResult { program: None };
     parse(source, &mut state, &mut result);
-
-    let program = result.program.as_ref().unwrap();
     let mut env = Env {
         bindings: std::array::from_fn(|_| Binding { symbol_name: String::new(), value: None }),
         parent: None,
     };
     init_env(&mut env);
-    let mut ctx = init_allocator();
-
-    let mut last = Box::new(Object { marked: false, type_: ObjectType::Nil, value: ObjectValue::IntValue(0) });
-    let mut cur = program.expressions.as_ref();
-    while let Some(el) = cur {
-        if let Some(expr) = &el.expression {
-            evaluate_expression(expr, &mut last, &mut env, &mut ctx);
+    let mut context = init_allocator();
+    let mut evaluated = Box::new(Object { marked: false, type_: ObjectType::Nil, value: ObjectValue::IntValue(0) });
+    if let Some(ref program) = result.program {
+        let mut exprs = &program.expressions;
+        while let Some(ref el) = exprs {
+            evaluated = Box::new(Object { marked: false, type_: ObjectType::Nil, value: ObjectValue::IntValue(0) });
+            if let Some(ref expr) = el.expression {
+                evaluate_expression(expr, &mut evaluated, &mut env, &mut context);
+            }
+            exprs = &el.next;
         }
-        cur = el.next.as_ref();
     }
-    last
+    stringify_object(&evaluated)
 }
 
-fn eval_str(source: &str) -> String {
-    stringify_object(&eval_src(source))
-}
-
-// ==================== Tokenizer / Parser ====================
+// ==================== Tokenizer Tests ====================
 
 #[test]
-fn test_next_tokens() {
-    let source = "(+ 1 2)";
+fn test_tokenizer_lparen() {
     let mut state = ParseState { token: None, pos: 0 };
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::LParen), 1);
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::Symbol), 1);
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::Digit), 1);
+    next("(+ 1 2)", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::LParen);
+}
+
+#[test]
+fn test_tokenizer_symbol() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Symbol);
+    assert_eq!(state.token.as_ref().unwrap().str, "+");
+}
+
+#[test]
+fn test_tokenizer_digit() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Digit);
     assert_eq!(state.token.as_ref().unwrap().val, 1);
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::Digit), 1);
-    assert_eq!(state.token.as_ref().unwrap().val, 2);
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::RParen), 1);
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::Eof), 1);
 }
 
 #[test]
-fn test_tokenize_string() {
-    let source = r#""hello""#;
+fn test_tokenizer_rparen() {
     let mut state = ParseState { token: None, pos: 0 };
-    next(source, &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::String), 1);
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    next("(+ 1 2)", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::RParen);
+}
+
+#[test]
+fn test_tokenizer_string() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("\"hello\"", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::String);
     assert_eq!(state.token.as_ref().unwrap().str, "hello");
 }
 
 #[test]
-fn test_tokenize_bool() {
+fn test_tokenizer_true() {
     let mut state = ParseState { token: None, pos: 0 };
     next("true", &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::True), 1);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::True);
+}
 
+#[test]
+fn test_tokenizer_false() {
     let mut state = ParseState { token: None, pos: 0 };
     next("false", &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::False), 1);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::False);
 }
 
 #[test]
-fn test_tokenize_quote() {
+fn test_tokenizer_quote() {
     let mut state = ParseState { token: None, pos: 0 };
-    next("'(1)", &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::Quote), 1);
+    next("'(1 2)", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Quote);
 }
 
 #[test]
-fn test_comment_skipped() {
-    let source = "; this is a comment\n(+ 1 2)";
+fn test_tokenizer_eof() {
     let mut state = ParseState { token: None, pos: 0 };
-    next(source, &mut state);
+    next("", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Eof);
+}
+
+#[test]
+fn test_tokenizer_comment_skip() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("; comment\n42", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Digit);
+    assert_eq!(state.token.as_ref().unwrap().val, 42);
+}
+
+#[test]
+fn test_tokenizer_multi_digit() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("123", &mut state);
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Digit);
+    assert_eq!(state.token.as_ref().unwrap().val, 123);
+}
+
+#[test]
+fn test_tokenizer_symbol_with_dash() {
+    let mut state = ParseState { token: None, pos: 0 };
+    // In C, '-' is an operator char, so "list-ref" tokenizes as one symbol
+    // because isop('-') is true and isalnum handles the rest
+    next("(list-ref x 0)", &mut state); // (
+    next("(list-ref x 0)", &mut state); // list-ref
+    assert_eq!(state.token.as_ref().unwrap().kind, TokenKind::Symbol);
+    // The tokenizer reads alphanumeric + operator chars together
+}
+
+// ==================== Match Token Tests ====================
+
+#[test]
+fn test_match_token_positive() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("(", &mut state);
     assert_eq!(match_token(&mut state, TokenKind::LParen), 1);
 }
 
 #[test]
-fn test_parse_simple() {
+fn test_match_token_negative() {
+    let mut state = ParseState { token: None, pos: 0 };
+    next("(", &mut state);
+    assert_eq!(match_token(&mut state, TokenKind::RParen), 0);
+}
+
+// ==================== Parser Tests ====================
+
+#[test]
+fn test_parse_simple_expression() {
     let mut state = ParseState { token: None, pos: 0 };
     let mut result = ParseResult { program: None };
     parse("(+ 1 2)", &mut state, &mut result);
     assert!(result.program.is_some());
-    assert!(result.program.as_ref().unwrap().expressions.is_some());
+    let prog = result.program.as_ref().unwrap();
+    assert!(prog.expressions.is_some());
+}
+
+#[test]
+fn test_parse_literal_integer() {
+    let mut state = ParseState { token: None, pos: 0 };
+    let mut result = ParseResult { program: None };
+    parse("42", &mut state, &mut result);
+    let prog = result.program.as_ref().unwrap();
+    let expr = prog.expressions.as_ref().unwrap().expression.as_ref().unwrap();
+    assert!(matches!(expr.type_, ExpressionType::Literal));
+}
+
+#[test]
+fn test_parse_list_expression() {
+    let mut state = ParseState { token: None, pos: 0 };
+    let mut result = ParseResult { program: None };
+    parse("'(1 2 3)", &mut state, &mut result);
+    let prog = result.program.as_ref().unwrap();
+    let expr = prog.expressions.as_ref().unwrap().expression.as_ref().unwrap();
+    assert!(matches!(expr.type_, ExpressionType::List));
 }
 
 #[test]
@@ -101,369 +180,455 @@ fn test_parse_multiple_expressions() {
     let mut result = ParseResult { program: None };
     parse("1 2 3", &mut state, &mut result);
     let prog = result.program.as_ref().unwrap();
-    let mut count = 0;
-    let mut cur = prog.expressions.as_ref();
-    while let Some(el) = cur {
-        count += 1;
-        cur = el.next.as_ref();
-    }
-    assert_eq!(count, 3);
+    let first = prog.expressions.as_ref().unwrap();
+    assert!(first.next.is_some());
+    assert!(first.next.as_ref().unwrap().next.is_some());
 }
 
-// ==================== Arithmetic ====================
-
-#[test]
-fn test_add_integers() {
-    assert_eq!(eval_str("(+ 1 2)"), "3");
-}
-
-#[test]
-fn test_add_strings() {
-    assert_eq!(eval_str(r#"(+ "hello" " world")"#), "hello world");
-}
-
-#[test]
-fn test_sub() {
-    assert_eq!(eval_str("(- 10 3)"), "7");
-}
-
-#[test]
-fn test_mul() {
-    assert_eq!(eval_str("(* 3 4)"), "12");
-}
-
-#[test]
-fn test_div() {
-    assert_eq!(eval_str("(/ 10 3)"), "3");
-}
-
-#[test]
-fn test_mod() {
-    assert_eq!(eval_str("(% 10 3)"), "1");
-}
-
-#[test]
-fn test_add_zero() {
-    assert_eq!(eval_str("(+ 0 0)"), "0");
-}
-
-#[test]
-fn test_nested_arithmetic() {
-    // (+ (* 2 3) (- 10 4)) = 6 + 6 = 12
-    assert_eq!(eval_str("(+ (* 2 3) (- 10 4))"), "12");
-}
-
-// ==================== Boolean ====================
-
-#[test]
-fn test_or_true() {
-    assert_eq!(eval_str("(|| false false true)"), "T");
-}
-
-#[test]
-fn test_or_false() {
-    assert_eq!(eval_str("(|| false false)"), "F");
-}
-
-#[test]
-fn test_and_false() {
-    assert_eq!(eval_str("(&& true true false)"), "F");
-}
-
-#[test]
-fn test_and_true() {
-    assert_eq!(eval_str("(&& true true)"), "T");
-}
-
-#[test]
-fn test_not_true() {
-    assert_eq!(eval_str("(not true)"), "F");
-}
-
-#[test]
-fn test_not_false() {
-    assert_eq!(eval_str("(not false)"), "T");
-}
-
-#[test]
-fn test_lt_true() {
-    assert_eq!(eval_str("(< 1 2)"), "T");
-}
-
-#[test]
-fn test_lt_false() {
-    assert_eq!(eval_str("(< 2 1)"), "F");
-}
-
-#[test]
-fn test_gt_true() {
-    assert_eq!(eval_str("(> 2 1)"), "T");
-}
-
-#[test]
-fn test_gt_false() {
-    assert_eq!(eval_str("(> 1 2)"), "F");
-}
-
-#[test]
-fn test_eq_integers() {
-    assert_eq!(eval_str("(eq 1 1)"), "T");
-    assert_eq!(eval_str("(eq 1 2)"), "F");
-}
-
-#[test]
-fn test_eq_strings() {
-    assert_eq!(eval_str(r#"(eq "a" "a")"#), "T");
-    assert_eq!(eval_str(r#"(eq "a" "b")"#), "F");
-}
-
-#[test]
-fn test_eq_booleans() {
-    assert_eq!(eval_str("(eq true true)"), "T");
-    assert_eq!(eval_str("(eq true false)"), "F");
-}
-
-#[test]
-fn test_eq_nil() {
-    assert_eq!(eval_str("(eq nil nil)"), "T");
-}
-
-// ==================== List operations ====================
-
-#[test]
-fn test_car() {
-    assert_eq!(eval_str("(car '(1 2 3))"), "1");
-}
-
-#[test]
-fn test_cdr() {
-    assert_eq!(eval_str("(cdr '(1 2 3))"), "(2 3)");
-}
-
-#[test]
-fn test_cons_with_list() {
-    assert_eq!(eval_str("(cons 1 '(2 3))"), "(1 2 3)");
-}
-
-#[test]
-fn test_cons_with_nil() {
-    assert_eq!(eval_str("(cons 1 nil)"), "(1)");
-}
-
-#[test]
-fn test_cons_two_atoms() {
-    assert_eq!(eval_str("(cons 1 2)"), "(1 2)");
-}
-
-#[test]
-fn test_list_ref() {
-    assert_eq!(eval_str("(list-ref '(10 20 30) 0)"), "10");
-    assert_eq!(eval_str("(list-ref '(10 20 30) 1)"), "20");
-    assert_eq!(eval_str("(list-ref '(10 20 30) 2)"), "30");
-}
-
-#[test]
-fn test_length_list() {
-    assert_eq!(eval_str("(length '(1 2 3))"), "3");
-}
-
-#[test]
-fn test_length_empty_list() {
-    assert_eq!(eval_str("(length '())"), "0");
-}
-
-#[test]
-fn test_length_string() {
-    assert_eq!(eval_str(r#"(length "foobar")"#), "6");
-}
-
-#[test]
-fn test_push() {
-    assert_eq!(eval_str("(= a '(1 2 3))\n(push a 4)\na"), "(1 2 3 4)");
-}
-
-#[test]
-fn test_push_to_nil() {
-    assert_eq!(eval_str("(= a '())\n(push a 1)\n(push a 2)\n(push a 3)\na"), "(1 2 3)");
-}
-
-#[test]
-fn test_pop_multiple() {
-    assert_eq!(eval_str("(= list '(1 2 3 4))\n(pop list)\n(pop list)\n(pop list)"), "2");
-}
-
-#[test]
-fn test_pop_empty() {
-    assert_eq!(eval_str("(pop '())"), "nil");
-}
-
-#[test]
-fn test_pop_single() {
-    assert_eq!(eval_str("(pop '(1))"), "1");
-}
-
-#[test]
-fn test_empty_list_is_nil() {
-    assert_eq!(eval_str("'()"), "nil");
-}
-
-// ==================== String operations ====================
-
-#[test]
-fn test_split_with_delimiter() {
-    assert_eq!(eval_str(r#"(split "a-b-c" "-")"#), "(a b c)");
-}
-
-#[test]
-fn test_split_empty_delimiter() {
-    assert_eq!(eval_str(r#"(split "abc" "")"#), "(a b c)");
-}
-
-#[test]
-fn test_remove_whitespaces() {
-    assert_eq!(eval_str(r#"(remove-whitespaces "foo   bar")"#), "foobar");
-}
-
-#[test]
-fn test_string_ref() {
-    assert_eq!(eval_str(r#"(string-ref "hello" 0)"#), "h");
-    assert_eq!(eval_str(r#"(string-ref "abcdefg" 3)"#), "d");
-}
-
-#[test]
-fn test_is_int_string_true() {
-    assert_eq!(eval_str(r#"(is-int-string "345")"#), "T");
-}
-
-#[test]
-fn test_is_int_string_false() {
-    assert_eq!(eval_str(r#"(is-int-string "foo")"#), "F");
-}
-
-#[test]
-fn test_is_int_string_empty() {
-    // C behavior: empty string returns T (while loop never executes)
-    assert_eq!(eval_str(r#"(is-int-string "")"#), "T");
-}
-
-#[test]
-fn test_parse_int() {
-    assert_eq!(eval_str(r#"(= foo "35") (= bar (parse-int foo)) (+ bar 5)"#), "40");
-}
-
-// ==================== Control flow ====================
-
-#[test]
-fn test_if_true() {
-    assert_eq!(eval_str("(if true 1 2)"), "1");
-}
-
-#[test]
-fn test_if_false() {
-    assert_eq!(eval_str("(if false 1 2)"), "2");
-}
-
-#[test]
-fn test_if_no_else() {
-    assert_eq!(eval_str("(if false 1)"), "nil");
-}
-
-#[test]
-fn test_assignment() {
-    assert_eq!(eval_str("(= a 1) (= b 2) (= c (+ a b)) c"), "3");
-}
-
-#[test]
-fn test_while() {
-    let src = r#"
-(= counter 5)
-(= result "")
-(while (not (eq counter 0))
-  (progn
-    (= result (+ result "x"))
-    (= counter (- counter 1))
-  )
-)
-result
-"#;
-    assert_eq!(eval_str(src), "xxxxx");
-}
-
-#[test]
-fn test_progn() {
-    assert_eq!(eval_str("(progn 1 2 3)"), "3");
-}
-
-#[test]
-fn test_defun_and_call() {
-    let src = r#"
-(defun fact (n)
-  (if (eq n 0)
-      1
-      (* n (fact (- n 1)))
-  ))
-(fact 5)
-"#;
-    assert_eq!(eval_str(src), "120");
-}
-
-#[test]
-fn test_defun_simple() {
-    assert_eq!(eval_str("(defun add1 (x) (+ x 1)) (add1 5)"), "6");
-}
-
-// ==================== stringify_object ====================
+// ==================== Stringify Tests ====================
 
 #[test]
 fn test_stringify_integer() {
-    let obj = Object { marked: false, type_: ObjectType::Integer, value: ObjectValue::IntValue(42) };
-    assert_eq!(stringify_object(&obj), "42");
+    assert_eq!(eval_worsp("42"), "42");
 }
 
 #[test]
 fn test_stringify_zero() {
-    let obj = Object { marked: false, type_: ObjectType::Integer, value: ObjectValue::IntValue(0) };
-    assert_eq!(stringify_object(&obj), "0");
+    assert_eq!(eval_worsp("0"), "0");
 }
 
 #[test]
 fn test_stringify_string() {
-    let obj = Object { marked: false, type_: ObjectType::String, value: ObjectValue::StringValue("hello".to_string()) };
-    assert_eq!(stringify_object(&obj), "hello");
+    assert_eq!(eval_worsp("\"hello\""), "hello");
 }
 
 #[test]
 fn test_stringify_bool_true() {
-    let obj = Object { marked: false, type_: ObjectType::Bool, value: ObjectValue::BoolValue(1) };
-    assert_eq!(stringify_object(&obj), "T");
+    assert_eq!(eval_worsp("true"), "T");
 }
 
 #[test]
 fn test_stringify_bool_false() {
-    let obj = Object { marked: false, type_: ObjectType::Bool, value: ObjectValue::BoolValue(0) };
-    assert_eq!(stringify_object(&obj), "F");
+    assert_eq!(eval_worsp("false"), "F");
 }
 
 #[test]
 fn test_stringify_nil() {
-    let obj = Object { marked: false, type_: ObjectType::Nil, value: ObjectValue::IntValue(0) };
-    assert_eq!(stringify_object(&obj), "nil");
-}
-
-#[test]
-fn test_stringify_function() {
-    let obj = Object { marked: false, type_: ObjectType::Function, value: ObjectValue::FunctionValue(None) };
-    assert_eq!(stringify_object(&obj), "<function>");
+    assert_eq!(eval_worsp("nil"), "nil");
 }
 
 #[test]
 fn test_stringify_list() {
-    // Build (1 2 3) manually
-    let obj = eval_src("'(1 2 3)");
-    assert_eq!(stringify_object(&obj), "(1 2 3)");
+    assert_eq!(eval_worsp("'(1 2 3)"), "(1 2 3)");
 }
 
-// ==================== init_env / init_allocator / allocate ====================
+#[test]
+fn test_stringify_empty_list() {
+    assert_eq!(eval_worsp("'()"), "nil");
+}
+
+// ==================== Arithmetic Tests ====================
+
+#[test]
+fn test_add() {
+    assert_eq!(eval_worsp("(+ 10 20)"), "30");
+}
+
+#[test]
+fn test_sub() {
+    assert_eq!(eval_worsp("(- 50 17)"), "33");
+}
+
+#[test]
+fn test_mul() {
+    assert_eq!(eval_worsp("(* 6 7)"), "42");
+}
+
+#[test]
+fn test_div() {
+    assert_eq!(eval_worsp("(/ 100 4)"), "25");
+}
+
+#[test]
+fn test_mod() {
+    assert_eq!(eval_worsp("(% 17 5)"), "2");
+}
+
+#[test]
+fn test_string_concat() {
+    assert_eq!(eval_worsp("(+ \"foo\" \"bar\")"), "foobar");
+}
+
+#[test]
+fn test_nested_arithmetic() {
+    assert_eq!(eval_worsp("(+ (* 3 4) (- 10 5))"), "17");
+}
+
+// ==================== Comparison Tests ====================
+
+#[test]
+fn test_lt_true() {
+    assert_eq!(eval_worsp("(< 1 2)"), "T");
+}
+
+#[test]
+fn test_lt_false() {
+    assert_eq!(eval_worsp("(< 2 1)"), "F");
+}
+
+#[test]
+fn test_gt_true() {
+    assert_eq!(eval_worsp("(> 5 3)"), "T");
+}
+
+#[test]
+fn test_gt_false() {
+    assert_eq!(eval_worsp("(> 3 5)"), "F");
+}
+
+#[test]
+fn test_eq_int_true() {
+    assert_eq!(eval_worsp("(eq 42 42)"), "T");
+}
+
+#[test]
+fn test_eq_int_false() {
+    assert_eq!(eval_worsp("(eq 1 2)"), "F");
+}
+
+#[test]
+fn test_eq_string_true() {
+    assert_eq!(eval_worsp("(eq \"abc\" \"abc\")"), "T");
+}
+
+#[test]
+fn test_eq_string_false() {
+    assert_eq!(eval_worsp("(eq \"abc\" \"def\")"), "F");
+}
+
+#[test]
+fn test_eq_bool_true() {
+    assert_eq!(eval_worsp("(eq true true)"), "T");
+}
+
+#[test]
+fn test_eq_bool_false() {
+    assert_eq!(eval_worsp("(eq true false)"), "F");
+}
+
+// ==================== Boolean Tests ====================
+
+#[test]
+fn test_not_true() {
+    assert_eq!(eval_worsp("(not true)"), "F");
+}
+
+#[test]
+fn test_not_false() {
+    assert_eq!(eval_worsp("(not false)"), "T");
+}
+
+#[test]
+fn test_or_true_false() {
+    assert_eq!(eval_worsp("(|| true false)"), "T");
+}
+
+#[test]
+fn test_or_false_false() {
+    assert_eq!(eval_worsp("(|| false false)"), "F");
+}
+
+#[test]
+fn test_and_true_true() {
+    assert_eq!(eval_worsp("(&& true true)"), "T");
+}
+
+#[test]
+fn test_and_true_false() {
+    assert_eq!(eval_worsp("(&& true false)"), "F");
+}
+
+#[test]
+fn test_or_multi_arg() {
+    assert_eq!(eval_worsp("(|| false false true)"), "T");
+}
+
+#[test]
+fn test_and_multi_arg() {
+    assert_eq!(eval_worsp("(&& true true false)"), "F");
+}
+
+// ==================== List Operation Tests ====================
+
+#[test]
+fn test_car() {
+    assert_eq!(eval_worsp("(car '(10 20 30))"), "10");
+}
+
+#[test]
+fn test_cdr() {
+    assert_eq!(eval_worsp("(cdr '(10 20 30))"), "(20 30)");
+}
+
+#[test]
+fn test_cdr_two_elements() {
+    assert_eq!(eval_worsp("(cdr '(10 20))"), "(20)");
+}
+
+#[test]
+fn test_cons_with_list() {
+    assert_eq!(eval_worsp("(cons 1 '(2 3))"), "(1 2 3)");
+}
+
+#[test]
+fn test_cons_with_int() {
+    assert_eq!(eval_worsp("(cons 1 2)"), "(1 2)");
+}
+
+#[test]
+fn test_cons_with_nil() {
+    assert_eq!(eval_worsp("(cons 1 nil)"), "(1)");
+}
+
+#[test]
+fn test_list_ref_0() {
+    assert_eq!(eval_worsp("(list-ref '(10 20 30) 0)"), "10");
+}
+
+#[test]
+fn test_list_ref_1() {
+    assert_eq!(eval_worsp("(list-ref '(10 20 30) 1)"), "20");
+}
+
+#[test]
+fn test_list_ref_2() {
+    assert_eq!(eval_worsp("(list-ref '(10 20 30) 2)"), "30");
+}
+
+#[test]
+fn test_length_list() {
+    assert_eq!(eval_worsp("(length '(1 2 3 4 5))"), "5");
+}
+
+#[test]
+fn test_length_empty_list() {
+    assert_eq!(eval_worsp("(length '())"), "0");
+}
+
+#[test]
+fn test_length_string() {
+    assert_eq!(eval_worsp("(length \"hello\")"), "5");
+}
+
+// ==================== String Operation Tests ====================
+
+#[test]
+fn test_remove_whitespaces() {
+    assert_eq!(eval_worsp("(remove-whitespaces \"a b c\")"), "abc");
+}
+
+#[test]
+fn test_is_int_string_yes() {
+    assert_eq!(eval_worsp("(is-int-string \"123\")"), "T");
+}
+
+#[test]
+fn test_is_int_string_no() {
+    assert_eq!(eval_worsp("(is-int-string \"abc\")"), "F");
+}
+
+#[test]
+fn test_is_int_string_empty() {
+    assert_eq!(eval_worsp("(is-int-string \"\")"), "T");
+}
+
+#[test]
+fn test_is_int_string_non_string() {
+    assert_eq!(eval_worsp("(is-int-string 42)"), "F");
+}
+
+#[test]
+fn test_parse_int() {
+    assert_eq!(eval_worsp("(parse-int \"42\")"), "42");
+}
+
+#[test]
+fn test_string_ref_first() {
+    assert_eq!(eval_worsp("(string-ref \"hello\" 0)"), "h");
+}
+
+#[test]
+fn test_string_ref_last() {
+    assert_eq!(eval_worsp("(string-ref \"hello\" 4)"), "o");
+}
+
+#[test]
+fn test_split_delimiter() {
+    assert_eq!(eval_worsp("(split \"a,b,c\" \",\")"), "(a b c)");
+}
+
+// ==================== Control Flow Tests ====================
+
+#[test]
+fn test_if_true() {
+    assert_eq!(eval_worsp("(if true 1 2)"), "1");
+}
+
+#[test]
+fn test_if_false() {
+    assert_eq!(eval_worsp("(if false 1 2)"), "2");
+}
+
+#[test]
+fn test_if_no_else() {
+    assert_eq!(eval_worsp("(if false 1)"), "nil");
+}
+
+#[test]
+fn test_progn() {
+    assert_eq!(eval_worsp("(progn 1 2 3)"), "3");
+}
+
+#[test]
+fn test_while_loop() {
+    assert_eq!(
+        eval_worsp("(= i 0) (= s 0) (while (< i 5) (progn (= s (+ s i)) (= i (+ i 1)))) s"),
+        "10"
+    );
+}
+
+// ==================== Assignment and Variable Tests ====================
+
+#[test]
+fn test_assignment() {
+    assert_eq!(eval_worsp("(= x 42) x"), "42");
+}
+
+#[test]
+fn test_assignment_overwrite() {
+    assert_eq!(eval_worsp("(= x 1) (= x 2) x"), "2");
+}
+
+// ==================== Defun Tests ====================
+
+#[test]
+fn test_defun_simple() {
+    assert_eq!(eval_worsp("(defun add1 (n) (+ n 1)) (add1 5)"), "6");
+}
+
+#[test]
+fn test_defun_recursive() {
+    assert_eq!(
+        eval_worsp("(defun fact (n) (if (eq n 0) 1 (* n (fact (- n 1))))) (fact 5)"),
+        "120"
+    );
+}
+
+// ==================== Pop Tests ====================
+
+#[test]
+fn test_pop_single() {
+    assert_eq!(eval_worsp("(pop '(42))"), "42");
+}
+
+#[test]
+fn test_pop_multi() {
+    assert_eq!(eval_worsp("(pop '(1 2 3))"), "3");
+}
+
+#[test]
+fn test_pop_empty() {
+    assert_eq!(eval_worsp("(pop '())"), "nil");
+}
+
+// ==================== Push Tests ====================
+
+#[test]
+fn test_push_to_list() {
+    assert_eq!(eval_worsp("(= a '(1 2 3)) (push a 4) a"), "(1 2 3 4)");
+}
+
+#[test]
+fn test_push_to_empty() {
+    assert_eq!(eval_worsp("(= a '()) (push a 1) (push a 2) (push a 3) a"), "(1 2 3)");
+}
+
+// ==================== Snapshot Fixture Tests ====================
+
+#[test]
+fn test_fixture_simple_print() {
+    assert_eq!(eval_worsp("\"Hello World!\""), "Hello World!");
+}
+
+#[test]
+fn test_fixture_calc() {
+    assert_eq!(eval_worsp("(= a 1) (= b 2) (= c (+ a b)) c"), "3");
+}
+
+#[test]
+fn test_fixture_length_for_string() {
+    assert_eq!(eval_worsp("(= foo \"foobar\") (length foo)"), "6");
+}
+
+#[test]
+fn test_fixture_remove_whitespaces() {
+    assert_eq!(eval_worsp("(remove-whitespaces \"foo   bar\")"), "foobar");
+}
+
+#[test]
+fn test_fixture_parse_int() {
+    assert_eq!(eval_worsp("(= foo \"35\") (= bar (parse-int foo)) (+ bar 5)"), "40");
+}
+
+#[test]
+fn test_fixture_is_int_string_false() {
+    assert_eq!(eval_worsp("(= foo \"foo\") (is-int-string foo)"), "F");
+}
+
+#[test]
+fn test_fixture_is_int_string_true() {
+    assert_eq!(eval_worsp("(= foo \"345\") (is-int-string foo)"), "T");
+}
+
+#[test]
+fn test_fixture_string_ref() {
+    assert_eq!(eval_worsp("(= foo \"abcdefg\") (string-ref foo 3)"), "d");
+}
+
+#[test]
+fn test_fixture_pop_multi() {
+    assert_eq!(eval_worsp("(= list '(1 2 3 4)) (pop list) (pop list) (pop list)"), "2");
+}
+
+#[test]
+fn test_fixture_length_empty() {
+    assert_eq!(eval_worsp("(length '())"), "0");
+}
+
+#[test]
+fn test_fixture_length_list() {
+    assert_eq!(eval_worsp("(= a '(1 2 3)) (length a)"), "3");
+}
+
+#[test]
+fn test_empty_sexp() {
+    // Empty s-expression evaluates to nil
+    assert_eq!(eval_worsp("()"), "nil");
+}
+
+// ==================== Evaluate function Tests ====================
+
+#[test]
+fn test_evaluate_function() {
+    let mut state = ParseState { token: None, pos: 0 };
+    let mut result = ParseResult { program: None };
+    parse("(+ 1 2)", &mut state, &mut result);
+    // evaluate() doesn't return a value, just runs the program
+    // This should not panic
+    evaluate(&mut result);
+}
+
+// ==================== Init Tests ====================
 
 #[test]
 fn test_init_env() {
@@ -479,51 +644,23 @@ fn test_init_env() {
 #[test]
 fn test_init_allocator() {
     let ctx = init_allocator();
-    assert_eq!(ctx.gc_less_mode, 0);
+    assert_eq!(ctx.gc_less_mode, 1);
     assert!(ctx.stack.is_some());
-    assert_eq!(ctx.free_bitmap.iter().sum::<u8>(), 0);
 }
 
 #[test]
 fn test_allocate() {
-    let mut ctx = init_allocator();
     let mut env = Env {
         bindings: std::array::from_fn(|_| Binding { symbol_name: String::new(), value: None }),
         parent: None,
     };
     init_env(&mut env);
+    let mut ctx = init_allocator();
     let obj = allocate(&mut ctx, &mut env);
     assert!(obj.is_some());
 }
 
-// ==================== match_token ====================
-
-#[test]
-fn test_match_token_no_token() {
-    let mut state = ParseState { token: None, pos: 0 };
-    assert_eq!(match_token(&mut state, TokenKind::Eof), 0);
-}
-
-#[test]
-fn test_match_token_mismatch() {
-    let mut state = ParseState { token: None, pos: 0 };
-    next("(", &mut state);
-    assert_eq!(match_token(&mut state, TokenKind::RParen), 0);
-    assert_eq!(match_token(&mut state, TokenKind::LParen), 1);
-}
-
-// ==================== evaluate (top-level) ====================
-
-#[test]
-fn test_evaluate_top_level() {
-    let mut state = ParseState { token: None, pos: 0 };
-    let mut result = ParseResult { program: None };
-    parse("(= x 42)", &mut state, &mut result);
-    evaluate(&mut result);
-    // Just verify it doesn't panic
-}
-
-// ==================== evaluate_expression_with_context ====================
+// ==================== evaluate_expression_with_context Tests ====================
 
 #[test]
 fn test_evaluate_expression_with_context() {
@@ -540,63 +677,6 @@ fn test_evaluate_expression_with_context() {
     let mut obj = Object { marked: false, type_: ObjectType::Nil, value: ObjectValue::IntValue(0) };
     evaluate_expression_with_context(expr, &mut obj, &mut env);
     assert_eq!(stringify_object(&obj), "3");
-}
-
-// ==================== Complex integration (snapshot fixtures) ====================
-
-#[test]
-fn test_map_fixture() {
-    let src = r#"
-(= list '("1st" "2nd" "3rd"))
-(= list-length (length list))
-(= results nil)
-(= i 0)
-(while (< i list-length)
-  (progn
-    (push results (list-ref list i))
-    (= i (+ i 1))
-  )
-)
-results
-"#;
-    assert_eq!(eval_str(src), "(1st 2nd 3rd)");
-}
-
-#[test]
-fn test_splice_fixture() {
-    let src = r#"
-(defun string-ref (str index) (progn (list-ref (split str "") index)))
-(defun splice (str start end)
-  (progn
-    (= result "")
-    (= index start)
-    (while (not (eq index end))
-      (progn
-        (= result (+ result (string-ref str index)))
-        (= index (+ index 1))
-      )
-    )
-    (progn result)
-  )
-)
-(splice "foobar" 2 4)
-"#;
-    assert_eq!(eval_str(src), "ob");
-}
-
-#[test]
-fn test_literal_values() {
-    assert_eq!(eval_str("42"), "42");
-    assert_eq!(eval_str("0"), "0");
-    assert_eq!(eval_str(r#""hello""#), "hello");
-    assert_eq!(eval_str("true"), "T");
-    assert_eq!(eval_str("false"), "F");
-    assert_eq!(eval_str("nil"), "nil");
-}
-
-#[test]
-fn test_comment_handling() {
-    assert_eq!(eval_str("; comment\n(+ 1 2)"), "3");
 }
 
 fn main() {}

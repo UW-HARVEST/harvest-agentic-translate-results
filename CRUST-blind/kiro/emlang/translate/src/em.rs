@@ -79,7 +79,9 @@ impl fmt::Display for Em {
                     }
                 }
             }
-            EmType::PrintBegin | EmType::IfBegin => write!(f, " ref: {}", self.r#ref)?,
+            EmType::PrintBegin | EmType::IfBegin => {
+                write!(f, " ref: {}", self.r#ref)?;
+            }
             _ => {}
         }
         write!(f, " {}:{}:{}>", self.path, self.row, self.col)

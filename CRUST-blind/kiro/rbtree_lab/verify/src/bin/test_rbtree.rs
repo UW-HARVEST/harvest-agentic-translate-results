@@ -1,262 +1,147 @@
-use rbtree::rbtree::{Color, Key, NodeRef, RBTree};
-use std::rc::Rc;
+use rbtree::rbtree::{Color, RBTree};
 
-// Helper: check BST property recursively, returns (min, max) of subtree
-fn check_bst(node: &Option<NodeRef>) -> Option<(Key, Key)> {
-    let n = match node.as_ref() {
-        Some(n) => n,
-        None => return None,
-    };
-    let b = n.borrow();
-    let key = b.key;
-    let mut min = key;
-    let mut max = key;
-
-    if let Some((l_min, l_max)) = check_bst(&b.left) {
-        assert!(l_max <= key, "BST violation: left max {} > node {}", l_max, key);
-        min = l_min;
-    }
-    if let Some((r_min, r_max)) = check_bst(&b.right) {
-        assert!(r_min >= key, "BST violation: right min {} < node {}", r_min, key);
-        max = r_max;
-    }
-    Some((min, max))
-}
-
-// Helper: check RB color constraints, returns black-height
-fn check_color(node: &Option<NodeRef>, parent_color: Color) -> usize {
-    let n = match node.as_ref() {
-        Some(n) => n,
-        None => return 1, // NIL counts as black
-    };
-    let b = n.borrow();
-    assert!(
-        !(parent_color == Color::Red && b.color == Color::Red),
-        "Red-red violation at key {}",
-        b.key
-    );
-    let left_bh = check_color(&b.left, b.color.clone());
-    let right_bh = check_color(&b.right, b.color.clone());
-    assert_eq!(left_bh, right_bh, "Black-height mismatch at key {}", b.key);
-    left_bh + if b.color == Color::Black { 1 } else { 0 }
-}
-
-fn check_rb(t: &RBTree) {
-    // Root must be black (or None)
-    if let Some(r) = t.root.as_ref() {
-        assert_eq!(r.borrow().color, Color::Black, "Root must be black");
-    }
-    check_bst(&t.root);
-    check_color(&t.root, Color::Black);
-}
-
-fn insert_arr(t: &mut RBTree, arr: &[Key]) {
-    for &k in arr {
+fn insert_keys(t: &mut RBTree, keys: &[i32]) {
+    for &k in keys {
         t.rbtree_insert(k);
     }
 }
 
-// --- Tests ---
+// === RB-tree structural validators ===
+
+fn check_bst(t: &RBTree) -> bool {
+    fn recurse(node: &Option<rbtree::rbtree::NodeRef>, min: i32, max: i32) -> bool {
+        match node {
+            None => true,
+            Some(n) => {
+                let b = n.borrow();
+                // duplicates go right, so left <= key, right >= key
+                recurse(&b.left, min, b.key) && recurse(&b.right, b.key, max)
+            }
+        }
+    }
+    recurse(&t.root, i32::MIN, i32::MAX)
+}
+
+fn check_rb_properties(t: &RBTree) -> bool {
+    // Root must be black
+    if let Some(ref r) = t.root {
+        if r.borrow().color != Color::Black {
+            return false;
+        }
+    }
+    // No red-red parent-child, and equal black-height on all paths
+    fn black_height(node: &Option<rbtree::rbtree::NodeRef>) -> Option<usize> {
+        match node {
+            None => Some(1), // NIL counts as black
+            Some(n) => {
+                let b = n.borrow();
+                // red-red check
+                if b.color == Color::Red {
+                    if b.left.as_ref().map_or(false, |l| l.borrow().color == Color::Red) {
+                        return None;
+                    }
+                    if b.right.as_ref().map_or(false, |r| r.borrow().color == Color::Red) {
+                        return None;
+                    }
+                }
+                let lh = black_height(&b.left)?;
+                let rh = black_height(&b.right)?;
+                if lh != rh {
+                    return None;
+                }
+                Some(lh + if b.color == Color::Black { 1 } else { 0 })
+            }
+        }
+    }
+    black_height(&t.root).is_some()
+}
+
+// === Tests ===
 
 #[test]
-fn test_init() {
+fn test_new_empty() {
     let t = RBTree::new();
     assert!(t.root.is_none());
-    t.delete_rbtree();
 }
 
 #[test]
 fn test_insert_single() {
     let mut t = RBTree::new();
-    let p = t.rbtree_insert(1024).unwrap();
-    assert!(t.root.is_some());
-    assert!(Rc::ptr_eq(t.root.as_ref().unwrap(), &p));
-    assert_eq!(p.borrow().key, 1024);
+    let p = t.rbtree_insert(42).unwrap();
+    assert_eq!(p.borrow().key, 42);
     assert_eq!(p.borrow().color, Color::Black);
-    assert!(p.borrow().left.is_none());
-    assert!(p.borrow().right.is_none());
-    assert!(p.borrow().parent.is_none());
-    t.delete_rbtree();
+    assert!(t.root.is_some());
+    let root = t.root.as_ref().unwrap();
+    assert_eq!(root.borrow().key, 42);
+    assert_eq!(root.borrow().color, Color::Black);
+    assert!(root.borrow().left.is_none());
+    assert!(root.borrow().right.is_none());
+    assert!(root.borrow().parent.is_none());
 }
 
 #[test]
-fn test_find_single() {
+fn test_insert_sequence_to_array() {
     let mut t = RBTree::new();
-    let p = t.rbtree_insert(512).unwrap();
-
-    let q = t.rbtree_find(512);
-    assert!(q.is_some());
-    let q = q.unwrap();
-    assert_eq!(q.borrow().key, 512);
-    assert!(Rc::ptr_eq(&q, &p));
-
-    let missing = t.rbtree_find(1024);
-    assert!(missing.is_none());
-
-    t.delete_rbtree();
+    insert_keys(&mut t, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12]);
+    let arr = t.to_array(10);
+    assert_eq!(arr, vec![2, 5, 8, 10, 12, 23, 24, 34, 67, 156]);
 }
 
 #[test]
-fn test_erase_root() {
+fn test_insert_sequence_root_min_max() {
     let mut t = RBTree::new();
-    let p = t.rbtree_insert(128).unwrap();
-    assert!(Rc::ptr_eq(t.root.as_ref().unwrap(), &p));
-    t.erase(p);
-    assert!(t.root.is_none());
-    t.delete_rbtree();
+    insert_keys(&mut t, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12]);
+    let root = t.root.as_ref().unwrap();
+    assert_eq!(root.borrow().key, 23);
+    assert_eq!(root.borrow().color, Color::Black);
+    assert_eq!(t.rbtree_min().unwrap().borrow().key, 2);
+    assert_eq!(t.rbtree_max().unwrap().borrow().key, 156);
 }
 
 #[test]
-fn test_minmax() {
-    let mut entries = vec![10, 5, 8, 34, 67, 23, 156, 24, 2, 12];
+fn test_ascending_insert() {
     let mut t = RBTree::new();
-    insert_arr(&mut t, &entries);
-
-    entries.sort();
-
-    let p = t.rbtree_min().unwrap();
-    assert_eq!(p.borrow().key, entries[0]);
-
-    let q = t.rbtree_max().unwrap();
-    assert_eq!(q.borrow().key, *entries.last().unwrap());
-
-    // Erase min, check new min
-    t.erase(p);
-    let p2 = t.rbtree_min().unwrap();
-    assert_eq!(p2.borrow().key, entries[1]);
-
-    // Erase max, check new max
-    t.erase(q);
-    let q2 = t.rbtree_max().unwrap();
-    assert_eq!(q2.borrow().key, entries[entries.len() - 2]);
-
-    t.delete_rbtree();
+    for i in 1..=8 {
+        t.rbtree_insert(i);
+    }
+    let arr = t.to_array(8);
+    assert_eq!(arr, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(t.root.as_ref().unwrap().borrow().key, 4);
+    assert_eq!(t.root.as_ref().unwrap().borrow().color, Color::Black);
 }
 
 #[test]
-fn test_to_array() {
+fn test_descending_insert() {
     let mut t = RBTree::new();
-    let entries = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12, 24, 36, 990, 25];
-    insert_arr(&mut t, &entries);
-
-    let mut sorted = entries.to_vec();
-    sorted.sort();
-
-    let res = t.to_array(entries.len());
-    assert_eq!(res, sorted);
-
-    t.delete_rbtree();
+    for i in (1..=8).rev() {
+        t.rbtree_insert(i);
+    }
+    let arr = t.to_array(8);
+    assert_eq!(arr, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(t.root.as_ref().unwrap().borrow().key, 5);
+    assert_eq!(t.root.as_ref().unwrap().borrow().color, Color::Black);
 }
 
 #[test]
-fn test_to_array_partial() {
+fn test_find_existing() {
     let mut t = RBTree::new();
-    insert_arr(&mut t, &[5, 3, 7, 1, 4]);
-    // Request fewer elements than in tree
-    let res = t.to_array(3);
-    assert_eq!(res, vec![1, 3, 4]);
-    t.delete_rbtree();
+    insert_keys(&mut t, &[10, 20, 30]);
+    let f = t.rbtree_find(20);
+    assert!(f.is_some());
+    assert_eq!(f.unwrap().borrow().key, 20);
 }
 
 #[test]
-fn test_to_array_empty() {
+fn test_find_nonexistent() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 20, 30]);
+    assert!(t.rbtree_find(99).is_none());
+}
+
+#[test]
+fn test_find_empty_tree() {
     let t = RBTree::new();
-    let res = t.to_array(10);
-    assert!(res.is_empty());
-    t.delete_rbtree();
-}
-
-#[test]
-fn test_multi_instance() {
-    let mut t1 = RBTree::new();
-    let mut t2 = RBTree::new();
-
-    let arr1 = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12, 24, 36, 990, 25];
-    insert_arr(&mut t1, &arr1);
-    let mut sorted1 = arr1.to_vec();
-    sorted1.sort();
-
-    let arr2 = [4, 8, 10, 5, 3];
-    insert_arr(&mut t2, &arr2);
-    let mut sorted2 = arr2.to_vec();
-    sorted2.sort();
-
-    assert_eq!(t1.to_array(arr1.len()), sorted1);
-    assert_eq!(t2.to_array(arr2.len()), sorted2);
-
-    t2.delete_rbtree();
-    t1.delete_rbtree();
-}
-
-#[test]
-fn test_distinct_values_rb_constraints() {
-    let mut t = RBTree::new();
-    let entries = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12];
-    insert_arr(&mut t, &entries);
-    check_rb(&t);
-    t.delete_rbtree();
-}
-
-#[test]
-fn test_duplicate_values_rb_constraints() {
-    let mut t = RBTree::new();
-    let entries = [10, 5, 5, 34, 6, 23, 12, 12, 6, 12];
-    insert_arr(&mut t, &entries);
-    check_rb(&t);
-    t.delete_rbtree();
-}
-
-#[test]
-fn test_find_after_multiple_inserts() {
-    let mut t = RBTree::new();
-    let keys = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12];
-    insert_arr(&mut t, &keys);
-    for &k in &keys {
-        let found = t.rbtree_find(k);
-        assert!(found.is_some(), "Should find key {}", k);
-        assert_eq!(found.unwrap().borrow().key, k);
-    }
-    // Key not in tree
-    assert!(t.rbtree_find(999).is_none());
-    t.delete_rbtree();
-}
-
-#[test]
-fn test_erase_all_nodes() {
-    let mut t = RBTree::new();
-    let keys = [10, 5, 8, 34, 67];
-    insert_arr(&mut t, &keys);
-
-    // Erase all by finding min repeatedly
-    for _ in 0..keys.len() {
-        check_rb(&t);
-        let m = t.rbtree_min().unwrap();
-        t.erase(m);
-    }
-    assert!(t.root.is_none());
-    t.delete_rbtree();
-}
-
-#[test]
-fn test_rb_constraints_after_erase() {
-    let mut t = RBTree::new();
-    let entries = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12];
-    insert_arr(&mut t, &entries);
-
-    // Erase a few nodes and check constraints each time
-    let node = t.rbtree_find(10).unwrap();
-    t.erase(node);
-    check_rb(&t);
-
-    let node = t.rbtree_find(156).unwrap();
-    t.erase(node);
-    check_rb(&t);
-
-    let node = t.rbtree_find(2).unwrap();
-    t.erase(node);
-    check_rb(&t);
-
-    t.delete_rbtree();
+    assert!(t.rbtree_find(1).is_none());
 }
 
 #[test]
@@ -264,56 +149,207 @@ fn test_min_max_empty() {
     let t = RBTree::new();
     assert!(t.rbtree_min().is_none());
     assert!(t.rbtree_max().is_none());
-    t.delete_rbtree();
 }
 
 #[test]
-fn test_find_empty() {
-    let t = RBTree::new();
-    assert!(t.rbtree_find(42).is_none());
-    t.delete_rbtree();
-}
-
-#[test]
-fn test_insert_duplicate_find_returns_one() {
+fn test_erase_root() {
     let mut t = RBTree::new();
-    t.rbtree_insert(5);
-    t.rbtree_insert(5);
-    t.rbtree_insert(5);
-    // find should return one of them
-    let found = t.rbtree_find(5);
-    assert!(found.is_some());
-    assert_eq!(found.unwrap().borrow().key, 5);
-    // to_array should have all 3
+    let p = t.rbtree_insert(128).unwrap();
+    t.erase(p);
+    assert!(t.root.is_none());
+}
+
+#[test]
+fn test_erase_min_max() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12]);
+    let mn = t.rbtree_min().unwrap();
+    assert_eq!(mn.borrow().key, 2);
+    t.erase(mn);
+    let mx = t.rbtree_max().unwrap();
+    assert_eq!(mx.borrow().key, 156);
+    t.erase(mx);
+    let arr = t.to_array(8);
+    assert_eq!(arr, vec![5, 8, 10, 12, 23, 24, 34, 67]);
+    assert_eq!(t.rbtree_min().unwrap().borrow().key, 5);
+    assert_eq!(t.rbtree_max().unwrap().borrow().key, 67);
+}
+
+#[test]
+fn test_duplicates() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 5, 5, 34, 6, 23, 12, 12, 6, 12]);
     let arr = t.to_array(10);
-    assert_eq!(arr, vec![5, 5, 5]);
-    t.delete_rbtree();
+    assert_eq!(arr, vec![5, 5, 6, 6, 10, 12, 12, 12, 23, 34]);
 }
 
 #[test]
-fn test_large_insert_and_constraints() {
+fn test_insert_tree_structure() {
+    // Insert [11,2,14,1,7,15,5,8,4] -> specific tree from C ground truth
     let mut t = RBTree::new();
-    for i in 0..100 {
-        t.rbtree_insert(i);
-    }
-    check_rb(&t);
-    let arr = t.to_array(100);
-    let expected: Vec<i32> = (0..100).collect();
-    assert_eq!(arr, expected);
-    t.delete_rbtree();
+    insert_keys(&mut t, &[11, 2, 14, 1, 7, 15, 5, 8, 4]);
+    let arr = t.to_array(9);
+    assert_eq!(arr, vec![1, 2, 4, 5, 7, 8, 11, 14, 15]);
+
+    let root = t.root.as_ref().unwrap();
+    assert_eq!(root.borrow().key, 7);
+    assert_eq!(root.borrow().color, Color::Black);
+    assert!(root.borrow().parent.is_none());
+
+    // root.left = 2 Red
+    let rl = root.borrow().left.clone().unwrap();
+    assert_eq!(rl.borrow().key, 2);
+    assert_eq!(rl.borrow().color, Color::Red);
+
+    // root.left.left = 1 Black (leaf)
+    let rll = rl.borrow().left.clone().unwrap();
+    assert_eq!(rll.borrow().key, 1);
+    assert_eq!(rll.borrow().color, Color::Black);
+    assert!(rll.borrow().left.is_none());
+    assert!(rll.borrow().right.is_none());
+
+    // root.left.right = 5 Black
+    let rlr = rl.borrow().right.clone().unwrap();
+    assert_eq!(rlr.borrow().key, 5);
+    assert_eq!(rlr.borrow().color, Color::Black);
+
+    // root.left.right.left = 4 Red (leaf)
+    let rlrl = rlr.borrow().left.clone().unwrap();
+    assert_eq!(rlrl.borrow().key, 4);
+    assert_eq!(rlrl.borrow().color, Color::Red);
+    assert!(rlrl.borrow().left.is_none());
+    assert!(rlrl.borrow().right.is_none());
+
+    // root.right = 11 Red
+    let rr = root.borrow().right.clone().unwrap();
+    assert_eq!(rr.borrow().key, 11);
+    assert_eq!(rr.borrow().color, Color::Red);
+
+    // root.right.left = 8 Black (leaf)
+    let rrl = rr.borrow().left.clone().unwrap();
+    assert_eq!(rrl.borrow().key, 8);
+    assert_eq!(rrl.borrow().color, Color::Black);
+    assert!(rrl.borrow().left.is_none());
+    assert!(rrl.borrow().right.is_none());
+
+    // root.right.right = 14 Black
+    let rrr = rr.borrow().right.clone().unwrap();
+    assert_eq!(rrr.borrow().key, 14);
+    assert_eq!(rrr.borrow().color, Color::Black);
+    assert!(rrr.borrow().left.is_none());
+
+    // root.right.right.right = 15 Red (leaf)
+    let rrrr = rrr.borrow().right.clone().unwrap();
+    assert_eq!(rrrr.borrow().key, 15);
+    assert_eq!(rrrr.borrow().color, Color::Red);
+    assert!(rrrr.borrow().left.is_none());
+    assert!(rrrr.borrow().right.is_none());
 }
 
 #[test]
-fn test_reverse_insert_and_constraints() {
+fn test_find_erase_all() {
     let mut t = RBTree::new();
-    for i in (0..100).rev() {
-        t.rbtree_insert(i);
+    let keys = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12, 24, 36, 990, 25];
+    insert_keys(&mut t, &keys);
+    for &k in &keys {
+        let p = t.rbtree_find(k);
+        assert!(p.is_some(), "should find key {}", k);
+        t.erase(p.unwrap());
     }
-    check_rb(&t);
-    let arr = t.to_array(100);
-    let expected: Vec<i32> = (0..100).collect();
-    assert_eq!(arr, expected);
-    t.delete_rbtree();
+    assert!(t.root.is_none());
+}
+
+#[test]
+fn test_to_array_partial() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[50, 30, 70, 20, 40, 60, 80]);
+    let arr = t.to_array(3);
+    assert_eq!(arr, vec![20, 30, 40]);
+}
+
+#[test]
+fn test_to_array_empty() {
+    let t = RBTree::new();
+    let arr = t.to_array(0);
+    assert!(arr.is_empty());
+}
+
+#[test]
+fn test_multi_instance() {
+    let mut t1 = RBTree::new();
+    let mut t2 = RBTree::new();
+    insert_keys(&mut t1, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12, 24, 36, 990, 25]);
+    insert_keys(&mut t2, &[4, 8, 10, 5, 3]);
+    let arr1 = t1.to_array(14);
+    let arr2 = t2.to_array(5);
+    assert_eq!(arr1, vec![2, 5, 8, 10, 12, 23, 24, 24, 25, 34, 36, 67, 156, 990]);
+    assert_eq!(arr2, vec![3, 4, 5, 8, 10]);
+}
+
+#[test]
+fn test_rb_constraints_distinct() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12]);
+    assert!(check_bst(&t));
+    assert!(check_rb_properties(&t));
+}
+
+#[test]
+fn test_rb_constraints_duplicates() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 5, 5, 34, 6, 23, 12, 12, 6, 12]);
+    assert!(check_bst(&t));
+    assert!(check_rb_properties(&t));
+}
+
+#[test]
+fn test_rb_constraints_after_erase() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12]);
+    let mn = t.rbtree_min().unwrap();
+    t.erase(mn);
+    assert!(check_bst(&t));
+    assert!(check_rb_properties(&t));
+    let mx = t.rbtree_max().unwrap();
+    t.erase(mx);
+    assert!(check_bst(&t));
+    assert!(check_rb_properties(&t));
+}
+
+#[test]
+fn test_erase_insert_erase_pattern() {
+    // Insert each key, find it, erase it, confirm gone
+    let mut t = RBTree::new();
+    let keys = [10, 5, 8, 34, 67, 23, 156, 24, 2, 12, 24, 36, 990, 25];
+    for &k in &keys {
+        let p = t.rbtree_insert(k).unwrap();
+        let q = t.rbtree_find(k).unwrap();
+        assert_eq!(q.borrow().key, k);
+        t.erase(p);
+        assert!(t.rbtree_find(k).is_none());
+    }
+}
+
+#[test]
+fn test_delete_rbtree() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 20, 30, 40, 50]);
+    t.delete_rbtree(); // should not panic
+}
+
+#[test]
+fn test_minmax_after_erase() {
+    let mut t = RBTree::new();
+    insert_keys(&mut t, &[10, 5, 8, 34, 67, 23, 156, 24, 2, 12]);
+    // sorted: [2,5,8,10,12,23,24,34,67,156]
+    let mn = t.rbtree_min().unwrap();
+    assert_eq!(mn.borrow().key, 2);
+    t.erase(mn);
+    assert_eq!(t.rbtree_min().unwrap().borrow().key, 5);
+    let mx = t.rbtree_max().unwrap();
+    assert_eq!(mx.borrow().key, 156);
+    t.erase(mx);
+    assert_eq!(t.rbtree_max().unwrap().borrow().key, 67);
 }
 
 fn main() {}

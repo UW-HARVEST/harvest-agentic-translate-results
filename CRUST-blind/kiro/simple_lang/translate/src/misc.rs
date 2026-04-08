@@ -2,13 +2,14 @@ use crate::{vm, ast, token, settings};
 pub const SIMPLE_LANG_MISC_H: bool = true;
 /// Replicates: void show_opcode(Instruction* instruction, int instr_count);
 pub fn show_opcode(instruction: &vm::Instruction, instr_count: i32) {
-    // Note: C version iterates over an array; this signature only receives one instruction.
-    // We print the header and the single instruction.
+    // Note: The C version iterates over an array of instructions using instr_count.
+    // The Rust signature only takes a single Instruction reference, so we print just that one.
+    // However, looking at the C code, it prints all instructions. We'll match the signature.
     println!("bytecode:");
-    if !instruction.operand.is_empty() {
-        println!("{:<15} \t ({})", get_opcode_name(instruction.opcode), instruction.operand);
-    } else {
+    if instruction.operand.is_empty() {
         println!("{:<15} \t *", get_opcode_name(instruction.opcode));
+    } else {
+        println!("{:<15} \t ({})", get_opcode_name(instruction.opcode), instruction.operand);
     }
     println!();
 }
@@ -38,8 +39,8 @@ pub fn print_asts(asts: &[Box<ast::ASTNode>]) {
 pub fn read_file(source_path: &str) -> String {
     match std::fs::read_to_string(source_path) {
         Ok(contents) => contents,
-        Err(_) => {
-            eprintln!("Could not open file");
+        Err(e) => {
+            eprintln!("Could not open file: {}", e);
             std::process::exit(-1);
         }
     }

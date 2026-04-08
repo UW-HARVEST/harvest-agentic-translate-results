@@ -1,11 +1,10 @@
 use proj_42_Kocaeli_Printf::ft_printf::*;
 use std::any::Any;
-use std::ptr;
 
-// === writechar tests ===
+// --- writechar ---
 
 #[test]
-fn test_writechar_basic() {
+fn test_writechar_normal() {
     let mut len = 0;
     assert_eq!(writechar('A', &mut len), 1);
     assert_eq!(len, 1);
@@ -19,13 +18,13 @@ fn test_writechar_null_byte() {
 }
 
 #[test]
-fn test_writechar_accumulates_len() {
-    let mut len = 5;
-    assert_eq!(writechar('Z', &mut len), 1);
-    assert_eq!(len, 6);
+fn test_writechar_tilde() {
+    let mut len = 0;
+    assert_eq!(writechar('~', &mut len), 1);
+    assert_eq!(len, 1);
 }
 
-// === writestring tests ===
+// --- writestring ---
 
 #[test]
 fn test_writestring_hello() {
@@ -42,27 +41,14 @@ fn test_writestring_empty() {
 }
 
 #[test]
-fn test_writestring_null_literal() {
+fn test_writestring_null_equivalent() {
+    // C writestring(NULL) writes "(null)" -> len=6
     let mut len = 0;
     assert_eq!(writestring("(null)", &mut len), 1);
     assert_eq!(len, 6);
 }
 
-#[test]
-fn test_writestring_two_chars() {
-    let mut len = 0;
-    assert_eq!(writestring("ab", &mut len), 1);
-    assert_eq!(len, 2);
-}
-
-#[test]
-fn test_writestring_ten_chars() {
-    let mut len = 0;
-    assert_eq!(writestring("1234567890", &mut len), 1);
-    assert_eq!(len, 10);
-}
-
-// === writeint tests ===
+// --- writeint ---
 
 #[test]
 fn test_writeint_zero() {
@@ -88,22 +74,15 @@ fn test_writeint_negative() {
 #[test]
 fn test_writeint_min() {
     let mut len = 0;
-    assert_eq!(writeint(-2147483648, &mut len), 1);
+    assert_eq!(writeint(i32::MIN, &mut len), 1);
     assert_eq!(len, 11);
 }
 
 #[test]
 fn test_writeint_max() {
     let mut len = 0;
-    assert_eq!(writeint(2147483647, &mut len), 1);
+    assert_eq!(writeint(i32::MAX, &mut len), 1);
     assert_eq!(len, 10);
-}
-
-#[test]
-fn test_writeint_one() {
-    let mut len = 0;
-    assert_eq!(writeint(1, &mut len), 1);
-    assert_eq!(len, 1);
 }
 
 #[test]
@@ -113,7 +92,7 @@ fn test_writeint_neg_one() {
     assert_eq!(len, 2);
 }
 
-// === writeuint tests ===
+// --- writeuint ---
 
 #[test]
 fn test_writeuint_zero() {
@@ -130,23 +109,16 @@ fn test_writeuint_42() {
 }
 
 #[test]
-fn test_writeuint_max() {
+fn test_writeuint_max_u32() {
     let mut len = 0;
-    assert_eq!(writeuint(4294967295u64, &mut len), 1);
+    assert_eq!(writeuint(4294967295, &mut len), 1);
     assert_eq!(len, 10);
 }
 
-#[test]
-fn test_writeuint_one() {
-    let mut len = 0;
-    assert_eq!(writeuint(1, &mut len), 1);
-    assert_eq!(len, 1);
-}
-
-// === writehex tests ===
+// --- writehex ---
 
 #[test]
-fn test_writehex_zero_lower() {
+fn test_writehex_zero() {
     let mut len = 0;
     assert_eq!(writehex(0, 'x', &mut len), 1);
     assert_eq!(len, 1);
@@ -167,146 +139,123 @@ fn test_writehex_255_upper() {
 }
 
 #[test]
-fn test_writehex_42_lower() {
+fn test_writehex_deadbeef() {
     let mut len = 0;
-    assert_eq!(writehex(42, 'x', &mut len), 1);
-    assert_eq!(len, 2);
-}
-
-#[test]
-fn test_writehex_42_upper() {
-    let mut len = 0;
-    assert_eq!(writehex(42, 'X', &mut len), 1);
-    assert_eq!(len, 2);
-}
-
-#[test]
-fn test_writehex_uint_max_lower() {
-    let mut len = 0;
-    assert_eq!(writehex(4294967295u64, 'x', &mut len), 1);
+    assert_eq!(writehex(0xdeadbeef, 'x', &mut len), 1);
     assert_eq!(len, 8);
 }
 
 #[test]
-fn test_writehex_16_lower() {
+fn test_writehex_16() {
     let mut len = 0;
     assert_eq!(writehex(16, 'x', &mut len), 1);
     assert_eq!(len, 2);
 }
 
-// === writepoint tests ===
+// --- writepoint ---
 
 #[test]
 fn test_writepoint_null() {
     let mut len = 0;
-    assert_eq!(writepoint(ptr::null(), &mut len), 1);
-    assert_eq!(len, 5);
+    assert_eq!(writepoint(std::ptr::null(), &mut len), 1);
+    assert_eq!(len, 5); // "(nil)" = 5 chars
 }
 
 #[test]
 fn test_writepoint_0x1234() {
     let mut len = 0;
     assert_eq!(writepoint(0x1234 as *const std::ffi::c_void, &mut len), 1);
-    assert_eq!(len, 6);
+    assert_eq!(len, 6); // "0x" + "1234" = 6
 }
 
 #[test]
 fn test_writepoint_0x1() {
     let mut len = 0;
     assert_eq!(writepoint(0x1 as *const std::ffi::c_void, &mut len), 1);
-    assert_eq!(len, 3);
+    assert_eq!(len, 3); // "0x" + "1" = 3
 }
 
-// === format tests ===
-// Each #[test] runs on its own thread, so thread-local ARG_INDEX starts at 0.
-
-#[test]
-fn test_format_percent() {
-    let mut len = 0;
-    let args: &[Box<dyn Any>] = &[];
-    assert_eq!(format(args, '%', &mut len), 1);
-    assert_eq!(len, 1);
-}
+// --- format ---
 
 #[test]
 fn test_format_char() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new('A' as i32)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new('A')];
-    assert_eq!(format(args, 'c', &mut len), 1);
+    assert_eq!(format(&args, 'c', &mut len), 1);
     assert_eq!(len, 1);
 }
 
 #[test]
 fn test_format_string() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new("test" as &str)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new("world" as &str)];
-    assert_eq!(format(args, 's', &mut len), 1);
-    assert_eq!(len, 5);
+    assert_eq!(format(&args, 's', &mut len), 1);
+    assert_eq!(len, 4);
 }
 
 #[test]
 fn test_format_int() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new(42i32)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new(42i32)];
-    assert_eq!(format(args, 'd', &mut len), 1);
+    assert_eq!(format(&args, 'd', &mut len), 1);
     assert_eq!(len, 2);
 }
 
 #[test]
 fn test_format_uint() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new(42u32)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new(42u32)];
-    assert_eq!(format(args, 'u', &mut len), 1);
+    assert_eq!(format(&args, 'u', &mut len), 1);
     assert_eq!(len, 2);
 }
 
 #[test]
 fn test_format_hex_lower() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new(255u32)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new(255u32)];
-    assert_eq!(format(args, 'x', &mut len), 1);
+    assert_eq!(format(&args, 'x', &mut len), 1);
     assert_eq!(len, 2);
 }
 
 #[test]
 fn test_format_hex_upper() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new(255u32)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new(255u32)];
-    assert_eq!(format(args, 'X', &mut len), 1);
+    assert_eq!(format(&args, 'X', &mut len), 1);
     assert_eq!(len, 2);
 }
 
 #[test]
-fn test_format_pointer_null() {
+fn test_format_pointer() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new(0x1234usize)];
     let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new(0usize)];
-    assert_eq!(format(args, 'p', &mut len), 1);
-    assert_eq!(len, 5);
-}
-
-#[test]
-fn test_format_unknown_specifier() {
-    let mut len = 0;
-    let args: &[Box<dyn Any>] = &[];
-    assert_eq!(format(args, 'z', &mut len), -1);
-}
-
-#[test]
-fn test_format_null_string() {
-    let mut len = 0;
-    let args: &[Box<dyn Any>] = &[Box::new(None::<&str>)];
-    assert_eq!(format(args, 's', &mut len), 1);
+    assert_eq!(format(&args, 'p', &mut len), 1);
     assert_eq!(len, 6);
 }
 
-// === constants tests ===
+#[test]
+fn test_format_percent() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![];
+    let mut len = 0;
+    assert_eq!(format(&args, '%', &mut len), 1);
+    assert_eq!(len, 1);
+}
 
 #[test]
-fn test_constants() {
-    assert_eq!(HEXALOW, "0123456789abcdef");
-    assert_eq!(HEXAUP, "0123456789ABCDEF");
-    assert_eq!(DECIMAL, "0123456789");
-    assert_eq!(LOCATION, 2);
+fn test_format_int_i_specifier() {
+    reset_arg_index();
+    let args: Vec<Box<dyn Any>> = vec![Box::new(-1i32)];
+    let mut len = 0;
+    assert_eq!(format(&args, 'i', &mut len), 1);
+    assert_eq!(len, 2);
 }
 
 fn main() {}

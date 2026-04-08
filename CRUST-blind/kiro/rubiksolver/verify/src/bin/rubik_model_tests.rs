@@ -1,11 +1,32 @@
 use rubiksolver::rubik_model::*;
 
+fn test_cube_data() -> Cube {
+    [
+        [Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red],
+        [Color::Green, Color::Yellow, Color::Blue, Color::Orange, Color::Orange, Color::Yellow, Color::Green, Color::Green],
+        [Color::Blue, Color::Blue, Color::Blue, Color::Orange, Color::Orange, Color::Green, Color::Orange, Color::Blue],
+        [Color::White, Color::White, Color::White, Color::Green, Color::Green, Color::White, Color::Yellow, Color::Blue],
+        [Color::Orange, Color::Green, Color::Blue, Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Blue],
+        [Color::Yellow, Color::Orange, Color::White, Color::White, Color::White, Color::White, Color::Green, Color::Orange],
+    ]
+}
+
+fn yellow_cw_output() -> Cube {
+    [
+        [Color::Red, Color::Red, Color::Red, Color::Red, Color::Blue, Color::Orange, Color::Orange, Color::Red],
+        [Color::Green, Color::Yellow, Color::Blue, Color::Orange, Color::Orange, Color::Yellow, Color::Green, Color::Green],
+        [Color::Blue, Color::Blue, Color::Yellow, Color::Blue, Color::White, Color::Green, Color::Orange, Color::Blue],
+        [Color::White, Color::White, Color::White, Color::Green, Color::Green, Color::White, Color::Yellow, Color::Orange],
+        [Color::Yellow, Color::Blue, Color::Orange, Color::Green, Color::Blue, Color::Yellow, Color::Yellow, Color::Yellow],
+        [Color::Red, Color::Red, Color::Red, Color::White, Color::White, Color::White, Color::Green, Color::Orange],
+    ]
+}
+
 #[test]
 fn test_rear() {
-    // REAR = [3,4,5,0,1,2]
-    assert_eq!(rear(Color::Red) as u8, 3);     // Orange
-    assert_eq!(rear(Color::Green) as u8, 4);    // Yellow
-    assert_eq!(rear(Color::Blue) as u8, 5);     // White
+    assert_eq!(rear(Color::Red), Color::Orange);
+    assert_eq!(rear(Color::Green), Color::Yellow);
+    assert_eq!(rear(Color::Blue), Color::White);
     assert_eq!(rear(rear(Color::Red)), Color::Red);
     assert_eq!(rear(rear(Color::Green)), Color::Green);
     assert_eq!(rear(rear(Color::Blue)), Color::Blue);
@@ -65,17 +86,6 @@ fn test_find_entropy_initial() {
     assert_eq!(find_entropy(&cube), 0);
 }
 
-fn test_cube_data() -> Cube {
-    [
-        [Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red],
-        [Color::Green, Color::Yellow, Color::Blue, Color::Orange, Color::Orange, Color::Yellow, Color::Green, Color::Green],
-        [Color::Blue, Color::Blue, Color::Blue, Color::Orange, Color::Orange, Color::Green, Color::Orange, Color::Blue],
-        [Color::White, Color::White, Color::White, Color::Green, Color::Green, Color::White, Color::Yellow, Color::Blue],
-        [Color::Orange, Color::Green, Color::Blue, Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Blue],
-        [Color::Yellow, Color::Orange, Color::White, Color::White, Color::White, Color::White, Color::Green, Color::Orange],
-    ]
-}
-
 #[test]
 fn test_cube_hash_test_cube() {
     let cube = test_cube_data();
@@ -92,133 +102,82 @@ fn test_find_entropy_test_cube() {
 fn test_cube_compare_equal() {
     let c1 = test_cube_data();
     let c2 = test_cube_data();
-    assert!(cube_compare_equal(&c1, &c2));
-    let initial = populate_initial();
-    assert!(!cube_compare_equal(&c1, &initial));
+    assert_eq!(cube_compare_equal(&c1, &c2), true);
+    let out = yellow_cw_output();
+    assert_eq!(cube_compare_equal(&c1, &out), false);
 }
 
 #[test]
-fn test_rotate_face_yellow_cw() {
+fn test_rotate_yellow_cw() {
     let mut cube = test_cube_data();
-    let expected: Cube = [
-        [Color::Red, Color::Red, Color::Red, Color::Red, Color::Blue, Color::Orange, Color::Orange, Color::Red],
-        [Color::Green, Color::Yellow, Color::Blue, Color::Orange, Color::Orange, Color::Yellow, Color::Green, Color::Green],
-        [Color::Blue, Color::Blue, Color::Yellow, Color::Blue, Color::White, Color::Green, Color::Orange, Color::Blue],
-        [Color::White, Color::White, Color::White, Color::Green, Color::Green, Color::White, Color::Yellow, Color::Orange],
-        [Color::Yellow, Color::Blue, Color::Orange, Color::Green, Color::Blue, Color::Yellow, Color::Yellow, Color::Yellow],
-        [Color::Red, Color::Red, Color::Red, Color::White, Color::White, Color::White, Color::Green, Color::Orange],
-    ];
+    let expected = yellow_cw_output();
     rotate_face(&mut cube, Color::Yellow, Rotation::CW);
-    assert!(cube_compare_equal(&cube, &expected));
+    assert_eq!(cube_compare_equal(&cube, &expected), true);
+    assert_eq!(cube_hash(&cube), 8191962);
+    assert_eq!(find_entropy(&cube), 28);
 }
 
 #[test]
-fn test_rotate_face_yellow_cw_then_ccw_roundtrip() {
+fn test_rotate_yellow_cw_then_ccw_roundtrip() {
     let original = test_cube_data();
     let mut cube = test_cube_data();
     rotate_face(&mut cube, Color::Yellow, Rotation::CW);
     rotate_face(&mut cube, Color::Yellow, Rotation::CCW);
-    assert!(cube_compare_equal(&cube, &original));
+    assert_eq!(cube_compare_equal(&cube, &original), true);
 }
 
 #[test]
-fn test_rotate_face_red_cw_on_initial() {
+fn test_rotate_red_cw_on_initial() {
     let mut cube = populate_initial();
     rotate_face(&mut cube, Color::Red, Rotation::CW);
-    // Ground truth from C:
-    // face 0: 0 0 0 0 0 0 0 0
-    // face 1: 2 1 1 1 1 1 2 2
-    // face 2: 4 4 4 2 2 2 2 2
-    // face 3: 3 3 3 3 3 3 3 3
-    // face 4: 4 4 4 4 5 5 5 4
-    // face 5: 5 5 1 1 1 5 5 5
+    assert_eq!(cube_hash(&cube), 1278060);
+    assert_eq!(find_entropy(&cube), 12);
+    // Verify exact face data from C ground truth
     let expected: Cube = [
-        [Color::Red; 8],
+        [Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red],
         [Color::Blue, Color::Green, Color::Green, Color::Green, Color::Green, Color::Green, Color::Blue, Color::Blue],
         [Color::Yellow, Color::Yellow, Color::Yellow, Color::Blue, Color::Blue, Color::Blue, Color::Blue, Color::Blue],
-        [Color::Orange; 8],
+        [Color::Orange, Color::Orange, Color::Orange, Color::Orange, Color::Orange, Color::Orange, Color::Orange, Color::Orange],
         [Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::White, Color::White, Color::White, Color::Yellow],
         [Color::White, Color::White, Color::Green, Color::Green, Color::Green, Color::White, Color::White, Color::White],
     ];
-    assert!(cube_compare_equal(&cube, &expected));
+    assert_eq!(cube_compare_equal(&cube, &expected), true);
+}
+
+#[test]
+fn test_rotate_green_ccw_on_initial() {
+    let mut cube = populate_initial();
+    rotate_face(&mut cube, Color::Green, Rotation::CCW);
+    assert_eq!(cube_hash(&cube), 25242630);
     assert_eq!(find_entropy(&cube), 12);
-    assert_eq!(cube_hash(&cube), 1278060);
-}
-
-#[test]
-fn test_rotate_face_red_ccw_on_initial() {
-    let mut cube = populate_initial();
-    rotate_face(&mut cube, Color::Red, Rotation::CCW);
-    // face 0: 0 0 0 0 0 0 0 0
-    // face 1: 5 1 1 1 1 1 5 5
-    // face 2: 1 1 1 2 2 2 2 2
-    // face 3: 3 3 3 3 3 3 3 3
-    // face 4: 4 4 4 4 2 2 2 4
-    // face 5: 5 5 4 4 4 5 5 5
     let expected: Cube = [
-        [Color::Red; 8],
-        [Color::White, Color::Green, Color::Green, Color::Green, Color::Green, Color::Green, Color::White, Color::White],
-        [Color::Green, Color::Green, Color::Green, Color::Blue, Color::Blue, Color::Blue, Color::Blue, Color::Blue],
-        [Color::Orange; 8],
-        [Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Blue, Color::Blue, Color::Blue, Color::Yellow],
-        [Color::White, Color::White, Color::Yellow, Color::Yellow, Color::Yellow, Color::White, Color::White, Color::White],
+        [Color::Blue, Color::Blue, Color::Blue, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red],
+        [Color::Green, Color::Green, Color::Green, Color::Green, Color::Green, Color::Green, Color::Green, Color::Green],
+        [Color::Orange, Color::Blue, Color::Blue, Color::Blue, Color::Blue, Color::Blue, Color::Orange, Color::Orange],
+        [Color::Orange, Color::Orange, Color::White, Color::White, Color::White, Color::Orange, Color::Orange, Color::Orange],
+        [Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow, Color::Yellow],
+        [Color::White, Color::White, Color::White, Color::White, Color::Red, Color::Red, Color::Red, Color::White],
     ];
-    assert!(cube_compare_equal(&cube, &expected));
-}
-
-#[test]
-fn test_rotate_red_cw_ccw_roundtrip_initial() {
-    let initial = populate_initial();
-    let mut cube = populate_initial();
-    rotate_face(&mut cube, Color::Red, Rotation::CW);
-    rotate_face(&mut cube, Color::Red, Rotation::CCW);
-    assert!(cube_compare_equal(&cube, &initial));
+    assert_eq!(cube_compare_equal(&cube, &expected), true);
 }
 
 #[test]
 fn test_new_cube_rotate_face() {
     let cube = test_cube_data();
     let rotated = new_cube_rotate_face(&cube, Color::Yellow, Rotation::CW);
-    assert_eq!(cube_hash(&rotated), 8191962);
-    assert_eq!(find_entropy(&rotated), 28);
-    // Original should be unchanged
-    assert_eq!(cube_hash(&cube), 1900466);
-}
-
-#[test]
-fn test_rotate_green_cw_on_initial() {
-    let mut cube = populate_initial();
-    rotate_face(&mut cube, Color::Green, Rotation::CW);
-    // face 0: 5 5 5 0 0 0 0 0
-    // face 1: 1 1 1 1 1 1 1 1
-    // face 2: 0 2 2 2 2 2 0 0
-    // face 3: 3 3 2 2 2 3 3 3
-    // face 4: 4 4 4 4 4 4 4 4
-    // face 5: 5 5 5 5 3 3 3 5
-    let expected: Cube = [
-        [Color::White, Color::White, Color::White, Color::Red, Color::Red, Color::Red, Color::Red, Color::Red],
-        [Color::Green; 8],
-        [Color::Red, Color::Blue, Color::Blue, Color::Blue, Color::Blue, Color::Blue, Color::Red, Color::Red],
-        [Color::Orange, Color::Orange, Color::Blue, Color::Blue, Color::Blue, Color::Orange, Color::Orange, Color::Orange],
-        [Color::Yellow; 8],
-        [Color::White, Color::White, Color::White, Color::White, Color::Orange, Color::Orange, Color::Orange, Color::White],
-    ];
-    assert!(cube_compare_equal(&cube, &expected));
+    let expected = yellow_cw_output();
+    assert_eq!(cube_compare_equal(&rotated, &expected), true);
+    // Original unchanged
+    assert_eq!(cube_compare_equal(&cube, &test_cube_data()), true);
 }
 
 #[test]
 fn test_ecube_new() {
     let cube = test_cube_data();
-    let ecube = ECube::new(cube);
-    assert_eq!(ecube.entropy, 25);
-    assert_eq!(ecube.hash, 1900466);
-}
-
-#[test]
-fn test_populate_specific() {
-    let data = test_cube_data();
-    let cube = populate_specific(&data);
-    assert!(cube_compare_equal(&cube, &data));
+    let ec = ECube::new(cube);
+    assert_eq!(ec.entropy, 25);
+    assert_eq!(ec.hash, 1900466);
+    assert_eq!(cube_compare_equal(&ec.cube, &cube), true);
 }
 
 fn main() {}

@@ -51,10 +51,13 @@ pub fn tokenize(source: &str) -> Vec<token::Token> {
 }
 /// Replicates: void free_token(Token* token);
 pub fn free_token(_token: token::Token) {
-    // Rust handles memory automatically
+    // Rust handles deallocation automatically.
 }
 /// Replicates: Token* new_token(TokenType type, const char* value);
 /// In Rust: returns a new Token struct.
 pub fn new_token(type_: token::TokenType, value: &str) -> token::Token {
-    token::new_token(type_, value)
+    token::Token {
+        token_type: type_,
+        value: value.to_string(),
+    }
 }

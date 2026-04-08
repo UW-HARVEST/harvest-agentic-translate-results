@@ -1,5 +1,5 @@
 pub fn pad_buffer(input: &[u8], input_len: usize, output: &mut Vec<u8>, output_len: &mut usize) {
-    let block_size: usize = 16;
+    let block_size = 16;
     let padded_len = ((input_len / block_size) + 1) * block_size;
     let pad_value = (padded_len - input_len) as u8;
     output.clear();

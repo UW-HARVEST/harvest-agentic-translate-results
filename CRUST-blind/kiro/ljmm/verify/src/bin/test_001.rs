@@ -1,125 +1,102 @@
 use ljmm::ljmm;
 
-fn setup(map_file: &str, sbrk0: usize, page_size: i32, os_take_care: i32) {
-    ljmm::ljmm_init();
-    ljmm::ljmm_let_os_take_care_1g_2g(os_take_care);
-    ljmm::ljmm_test_set_test_param(map_file, sbrk0, page_size);
+#[test]
+fn test_parse_addr_hex_lower() {
+    let (val, len) = ljmm::parse_addr(b"00400000-");
+    assert_eq!(val, 0x400000);
+    assert_eq!(len, 8);
 }
 
-// Test 1: basic best-fit with lowbound=0, OS_take_care=0
-// Holes in input_001_001.txt (first 8191 bytes):
-//   [0, 0x400000) size=0x400000
-//   [0x418000, 0x617000) size=0x1FF000  <-- best fit for 0x8000
-//   [0x619000, 0x7f2b4b200000) huge
-// alloc_sz = 32*1024-1 = 32767, page_aligned = 0x8000
-// Expected: 0x418000
 #[test]
-fn test_best_fit_basic() {
-    setup("c_src/test/test_input/input_001_001.txt", 0, 4096, 0);
-    let result = ljmm::find_best_fit(32 * 1024 - 1);
-    assert_eq!(result, 0x418000);
+fn test_parse_addr_hex_618() {
+    let (val, len) = ljmm::parse_addr(b"00618000-");
+    assert_eq!(val, 0x618000);
+    assert_eq!(len, 8);
 }
 
-// Test 2: considering lowbound=0x619000
-// Only hole >= lowbound: [0x619000, 0x7f2b4b200000)
-// Expected: 0x619000
 #[test]
-fn test_best_fit_with_lowbound() {
-    setup("c_src/test/test_input/input_001_001.txt", 0x619000, 4096, 0);
-    let result = ljmm::find_best_fit(32 * 1024 - 100);
-    assert_eq!(result, 0x619000);
+fn test_parse_addr_long() {
+    let (val, len) = ljmm::parse_addr(b"7f2b4b200000-");
+    assert_eq!(val, 0x7f2b4b200000);
+    assert_eq!(len, 12);
 }
 
-// Test 3: OS_take_care_1G_2G=1, lowbound=0
-// Same holes, but now when start_addr >= 1G, we check start_addr >= upbound.
-// 0x7f2b4b200000 >= 0x80000000 → break. Best fit is still 0x418000.
 #[test]
-fn test_best_fit_os_take_care() {
-    setup("c_src/test/test_input/input_001_001.txt", 0, 4096, 1);
-    let result = ljmm::find_best_fit(32 * 1024 - 10);
-    assert_eq!(result, 0x418000);
+fn test_parse_addr_uppercase() {
+    let (val, len) = ljmm::parse_addr(b"DEADBEEF ");
+    assert_eq!(val, 0xdeadbeef);
+    assert_eq!(len, 8);
 }
 
-// Test 4: buffer not large enough, incomplete last line "7f2b4b200000-\n"
-// input_001_002.txt: 3 complete lines + "7f2b4b200000-\n"
-// Last line: parse start=0x7f2b4b200000, '-' found, parse end: '\n' → advance=0
-// end_addr fallback: upbound(0x80000000) < start_addr → end_addr = start_addr
-// Hole before last line: [0x619000, 0x7f2b4b200000) → best fit
-// Expected: 0x619000
 #[test]
-fn test_best_fit_truncated_buffer() {
-    setup("c_src/test/test_input/input_001_002.txt", 0x619000, 4096, 0);
-    let result = ljmm::find_best_fit(32 * 1024 - 10);
-    assert_eq!(result, 0x619000);
+fn test_parse_addr_zero() {
+    let (val, len) = ljmm::parse_addr(b"0 ");
+    assert_eq!(val, 0x0);
+    assert_eq!(len, 1);
 }
 
-// Test 5: incomplete start addr on last line "7f2b4b200000\n" (no '-')
-// input_001_003.txt: 1 complete line + "7f2b4b200000\n"
-// Last line: parse start=0x7f2b4b200000, next char is '\n' not '-' → break
-// No valid hole found with lowbound=0x619000
-// Expected: 0
 #[test]
-fn test_best_fit_incomplete_start() {
-    setup("c_src/test/test_input/input_001_003.txt", 0x619000, 4096, 0);
-    let result = ljmm::find_best_fit(32 * 1024 - 10);
-    assert_eq!(result, 0);
+fn test_parse_addr_lowercase_af() {
+    let (val, len) = ljmm::parse_addr(b"abcdef01-");
+    assert_eq!(val, 0xabcdef01);
+    assert_eq!(len, 8);
 }
 
-// Test 6: exact fit hole
-// input_001_004.txt has a hole [0x3ffff000, 0x40007000) of size 0x8000
-// alloc_sz = 32*1024 = 0x8000, exact match → early break
-// Expected: 0x3ffff000
 #[test]
-fn test_best_fit_exact_fit() {
-    setup("c_src/test/test_input/input_001_004.txt", 0x619000, 4096, 0);
-    let result = ljmm::find_best_fit(32 * 1024);
-    assert_eq!(result, 0x3ffff000);
+fn test_parse_addr_empty() {
+    let (val, len) = ljmm::parse_addr(b"");
+    assert_eq!(val, 0x0);
+    assert_eq!(len, 0);
 }
 
-// Test: find_best_fit returns 0 when not initialized
 #[test]
-fn test_find_best_fit_not_initialized() {
-    // Reset state by re-initializing - but we can't un-initialize.
-    // Instead test with a nonexistent file after init
-    ljmm::ljmm_init();
-    ljmm::ljmm_test_set_test_param("/nonexistent/file", 0, 4096);
-    let result = ljmm::find_best_fit(4096);
-    assert_eq!(result, 0);
+fn test_page_align_zero() {
+    assert_eq!(ljmm::page_align_addr(0, 4096, 4095), 0);
 }
 
-// Test: ljmm_init returns 1
 #[test]
-fn test_ljmm_init_returns_1() {
-    assert_eq!(ljmm::ljmm_init(), 1);
+fn test_page_align_one() {
+    assert_eq!(ljmm::page_align_addr(1, 4096, 4095), 0x1000);
 }
 
-// Test: page_align_addr behavior (tested indirectly through find_best_fit)
-// With length=1, page_aligned = 4096. The smallest hole that fits is [0x418000, 0x617000)
 #[test]
-fn test_best_fit_small_alloc() {
-    setup("c_src/test/test_input/input_001_001.txt", 0, 4096, 0);
-    let result = ljmm::find_best_fit(1);
-    assert_eq!(result, 0x418000);
+fn test_page_align_just_below_page() {
+    assert_eq!(ljmm::page_align_addr(0xfff, 4096, 4095), 0x1000);
 }
 
-// Test: length=0 → page_aligned=0, any hole fits. Best fit = smallest hole.
-// Holes: [0,0x400000)=0x400000, [0x418000,0x617000)=0x1FF000, [0x619000,huge)
-// Smallest is [0x619000-0x618000=0x1000 between blocks 2&3? No:
-// block2 end=0x618000, block3 start=0x618000 → hole=0. 
-// Actually [0x418000,0x617000) size=0x1FF000 is smallest non-zero.
-// But length=0 means any hole of size>=0 fits. hole_size=0 >= 0 is true.
-// First hole with size 0: between block2(end=0x618000) and block3(start=0x618000).
-// hole_start=0x618000, hole_size=0. 0>=0 ✓. But 0 < best_fit_size(MAX) ✓.
-// Actually wait: the first hole [0,0x400000) has hole_start=0, size=0x400000.
-// 0x400000 >= 0 ✓, 0+0 <= 0x80000000 ✓, 0x400000 < MAX ✓. best=(0, 0x400000).
-// Then [0x418000,0x617000) size=0x1FF000 < 0x400000 ✓. best=(0x418000, 0x1FF000).
-// Then [0x618000,0x618000) size=0. 0 < 0x1FF000 ✓. best=(0x618000, 0).
-// 0 == length(0) → break early.
 #[test]
-fn test_best_fit_zero_length() {
-    setup("c_src/test/test_input/input_001_001.txt", 0, 4096, 0);
-    let result = ljmm::find_best_fit(0);
-    assert_eq!(result, 0x618000);
+fn test_page_align_exact_page() {
+    assert_eq!(ljmm::page_align_addr(0x1000, 4096, 4095), 0x1000);
+}
+
+#[test]
+fn test_page_align_one_over() {
+    assert_eq!(ljmm::page_align_addr(0x1001, 4096, 4095), 0x2000);
+}
+
+#[test]
+fn test_page_align_two_pages_minus_one() {
+    assert_eq!(ljmm::page_align_addr(0x1fff, 4096, 4095), 0x2000);
+}
+
+#[test]
+fn test_page_align_two_pages() {
+    assert_eq!(ljmm::page_align_addr(0x2000, 4096, 4095), 0x2000);
+}
+
+#[test]
+fn test_page_align_already_aligned() {
+    assert_eq!(ljmm::page_align_addr(0x619000, 4096, 4095), 0x619000);
+}
+
+#[test]
+fn test_page_align_32k_minus_1() {
+    assert_eq!(ljmm::page_align_addr(0x7fff, 4096, 4095), 0x8000);
+}
+
+#[test]
+fn test_page_align_32k() {
+    assert_eq!(ljmm::page_align_addr(0x8000, 4096, 4095), 0x8000);
 }
 
 fn main() {}

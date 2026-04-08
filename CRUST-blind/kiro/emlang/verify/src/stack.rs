@@ -27,7 +27,11 @@ impl Stack {
         }
     }
     fn add_popped(&mut self, s: String) {
-        self.popped.push(Popped { str: s, marked: false });
+        if self.popped_size >= self.popped.len() {
+            self.popped.push(Popped { str: s, marked: false });
+        } else {
+            self.popped[self.popped_size] = Popped { str: s, marked: false };
+        }
         self.popped_size += 1;
     }
     pub fn push(&mut self, data: data::Data) {
@@ -44,10 +48,8 @@ impl Stack {
         }
         self.size -= 1;
         let data = self.buf[self.size].clone();
-        if data.dtype == data::DataType::Str {
-            if let data::DataValue::Str(ref s) = data.value {
-                self.add_popped(s.clone());
-            }
+        if let data::DataValue::Str(ref s) = data.value {
+            self.add_popped(s.clone());
         }
         Some(data)
     }
@@ -73,10 +75,8 @@ impl Stack {
             return;
         }
         for i in size..self.size {
-            if self.buf[i].dtype == data::DataType::Str {
-                if let data::DataValue::Str(ref s) = self.buf[i].value {
-                    self.add_popped(s.clone());
-                }
+            if let data::DataValue::Str(ref s) = self.buf[i].value {
+                self.add_popped(s.clone());
             }
         }
         self.size = size;
@@ -89,11 +89,23 @@ impl Stack {
         if self.popped_size == 0 {
             return;
         }
-        // In the C code, the GC marks popped strings that are still referenced on the stack,
-        // then frees unmarked ones. In Rust with owned Strings, we just clear the popped list.
-        // The C code has a bug in gc where inner loop variable shadows outer - we replicate
-        // the semantic: just clear popped since Rust manages memory.
-        self.popped.clear();
+        // The C code has a bug where inner loop uses same variable name 'i' as outer loop,
+        // causing it to compare buf[i] with popped[i] using the inner index.
+        // We replicate that behavior: for each stack item that is a string,
+        // iterate popped and compare buf[inner_i].as.str with popped[inner_i].str
+        for i in 0..self.size {
+            if let data::DataValue::Str(_) = self.buf[i].value {
+                for j in 0..self.popped_size {
+                    // In C, the inner loop shadows 'i', so buf[i] uses inner 'i' = j
+                    if let data::DataValue::Str(ref buf_s) = self.buf[j].value {
+                        if j < self.popped_size && buf_s == &self.popped[j].str {
+                            self.popped[j].marked = true;
+                        }
+                    }
+                }
+            }
+        }
+        // In Rust we don't actually need to free strings, but we clear the popped list
         self.popped_size = 0;
     }
 }

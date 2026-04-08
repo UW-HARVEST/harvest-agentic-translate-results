@@ -1,4 +1,11 @@
-
+#[allow(unused_imports)]
+use core::cmp::Ordering;
+#[allow(unused_imports)]
+use std::collections::hash_map::DefaultHasher;
+#[allow(unused_imports)]
+use std::hash::{Hash as StdHash, Hasher};
+#[allow(unused_imports)]
+use std::sync::Mutex;
 /// A collection of constants matching the original C #defines.
 pub const HASH_MOD: u64 = 1000000007;
 pub const HASH_BASE: u64 = 256;
@@ -86,42 +93,66 @@ pub keys_dump: Vec<u8>,       // Unused here; effectively replaced by a safe app
 pub count: usize,             // Number of elements total
 }
 
-/// Helper: compute the aligned key size for a given type, matching C's dict_create logic.
-fn compute_key_size(type_: DictType, user_size: usize) -> usize {
-    let ptr_size = std::mem::size_of::<usize>();
-    match type_ {
-        DictType::Char => std::mem::size_of::<u8>(),
-        DictType::WChar => std::mem::size_of::<i32>(), // wchar_t is typically 4 bytes on Linux
-        DictType::I32 => 4,
-        DictType::U32 => 4,
-        DictType::F32 => 4,
-        DictType::I64 => 8,
-        DictType::U64 => 8,
-        DictType::F64 => 8,
-        DictType::Ptr => ptr_size,
-        DictType::Str => ptr_size, // sizeof(char*) in C
-        DictType::Struct => (user_size + (ptr_size - 1)) & !(ptr_size - 1),
+// ── helpers ──────────────────────────────────────────────────────────
+
+fn key_size_for_type(t: DictType) -> usize {
+    match t {
+        DictType::Char   => 1,
+        DictType::WChar  => 4,
+        DictType::I32    => 4,
+        DictType::U32    => 4,
+        DictType::F32    => 4,
+        DictType::I64    => 8,
+        DictType::U64    => 8,
+        DictType::F64    => 8,
+        DictType::Ptr    => 8,
+        DictType::Str    => 8, // pointer-sized
+        DictType::Struct => 0, // caller must provide
     }
 }
 
-/// Helper: compute aligned val size
-fn compute_val_size(user_size: usize) -> usize {
-    let ptr_size = std::mem::size_of::<usize>();
-    (user_size + (ptr_size - 1)) & !(ptr_size - 1)
+fn align_to_ptr(sz: usize) -> usize {
+    let a = std::mem::size_of::<usize>();
+    (sz + (a - 1)) & !(a - 1)
 }
 
-/// Helper: compute hash for a key, matching C's dict_get_hash
-fn compute_hash(key_attr: &DictKeyAttr, key: &[u8]) -> u64 {
-    if let Some(hash_fn) = key_attr.hash {
+fn compute_key_size(t: DictType, user_size: usize) -> usize {
+    match t {
+        DictType::Struct => align_to_ptr(user_size),
+        _ => key_size_for_type(t),
+    }
+}
+
+fn compute_val_size(user_size: usize) -> usize {
+    align_to_ptr(user_size)
+}
+
+/// Prepare key bytes: apply copy callback or handle Str type (clone the string bytes).
+fn prepare_key(dict: &Dict, key_data: &[u8]) -> Vec<u8> {
+    if let Some(copy_fn) = dict.key.copy {
+        let mut buf = vec![0u8; dict.key.size];
+        copy_fn(&mut buf, key_data);
+        buf
+    } else if dict.key.type_ == DictType::Str {
+        // key_data is the raw string bytes; we store them as-is
+        key_data.to_vec()
+    } else {
+        // For fixed-size types / struct: just copy the bytes (up to key.size)
+        let mut buf = vec![0u8; dict.key.size];
+        let len = key_data.len().min(dict.key.size);
+        buf[..len].copy_from_slice(&key_data[..len]);
+        buf
+    }
+}
+
+/// Compute hash code for a key.
+fn compute_hash(dict: &Dict, key: &[u8]) -> u64 {
+    if let Some(hash_fn) = dict.key.hash {
         return hash_fn(key);
     }
-    match key_attr.type_ {
+    match dict.key.type_ {
         DictType::Str => {
-            // key contains a pointer-sized representation; we treat the key bytes
-            // as the actual string bytes for hashing. But in our Rust model,
-            // for Str type the key bytes ARE the string bytes directly.
-            // Actually, looking at the C code: for DICT_STR, the key field stores
-            // a char* (pointer). In our Rust version, key bytes store the actual string.
+            // key is raw string bytes; polynomial hash
             let mut code: u64 = 0;
             for &b in key.iter() {
                 code = (code.wrapping_mul(HASH_BASE).wrapping_add(b as u64)) % HASH_MOD;
@@ -135,72 +166,76 @@ fn compute_hash(key_attr: &DictKeyAttr, key: &[u8]) -> u64 {
             }
             code
         }
-        _ => {
-            // For primitive types, interpret the bytes as a u64 value
-            // C code casts the value directly to u64
-            match key.len() {
-                1 => key[0] as u64,
-                2 => {
-                    let mut buf = [0u8; 2];
-                    buf.copy_from_slice(key);
-                    u16::from_ne_bytes(buf) as u64
-                }
-                4 => {
-                    let mut buf = [0u8; 4];
-                    buf.copy_from_slice(key);
-                    u32::from_ne_bytes(buf) as u64
-                }
-                8 => {
-                    let mut buf = [0u8; 8];
-                    buf.copy_from_slice(key);
-                    u64::from_ne_bytes(buf)
-                }
-                _ => {
-                    // fallback: treat as struct-like
-                    let mut code: u64 = 0;
-                    for &b in key.iter() {
-                        code = (code.wrapping_mul(HASH_BASE).wrapping_add(b as u64)) % HASH_MOD;
-                    }
-                    code
-                }
-            }
+        DictType::Char => {
+            if key.is_empty() { 0 } else { key[0] as u64 }
+        }
+        DictType::WChar | DictType::I32 | DictType::U32 | DictType::F32 => {
+            let mut arr = [0u8; 4];
+            let len = key.len().min(4);
+            arr[..len].copy_from_slice(&key[..len]);
+            u32::from_ne_bytes(arr) as u64
+        }
+        DictType::I64 | DictType::U64 | DictType::F64 | DictType::Ptr => {
+            let mut arr = [0u8; 8];
+            let len = key.len().min(8);
+            arr[..len].copy_from_slice(&key[..len]);
+            u64::from_ne_bytes(arr)
         }
     }
 }
 
-/// Helper: compare two keys for equality
-fn keys_equal(key_attr: &DictKeyAttr, a: &[u8], b: &[u8]) -> bool {
-    if let Some(cmpr) = key_attr.cmpr {
+/// Compare two keys for equality.
+fn keys_equal(dict: &Dict, a: &[u8], b: &[u8]) -> bool {
+    if let Some(cmpr) = dict.key.cmpr {
         return cmpr(a, b) == 0;
     }
-    match key_attr.type_ {
-        DictType::Str => a == b, // In our model, Str keys store actual string bytes
+    match dict.key.type_ {
+        DictType::Str => a == b, // both are raw string bytes
         _ => a == b,
     }
 }
+
+/// Free key via destructor if applicable.
+fn free_key(dict: &Dict, key: &mut Vec<u8>) {
+    if dict.key.copy.is_some() {
+        if let Some(free_fn) = dict.key.free {
+            free_fn(key);
+        }
+    }
+    // For Str without custom copy, nothing special needed in Rust (Vec drops)
+}
+
+/// Free val via destructor if applicable.
+fn free_val_bytes(dict: &Dict, val: &mut Vec<u8>) {
+    if let Some(free_fn) = dict.val.free {
+        free_fn(val);
+    }
+}
+
+// ── public API ───────────────────────────────────────────────────────
 
 /// Create a dictionary using detailed arguments. Matches C's dict_create().
 pub fn dict_create(args: DictArgs) -> Dict {
     let key_size = compute_key_size(args.key.type_, args.key.size);
     let val_size = compute_val_size(args.val.size);
 
+    let mut buckets = Vec::with_capacity(DEFAULT_MOD);
+    for _ in 0..DEFAULT_MOD {
+        buckets.push(DictBucket { elements: Vec::new() });
+    }
+
     Dict {
-        key: DictKeyAttr {
-            size: key_size,
-            ..args.key
-        },
-        val: DictValAttr {
-            size: val_size,
-            ..args.val
-        },
+        key: DictKeyAttr { size: key_size, ..args.key },
+        val: DictValAttr { size: val_size, ..args.val },
         alloc: args.alloc,
         mod_: DEFAULT_MOD,
-        buckets: (0..DEFAULT_MOD).map(|_| DictBucket { elements: Vec::new() }).collect(),
+        buckets,
         key_temp: vec![0u8; key_size],
         keys_dump: Vec::new(),
         count: 0,
     }
 }
+
 /// Create a dictionary with derived arguments. Matches C's dict_new().
 pub fn dict_new(key_type: DictType, key_size: usize, val_size: usize) -> Dict {
     dict_create(DictArgs {
@@ -212,159 +247,114 @@ pub fn dict_new(key_type: DictType, key_size: usize, val_size: usize) -> Dict {
             hash: None,
             cmpr: None,
         },
-        val: DictValAttr {
-            size: val_size,
-            free: None,
-        },
-        alloc: DictAlloc {
-            malloc: None,
-            free: None,
-        },
+        val: DictValAttr { size: val_size, free: None },
+        alloc: DictAlloc { malloc: None, free: None },
     })
 }
+
 /// Destroy a dictionary. Matches C's dict_destroy().
-/// In Rust, memory is freed automatically, but we emulate calling destructors if provided.
 pub fn dict_destroy(dict: &mut Dict) {
+    let key_copy = dict.key.copy;
+    let key_free = dict.key.free;
+    let val_free = dict.val.free;
+    let val_size = dict.val.size;
     for bucket in dict.buckets.iter_mut() {
         for elem in bucket.elements.iter_mut() {
-            if let Some(key_free) = dict.key.free {
-                key_free(&mut elem.key);
+            if key_copy.is_some() {
+                if let Some(kf) = key_free {
+                    kf(&mut elem.key);
+                }
             }
-            if dict.val.size != 0 {
-                if let Some(val_free) = dict.val.free {
-                    val_free(&mut elem.val);
+            if val_size != 0 {
+                if let Some(vf) = val_free {
+                    vf(&mut elem.val);
                 }
             }
         }
         bucket.elements.clear();
     }
     dict.buckets.clear();
-    dict.key_temp.clear();
+    dict.mod_ = 0;
     dict.count = 0;
 }
-/// Retrieve or create a value from the dictionary. In C, this used varargs. Here, we
-/// accept a slice of bytes as the key. Returns a mutable slice of the value,
-/// or None if something went wrong. Matches C's dict_get(dict_t*, ...).
-///
-/// IMPORTANT NOTE on borrow-checking:
-/// We must avoid returning a reference while also reshaping or re-borrowing the dictionary.
-/// To fix borrow issues, we do this in distinct steps:
-/// 1) Prepare the final key bytes. 2) Compute hash/code/index. 3) Search for existing element.
-/// 4) If not found, insert a new element. 5) Possibly reshape. 6) Perform a final search
-/// to retrieve a &mut reference. This ensures no overlapping mutable borrows exist during
-/// the function body.
+
+/// Retrieve or create a value from the dictionary.
 pub fn dict_get<'dict>(dict: &'dict mut Dict, key_data: &[u8]) -> Option<&'dict mut [u8]> {
-    // Prepare key
-    let key_bytes = prepare_key(&dict.key, key_data);
-    let code = compute_hash(&dict.key, &key_bytes);
+    let key = prepare_key(dict, key_data);
+    let code = compute_hash(dict, &key);
     let index = (code as usize) % dict.mod_;
 
-    // Check if key already exists
-    let found = dict.buckets[index].elements.iter().position(|elem| {
-        elem.code == code && keys_equal(&dict.key, &elem.key, &key_bytes)
+    // Search existing
+    let found = dict.buckets[index].elements.iter().position(|e| {
+        e.code == code && keys_equal(dict, &e.key, &key)
     });
 
     if let Some(pos) = found {
-        return Some(&mut dict.buckets[index].elements[pos].val);
+        let val_size = dict.val.size;
+        return Some(&mut dict.buckets[index].elements[pos].val[..val_size]);
     }
 
-    // Insert new element
-    let new_elem = DictElem {
+    // Insert new
+    let val_size = dict.val.size;
+    let bucket_size_before = dict.buckets[index].elements.len();
+    dict.buckets[index].elements.push(DictElem {
         code,
-        key: key_bytes,
-        val: vec![0u8; dict.val.size],
-    };
-    dict.buckets[index].elements.push(new_elem);
+        key,
+        val: vec![0u8; val_size],
+    });
     dict.count += 1;
 
-    let bucket_size = dict.buckets[index].elements.len();
-    if bucket_size > dict.mod_ {
+    // Reshape if needed
+    if bucket_size_before > dict.mod_ {
         dict_reshape(dict, 1);
-        // After reshape, need to find the element again
+        // After reshape, find the element again
         let new_index = (code as usize) % dict.mod_;
-        let pos = dict.buckets[new_index].elements.iter().position(|elem| {
-            elem.code == code
-        });
-        if let Some(p) = pos {
-            return Some(&mut dict.buckets[new_index].elements[p].val);
-        }
-        return None;
+        let pos = dict.buckets[new_index].elements.iter().position(|e| e.code == code).unwrap();
+        return Some(&mut dict.buckets[new_index].elements[pos].val[..val_size]);
     }
 
-    let last = dict.buckets[index].elements.len() - 1;
-    Some(&mut dict.buckets[index].elements[last].val)
+    let len = dict.buckets[index].elements.len();
+    Some(&mut dict.buckets[index].elements[len - 1].val[..val_size])
 }
 
-/// Helper to prepare key bytes from input data
-fn prepare_key(key_attr: &DictKeyAttr, key_data: &[u8]) -> Vec<u8> {
-    if key_attr.copy.is_some() {
-        let mut dest = vec![0u8; key_attr.size];
-        (key_attr.copy.unwrap())(&mut dest, key_data);
-        dest
-    } else {
-        match key_attr.type_ {
-            DictType::Str => {
-                // For Str type, key_data is the raw string bytes
-                key_data.to_vec()
-            }
-            DictType::Struct => {
-                // Copy up to key.size bytes
-                let mut buf = vec![0u8; key_attr.size];
-                let copy_len = key_data.len().min(key_attr.size);
-                buf[..copy_len].copy_from_slice(&key_data[..copy_len]);
-                buf
-            }
-            _ => {
-                // Primitive types: copy the bytes as-is
-                key_data.to_vec()
-            }
-        }
-    }
-}
-
-/// Remove a value from the dictionary. Matches C's dict_remove(dict_t*, ...).
-/// Returns true if the element was found and removed.
+/// Remove a value from the dictionary. Returns true if found and removed.
 pub fn dict_remove(dict: &mut Dict, key_data: &[u8]) -> bool {
-    let key_bytes = prepare_key(&dict.key, key_data);
-    let code = compute_hash(&dict.key, &key_bytes);
+    let key = prepare_key(dict, key_data);
+    let code = compute_hash(dict, &key);
     let index = (code as usize) % dict.mod_;
 
-    let pos = dict.buckets[index].elements.iter().position(|elem| {
-        elem.code == code && keys_equal(&dict.key, &elem.key, &key_bytes)
+    let pos = dict.buckets[index].elements.iter().position(|e| {
+        e.code == code && keys_equal(dict, &e.key, &key)
     });
 
-    if let Some(p) = pos {
-        let mut removed = dict.buckets[index].elements.remove(p);
-        if let Some(key_free) = dict.key.free {
-            key_free(&mut removed.key);
-        }
-        if let Some(val_free) = dict.val.free {
-            val_free(&mut removed.val);
-        }
+    if let Some(pos) = pos {
+        let mut elem = dict.buckets[index].elements.remove(pos);
+        free_key(dict, &mut elem.key);
+        free_val_bytes(dict, &mut elem.val);
         dict.count -= 1;
         true
     } else {
         false
     }
 }
-/// Check if a key exists in the dictionary. Matches C's dict_has(const dict_t*, ...).
+
+/// Check if a key exists in the dictionary.
 pub fn dict_has(dict: &Dict, key_data: &[u8]) -> bool {
-    let key_bytes = prepare_key(&dict.key, key_data);
-    let code = compute_hash(&dict.key, &key_bytes);
+    let key = prepare_key(dict, key_data);
+    let code = compute_hash(dict, &key);
     let index = (code as usize) % dict.mod_;
 
-    dict.buckets[index].elements.iter().any(|elem| {
-        elem.code == code && keys_equal(&dict.key, &elem.key, &key_bytes)
+    dict.buckets[index].elements.iter().any(|e| {
+        e.code == code && keys_equal(dict, &e.key, &key)
     })
 }
-/// Return the number of elements in the dictionary. Matches C's dict_len().
+
+/// Return the number of elements in the dictionary.
 pub fn dict_len(dict: &Dict) -> usize {
     dict.buckets.iter().map(|b| b.elements.len()).sum()
 }
-/// Return a snapshot of all keys. In C, it returns a newly allocated array of all keys
-/// (size = key.size * dict_len). This is not thread-safe in the original C usage. In
-/// safe Rust, we simulate returning a static buffer by leaking the allocation. This
-/// avoids unsafe code, but does leak memory for each call. Matches C's dict_key().
+
+/// Return a snapshot of all keys.
 pub fn dict_key(dict: &Dict, size: &mut usize) -> Option<&'static [u8]> {
     *size = dict_len(dict);
     if *size == 0 {
@@ -374,41 +364,40 @@ pub fn dict_key(dict: &Dict, size: &mut usize) -> Option<&'static [u8]> {
     let key_size = dict.key.size;
     let mut arr = vec![0u8; key_size * (*size)];
     let mut idx = 0;
-
     for bucket in &dict.buckets {
         for elem in &bucket.elements {
-            let offset = key_size * idx;
-            let copy_len = elem.key.len().min(key_size);
-            arr[offset..offset + copy_len].copy_from_slice(&elem.key[..copy_len]);
+            let start = key_size * idx;
+            let len = elem.key.len().min(key_size);
+            arr[start..start + len].copy_from_slice(&elem.key[..len]);
             idx += 1;
-            if idx >= *size {
+            if idx == *size {
                 let leaked = arr.leak();
                 return Some(leaked);
             }
         }
     }
-
     let leaked = arr.leak();
     Some(leaked)
 }
-/// Serialize a dictionary into a contiguous Vec<u8>. Matches C's dict_serialize().
+
+/// Serialize a dictionary into a contiguous Vec<u8>.
 pub fn dict_serialize(dict: &Dict, bytes: &mut usize) -> Option<Vec<u8>> {
     let size = dict_len(dict) as u32;
-    let key_size = dict.key.size as u32;
-    let val_size = dict.val.size as u32;
+    let key_val_size: [u32; 3] = [dict.key.size as u32, dict.val.size as u32, size];
 
-    let elem_size = if dict.key.type_ == DictType::Str {
-        4 + dict.val.size // sizeof(uint32_t) + val_size
+    let is_str = dict.key.type_ == DictType::Str;
+    let elem_size = if is_str {
+        4 + dict.val.size // u32 strlen + val
     } else {
         dict.key.size + dict.val.size
     };
 
-    // Calculate total size
-    let mut total = 12 + (size as usize) * elem_size; // 3 * sizeof(u32) header
+    // Calculate total bytes
+    let mut total = 12 + (size as usize) * elem_size; // 3 * u32 header
 
-    // For Str type, also need space for the actual string data
+    // For string keys, add the actual string data lengths
     let mut strlen_table: Vec<u32> = Vec::new();
-    if dict.key.type_ == DictType::Str {
+    if is_str {
         for bucket in &dict.buckets {
             for elem in &bucket.elements {
                 let slen = elem.key.len() as u32;
@@ -418,209 +407,171 @@ pub fn dict_serialize(dict: &Dict, bytes: &mut usize) -> Option<Vec<u8>> {
         }
     }
 
-    *bytes = total;
-
     let mut data = vec![0u8; total];
     let mut ptr = 0;
 
-    // Write header: key_size, val_size, count
-    data[ptr..ptr + 4].copy_from_slice(&key_size.to_ne_bytes());
-    ptr += 4;
-    data[ptr..ptr + 4].copy_from_slice(&val_size.to_ne_bytes());
-    ptr += 4;
-    data[ptr..ptr + 4].copy_from_slice(&size.to_ne_bytes());
-    ptr += 4;
+    // Header
+    for &v in &key_val_size {
+        data[ptr..ptr + 4].copy_from_slice(&v.to_ne_bytes());
+        ptr += 4;
+    }
 
-    if dict.key.type_ == DictType::Str {
-        let mut str_idx = 0;
-        let mut str_ptr = ptr + (size as usize) * elem_size;
+    if is_str {
+        // First pass: write strlen + val entries
+        let str_data_offset = ptr + (size as usize) * elem_size;
+        let mut str_ptr = str_data_offset;
+        let mut si = 0;
         for bucket in &dict.buckets {
             for elem in &bucket.elements {
-                let slen = strlen_table[str_idx];
-                // Write string length
+                let slen = strlen_table[si];
                 data[ptr..ptr + 4].copy_from_slice(&slen.to_ne_bytes());
                 ptr += 4;
-                // Write value
-                let val_sz = dict.val.size;
-                let copy_len = elem.val.len().min(val_sz);
-                data[ptr..ptr + copy_len].copy_from_slice(&elem.val[..copy_len]);
-                ptr += val_sz;
-                // Write string data at str_ptr
-                data[str_ptr..str_ptr + slen as usize].copy_from_slice(&elem.key[..slen as usize]);
-                str_ptr += slen as usize;
-                str_idx += 1;
+                let vlen = dict.val.size.min(elem.val.len());
+                data[ptr..ptr + vlen].copy_from_slice(&elem.val[..vlen]);
+                ptr += dict.val.size;
+                let klen = elem.key.len();
+                data[str_ptr..str_ptr + klen].copy_from_slice(&elem.key[..klen]);
+                str_ptr += klen;
+                si += 1;
             }
         }
     } else {
         for bucket in &dict.buckets {
             for elem in &bucket.elements {
-                // Write key
-                let key_sz = dict.key.size;
-                let copy_len = elem.key.len().min(key_sz);
-                data[ptr..ptr + copy_len].copy_from_slice(&elem.key[..copy_len]);
-                ptr += key_sz;
-                // Write value
-                let val_sz = dict.val.size;
-                let copy_len = elem.val.len().min(val_sz);
-                data[ptr..ptr + copy_len].copy_from_slice(&elem.val[..copy_len]);
-                ptr += val_sz;
+                let klen = dict.key.size.min(elem.key.len());
+                data[ptr..ptr + klen].copy_from_slice(&elem.key[..klen]);
+                ptr += dict.key.size;
+                let vlen = dict.val.size.min(elem.val.len());
+                data[ptr..ptr + vlen].copy_from_slice(&elem.val[..vlen]);
+                ptr += dict.val.size;
             }
         }
     }
 
+    *bytes = total;
     Some(data)
 }
-/// Deserialize a dictionary from a slice. Matches C's dict_deserialize().
+
+/// Deserialize a dictionary from a slice.
 pub fn dict_deserialize(args: DictArgs, data: &[u8]) -> Dict {
     let mut ptr = 0;
 
-    // Read header
-    let mut buf4 = [0u8; 4];
-    buf4.copy_from_slice(&data[ptr..ptr + 4]);
-    let _stored_key_size = u32::from_ne_bytes(buf4) as usize;
-    ptr += 4;
-    buf4.copy_from_slice(&data[ptr..ptr + 4]);
-    let _stored_val_size = u32::from_ne_bytes(buf4) as usize;
-    ptr += 4;
-    buf4.copy_from_slice(&data[ptr..ptr + 4]);
-    let count = u32::from_ne_bytes(buf4) as usize;
-    ptr += 4;
+    let mut key_val_size = [0u32; 3];
+    for i in 0..3 {
+        key_val_size[i] = u32::from_ne_bytes(data[ptr..ptr + 4].try_into().unwrap());
+        ptr += 4;
+    }
 
-    let key_size = compute_key_size(args.key.type_, args.key.size);
-    let val_size = compute_val_size(args.val.size);
+    let _key_size = compute_key_size(args.key.type_, args.key.size);
+    let _val_size = compute_val_size(args.val.size);
 
-    // Create the dict
-    let mut dict = Dict {
-        key: DictKeyAttr {
-            size: key_size,
-            ..args.key
-        },
-        val: DictValAttr {
-            size: val_size,
-            ..args.val
-        },
-        alloc: args.alloc,
-        mod_: DEFAULT_MOD,
-        buckets: (0..DEFAULT_MOD).map(|_| DictBucket { elements: Vec::new() }).collect(),
-        key_temp: vec![0u8; key_size],
-        keys_dump: Vec::new(),
-        count: 0,
-    };
+    let mut dict = dict_create(args);
 
-    let elem_size = if dict.key.type_ == DictType::Str {
+    let count = key_val_size[2] as usize;
+    let is_str = dict.key.type_ == DictType::Str;
+    let elem_size = if is_str {
         4 + dict.val.size
     } else {
         dict.key.size + dict.val.size
     };
 
-    if dict.key.type_ == DictType::Str {
-        let mut str_ptr = ptr + count * elem_size;
+    if is_str {
+        let str_data_start = ptr + count * elem_size;
+        let mut str_ptr = str_data_start;
         for _ in 0..count {
-            buf4.copy_from_slice(&data[ptr..ptr + 4]);
-            let slen = u32::from_ne_bytes(buf4) as usize;
+            let slen = u32::from_ne_bytes(data[ptr..ptr + 4].try_into().unwrap()) as usize;
             ptr += 4;
-
             let mut val = vec![0u8; dict.val.size];
-            let copy_len = dict.val.size;
-            val[..copy_len].copy_from_slice(&data[ptr..ptr + copy_len]);
+            let vlen = dict.val.size;
+            val[..vlen].copy_from_slice(&data[ptr..ptr + vlen]);
             ptr += dict.val.size;
-
-            let key_bytes = data[str_ptr..str_ptr + slen].to_vec();
+            let key = data[str_ptr..str_ptr + slen].to_vec();
             str_ptr += slen;
 
-            let code = compute_hash(&dict.key, &key_bytes);
+            let code = compute_hash(&dict, &key);
             let index = (code as usize) % dict.mod_;
-            dict.buckets[index].elements.push(DictElem {
-                code,
-                key: key_bytes,
-                val,
-            });
+            dict.buckets[index].elements.push(DictElem { code, key, val });
             dict.count += 1;
         }
     } else {
         for _ in 0..count {
-            let mut key_bytes = vec![0u8; dict.key.size];
-            key_bytes.copy_from_slice(&data[ptr..ptr + dict.key.size]);
+            let mut key = vec![0u8; dict.key.size];
+            key.copy_from_slice(&data[ptr..ptr + dict.key.size]);
             ptr += dict.key.size;
-
             let mut val = vec![0u8; dict.val.size];
             val.copy_from_slice(&data[ptr..ptr + dict.val.size]);
             ptr += dict.val.size;
 
-            let code = compute_hash(&dict.key, &key_bytes);
+            let code = compute_hash(&dict, &key);
             let index = (code as usize) % dict.mod_;
-            dict.buckets[index].elements.push(DictElem {
-                code,
-                key: key_bytes,
-                val,
-            });
+            dict.buckets[index].elements.push(DictElem { code, key, val });
             dict.count += 1;
         }
     }
 
-    // Reshape if needed (matching C logic)
-    let mut max_bucket = 0;
-    for bucket in &dict.buckets {
-        if bucket.elements.len() > max_bucket {
-            max_bucket = bucket.elements.len();
-        }
-    }
-    if max_bucket > DEFAULT_MOD {
-        let step = max_bucket / DEFAULT_MOD;
+    // Reshape if needed (same logic as C)
+    let max = dict.buckets.iter().map(|b| b.elements.len()).max().unwrap_or(0);
+    if max > DEFAULT_MOD {
+        let step = max / DEFAULT_MOD;
         dict_reshape(&mut dict, step);
     }
 
     dict
 }
-/// Convenience function to create a dictionary using inline arguments, mirroring the
-/// C macro dict_create_args(...).
+
+/// Convenience function to create a dictionary using inline arguments.
 pub fn dict_create_args(args: DictArgs) -> Dict {
     dict_create(args)
 }
-/// The original dict_key_equals. Kept for signature consistency but not used internally
-/// to avoid borrow conflicts.
+
+/// Key equality check.
 pub fn dict_key_equals(dict: &Dict, a: &[u8], b: &[u8]) -> bool {
-    keys_equal(&dict.key, a, b)
+    keys_equal(dict, a, b)
 }
-/// Not used in this design, but signature is kept.
+
+/// Not used in this safe design.
 pub fn dict_delete_node(_list: &mut DictBucket, _curr: &mut DictElem) {
 // no-op in this safe design
 }
-/// The original dict_free_val. Kept for signature consistency.
+
+/// Free val via destructor.
 pub fn dict_free_val(dict: &Dict, val: &mut [u8]) {
     if let Some(free_fn) = dict.val.free {
         free_fn(val);
     }
 }
+
 /// Not used in pure Rust version, matching signature only.
 pub fn dict_get_key(_dict: &Dict) -> Option<&mut [u8]> {
     None
 }
-/// Internal function to reshape the dictionary. Matches C's dict_reshape().
-/// We re-allocate and re-hash all elements with new capacity = old * step * DEFAULT_STEP.
+
+/// Reshape the dictionary.
 pub fn dict_reshape(dict: &mut Dict, step: usize) -> bool {
     let new_size = dict.mod_ * step * DEFAULT_STEP;
-    let mut new_buckets: Vec<DictBucket> = (0..new_size)
-        .map(|_| DictBucket { elements: Vec::new() })
-        .collect();
+    let mut new_buckets = Vec::with_capacity(new_size);
+    for _ in 0..new_size {
+        new_buckets.push(DictBucket { elements: Vec::new() });
+    }
 
-    let old_buckets = std::mem::take(&mut dict.buckets);
+    let old_buckets = std::mem::replace(&mut dict.buckets, new_buckets);
+    dict.mod_ = new_size;
+
     for bucket in old_buckets {
         for elem in bucket.elements {
             let index = (elem.code as usize) % new_size;
-            new_buckets[index].elements.push(elem);
+            dict.buckets[index].elements.push(elem);
         }
     }
-
-    dict.mod_ = new_size;
-    dict.buckets = new_buckets;
     true
 }
-/// Internal function to free a node. Matches C's dict_free_node().
+
+/// Free a node (no-op in safe Rust).
 pub fn dict_free_node(_dict: &Dict, _node: &mut DictElem) {
-    // no-op in safe Rust - memory managed automatically
+    // no-op
 }
-/// Internal function to free a dictionary key. Kept for signature consistency.
+
+/// Free a key via destructor.
 pub fn dict_free_key(dict: &Dict, key: &mut [u8]) {
     if dict.key.copy.is_some() {
         if let Some(free_fn) = dict.key.free {
@@ -628,8 +579,8 @@ pub fn dict_free_key(dict: &Dict, key: &mut [u8]) {
         }
     }
 }
-/// The original dict_get_hash. Kept for signature consistency but not used internally
-/// to avoid borrow conflicts.
+
+/// Compute hash for a key.
 pub fn dict_get_hash(dict: &Dict, key: &[u8]) -> u64 {
-    compute_hash(&dict.key, key)
+    compute_hash(dict, key)
 }

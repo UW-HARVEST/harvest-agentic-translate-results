@@ -6,26 +6,26 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 21 tests
 test test_buffer_too_small ... ok
+test test_create_and_get_options ... ok
+test test_data_size_after_create ... ok
+test test_delete_key ... ok
 test test_delete_nonexistent_key ... ok
-test test_happy_path ... ok
-test test_key_at_max_size ... ok
-test test_key_size_too_large ... ok
-test test_get_options ... ok
-test test_index_and_data_size_after_write ... ok
-test test_open_nonexistent ... ok
-test test_index_and_data_size_after_create ... ok
-test test_empty_value ... ok
-test test_multiple_keys ... ok
-test test_overwrite_value ... ok
+test test_index_size_after_create ... ok
+test test_delete_then_other_key_still_readable ... ok
 test test_delete_and_reinsert ... ok
-test test_value_at_max_size ... ok
-test test_read_nonexistent_key ... ok
+test test_index_size_grows_after_write ... ok
+test test_overwrite_key ... ok
+test test_multiple_keys_small_buckets ... ok
+test test_key_size_too_large ... ok
 test test_value_size_too_large ... ok
-test test_hash_empty_key ... ok
-test test_many_keys_same_bucket ... ok
-test test_write_delete_write_same_key ... ok
-test test_reopen ... ok
-test test_load_many_entries ... ok
+test test_reopen_deleted_key_not_found ... ok
+test test_overwrite_with_different_length ... ok
+test test_read_nonexistent_key ... ok
+test test_write_and_read_two_keys ... ok
+test test_many_writes_and_reads ... ok
+test test_reopen_database ... ok
+test test_write_and_read_single_key ... ok
+test test_empty_value ... ok
 
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
@@ -43,7 +43,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
    Compiling ppv-lite86 v0.2.21
    Compiling rand_chacha v0.3.1
    Compiling rand v0.8.5
-   Compiling mdb v0.1.0 (/local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/CRUST-blind/kiro/mdb)
+   Compiling mdb v0.1.0 (/local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/CRUST-blind/kiro/mdb/verify)
 warning: unused import: `PathBuf`
  --> src/mdb.rs:3:23
   |
@@ -138,10 +138,18 @@ warning: variant `MDB_ERR_UNIMPLEMENTED` should have an upper camel case name
 24 |     MDB_ERR_UNIMPLEMENTED = 100,
    |     ^^^^^^^^^^^^^^^^^^^^^ help: convert the identifier to upper camel case: `MdbErrUnimplemented`
 
+warning: unused variable: `path`
+   --> src/mdb.rs:107:35
+    |
+107 |     pub fn create<P: AsRef<Path>>(path: P, options: MdbOptions) -> Result<Self> {
+    |                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
 warning: constant `DB_NAME_MAX` is never used
  --> src/mdb.rs:4:7
   |
-4 | const DB_NAME_MAX: usize = 128; // Assuming a...
+4 | const DB_NAME_MAX: usize = 128; // Assuming a reasonable maximum length
   |       ^^^^^^^^^^^
   |
   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
@@ -157,26 +165,26 @@ warning: fields `db_name` and `fp_superblock` are never read
    |     ^^^^^^^^^^^^^
 
 warning: associated items `write_bucket`, `alloc`, `free`, and `close` are never used
-   --> src/mdb.rs:272:8
+   --> src/mdb.rs:285:8
     |
  68 | impl Mdb {
     | -------- associated items in this implementation
 ...
-272 |     fn write_bucket(&mut self, bucket: u32,...
+285 |     fn write_bucket(&mut self, bucket: u32, ptr: MdbPtr) -> Result<()> {
     |        ^^^^^^^^^^^^
 ...
-406 |     fn alloc()-> Result<()> {
+421 |     fn alloc()-> Result<()> {
     |        ^^^^^
 ...
-409 |     fn free() -> Result<()> {
+425 |     fn free() -> Result<()> {
     |        ^^^^
 ...
-419 |     fn close(&mut self) -> Result<()> {
+436 |     fn close(&mut self) -> Result<()> {
     |        ^^^^^
 
-warning: `mdb` (lib) generated 18 warnings (run `cargo fix --lib -p mdb` to apply 1 suggestion)
-warning: `mdb` (lib test) generated 18 warnings (18 duplicates)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.42s
+warning: `mdb` (lib) generated 19 warnings (run `cargo fix --lib -p mdb` to apply 2 suggestions)
+warning: `mdb` (lib test) generated 19 warnings (19 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.58s
      Running unittests src/lib.rs (target/debug/deps/mdb-2207fd3be7833b6c)
      Running unittests src/bin/test_mdb.rs (target/debug/deps/test_mdb-30640e4391e0fadf)
    Doc-tests mdb

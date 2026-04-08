@@ -42,12 +42,22 @@ pub struct StackElement {
     depth: usize,
 }
 
+impl PartialEq for StackElement {
+    fn eq(&self, _other: &Self) -> bool { false }
+}
+
 impl StackElement {
     pub fn new(element: XMLElement, depth: usize) -> Self {
         StackElement { element, depth }
     }
     pub fn release(&mut self) {
         // no-op in Rust, ownership handles cleanup
+    }
+}
+
+impl PartialEq for XMLElement {
+    fn eq(&self, other: &Self) -> bool {
+        self.tag_name == other.tag_name && self.value == other.value
     }
 }
 
@@ -96,7 +106,6 @@ impl XMLParser {
                 Some(t) => t,
                 None => break,
             };
-            // skip TEXT tokens with no data
             if token.token_type == XMLTokenType::Text && token.data.is_none() {
                 continue;
             }
@@ -104,48 +113,41 @@ impl XMLParser {
             let new_state = Self::translate(self.state, &token.token_type);
             if new_state != ParseState::StateError {
                 match self.state {
-                    ParseState::State1 => {}
                     ParseState::State2 => {
                         if token.token_type == XMLTokenType::Text {
                             self.tag_stack.push_back(token.data.unwrap());
                             self.depth += 1;
                         }
                     }
-                    ParseState::State3 => {}
                     ParseState::State4 => {
-                        // push text value (or empty) between open tag end and next token
                         self.value_stack.push_back(token.data.unwrap_or_default());
                     }
-                    ParseState::State5 => {}
                     ParseState::State6 => {
                         if token.token_type == XMLTokenType::Text {
-                            let top_tag = self.tag_stack.top_back().unwrap();
-                            let close_tag = token.data.as_ref().unwrap();
-                            assert_eq!(close_tag, top_tag);
+                            let top = self.tag_stack.top_back().unwrap();
+                            assert_eq!(token.data.as_deref().unwrap(), top.as_str());
                         }
                     }
                     ParseState::State7 => {
                         if token.token_type == XMLTokenType::EndTag {
                             let current_tag = self.tag_stack.top_back().unwrap().clone();
                             let current_value = self.value_stack.top_back().unwrap().clone();
+                            let length = self.element_stack.size();
                             self.depth -= 1;
 
                             let mut current = XMLElement::new(current_tag, current_value);
                             let current_depth = self.depth;
 
-                            // find children: pop from element_stack while depth > current_depth
-                            let length = self.element_stack.size();
-                            let mut children_rev = Vec::new();
+                            // collect children from stack
+                            let mut children_tmp: Vec<XMLElement> = Vec::new();
                             for _ in 0..length {
                                 let top = self.element_stack.top_back().unwrap();
-                                if top.depth <= current_depth {
-                                    break;
-                                }
+                                if top.depth <= current_depth { break; }
                                 let se = self.element_stack.pop_back().unwrap();
-                                children_rev.push(se.element);
+                                children_tmp.push(se.element);
                             }
-                            // push_front in C means children end up in original order
-                            for child in children_rev.into_iter().rev() {
+                            // push_front in C means reverse order
+                            for child in children_tmp.into_iter().rev() {
                                 current.children.push_back(child);
                             }
 
@@ -156,7 +158,6 @@ impl XMLParser {
                             self.value_stack.pop_back();
                         }
                     }
-                    ParseState::State8 => {}
                     _ => {}
                 }
             }
@@ -167,7 +168,8 @@ impl XMLParser {
             self.state = new_state;
         }
 
-        let se = self.element_stack.pop_back().ok_or("empty element stack")?;
+        let se = self.element_stack.pop_back()
+            .ok_or_else(|| "no element parsed".to_string())?;
         Ok(se.element)
     }
 
@@ -176,9 +178,7 @@ impl XMLParser {
         let length = bytes.len();
         let begin_pos = self.position;
 
-        if begin_pos >= length {
-            return None;
-        }
+        if begin_pos >= length { return None; }
 
         while self.position < length {
             let ch = bytes[self.position] as char;
@@ -189,20 +189,11 @@ impl XMLParser {
                     if self.position > begin_pos + 1 {
                         self.position -= 1;
                         return Some(self.get_text_token(begin_pos, self.position - 1));
+                    } else if self.position < length && bytes[self.position] as char == SPLASH_TOKEN {
+                        self.position += 1;
+                        return Some(XMLToken { token_type: XMLTokenType::BeginCloseTag, data: None });
                     } else {
-                        let next_char = bytes[self.position] as char;
-                        if next_char == SPLASH_TOKEN {
-                            self.position += 1;
-                            return Some(XMLToken {
-                                token_type: XMLTokenType::BeginCloseTag,
-                                data: None,
-                            });
-                        } else {
-                            return Some(XMLToken {
-                                token_type: XMLTokenType::BeginOpenTag,
-                                data: None,
-                            });
-                        }
+                        return Some(XMLToken { token_type: XMLTokenType::BeginOpenTag, data: None });
                     }
                 }
                 END_TAG_TOKEN => {
@@ -210,10 +201,7 @@ impl XMLParser {
                         self.position -= 1;
                         return Some(self.get_text_token(begin_pos, self.position - 1));
                     } else {
-                        return Some(XMLToken {
-                            token_type: XMLTokenType::EndTag,
-                            data: None,
-                        });
+                        return Some(XMLToken { token_type: XMLTokenType::EndTag, data: None });
                     }
                 }
                 _ => {}
@@ -225,27 +213,14 @@ impl XMLParser {
 
     fn get_text_token(&self, mut from: usize, mut to: usize) -> XMLToken {
         let bytes = self.input.as_bytes();
-        // trim leading spaces
-        while from <= to && bytes[from] == b' ' {
-            from += 1;
+        while from <= to && bytes[from] == b' ' { from += 1; }
+        while to > from && bytes[to] == b' ' { to -= 1; }
+        // handle case where from went past to (all spaces)
+        if from > to || (from == to && bytes[from] == b' ') {
+            return XMLToken { token_type: XMLTokenType::Text, data: None };
         }
-        // trim trailing spaces
-        while to > from && bytes[to] == b' ' {
-            to -= 1;
-        }
-
-        if to >= from && from <= to {
-            let data = self.input[from..=to].to_string();
-            XMLToken {
-                token_type: XMLTokenType::Text,
-                data: Some(data),
-            }
-        } else {
-            XMLToken {
-                token_type: XMLTokenType::Text,
-                data: None,
-            }
-        }
+        let data = self.input[from..=to].to_string();
+        XMLToken { token_type: XMLTokenType::Text, data: Some(data) }
     }
 
     fn translate(state: ParseState, token: &XMLTokenType) -> ParseState {
@@ -267,7 +242,9 @@ impl XMLParser {
     }
 
     fn release(&mut self) {
-        // no-op in Rust
+        self.tag_stack.release();
+        self.value_stack.release();
+        self.element_stack.release();
     }
 }
 

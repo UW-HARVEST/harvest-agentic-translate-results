@@ -40,28 +40,27 @@ impl<T> Heap<T> {
         }
         let last = self.data.len() - 1;
         self.data.swap(0, last);
-        let min = self.data.pop();
+        let min = self.data.pop().unwrap();
         let len = self.data.len();
-        if len > 0 {
-            let mut parent = 0;
-            loop {
-                let son1 = 2 * parent + 1;
-                let son2 = 2 * parent + 2;
-                let son = if son1 < len {
-                    if son2 < len {
-                        if (self.comparator)(&self.data[son1], &self.data[son2]) { son1 } else { son2 }
-                    } else {
-                        son1
-                    }
+        let mut parent = 0;
+        loop {
+            let son1 = 2 * parent + 1;
+            let son2 = 2 * parent + 2;
+            let son;
+            if son1 < len {
+                if son2 < len {
+                    son = if (self.comparator)(&self.data[son1], &self.data[son2]) { son1 } else { son2 };
                 } else {
-                    break;
-                };
-                if (self.comparator)(&self.data[son], &self.data[parent]) {
-                    self.data.swap(parent, son);
+                    son = son1;
                 }
-                parent = son;
+            } else {
+                break;
             }
+            if (self.comparator)(&self.data[son], &self.data[parent]) {
+                self.data.swap(parent, son);
+            }
+            parent = son;
         }
-        min
+        Some(min)
     }
 }

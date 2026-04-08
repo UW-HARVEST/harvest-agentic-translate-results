@@ -8,5 +8,4 @@ fn main() {
     let mut program = parser::parse(&args[1]);
     let x = slothvm::execute(&mut program);
     println!("Returned: {}", x);
-    parser::free_program(program);
 }

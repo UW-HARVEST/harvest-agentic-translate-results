@@ -2,9 +2,8 @@ use crate::{
     metadata::PgnMetadata,
     moves::{PgnMove, PgnMoves},
     score::PgnScore,
+    utils::cursor,
 };
-use crate::utils::cursor::pgn_cursor_skip_whitespace;
-
 #[derive(Debug)]
 pub struct Pgn {
     pub metadata: Option<Box<PgnMetadata>>, // Instead of raw `pgn_metadata_t *`
@@ -32,26 +31,23 @@ impl Pgn {
         PgnScore::from(s)
     }
     pub fn parse(&mut self, s: &str) -> usize {
-        let mut cursor = 0usize;
+        let mut cur = 0usize;
 
-        let metadata = PgnMetadata::from_string_with_consumption(s, &mut cursor);
-        // C code returns NULL if no '[' found; our version returns empty metadata
-        // Check if metadata has items
-        if s.as_bytes().first() == Some(&b'[') {
+        let metadata = PgnMetadata::from_string_with_consumption(&s[cur..], &mut cur);
+        // Only store if it has items (C returns NULL if no '[')
+        if !s.is_empty() && s.as_bytes()[0] == b'[' {
             self.metadata = Some(Box::new(metadata));
         }
 
-        pgn_cursor_skip_whitespace(s, &mut cursor);
+        cursor::pgn_cursor_skip_whitespace(s, &mut cur);
 
-        let mut moves_consumed = 0usize;
-        let moves = PgnMoves::from_string_with_consumption(&s[cursor..], &mut moves_consumed);
-        cursor += moves_consumed;
+        let moves = PgnMoves::from_string_with_consumption(&s[cur..], &mut cur);
         self.moves = Some(Box::new(moves));
 
         let mut score_consumed = 0usize;
-        self.score = PgnScore::from_string_with_consumption_pub(&s[cursor..], &mut score_consumed);
-        cursor += score_consumed;
+        self.score = PgnScore::from_string_with_consumption_pub(&s[cur..], &mut score_consumed);
+        cur += score_consumed;
 
-        cursor
+        cur
     }
 }

@@ -39,7 +39,7 @@ pub fn new_instruction(opcode: OpCode, operand: &str) -> Instruction {
 }
 /// Replicates: void free_instruction(Instruction* instruction);
 pub fn free_instruction(_instruction: &mut Instruction) {
-    // Rust handles memory automatically
+    // Rust handles deallocation automatically.
 }
 /// Replicates: void eval(Frame* frame, Instruction* instructions, int instr_count);
 /// In Rust: instructions is a slice of Instruction, instr_count is the length, or a separate i32.
@@ -60,6 +60,8 @@ pub fn eval(frame: &mut Frame, instructions: &[Instruction]) {
                 }
             }
             OpCode::STORE_NAME => {
+                // C logic: first scan existing vars; if found, update and pop.
+                // Then check if it's a new variable (var_count==0 or last name != operand).
                 let mut found = false;
                 for i in 0..frame.var_count as usize {
                     if frame.var_names[i] == instr.operand {
@@ -70,21 +72,21 @@ pub fn eval(frame: &mut Frame, instructions: &[Instruction]) {
                     }
                 }
                 if !found {
-                    let idx = frame.var_count as usize;
-                    frame.var_names[idx] = instr.operand.clone();
-                    frame.variables[idx] = frame.stack[frame.sp as usize];
+                    let vc = frame.var_count as usize;
+                    frame.var_names[vc] = instr.operand.clone();
+                    frame.variables[vc] = frame.stack[frame.sp as usize];
                     frame.sp -= 1;
                     frame.var_count += 1;
                 }
             }
             OpCode::BINARY_ADD => {
-                frame.stack[(frame.sp - 1) as usize] =
-                    frame.stack[(frame.sp - 1) as usize] + frame.stack[frame.sp as usize];
+                let sp = frame.sp as usize;
+                frame.stack[sp - 1] = frame.stack[sp - 1] + frame.stack[sp];
                 frame.sp -= 1;
             }
             OpCode::BINARY_SUB => {
-                frame.stack[(frame.sp - 1) as usize] =
-                    frame.stack[(frame.sp - 1) as usize] - frame.stack[frame.sp as usize];
+                let sp = frame.sp as usize;
+                frame.stack[sp - 1] = frame.stack[sp - 1] - frame.stack[sp];
                 frame.sp -= 1;
             }
             OpCode::STK_DIS => {
@@ -105,5 +107,5 @@ pub fn init_frame() -> Frame {
 }
 /// Replicates: void free_frame(Frame* frame);
 pub fn free_frame(_frame: &mut Frame) {
-    // Rust handles memory automatically
+    // Rust handles deallocation automatically.
 }

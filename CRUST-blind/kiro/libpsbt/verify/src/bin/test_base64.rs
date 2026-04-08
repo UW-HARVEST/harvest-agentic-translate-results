@@ -1,88 +1,92 @@
-use libpsbt::base64::*;
+use libpsbt::base64::{base64_encode, base64_decode, base62_encode};
+
+#[test]
+fn test_base64_encode_hello() {
+    let mut out = [0u8; 256];
+    let n = base64_encode(b"Hello", &mut out).unwrap();
+    assert_eq!(n, 8);
+    assert_eq!(&out[..n], b"SGVsbG8=");
+}
+
+#[test]
+fn test_base64_decode_hello() {
+    let mut out = [0u8; 256];
+    let n = base64_decode(b"SGVsbG8=", &mut out).unwrap();
+    assert_eq!(n, 5);
+    assert_eq!(&out[..n], b"Hello");
+}
+
+#[test]
+fn test_base62_encode_hello() {
+    let mut out = [0u8; 256];
+    let n = base62_encode(b"Hello", &mut out).unwrap();
+    assert_eq!(n, 8);
+    assert_eq!(&out[..n], b"I6LiR6y=");
+}
 
 #[test]
 fn test_base64_encode_empty() {
-    let mut out = [0u8; 64];
-    let len = base64_encode(b"", &mut out);
-    assert_eq!(len, Some(0));
+    let mut out = [0u8; 256];
+    let n = base64_encode(b"", &mut out).unwrap();
+    assert_eq!(n, 0);
 }
 
 #[test]
-fn test_base64_encode_standard_vectors() {
-    let mut out = [0u8; 64];
-
-    let len = base64_encode(b"f", &mut out).unwrap();
-    assert_eq!(&out[..len], b"Zg==");
-    assert_eq!(len, 4);
-
-    let len = base64_encode(b"fo", &mut out).unwrap();
-    assert_eq!(&out[..len], b"Zm8=");
-    assert_eq!(len, 4);
-
-    let len = base64_encode(b"foo", &mut out).unwrap();
-    assert_eq!(&out[..len], b"Zm9v");
-    assert_eq!(len, 4);
-
-    let len = base64_encode(b"foobar", &mut out).unwrap();
-    assert_eq!(&out[..len], b"Zm9vYmFy");
-    assert_eq!(len, 8);
+fn test_base64_encode_one_byte() {
+    let mut out = [0u8; 256];
+    let n = base64_encode(b"A", &mut out).unwrap();
+    assert_eq!(n, 4);
+    assert_eq!(&out[..n], b"QQ==");
 }
 
 #[test]
-fn test_base64_decode_standard_vectors() {
-    let mut out = [0u8; 64];
-
-    let len = base64_decode(b"Zg==", &mut out).unwrap();
-    assert_eq!(&out[..len], b"f");
-
-    let len = base64_decode(b"Zm8=", &mut out).unwrap();
-    assert_eq!(&out[..len], b"fo");
-
-    let len = base64_decode(b"Zm9v", &mut out).unwrap();
-    assert_eq!(&out[..len], b"foo");
-
-    let len = base64_decode(b"Zm9vYmFy", &mut out).unwrap();
-    assert_eq!(&out[..len], b"foobar");
+fn test_base64_encode_two_bytes() {
+    let mut out = [0u8; 256];
+    let n = base64_encode(b"AB", &mut out).unwrap();
+    assert_eq!(n, 4);
+    assert_eq!(&out[..n], b"QUI=");
 }
 
 #[test]
-fn test_base64_roundtrip() {
-    let input = b"Hello, World!";
-    let mut encoded = [0u8; 256];
-    let enc_len = base64_encode(input, &mut encoded).unwrap();
-    let mut decoded = [0u8; 256];
-    let dec_len = base64_decode(&encoded[..enc_len], &mut decoded).unwrap();
-    assert_eq!(&decoded[..dec_len], input);
+fn test_base64_encode_three_bytes() {
+    let mut out = [0u8; 256];
+    let n = base64_encode(b"ABC", &mut out).unwrap();
+    assert_eq!(n, 4);
+    assert_eq!(&out[..n], b"QUJD");
 }
 
 #[test]
-fn test_base64_decode_invalid() {
-    let mut out = [0u8; 64];
-    // Not a multiple of 4
-    assert_eq!(base64_decode(b"Zg=", &mut out), None);
-    // Empty
-    assert_eq!(base64_decode(b"", &mut out), None);
+fn test_base64_decode_single_pad() {
+    let mut out = [0u8; 256];
+    let n = base64_decode(b"QQ==", &mut out).unwrap();
+    assert_eq!(n, 1);
+    assert_eq!(out[0], b'A');
 }
 
 #[test]
-fn test_base64_encode_buffer_too_small() {
-    let mut out = [0u8; 2]; // too small
-    assert_eq!(base64_encode(b"foobar", &mut out), None);
+fn test_base64_decode_invalid_returns_none() {
+    let mut out = [0u8; 256];
+    assert!(base64_decode(b"Q", &mut out).is_none());
 }
 
 #[test]
-fn test_base62_encode() {
-    let mut out = [0u8; 64];
-    let len = base62_encode(b"foo", &mut out).unwrap();
-    assert_eq!(&out[..len], b"Pczl");
-    assert_eq!(len, 4);
+fn test_base64_encode_binary() {
+    let bin = [0x00u8, 0xff, 0x80, 0x7f, 0x01];
+    let mut out = [0u8; 256];
+    let n = base64_encode(&bin, &mut out).unwrap();
+    assert_eq!(n, 8);
+    assert_eq!(&out[..n], b"AP+AfwE=");
 }
 
 #[test]
-fn test_base62_encode_empty() {
-    let mut out = [0u8; 64];
-    let len = base62_encode(b"", &mut out);
-    assert_eq!(len, Some(0));
+fn test_base64_roundtrip_binary() {
+    let bin = [0x00u8, 0xff, 0x80, 0x7f, 0x01];
+    let mut enc = [0u8; 256];
+    let n = base64_encode(&bin, &mut enc).unwrap();
+    let mut dec = [0u8; 256];
+    let m = base64_decode(&enc[..n], &mut dec).unwrap();
+    assert_eq!(m, 5);
+    assert_eq!(&dec[..m], &bin);
 }
 
 fn main() {}

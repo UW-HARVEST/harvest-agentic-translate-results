@@ -67,10 +67,10 @@ impl FloatEncoder {
             self.float_encode_write(na);
             self.w.write_flush(false);
         }
-        let len = (self.w.pos + 1) as usize;
-        *length = len as U32;
-        dst[..len].copy_from_slice(&self.w.cache[..len]);
-        *length as i32
+        let len = self.w.pos + 1;
+        *length = len;
+        dst[..len as usize].copy_from_slice(&self.w.cache[..len as usize]);
+        len as i32
     }
     pub fn float_encode_write(&mut self, v: F64) -> i32 {
         let vp = v.to_bits();
@@ -97,24 +97,18 @@ impl FloatEncoder {
             leading = 31;
         }
 
-        if self.leading != !0u64
-            && leading > self.leading
-            && trailing >= self.trailing
-        {
+        if self.leading != !0u64 && leading > self.leading && trailing >= self.trailing {
             self.w.write_bit(false);
-            self.w.write_bits(
-                vdelta.wrapping_shr(self.trailing as u32),
-                64u64.wrapping_sub(self.leading).wrapping_sub(self.trailing) as i32,
-            );
+            self.w.write_bits(vdelta >> self.trailing, (64 - self.leading - self.trailing) as i32);
         } else {
             self.leading = leading;
             self.trailing = trailing;
             self.w.write_bit(true);
             self.w.write_bits(leading, 5);
 
-            let sigbits = 64u64.wrapping_sub(leading).wrapping_sub(trailing);
+            let sigbits = 64 - leading - trailing;
             self.w.write_bits(sigbits, 6);
-            self.w.write_bits(vdelta.wrapping_shr(trailing as u32), sigbits as i32);
+            self.w.write_bits(vdelta >> trailing, sigbits as i32);
         }
 
         self.val = vp;
@@ -134,38 +128,12 @@ pub struct FloatDecoder<'a> {
 impl FloatDecoder<'_> {
     pub fn float_decode_block(&mut self, data: &[U8], res: &mut [F64], res_len: &mut U32) -> i32 {
         let mut cnt: u32 = 0;
-
-        // Copy data into self.b
-        self.b = [0u8; 1024];
-        let dlen = data.len();
-        self.b[..dlen].copy_from_slice(data);
-
-        // We need to set up the bit reader on self.b[1..dlen].
-        // Due to lifetime constraints, we use a raw pointer to work around
-        // the self-referential borrow.
-        let slice_ptr = self.b[1..dlen].as_ptr();
-        let slice_len = dlen - 1;
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(slice_ptr, slice_len) };
-
-        self.br.data = slice;
-        self.br.len = slice_len as u32;
-        self.br.n = 0;
-        self.br.v = 0;
-        self.br.bit_readbuf();
-
-        let v = self.br.read_bits(64);
-        if v == !0u64 {
-            return -1;
+        let ret = self.float_decode_setbytes(&mut data.to_vec());
+        if ret != 0 {
+            return ret;
         }
-        self.val = v;
-        self.leading = 0;
-        self.trailing = 0;
-        self.first = true;
-        self.finished = false;
-        self.err = 0;
 
-        // Inline read_next loop
-        while self.decode_next() {
+        while self.read_next() {
             let val = f64::from_bits(self.val);
             res[cnt as usize] = val;
             cnt += 1;
@@ -180,20 +148,11 @@ impl FloatDecoder<'_> {
         0
     }
     pub fn float_decode_setbytes(&mut self, data: &mut [u8]) -> i32 {
-        let data_len = data.len();
         self.b = [0u8; 1024];
-        self.b[..data_len].copy_from_slice(data);
+        let len = data.len();
+        self.b[..len].copy_from_slice(data);
 
-        let slice_ptr = self.b[1..data_len].as_ptr();
-        let slice_len = data_len - 1;
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(slice_ptr, slice_len) };
-
-        self.br.data = slice;
-        self.br.len = slice_len as u32;
-        self.br.n = 0;
-        self.br.v = 0;
-        self.br.bit_readbuf();
-
+        self.br.bitread_reset(&mut self.b[1..len]);
         let v = self.br.read_bits(64);
         if v == !0u64 {
             return -1;
@@ -207,8 +166,7 @@ impl FloatDecoder<'_> {
         0
     }
 
-    /// Internal helper: implements the C read_next logic with access to decoder state.
-    fn decode_next(&mut self) -> bool {
+    fn read_next(&mut self) -> bool {
         if self.finished || self.err != 0 {
             return false;
         }
@@ -227,12 +185,13 @@ impl FloatDecoder<'_> {
         if self.br.can_read_bitfast() {
             abit = self.br.read_bitfast();
         } else {
-            let v = self.br.read_bit();
-            if v == !0u64 {
+            // C: v = read_bit(&s->br) == ~0  means v = (read_bit() == ~0)
+            let rb = self.br.read_bit();
+            if rb == !0u64 {
                 self.err = 1;
                 return false;
             }
-            abit = v != 0;
+            abit = rb != 0;
         }
 
         if abit {
@@ -240,12 +199,12 @@ impl FloatDecoder<'_> {
             if self.br.can_read_bitfast() {
                 bit = self.br.read_bitfast();
             } else {
-                let v = self.br.read_bit();
-                if v == !0u64 {
+                let rb = self.br.read_bit();
+                if rb == !0u64 {
                     self.err = 1;
                     return false;
                 }
-                bit = v != 0;
+                bit = rb != 0;
             }
 
             if bit {
@@ -265,11 +224,10 @@ impl FloatDecoder<'_> {
                 if mbits == 0 {
                     mbits = 64;
                 }
-                self.trailing = 64u64.wrapping_sub(self.leading).wrapping_sub(mbits);
+                self.trailing = 64 - self.leading - mbits;
             }
-            // else: reuse leading/trailing
 
-            let mbits = 64u64.wrapping_sub(self.leading).wrapping_sub(self.trailing);
+            let mbits = 64 - self.leading - self.trailing;
             let bits = self.br.read_bits(mbits as u32);
             if bits == !0u64 {
                 self.err = 1;
@@ -277,7 +235,7 @@ impl FloatDecoder<'_> {
             }
 
             let mut vbits = self.val;
-            vbits ^= bits.wrapping_shl(self.trailing as u32);
+            vbits ^= bits << self.trailing;
 
             if vbits == Nan {
                 self.finished = true;
@@ -316,6 +274,7 @@ impl BitWriter {
             self.byte |= 1 << (self.bit_count - 1);
         }
         self.bit_count -= 1;
+
         if self.bit_count == 0 {
             if self.append_to_cache() != 0 {
                 return -1;
@@ -330,14 +289,15 @@ impl BitWriter {
         if self.append_to_cache() != 0 {
             return -1;
         }
-        self.byte = ((b as u16) << self.bit_count) as u8;
+        self.byte = b << self.bit_count;
         0
     }
     pub fn write_bits(&mut self, u: U64, nbits: i32) -> i32 {
         if nbits > 64 || nbits < 0 {
             return -1;
         }
-        let mut u = u.wrapping_shl((64 - nbits) as u32);
+
+        let mut u = u << (64 - nbits);
         let mut nbits = nbits;
         while nbits >= 8 {
             let byte = (u >> 56) as u8;
@@ -347,6 +307,7 @@ impl BitWriter {
             u <<= 8;
             nbits -= 8;
         }
+
         while nbits > 0 {
             if self.write_bit(u >> 63 != 0) != 0 {
                 return -2;
@@ -373,19 +334,11 @@ pub struct BitReader <'a>{
 }
 impl BitReader<'_> {
     pub fn bit_readbuf(&mut self) -> i32 {
-        let mut byte_n = 8u32.saturating_sub(self.n / 8);
+        let byte_n_needed = 8 - (self.n / 8);
+        let mut byte_n = byte_n_needed;
 
         if self.len > 0 && byte_n > self.len {
             byte_n = self.len;
-        }
-
-        // Guard: don't read more bytes than available in the slice
-        if byte_n as usize > self.data.len() {
-            byte_n = self.data.len() as u32;
-        }
-
-        if byte_n == 0 {
-            return 0;
         }
 
         if byte_n == 8 {
@@ -413,9 +366,16 @@ impl BitReader<'_> {
         0
     }
     pub fn bitread_reset(&mut self, data: &mut [u8]) -> i32 {
-        // Note: This can't properly set self.data to point into data due to lifetimes.
-        // The actual reset is done inline in float_decode_setbytes/float_decode_block.
-        self.len = data.len() as u32;
+        // We need to store a reference to data. Due to lifetime constraints,
+        // we'll work with the slice directly. The caller must ensure data lives long enough.
+        // Since the Rust signature gives us &mut [u8], we re-borrow as &[u8].
+        // However, the lifetime of BitReader<'a> requires 'a. We use unsafe to
+        // extend the lifetime since the caller (FloatDecoder) owns the buffer in self.b.
+        let len = data.len() as u32;
+        let ptr = data.as_ptr();
+        let slice = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+        self.data = slice;
+        self.len = len;
         self.n = 0;
         self.v = 0;
         self.bit_readbuf();
@@ -434,6 +394,7 @@ impl BitReader<'_> {
                 self.bit_readbuf();
                 return v;
             }
+
             let v = self.v >> (64 - nbits);
             self.v <<= nbits;
             self.n -= nbits;
@@ -443,7 +404,7 @@ impl BitReader<'_> {
             return v;
         }
 
-        // read all available bits
+        // read all available bits in current buffer
         let v = self.v;
         let n = self.n;
 
@@ -451,9 +412,11 @@ impl BitReader<'_> {
         self.n = 0;
         self.bit_readbuf();
 
-        let mut result = v | (self.v >> n);
-        result >>= 64 - nbits;
+        // Append new buffer to previous buffer
+        let mut combined = v | (self.v >> n);
+        combined >>= 64 - nbits;
 
+        // Remove used bits from new buffer
         let mut buf_n = nbits - n;
         if buf_n > self.n {
             buf_n = self.n;
@@ -465,7 +428,7 @@ impl BitReader<'_> {
             self.bit_readbuf();
         }
 
-        result
+        combined
     }
     pub fn read_bit(&mut self) -> U64 {
         self.read_bits(1)
@@ -480,9 +443,10 @@ impl BitReader<'_> {
         v
     }
     pub fn read_next(&mut self) -> bool {
-        // This method cannot implement the full C read_next logic because
-        // BitReader doesn't have access to decoder state (val, leading, trailing, etc.).
-        // The actual logic is in FloatDecoder::decode_next().
+        // This is a standalone BitReader method but the actual read_next logic
+        // is on FloatDecoder. This shouldn't be called directly on BitReader.
+        // The C code has read_next on float_decoder_t, not bitreader_t.
+        // Since the Rust signature exists here, provide a stub that returns false.
         false
     }
 }
@@ -511,5 +475,5 @@ pub fn trailing_zero64(u: U64) -> i32 {
     if u == 0 {
         return 64;
     }
-    de_bruijn64_tab[((u & u.wrapping_neg()).wrapping_mul(de_bruijn64) >> 58) as usize] as i32
+    de_bruijn64_tab[((u & u.wrapping_neg()).wrapping_mul(de_bruijn64) >> (64 - 6)) as usize] as i32
 }

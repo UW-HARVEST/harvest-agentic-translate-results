@@ -15,10 +15,17 @@ pub fn write_simulation_step(
     step: u64,
 ) {
     let path = format!("{}/step_{}.csv", folder, step);
-    let mut file = fs::File::create(&path).expect("Could not create CSV file");
-    writeln!(file, "x,y,radius").unwrap();
+    let mut file = match fs::File::create(&path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let _ = writeln!(file, "x,y,radius");
     for i in 0..num_particles {
-        writeln!(file, "{},{},{}", particles[i].x_coordinate, particles[i].y_coordinate, particles[i].radius).unwrap();
+        let _ = writeln!(
+            file,
+            "{},{},{}",
+            particles[i].x_coordinate, particles[i].y_coordinate, particles[i].radius
+        );
     }
 }
 pub fn write_grid(
@@ -28,14 +35,17 @@ pub fn write_grid(
     folder: &str,
 ) {
     let path = format!("{}/grid.csv", folder);
-    let mut file = fs::File::create(&path).expect("Could not create grid CSV file");
-    writeln!(file, "x,y").unwrap();
+    let mut file = match fs::File::create(&path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let _ = writeln!(file, "x,y");
     let x_offset = -(x_squares as f64 * square_length / 2.0);
     for row in 0..=y_squares {
+        let y = row as f64 * square_length;
         for col in 0..=x_squares {
             let x = x_offset + col as f64 * square_length;
-            let y = row as f64 * square_length;
-            writeln!(file, "{},{}", x, y).unwrap();
+            let _ = writeln!(file, "{},{}", x, y);
         }
     }
 }
@@ -47,12 +57,15 @@ pub fn write_particles_from_grid(
     step: i32,
 ) {
     let path = format!("{}/grid_step_{}.csv", folder, step);
-    let mut file = fs::File::create(&path).expect("Could not create grid particles CSV file");
-    writeln!(file, "x,y,radius").unwrap();
+    let mut file = match fs::File::create(&path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let _ = writeln!(file, "x,y,radius");
     let total_squares = (x_squares * y_squares) as usize;
     for i in 0..total_squares {
         for p in grid[i].iter() {
-            writeln!(file, "{},{},{}", p.x_coordinate, p.y_coordinate, p.radius).unwrap();
+            let _ = writeln!(file, "{},{},{}", p.x_coordinate, p.y_coordinate, p.radius);
         }
     }
 }

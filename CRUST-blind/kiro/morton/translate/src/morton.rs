@@ -28,9 +28,3 @@ pub fn morton(hi: u32, lo: u32) -> u64 {
     yu = (yu | yu << 1) & 0x5555555555555555;
     xu | yu << 1
 }
-pub fn unmorton(z: u64) -> Morton {
-    Morton {
-        hi: unmortoner(z),
-        lo: unmortoner(z >> 1),
-    }
-}

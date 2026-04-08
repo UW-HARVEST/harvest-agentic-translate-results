@@ -36,23 +36,28 @@ impl<'a> BitReader<'a> {
     /// Read up to `nbits` from the input, returns (bits_read, value)
     pub fn read(&mut self, nbits: u8) -> (u8, u8) {
         let bit_len = self.input.len() * 8;
-        let max_nbits = bit_len.saturating_sub(self.bit_pos);
+        let cur_bit = self.byte_pos * 8 + self.bit_pos;
+        let max_nbits = if bit_len > cur_bit { bit_len - cur_bit } else { 0 };
         let nbits = (nbits as usize).min(max_nbits);
+
         if nbits == 0 {
             return (0, 0);
         }
 
-        let first_byte_index = self.bit_pos / 8;
-        let first_byte_cur_bit = self.bit_pos % 8;
-        let mut two_bytes = (self.input[first_byte_index] as u16) << 8;
+        let first_byte_index = cur_bit / 8;
+        let first_byte_cur_bit = cur_bit % 8;
+        let mut two_bytes: u16 = (self.input[first_byte_index] as u16) << 8;
         if first_byte_index + 1 < self.input.len() {
             two_bytes |= self.input[first_byte_index + 1] as u16;
         }
         two_bytes >>= (8 - first_byte_cur_bit) + (8 - nbits);
-        let mask = !(0xFFu8 << nbits);
+        let mask: u8 = !((0xFFu16 << nbits) as u8);
         let out = (two_bytes as u8) & mask;
 
-        self.bit_pos += nbits;
+        let new_cur_bit = cur_bit + nbits;
+        self.byte_pos = new_cur_bit / 8;
+        self.bit_pos = new_cur_bit % 8;
+
         (nbits as u8, out)
     }
 }
@@ -72,9 +77,10 @@ impl<'a> BitWriter<'a> {
     /// Returns the number of bytes used so far or an error
     pub fn write(&mut self, nbits: u8, value: u8) -> Result<usize, Base122Error> {
         let nbits = nbits as usize;
+
         if self.count_only {
             self.cur_bit += nbits;
-            return Ok(0);
+            return Ok(self.cur_bit / 8);
         }
 
         let bit_len = self.len * 8;
@@ -86,10 +92,11 @@ impl<'a> BitWriter<'a> {
         let first_byte_cur_bit = self.cur_bit % 8;
 
         let out = self.output.as_mut().unwrap();
-        let mask_keep = !(0xFFu8 >> first_byte_cur_bit);
-        let mut two_bytes = ((out[first_byte_index] & mask_keep) as u16) << 8;
 
-        let mask_in = !((0xFFu16 << nbits) as u8);
+        let mask_keep: u8 = !(0xFFu8 >> first_byte_cur_bit);
+        let mut two_bytes: u16 = ((out[first_byte_index] & mask_keep) as u16) << 8;
+
+        let mask_in: u8 = !((0xFFu16 << nbits) as u8);
         two_bytes |= ((value & mask_in) as u16) << (8 + (8 - first_byte_cur_bit) - nbits);
 
         out[first_byte_index] = (two_bytes >> 8) as u8;
@@ -97,7 +104,7 @@ impl<'a> BitWriter<'a> {
             out[first_byte_index + 1] = two_bytes as u8;
         }
         self.cur_bit += nbits;
-        Ok(0)
+        Ok(self.cur_bit / 8)
     }
 }
 const ILLEGALS: [u8; 6] = [
@@ -114,7 +121,7 @@ fn is_illegal(val: u8) -> bool {
 }
 /// Get the index of an illegal character in the ILLEGALS array
 fn get_illegal_index(val: u8) -> u8 {
-    ILLEGALS.iter().position(|&x| x == val).unwrap() as u8
+    ILLEGALS.iter().position(|&v| v == val).expect("unreachable") as u8
 }
 /// Encode binary data to Base122 encoding
 ///
@@ -127,17 +134,19 @@ fn get_illegal_index(val: u8) -> u8 {
 /// * `Ok(Vec<u8>)` - The encoded data
 /// * `Err(Base122Error)` - If there was an error during encoding
 pub fn encode(input: &[u8]) -> Result<Vec<u8>, Base122Error> {
-    let mut size = 0usize;
-    encode_internal(input, None, &mut size)?;
-    let mut out = vec![0u8; size];
+    // First pass: count only
+    let mut count = 0usize;
+    encode_internal(input, None, &mut count)?;
+    // Second pass: write
+    let mut out = vec![0u8; count];
     let mut written = 0usize;
     encode_internal(input, Some(&mut out), &mut written)?;
-    out.truncate(written);
     Ok(out)
 }
 /// Internal function to perform the encoding
 fn encode_internal(input: &[u8], mut output: Option<&mut [u8]>, out_written: &mut usize) -> Result<(), Base122Error> {
     let mut reader = BitReader::new(input);
+    let mut out_index = 0usize;
     let count_only = output.is_none();
     *out_written = 0;
 
@@ -147,11 +156,12 @@ fn encode_internal(input: &[u8], mut output: Option<&mut [u8]>, out_written: &mu
                 *out_written += 1;
             } else {
                 let out = output.as_mut().unwrap();
-                if *out_written >= out.len() {
+                if out_index == out.len() {
                     return Err(Base122Error::new("output does not have sufficient size"));
                 }
-                out[*out_written] = $b;
+                out[out_index] = $b;
                 *out_written += 1;
+                out_index += 1;
             }
         };
     }
@@ -171,7 +181,7 @@ fn encode_internal(input: &[u8], mut output: Option<&mut [u8]>, out_written: &mu
             let mut b2: u8 = 0x80;
 
             let (next_nbits, mut next_bits) = reader.read(7);
-            next_bits <<= 7u8.saturating_sub(next_nbits);
+            next_bits <<= 7 - next_nbits;
 
             if next_nbits == 0 {
                 b1 |= 0x7 << 2; // 11100
@@ -195,21 +205,17 @@ fn encode_internal(input: &[u8], mut output: Option<&mut [u8]>, out_written: &mu
 }
 /// Write the last 7 bits of byteVal for decoding.
 /// Returns an error if byteVal has 1 bits exceeding the last byte boundary.
-fn write_last_7(writer: &mut BitWriter, byte_val: u8, error: &mut Base122Error) -> Result<(), Base122Error> {
+fn write_last_7(writer: &mut BitWriter, byte_val: u8, _error: &mut Base122Error) -> Result<(), Base122Error> {
     let nbits = 8 - (writer.cur_bit % 8);
     if nbits == 8 {
-        *error = Base122Error::new("Decoded data is not a byte multiple");
-        return Err(error.clone());
+        return Err(Base122Error::new("Decoded data is not a byte multiple"));
     }
-    let mask = !(0xFFu8 << (7 - nbits));
+    let mask: u8 = !(0xFFu8 << (7 - nbits));
     if (byte_val & mask) > 0 {
-        *error = Base122Error::new("Encoded data is malformed. Last byte has extra data.");
-        return Err(error.clone());
+        return Err(Base122Error::new("Encoded data is malformed. Last byte has extra data."));
     }
     let shifted = byte_val >> (7 - nbits);
-    writer.write(nbits as u8, shifted).map_err(|_| {
-        Base122Error::new("Output does not have sufficient size")
-    })?;
+    writer.write(nbits as u8, shifted).map_err(|_| Base122Error::new("Output does not have sufficient size"))?;
     Ok(())
 }
 /// Decode Base122 encoded data to binary
@@ -223,19 +229,25 @@ fn write_last_7(writer: &mut BitWriter, byte_val: u8, error: &mut Base122Error) 
 /// * `Ok(Vec<u8>)` - The decoded binary data
 /// * `Err(Base122Error)` - If there was an error during decoding
 pub fn decode(input: &[u8]) -> Result<Vec<u8>, Base122Error> {
-    let mut size = 0usize;
-    let mut writer = BitWriter::new(None, 0);
-    decode_internal(input, &mut writer, &mut size)?;
-    let mut out = vec![0u8; size];
+    // First pass: count only
+    let mut count = 0usize;
+    {
+        let mut writer = BitWriter::new(None, 0);
+        decode_internal(input, &mut writer, &mut count)?;
+    }
+    // Second pass: write
+    let mut out = vec![0u8; count];
     let mut written = 0usize;
-    let mut writer = BitWriter::new(Some(&mut out), size);
-    decode_internal(input, &mut writer, &mut written)?;
-    out.truncate(written);
+    {
+        let len = out.len();
+        let mut writer = BitWriter::new(Some(&mut out), len);
+        decode_internal(input, &mut writer, &mut written)?;
+    }
     Ok(out)
 }
 /// Internal function to perform the decoding
 fn decode_internal(input: &[u8], writer: &mut BitWriter, out_written: &mut usize) -> Result<(), Base122Error> {
-    let mut error = Base122Error::new("");
+    let mut dummy_error = Base122Error::new("");
     let in_len = input.len();
     let mut cur_byte = 0usize;
 
@@ -244,11 +256,9 @@ fn decode_internal(input: &[u8], writer: &mut BitWriter, out_written: &mut usize
             // One byte sequence
             let cur_byte_val = input[cur_byte];
             if cur_byte + 1 == in_len {
-                write_last_7(writer, cur_byte_val, &mut error)?;
+                write_last_7(writer, cur_byte_val, &mut dummy_error)?;
             } else {
-                writer.write(7, cur_byte_val).map_err(|_| {
-                    Base122Error::new("Output does not have sufficient size")
-                })?;
+                writer.write(7, cur_byte_val).map_err(|_| Base122Error::new("Output does not have sufficient size"))?;
             }
         } else {
             // Two byte sequence
@@ -272,24 +282,21 @@ fn decode_internal(input: &[u8], writer: &mut BitWriter, out_written: &mut usize
                     return Err(Base122Error::new("Got unexpected extra data after shortened two byte sequence"));
                 }
                 let last_byte_val = (cur_byte_val << 6) | (next_byte_val & 0x3F);
+
                 if cur_byte + 1 == in_len {
-                    write_last_7(writer, last_byte_val, &mut error)?;
+                    write_last_7(writer, last_byte_val, &mut dummy_error)?;
                 } else {
-                    writer.write(7, last_byte_val).map_err(|_| {
-                        Base122Error::new("Output does not have sufficient size")
-                    })?;
+                    writer.write(7, last_byte_val).map_err(|_| Base122Error::new("Output does not have sufficient size"))?;
                 }
             } else if (illegal_index as usize) < ILLEGALS.len() {
-                writer.write(7, ILLEGALS[illegal_index as usize]).map_err(|_| {
-                    Base122Error::new("Output does not have sufficient size")
-                })?;
+                writer.write(7, ILLEGALS[illegal_index as usize]).map_err(|_| Base122Error::new("Output does not have sufficient size"))?;
+
                 let second_byte_val = (cur_byte_val << 6) | (next_byte_val & 0x3F);
+
                 if cur_byte + 1 == in_len {
-                    write_last_7(writer, second_byte_val, &mut error)?;
+                    write_last_7(writer, second_byte_val, &mut dummy_error)?;
                 } else {
-                    writer.write(7, second_byte_val).map_err(|_| {
-                        Base122Error::new("Output does not have sufficient size")
-                    })?;
+                    writer.write(7, second_byte_val).map_err(|_| Base122Error::new("Output does not have sufficient size"))?;
                 }
             } else {
                 return Err(Base122Error::new("Got unrecognized illegal index"));

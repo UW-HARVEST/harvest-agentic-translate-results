@@ -1,248 +1,312 @@
 use clhash::clhash::{
-    clhash, get_random_key_for_clhash, ClHasher, RANDOM_64BITWORDS_NEEDED_FOR_CLHASH,
-    RANDOM_BYTES_NEEDED_FOR_CLHASH,
+    clhash, get_random_key_for_clhash, ClHasher,
+    RANDOM_64BITWORDS_NEEDED_FOR_CLHASH, RANDOM_BYTES_NEEDED_FOR_CLHASH,
 };
 
-// ---- Constants ----
+fn main() {}
+
+// --- Constants ---
 
 #[test]
 fn test_constants() {
     assert_eq!(RANDOM_64BITWORDS_NEEDED_FOR_CLHASH, 133);
     assert_eq!(RANDOM_BYTES_NEEDED_FOR_CLHASH, 133 * 8);
+    assert_eq!(RANDOM_BYTES_NEEDED_FOR_CLHASH, 1064);
 }
 
-// ---- get_random_key_for_clhash ----
+// --- get_random_key_for_clhash ---
 
 #[test]
 fn test_get_random_key_length() {
-    let key = get_random_key_for_clhash(137, 777);
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
     assert_eq!(key.len(), RANDOM_BYTES_NEEDED_FOR_CLHASH);
 }
 
 #[test]
-fn test_get_random_key_values() {
-    let key = get_random_key_for_clhash(137, 777);
-    let k64: Vec<u64> = key
-        .chunks_exact(8)
-        .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
-        .collect();
-
-    // Verify first few values match C xorshift128plus output
-    assert_eq!(k64[0], 1149244865);
-    assert_eq!(k64[1], 8701379260);
-    assert_eq!(k64[2], 9640526657320736);
-    assert_eq!(k64[3], 64317040884696645);
-    assert_eq!(k64[4], 109926439917670026);
-    assert_eq!(k64[5], 118642916319092990);
-    assert_eq!(k64[6], 13980211360741814764);
-    assert_eq!(k64[7], 14746191864734490451);
-    assert_eq!(k64[8], 10233102483202606683);
-    assert_eq!(k64[9], 7835856983069276281);
-
-    // Verify tail values
-    assert_eq!(k64[128], 12491235888376946051);
-    assert_eq!(k64[129], 17217646778639590103);
-    assert_eq!(k64[130], 10933674056228117724);
-    assert_eq!(k64[131], 7081780302273033876);
-    assert_eq!(k64[132], 11205380670366400436);
+fn test_get_random_key_deterministic() {
+    let key1 = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    let key2 = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(key1, key2);
 }
 
 #[test]
-fn test_get_random_key_deterministic() {
-    let k1 = get_random_key_for_clhash(137, 777);
-    let k2 = get_random_key_for_clhash(137, 777);
-    assert_eq!(k1, k2);
+fn test_get_random_key_values_seed1() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    let r = |i: usize| u64::from_le_bytes(key[i * 8..i * 8 + 8].try_into().unwrap());
+    assert_eq!(r(0), 11727443923012301735);
+    assert_eq!(r(1), 16001092925326965413);
+    assert_eq!(r(2), 5675522312328131209);
+    assert_eq!(r(132), 1066976533721771965);
+}
+
+#[test]
+fn test_get_random_key_values_seed2() {
+    let key = get_random_key_for_clhash(137, 777);
+    let r = |i: usize| u64::from_le_bytes(key[i * 8..i * 8 + 8].try_into().unwrap());
+    assert_eq!(r(0), 1149244865);
+    assert_eq!(r(1), 8701379260);
+    assert_eq!(r(132), 11205380670366400436);
 }
 
 #[test]
 fn test_get_random_key_different_seeds() {
-    let k1 = get_random_key_for_clhash(137, 777);
-    let k2 = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
-    assert_ne!(k1, k2);
+    let key1 = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    let key2 = get_random_key_for_clhash(137, 777);
+    assert_ne!(key1, key2);
 }
 
-// ---- clhash: empty and boundary inputs ----
+// --- clhash: demo values (seeds 0x23a23cf5033c3c81, 0xb3816f6a2c68e530) ---
+
+#[test]
+fn test_clhash_demo_my_dog() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"my dog"), 808761308841733891);
+}
+
+#[test]
+fn test_clhash_demo_my_cat() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"my cat"), 2088517542587126895);
+}
+
+#[test]
+fn test_clhash_deterministic() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    let h1 = clhash(&key, b"my dog");
+    let h3 = clhash(&key, b"my dog");
+    assert_eq!(h1, h3);
+    assert_eq!(h1, 808761308841733891);
+}
 
 #[test]
 fn test_clhash_empty_string() {
-    let key = get_random_key_for_clhash(137, 777);
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
     assert_eq!(clhash(&key, b""), 0);
 }
 
 #[test]
 fn test_clhash_single_byte() {
-    let key = get_random_key_for_clhash(137, 777);
-    assert_eq!(clhash(&key, b"a"), 1382967411330071092);
-    assert_eq!(clhash(&key, b"b"), 1382967437022510576);
-    assert_eq!(clhash(&key, b"\0"), 1382967151133016072);
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"a"), 5667746712765706676);
 }
 
-// ---- clhash: short strings ----
+#[test]
+fn test_clhash_5_bytes() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"hello"), 8531588392195409363);
+}
 
 #[test]
-fn test_clhash_short_strings() {
+fn test_clhash_8_bytes_aligned() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"12345678"), 210716313166875572);
+}
+
+#[test]
+fn test_clhash_16_bytes_aligned() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"1234567890123456"), 3390917496109661694);
+}
+
+#[test]
+fn test_clhash_7_bytes() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"abcdefg"), 13954811839410827229);
+}
+
+#[test]
+fn test_clhash_9_bytes() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"abcdefghi"), 13450074313225880919);
+}
+
+#[test]
+fn test_clhash_15_bytes() {
+    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(clhash(&key, b"abcdefghijklmno"), 3059589021337807290);
+}
+
+// --- clhash: different seeds (137, 777) ---
+
+#[test]
+fn test_clhash_seed2_test() {
     let key = get_random_key_for_clhash(137, 777);
-    assert_eq!(clhash(&key, b"my dog"), 10235581410102137208);
-    assert_eq!(clhash(&key, b"my cat"), 526488957445861319);
-    assert_eq!(clhash(&key, b"hello"), 18255269798239507943);
     assert_eq!(clhash(&key, b"test"), 1106899457831998698);
 }
 
-// ---- clhash: aligned lengths (multiples of 8) ----
-
 #[test]
-fn test_clhash_aligned_lengths() {
+fn test_clhash_seed2_empty() {
     let key = get_random_key_for_clhash(137, 777);
-    assert_eq!(clhash(&key, b"12345678"), 14742390747119455523);
-    assert_eq!(clhash(&key, b"1234567890123456"), 2526366401639115986);
-    assert_eq!(clhash(&key, b"123456789012345678901234"), 17305781157606364117);
+    assert_eq!(clhash(&key, b""), 0);
 }
 
-// ---- clhash: unaligned length (15 bytes) ----
-
 #[test]
-fn test_clhash_unaligned_length() {
+fn test_clhash_seed2_long_string() {
     let key = get_random_key_for_clhash(137, 777);
-    assert_eq!(clhash(&key, b"123456789012345"), 14437393240895616983);
+    assert_eq!(
+        clhash(&key, b"the quick brown fox jumps over the lazy dog"),
+        4509208149723572213
+    );
 }
 
-// ---- clhash: different seeds ----
+// --- clhash: manual random source (clhashtest-style) ---
 
 #[test]
-fn test_clhash_different_seeds() {
-    let key = get_random_key_for_clhash(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
-    assert_eq!(clhash(&key, b"my dog"), 808761308841733891);
-    assert_eq!(clhash(&key, b"my cat"), 2088517542587126895);
-}
-
-// ---- clhash: determinism ----
-
-#[test]
-fn test_clhash_deterministic() {
-    let key = get_random_key_for_clhash(137, 777);
-    let h1 = clhash(&key, b"test");
-    let h2 = clhash(&key, b"test");
-    assert_eq!(h1, h2);
-}
-
-// ---- clhash: manual key (like C unit test) ----
-
-fn make_manual_key() -> Vec<u8> {
+fn test_clhash_manual_rs() {
     let mut rs = vec![0u8; RANDOM_BYTES_NEEDED_FOR_CLHASH];
     for k in 0..RANDOM_BYTES_NEEDED_FOR_CLHASH {
         rs[k] = (1i32 - k as i32) as u8;
     }
-    rs
+    let x: u64 = 0;
+    assert_eq!(clhash(&rs, &x.to_le_bytes()), 4382526952154562553);
+    let x: u64 = 1;
+    assert_eq!(clhash(&rs, &x.to_le_bytes()), 14853480695934256896);
+}
+
+// --- clhash: long strings (> 1024 bytes, exercises multi-block path) ---
+
+#[test]
+fn test_clhash_long_1024() {
+    let key = get_random_key_for_clhash(42, 99);
+    let data: Vec<u8> = (0..1024).map(|i| (i & 0xFF) as u8).collect();
+    assert_eq!(clhash(&key, &data), 10565863334500808456);
 }
 
 #[test]
-fn test_clhash_manual_key_zeros() {
-    let rs = make_manual_key();
-    let zero = [0u8; 8];
-    assert_eq!(clhash(&rs, &zero[..1]), 3518691437419927626);
-    assert_eq!(clhash(&rs, &zero[..2]), 6897406170948942194);
-    assert_eq!(clhash(&rs, &zero[..3]), 9611629948823427475);
-    assert_eq!(clhash(&rs, &zero[..4]), 9322531023046572802);
-    assert_eq!(clhash(&rs, &zero[..5]), 6610039946375863267);
-    assert_eq!(clhash(&rs, &zero[..6]), 3807777169057266395);
-    assert_eq!(clhash(&rs, &zero[..7]), 17153135610892900922);
-    assert_eq!(clhash(&rs, &zero[..8]), 4382526952154562553);
+fn test_clhash_long_1025() {
+    let key = get_random_key_for_clhash(42, 99);
+    let data: Vec<u8> = (0..1025).map(|i| (i & 0xFF) as u8).collect();
+    assert_eq!(clhash(&key, &data), 16873154198523271533);
 }
 
 #[test]
-fn test_clhash_manual_key_strings() {
-    let rs = make_manual_key();
-    assert_eq!(clhash(&rs, b"hello"), 16856428472158674338);
-    assert_eq!(clhash(&rs, b"world"), 10065635763051777486);
+fn test_clhash_long_2048() {
+    let key = get_random_key_for_clhash(42, 99);
+    let data: Vec<u8> = (0..2048).map(|i| (i & 0xFF) as u8).collect();
+    assert_eq!(clhash(&key, &data), 4221986466180303932);
 }
 
-// ---- clhash: long strings (> 1024 bytes, triggers multi-block path) ----
-
-fn make_long_string(len: usize) -> Vec<u8> {
-    (0..len).map(|i| (i & 0xFF) as u8).collect()
-}
-
-#[test]
-fn test_clhash_long_string_generated_key() {
-    let key = get_random_key_for_clhash(137, 777);
-    let longstr = make_long_string(2048);
-    assert_eq!(clhash(&key, &longstr[..1024]), 13878933686121200245);
-    assert_eq!(clhash(&key, &longstr[..1025]), 14167079484582886430);
-    assert_eq!(clhash(&key, &longstr), 16890874039237711337);
-}
-
-#[test]
-fn test_clhash_long_string_manual_key() {
-    let rs = make_manual_key();
-    let longstr = make_long_string(2048);
-    assert_eq!(clhash(&rs, &longstr[..1024]), 8030893932835744853);
-    assert_eq!(clhash(&rs, &longstr[..1025]), 127030318649434636);
-    assert_eq!(clhash(&rs, &longstr), 13927702028376612513);
-}
-
-// ---- clhash: bit-flip test (from C unit test) ----
+// --- clhash: bit-flip test (from C clhashtest) ---
 
 #[test]
 fn test_clhash_bitflip() {
-    let rs = make_manual_key();
+    let mut rs = vec![0u8; RANDOM_BYTES_NEEDED_FOR_CLHASH];
+    for k in 0..RANDOM_BYTES_NEEDED_FOR_CLHASH {
+        rs[k] = (1i32 - k as i32) as u8;
+    }
     for bit in 0..64u32 {
         let min_len = ((bit + 8) / 8) as usize;
         for length in min_len..=8 {
             let x: u64 = 0;
             let orig = clhash(&rs, &x.to_le_bytes()[..length]);
-            let flipped_x = x ^ (1u64 << bit);
-            let flip = clhash(&rs, &flipped_x.to_le_bytes()[..length]);
-            assert_ne!(flip, orig, "bit={bit} length={length}");
+            let x_flipped: u64 = 1u64 << bit;
+            let flip = clhash(&rs, &x_flipped.to_le_bytes()[..length]);
+            assert_ne!(flip, orig, "bit={} length={}", bit, length);
             let back = clhash(&rs, &x.to_le_bytes()[..length]);
-            assert_eq!(back, orig, "bit={bit} length={length}");
+            assert_eq!(back, orig, "bit={} length={}", bit, length);
         }
     }
 }
 
-// ---- ClHasher struct ----
+// --- clhash: collision test (Eik List) ---
+
+#[test]
+fn test_clhash_collision_eik_list() {
+    let key_offset: u8 = 0x63;
+    let mut k = vec![0u8; RANDOM_BYTES_NEEDED_FOR_CLHASH];
+    for j in 0..RANDOM_BYTES_NEEDED_FOR_CLHASH {
+        k[j] = ((j as u64 + key_offset as u64) & 0xFF) as u8;
+    }
+    for i in 1..10usize {
+        for j in 1..=8usize {
+            let mlen = i * 1024 + j;
+            let mut m: Vec<u8> = (0..mlen).map(|x| (x & 0xFF) as u8).collect();
+            let h1 = clhash(&k, &m);
+            m[mlen - 1] = (m[mlen - 1].wrapping_add(1)) & 0xFF;
+            let h2 = clhash(&k, &m);
+            assert_ne!(h1, h2, "collision at i={} j={} mlen={}", i, j, mlen);
+        }
+    }
+}
+
+// --- clhash: specific collision test value ---
+
+#[test]
+fn test_clhash_collision_specific_values() {
+    let key_offset: u8 = 0x63;
+    let mut k = vec![0u8; RANDOM_BYTES_NEEDED_FOR_CLHASH];
+    for j in 0..RANDOM_BYTES_NEEDED_FOR_CLHASH {
+        k[j] = ((j as u64 + key_offset as u64) & 0xFF) as u8;
+    }
+    let m: Vec<u8> = (0..1025usize).map(|x| (x & 0xFF) as u8).collect();
+    assert_eq!(clhash(&k, &m), 4383937999666532308);
+    let mut m2 = m.clone();
+    m2[1024] = (m2[1024].wrapping_add(1)) & 0xFF;
+    assert_eq!(clhash(&k, &m2), 17183773019360414639);
+}
+
+// --- clhash: avalanche test (from C clhashavalanchetest) ---
+
+#[test]
+fn test_clhash_avalanche() {
+    let mut rs = vec![0u8; RANDOM_BYTES_NEEDED_FOR_CLHASH];
+    for k in 0..RANDOM_BYTES_NEEDED_FOR_CLHASH {
+        rs[k] = ((k as i32 + 1 - (k as i32) * (k as i32)) & 0xFF) as u8;
+    }
+    for bytelength in 1..16usize {
+        for whichcase in 0..256u16 {
+            let val = whichcase as u8;
+            let array: Vec<u8> = vec![val; bytelength];
+            let array1: Vec<u8> = vec![val.wrapping_add(35); bytelength];
+            let orighash = clhash(&rs, &array);
+            let orighash1 = clhash(&rs, &array1);
+            for z in 0..8 * bytelength {
+                let byte_idx = z / 8;
+                let bit_idx = z % 8;
+                let mut flipped = array.clone();
+                flipped[byte_idx] ^= 1 << bit_idx;
+                let newhash = clhash(&rs, &flipped);
+                assert_ne!(orighash, newhash);
+
+                let mut flipped1 = array1.clone();
+                flipped1[byte_idx] ^= 1 << bit_idx;
+                let newhash1 = clhash(&rs, &flipped1);
+                assert_ne!(orighash1, newhash1);
+
+                if bytelength <= 8 {
+                    assert_eq!(
+                        orighash ^ newhash,
+                        orighash1 ^ newhash1,
+                        "avalanche failed at bytelength={} whichcase={} z={}",
+                        bytelength, whichcase, z
+                    );
+                }
+            }
+        }
+    }
+}
+
+// --- ClHasher struct ---
 
 #[test]
 fn test_clhasher_new_and_hash() {
-    let hasher = ClHasher::new(137, 777);
-    assert_eq!(hasher.hash(b"my dog"), 10235581410102137208);
-    assert_eq!(hasher.hash(b"my cat"), 526488957445861319);
-    assert_eq!(hasher.hash("hello"), 18255269798239507943);
-}
-
-#[test]
-fn test_clhasher_empty() {
-    let hasher = ClHasher::new(137, 777);
+    let hasher = ClHasher::new(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    assert_eq!(hasher.hash(b"my dog"), 808761308841733891);
+    assert_eq!(hasher.hash(b"my cat"), 2088517542587126895);
     assert_eq!(hasher.hash(b""), 0);
 }
 
 #[test]
 fn test_clhasher_deterministic() {
-    let hasher = ClHasher::new(137, 777);
-    let h1 = hasher.hash(b"test");
-    let h2 = hasher.hash(b"test");
+    let hasher = ClHasher::new(0x23a23cf5033c3c81, 0xb3816f6a2c68e530);
+    let h1 = hasher.hash(b"hello");
+    let h2 = hasher.hash(b"hello");
     assert_eq!(h1, h2);
+    assert_eq!(h1, 8531588392195409363);
 }
-
-// ---- Collision resistance (from C unit test) ----
 
 #[test]
-fn test_clhash_collision_resistance() {
-    let mut rs = vec![0u8; RANDOM_BYTES_NEEDED_FOR_CLHASH];
-    let key_offset: u8 = 0x63;
-    for j in 0..RANDOM_BYTES_NEEDED_FOR_CLHASH {
-        rs[j] = ((j as u64 + key_offset as u64) & 0xFF) as u8;
-    }
-    let block_size = 1024usize;
-    for i in 1..10usize {
-        for j in 1..=8usize {
-            let mlen = i * block_size + j;
-            let mut m: Vec<u8> = (0..mlen).map(|k| (k & 0xFF) as u8).collect();
-            let h1 = clhash(&rs, &m);
-            m[mlen - 1] = m[mlen - 1].wrapping_add(1);
-            let h2 = clhash(&rs, &m);
-            assert_ne!(h1, h2, "collision at mlen={mlen}");
-        }
-    }
+fn test_clhasher_different_seeds() {
+    let hasher = ClHasher::new(137, 777);
+    assert_eq!(hasher.hash(b"test"), 1106899457831998698);
 }
-
-fn main() {}

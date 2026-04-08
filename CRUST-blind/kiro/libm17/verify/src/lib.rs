@@ -41,7 +41,7 @@ pub fn send_preamble(out: &mut [f32; SYM_PER_FRA], cnt: &mut u32, ptype: Preambl
 
 pub fn send_syncword(out: &mut [f32; SYM_PER_SWD], cnt: &mut u32, syncword: u16) {
     let mut i = 0u8;
-    while i < (SYM_PER_SWD as u8) * 2 {
+    while i < SYM_PER_SWD as u8 * 2 {
         out[*cnt as usize] = encode::SYMBOL_MAP[((syncword >> (14 - i)) & 3) as usize] as f32;
         *cnt += 1;
         i += 2;
@@ -60,17 +60,17 @@ pub fn send_frame(
     let mut rf_bits = [0u8; SYM_PER_PLD * 2];
     let mut sym_cnt: u32 = 0;
 
-    // We need to cast the SYM_PER_FRA output buffer to SYM_PER_SWD for send_syncword
-    // Since send_syncword writes to out[0..8] via cnt, we use a temporary buffer
-    let mut sw_buf = [0f32; SYM_PER_SWD];
+    // We need to cast out to the right sized array for syncword
+    // send_syncword writes to first 8 elements
+    let syncword_out: &mut [f32; SYM_PER_SWD] = (&mut out[..SYM_PER_SWD]).try_into().unwrap();
 
     match frame_type {
         FrameType::Lsf => {
-            send_syncword(&mut sw_buf, &mut sym_cnt, phy::SYNC_LSF);
+            send_syncword(syncword_out, &mut sym_cnt, phy::SYNC_LSF);
             encode::conv_encode_lsf(&mut enc_bits, lsf);
         }
         FrameType::Str => {
-            send_syncword(&mut sw_buf, &mut sym_cnt, phy::SYNC_STR);
+            send_syncword(syncword_out, &mut sym_cnt, phy::SYNC_STR);
             let mut lich = [0u8; 6];
             payload::extract_lich(&mut lich, lich_cnt, lsf);
             let lich_encoded = math::encode_LICH(&lich);
@@ -78,26 +78,15 @@ pub fn send_frame(
             encode::conv_encode_stream_frame(&mut enc_bits[96..], data, fn_num);
         }
         FrameType::Pkt => {
-            send_syncword(&mut sw_buf, &mut sym_cnt, phy::SYNC_PKT);
+            send_syncword(syncword_out, &mut sym_cnt, phy::SYNC_PKT);
             encode::conv_encode_packet_frame(&mut enc_bits, data);
         }
     }
 
-    // Copy syncword symbols to output
-    for i in 0..SYM_PER_SWD {
-        out[i] = sw_buf[i];
-    }
-
-    // common stuff
     phy::reorder_bits(&mut rf_bits, &enc_bits);
     phy::randomize_bits(&mut rf_bits);
 
-    // send_data expects &mut [f32; SYM_PER_PLD], we need to write starting at sym_cnt
-    let mut data_buf = [0f32; SYM_PER_PLD];
-    let mut data_cnt: u32 = 0;
-    send_data(&mut data_buf, &mut data_cnt, &rf_bits);
-
-    for i in 0..SYM_PER_PLD {
-        out[sym_cnt as usize + i] = data_buf[i];
-    }
+    // send_data expects &mut [f32; SYM_PER_PLD] starting at sym_cnt
+    let data_out: &mut [f32; SYM_PER_PLD] = (&mut out[..SYM_PER_PLD]).try_into().unwrap();
+    send_data(data_out, &mut sym_cnt, &rf_bits);
 }

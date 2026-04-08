@@ -33,7 +33,7 @@ pub fn rotl(x: u32, n: i32) -> u32 {
 pub fn sha1(buf: &mut [u8], len: usize, cap: usize, hash: &mut [u8; 20]) -> i32 {
     let k: [u32; 4] = [0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6];
 
-    // Padding: add 1 byte for stop bit, 8 for length, pad to 64 bytes
+    // Padding: need len+9 rounded up to multiple of 64
     if len > usize::MAX - 9 - 63 {
         return TOTP_EBOUNDS;
     }
@@ -42,6 +42,7 @@ pub fn sha1(buf: &mut [u8], len: usize, cap: usize, hash: &mut [u8; 20]) -> i32 
         return TOTP_EBOUNDS;
     }
 
+    // Zero-fill after data, set stop bit, append length
     for i in len..new_len {
         buf[i] = 0;
     }
@@ -51,6 +52,7 @@ pub fn sha1(buf: &mut [u8], len: usize, cap: usize, hash: &mut [u8; 20]) -> i32 
     unpack64(bit_len, &mut len_bytes);
     buf[new_len - 8..new_len].copy_from_slice(&len_bytes);
 
+    // Initial hash values
     let mut h: [u32; 5] = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
 
     for i in 0..new_len / 64 {
@@ -76,7 +78,7 @@ pub fn sha1(buf: &mut [u8], len: usize, cap: usize, hash: &mut [u8; 20]) -> i32 
                 b ^ c ^ d
             };
 
-            let big_t = rotl(a, 5)
+            let temp = rotl(a, 5)
                 .wrapping_add(f)
                 .wrapping_add(e)
                 .wrapping_add(k[t / 20])
@@ -85,7 +87,7 @@ pub fn sha1(buf: &mut [u8], len: usize, cap: usize, hash: &mut [u8; 20]) -> i32 
             d = c;
             c = rotl(b, 30);
             b = a;
-            a = big_t;
+            a = temp;
         }
 
         h[0] = h[0].wrapping_add(a);
@@ -155,9 +157,9 @@ pub fn from_base32(s: &str, buf: &mut [u8], cap: usize) -> usize {
     }
 
     let bytes = s.as_bytes();
-    let blocks = slen / 8;
+    let chunks = slen / 8;
 
-    for i in 0..blocks {
+    for i in 0..chunks {
         let mut v = [0u8; 8];
         for j in 0..8 {
             let c = bytes[i * 8 + j];
@@ -182,5 +184,5 @@ pub fn from_base32(s: &str, buf: &mut [u8], cap: usize) -> usize {
         if bytes[i * 8 + 7] == b'=' { return i * 5 + 4; }
     }
 
-    blocks * 5
+    chunks * 5
 }

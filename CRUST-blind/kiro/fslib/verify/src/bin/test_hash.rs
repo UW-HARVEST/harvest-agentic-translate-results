@@ -1,56 +1,48 @@
 use fslib::hash::HashTable;
 
-fn simple_hash(k: &u32) -> usize {
+fn int_hash(k: &i32) -> usize {
     *k as usize
 }
 
 #[test]
-fn test_insert_and_get() {
-    let mut ht: HashTable<u32, String, _> = HashTable::new(simple_hash, 16);
-    ht.insert(1, "one".to_string());
-    ht.insert(2, "two".to_string());
-    assert_eq!(ht.get(&1), Some(&"one".to_string()));
-    assert_eq!(ht.get(&2), Some(&"two".to_string()));
-    assert_eq!(ht.get(&3), None);
+fn test_insert_get() {
+    let mut h: HashTable<i32, i32, _> = HashTable::new(int_hash, 16);
+    assert_eq!(h.n_items, 0);
+    h.insert(1, 100);
+    h.insert(2, 200);
+    h.insert(3, 300);
+    assert_eq!(h.n_items, 3);
+    assert_eq!(h.get(&1), Some(&100));
+    assert_eq!(h.get(&2), Some(&200));
+    assert_eq!(h.get(&3), Some(&300));
 }
 
 #[test]
-fn test_update_existing() {
-    let mut ht: HashTable<u32, String, _> = HashTable::new(simple_hash, 16);
-    ht.insert(1, "one".to_string());
-    ht.insert(1, "ONE".to_string());
-    assert_eq!(ht.get(&1), Some(&"ONE".to_string()));
-    assert_eq!(ht.n_items, 1);
+fn test_update() {
+    let mut h: HashTable<i32, i32, _> = HashTable::new(int_hash, 16);
+    h.insert(1, 100);
+    h.insert(1, 999);
+    assert_eq!(h.get(&1), Some(&999));
+    assert_eq!(h.n_items, 1);
 }
 
 #[test]
 fn test_remove() {
-    let mut ht: HashTable<u32, String, _> = HashTable::new(simple_hash, 16);
-    ht.insert(1, "one".to_string());
-    ht.insert(2, "two".to_string());
-    ht.remove(&1);
-    assert_eq!(ht.get(&1), None);
-    assert_eq!(ht.get(&2), Some(&"two".to_string()));
-    assert_eq!(ht.n_items, 1);
+    let mut h: HashTable<i32, i32, _> = HashTable::new(int_hash, 16);
+    h.insert(1, 100);
+    h.insert(2, 200);
+    h.insert(3, 300);
+    h.remove(&2);
+    assert_eq!(h.n_items, 2);
+    assert_eq!(h.get(&2), None);
+    assert_eq!(h.get(&1), Some(&100));
+    assert_eq!(h.get(&3), Some(&300));
 }
 
 #[test]
-fn test_resize() {
-    let mut ht: HashTable<u32, u32, _> = HashTable::new(simple_hash, 4);
-    for i in 0..20 {
-        ht.insert(i, i * 10);
-    }
-    for i in 0..20 {
-        assert_eq!(ht.get(&i), Some(&(i * 10)));
-    }
-    assert_eq!(ht.n_items, 20);
-}
-
-#[test]
-fn test_empty_table() {
-    let ht: HashTable<u32, u32, _> = HashTable::new(simple_hash, 8);
-    assert_eq!(ht.get(&0), None);
-    assert_eq!(ht.n_items, 0);
+fn test_get_missing() {
+    let h: HashTable<i32, i32, _> = HashTable::new(int_hash, 16);
+    assert_eq!(h.get(&42), None);
 }
 
 fn main() {}

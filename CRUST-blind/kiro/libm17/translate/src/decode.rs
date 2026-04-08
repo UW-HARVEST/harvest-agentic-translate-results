@@ -9,7 +9,6 @@ pub const PKT_SYNC_SYMBOLS: [i8; 8] = [3, -3, 3, 3, -3, -3, -3, -3];
 // Symbol levels for modulation
 pub const SYMBOL_LEVELS: [f32; 4] = [-3.0, -1.0, 1.0, 3.0];
 pub const NUM_STATES: usize = 1 << (5 - 1);
-
 static mut PREV_METRICS: [u32; NUM_STATES] = [0; NUM_STATES];
 static mut CURR_METRICS: [u32; NUM_STATES] = [0; NUM_STATES];
 static mut PREV_METRICS_DATA: [u32; NUM_STATES] = [0; NUM_STATES];
@@ -18,7 +17,6 @@ static mut VITERBI_HISTORY: [u16; 244] = [0; 244];
 
 pub fn viterbi_decode(out: &mut [u8], input: &[u16], len: u16) -> u32 {
     viterbi_reset();
-
     let mut pos: usize = 0;
     let mut i: usize = 0;
     while i < len as usize {
@@ -28,7 +26,6 @@ pub fn viterbi_decode(out: &mut [u8], input: &[u16], len: u16) -> u32 {
         pos += 1;
         i += 2;
     }
-
     viterbi_chainback(out, pos, len / 2)
 }
 
@@ -52,10 +49,12 @@ pub fn viterbi_decode_punctured(
             umsg[u] = 0x7FFF;
         }
         u += 1;
-        p = (p + 1) % p_len as usize;
+        p += 1;
+        p %= p_len as usize;
     }
 
-    viterbi_decode(out, &umsg, u as u16).wrapping_sub((u as u32 - in_len as u32) * 0x7FFF)
+    let cost = viterbi_decode(out, &umsg, u as u16);
+    cost - ((u as u32) - (in_len as u32)) * 0x7FFF
 }
 
 pub fn viterbi_decode_bit(s0: u16, s1: u16, pos: usize) {
@@ -63,13 +62,12 @@ pub fn viterbi_decode_bit(s0: u16, s1: u16, pos: usize) {
     const COST_TABLE_1: [u16; 8] = [0, 0xFFFF, 0xFFFF, 0, 0, 0xFFFF, 0xFFFF, 0];
 
     unsafe {
-        for i in 0..NUM_STATES / 2 {
+        for i in 0..(NUM_STATES / 2) {
             let metric = q_abs_diff(COST_TABLE_0[i], s0) as u32
                 + q_abs_diff(COST_TABLE_1[i], s1) as u32;
 
             let m0 = PREV_METRICS[i] + metric;
             let m1 = PREV_METRICS[i + NUM_STATES / 2] + (0x1FFFE - metric);
-
             let m2 = PREV_METRICS[i] + (0x1FFFE - metric);
             let m3 = PREV_METRICS[i + NUM_STATES / 2] + metric;
 
@@ -93,10 +91,15 @@ pub fn viterbi_decode_bit(s0: u16, s1: u16, pos: usize) {
             }
         }
 
-        // swap prev and curr
-        let tmp = CURR_METRICS;
-        CURR_METRICS = PREV_METRICS;
-        PREV_METRICS = tmp;
+        // swap
+        let mut tmp = [0u32; NUM_STATES];
+        for i in 0..NUM_STATES {
+            tmp[i] = CURR_METRICS[i];
+        }
+        for i in 0..NUM_STATES {
+            CURR_METRICS[i] = PREV_METRICS[i];
+            PREV_METRICS[i] = tmp[i];
+        }
     }
 }
 
@@ -104,10 +107,10 @@ fn viterbi_chainback(out: &mut [u8], mut pos: usize, len: u16) -> u32 {
     let mut state: u8 = 0;
     let mut bit_pos = len as usize + 4;
 
-    // zero output
-    let out_len = (len as usize - 1) / 8 + 1;
-    for i in 0..out_len {
-        out[i] = 0;
+    // zero out output
+    let out_len = ((len as usize).wrapping_sub(1)) / 8 + 1;
+    for b in out[..out_len].iter_mut() {
+        *b = 0;
     }
 
     unsafe {

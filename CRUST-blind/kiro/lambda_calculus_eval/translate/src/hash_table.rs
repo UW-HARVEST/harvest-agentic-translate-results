@@ -26,7 +26,7 @@ impl HashTable {
 pub fn hash(key: &str) -> u32 {
     let mut h: u64 = 5381;
     for c in key.bytes() {
-        h = ((h << 5).wrapping_add(h)).wrapping_add(c as u64);
+        h = h.wrapping_shl(5).wrapping_add(h).wrapping_add(c as u64);
     }
     (h % HASH_TABLE_SIZE as u64) as u32
 }

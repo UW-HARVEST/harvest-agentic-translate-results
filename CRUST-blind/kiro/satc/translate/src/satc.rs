@@ -58,24 +58,25 @@ fn len(p: &[f64; 2]) -> f64 {
 fn recalc(polygon: &mut SatcPolygon) {
     let n = polygon.num_points;
     for i in 0..n {
-        let mut cp = [
-            polygon.points[i][0] + polygon.offset[0],
-            polygon.points[i][1] + polygon.offset[1],
-        ];
+        let mut cp = polygon.points[i];
+        cp[0] += polygon.offset[0];
+        cp[1] += polygon.offset[1];
         if polygon.angle != 0.0 {
-            cp = satc_point_rotate(&cp, polygon.angle);
+            let x = cp[0];
+            let y = cp[1];
+            cp[0] = x * polygon.angle.cos() - y * polygon.angle.sin();
+            cp[1] = x * polygon.angle.sin() - y * polygon.angle.cos();
         }
         polygon.calc_points[i] = cp;
     }
     for i in 0..n {
-        let next = if i < n - 1 { i + 1 } else { 0 };
-        let edge = [
-            polygon.calc_points[next][0] - polygon.calc_points[i][0],
-            polygon.calc_points[next][1] - polygon.calc_points[i][1],
-        ];
+        let p1 = polygon.calc_points[i];
+        let p2 = polygon.calc_points[if i < n - 1 { i + 1 } else { 0 }];
+        let edge = [p2[0] - p1[0], p2[1] - p1[1]];
         polygon.edges[i] = edge;
         let perp = [edge[1], -edge[0]];
-        polygon.normals[i] = satc_point_normalize(&perp);
+        let d = len(&perp);
+        polygon.normals[i] = if d > 0.0 { [perp[0] / d, perp[1] / d] } else { perp };
     }
 }
 
@@ -127,45 +128,34 @@ pub fn satc_box_create(pos: [f64; 2], w: f64, h: f64) -> SatcBox {
     SatcBox { pos, w, h }
 }
 pub fn satc_box_to_polygon(box_: &SatcBox) -> SatcPolygon {
-    let w = box_.w;
-    let h = box_.h;
     let points = vec![
         [0.0, 0.0],
-        [w, 0.0],
-        [w, h],
-        [0.0, h],
+        [box_.w, 0.0],
+        [box_.w, box_.h],
+        [0.0, box_.h],
     ];
     satc_polygon_create(box_.pos, points)
 }
 pub fn satc_test_polygon_polygon(a: &SatcPolygon, b: &SatcPolygon, response: &mut SatcResponse) -> bool {
-    for i in 0..a.num_points {
-        if satc_is_separating_axis(
-            &a.pos, &b.pos,
-            a.num_points, &a.points,
-            b.num_points, &b.points,
-            &a.normals[i], response,
-        ) {
+    let a_len = a.num_points;
+    let b_len = b.num_points;
+    for i in 0..a_len {
+        if satc_is_separating_axis(&a.pos, &b.pos, a_len, &a.points, b_len, &b.points, &a.normals[i], response) {
             return false;
         }
     }
-    for i in 0..b.num_points {
-        if satc_is_separating_axis(
-            &a.pos, &b.pos,
-            a.num_points, &a.points,
-            b.num_points, &b.points,
-            &b.normals[i], response,
-        ) {
+    for i in 0..b_len {
+        if satc_is_separating_axis(&a.pos, &b.pos, a_len, &a.points, b_len, &b.points, &b.normals[i], response) {
             return false;
         }
     }
-    response.overlap_v = [
-        response.overlap_n[0] * response.overlap,
-        response.overlap_n[1] * response.overlap,
-    ];
+    response.overlap_v = response.overlap_n;
+    response.overlap_v[0] *= response.overlap;
+    response.overlap_v[1] *= response.overlap;
     true
 }
-pub fn satc_point_copy(p: &[f64; 2], q: &[f64; 2]) -> [f64; 2] {
-    [q[0], q[1]]
+pub fn satc_point_copy(_p: &[f64; 2], q: &[f64; 2]) -> [f64; 2] {
+    *q
 }
 pub fn satc_point_perp(p: &[f64; 2]) -> [f64; 2] {
     [p[1], -p[0]]
@@ -204,8 +194,8 @@ pub fn satc_point_project(p: &[f64; 2], q: &[f64; 2]) -> [f64; 2] {
 pub fn satc_point_reflect(p: &[f64; 2], axis: &[f64; 2]) -> [f64; 2] {
     let x = p[0];
     let y = p[1];
-    let proj = satc_point_project(p, axis);
-    let scaled = satc_point_scale_x(&proj, 2.0);
+    let projected = satc_point_project(p, axis);
+    let scaled = satc_point_scale_x(&projected, 2.0);
     [scaled[0] - x, scaled[1] - y]
 }
 pub fn satc_circle_create(pos: [f64; 2], r: f64) -> SatcCircle {
@@ -224,7 +214,8 @@ pub fn satc_polygon_get_aabb(polygon: &SatcPolygon) -> SatcPolygon {
     let mut x_min = polygon.points[0][0];
     let mut y_min = polygon.points[0][1];
     let mut x_max = x_min;
-    let mut y_max = x_max; // matches C bug: y_max = x_max (not y_min)
+    // C code bug: y_max = x_max (which is x_min), not y_min
+    let mut y_max = x_max;
     for i in 1..polygon.num_points {
         let x = polygon.points[i][0];
         let y = polygon.points[i][1];
@@ -233,18 +224,20 @@ pub fn satc_polygon_get_aabb(polygon: &SatcPolygon) -> SatcPolygon {
         if y < y_min { y_min = y; }
         if y > y_max { y_max = y; }
     }
-    let b = satc_box_create([x_min, y_min], x_max - x_min, y_max - y_min);
+    // C code uses uninitialized pos + x_min/y_min; intended behavior is [x_min, y_min]
+    let pos = [x_min, y_min];
+    let b = satc_box_create(pos, x_max - x_min, y_max - y_min);
     satc_box_to_polygon(&b)
 }
 pub fn satc_polygon_get_centroid(polygon: &SatcPolygon) -> [f64; 2] {
     let points = &polygon.calc_points;
-    let len = points.len();
+    let n = points.len();
     let mut cx = 0.0;
     let mut cy = 0.0;
     let mut ar = 0.0;
-    for i in 0..len {
+    for i in 0..n {
         let p1 = &points[i];
-        let p2 = &points[if i == len - 1 { 0 } else { i + 1 }];
+        let p2 = &points[if i == n - 1 { 0 } else { i + 1 }];
         let a = p1[0] * p2[1] - p2[0] * p1[1];
         cx += (p1[0] + p2[0]) * a;
         cy += (p1[1] + p2[1]) * a;
@@ -277,10 +270,10 @@ b_points: &[[f64; 2]],
 axis: &[f64; 2],
 response: &mut SatcResponse,
 ) -> bool {
-    let mut range_a = [0.0; 2];
-    let mut range_b = [0.0; 2];
     let offset_v = [b_pos[0] - a_pos[0], b_pos[1] - a_pos[1]];
     let projected_offset = dot(&offset_v, axis);
+    let mut range_a = [0.0, 0.0];
+    let mut range_b = [0.0, 0.0];
     satc_flatten_points_on(a_len, a_points, axis, &mut range_a);
     satc_flatten_points_on(b_len, b_points, axis, &mut range_b);
     range_b[0] += projected_offset;
@@ -288,7 +281,7 @@ response: &mut SatcResponse,
     if range_a[0] > range_b[1] || range_b[0] > range_a[1] {
         return true;
     }
-    let mut overlap;
+    let overlap;
     if range_a[0] < range_b[0] {
         response.a_in_b = false;
         if range_a[1] < range_b[1] {
@@ -315,7 +308,8 @@ response: &mut SatcResponse,
         response.overlap = abs_overlap;
         response.overlap_n = *axis;
         if overlap < 0.0 {
-            response.overlap_n = satc_point_reverse(&response.overlap_n);
+            response.overlap_n[0] = -response.overlap_n[0];
+            response.overlap_n[1] = -response.overlap_n[1];
         }
     }
     false
@@ -328,40 +322,43 @@ pub fn satc_voronoi_region(line: &[f64; 2], point: &[f64; 2]) -> i32 {
     else { SATC_MIDDLE_VORONOI_REGION }
 }
 pub fn satc_point_in_circle(point: &[f64; 2], circle: &SatcCircle) -> bool {
-    let diff = [point[0] - circle.pos[0], point[1] - circle.pos[1]];
-    len2(&diff) <= circle.r * circle.r
+    let d = [point[0] - circle.pos[0], point[1] - circle.pos[1]];
+    len2(&d) <= circle.r * circle.r
 }
 pub fn satc_point_in_polygon(point: &[f64; 2], polygon: &SatcPolygon) -> bool {
-    let test_point = satc_box_to_polygon(&satc_box_create(*point, 0.000001, 0.000001));
+    let b = satc_box_create([0.0, 0.0], 0.000001, 0.000001);
+    let mut test_point = satc_box_to_polygon(&b);
+    test_point.pos = *point;
     let mut response = satc_response_create();
     let result = satc_test_polygon_polygon(&test_point, polygon, &mut response);
     result && response.a_in_b
 }
 pub fn satc_test_circle_circle(a: &SatcCircle, b: &SatcCircle, response: &mut SatcResponse) -> bool {
-    let mut diff = [b.pos[0] - a.pos[0], b.pos[1] - a.pos[1]];
+    let dv = [b.pos[0] - a.pos[0], b.pos[1] - a.pos[1]];
     let total_radius = a.r + b.r;
-    let dist_sq = len2(&diff);
-    if dist_sq > total_radius * total_radius { return false; }
-    let distance = dist_sq.sqrt();
+    let distance_sq = len2(&dv);
+    if distance_sq > total_radius * total_radius { return false; }
+    let distance = distance_sq.sqrt();
     response.overlap = total_radius - distance;
-    diff = satc_point_normalize(&diff);
-    response.overlap_n = diff;
-    response.overlap_v = satc_point_scale_x(&diff, response.overlap);
+    let nd = satc_point_normalize(&dv);
+    response.overlap_n = nd;
+    let sv = satc_point_scale_x(&nd, response.overlap);
+    response.overlap_v = sv;
     response.a_in_b = a.r <= b.r && distance <= b.r - a.r;
     response.b_in_a = b.r <= a.r && distance <= a.r - b.r;
     true
 }
 pub fn satc_test_polygon_circle(polygon: &SatcPolygon, circle: &SatcCircle, response: &mut SatcResponse) -> bool {
-    let mut circle_pos = [circle.pos[0] - polygon.pos[0], circle.pos[1] - polygon.pos[1]];
+    let circle_pos = [circle.pos[0] - polygon.pos[0], circle.pos[1] - polygon.pos[1]];
     let radius = circle.r;
     let radius2 = radius * radius;
     let points = &polygon.calc_points;
-    let n = points.len();
+    let n = polygon.num_points;
 
     for i in 0..n {
         let next = if i == n - 1 { 0 } else { i + 1 };
         let prev = if i == 0 { n - 1 } else { i - 1 };
-        let mut overlap = 0.0f64;
+        let mut overlap = 0.0_f64;
         let mut overlap_n: Option<[f64; 2]> = None;
 
         let edge = polygon.edges[i];
@@ -382,8 +379,8 @@ pub fn satc_test_polygon_circle(polygon: &SatcPolygon, circle: &SatcCircle, resp
                     return false;
                 } else {
                     response.b_in_a = false;
-                    point = satc_point_normalize(&point);
-                    overlap_n = Some(point);
+                    let np = satc_point_normalize(&point);
+                    overlap_n = Some(np);
                     overlap = radius - dist;
                 }
             }
@@ -397,15 +394,16 @@ pub fn satc_test_polygon_circle(polygon: &SatcPolygon, circle: &SatcCircle, resp
                     return false;
                 } else {
                     response.b_in_a = false;
-                    point = satc_point_normalize(&point);
-                    overlap_n = Some(point);
+                    let np = satc_point_normalize(&point);
+                    overlap_n = Some(np);
                     overlap = radius - dist;
                 }
             }
         } else {
             // MIDDLE region
-            let mut normal = satc_point_perp(&edge);
-            normal = satc_point_normalize(&normal);
+            let e = edge;
+            let perp = satc_point_perp(&e);
+            let normal = satc_point_normalize(&perp);
             let dist = dot(&point, &normal);
             let dist_abs = dist.abs();
             if dist > 0.0 && dist_abs > radius {
@@ -427,20 +425,17 @@ pub fn satc_test_polygon_circle(polygon: &SatcPolygon, circle: &SatcCircle, resp
         }
     }
 
-    response.overlap_v = [
-        response.overlap_n[0] * response.overlap,
-        response.overlap_n[1] * response.overlap,
-    ];
+    response.overlap_v = [response.overlap_n[0] * response.overlap, response.overlap_n[1] * response.overlap];
     true
 }
 pub fn satc_test_circle_polygon(circle: &SatcCircle, polygon: &SatcPolygon, response: &mut SatcResponse) -> bool {
     let result = satc_test_polygon_circle(polygon, circle, response);
     if result {
+        let a_in_b = response.a_in_b;
         response.overlap_n = satc_point_reverse(&response.overlap_n);
         response.overlap_v = satc_point_reverse(&response.overlap_v);
-        let tmp = response.a_in_b;
         response.a_in_b = response.b_in_a;
-        response.b_in_a = tmp;
+        response.b_in_a = a_in_b;
     }
     result
 }

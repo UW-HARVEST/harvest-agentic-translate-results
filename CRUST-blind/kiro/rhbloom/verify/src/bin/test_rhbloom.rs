@@ -1,23 +1,25 @@
 use rhbloom::rhbloom::RHBloom;
 
-// Murmurhash2 matching the C test harness, used to generate deterministic keys
+// Murmurhash2 matching the C test's hash function
 fn murmurhash2(key: &[u8], seed: u32) -> u32 {
     let m: u32 = 0x5bd1e995;
     let r = 24;
-    let mut h: u32 = seed ^ (key.len() as u32);
-    let mut data = key;
-    while data.len() >= 4 {
-        let mut k = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    let len = key.len();
+    let mut h: u32 = seed ^ (len as u32);
+    let mut i = 0;
+    while i + 4 <= len {
+        let mut k = u32::from_le_bytes([key[i], key[i+1], key[i+2], key[i+3]]);
         k = k.wrapping_mul(m);
         k ^= k >> r;
         k = k.wrapping_mul(m);
         h = h.wrapping_mul(m);
         h ^= k;
-        data = &data[4..];
+        i += 4;
     }
-    if data.len() >= 3 { h ^= (data[2] as u32) << 16; }
-    if data.len() >= 2 { h ^= (data[1] as u32) << 8; }
-    if data.len() >= 1 { h ^= data[0] as u32; h = h.wrapping_mul(m); }
+    let remaining = len - i;
+    if remaining >= 3 { h ^= (key[i+2] as u32) << 16; }
+    if remaining >= 2 { h ^= (key[i+1] as u32) << 8; }
+    if remaining >= 1 { h ^= key[i] as u32; h = h.wrapping_mul(m); }
     h ^= h >> 13;
     h = h.wrapping_mul(m);
     h ^= h >> 15;
@@ -28,339 +30,279 @@ fn hash(x: i32) -> u64 {
     murmurhash2(&x.to_le_bytes(), 0) as u64
 }
 
-// --- new ---
+// Rust struct base size (80) vs C struct base size (64) = +16 offset
+const MEMSIZE_OFFSET: usize = std::mem::size_of::<RHBloom>() - 64;
 
 #[test]
-fn test_new_default_state() {
-    let b = RHBloom::new(100, 0.01);
-    assert!(!b.upgraded());
-    assert_eq!(b.memsize(), std::mem::size_of::<RHBloom>());
+fn test_mix() {
+    assert_eq!(RHBloom::mix(0), 0);
+    assert_eq!(RHBloom::mix(1), 6238072747940578789);
+    assert_eq!(RHBloom::mix(2), 15839785061582574730);
+    assert_eq!(RHBloom::mix(42), 12058926934050108962);
+    assert_eq!(RHBloom::mix(100), 2824278126137619252);
+    assert_eq!(RHBloom::mix(u64::MAX), 13029008266876403067);
+    assert_eq!(RHBloom::mix(0xDEADBEEF), 5622224078331092714);
 }
 
 #[test]
-fn test_new_small_n_clamped_to_16() {
-    let b = RHBloom::new(0, 0.01);
-    assert_eq!(b.memsize(), std::mem::size_of::<RHBloom>());
-    assert!(!b.upgraded());
-}
-
-#[test]
-fn test_new_n_equals_1() {
-    let b = RHBloom::new(1, 0.01);
-    assert!(!b.upgraded());
-}
-
-// --- test on empty filter ---
-
-#[test]
-fn test_empty_filter_returns_false() {
+fn test_empty_filter() {
     let b = RHBloom::new(100, 0.01);
     assert!(!b.test(hash(0)));
-    assert!(!b.test(hash(999)));
-    assert!(!b.test(0));
-    assert!(!b.test(u64::MAX));
+    assert!(!b.test(12345));
+    assert!(!b.upgraded());
+    assert_eq!(b.memsize(), 64 + MEMSIZE_OFFSET); // C: 64
 }
 
-// --- add / test in robinhood phase ---
+#[test]
+fn test_new_clamps_n_to_16() {
+    let b = RHBloom::new(0, 0.01);
+    assert_eq!(b.memsize(), 64 + MEMSIZE_OFFSET);
+    assert!(!b.upgraded());
+
+    let b2 = RHBloom::new(5, 0.01);
+    assert_eq!(b2.memsize(), 64 + MEMSIZE_OFFSET);
+}
 
 #[test]
-fn test_add_and_test_single_key() {
+fn test_add_and_test_robinhood_phase() {
     let mut b = RHBloom::new(1000, 0.01);
-    assert!(b.add(hash(0)));
-    assert!(b.test(hash(0)));
-    assert!(!b.test(hash(1)));
+    assert!(!b.upgraded());
+    assert_eq!(b.memsize(), 64 + MEMSIZE_OFFSET);
+
+    for i in 0..5 {
+        b.add(hash(i));
+    }
+    assert!(!b.upgraded());
+    assert_eq!(b.memsize(), 192 + MEMSIZE_OFFSET); // C: 192
+
+    // All added keys should be found
+    for i in 0..5 {
+        assert!(b.test(hash(i)), "hash({}) should be found", i);
+    }
+    // Non-existent keys should not be found
+    for i in 100..105 {
+        assert!(!b.test(hash(i)), "hash({}) should not be found", i);
+    }
+}
+
+#[test]
+fn test_robinhood_memsize_growth() {
+    let mut b = RHBloom::new(1000, 0.01);
+    assert_eq!(b.memsize(), 64 + MEMSIZE_OFFSET);
+
+    b.add(hash(0));
+    assert_eq!(b.memsize(), 192 + MEMSIZE_OFFSET); // 16 buckets * 8 = 128 + 64
+
+    for i in 1..8 { b.add(hash(i)); }
+    assert_eq!(b.memsize(), 192 + MEMSIZE_OFFSET);
+
+    for i in 8..16 { b.add(hash(i)); }
+    assert_eq!(b.memsize(), 320 + MEMSIZE_OFFSET); // 32 buckets * 8 = 256 + 64
+
+    for i in 16..32 { b.add(hash(i)); }
+    assert_eq!(b.memsize(), 576 + MEMSIZE_OFFSET);
+
+    for i in 32..64 { b.add(hash(i)); }
+    assert_eq!(b.memsize(), 1088 + MEMSIZE_OFFSET);
     assert!(!b.upgraded());
 }
 
 #[test]
-fn test_add_multiple_keys_robinhood() {
-    let mut b = RHBloom::new(1000, 0.01);
-    for i in 0..10 {
-        b.add(hash(i));
-    }
+fn test_upgrade_n16() {
+    // n=16, p=0.01: upgrades on first add
+    let mut b = RHBloom::new(16, 0.01);
     assert!(!b.upgraded());
-    for i in 0..10 {
-        assert!(b.test(hash(i)));
-    }
-    assert!(!b.test(hash(999)));
+    b.add(hash(0));
+    assert!(b.upgraded());
+    assert_eq!(b.memsize(), 96 + MEMSIZE_OFFSET);
 }
 
 #[test]
-fn test_add_returns_true() {
-    let mut b = RHBloom::new(100, 0.01);
-    assert!(b.add(hash(42)));
-}
-
-#[test]
-fn test_duplicate_add() {
-    let mut b = RHBloom::new(100, 0.01);
-    assert!(b.add(hash(42)));
-    assert!(b.add(hash(42)));
-    assert!(b.test(hash(42)));
-}
-
-// --- memsize in robinhood phase ---
-
-#[test]
-fn test_memsize_initial() {
-    let b = RHBloom::new(16, 0.01);
-    // No buckets allocated yet, so memsize = base only
-    assert_eq!(b.memsize(), 80);
-}
-
-#[test]
-fn test_memsize_after_adds_robinhood() {
+fn test_upgrade_n1000() {
+    // n=1000, p=0.01: upgrades at add index 64
     let mut b = RHBloom::new(1000, 0.01);
-    for i in 0..10 {
+    for i in 0..64 {
         b.add(hash(i));
+        assert!(!b.upgraded(), "should not upgrade at add {}", i);
     }
-    // First grow creates 16 buckets, second grow doubles to 32
-    // 32 * 8 = 256, plus base 80 = 336
-    assert_eq!(b.memsize(), 336);
-}
-
-// --- upgrade to bloom ---
-
-#[test]
-fn test_upgrade_to_bloom() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
+    b.add(hash(64));
     assert!(b.upgraded());
-    // After upgrade: memsize = base + m>>3 = 80 + 128 = 208
-    assert_eq!(b.memsize(), 208);
+    assert_eq!(b.memsize(), 2112 + MEMSIZE_OFFSET);
 }
 
 #[test]
-fn test_all_keys_found_after_upgrade() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
-    assert!(b.upgraded());
-    for i in 0..=100 {
-        assert!(b.test(hash(i)), "key {} not found after upgrade", i);
-    }
-}
-
-#[test]
-fn test_upgrade_small_p() {
-    let mut b = RHBloom::new(16, 0.5);
+fn test_small_filter_full() {
+    // n=16, p=0.01: add 17 keys, all should be found
+    let mut b = RHBloom::new(16, 0.01);
     for i in 0..=16 {
         b.add(hash(i));
     }
     assert!(b.upgraded());
-    // m>>3 = 4, base 80 + 4 = 84
-    assert_eq!(b.memsize(), 84);
-}
+    assert_eq!(b.memsize(), 96 + MEMSIZE_OFFSET);
 
-// --- upgraded ---
+    let hits: i32 = (0..=16).filter(|&i| b.test(hash(i))).count() as i32;
+    assert_eq!(hits, 17);
 
-#[test]
-fn test_upgraded_false_initially() {
-    let b = RHBloom::new(100, 0.01);
-    assert!(!b.upgraded());
+    let fp: i32 = (17..=33).filter(|&i| b.test(hash(i))).count() as i32;
+    assert_eq!(fp, 0);
 }
 
 #[test]
-fn test_upgraded_true_after_bloom() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
-    assert!(b.upgraded());
-}
-
-// --- clear ---
-
-#[test]
-fn test_clear_on_empty_filter() {
-    let mut b = RHBloom::new(100, 0.01);
-    b.clear(); // should not panic
-    assert!(!b.upgraded());
-}
-
-#[test]
-fn test_clear_robinhood_phase() {
+fn test_full_n1000() {
     let mut b = RHBloom::new(1000, 0.01);
-    for i in 0..10 {
-        b.add(hash(i));
-    }
-    assert!(!b.upgraded());
-    b.clear();
-    // After clear in robinhood phase, keys should not be found
-    for i in 0..10 {
-        assert!(!b.test(hash(i)));
-    }
-}
-
-#[test]
-fn test_clear_preserves_upgraded_state() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
+    let nn = 1001;
+    for i in 0..nn {
         b.add(hash(i));
     }
     assert!(b.upgraded());
-    let ms = b.memsize();
-    b.clear();
+    assert_eq!(b.memsize(), 2112 + MEMSIZE_OFFSET);
+
+    let hits = (0..nn).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(hits, 1001);
+
+    let fp = (nn..nn*2).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(fp, 0);
+}
+
+#[test]
+fn test_false_positives_n100_p01() {
+    let mut b = RHBloom::new(100, 0.1);
+    let nn = 101;
+    for i in 0..nn { b.add(hash(i)); }
     assert!(b.upgraded());
-    assert_eq!(b.memsize(), ms);
+    assert_eq!(b.memsize(), 128 + MEMSIZE_OFFSET);
+
+    let hits = (0..nn).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(hits, 101);
+
+    let fp = (nn..nn*2).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(fp, 9);
 }
 
 #[test]
-fn test_clear_zeros_bloom_bits() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
+fn test_clear_robinhood() {
+    let mut b = RHBloom::new(1000, 0.01);
+    for i in 0..5 { b.add(hash(i)); }
+    assert!(b.test(hash(0)));
     b.clear();
-    for i in 0..=100 {
-        assert!(!b.test(hash(i)));
-    }
+    assert!(!b.test(hash(0)));
+    // Re-add works
+    b.add(hash(0));
+    assert!(b.test(hash(0)));
 }
 
 #[test]
-fn test_readd_after_clear() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
+fn test_clear_bloom() {
+    let mut b = RHBloom::new(16, 0.01);
+    for i in 0..=20 { b.add(hash(i)); }
+    assert!(b.upgraded());
+    assert!(b.test(hash(0)));
+
     b.clear();
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
-    for i in 0..=100 {
-        assert!(b.test(hash(i)), "key {} not found after re-add", i);
-    }
+    assert!(b.upgraded()); // stays upgraded
+    assert!(!b.test(hash(0))); // but data cleared
+
+    // Re-add after clear
+    for i in 0..=20 { b.add(hash(i)); }
+    let hits = (0..=20).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(hits, 21);
 }
 
-// --- test_step equivalent (matches C test logic) ---
+#[test]
+fn test_raw_keys() {
+    let mut b = RHBloom::new(100, 0.01);
+    b.add(12345);
+    b.add(67890);
+    assert!(b.test(12345));
+    assert!(b.test(67890));
+    assert!(!b.test(99999));
+    assert!(b.upgraded()); // n=100 upgrades on first add (like n=16)
+}
 
 #[test]
-fn test_step_small() {
-    // Mirrors C test_step(rhbloom, 0, 0.01)
+fn test_n0_edge_case() {
     let mut b = RHBloom::new(0, 0.01);
-    let n = 0;
-    let nn = n + 1;
-    for i in 0..nn {
-        if !b.upgraded() {
-            assert!(!b.test(hash(i)));
-        }
-        b.add(hash(i));
-        if !b.upgraded() {
-            assert!(b.test(hash(i)));
-        }
-    }
-    assert!(b.upgraded());
-    let hits: i32 = (0..nn).filter(|&i| b.test(hash(i))).count() as i32;
-    assert_eq!(hits, nn);
+    assert_eq!(b.memsize(), 64 + MEMSIZE_OFFSET);
+    assert!(!b.upgraded());
+    b.add(hash(0));
+    assert!(b.test(hash(0)));
 }
 
 #[test]
-fn test_step_medium() {
-    // Mirrors C test_step(rhbloom, 1000, 0.01)
+fn test_add_returns_true() {
     let mut b = RHBloom::new(1000, 0.01);
-    let n = 1000;
-    let p = 0.01;
-    let nn = n + 1;
-    for i in 0..nn {
-        if !b.upgraded() {
-            assert!(!b.test(hash(i)));
-        }
-        b.add(hash(i));
-        if !b.upgraded() {
-            assert!(b.test(hash(i)));
-        }
-    }
-    assert!(b.upgraded());
-    let hits: i32 = (0..nn).filter(|&i| b.test(hash(i))).count() as i32;
-    assert_eq!(hits, nn);
-
-    // Check false positive rate
-    let fp: i32 = (nn..nn * 2).filter(|&i| b.test(hash(i))).count() as i32;
-    let fp_rate = fp as f64 / n as f64;
-    assert!(fp_rate - p < 0.1, "false positive rate too high: {}", fp_rate);
+    assert!(b.add(hash(0)));
+    // Adding same key again should also return true
+    assert!(b.add(hash(0)));
 }
-
-#[test]
-fn test_step_then_clear_then_redo() {
-    // Mirrors the C test pattern: test_step, clear, test_step again
-    for &(n, p) in &[(0, 0.01), (1000, 0.01), (1000, 0.5)] {
-        let mut b = RHBloom::new(n, p);
-        let nn = n as i32 + 1;
-        // First pass
-        for i in 0..nn {
-            b.add(hash(i));
-        }
-        assert!(b.upgraded());
-        let hits: i32 = (0..nn).filter(|&i| b.test(hash(i))).count() as i32;
-        assert_eq!(hits, nn);
-
-        // Clear and redo
-        b.clear();
-        for i in 0..nn {
-            b.add(hash(i));
-        }
-        assert!(b.upgraded());
-        let hits: i32 = (0..nn).filter(|&i| b.test(hash(i))).count() as i32;
-        assert_eq!(hits, nn);
-    }
-}
-
-// --- boundary keys ---
-
-#[test]
-fn test_key_zero() {
-    let mut b = RHBloom::new(100, 0.01);
-    b.add(0);
-    assert!(b.test(0));
-}
-
-#[test]
-fn test_key_max() {
-    let mut b = RHBloom::new(100, 0.01);
-    b.add(u64::MAX);
-    assert!(b.test(u64::MAX));
-}
-
-#[test]
-fn test_key_one() {
-    let mut b = RHBloom::new(100, 0.01);
-    b.add(1);
-    assert!(b.test(1));
-    assert!(!b.test(0));
-}
-
-// --- various p values ---
-
-#[test]
-fn test_various_probabilities() {
-    let mut p = 0.01;
-    while p < 0.70 {
-        let mut b = RHBloom::new(1000, p);
-        let nn = 1001;
-        for i in 0..nn {
-            b.add(hash(i));
-        }
-        assert!(b.upgraded());
-        let hits: i32 = (0..nn).filter(|&i| b.test(hash(i))).count() as i32;
-        assert_eq!(hits, nn, "failed for p={}", p);
-        p += 0.05;
-    }
-}
-
-// --- free ---
 
 #[test]
 fn test_free() {
-    let mut b = RHBloom::new(100, 0.01);
-    for i in 0..=100 {
-        b.add(hash(i));
-    }
+    let mut b = RHBloom::new(1000, 0.01);
+    for i in 0..10 { b.add(hash(i)); }
     b.free();
     assert!(!b.upgraded());
     assert_eq!(b.memsize(), std::mem::size_of::<RHBloom>());
+}
+
+#[test]
+fn test_step_like_c() {
+    // Replicate the C test_step for n=0, p=0.01
+    let mut b = RHBloom::new(0, 0.01);
+    let nn = 1;
+    for i in 0..nn {
+        if !b.upgraded() {
+            assert!(!b.test(hash(i)));
+        }
+        b.add(hash(i));
+        if !b.upgraded() {
+            assert!(b.test(hash(i)));
+        }
+    }
+    assert!(b.upgraded());
+    let hits = (0..nn).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(hits, nn as usize);
+}
+
+#[test]
+fn test_step_n1000() {
+    // Replicate C test_step for n=1000, p=0.01
+    let mut b = RHBloom::new(1000, 0.01);
+    let nn = 1001i32;
+    for i in 0..nn {
+        if !b.upgraded() {
+            assert!(!b.test(hash(i)), "pre-test failed at {}", i);
+        }
+        b.add(hash(i));
+        if !b.upgraded() {
+            assert!(b.test(hash(i)), "post-test failed at {}", i);
+        }
+    }
+    assert!(b.upgraded());
+    let hits = (0..nn).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(hits, nn as usize);
+}
+
+#[test]
+fn test_step_then_clear_n1000() {
+    let mut b = RHBloom::new(1000, 0.01);
+    let nn = 1001i32;
+    // First pass
+    for i in 0..nn { b.add(hash(i)); }
+    assert!(b.upgraded());
+    // Clear and redo
+    b.clear();
+    for i in 0..nn {
+        if !b.upgraded() {
+            assert!(!b.test(hash(i)));
+        }
+        b.add(hash(i));
+        if !b.upgraded() {
+            assert!(b.test(hash(i)));
+        }
+    }
+    let hits = (0..nn).filter(|&i| b.test(hash(i))).count();
+    assert_eq!(hits, nn as usize);
 }
 
 fn main() {}

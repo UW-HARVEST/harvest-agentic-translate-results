@@ -26,16 +26,16 @@ pub fn compute_closed_syncmers(sequence_input: &str, len: i32, k: i32, s: i32, r
     let mut hash_fwd: u128 = 0;
     let mut hash_rev: u128 = 0;
     let rc_shift = 2 * (s - 1);
-    let seq = sequence_input.as_bytes();
+    let bytes = sequence_input.as_bytes();
 
     for i in 0..len {
-        let base = base_to_bits(seq[i] as char);
+        let base = base_to_bits(bytes[i] as char);
         hash_fwd = ((hash_fwd << 2) | base as u128) & mask;
         let comp_base = complement_base(base);
         hash_rev = ((hash_rev >> 2) | ((comp_base as u128) << rc_shift)) & mask;
         if i >= s - 1 {
-            let s_mer_pos = i + 1 - s;
-            s_mer_hashes[s_mer_pos] = hash_fwd.min(hash_rev);
+            let s_mer_pos = i - s + 1;
+            s_mer_hashes[s_mer_pos] = if hash_fwd < hash_rev { hash_fwd } else { hash_rev };
         }
     }
 
@@ -55,7 +55,7 @@ pub fn compute_closed_syncmers(sequence_input: &str, len: i32, k: i32, s: i32, r
         }
         if i >= window_size - 1 {
             let min_pos = deque[front];
-            let kmer_pos = i + 1 - window_size;
+            let kmer_pos = i - window_size + 1;
             if min_pos == kmer_pos || min_pos == kmer_pos + k - s {
                 add_minimizer(results, num_results, s_mer_hashes[min_pos], kmer_pos, min_pos);
             }

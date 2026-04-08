@@ -16,60 +16,77 @@ pub next: Option<Box<RangeElement>>,
 impl RangeElement {
 pub fn new() -> Self {
     RangeElement {
-        start: u32::MAX,
-        end: u32::MAX,
+        start: 0,
+        end: 0,
         rangetype: RangeType::Empty,
         next: None,
     }
 }
 pub fn add_single(num: u32, start_of_list: Option<Box<RangeElement>>) -> Option<Box<RangeElement>> {
-    let new_elem = RangeElement {
+    let new_elem = Box::new(RangeElement {
         start: num,
-        end: u32::MAX,
+        end: 0,
         rangetype: RangeType::Single,
         next: None,
-    };
-    Self::append_to_list(start_of_list, new_elem)
-}
-pub fn add_start_end(start: u32, end: u32, start_of_list: Option<Box<RangeElement>>) -> Option<Box<RangeElement>> {
-    let new_elem = if start == end {
-        RangeElement { start, end: u32::MAX, rangetype: RangeType::Single, next: None }
-    } else {
-        RangeElement { start, end, rangetype: RangeType::StartEnd, next: None }
-    };
-    Self::append_to_list(start_of_list, new_elem)
-}
-pub fn add_greater_equal(num: u32, start_of_list: Option<Box<RangeElement>>) -> Option<Box<RangeElement>> {
-    let new_elem = RangeElement {
-        start: num,
-        end: u32::MAX,
-        rangetype: RangeType::GreaterEqual,
-        next: None,
-    };
-    Self::append_to_list(start_of_list, new_elem)
-}
-
-fn append_to_list(start_of_list: Option<Box<RangeElement>>, new_elem: RangeElement) -> Option<Box<RangeElement>> {
+    });
     match start_of_list {
-        None => Some(Box::new(new_elem)),
+        None => Some(new_elem),
         Some(mut head) => {
             let mut ptr = &mut head;
             while ptr.next.is_some() {
                 ptr = ptr.next.as_mut().unwrap();
             }
-            ptr.next = Some(Box::new(new_elem));
+            ptr.next = Some(new_elem);
             Some(head)
         }
     }
 }
-
+pub fn add_start_end(start: u32, end: u32, start_of_list: Option<Box<RangeElement>>) -> Option<Box<RangeElement>> {
+    let rt = if start == end { RangeType::Single } else { RangeType::StartEnd };
+    let new_elem = Box::new(RangeElement {
+        start,
+        end,
+        rangetype: rt,
+        next: None,
+    });
+    match start_of_list {
+        None => Some(new_elem),
+        Some(mut head) => {
+            let mut ptr = &mut head;
+            while ptr.next.is_some() {
+                ptr = ptr.next.as_mut().unwrap();
+            }
+            ptr.next = Some(new_elem);
+            Some(head)
+        }
+    }
+}
+pub fn add_greater_equal(num: u32, start_of_list: Option<Box<RangeElement>>) -> Option<Box<RangeElement>> {
+    let new_elem = Box::new(RangeElement {
+        start: num,
+        end: 0,
+        rangetype: RangeType::GreaterEqual,
+        next: None,
+    });
+    match start_of_list {
+        None => Some(new_elem),
+        Some(mut head) => {
+            let mut ptr = &mut head;
+            while ptr.next.is_some() {
+                ptr = ptr.next.as_mut().unwrap();
+            }
+            ptr.next = Some(new_elem);
+            Some(head)
+        }
+    }
+}
 pub fn contains_num(num: u32, start_of_list: &Option<Box<RangeElement>>) -> bool {
     let mut ptr = start_of_list;
     while let Some(elem) = ptr {
         match elem.rangetype {
-            RangeType::Single if elem.start == num => return true,
-            RangeType::GreaterEqual if num >= elem.start => return true,
-            RangeType::StartEnd if num >= elem.start && num <= elem.end => return true,
+            RangeType::Single => { if elem.start == num { return true; } }
+            RangeType::GreaterEqual => { if num >= elem.start { return true; } }
+            RangeType::StartEnd => { if num >= elem.start && num <= elem.end { return true; } }
             _ => {}
         }
         ptr = &elem.next;
@@ -85,26 +102,22 @@ pub fn to_string(&self, buf: &mut String, bufsize: usize) -> &str {
         RangeType::Empty => "[]".to_string(),
     };
     buf.push_str(&s[..s.len().min(bufsize)]);
-    // Return lifetime is tied to &self; buf is the actual output
+    // Return lifetime is tied to &self by elision; buf is populated as side effect
     ""
 }
 pub fn list_to_string<'a>(buf: &'a mut String, bufsize: usize, start_of_list: &'a Option<Box<RangeElement>>) -> &'a str {
     buf.clear();
     let mut ptr = start_of_list;
     while let Some(elem) = ptr {
-        let tmp = match elem.rangetype {
+        let s = match elem.rangetype {
             RangeType::Single => format!("[{}]", elem.start),
             RangeType::GreaterEqual => format!("[{}-]", elem.start),
             RangeType::StartEnd => format!("[{}-{}]", elem.start, elem.end),
             RangeType::Empty => "[]".to_string(),
         };
-        if buf.len() + tmp.len() <= bufsize {
-            buf.push_str(&tmp);
-        } else {
-            let remaining = bufsize.saturating_sub(buf.len());
-            buf.push_str(&tmp[..remaining]);
-            break;
-        }
+        let copylen = s.len().min(bufsize - buf.len());
+        buf.push_str(&s[..copylen]);
+        if buf.len() >= bufsize { break; }
         ptr = &elem.next;
     }
     buf.as_str()
@@ -114,12 +127,12 @@ pub fn parse_int_ranges(text: &str) -> Option<Box<RangeElement>> {
     let mut state: i32 = 0;
     let mut numbuf = String::new();
     let mut rv: Option<Box<RangeElement>> = None;
-    let mut start: i32 = 0;
+    let mut start: u32 = 0;
 
-    for c in text.chars() {
-        if c.is_ascii_digit() {
-            numbuf.push(c);
-        } else if c == '-' {
+    for ch in text.chars() {
+        if ch >= '0' && ch <= '9' {
+            numbuf.push(ch);
+        } else if ch == '-' {
             if state & flag_dash != 0 {
                 eprintln!("error: too many dashes in range");
                 std::process::exit(-1);
@@ -129,27 +142,27 @@ pub fn parse_int_ranges(text: &str) -> Option<Box<RangeElement>> {
                 eprintln!("error: range cannot start with '-'");
                 std::process::exit(-1);
             }
-            start = numbuf.parse::<i32>().unwrap_or(0);
-            if start <= 0 {
+            start = numbuf.parse::<u32>().unwrap_or(0);
+            if start == 0 {
                 eprintln!("error: start range <= 0");
                 std::process::exit(-1);
             }
             numbuf.clear();
-        } else if c == ',' {
+        } else if ch == ',' {
             if numbuf.is_empty() {
                 if state & flag_dash != 0 {
-                    rv = Self::add_greater_equal(start as u32, rv);
+                    rv = RangeElement::add_greater_equal(start, rv);
                 }
             } else if start > 0 {
-                let end = numbuf.parse::<i32>().unwrap_or(0);
-                if end <= 0 || start > end {
+                let end = numbuf.parse::<u32>().unwrap_or(0);
+                if end == 0 || start > end {
                     eprintln!("error: illegal start/end ranges");
                     std::process::exit(-1);
                 }
-                rv = Self::add_start_end(start as u32, end as u32, rv);
+                rv = RangeElement::add_start_end(start, end, rv);
             } else {
-                start = numbuf.parse::<i32>().unwrap_or(0);
-                rv = Self::add_single(start as u32, rv);
+                start = numbuf.parse::<u32>().unwrap_or(0);
+                rv = RangeElement::add_single(start, rv);
             }
             numbuf.clear();
             start = 0;
@@ -159,18 +172,18 @@ pub fn parse_int_ranges(text: &str) -> Option<Box<RangeElement>> {
     // finish up
     if numbuf.is_empty() {
         if state & flag_dash != 0 {
-            rv = Self::add_greater_equal(start as u32, rv);
+            rv = RangeElement::add_greater_equal(start, rv);
         }
     } else if start > 0 {
-        let end = numbuf.parse::<i32>().unwrap_or(0);
-        if end <= 0 || start > end {
+        let end = numbuf.parse::<u32>().unwrap_or(0);
+        if end == 0 || start > end {
             eprintln!("error: illegal start/end range {}", text);
             std::process::exit(-1);
         }
-        rv = Self::add_start_end(start as u32, end as u32, rv);
+        rv = RangeElement::add_start_end(start, end, rv);
     } else {
-        start = numbuf.parse::<i32>().unwrap_or(0);
-        rv = Self::add_single(start as u32, rv);
+        start = numbuf.parse::<u32>().unwrap_or(0);
+        rv = RangeElement::add_single(start, rv);
     }
     rv
 }

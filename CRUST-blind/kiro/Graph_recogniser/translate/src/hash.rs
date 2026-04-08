@@ -9,7 +9,7 @@ pub const REHASHER: Hash = 718841;
 
 fn hash_by_power_bytes(key: &str, power: Hash) -> Hash {
     let mut res: Hash = 0;
-    for &b in key.as_bytes() {
+    for b in key.bytes() {
         res = res.wrapping_mul(power).wrapping_add(b as Hash);
     }
     res
@@ -28,8 +28,12 @@ pub fn alternative_hash(key: Key) -> Hash {
     hash_by_power_bytes(key, ALTERNATIVE_POWER)
 }
 
-pub fn hash_str(key: &str) -> Hash {
+pub(crate) fn hash_str(key: &str) -> Hash {
     hash_by_power_bytes(key, POWER)
+}
+
+pub(crate) fn alternative_hash_str(key: &str) -> Hash {
+    hash_by_power_bytes(key, ALTERNATIVE_POWER)
 }
 
 /// Compares two keys lexicographically.

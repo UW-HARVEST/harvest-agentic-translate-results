@@ -1,13 +1,16 @@
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
+// Flags (just examples; adapt to your constants)
 const OSORT: u32 = 0x1;
 const ISORT: u32 = 0x2;
+// A trait to represent your semiring
 pub trait Semiring: Clone {
     fn zero() -> Self;
     fn one() -> Self;
     fn plus(&self, rhs: &Self) -> Self;
     fn prod(&self, rhs: &Self) -> Self;
 }
+// Example semiring for Weighted FST with float weights (Tropical semiring-like)
 #[derive(Clone, Debug)]
 pub struct FloatSemiring(pub f32);
 impl Semiring for FloatSemiring {
@@ -16,6 +19,7 @@ impl Semiring for FloatSemiring {
     fn plus(&self, rhs: &Self) -> Self { FloatSemiring(self.0.min(rhs.0)) }
     fn prod(&self, rhs: &Self) -> Self { FloatSemiring(self.0 + rhs.0) }
 }
+// Arc representation
 #[derive(Clone, Debug)]
 pub struct Arc<W: Semiring> {
     pub state: usize,
@@ -23,11 +27,13 @@ pub struct Arc<W: Semiring> {
     pub olabel: u32,
     pub weight: W,
 }
+// State representation
 #[derive(Clone, Debug)]
 pub struct State<W: Semiring> {
     pub arcs: Vec<Arc<W>>,
     pub final_weight: Option<W>,
 }
+// Fst representation
 #[derive(Clone, Debug)]
 pub struct Fst<W: Semiring> {
     pub states: Vec<State<W>>,
@@ -50,6 +56,7 @@ impl<W: Semiring> Fst<W> {
         self.states[src].arcs.push(arc);
     }
 }
+// A pair of states (a,b)
 #[derive(Copy, Clone, Debug, Eq)]
 pub struct StatePair {
     pub a: usize,
@@ -66,11 +73,13 @@ impl Hash for StatePair {
         state.write_usize(self.b);
     }
 }
+// A pair of arcs matched together
 #[derive(Clone, Debug)]
 pub struct ArcPair<W: Semiring> {
     pub a: Arc<W>,
     pub b: Arc<W>,
 }
+// The "EPS" label constant
 pub const EPS: u32 = 0;
 
 fn _match_check<W: Semiring>(a: &[Arc<W>], _b: &[Arc<W>], i: usize, j: usize) -> bool {
@@ -85,8 +94,10 @@ fn _match_check<W: Semiring>(a: &[Arc<W>], _b: &[Arc<W>], i: usize, j: usize) ->
 
 fn match_full_sorted<W: Semiring>(arcs_a: &[Arc<W>], arcs_b: &[Arc<W>]) -> Vec<ArcPair<W>> {
     let mut result = Vec::new();
-    let (m, n) = (arcs_a.len(), arcs_b.len());
-    let (mut i, mut j) = (0, 0);
+    let m = arcs_a.len();
+    let n = arcs_b.len();
+    let mut i = 0;
+    let mut j = 0;
     while i < m && j < n {
         if arcs_a[i].olabel < arcs_b[j].ilabel { i += 1; }
         else if arcs_a[i].olabel > arcs_b[j].ilabel { j += 1; }
@@ -107,9 +118,9 @@ fn match_half_sorted<W: Semiring>(arcs_a: &[Arc<W>], arcs_b: &[Arc<W>]) -> Vec<A
     let mut result = Vec::new();
     let n = arcs_b.len();
     for i in 0..arcs_a.len() {
-        let mut l: usize = 0;
-        let mut h: usize = n.wrapping_sub(1);
         if n == 0 { continue; }
+        let mut l: usize = 0;
+        let mut h: usize = n - 1;
         while l <= h {
             let mid = (l + h) >> 1;
             if arcs_a[i].olabel > arcs_b[mid].ilabel { l = mid + 1; }
@@ -119,8 +130,8 @@ fn match_half_sorted<W: Semiring>(arcs_a: &[Arc<W>], arcs_b: &[Arc<W>]) -> Vec<A
             } else {
                 let mut ll = mid;
                 let mut hh = mid;
-                while ll > l && arcs_a[i].olabel == arcs_b[ll - 1].ilabel { ll -= 1; }
-                while hh < h && arcs_a[i].olabel == arcs_b[hh + 1].ilabel { hh += 1; }
+                while ll > l && arcs_a[i].olabel == arcs_b[ll-1].ilabel { ll -= 1; }
+                while hh < h && arcs_a[i].olabel == arcs_b[hh+1].ilabel { hh += 1; }
                 while ll <= hh {
                     if _match_check(arcs_a, arcs_b, i, ll) {
                         result.push(ArcPair { a: arcs_a[i].clone(), b: arcs_b[ll].clone() });
@@ -137,9 +148,9 @@ fn match_half_sorted_rev<W: Semiring>(arcs_a: &[Arc<W>], arcs_b: &[Arc<W>]) -> V
     let mut result = Vec::new();
     let m = arcs_a.len();
     for i in 0..arcs_b.len() {
-        let mut l: usize = 0;
-        let mut h: usize = m.wrapping_sub(1);
         if m == 0 { continue; }
+        let mut l: usize = 0;
+        let mut h: usize = m - 1;
         while l <= h {
             let mid = (l + h) >> 1;
             if arcs_b[i].ilabel > arcs_a[mid].olabel { l = mid + 1; }
@@ -149,8 +160,8 @@ fn match_half_sorted_rev<W: Semiring>(arcs_a: &[Arc<W>], arcs_b: &[Arc<W>]) -> V
             } else {
                 let mut ll = mid;
                 let mut hh = mid;
-                while ll > l && arcs_b[i].ilabel == arcs_a[ll - 1].olabel { ll -= 1; }
-                while hh < h && arcs_b[i].ilabel == arcs_a[hh + 1].olabel { hh += 1; }
+                while ll > l && arcs_b[i].ilabel == arcs_a[ll-1].olabel { ll -= 1; }
+                while hh < h && arcs_b[i].ilabel == arcs_a[hh+1].olabel { hh += 1; }
                 while ll <= hh {
                     if _match_check(arcs_a, arcs_b, ll, i) {
                         result.push(ArcPair { a: arcs_a[ll].clone(), b: arcs_b[i].clone() });
@@ -193,23 +204,23 @@ fn match_arcs<W: Semiring>(fst_a: &Fst<W>, fst_b: &Fst<W>, pair: &StatePair, sr:
     else if osort { match_half_sorted_rev(&arcs_a, &arcs_b) }
     else { match_unsorted(&arcs_a, &arcs_b) }
 }
-pub fn fst_compose<W: Semiring>(fst_a: &Fst<W>, fst_b: &Fst<W>, _sr: &W) -> Fst<W> {
+/// Compose two FSTs into a third. 
+pub fn fst_compose<W: Semiring>(fst_a: &Fst<W>, fst_b: &Fst<W>, sr: &W) -> Fst<W> {
     let mut fst_c = Fst::new();
     let mut q: VecDeque<StatePair> = VecDeque::new();
     let mut marked: HashMap<StatePair, usize> = HashMap::new();
 
-    let start_pair = StatePair { a: fst_a.start, b: fst_b.start };
-    q.push_back(start_pair);
+    let pair = StatePair { a: fst_a.start, b: fst_b.start };
+    q.push_back(pair);
 
     while let Some(pair) = q.pop_front() {
-        let state_a = &fst_a.states[pair.a];
-        let state_b = &fst_b.states[pair.b];
-
         let sc = if let Some(&existing) = marked.get(&pair) {
             existing
         } else {
             let sc = fst_c.add_state();
-            if state_a.final_weight.is_some() && state_b.final_weight.is_some() {
+            let sa = &fst_a.states[pair.a];
+            let sb = &fst_b.states[pair.b];
+            if sa.final_weight.is_some() && sb.final_weight.is_some() {
                 fst_c.set_final(sc, W::one());
             }
             if pair.a == fst_a.start && pair.b == fst_b.start {
@@ -219,17 +230,16 @@ pub fn fst_compose<W: Semiring>(fst_a: &Fst<W>, fst_b: &Fst<W>, _sr: &W) -> Fst<
             sc
         };
 
-        let matches = match_arcs(fst_a, fst_b, &pair, _sr);
-
+        let matches = match_arcs(fst_a, fst_b, &pair, sr);
         for mi in matches {
             let dst_pair = StatePair { a: mi.a.state, b: mi.b.state };
             let dst_sc = if let Some(&existing) = marked.get(&dst_pair) {
                 existing
             } else {
-                let dst_state_a = &fst_a.states[dst_pair.a];
-                let dst_state_b = &fst_b.states[dst_pair.b];
                 let dst_sc = fst_c.add_state();
-                if dst_state_a.final_weight.is_some() && dst_state_b.final_weight.is_some() {
+                let dsa = &fst_a.states[dst_pair.a];
+                let dsb = &fst_b.states[dst_pair.b];
+                if dsa.final_weight.is_some() && dsb.final_weight.is_some() {
                     fst_c.set_final(dst_sc, W::one());
                 }
                 q.push_back(dst_pair);

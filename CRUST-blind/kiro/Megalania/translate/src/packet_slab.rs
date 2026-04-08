@@ -4,10 +4,9 @@ pub struct PacketSlab {
 }
 impl PacketSlab {
     pub fn memory_usage(data_size: usize) -> usize {
-        std::mem::size_of::<LZMAPacket>() * data_size + std::mem::size_of::<Self>()
+        std::mem::size_of::<LZMAPacket>() * data_size + std::mem::size_of::<PacketSlab>()
     }
     pub fn new(data_size: usize) -> Self {
-        // Initialize with "literal" packets.
         Self {
             packets: vec![LZMAPacket::literal_packet(); data_size],
         }

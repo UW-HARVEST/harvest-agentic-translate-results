@@ -22,11 +22,7 @@ impl PgnCheck {
                         cursor += 1;
                     }
                     assert!(count <= 2);
-                    check = match count {
-                        1 => PgnCheck::Single,
-                        2 => PgnCheck::Double,
-                        _ => PgnCheck::None,
-                    };
+                    check = if count == 1 { PgnCheck::Single } else { PgnCheck::Double };
                 }
                 b'#' => {
                     check = PgnCheck::Mate;

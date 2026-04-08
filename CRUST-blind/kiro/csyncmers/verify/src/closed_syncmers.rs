@@ -26,16 +26,16 @@ pub fn compute_closed_syncmers(sequence_input: &str, len: i32, k: i32, s: i32, r
     let mut hash_fwd: u128 = 0;
     let mut hash_rev: u128 = 0;
     let rc_shift = 2 * (s - 1);
-    let seq = sequence_input.as_bytes();
+    let bytes = sequence_input.as_bytes();
 
     for i in 0..len {
-        let base = base_to_bits(seq[i] as char);
+        let base = base_to_bits(bytes[i] as char);
         hash_fwd = ((hash_fwd << 2) | base as u128) & mask;
         let comp_base = complement_base(base);
         hash_rev = ((hash_rev >> 2) | ((comp_base as u128) << rc_shift)) & mask;
         if i >= s - 1 {
             let s_mer_pos = i + 1 - s;
-            s_mer_hashes[s_mer_pos] = hash_fwd.min(hash_rev);
+            s_mer_hashes[s_mer_pos] = if hash_fwd < hash_rev { hash_fwd } else { hash_rev };
         }
     }
 

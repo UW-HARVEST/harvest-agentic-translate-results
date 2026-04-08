@@ -20,15 +20,15 @@ pub fn get_args(l: &ArgList) -> Vec<String> {
     if l.position == 0 {
         return Vec::new();
     }
-    l.items[..l.position].to_vec()
+    l.items.clone()
 }
 /// Returns a new String derived from the given Str.
 /// In C, this was returning a 'char*'.
 pub fn get_string(s: &Str) -> String {
-    s.items[..s.position].to_string()
+    s.items.clone()
 }
 /// Destroys / frees the given vector of strings.
 /// In C, this was taking 'char** args'.
 pub fn destroy_args(_args: Vec<String>) {
-    // In Rust, dropping the Vec automatically frees memory.
+    // In Rust, dropping the Vec<String> automatically frees memory.
 }

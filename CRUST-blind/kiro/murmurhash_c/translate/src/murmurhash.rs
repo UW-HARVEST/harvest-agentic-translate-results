@@ -10,11 +10,12 @@ pub fn murmurhash(key: &[u8], seed: u32) -> u32 {
     let r2 = 13;
     let m: u32 = 5;
     let n: u32 = 0xe6546b64;
-    let len = key.len() as u32;
-    let l = (len / 4) as usize;
-    let mut h = seed;
 
-    // process 4-byte chunks
+    let len = key.len() as u32;
+    let mut h: u32 = seed;
+    let l = (len / 4) as usize;
+
+    // Process 4-byte chunks
     for i in 0..l {
         let mut k = u32::from_le_bytes([
             key[i * 4],
@@ -30,7 +31,7 @@ pub fn murmurhash(key: &[u8], seed: u32) -> u32 {
         h = h.wrapping_mul(m).wrapping_add(n);
     }
 
-    // remainder
+    // Remainder
     let tail = &key[l * 4..];
     let mut k: u32 = 0;
     match len & 3 {
@@ -61,7 +62,6 @@ pub fn murmurhash(key: &[u8], seed: u32) -> u32 {
         _ => {}
     }
 
-    // finalization
     h ^= len;
     h ^= h >> 16;
     h = h.wrapping_mul(0x85ebca6b);

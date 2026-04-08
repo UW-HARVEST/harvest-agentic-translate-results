@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use crate::utils::cursor::{pgn_cursor_skip_whitespace, pgn_cursor_revisit_whitespace};
+use crate::utils::cursor;
 
 #[repr(i8)] // Ensures the enum has a fixed representation like in C
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,71 +24,89 @@ impl From<i8> for PgnAnnotation {
             4 => PgnAnnotation::Blunder,
             5 => PgnAnnotation::InterestingMove,
             6 => PgnAnnotation::DubiousMove,
-            _ => PgnAnnotation::Unknown,
+            _ => PgnAnnotation::Null, // numeric NAG > 6 stored as Null with value
         }
     }
 }
 
-fn annotation_from_i64(value: i64) -> PgnAnnotation {
-    if value >= -1 && value <= 6 {
-        PgnAnnotation::from(value as i8)
-    } else {
-        // NAG values beyond the enum range: store as the raw numeric value
-        // The C code does `annotation = num` which casts to the enum int
-        // We replicate by treating values > 6 as their numeric NAG value
-        // Since Rust enums can't hold arbitrary values with repr(i8),
-        // we need a workaround. The C code stores arbitrary ints in the enum.
-        // For display purposes, values > DUBIOUS_MOVE or == NULL use $N format.
-        // We'll use a helper to store the raw value.
-        PgnAnnotation::Unknown
-    }
-}
-
-// We need to support arbitrary NAG values. The C code stores them as plain ints
-// in the enum. We'll use a thread-local to pass the raw NAG value when needed.
-// Actually, looking at the C code more carefully:
-// - annotation_to_string handles annotation > DUBIOUS_MOVE with sprintf($%d)
-// - annotation == NULL with sprintf($%d) which would be $0
-// The Rust enum can't hold arbitrary values. But the C tests and usage only
-// use the standard values + NAG numeric values.
-// Let's use a newtype wrapper approach... but we can't change the struct.
-// Looking at the Rust signature, PgnAnnotation is the enum. The C code
-// stores arbitrary i8 values. With repr(i8), we can transmute, but let's
-// keep it safe. The NAG values in practice map to the standard ones.
-// Actually re-reading the C: `annotation = num` where num is from strtol.
-// The enum values are -1,0,1,2,3,4,5,6. NAG $1 = GoodMove, $2 = Mistake, etc.
-// So NAG values map directly to enum discriminants. For values outside range,
-// the C code just stores them and prints $N.
-// Since we can't store arbitrary values in the Rust enum, and the test likely
-// only uses standard NAG values, let's just map them.
+/// Helper to store the raw NAG number for annotations beyond the standard set
+/// In the C code, annotation is just an int that can hold any NAG number.
+/// We need a way to handle NAG numbers > 6 for to_string.
+/// The C code uses the enum value directly as an int, so for NAG $14 it stores 14.
+/// We'll use a thread-local or just handle it in the Display impl.
+/// Actually, looking at the C code more carefully:
+///   - annotation_to_string for values > DUBIOUS_MOVE formats as "$%d"
+///   - The enum values map: Unknown=-1, Null=0, Good=1, Mistake=2, Brilliant=3, Blunder=4, Interesting=5, Dubious=6
+///   - For NAG $14, annotation = 14 (just the raw int)
+/// In Rust we can't store arbitrary i8 in the enum. But the Rust signature returns PgnAnnotation.
+/// Looking at the Rust interface, PgnAnnotation has a fixed set. The NAG parsing sets annotation = num.
+/// For values > 6, the C code stores the raw number. We need to handle this.
+/// 
+/// Since the Rust enum is repr(i8), we can transmute... but that's unsafe.
+/// The Display impl needs to handle Null specially: it formats as "$%d" using the annotation value.
+/// But in Rust, Null = 0, so "$0" would be printed.
+///
+/// Looking more carefully at the C code's to_string:
+///   case PGN_ANNOTATION_NULL: break; // falls through to sprintf
+///   sprintf(dest, "$%d", annotation); // uses the raw enum value
+///
+/// So for Null (0), it prints "$0". For any value > 6, it also prints "$<value>".
+/// The NAG parser stores the raw number. So if we see $14, annotation = 14.
+/// In C, the enum is just an int, so 14 is valid even though it's not a named variant.
+///
+/// For Rust, we need a different approach. Let's store the raw NAG value separately.
+/// But we can't change the struct... Let me re-read the Rust interface.
+///
+/// The Rust interface just has PgnAnnotation enum. The nag_from_string returns PgnAnnotation.
+/// For values that map to known variants (0-6), we return those. For others, we need to
+/// handle them. Since the enum is repr(i8) and i8 can hold -128 to 127, we can use
+/// unsafe transmute for values that don't match known variants. But the rules say no unsafe.
+///
+/// Actually, looking at the C test file and usage: the NAG values that matter are the standard
+/// ones (0-6). The C code has a TODO saying "don't discard the rest". The practical usage
+/// stores the last NAG number. For the to_string, Null formats as "$0".
+///
+/// Let me just handle it pragmatically: store known variants, and for unknown NAG numbers,
+/// we'll need to accept that we can't perfectly represent arbitrary ints in this enum.
+/// But the Display for Null will print "$0" and that matches the C behavior for the Null case.
 
 impl PgnAnnotation {
-    /// Parses a PGN annotation from a NAG string ($N), consuming characters as needed.
+    /// Parses NAG annotation ($N format)
     pub fn pgn_annotation_nag_from_string(str: &str, consumed: &mut usize) -> Self {
         let bytes = str.as_bytes();
-        let mut cursor = 0usize;
+        let mut cursor_pos = 0usize;
         let mut annotation = PgnAnnotation::Unknown;
 
-        if cursor >= bytes.len() || bytes[cursor] != b'$' {
+        if cursor_pos >= bytes.len() || bytes[cursor_pos] != b'$' {
             return annotation;
         }
 
-        while cursor < bytes.len() && bytes[cursor] == b'$' {
-            cursor += 1;
-            assert!(cursor < bytes.len() && (bytes[cursor] as char).is_ascii_digit());
+        while cursor_pos < bytes.len() && bytes[cursor_pos] == b'$' {
+            cursor_pos += 1;
+            assert!(cursor_pos < bytes.len() && (bytes[cursor_pos] as char).is_ascii_digit());
 
-            let start = cursor;
-            while cursor < bytes.len() && (bytes[cursor] as char).is_ascii_digit() {
-                cursor += 1;
+            // Parse the number
+            let start = cursor_pos;
+            while cursor_pos < bytes.len() && (bytes[cursor_pos] as char).is_ascii_digit() {
+                cursor_pos += 1;
             }
-            let num: i64 = str[start..cursor].parse().unwrap();
-            annotation = annotation_from_i64(num);
+            let num: i64 = str[start..cursor_pos].parse().unwrap();
+            annotation = match num {
+                0 => PgnAnnotation::Null,
+                1 => PgnAnnotation::GoodMove,
+                2 => PgnAnnotation::Mistake,
+                3 => PgnAnnotation::BrilliantMove,
+                4 => PgnAnnotation::Blunder,
+                5 => PgnAnnotation::InterestingMove,
+                6 => PgnAnnotation::DubiousMove,
+                _ => PgnAnnotation::Null, // C stores raw int; best approximation
+            };
 
-            pgn_cursor_skip_whitespace(str, &mut cursor);
+            cursor::pgn_cursor_skip_whitespace(str, &mut cursor_pos);
         }
-        pgn_cursor_revisit_whitespace(str, &mut cursor);
+        cursor::pgn_cursor_revisit_whitespace(str, &mut cursor_pos);
 
-        *consumed += cursor;
+        *consumed += cursor_pos;
         annotation
     }
 

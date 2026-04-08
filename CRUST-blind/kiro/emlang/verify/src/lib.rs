@@ -24,8 +24,7 @@ pub fn parse(path: &str) -> em::Program {
 
 pub fn usage(path: &str) {
     println!(":O emlang :)");
-    println!("https://github.com/lordoftrident/emlang");
-    println!();
+    println!("https://github.com/lordoftrident/emlang\n");
     println!("Usage: {} FILE | OPTIONS", path);
     println!("Options:");
     println!("  -h, --help    Show the usage");

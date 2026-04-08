@@ -15,4 +15,10 @@ fn test_checker_interface_constants() {
     assert_eq!(TRUSTED_CHK_RES_ERROR, 'E');
 }
 
+#[test]
+fn test_end_load_equals_res_error() {
+    // Both are 'E' in the C code
+    assert_eq!(TRUSTED_CHK_END_LOAD, TRUSTED_CHK_RES_ERROR);
+}
+
 fn main() {}

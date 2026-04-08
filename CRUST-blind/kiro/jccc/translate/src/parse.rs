@@ -1,39 +1,10 @@
-use std::fs::File;
-use crate::lex::{Lexer, lex, lexer_getchar, lexer_ungetchar, skip_to_token, ttype_name, TOKEN_PUTBACKS};
+use crate::lex::{Lexer, lex, ttype_name};
 use crate::token::{Token, TokenType};
 use crate::codegen::{start_main, end_main_custom_return};
 use crate::cst::{FunctionDeclaration, ConcreteFileTree, Expression, BlockStatement};
+use std::fs::File;
 
-pub fn parse_funcdecl(l: &mut Lexer, fd: &mut FunctionDeclaration) -> i32 {
-    // TODO stub - not fully implemented in C either
-    0
-}
-
-pub fn make_cst(l: &mut Lexer, tree: &mut ConcreteFileTree) -> i32 {
-    // TODO stub - not fully implemented in C either
-    0
-}
-
-pub fn parse_expr(l: &mut Lexer, ex: &mut Expression) -> i32 {
-    // TODO stub - not fully implemented in C either
-    0
-}
-
-pub fn parse_blockstmt(l: &mut Lexer, bs: &mut BlockStatement) -> i32 {
-    // TODO stub - not fully implemented in C either
-    0
-}
-
-pub fn parse_funccall(l: &mut Lexer, ex: &mut Expression) -> i32 {
-    // TODO stub - not fully implemented in C either
-    0
-}
-
-pub fn parse_simple_main_func() -> i32 {
-    // Empty in C as well
-    0
-}
-
+/// Parses a file and returns a status code.
 pub fn parse(filename: &str) -> i32 {
     let fp = match File::open(filename) {
         Ok(f) => f,
@@ -55,25 +26,32 @@ pub fn parse(filename: &str) -> i32 {
         unlexed_count: 0,
     };
 
-    let mut t = Token::default();
-    let mut i = 0;
     let mut tokens: Vec<Token> = Vec::new();
 
     loop {
+        let mut t = Token {
+            token_type: TokenType::TT_NO_TOKEN,
+            contents: String::new(),
+            length: 0,
+            source_file: String::new(),
+            line: 0,
+            column: 0,
+        };
         if lex(&mut lexer, &mut t) != 0 {
             return 1;
         }
-        println!("Contents: {:>20}, type: {:>20}, position: {}/{}", t.contents, ttype_name(t.token_type.clone()), t.line, t.column);
+        println!(
+            "Contents: {:>20}, type: {:>20}, position: {}/{}",
+            t.contents,
+            ttype_name(std::mem::replace(&mut t.token_type, TokenType::TT_NO_TOKEN)),
+            t.line,
+            t.column
+        );
+        // Restore token_type for later use - we need to check it
+        // Actually we consumed it above, let's re-parse from contents
+        t.token_type = crate::lex::ttype_from_string(&t.contents);
         let is_eof = t.token_type == TokenType::TT_EOF;
-        tokens.push(Token {
-            token_type: std::mem::replace(&mut t.token_type, TokenType::TT_NO_TOKEN),
-            contents: std::mem::take(&mut t.contents),
-            length: t.length,
-            source_file: std::mem::take(&mut t.source_file),
-            line: t.line,
-            column: t.column,
-        });
-        i += 1;
+        tokens.push(t);
         if is_eof {
             break;
         }
@@ -98,8 +76,9 @@ pub fn parse(filename: &str) -> i32 {
                     println!();
                     let code_start = start_main();
                     print!("{}", code_start);
-                    let val: i32 = tokens[6].contents.parse().unwrap_or(0);
-                    let code_end = end_main_custom_return(val);
+                    let code_end = end_main_custom_return(
+                        tokens[6].contents.parse::<i32>().unwrap_or(0),
+                    );
                     print!("{}", code_end);
                 } else {
                     eprintln!("\x1b[31mError: jccc: Wrong closing brace.\n\x1b[0m");
@@ -114,5 +93,35 @@ pub fn parse(filename: &str) -> i32 {
         eprintln!("\x1b[31mError: jccc: Not correct main function.\n\x1b[0m");
     }
 
+    0
+}
+
+/// Parses a simple main function (for testing).
+pub fn parse_simple_main_func() -> i32 {
+    0
+}
+
+/// Parses an expression from the Lexer into an Expression object.
+pub fn parse_expr(_l: &mut Lexer, _ex: &mut Expression) -> i32 {
+    0
+}
+
+/// Parses a function call from the lexer into an Expression object.
+pub fn parse_funccall(_l: &mut Lexer, _ex: &mut Expression) -> i32 {
+    0
+}
+
+/// Parses a block statement from the lexer.
+pub fn parse_blockstmt(_l: &mut Lexer, _bs: &mut BlockStatement) -> i32 {
+    0
+}
+
+/// Parses a function declaration from the lexer into a FunctionDeclaration object.
+pub fn parse_funcdecl(_l: &mut Lexer, _fd: &mut FunctionDeclaration) -> i32 {
+    0
+}
+
+/// Creates a concrete syntax tree from the lexer.
+pub fn make_cst(_l: &mut Lexer, _tree: &mut ConcreteFileTree) -> i32 {
     0
 }

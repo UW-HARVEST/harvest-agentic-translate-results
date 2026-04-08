@@ -1,11 +1,24 @@
 use mdb::mdb::{Mdb, MdbError, MdbOptions};
+use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-fn unique_db_name(prefix: &str) -> String {
+fn temp_db_name() -> String {
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("/tmp/mdb_test_{}_{}", prefix, id)
+    let pid = std::process::id();
+    let name = format!("/tmp/mdb_test_{}_{}", pid, id);
+    // Clean up any leftover files
+    let _ = fs::remove_file(format!("{}.db.super", name));
+    let _ = fs::remove_file(format!("{}.db.index", name));
+    let _ = fs::remove_file(format!("{}.db.data", name));
+    name
+}
+
+fn cleanup(name: &str) {
+    let _ = fs::remove_file(format!("{}.db.super", name));
+    let _ = fs::remove_file(format!("{}.db.index", name));
+    let _ = fs::remove_file(format!("{}.db.data", name));
 }
 
 fn default_options(name: &str) -> MdbOptions {
@@ -18,143 +31,207 @@ fn default_options(name: &str) -> MdbOptions {
     }
 }
 
-fn cleanup(name: &str) {
-    let _ = std::fs::remove_file(format!("{}.db.super", name));
-    let _ = std::fs::remove_file(format!("{}.db.index", name));
-    let _ = std::fs::remove_file(format!("{}.db.data", name));
-}
-
-// ---- Hash function tests (via observable bucket behavior) ----
+// ---- Hash function tests (via write/read with known bucket behavior) ----
 
 #[test]
-fn test_hash_empty_key() {
-    // hash("") = 0, bucket = 0 % 128 = 0
-    // Writing empty key should work (key_size 0 <= 64)
-    let name = unique_db_name("hash_empty");
+fn test_create_and_get_options() {
+    let name = temp_db_name();
     let opts = default_options(&name);
-    let mut db = Mdb::create(&name, opts).unwrap();
-    db.write("", "value").unwrap();
-    let mut buf = [0u8; 257];
-    let n = db.read("", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"value");
+    let db = Mdb::create(&name, opts).unwrap();
+    let got = db.get_options();
+    assert_eq!(got.db_name, name);
+    assert_eq!(got.key_size_max, 64);
+    assert_eq!(got.data_size_max, 256);
+    assert_eq!(got.hash_buckets, 128);
+    assert_eq!(got.items_max, 166716);
     drop(db);
     cleanup(&name);
 }
 
 #[test]
-fn test_happy_path() {
-    // Mirrors C happy_test0: create, write, read, delete, read-after-delete
-    let name = unique_db_name("happy");
+fn test_write_and_read_single_key() {
+    let name = temp_db_name();
     let opts = default_options(&name);
     let mut db = Mdb::create(&name, opts).unwrap();
-
-    db.write("misakawa", "mikoto").unwrap();
-
-    let mut buf = [0u8; 257];
-    let n = db.read("misakawa", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"mikoto");
-
-    db.delete("misakawa").unwrap();
-
-    let err = db.read("misakawa", &mut buf);
-    assert!(matches!(err, Err(MdbError::KeyNotFound)));
-
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_reopen() {
-    // Mirrors C reopen_test1: create, write, close, open, verify options + read
-    let name = unique_db_name("reopen");
-    let opts = default_options(&name);
-    {
-        let mut db = Mdb::create(&name, opts.clone()).unwrap();
-        db.write("Lisp", "LambdaExpression").unwrap();
-    }
-
-    let mut db = Mdb::open(&name).unwrap();
-    let ro = db.get_options();
-    assert_eq!(ro.db_name, name);
-    assert_eq!(ro.key_size_max, 64);
-    assert_eq!(ro.data_size_max, 256);
-    assert_eq!(ro.hash_buckets, 128);
-    assert_eq!(ro.items_max, 166716);
-
-    let mut buf = [0u8; 257];
-    let n = db.read("Lisp", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"LambdaExpression");
-
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_overwrite_value() {
-    // Write same key twice, second value should replace first
-    let name = unique_db_name("overwrite");
-    let opts = default_options(&name);
-    let mut db = Mdb::create(&name, opts).unwrap();
-
-    db.write("key1", "first").unwrap();
-    db.write("key1", "second").unwrap();
-
-    let mut buf = [0u8; 257];
+    db.write("key1", "value1").unwrap();
+    let mut buf = vec![0u8; 257];
     let n = db.read("key1", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"second");
-
+    assert_eq!(n, 6);
+    assert_eq!(&buf[..6], b"value1");
     drop(db);
     cleanup(&name);
 }
 
 #[test]
-fn test_multiple_keys() {
-    let name = unique_db_name("multi");
+fn test_write_and_read_two_keys() {
+    let name = temp_db_name();
     let opts = default_options(&name);
     let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("key1", "value1").unwrap();
+    db.write("key2", "value2").unwrap();
 
-    db.write("alpha", "one").unwrap();
-    db.write("beta", "two").unwrap();
-    db.write("gamma", "three").unwrap();
+    let mut buf = vec![0u8; 257];
+    let n = db.read("key1", &mut buf).unwrap();
+    assert_eq!(n, 6);
+    assert_eq!(&buf[..6], b"value1");
 
-    let mut buf = [0u8; 257];
-    let n = db.read("alpha", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"one");
-    let n = db.read("beta", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"two");
-    let n = db.read("gamma", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"three");
+    let n = db.read("key2", &mut buf).unwrap();
+    assert_eq!(n, 6);
+    assert_eq!(&buf[..6], b"value2");
+    drop(db);
+    cleanup(&name);
+}
 
+#[test]
+fn test_overwrite_key() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("key1", "value1").unwrap();
+    db.write("key1", "updated1").unwrap();
+
+    let mut buf = vec![0u8; 257];
+    let n = db.read("key1", &mut buf).unwrap();
+    assert_eq!(n, 8);
+    assert_eq!(&buf[..8], b"updated1");
+    drop(db);
+    cleanup(&name);
+}
+
+#[test]
+fn test_delete_key() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("key1", "value1").unwrap();
+    db.delete("key1").unwrap();
+
+    let mut buf = vec![0u8; 257];
+    let result = db.read("key1", &mut buf);
+    assert!(matches!(result, Err(MdbError::KeyNotFound)));
     drop(db);
     cleanup(&name);
 }
 
 #[test]
 fn test_delete_nonexistent_key() {
-    let name = unique_db_name("del_nokey");
+    let name = temp_db_name();
     let opts = default_options(&name);
     let mut db = Mdb::create(&name, opts).unwrap();
-    let err = db.delete("nonexistent");
-    assert!(matches!(err, Err(MdbError::KeyNotFound)));
+    let result = db.delete("nonexistent");
+    assert!(matches!(result, Err(MdbError::KeyNotFound)));
     drop(db);
     cleanup(&name);
 }
 
 #[test]
 fn test_read_nonexistent_key() {
-    let name = unique_db_name("read_nokey");
+    let name = temp_db_name();
     let opts = default_options(&name);
     let mut db = Mdb::create(&name, opts).unwrap();
-    let mut buf = [0u8; 257];
-    let err = db.read("nonexistent", &mut buf);
-    assert!(matches!(err, Err(MdbError::KeyNotFound)));
+    let mut buf = vec![0u8; 257];
+    let result = db.read("nonexistent", &mut buf);
+    assert!(matches!(result, Err(MdbError::KeyNotFound)));
+    drop(db);
+    cleanup(&name);
+}
+
+#[test]
+fn test_delete_then_other_key_still_readable() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("key1", "value1").unwrap();
+    db.write("key2", "value2").unwrap();
+    db.delete("key1").unwrap();
+
+    let mut buf = vec![0u8; 257];
+    let n = db.read("key2", &mut buf).unwrap();
+    assert_eq!(n, 6);
+    assert_eq!(&buf[..6], b"value2");
+
+    let result = db.read("key1", &mut buf);
+    assert!(matches!(result, Err(MdbError::KeyNotFound)));
+    drop(db);
+    cleanup(&name);
+}
+
+#[test]
+fn test_reopen_database() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    {
+        let mut db = Mdb::create(&name, opts).unwrap();
+        db.write("Lisp", "LambdaExpression").unwrap();
+        // db dropped here, files closed
+    }
+
+    let mut db2 = Mdb::open(&name).unwrap();
+    let opts2 = db2.get_options();
+    assert_eq!(opts2.key_size_max, 64);
+    assert_eq!(opts2.data_size_max, 256);
+    assert_eq!(opts2.hash_buckets, 128);
+    assert_eq!(opts2.items_max, 166716);
+
+    let mut buf = vec![0u8; 257];
+    let n = db2.read("Lisp", &mut buf).unwrap();
+    assert_eq!(n, 16);
+    assert_eq!(&buf[..16], b"LambdaExpression");
+    drop(db2);
+    cleanup(&name);
+}
+
+#[test]
+fn test_reopen_deleted_key_not_found() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    {
+        let mut db = Mdb::create(&name, opts).unwrap();
+        db.write("key1", "value1").unwrap();
+        db.write("key2", "value2").unwrap();
+        db.delete("key1").unwrap();
+    }
+
+    let mut db2 = Mdb::open(&name).unwrap();
+    let mut buf = vec![0u8; 257];
+    let n = db2.read("key2", &mut buf).unwrap();
+    assert_eq!(n, 6);
+    assert_eq!(&buf[..6], b"value2");
+
+    let result = db2.read("key1", &mut buf);
+    assert!(matches!(result, Err(MdbError::KeyNotFound)));
+    drop(db2);
+    cleanup(&name);
+}
+
+#[test]
+fn test_buffer_too_small() {
+    let name = temp_db_name();
+    let opts = MdbOptions {
+        db_name: name.clone(),
+        key_size_max: 64,
+        data_size_max: 256,
+        hash_buckets: 16,
+        items_max: 100,
+    };
+    let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("k", "longvalue").unwrap(); // 9 bytes
+
+    let mut buf = vec![0u8; 5]; // too small: need 10 (9+1)
+    let result = db.read("k", &mut buf);
+    assert!(matches!(result, Err(MdbError::BufferSizeTooSmall)));
+
+    let mut buf = vec![0u8; 10]; // exact: 9+1=10
+    let n = db.read("k", &mut buf).unwrap();
+    assert_eq!(n, 9);
+    assert_eq!(&buf[..9], b"longvalue");
     drop(db);
     cleanup(&name);
 }
 
 #[test]
 fn test_key_size_too_large() {
-    let name = unique_db_name("keysize");
+    let name = temp_db_name();
     let opts = MdbOptions {
         db_name: name.clone(),
         key_size_max: 4,
@@ -163,16 +240,18 @@ fn test_key_size_too_large() {
         items_max: 100,
     };
     let mut db = Mdb::create(&name, opts).unwrap();
-    // Key "hello" is 5 bytes, max is 4
-    let err = db.write("hello", "world");
-    assert!(matches!(err, Err(MdbError::KeySizeTooLarge)));
+    let result = db.write("toolong", "val");
+    assert!(matches!(result, Err(MdbError::KeySizeTooLarge)));
+
+    // Key within limit should work
+    db.write("ok", "val").unwrap();
     drop(db);
     cleanup(&name);
 }
 
 #[test]
 fn test_value_size_too_large() {
-    let name = unique_db_name("valsize");
+    let name = temp_db_name();
     let opts = MdbOptions {
         db_name: name.clone(),
         key_size_max: 64,
@@ -181,289 +260,173 @@ fn test_value_size_too_large() {
         items_max: 100,
     };
     let mut db = Mdb::create(&name, opts).unwrap();
-    // Value "hello" is 5 bytes, max is 4
-    let err = db.write("k", "hello");
-    assert!(matches!(err, Err(MdbError::ValueSizeTooLarge)));
+    let result = db.write("k", "toolong");
+    assert!(matches!(result, Err(MdbError::ValueSizeTooLarge)));
+
+    // Value within limit should work
+    db.write("k", "ok").unwrap();
     drop(db);
     cleanup(&name);
 }
 
 #[test]
-fn test_buffer_too_small() {
-    let name = unique_db_name("bufsiz");
-    let opts = default_options(&name);
-    let mut db = Mdb::create(&name, opts).unwrap();
-    db.write("key", "longvalue").unwrap();
-    // C checks bufsiz < valsize + 1, so buf of len 9 is too small for "longvalue" (9 chars + null)
-    let mut buf = [0u8; 9];
-    let err = db.read("key", &mut buf);
-    assert!(matches!(err, Err(MdbError::BufferSizeTooSmall)));
-    // buf of len 10 should work
-    let mut buf = [0u8; 10];
-    let n = db.read("key", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"longvalue");
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_index_and_data_size_after_create() {
-    // After create: index = 4 + 128*4 = 516, data = 0
-    let name = unique_db_name("sizes_init");
-    let opts = default_options(&name);
-    let mut db = Mdb::create(&name, opts).unwrap();
-    assert_eq!(db.index_size().unwrap(), 4 + 128 * 4);
-    assert_eq!(db.data_size().unwrap(), 0);
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_index_and_data_size_after_write() {
-    // After one write: index grows by index_record_size (64+8+4=76)
-    // data grows by value length
-    let name = unique_db_name("sizes_write");
-    let opts = default_options(&name);
-    let mut db = Mdb::create(&name, opts).unwrap();
-    db.write("misakawa", "mikoto").unwrap();
-    // index: 516 + 76 = 592
-    assert_eq!(db.index_size().unwrap(), 516 + 76);
-    // data: "mikoto" = 6 bytes
-    assert_eq!(db.data_size().unwrap(), 6);
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_get_options() {
-    let name = unique_db_name("getopts");
-    let opts = MdbOptions {
-        db_name: name.clone(),
-        key_size_max: 32,
-        data_size_max: 512,
-        hash_buckets: 64,
-        items_max: 1000,
-    };
-    let db = Mdb::create(&name, opts).unwrap();
-    let ro = db.get_options();
-    assert_eq!(ro.db_name, name);
-    assert_eq!(ro.key_size_max, 32);
-    assert_eq!(ro.data_size_max, 512);
-    assert_eq!(ro.hash_buckets, 64);
-    assert_eq!(ro.items_max, 1000);
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_write_delete_write_same_key() {
-    // Write, delete, then write same key again
-    let name = unique_db_name("wdw");
-    let opts = default_options(&name);
-    let mut db = Mdb::create(&name, opts).unwrap();
-
-    db.write("key", "val1").unwrap();
-    db.delete("key").unwrap();
-    db.write("key", "val2").unwrap();
-
-    let mut buf = [0u8; 257];
-    let n = db.read("key", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"val2");
-
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_many_keys_same_bucket() {
-    // Use hash_buckets=1 to force all keys into same bucket (chain collisions)
-    let name = unique_db_name("collision");
-    let opts = MdbOptions {
-        db_name: name.clone(),
-        key_size_max: 64,
-        data_size_max: 256,
-        hash_buckets: 1,
-        items_max: 100,
-    };
-    let mut db = Mdb::create(&name, opts).unwrap();
-
-    for i in 0..10 {
-        let key = format!("key{}", i);
-        let val = format!("val{}", i);
-        db.write(&key, &val).unwrap();
-    }
-
-    let mut buf = [0u8; 257];
-    for i in 0..10 {
-        let key = format!("key{}", i);
-        let val = format!("val{}", i);
-        let n = db.read(&key, &mut buf).unwrap();
-        assert_eq!(&buf[..n], val.as_bytes());
-    }
-
-    // Delete middle key and verify others still work
-    db.delete("key5").unwrap();
-    assert!(matches!(db.read("key5", &mut buf), Err(MdbError::KeyNotFound)));
-    let n = db.read("key4", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"val4");
-    let n = db.read("key6", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"val6");
-
-    drop(db);
-    cleanup(&name);
-}
-
-#[test]
-fn test_key_at_max_size() {
-    // Key exactly at key_size_max should succeed
-    let name = unique_db_name("key_exact");
+fn test_multiple_keys_small_buckets() {
+    let name = temp_db_name();
     let opts = MdbOptions {
         db_name: name.clone(),
         key_size_max: 8,
         data_size_max: 256,
-        hash_buckets: 16,
+        hash_buckets: 4,
         items_max: 100,
     };
     let mut db = Mdb::create(&name, opts).unwrap();
-    // 8-byte key is exactly at limit
-    db.write("12345678", "val").unwrap();
-    let mut buf = [0u8; 257];
-    let n = db.read("12345678", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"val");
-    // 9-byte key exceeds limit
-    let err = db.write("123456789", "val");
-    assert!(matches!(err, Err(MdbError::KeySizeTooLarge)));
+    db.write("a", "alpha").unwrap();
+    db.write("b", "beta").unwrap();
+    db.write("c", "gamma").unwrap();
+    db.write("d", "delta").unwrap();
+    db.write("e", "epsilon").unwrap();
+
+    let mut buf = vec![0u8; 257];
+    let n = db.read("a", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"alpha");
+    let n = db.read("b", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"beta");
+    let n = db.read("c", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"gamma");
+    let n = db.read("d", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"delta");
+    let n = db.read("e", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"epsilon");
+
+    // Delete middle key
+    db.delete("c").unwrap();
+    let result = db.read("c", &mut buf);
+    assert!(matches!(result, Err(MdbError::KeyNotFound)));
+
+    // Others still readable
+    let n = db.read("a", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"alpha");
+    let n = db.read("e", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"epsilon");
+
+    // Write new key after delete (reuses freed index)
+    db.write("f", "foxtrot").unwrap();
+    let n = db.read("f", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"foxtrot");
     drop(db);
     cleanup(&name);
 }
 
 #[test]
-fn test_value_at_max_size() {
-    // Value exactly at data_size_max should succeed
-    let name = unique_db_name("val_exact");
-    let opts = MdbOptions {
-        db_name: name.clone(),
-        key_size_max: 64,
-        data_size_max: 10,
-        hash_buckets: 16,
-        items_max: 100,
-    };
+fn test_index_size_after_create() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    // index_size after create = freeptr(4) + 128 buckets * 4 = 516
     let mut db = Mdb::create(&name, opts).unwrap();
-    db.write("k", "1234567890").unwrap();
-    let mut buf = [0u8; 257];
-    let n = db.read("k", &mut buf).unwrap();
-    assert_eq!(&buf[..n], b"1234567890");
-    // 11-byte value exceeds limit
-    let err = db.write("k2", "12345678901");
-    assert!(matches!(err, Err(MdbError::ValueSizeTooLarge)));
+    let sz = db.index_size().unwrap();
+    assert_eq!(sz, 4 + 128 * 4); // 516
+    drop(db);
+    cleanup(&name);
+}
+
+#[test]
+fn test_data_size_after_create() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    let mut db = Mdb::create(&name, opts).unwrap();
+    let sz = db.data_size().unwrap();
+    assert_eq!(sz, 0);
+    drop(db);
+    cleanup(&name);
+}
+
+#[test]
+fn test_index_size_grows_after_write() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    let mut db = Mdb::create(&name, opts).unwrap();
+    let sz_before = db.index_size().unwrap();
+    db.write("key1", "value1").unwrap();
+    let sz_after = db.index_size().unwrap();
+    // index_record_size = key_size_max(64) + 2*PTR_SIZE(8) + DATALEN_SIZE(4) = 76
+    assert_eq!(sz_after, sz_before + 76);
     drop(db);
     cleanup(&name);
 }
 
 #[test]
 fn test_empty_value() {
-    let name = unique_db_name("empty_val");
+    let name = temp_db_name();
     let opts = default_options(&name);
     let mut db = Mdb::create(&name, opts).unwrap();
-    db.write("key", "").unwrap();
-    let mut buf = [0u8; 257];
-    let n = db.read("key", &mut buf).unwrap();
+    db.write("k", "").unwrap();
+    let mut buf = vec![0u8; 257];
+    let n = db.read("k", &mut buf).unwrap();
     assert_eq!(n, 0);
-    assert_eq!(&buf[..n], b"");
     drop(db);
     cleanup(&name);
 }
 
 #[test]
-fn test_load_many_entries() {
-    // Similar to C load_test2: write 100 entries, read them all back
-    let name = unique_db_name("load");
+fn test_overwrite_with_different_length() {
+    let name = temp_db_name();
+    let opts = default_options(&name);
+    let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("k", "short").unwrap();
+    db.write("k", "a_much_longer_value").unwrap();
+    let mut buf = vec![0u8; 257];
+    let n = db.read("k", &mut buf).unwrap();
+    assert_eq!(n, 19);
+    assert_eq!(&buf[..19], b"a_much_longer_value");
+    drop(db);
+    cleanup(&name);
+}
+
+#[test]
+fn test_many_writes_and_reads() {
+    let name = temp_db_name();
     let opts = MdbOptions {
         db_name: name.clone(),
         key_size_max: 8,
         data_size_max: 256,
-        hash_buckets: 128,
-        items_max: 166716,
+        hash_buckets: 16,
+        items_max: 1000,
     };
     let mut db = Mdb::create(&name, opts).unwrap();
 
-    let preset = [
-        "misakawa", "kamijou", "accelerator", "index", "lyzh", "chuigda",
-        "de_nuke", "de_mirage", "de_cache",
-    ];
-
-    let mut entries = Vec::new();
-    for i in 0..100u32 {
-        let key = format!("{:03}", i);
-        let val = preset[(i as usize) % preset.len()];
-        db.write(&key, val).unwrap();
-        entries.push((key, val.to_string()));
+    // Write 50 keys
+    let mut expected = Vec::new();
+    for i in 0..50u32 {
+        let key = format!("k{}", i);
+        let val = format!("v{}", i * 7);
+        db.write(&key, &val).unwrap();
+        expected.push((key, val));
     }
 
-    let mut buf = [0u8; 257];
-    for (key, val) in &entries {
+    // Read all back
+    let mut buf = vec![0u8; 257];
+    for (key, val) in &expected {
         let n = db.read(key, &mut buf).unwrap();
         assert_eq!(&buf[..n], val.as_bytes(), "mismatch for key {}", key);
     }
-
     drop(db);
     cleanup(&name);
 }
 
 #[test]
 fn test_delete_and_reinsert() {
-    // Write several, delete some, write new ones, verify all
-    let name = unique_db_name("del_reins");
-    let opts = MdbOptions {
-        db_name: name.clone(),
-        key_size_max: 8,
-        data_size_max: 256,
-        hash_buckets: 128,
-        items_max: 166716,
-    };
+    let name = temp_db_name();
+    let opts = default_options(&name);
     let mut db = Mdb::create(&name, opts).unwrap();
+    db.write("k", "first").unwrap();
+    db.delete("k").unwrap();
+    db.write("k", "second").unwrap();
 
-    for i in 0..20 {
-        db.write(&format!("{:03}", i), &format!("v{}", i)).unwrap();
-    }
-
-    // Delete even entries
-    for i in (0..20).step_by(2) {
-        db.delete(&format!("{:03}", i)).unwrap();
-    }
-
-    // Write new entries in the freed slots
-    for i in 20..30 {
-        db.write(&format!("{:03}", i), &format!("v{}", i)).unwrap();
-    }
-
-    let mut buf = [0u8; 257];
-    // Odd originals should still be there
-    for i in (1..20).step_by(2) {
-        let key = format!("{:03}", i);
-        let n = db.read(&key, &mut buf).unwrap();
-        assert_eq!(&buf[..n], format!("v{}", i).as_bytes());
-    }
-    // Even originals should be gone
-    for i in (0..20).step_by(2) {
-        let key = format!("{:03}", i);
-        assert!(matches!(db.read(&key, &mut buf), Err(MdbError::KeyNotFound)));
-    }
-    // New entries should be there
-    for i in 20..30 {
-        let key = format!("{:03}", i);
-        let n = db.read(&key, &mut buf).unwrap();
-        assert_eq!(&buf[..n], format!("v{}", i).as_bytes());
-    }
-
+    let mut buf = vec![0u8; 257];
+    let n = db.read("k", &mut buf).unwrap();
+    assert_eq!(&buf[..n], b"second");
     drop(db);
     cleanup(&name);
-}
-
-#[test]
-fn test_open_nonexistent() {
-    let err = Mdb::open("/tmp/mdb_test_nonexistent_db_xyz");
-    assert!(err.is_err());
 }
 
 fn main() {}

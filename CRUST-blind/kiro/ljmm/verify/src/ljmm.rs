@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use std::fs;
+use std::sync::Mutex;
 
 const BUFFER_SZ: usize = 8192;
 const ADDR_2G: usize = 0x80000000;
@@ -31,15 +31,15 @@ impl Default for LjmmState {
 
 static LJMM: Mutex<Option<LjmmState>> = Mutex::new(None);
 
-fn page_align_addr(addr: usize, page_size: usize, page_mask: usize) -> usize {
+pub fn page_align_addr(addr: usize, page_size: usize, page_mask: usize) -> usize {
     (addr + page_size - 1) & !page_mask
 }
 
-fn parse_addr(bytes: &[u8]) -> (usize, usize) {
+pub fn parse_addr(s: &[u8]) -> (usize, usize) {
     let mut addr: usize = 0;
     let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
+    while i < s.len() {
+        let c = s[i];
         if c >= b'0' && c <= b'9' {
             addr = addr.wrapping_mul(16).wrapping_add((c - b'0') as usize);
             i += 1;
@@ -56,36 +56,25 @@ fn parse_addr(bytes: &[u8]) -> (usize, usize) {
     (addr, i)
 }
 
-/// Finds the best-fit hole in the address space for the given length.
-/// Returns the start address of the best-fit hole, or 0 if none found.
-pub fn find_best_fit(length: usize) -> usize {
-    let guard = LJMM.lock().unwrap();
-    let state = match guard.as_ref() {
-        Some(s) => s,
+struct MemBlk {
+    start: usize,
+    size: usize,
+}
+
+fn find_best_fit(state: &LjmmState, length: usize) -> usize {
+    let buffer = match read_maps_to_buffer(&state.map_file) {
+        Some(b) => b,
         None => return 0,
     };
-
-    let content = match fs::read(&state.map_file) {
-        Ok(c) => c,
-        Err(_) => return 0,
-    };
-
-    // Mimic C: read at most BUFFER_SZ - 1 bytes, ensure trailing newline
-    let mut buffer: Vec<u8> = content.into_iter().take(BUFFER_SZ - 1).collect();
-    if buffer.is_empty() || *buffer.last().unwrap() != b'\n' {
-        buffer.push(b'\n');
-    }
-    let buf_len = buffer.len();
 
     let length = page_align_addr(length, state.page_size, state.page_mask);
     let lowbound = state.addr_lowbound;
     let upbound = state.addr_upbound;
 
-    let mut best_fit_start = upbound;
-    let mut best_fit_size: usize = usize::MAX;
-    let mut prev_start: usize = 0;
-    let mut prev_size: usize = 0;
+    let mut best_fit = MemBlk { start: upbound, size: usize::MAX };
+    let mut prev_blk = MemBlk { start: 0, size: 0 };
     let mut ofst: usize = 0;
+    let buf_len = buffer.len();
 
     while ofst < buf_len {
         // step 1: parse start address
@@ -97,9 +86,9 @@ pub fn find_best_fit(length: usize) -> usize {
         }
 
         // step 2: parse end address
-        let (mut end_addr, advance2) = parse_addr(&buffer[ofst..]);
-        if advance2 > 0 && ofst + advance2 < buf_len && buffer[ofst + advance2] == b' ' {
-            ofst += advance2 + 1;
+        let (mut end_addr, advance) = parse_addr(&buffer[ofst..]);
+        if advance > 0 && ofst + advance < buf_len && buffer[ofst + advance] == b' ' {
+            ofst += advance + 1;
             // skip rest of line
             while ofst < buf_len && buffer[ofst] != b'\n' {
                 ofst += 1;
@@ -114,22 +103,22 @@ pub fn find_best_fit(length: usize) -> usize {
         end_addr = page_align_addr(end_addr, state.page_size, state.page_mask);
 
         // step 3: check hole between previous block and current
-        let hole_start = prev_start.wrapping_add(prev_size);
+        let hole_start = prev_blk.start + prev_blk.size;
         let hole_size = start_addr.wrapping_sub(hole_start);
 
         if hole_size >= length
             && hole_start >= lowbound
             && (hole_start + length) <= upbound
-            && hole_size < best_fit_size
+            && hole_size < best_fit.size
         {
-            best_fit_start = hole_start;
-            best_fit_size = hole_size;
-            if best_fit_size == length {
+            best_fit.start = hole_start;
+            best_fit.size = hole_size;
+            if best_fit.size == length {
                 break;
             }
         }
 
-        // step 4: check if we should continue
+        // step 4: determine if we need to continue
         if start_addr >= ADDR_1G {
             if !state.os_take_care_1g_2g || start_addr >= upbound {
                 break;
@@ -140,15 +129,24 @@ pub fn find_best_fit(length: usize) -> usize {
             break;
         }
 
-        prev_start = start_addr;
-        prev_size = end_addr - start_addr;
+        prev_blk.start = start_addr;
+        prev_blk.size = end_addr - start_addr;
     }
 
-    if best_fit_size != usize::MAX {
-        best_fit_start
+    if best_fit.size != usize::MAX { best_fit.start } else { 0 }
+}
+
+fn read_maps_to_buffer(map_file: &str) -> Option<Vec<u8>> {
+    let data = fs::read(map_file).ok()?;
+    let mut buf: Vec<u8> = if data.len() > BUFFER_SZ - 1 {
+        data[..BUFFER_SZ - 1].to_vec()
     } else {
-        0
+        data
+    };
+    if buf.is_empty() || *buf.last().unwrap() != b'\n' {
+        buf.push(b'\n');
     }
+    Some(buf)
 }
 
 /// Initializes the ljmm system.
@@ -157,10 +155,10 @@ pub fn find_best_fit(length: usize) -> usize {
 /// An integer status code.
 pub fn ljmm_init() -> i32 {
     let mut guard = LJMM.lock().unwrap();
-    let mut state = LjmmState::default();
-    state.init_succ = true;
-    *guard = Some(state);
-    1
+    let state = LjmmState::default();
+    let succ = 1_i32;
+    *guard = Some(LjmmState { init_succ: true, ..state });
+    succ
 }
 
 /// Instructs the OS to take care of the [1G..2G] space.
@@ -171,6 +169,12 @@ pub fn ljmm_let_os_take_care_1g_2g(turn_on: i32) {
     let mut guard = LJMM.lock().unwrap();
     if let Some(ref mut state) = *guard {
         state.os_take_care_1g_2g = turn_on != 0;
+    } else {
+        // Initialize with default if not yet initialized
+        *guard = Some(LjmmState {
+            os_take_care_1g_2g: turn_on != 0,
+            ..LjmmState::default()
+        });
     }
 }
 
@@ -182,10 +186,28 @@ pub fn ljmm_let_os_take_care_1g_2g(turn_on: i32) {
 /// - `page_size`: The system's page size.
 pub fn ljmm_test_set_test_param(map_file: &str, sbrk0: usize, page_size: i32) {
     let mut guard = LJMM.lock().unwrap();
+    let ps = page_size as usize;
     if let Some(ref mut state) = *guard {
         state.map_file = map_file.to_string();
         state.addr_lowbound = sbrk0;
-        state.page_size = page_size as usize;
-        state.page_mask = (page_size as usize) - 1;
+        state.page_size = ps;
+        state.page_mask = ps - 1;
+    } else {
+        *guard = Some(LjmmState {
+            map_file: map_file.to_string(),
+            addr_lowbound: sbrk0,
+            page_size: ps,
+            page_mask: ps - 1,
+            ..LjmmState::default()
+        });
+    }
+}
+
+pub fn ljmm_find_best_fit(length: usize) -> usize {
+    let guard = LJMM.lock().unwrap();
+    if let Some(ref state) = *guard {
+        find_best_fit(state, length)
+    } else {
+        0
     }
 }

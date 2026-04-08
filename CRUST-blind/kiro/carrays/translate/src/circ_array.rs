@@ -1,7 +1,6 @@
 use std::alloc::{alloc, dealloc, realloc, Layout};
 use std::ptr::{self, NonNull};
 use std::slice;
-use std::mem;
 pub struct CircBuf {
 el: usize,
 start: usize,
@@ -14,7 +13,11 @@ impl CircBuf {
 pub fn new(el: usize, size: usize) -> Self {
     let size = roundup64(size as u64) as usize;
     let layout = Layout::from_size_align(size * el, 1).unwrap();
-    let b = unsafe { NonNull::new(alloc(layout)).expect("alloc failed") };
+    let b = unsafe {
+        let ptr = alloc(layout);
+        ptr::write_bytes(ptr, 0, size * el);
+        NonNull::new(ptr).expect("allocation failed")
+    };
     CircBuf { el, start: 0, n: 0, size, mask: size - 1, b }
 }
 pub fn dealloc(&mut self) {
@@ -24,9 +27,9 @@ pub fn dealloc(&mut self) {
 pub fn resize(&mut self, size: usize) {
     assert!(size > self.size && (size & (size - 1)) == 0);
     let old_layout = Layout::from_size_align(self.size * self.el, 1).unwrap();
-    let new_size_bytes = size * self.el;
-    let new_ptr = unsafe { realloc(self.b.as_ptr(), old_layout, new_size_bytes) };
-    self.b = NonNull::new(new_ptr).expect("realloc failed");
+    let new_byte_size = size * self.el;
+    let ptr = unsafe { realloc(self.b.as_ptr(), old_layout, new_byte_size) };
+    self.b = NonNull::new(ptr).expect("realloc failed");
     if self.start + self.n > self.size {
         let nend = self.size - self.start;
         let nbeg = (self.start + self.n) & self.mask;
@@ -81,8 +84,8 @@ pub fn unshift(&mut self) -> &mut [u8] {
 pub fn shift(&mut self) -> &mut [u8] {
     assert!(self.n > 0);
     let pos = (self.start + self.n) & self.mask;
-    let offset = self.el * pos;
     self.n -= 1;
+    let offset = self.el * pos;
     unsafe { slice::from_raw_parts_mut(self.b.as_ptr().add(offset), self.el) }
 }
 pub fn norm(&mut self) {
@@ -90,15 +93,15 @@ pub fn norm(&mut self) {
         let newstart = (self.size - self.n) / 2;
         let nleft = self.start + self.n - self.size;
         let nright = self.size - self.start;
-        if nleft <= newstart {
-            unsafe {
-                let b = self.b.as_ptr();
+        unsafe {
+            let b = self.b.as_ptr();
+            if nleft <= newstart {
                 ptr::copy(b.add(self.start * self.el), b.add(newstart * self.el), self.el * nright);
                 ptr::copy_nonoverlapping(b, b.add((newstart + nright) * self.el), self.el * nleft);
+            } else {
+                let buf = slice::from_raw_parts_mut(b, self.size * self.el);
+                gca_cycle_left(buf, self.size, self.el, self.start - newstart);
             }
-        } else {
-            let buf = unsafe { slice::from_raw_parts_mut(self.b.as_ptr(), self.size * self.el) };
-            gca_cycle_left(buf, self.size, self.el, self.start - newstart);
         }
         self.start = newstart;
     }
@@ -109,8 +112,8 @@ fn get(&mut self, idx: usize) -> &mut [u8] {
     unsafe { slice::from_raw_parts_mut(self.b.as_ptr().add(offset), self.el) }
 }
 }
-fn roundup64(x: u64) -> u64 {
-    let mut x = x.wrapping_sub(1);
+fn roundup64(mut x: u64) -> u64 {
+    x = x.wrapping_sub(1);
     x |= x >> 1;
     x |= x >> 2;
     x |= x >> 4;
@@ -153,7 +156,7 @@ fn gca_calc_gcd(mut a: u32, mut b: u32) -> u32 {
     while a & 1 == 0 { a >>= 1; }
     loop {
         while b & 1 == 0 { b >>= 1; }
-        if a > b { mem::swap(&mut a, &mut b); }
+        if a > b { std::mem::swap(&mut a, &mut b); }
         b -= a;
         if b == 0 { break; }
     }

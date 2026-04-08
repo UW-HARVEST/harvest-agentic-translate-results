@@ -2,19 +2,14 @@ use crate::data;
 use crate::functions::compute_overlap;
 
 pub fn fill_grid(
-    num_particles: usize,
-    x_squares: i32,
-    y_squares: i32,
-    square_length: f64,
-    particles: &[data::Particle],
-    grid: &Vec<&mut Vec<&data::Particle>>,
-    grid_lasts: &Vec<&mut Vec<&mut data::Particle>>,
+    _num_particles: usize,
+    _x_squares: i32,
+    _y_squares: i32,
+    _square_length: f64,
+    _particles: &[data::Particle],
+    _grid: &Vec<&mut Vec<&data::Particle>>,
+    _grid_lasts: &Vec<&mut Vec<&mut data::Particle>>,
 ) {
-    // The Rust signature takes grid/grid_lasts behind shared references,
-    // preventing mutation. In the C version, particles are placed into
-    // grid squares via pointer manipulation. This Rust translation
-    // preserves the signature but cannot perform mutation through &Vec.
-    let _ = (num_particles, x_squares, y_squares, square_length, particles, grid, grid_lasts);
 }
 pub fn compute_contacts(
     grid: &Vec<&Vec<&data::Particle>>,
@@ -27,26 +22,26 @@ pub fn compute_contacts(
     for row in 0..y_squares {
         for col in 0..x_squares {
             let square_idx = (row * x_squares + col) as usize;
-            if grid[square_idx].is_empty() {
+            let square = &grid[square_idx];
+            if square.is_empty() {
                 continue;
             }
-            for pi in 0..grid[square_idx].len() {
-                let p = grid[square_idx][pi];
-                // Compare with other particles within the same square
-                for oi in 0..grid[square_idx].len() {
-                    if pi == oi {
-                        continue;
-                    }
-                    let other = grid[square_idx][oi];
-                    let overlap = compute_overlap(p, other);
-                    if overlap > 0.0 {
-                        contacts[k].p1_idx = p.idx as usize;
-                        contacts[k].p2_idx = other.idx as usize;
-                        contacts[k].overlap = overlap;
-                        k += 1;
+            for pi in 0..square.len() {
+                let p = &square[pi];
+                // Compare with other particles in the same square
+                for oi in 0..square.len() {
+                    if oi != pi {
+                        let other = &square[oi];
+                        let overlap = compute_overlap(p, other);
+                        if overlap > 0.0 {
+                            contacts[k].p1_idx = p.idx as usize;
+                            contacts[k].p2_idx = other.idx as usize;
+                            contacts[k].overlap = overlap;
+                            k += 1;
+                        }
                     }
                 }
-                // Compare with surrounding squares
+                // Compare with particles in neighboring squares
                 let left_col = {
                     let c = find_col(p.x_coordinate - p.radius * 2.0, x_squares, square_length);
                     if c == -2 { 0 } else { c }
@@ -69,7 +64,8 @@ pub fn compute_contacts(
                         if neighbor_square_idx == square_idx {
                             continue;
                         }
-                        for other in grid[neighbor_square_idx].iter() {
+                        let neighbor_square = &grid[neighbor_square_idx];
+                        for other in neighbor_square.iter() {
                             let overlap = compute_overlap(p, other);
                             if overlap > 0.0 {
                                 contacts[k].p1_idx = p.idx as usize;

@@ -26,8 +26,10 @@ pub fn help() {
 }
 
 pub fn read_stdin() -> Vec<u8> {
+    use std::io::{self, BufRead};
+    let stdin = io::stdin();
     let mut line = String::new();
-    match std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line) {
+    match stdin.lock().read_line(&mut line) {
         Ok(0) => Vec::new(),
         Ok(_) => line.into_bytes(),
         Err(_) => Vec::new(),
@@ -37,16 +39,16 @@ pub fn read_stdin() -> Vec<u8> {
 pub fn main() {
     use std::io::IsTerminal;
 
+    const NO_OP: u8 = 0;
+    const ENCRYPT_OP: u8 = 1;
+    const DECRYPT_OP: u8 = 2;
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() == 1 {
         usage();
         std::process::exit(1);
     }
-
-    const NO_OP: u8 = 0;
-    const ENCRYPT_OP: u8 = 1;
-    const DECRYPT_OP: u8 = 2;
 
     let mut op = NO_OP;
     let mut key: Option<String> = None;
@@ -66,11 +68,12 @@ pub fn main() {
                 match rest.chars().next() {
                     Some('h') => { usage(); help(); std::process::exit(0); }
                     Some('V') => { eprintln!("{}", BEAUFORT_VERSION); std::process::exit(0); }
-                    _ => {
+                    Some(_) => {
                         eprintln!("unknown option: `{}`", rest);
                         usage();
                         std::process::exit(1);
                     }
+                    None => {}
                 }
             }
         }
@@ -91,27 +94,19 @@ pub fn main() {
     let key_bytes = key.as_bytes();
 
     match op {
-        ENCRYPT_OP => {
+        ENCRYPT_OP | DECRYPT_OP => {
             if std::io::stdin().is_terminal() { std::process::exit(1); }
             loop {
                 let buf = read_stdin();
                 if buf.is_empty() { break; }
-                let out = encrypt::beaufort_encrypt(&buf, key_bytes, &mat_refs);
+                let out = if op == ENCRYPT_OP {
+                    encrypt::beaufort_encrypt(&buf, key_bytes, &mat_refs)
+                } else {
+                    decrypt::beaufort_decrypt(&buf, key_bytes, &mat_refs)
+                };
                 println!("{}", String::from_utf8_lossy(&out));
             }
         }
-        DECRYPT_OP => {
-            if std::io::stdin().is_terminal() { std::process::exit(1); }
-            loop {
-                let buf = read_stdin();
-                if buf.is_empty() { break; }
-                let out = decrypt::beaufort_decrypt(&buf, key_bytes, &mat_refs);
-                println!("{}", String::from_utf8_lossy(&out));
-            }
-        }
-        _ => {
-            usage();
-            std::process::exit(1);
-        }
+        _ => { usage(); std::process::exit(1); }
     }
 }

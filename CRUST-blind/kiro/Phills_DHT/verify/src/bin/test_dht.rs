@@ -1,11 +1,13 @@
 use Phills_DHT::dht::dht::HASHTABLE;
 
+// Test 1: uninitialised after dht_init
 #[test]
 fn uninitialise_test() {
     let ht: HASHTABLE<i32> = HASHTABLE::dht_init();
     assert!(!ht.dht_is_initialised());
 }
 
+// Test 2: initialised after dht_init_table
 #[test]
 fn initialised_test() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();
@@ -13,6 +15,7 @@ fn initialised_test() {
     assert!(ht.dht_is_initialised());
 }
 
+// Tests 3-7: get_size
 #[test]
 fn get_size_test_1() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();
@@ -48,6 +51,7 @@ fn get_size_test_5() {
     assert_eq!(ht.dht_get_size(), 44);
 }
 
+// Tests 8-12: check bounds
 #[test]
 fn check_bound_test_1() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();
@@ -83,6 +87,7 @@ fn check_bound_test_5() {
     assert_eq!(ht.dht_get_upper_bound(), 2);
 }
 
+// Tests 13-21: read returns None for unwritten slots
 #[test]
 fn read_write_1() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();
@@ -146,6 +151,7 @@ fn read_write_9() {
     assert!(ht.dht_read(18).is_none());
 }
 
+// Tests 22-24: write then read back
 #[test]
 fn read_write_10() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();
@@ -170,6 +176,7 @@ fn read_write_12() {
     assert_eq!(*ht.dht_read(19), Some(65));
 }
 
+// Tests 25-28: write, remap with migrate=true, read back
 #[test]
 fn write_remap_read_1() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();
@@ -206,6 +213,7 @@ fn write_remap_read_4() {
     assert_eq!(*ht.dht_read(0), Some(65));
 }
 
+// Test 29: write, remap with migrate=false, data is dropped
 #[test]
 fn write_remap_read_5() {
     let mut ht: HASHTABLE<i32> = HASHTABLE::dht_init();

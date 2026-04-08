@@ -49,9 +49,7 @@ pub fn add_u4(a: U4, b: U4) -> U4 {
     let mut carry = false;
     let mut result: U4 = 0;
     for i in 0..4 {
-        let ab = (a >> i) & 1 != 0;
-        let bb = (b >> i) & 1 != 0;
-        result |= (add_bit(ab, bb, carry, &mut carry) as U4) << i;
+        result |= (add_bit((a >> i) & 1 != 0, (b >> i) & 1 != 0, carry, &mut carry) as U4) << i;
     }
     result
 }
@@ -59,9 +57,7 @@ pub fn sub_u4(a: U4, b: U4) -> U4 {
     let mut carry = false;
     let mut result: U4 = 0;
     for i in 0..4 {
-        let ab = (a >> i) & 1 != 0;
-        let bb = (b >> i) & 1 != 0;
-        result |= (sub_bit(ab, bb, carry, &mut carry) as U4) << i;
+        result |= (sub_bit((a >> i) & 1 != 0, (b >> i) & 1 != 0, carry, &mut carry) as U4) << i;
     }
     result
 }
@@ -97,4 +93,3 @@ pub fn check_sub() -> bool {
     eprintln!("Sub works correctly");
     true
 }
-

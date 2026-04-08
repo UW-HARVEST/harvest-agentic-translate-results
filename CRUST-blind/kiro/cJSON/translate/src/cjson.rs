@@ -155,11 +155,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if self.pos == start || (self.pos == start + 1 && sign < 0.0 && n == 0.0 && scale == 0.0 && subscale == 0) {
-            // Check we actually consumed something meaningful
-            if self.pos == start {
-                return Err(CJsonError::InvalidNumber { pos: start });
-            }
+        if self.pos == start || (self.pos == start + 1 && sign < 0.0) {
+            return Err(CJsonError::InvalidNumber { pos: start });
         }
 
         let result = sign * n * 10.0_f64.powf(scale + (subscale * signsubscale) as f64);
@@ -167,18 +164,13 @@ impl<'a> Parser<'a> {
     }
     fn parse_string(&mut self) -> Result<String, CJsonError> {
         let pos = self.pos;
-        self.expect_char('"').map_err(|_| CJsonError::UnexpectedToken {
-            ch: self.input[pos..].chars().next().unwrap_or('\0'),
-            pos,
-        })?;
-
+        self.expect_char('"')?;
         let mut result = std::string::String::new();
         loop {
             match self.next_char() {
-                None => return Err(CJsonError::UnexpectedEOF { pos: self.pos }),
+                None => return Err(CJsonError::UnexpectedEOF { pos }),
                 Some('"') => return Ok(result),
                 Some('\\') => {
-                    let esc_pos = self.pos;
                     match self.next_char() {
                         None => return Err(CJsonError::UnexpectedEOF { pos: self.pos }),
                         Some('b') => result.push('\u{0008}'),
@@ -186,41 +178,27 @@ impl<'a> Parser<'a> {
                         Some('n') => result.push('\n'),
                         Some('r') => result.push('\r'),
                         Some('t') => result.push('\t'),
-                        Some('"') => result.push('"'),
-                        Some('\\') => result.push('\\'),
-                        Some('/') => result.push('/'),
                         Some('u') => {
-                            let uc = self.parse_hex4().map_err(|_| CJsonError::InvalidUnicodeEscape { pos: esc_pos })?;
+                            let uc = self.parse_hex4()?;
                             if (0xDC00..=0xDFFF).contains(&uc) || uc == 0 {
-                                // invalid lone low surrogate or null - C code just breaks (skips)
-                                continue;
-                            }
-                            let code_point;
-                            if (0xD800..=0xDBFF).contains(&uc) {
-                                // high surrogate, expect \uXXXX
-                                if self.peek() == Some('\\') {
-                                    self.pos += 1;
-                                    if self.peek() == Some('u') {
-                                        self.pos += 1;
-                                        let uc2 = self.parse_hex4().map_err(|_| CJsonError::InvalidUnicodeEscape { pos: esc_pos })?;
-                                        if (0xDC00..=0xDFFF).contains(&uc2) {
-                                            code_point = 0x10000 + (((uc & 0x3FF) << 10) | (uc2 & 0x3FF));
-                                        } else {
-                                            // invalid second half
-                                            continue;
+                                // invalid, just skip (matching C behavior which breaks)
+                            } else if (0xD800..=0xDBFF).contains(&uc) {
+                                // surrogate pair
+                                let escape_pos = self.pos;
+                                if self.next_char() == Some('\\') && self.next_char() == Some('u') {
+                                    let uc2 = self.parse_hex4()?;
+                                    if (0xDC00..=0xDFFF).contains(&uc2) {
+                                        let cp = 0x10000 + (((uc & 0x3FF) << 10) | (uc2 & 0x3FF));
+                                        if let Some(ch) = char::from_u32(cp) {
+                                            result.push(ch);
                                         }
-                                    } else {
-                                        // missing 'u' after backslash
-                                        self.pos -= 1; // put back the backslash
-                                        continue;
                                     }
+                                    // else: invalid second half, skip (C behavior)
                                 } else {
-                                    continue;
+                                    // missing second half, rewind isn't needed since C just breaks
+                                    let _ = escape_pos;
                                 }
-                            } else {
-                                code_point = uc;
-                            }
-                            if let Some(ch) = char::from_u32(code_point) {
+                            } else if let Some(ch) = char::from_u32(uc) {
                                 result.push(ch);
                             }
                         }
@@ -231,7 +209,6 @@ impl<'a> Parser<'a> {
             }
         }
     }
-
     fn parse_hex4(&mut self) -> Result<u32, CJsonError> {
         let pos = self.pos;
         let mut h: u32 = 0;
@@ -245,7 +222,6 @@ impl<'a> Parser<'a> {
         }
         Ok(h)
     }
-
     fn parse_array(&mut self) -> Result<CJson, CJsonError> {
         self.expect_char('[')?;
         self.skip_whitespace();
@@ -276,21 +252,30 @@ impl<'a> Parser<'a> {
             return Ok(CJson::Object(HashMap::new()));
         }
         let mut map = HashMap::new();
-        // Use a vec to preserve insertion order for printing (HashMap doesn't guarantee order,
-        // but the C code uses a linked list which preserves insertion order)
-        loop {
+        // parse first key-value
+        self.skip_whitespace();
+        let key = self.parse_string()?;
+        self.skip_whitespace();
+        if self.peek() != Some(':') {
+            return Err(CJsonError::ExpectedColon { pos: self.pos });
+        }
+        self.pos += 1;
+        let value = self.parse_value()?;
+        map.insert(key, value);
+        self.skip_whitespace();
+
+        while self.peek() == Some(',') {
+            self.pos += 1;
             self.skip_whitespace();
             let key = self.parse_string()?;
             self.skip_whitespace();
-            self.expect_char(':').map_err(|_| CJsonError::ExpectedColon { pos: self.pos })?;
-            let value = self.parse_value()?;
-            self.skip_whitespace();
-            map.insert(key, value);
-            if self.peek() == Some(',') {
-                self.pos += 1;
-            } else {
-                break;
+            if self.peek() != Some(':') {
+                return Err(CJsonError::ExpectedColon { pos: self.pos });
             }
+            self.pos += 1;
+            let value = self.parse_value()?;
+            map.insert(key, value);
+            self.skip_whitespace();
         }
         if self.peek() == Some('}') {
             self.pos += 1;
@@ -306,8 +291,9 @@ pub fn parse(input: &str, require_end: bool) -> Result<CJson, CJsonError> {
     if require_end {
         parser.skip_whitespace();
         if parser.pos < parser.input.len() {
-            let ch = parser.input[parser.pos..].chars().next().unwrap();
-            return Err(CJsonError::UnexpectedToken { ch, pos: parser.pos });
+            if let Some(ch) = parser.peek() {
+                return Err(CJsonError::UnexpectedToken { ch, pos: parser.pos });
+            }
         }
     }
     Ok(value)
@@ -335,18 +321,19 @@ fn escape_string(s: &str) -> String {
 }
 
 fn print_number(d: f64) -> String {
-    // Match C print_number behavior
-    let i = d as i32;
     if d == 0.0 {
         "0".to_string()
-    } else if (i as f64 - d).abs() <= f64::EPSILON && d <= i32::MAX as f64 && d >= i32::MIN as f64 {
-        format!("{}", i)
-    } else if (d.floor() - d).abs() <= f64::EPSILON && d.abs() < 1.0e60 {
-        format!("{:.0}", d)
-    } else if d.abs() < 1.0e-6 || d.abs() > 1.0e9 {
-        format!("{:e}", d)
     } else {
-        format!("{}", d)
+        let as_int = d as i32;
+        if (as_int as f64 - d).abs() <= f64::EPSILON && d <= i32::MAX as f64 && d >= i32::MIN as f64 {
+            format!("{}", as_int)
+        } else if (d.floor() - d).abs() <= f64::EPSILON && d.abs() < 1.0e60 {
+            format!("{:.0}", d)
+        } else if d.abs() < 1.0e-6 || d.abs() > 1.0e9 {
+            format!("{:e}", d)
+        } else {
+            format!("{}", d)
+        }
     }
 }
 
@@ -464,11 +451,8 @@ impl CJson {
     pub fn get_object_item(&self, key: &str) -> Option<&CJson> {
         match self {
             CJson::Object(map) => {
-                // C version uses case-insensitive comparison
                 let key_lower = key.to_ascii_lowercase();
-                map.iter()
-                    .find(|(k, _)| k.to_ascii_lowercase() == key_lower)
-                    .map(|(_, v)| v)
+                map.iter().find(|(k, _)| k.to_ascii_lowercase() == key_lower).map(|(_, v)| v)
             }
             _ => None,
         }

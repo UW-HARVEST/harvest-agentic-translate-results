@@ -60,7 +60,7 @@ pub fn fst_draw_sym(fst: &Fst, fout: &mut File, ist: Option<&SymTable>, ost: Opt
     write!(fout, "{}", FOOTER)?;
     Ok(())
 }
-fn trn(st: &mut SymTable, id: usize, _token: &str) -> String {
+fn trn(_st: &mut SymTable, id: usize, _token: &str) -> String {
     format!("{}", id)
 }
 fn trt(st: &mut SymTable, id: usize, _token: &str) -> String {

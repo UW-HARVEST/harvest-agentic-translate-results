@@ -10,4 +10,9 @@ fn test_constants() {
     assert_eq!(settings::DEBUG, 0);
 }
 
+#[test]
+fn test_header_guard() {
+    assert_eq!(settings::SIMPLE_LANG_SETTINGS_H, true);
+}
+
 fn main() {}

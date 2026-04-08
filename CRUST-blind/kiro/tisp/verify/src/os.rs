@@ -1,73 +1,71 @@
 use crate::tisp::*;
-use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH, Instant};
 
-fn tsp_arg_check(args: &Val, name: &str, n: i32) {
-    let len = tsp_lstlen(args);
-    if n > -1 && len != n {
+fn tsp_arg_num_check(args: &Val, name: &str, nargs: i32) -> bool {
+    if nargs > -1 && tsp_lstlen(args) != nargs {
         eprintln!("; tisp: error: {}: expected {} argument{}, received {}",
-            name, n, if n > 1 { "s" } else { "" }, len);
-    }
+            name, nargs, if nargs > 1 { "s" } else { "" }, tsp_lstlen(args));
+        false
+    } else { true }
 }
-fn tsp_type_check(v: &Val, name: &str, type_mask: u32) {
-    if (v.t as u32) & type_mask == 0 {
+
+fn tsp_arg_type_check(arg: &Val, name: &str, type_bits: u32) -> bool {
+    if (arg.t as u32) & type_bits == 0 {
         eprintln!("; tisp: error: {}: expected {}, received {}",
-            name, tsp_type_str_mask(type_mask), tsp_type_str(v.t));
-    }
-}
-fn tsp_type_str_mask(t: u32) -> &'static str {
-    if t == TspType::TspInt as u32 { return "Int"; }
-    if t == (TspType::TspStr as u32 | TspType::TspSym as u32) { return "Str"; }
-    "Invalid"
+            name, tsp_type_str_bits(type_bits), tsp_type_str(arg.t));
+        false
+    } else { true }
 }
 
 pub fn prim_cd(st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "cd!", 1);
-    let dir = car_ref(&args);
-    if !type_matches(dir.t, TspType::TspStr as u32 | TspType::TspSym as u32) {
+    if !tsp_arg_num_check(&args, "cd!", 1) { return mk_err(); }
+    let dir = car(&args);
+    if (dir.t as u32) & (TspType::TspStr as u32 | TspType::TspSym as u32) == 0 {
         eprintln!("; tisp: error: cd!: expected string or symbol, received {}", tsp_type_str(dir.t));
-        return mk_val(TspType::TspNone);
+        return mk_err();
     }
-    let path = sym_str(dir);
-    if std::env::set_current_dir(path).is_err() {
+    if std::env::set_current_dir(vs(dir)).is_err() {
         eprintln!("; error: cd");
-        return mk_val(TspType::TspNone);
+        return mk_err();
     }
-    val_clone(&st.none)
+    clone_val(&st.none)
 }
 
 pub fn prim_pwd(st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "pwd", 0);
+    if !tsp_arg_num_check(&args, "pwd", 0) { return mk_err(); }
     match std::env::current_dir() {
-        Ok(p) => mk_str(st, &p.to_string_lossy()).unwrap(),
+        Ok(p) => mk_str(st, &p.to_string_lossy()).unwrap_or_else(|| mk_err()),
         Err(_) => {
             eprintln!("; tisp: error: pwd: could not get current directory");
-            mk_val(TspType::TspNone)
+            mk_err()
         }
     }
 }
 
 pub fn prim_exit(_st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "exit!", 1);
-    tsp_type_check(car_ref(&args), "exit!", TspType::TspInt as u32);
-    std::process::exit(num_of(car_ref(&args)) as i32);
+    if !tsp_arg_num_check(&args, "exit!", 1) { return mk_err(); }
+    if !tsp_arg_type_check(car(&args), "exit!", TspType::TspInt as u32) { return mk_err(); }
+    std::process::exit(vnum(car(&args)) as i32);
 }
 
-pub fn prim_now(st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "now", 0);
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+pub fn prim_now(_st: &mut Tsp, _env: &mut Rec, args: Val) -> Val {
+    if !tsp_arg_num_check(&args, "now", 0) { return mk_err(); }
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     mk_int(secs as i32)
 }
 
 pub fn form_time(st: &mut Tsp, env: &mut Rec, args: Val) -> Val {
-    tsp_arg_check(&args, "time", 1);
+    if !tsp_arg_num_check(&args, "time", 1) { return mk_err(); }
     let start = Instant::now();
-    let _v = tisp_eval_with_env(st, env, val_clone(car_ref(&args)));
-    let elapsed = start.elapsed();
-    let ms = elapsed.as_secs_f64() * 100.0;
-    mk_dec(ms).unwrap()
+    let expr = clone_val(car(&args));
+    match tisp_eval_with_env(st, env, expr) {
+        None => mk_err(),
+        Some(_) => {
+            let elapsed = start.elapsed();
+            let ms = elapsed.as_secs_f64() * 100.0; // match C: clock()/CLOCKS_PER_SEC*100
+            mk_dec(ms).unwrap()
+        }
+    }
 }
 
 pub fn tib_env_os(st: &mut Tsp) {

@@ -8,9 +8,7 @@ pub fn get_file(path: &str, mode: &str) -> io::Result<File> {
         "r" => File::open(path),
         "w" => File::create(path),
         "a" => OpenOptions::new().append(true).create(true).open(path),
-        "r+" => OpenOptions::new().read(true).write(true).open(path),
-        "w+" => OpenOptions::new().read(true).write(true).create(true).truncate(true).open(path),
-        _ => File::open(path),
+        _ => OpenOptions::new().read(true).write(true).open(path),
     }
 }
 pub fn write_to_file(file: &mut File, content: &str) -> io::Result<()> {
@@ -29,7 +27,7 @@ pub fn next(file: &mut File) -> io::Result<char> {
     let mut buf = [0u8; 1];
     let n = file.read(&mut buf)?;
     if n == 0 {
-        Ok(char::from(0xff_u8)) // EOF equivalent
+        Ok((-1i8 as u8) as char) // EOF equivalent
     } else {
         Ok(buf[0] as char)
     }

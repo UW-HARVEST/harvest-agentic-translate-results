@@ -27,16 +27,16 @@ impl PacketSlabUndoStack {
         if self.count < UNDO_STACK_SIZE {
             self.stack[self.count] = Some(undo);
             self.count += 1;
-            return;
+        } else {
+            self.extra.push(undo);
         }
-        self.extra.push(undo);
     }
     pub fn apply(&mut self, slab: &mut PacketSlab) {
-        // Undo extras in reverse order
+        // Apply extras in reverse order
         while let Some(undo) = self.extra.pop() {
             slab.restore_packet(undo.position, undo.old_packet);
         }
-        // Undo stack items in reverse order
+        // Apply stack in reverse order
         while self.count > 0 {
             self.count -= 1;
             if let Some(undo) = self.stack[self.count].take() {

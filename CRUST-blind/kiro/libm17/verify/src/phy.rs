@@ -1,13 +1,9 @@
 use crate::types::SYM_PER_PLD;
-use crate::math::soft_bit_not;
-use crate::encode::SYMBOL_LIST;
-
 pub const SYNC_LSF: u16 = 0x55F7;
 pub const SYNC_STR: u16 = 0xFF5D;
 pub const SYNC_PKT: u16 = 0x75FF;
 pub const SYNC_BER: u16 = 0xDF55;
 pub const EOT_MRKR: u16 = 0x555D;
-
 pub const INTRL_SEQ: [usize; SYM_PER_PLD * 2] = [
     0, 137, 90, 227, 180, 317, 270, 39, 360, 129, 82, 219, 172, 309, 262, 31, 352, 121, 74, 211,
     164, 301, 254, 23, 344, 113, 66, 203, 156, 293, 246, 15, 336, 105, 58, 195, 148, 285, 238, 7,
@@ -29,7 +25,6 @@ pub const INTRL_SEQ: [usize; SYM_PER_PLD * 2] = [
     349, 302, 71, 24, 161, 114, 251, 204, 341, 294, 63, 16, 153, 106, 243, 196, 333, 286, 55, 8,
     145, 98, 235, 188, 325, 278, 47,
 ];
-
 pub const RAND_SEQ: [u8; 46] = [
     0xD6, 0xB5, 0xE2, 0x30, 0x82, 0xFF, 0x84, 0x62, 0xBA, 0x4E, 0x96, 0x90, 0xD8, 0x98, 0xDD, 0x5D,
     0x0C, 0xC8, 0x52, 0x43, 0x91, 0x1D, 0xF8, 0x6E, 0x68, 0x2F, 0x35, 0xDA, 0x14, 0xEA, 0xCD, 0x76,
@@ -57,53 +52,47 @@ pub fn randomize_bits(inp: &mut [u8; SYM_PER_PLD * 2]) {
 }
 
 pub fn randomize_soft_bits(inp: &mut [u8; SYM_PER_PLD * 2]) {
-    // The C version operates on uint16_t and calls soft_bit_NOT.
-    // The Rust signature uses u8, so we treat each pair of bytes as a u16 (big-endian).
-    // However, since the signature is &mut [u8; 368], and the C version is uint16_t[368],
-    // the Rust signature seems to be a simplification. We'll just XOR with 0xFF
-    // to approximate soft_bit_NOT on a byte level, matching the bit-flip pattern.
     for i in 0..SYM_PER_PLD * 2 {
         if (RAND_SEQ[i / 8] >> (7 - (i % 8))) & 1 != 0 {
-            inp[i] = soft_bit_not(inp[i] as u16) as u8;
+            // soft_bit_NOT for u8: treat as u8 soft value, NOT = 0xFF - val
+            inp[i] = 0xFF - inp[i];
         }
     }
 }
 
 pub fn slice_symbols(out: &mut [u8; SYM_PER_PLD * 2], inp: &[u8; SYM_PER_PLD]) {
-    // The C version takes float[SYM_PER_PLD] and outputs uint16_t[2*SYM_PER_PLD].
-    // The Rust signature uses u8 arrays. We implement the logic treating inp as
-    // signed symbol values and out as the result bytes.
-    let sl = SYMBOL_LIST;
+    // The C version takes float inp and produces u16 out.
+    // With u8 signatures, we replicate the logic scaled to u8 range.
+    // symbol_list = {-3, -1, +1, +3} mapped to u8: 0, 85, 170, 255
+    // We treat inp[i] as an unsigned byte representing a symbol level.
+    let sl0: f32 = 0.0;   // -3 mapped
+    let sl1: f32 = 85.0;  // -1 mapped
+    let sl2: f32 = 170.0; // +1 mapped
+    let sl3: f32 = 255.0; // +3 mapped
 
     for i in 0..SYM_PER_PLD {
-        let v = inp[i] as i8 as f32;
+        let v = inp[i] as f32;
 
-        // bit 0 (stored at out[i*2+1])
-        let b0: u16 = if v >= sl[3] as f32 {
-            0xFFFF
-        } else if v >= sl[2] as f32 {
-            let scale = 0xFFFF_u32 as f32 / (sl[3] as f32 - sl[2] as f32);
-            (-(scale * sl[2] as f32) + v * scale) as u16
-        } else if v >= sl[1] as f32 {
-            0x0000
-        } else if v >= sl[0] as f32 {
-            let scale = 0xFFFF_u32 as f32 / (sl[1] as f32 - sl[0] as f32);
-            (scale * sl[1] as f32 - v * scale) as u16
+        // bit 0 (out[i*2+1])
+        if v >= sl3 {
+            out[i * 2 + 1] = 0xFF;
+        } else if v >= sl2 {
+            out[i * 2 + 1] = ((-255.0 / (sl3 - sl2)) * sl2 + v * (255.0 / (sl3 - sl2))) as u8;
+        } else if v >= sl1 {
+            out[i * 2 + 1] = 0x00;
+        } else if v >= sl0 {
+            out[i * 2 + 1] = ((255.0 / (sl1 - sl0)) * sl1 - v * (255.0 / (sl1 - sl0))) as u8;
         } else {
-            0xFFFF
-        };
+            out[i * 2 + 1] = 0xFF;
+        }
 
-        // bit 1 (stored at out[i*2])
-        let b1: u16 = if v >= sl[2] as f32 {
-            0x0000
-        } else if v >= sl[1] as f32 {
-            let scale = 0xFFFF_u32 as f32 / (sl[2] as f32 - sl[1] as f32);
-            (0x7FFF_u32 as f32 - v * scale) as u16
+        // bit 1 (out[i*2])
+        if v >= sl2 {
+            out[i * 2] = 0x00;
+        } else if v >= sl1 {
+            out[i * 2] = (127.0 - v * (255.0 / (sl2 - sl1))) as u8;
         } else {
-            0xFFFF
-        };
-
-        out[i * 2 + 1] = b0 as u8;
-        out[i * 2] = b1 as u8;
+            out[i * 2] = 0xFF;
+        }
     }
 }
