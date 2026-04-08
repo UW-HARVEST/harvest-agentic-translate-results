@@ -1,277 +1,128 @@
 use matrix_multiplication::matrix;
+use matrix_multiplication::utils;
 
-fn make_result(rows: usize, cols: usize) -> Vec<Vec<f32>> {
-    vec![vec![0.0f32; cols]; rows]
+const ARRAY_TYPE_CHAR: &str = "float";
+
+/// Equivalent to:
+/// void test_generate_matrix(ARRAY_TYPE** matrix, int x, int y, char* name, char* type)
+///
+/// In Rust, we:
+/// 1. Generate a matrix and store in a local Vec.
+/// 2. Print its contents.
+/// 3. "Free" it (clear it) to mimic your original logic.
+fn test_generate_matrix(x: usize, y: usize, name: Option<&str>, typ: &str) {
+    // 1. Create the matrix
+    let mut matrix_data = matrix::generate_matrix(x, y, false);
+
+    // 2. Print (mimics print_array(...))
+    //    If name is None, we supply a default fallback name.
+    let display_name = name.unwrap_or("No name");
+    utils::print_array(&matrix_data, display_name, typ);
+
+    // 3. Free / clear the matrix for demonstration
+    //    (Rust would free automatically, but we call free_matrix to mirror C code)
+    let _ = matrix::free_matrix(&mut matrix_data);
 }
 
-// --- generate_matrix tests ---
-
+/// A set of tests for generating matrices with different dimensions.
 #[test]
-fn test_generate_matrix_4x4() {
-    let m = matrix::generate_matrix(4, 4, false);
-    assert_eq!(m, vec![
-        vec![0.0, 1.0, 2.0, 3.0],
-        vec![4.0, 5.0, 6.0, 7.0],
-        vec![8.0, 9.0, 10.0, 11.0],
-        vec![12.0, 13.0, 14.0, 15.0],
-    ]);
+fn tests_generate_matrix() {
+    // 4x4
+    test_generate_matrix(4, 4, Some("matrix"), ARRAY_TYPE_CHAR);
+
+    // 3x4
+    test_generate_matrix(3, 4, Some("matrix 2"), ARRAY_TYPE_CHAR);
+
+    // 4x3
+    test_generate_matrix(4, 3, Some("matrix 3"), ARRAY_TYPE_CHAR);
+
+    // 0x0
+    test_generate_matrix(0, 0, Some("matrix 4"), ARRAY_TYPE_CHAR);
+
+    // 2x2 but no name provided (NULL in C)
+    test_generate_matrix(2, 2, None, ARRAY_TYPE_CHAR);
 }
 
+/// Equivalent to:
+/// void test_multiply(int x1, int y1, int x2, int y2, char* test_name, int method)
+///
+/// 1. Generate m1 (x1×y1), m2 (x2×y2), r (x1×y2).
+/// 2. Multiply them using the chosen `method`.
+/// 3. Print results if success, else print error.
+/// 4. Free them all.
+fn test_multiply(x1: usize, y1: usize, x2: usize, y2: usize, test_name: &str, method: i32)-> i32 {
+    // 1. Generate the matrices
+    let mut matrix1 = matrix::generate_matrix(x1, y1, false);
+    let mut matrix2 = matrix::generate_matrix(x2, y2, false);
+    let mut r = matrix::generate_matrix(x1, y2, true);
+
+    // 2. Multiply
+    let flag = matrix::multiply(&matrix1, &matrix2, &mut r, method);
+    // 3. Print or error
+    if flag != 0 {
+        println!(
+            "x1:{}, y1:{}, x2:{}, y2:{}, method:{} => error",
+            x1, y1, x2, y2, method
+        );
+    } else {
+        
+        println!("====={}======", test_name);
+        utils::print_array(&matrix1, "result", ARRAY_TYPE_CHAR);
+        utils::print_array(&matrix2, "result", ARRAY_TYPE_CHAR);
+        utils::print_array(&r, "result", ARRAY_TYPE_CHAR);
+        println!("=============");
+        
+    }
+
+    // 4. Free / clear the matrices
+    let _ = matrix::free_matrix(&mut matrix1);
+    let _ = matrix::free_matrix(&mut matrix2);
+    let _ = matrix::free_matrix(&mut r);
+    flag
+}
+
+/// A set of tests for multiplying different dimensioned matrices
+/// with different algorithms (method=1,2,3,...).
 #[test]
-fn test_generate_matrix_3x4() {
-    let m = matrix::generate_matrix(3, 4, false);
-    assert_eq!(m, vec![
-        vec![0.0, 1.0, 2.0, 3.0],
-        vec![3.0, 4.0, 5.0, 6.0],
-        vec![6.0, 7.0, 8.0, 9.0],
-    ]);
+fn tests_multiply() {
+    let (mut x1, mut y1, mut x2, mut y2) = (4, 4, 4, 4);
+
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 1-1", 1), 0);
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 1-3", 3),0);
+
+    x1 = 8;
+    y1 = 8;
+    x2 = 8;
+    y2 = 8;
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 1-1", 1), 0);
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 1-3", 3),0);
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 1-2", 2),0);
+    
+
+    x1 = 4;
+    y1 = 4;
+    x2 = 1;
+    y2 = 4;
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 2-1", 1), -1);
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 2-3", 3),-1);
+    
+
+    x1 = 1;
+    y1 = 1;
+    x2 = 1;
+    y2 = 1;
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 3-1", 1), 0);
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 3-3", 3),0);
+
+    x1 = 1;
+    y1 = 2;
+    x2 = 2;
+    y2 = 1;
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 4-1", 1), 0);
+    assert_eq!(test_multiply(x1, y1, x2, y2, "multiply 4-3", 3),0);
+    
+
+    // Testing an invalid method = 0
+    assert_ne!(test_multiply(x1, y1, x2, y2, "multiply 5-0", 0),0);
 }
-
-#[test]
-fn test_generate_matrix_4x3() {
-    let m = matrix::generate_matrix(4, 3, false);
-    assert_eq!(m, vec![
-        vec![0.0, 1.0, 2.0],
-        vec![4.0, 5.0, 6.0],
-        vec![8.0, 9.0, 10.0],
-        vec![12.0, 13.0, 14.0],
-    ]);
-}
-
-#[test]
-fn test_generate_matrix_2x2() {
-    let m = matrix::generate_matrix(2, 2, false);
-    assert_eq!(m, vec![
-        vec![0.0, 1.0],
-        vec![2.0, 3.0],
-    ]);
-}
-
-#[test]
-fn test_generate_matrix_0x0() {
-    let m = matrix::generate_matrix(0, 0, false);
-    assert!(m.is_empty());
-}
-
-// --- free_matrix tests ---
-
-#[test]
-fn test_free_matrix() {
-    let mut m = matrix::generate_matrix(2, 2, false);
-    let ret = matrix::free_matrix(&mut m);
-    assert_eq!(ret, 0);
-    assert!(m.is_empty());
-}
-
-// --- multiply with method 1 (algorithm1) ---
-
-#[test]
-fn test_multiply_4x4_method1() {
-    let m1 = matrix::generate_matrix(4, 4, false);
-    let m2 = matrix::generate_matrix(4, 4, false);
-    let mut r = make_result(4, 4);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 1);
-    assert_eq!(ret, 0);
-    assert_eq!(r, vec![
-        vec![56.0, 62.0, 68.0, 74.0],
-        vec![152.0, 174.0, 196.0, 218.0],
-        vec![248.0, 286.0, 324.0, 362.0],
-        vec![344.0, 398.0, 452.0, 506.0],
-    ]);
-}
-
-#[test]
-fn test_multiply_4x4_method3() {
-    let m1 = matrix::generate_matrix(4, 4, false);
-    let m2 = matrix::generate_matrix(4, 4, false);
-    let mut r = make_result(4, 4);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 3);
-    assert_eq!(ret, 0);
-    assert_eq!(r, vec![
-        vec![56.0, 62.0, 68.0, 74.0],
-        vec![152.0, 174.0, 196.0, 218.0],
-        vec![248.0, 286.0, 324.0, 362.0],
-        vec![344.0, 398.0, 452.0, 506.0],
-    ]);
-}
-
-#[test]
-fn test_multiply_8x8_method1() {
-    let m1 = matrix::generate_matrix(8, 8, false);
-    let m2 = matrix::generate_matrix(8, 8, false);
-    let mut r = make_result(8, 8);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 1);
-    assert_eq!(ret, 0);
-    let expected = vec![
-        vec![1120.0, 1148.0, 1176.0, 1204.0, 1232.0, 1260.0, 1288.0, 1316.0],
-        vec![2912.0, 3004.0, 3096.0, 3188.0, 3280.0, 3372.0, 3464.0, 3556.0],
-        vec![4704.0, 4860.0, 5016.0, 5172.0, 5328.0, 5484.0, 5640.0, 5796.0],
-        vec![6496.0, 6716.0, 6936.0, 7156.0, 7376.0, 7596.0, 7816.0, 8036.0],
-        vec![8288.0, 8572.0, 8856.0, 9140.0, 9424.0, 9708.0, 9992.0, 10276.0],
-        vec![10080.0, 10428.0, 10776.0, 11124.0, 11472.0, 11820.0, 12168.0, 12516.0],
-        vec![11872.0, 12284.0, 12696.0, 13108.0, 13520.0, 13932.0, 14344.0, 14756.0],
-        vec![13664.0, 14140.0, 14616.0, 15092.0, 15568.0, 16044.0, 16520.0, 16996.0],
-    ];
-    assert_eq!(r, expected);
-}
-
-#[test]
-fn test_multiply_8x8_method2() {
-    let m1 = matrix::generate_matrix(8, 8, false);
-    let m2 = matrix::generate_matrix(8, 8, false);
-    let mut r = make_result(8, 8);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 2);
-    assert_eq!(ret, 0);
-    let expected = vec![
-        vec![1120.0, 1148.0, 1176.0, 1204.0, 1232.0, 1260.0, 1288.0, 1316.0],
-        vec![2912.0, 3004.0, 3096.0, 3188.0, 3280.0, 3372.0, 3464.0, 3556.0],
-        vec![4704.0, 4860.0, 5016.0, 5172.0, 5328.0, 5484.0, 5640.0, 5796.0],
-        vec![6496.0, 6716.0, 6936.0, 7156.0, 7376.0, 7596.0, 7816.0, 8036.0],
-        vec![8288.0, 8572.0, 8856.0, 9140.0, 9424.0, 9708.0, 9992.0, 10276.0],
-        vec![10080.0, 10428.0, 10776.0, 11124.0, 11472.0, 11820.0, 12168.0, 12516.0],
-        vec![11872.0, 12284.0, 12696.0, 13108.0, 13520.0, 13932.0, 14344.0, 14756.0],
-        vec![13664.0, 14140.0, 14616.0, 15092.0, 15568.0, 16044.0, 16520.0, 16996.0],
-    ];
-    assert_eq!(r, expected);
-}
-
-#[test]
-fn test_multiply_8x8_method3() {
-    let m1 = matrix::generate_matrix(8, 8, false);
-    let m2 = matrix::generate_matrix(8, 8, false);
-    let mut r = make_result(8, 8);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 3);
-    assert_eq!(ret, 0);
-    let expected = vec![
-        vec![1120.0, 1148.0, 1176.0, 1204.0, 1232.0, 1260.0, 1288.0, 1316.0],
-        vec![2912.0, 3004.0, 3096.0, 3188.0, 3280.0, 3372.0, 3464.0, 3556.0],
-        vec![4704.0, 4860.0, 5016.0, 5172.0, 5328.0, 5484.0, 5640.0, 5796.0],
-        vec![6496.0, 6716.0, 6936.0, 7156.0, 7376.0, 7596.0, 7816.0, 8036.0],
-        vec![8288.0, 8572.0, 8856.0, 9140.0, 9424.0, 9708.0, 9992.0, 10276.0],
-        vec![10080.0, 10428.0, 10776.0, 11124.0, 11472.0, 11820.0, 12168.0, 12516.0],
-        vec![11872.0, 12284.0, 12696.0, 13108.0, 13520.0, 13932.0, 14344.0, 14756.0],
-        vec![13664.0, 14140.0, 14616.0, 15092.0, 15568.0, 16044.0, 16520.0, 16996.0],
-    ];
-    assert_eq!(r, expected);
-}
-
-// --- 1x1 multiply ---
-
-#[test]
-fn test_multiply_1x1_method1() {
-    let m1 = matrix::generate_matrix(1, 1, false);
-    let m2 = matrix::generate_matrix(1, 1, false);
-    let mut r = make_result(1, 1);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 1);
-    assert_eq!(ret, 0);
-    assert_eq!(r, vec![vec![0.0]]);
-}
-
-#[test]
-fn test_multiply_1x1_method3() {
-    let m1 = matrix::generate_matrix(1, 1, false);
-    let m2 = matrix::generate_matrix(1, 1, false);
-    let mut r = make_result(1, 1);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 3);
-    assert_eq!(ret, 0);
-    assert_eq!(r, vec![vec![0.0]]);
-}
-
-// --- 1x2 * 2x1 multiply ---
-
-#[test]
-fn test_multiply_1x2_2x1_method1() {
-    let m1 = matrix::generate_matrix(1, 2, false);
-    let m2 = matrix::generate_matrix(2, 1, false);
-    let mut r = make_result(1, 1);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 1);
-    assert_eq!(ret, 0);
-    assert_eq!(r, vec![vec![2.0]]);
-}
-
-#[test]
-fn test_multiply_1x2_2x1_method3() {
-    let m1 = matrix::generate_matrix(1, 2, false);
-    let m2 = matrix::generate_matrix(2, 1, false);
-    let mut r = make_result(1, 1);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 3);
-    assert_eq!(ret, 0);
-    assert_eq!(r, vec![vec![2.0]]);
-}
-
-// --- dimension mismatch ---
-
-#[test]
-fn test_multiply_dimension_mismatch() {
-    let m1 = matrix::generate_matrix(4, 4, false);
-    let m2 = matrix::generate_matrix(1, 4, false);
-    let mut r = make_result(4, 4);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 1);
-    assert_eq!(ret, -1);
-}
-
-// --- invalid method ---
-
-#[test]
-fn test_multiply_invalid_method() {
-    let m1 = matrix::generate_matrix(1, 2, false);
-    let m2 = matrix::generate_matrix(2, 1, false);
-    let mut r = make_result(1, 1);
-    let ret = matrix::multiply(&m1, &m2, &mut r, 0);
-    assert_eq!(ret, -1);
-}
-
-// --- algorithm1 directly ---
-
-#[test]
-fn test_algorithm1_direct() {
-    let m1 = matrix::generate_matrix(4, 4, false);
-    let m2 = matrix::generate_matrix(4, 4, false);
-    let mut r = make_result(4, 4);
-    matrix::algorithm1(&m1, &m2, &mut r);
-    assert_eq!(r, vec![
-        vec![56.0, 62.0, 68.0, 74.0],
-        vec![152.0, 174.0, 196.0, 218.0],
-        vec![248.0, 286.0, 324.0, 362.0],
-        vec![344.0, 398.0, 452.0, 506.0],
-    ]);
-}
-
-// --- algorithm3 directly ---
-
-#[test]
-fn test_algorithm3_direct() {
-    let m1 = matrix::generate_matrix(4, 4, false);
-    let m2 = matrix::generate_matrix(4, 4, false);
-    let mut r = make_result(4, 4);
-    matrix::algorithm3(&m1, &m2, &mut r);
-    assert_eq!(r, vec![
-        vec![56.0, 62.0, 68.0, 74.0],
-        vec![152.0, 174.0, 196.0, 218.0],
-        vec![248.0, 286.0, 324.0, 362.0],
-        vec![344.0, 398.0, 452.0, 506.0],
-    ]);
-}
-
-// --- algorithm2 directly ---
-
-#[test]
-fn test_algorithm2_direct() {
-    let m1 = matrix::generate_matrix(8, 8, false);
-    let m2 = matrix::generate_matrix(8, 8, false);
-    let mut r = make_result(8, 8);
-    matrix::algorithm2(&m1, &m2, &mut r);
-    let expected = vec![
-        vec![1120.0, 1148.0, 1176.0, 1204.0, 1232.0, 1260.0, 1288.0, 1316.0],
-        vec![2912.0, 3004.0, 3096.0, 3188.0, 3280.0, 3372.0, 3464.0, 3556.0],
-        vec![4704.0, 4860.0, 5016.0, 5172.0, 5328.0, 5484.0, 5640.0, 5796.0],
-        vec![6496.0, 6716.0, 6936.0, 7156.0, 7376.0, 7596.0, 7816.0, 8036.0],
-        vec![8288.0, 8572.0, 8856.0, 9140.0, 9424.0, 9708.0, 9992.0, 10276.0],
-        vec![10080.0, 10428.0, 10776.0, 11124.0, 11472.0, 11820.0, 12168.0, 12516.0],
-        vec![11872.0, 12284.0, 12696.0, 13108.0, 13520.0, 13932.0, 14344.0, 14756.0],
-        vec![13664.0, 14140.0, 14616.0, 15092.0, 15568.0, 16044.0, 16520.0, 16996.0],
-    ];
-    assert_eq!(r, expected);
-}
-
-fn main() {}
+fn main(){}

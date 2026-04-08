@@ -1,65 +1,404 @@
-use libpgn::comments::{PgnComment, PgnComments, PgnCommentPosition};
+use libpgn::comments::PgnCommentPosition;
+use libpgn::moves::PgnMoves;
 
 #[test]
-fn test_comment_from_string() {
-    let mut consumed = 0;
-    let comment = PgnComment::from_string("{hello}", &mut consumed);
-    assert_eq!(comment.value(), "hello");
-    assert_eq!(consumed, 7);
-    assert_eq!(comment.position, PgnCommentPosition::Unknown);
+fn test_parsing_moves_with_comments_nested() {
+    let moves = PgnMoves::from("1.e4 { a comment {inside a comment} ? } e5");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        " a comment {inside a comment} ? "
+    );
 }
 
 #[test]
-fn test_comment_nested_braces() {
-    let mut consumed = 0;
-    let comment = PgnComment::from_string("{ a comment {inside a comment} ? }", &mut consumed);
-    assert_eq!(comment.value(), " a comment {inside a comment} ? ");
-    assert_eq!(consumed, 34);
+fn test_parsing_comments_on_position_before() {
+    let mut moves = PgnMoves::from("{ hello} 1.e4 e5");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        " hello"
+    );
+
+    moves = PgnMoves::from("{ hello} {libpgn} 1.e4 e5");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        2
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        " hello"
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[1].position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[1].value,
+        "libpgn"
+    );
+
+    moves = PgnMoves::from("1.e4 e5 ({hello2} 1... g5)");
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[0]
+            .position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[0]
+            .value,
+        "hello2"
+    );
+
+    moves = PgnMoves::from("1.e4 e5 ({hello} {libpgn} 1... g5)");
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        2
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[0]
+            .position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[0]
+            .value,
+        "hello"
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[1]
+            .position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[1]
+            .value,
+        "libpgn"
+    );
 }
 
 #[test]
-fn test_comments_poll_single() {
-    let mut comments = PgnComments::new();
-    let consumed = comments.poll(PgnCommentPosition::AfterMove, "{hello}");
-    assert_eq!(consumed, 7);
-    assert_eq!(comments.values.len(), 1);
-    assert_eq!(comments.values[0].position, PgnCommentPosition::AfterMove);
-    assert_eq!(comments.values[0].value(), "hello");
+fn test_parsing_comments_on_position_between() {
+    let mut moves = PgnMoves::from("1. {jackalope:w} e4 e5");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::BetweenMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        "jackalope:w"
+    );
+
+    moves = PgnMoves::from("1.e4 e5 (1... {:::::::::::::} g5)");
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[0]
+            .position,
+        PgnCommentPosition::BetweenMove
+    );
+    assert_eq!(
+        moves.values[0].black.alternatives.as_ref().unwrap().values[0].values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values[0]
+            .value,
+        ":::::::::::::"
+    );
 }
 
 #[test]
-fn test_comments_poll_multiple() {
-    let mut comments = PgnComments::new();
-    let consumed = comments.poll(PgnCommentPosition::AfterMove, "{hello} {from} {libpgn}");
-    assert!(consumed > 0);
-    assert_eq!(comments.values.len(), 3);
-    assert_eq!(comments.values[0].value(), "hello");
-    assert_eq!(comments.values[1].value(), "from");
-    assert_eq!(comments.values[2].value(), "libpgn");
+fn test_parsing_comments_on_position_after() {
+    let mut moves = PgnMoves::from("1.e4 {hello} {from} {libpgn} e5");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        3
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        "hello"
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[1].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[1].value,
+        "from"
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[2].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[2].value,
+        "libpgn"
+    );
+
+    moves = PgnMoves::from("1.e4 {dump} e5 { spaces does not get trimmed } { trim it with pgn_comment_trim() } {this makes the pgn file original -> } ");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        "dump"
+    );
+    assert_eq!(
+        moves.values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        3
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[0].value,
+        " spaces does not get trimmed "
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[1].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[1].value,
+        " trim it with pgn_comment_trim() "
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[2].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[2].value,
+        "this makes the pgn file original -> "
+    );
 }
 
 #[test]
-fn test_comments_poll_no_comment() {
-    let mut comments = PgnComments::new();
-    let consumed = comments.poll(PgnCommentPosition::AfterMove, "e4 e5");
-    assert_eq!(consumed, 0);
-    assert_eq!(comments.values.len(), 0);
+fn test_parsing_comments_on_position_after_alt() {
+    let mut moves = PgnMoves::from("1. e4 e5 {IGNORE MEEE} (1... f5) {hello} {again}");
+    assert!(moves.values[0].black.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .black
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        3
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[0].value,
+        "IGNORE MEEE"
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[1].position,
+        PgnCommentPosition::AfterAlternative
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[1].value,
+        "hello"
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[2].position,
+        PgnCommentPosition::AfterAlternative
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[2].value,
+        "again"
+    );
 }
 
 #[test]
-fn test_comments_get_first_after_alternative_index() {
-    let mut comments = PgnComments::new();
-    comments.push(PgnComment { position: PgnCommentPosition::AfterMove, value: "x".to_string() });
-    comments.push(PgnComment { position: PgnCommentPosition::AfterAlternative, value: "y".to_string() });
-    comments.push(PgnComment { position: PgnCommentPosition::AfterAlternative, value: "z".to_string() });
-    assert_eq!(comments.get_first_after_alternative_index(), Some(1));
+fn test_parsing_comments_on_position_all() {
+    let moves = PgnMoves::from("{hello} 1. {from}  e4 {libpgn} e5 (1... f5) {dawg}");
+    assert!(moves.values[0].white.comments.is_some());
+    assert_eq!(
+        moves.values[0]
+            .white
+            .comments
+            .as_ref()
+            .unwrap()
+            .values
+            .len(),
+        3
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::BeforeMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[0].value,
+        "hello"
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[1].position,
+        PgnCommentPosition::BetweenMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[1].value,
+        "from"
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[2].position,
+        PgnCommentPosition::AfterMove
+    );
+    assert_eq!(
+        moves.values[0].white.comments.as_ref().unwrap().values[2].value,
+        "libpgn"
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[0].position,
+        PgnCommentPosition::AfterAlternative
+    );
+    assert_eq!(
+        moves.values[0].black.comments.as_ref().unwrap().values[0].value,
+        "dawg"
+    );
 }
 
-#[test]
-fn test_comments_no_after_alternative() {
-    let mut comments = PgnComments::new();
-    comments.push(PgnComment { position: PgnCommentPosition::AfterMove, value: "x".to_string() });
-    assert_eq!(comments.get_first_after_alternative_index(), None);
-}
-
-fn main() {}
+fn main() { }

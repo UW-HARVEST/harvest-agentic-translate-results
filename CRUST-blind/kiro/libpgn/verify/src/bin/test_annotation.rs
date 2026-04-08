@@ -1,90 +1,42 @@
 use libpgn::annotation::PgnAnnotation;
+use libpgn::moves::PgnMoves;
 
 #[test]
-fn test_annotation_from_string() {
-    let mut consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("!", &mut consumed), PgnAnnotation::GoodMove);
-    assert_eq!(consumed, 1);
+fn test_parsing_moves_with_annotation() {
+    let moves = PgnMoves::from("1. a4?? a5!");
+    assert_eq!(moves.values[0].white.annotation, PgnAnnotation::Blunder);
+    assert_eq!(moves.values[0].black.annotation, PgnAnnotation::GoodMove);
+    assert_eq!(moves.values[0].white.notation, "a4??");
+    assert_eq!(moves.values[0].black.notation, "a5!");
 
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("?", &mut consumed), PgnAnnotation::Mistake);
-    assert_eq!(consumed, 1);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("!!", &mut consumed), PgnAnnotation::BrilliantMove);
-    assert_eq!(consumed, 2);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("??", &mut consumed), PgnAnnotation::Blunder);
-    assert_eq!(consumed, 2);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("!?", &mut consumed), PgnAnnotation::InterestingMove);
-    assert_eq!(consumed, 2);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("?!", &mut consumed), PgnAnnotation::DubiousMove);
-    assert_eq!(consumed, 2);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_from_string("", &mut consumed), PgnAnnotation::Unknown);
-    assert_eq!(consumed, 0);
+    let moves = PgnMoves::from("1. a4!! a5?!");
+    assert_eq!(
+        moves.values[0].white.annotation,
+        PgnAnnotation::BrilliantMove
+    );
+    assert_eq!(moves.values[0].black.annotation, PgnAnnotation::DubiousMove);
+    assert_eq!(moves.values[0].white.notation, "a4!!");
+    assert_eq!(moves.values[0].black.notation, "a5?!");
 }
 
 #[test]
-fn test_annotation_nag_from_string() {
-    let mut consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_nag_from_string("$0", &mut consumed), PgnAnnotation::Null);
-    assert_eq!(consumed, 2);
+fn test_parsing_moves_with_nag_annotation() {
+    let moves = PgnMoves::from("1. a4 $4 a5 $1");
+    assert_eq!(moves.values[0].white.annotation, PgnAnnotation::Blunder);
+    assert_eq!(moves.values[0].black.annotation, PgnAnnotation::GoodMove);
+    assert_eq!(moves.values[0].white.notation, "a4 $4");
+    assert_eq!(moves.values[0].black.notation, "a5 $1");
 
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_nag_from_string("$1", &mut consumed), PgnAnnotation::GoodMove);
-    assert_eq!(consumed, 2);
+    let moves = PgnMoves::from("1. a4 $69 a5 $420");
+    assert_eq!(moves.values[0].white.annotation, PgnAnnotation::Unknown); // Assuming 69 is not defined
+    assert_eq!(moves.values[0].black.annotation, PgnAnnotation::Unknown); // Assuming 420 is not defined
+    assert_eq!(moves.values[0].white.notation, "a4 $69");
+    assert_eq!(moves.values[0].black.notation, "a5 $420");
 
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_nag_from_string("$4", &mut consumed), PgnAnnotation::Blunder);
-    assert_eq!(consumed, 2);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_nag_from_string("$6", &mut consumed), PgnAnnotation::DubiousMove);
-    assert_eq!(consumed, 2);
-
-    // NAG > 6 maps to Null in Rust (C stores raw int)
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_nag_from_string("$69", &mut consumed), PgnAnnotation::Null);
-    assert_eq!(consumed, 3);
-
-    consumed = 0;
-    assert_eq!(PgnAnnotation::pgn_annotation_nag_from_string("$420", &mut consumed), PgnAnnotation::Null);
-    assert_eq!(consumed, 4);
+    let moves = PgnMoves::from("6. Nce2 $2 e5 $0 $19 {}");
+    assert_eq!(moves.values[0].white.annotation, PgnAnnotation::Mistake);
+    assert_eq!(moves.values[0].black.annotation, PgnAnnotation::Unknown); // Assuming 19 is not defined
+    assert_eq!(moves.values[0].white.notation, "Nce2 $2");
+    assert_eq!(moves.values[0].black.notation, "e5 $0 $19");
 }
-
-#[test]
-fn test_annotation_nag_multi() {
-    // "$0 $19" -> takes last NAG, which is 19 -> Null in Rust
-    let mut consumed = 0;
-    let ann = PgnAnnotation::pgn_annotation_nag_from_string("$0 $19", &mut consumed);
-    assert_eq!(ann, PgnAnnotation::Null);
-    assert_eq!(consumed, 6);
-}
-
-#[test]
-fn test_annotation_display() {
-    assert_eq!(format!("{}", PgnAnnotation::Unknown), "");
-    assert_eq!(format!("{}", PgnAnnotation::Null), "$0");
-    assert_eq!(format!("{}", PgnAnnotation::GoodMove), "!");
-    assert_eq!(format!("{}", PgnAnnotation::Mistake), "?");
-    assert_eq!(format!("{}", PgnAnnotation::BrilliantMove), "!!");
-    assert_eq!(format!("{}", PgnAnnotation::Blunder), "??");
-    assert_eq!(format!("{}", PgnAnnotation::InterestingMove), "!?");
-    assert_eq!(format!("{}", PgnAnnotation::DubiousMove), "?!");
-}
-
-#[test]
-fn test_annotation_from_str_trait() {
-    assert_eq!(PgnAnnotation::from("!"), PgnAnnotation::GoodMove);
-    assert_eq!(PgnAnnotation::from("??"), PgnAnnotation::Blunder);
-    assert_eq!(PgnAnnotation::from(""), PgnAnnotation::Unknown);
-}
-
-fn main() {}
+fn main(){}

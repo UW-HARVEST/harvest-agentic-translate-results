@@ -1,19 +1,17 @@
-use bigint::bigint::*;
-
-fn main() {}
+use bigint::bigint::BigInt;
 
 #[test]
-fn test1_init() {
+fn test1() {
     let a = BigInt::from_str("123456789012345678901234567890");
     let b = BigInt::from_int(1234567890);
-    let _c = a.copy();
-    let _ = b;
+    let _c = a.clone();
 }
 
 #[test]
-fn test2_arithmetic() {
+fn test2() {
     let a = BigInt::from_str("123456789012345678901234567890");
     let b = BigInt::from_str("987654321098765432109876543210");
+
     let _c = a.add(&b);
     let _d = a.sub(&b);
     let _e = a.mul(&b);
@@ -22,29 +20,32 @@ fn test2_arithmetic() {
 }
 
 #[test]
-fn test3_compare() {
+fn test3() {
     let a = BigInt::from_str("123456789012345678901234567890");
     let b = BigInt::from_str("987654321098765432109876543210");
+
     if a == b {
         println!("a == b");
-    } else if lt(&a, &b) {
+    } else if a < b {
         println!("a < b");
-    } else if gt(&a, &b) {
+    } else if a > b {
         println!("a > b");
     }
 }
 
 #[test]
-fn test4_fast_pow() {
+fn test4() {
     let a = BigInt::from_str("2");
     let b = BigInt::from_str("1234");
     let m = BigInt::from_str("10007");
+
     let _c = a.fast_pow(&b, &m);
 }
 
 #[test]
-fn test5_is_prime() {
+fn test5() {
     let a = BigInt::from_str("123456789012345678901234567890");
+
     if a.is_prime() {
         println!("a is prime");
     } else {
@@ -53,7 +54,8 @@ fn test5_is_prime() {
 }
 
 #[test]
-fn test6_sqrt() {
+fn test6() {
     let a = BigInt::from_str("123412341");
     let _b = a.sqrt();
 }
+fn main(){}

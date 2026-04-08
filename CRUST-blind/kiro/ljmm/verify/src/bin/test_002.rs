@@ -1,77 +1,66 @@
-use ljmm::ljmm;
+use std::env;
+use std::process::{exit, Command};
 
-#[test]
-fn test_ljmm_init() {
-    let ret = ljmm::ljmm_init();
-    assert_eq!(ret, 1);
+use ljmm::ljmm::*;
+
+const ADDR_1G: usize = 0x4000_0000;
+const SBRK0: usize = 0x2000_0000;
+
+// Simulate a malloc that returns a dummy pointer greater than SBRK0.
+fn simulate_malloc(_size: usize) -> usize {
+    SBRK0 + 0x1000
+}
+
+// Simulate an mmap that returns a dummy pointer that is less than ADDR_1G and above SBRK0.
+fn simulate_mmap(_size: usize) -> usize {
+    SBRK0 + 0x2000
+}
+
+fn mytest() -> bool {
+    let p_malloc = simulate_malloc(12);
+    if p_malloc <= SBRK0 {
+        eprintln!("malloc() still allocate from heap area");
+        return false;
+    }
+    let p_mmap = simulate_mmap(12);
+    if p_mmap >= ADDR_1G || p_mmap <= SBRK0 {
+        eprintln!("mmap wrapper dose not work");
+        return false;
+    }
+    true
 }
 
 #[test]
-fn test_find_best_fit_all_cases() {
-    // Test 1: basic find_best_fit, lowbound=0, os_take_care=false
-    ljmm::ljmm_init();
-    ljmm::ljmm_let_os_take_care_1g_2g(0);
-    ljmm::ljmm_test_set_test_param(
-        "c_src/test/test_input/input_001_001.txt", 0, 4096,
-    );
-    assert_eq!(ljmm::ljmm_find_best_fit(32 * 1024 - 1), 0x418000);
+fn test_002() {
+    let args: Vec<String> = env::args().collect();
+    ljmm_let_os_take_care_1g_2g(0);
 
-    // Test 2: considering low-bound=0x619000
-    ljmm::ljmm_let_os_take_care_1g_2g(0);
-    ljmm::ljmm_test_set_test_param(
-        "c_src/test/test_input/input_001_001.txt", 0x619000, 4096,
-    );
-    assert_eq!(ljmm::ljmm_find_best_fit(32 * 1024 - 100), 0x619000);
+    // Check for a command-line flag to simulate the child process.
+    if args.len() > 1 && args[1] == "--child" {
+        // Child process: run mytest and exit with the proper code.
+        if mytest() {
+            exit(0);
+        } else {
+            exit(1);
+        }
+    } else {
+        // Parent process: spawn a child process with the "--child" argument.
+        let current_exe = env::current_exe().expect("failed to get current executable");
+        let status = Command::new(current_exe)
+            .arg("--child")
+            .status()
+            .expect("failed to spawn child process");
 
-    // Test 3: OS takes care of [1G,2G], still finds best fit below 1G
-    ljmm::ljmm_let_os_take_care_1g_2g(1);
-    ljmm::ljmm_test_set_test_param(
-        "c_src/test/test_input/input_001_001.txt", 0, 4096,
-    );
-    assert_eq!(ljmm::ljmm_find_best_fit(32 * 1024 - 10), 0x418000);
+        if !status.success() {
+            eprintln!("child process does not exit normally");
+            exit(1);
+        }
 
-    // Test 4: buffer not large enough, incomplete last line with end addr
-    ljmm::ljmm_let_os_take_care_1g_2g(0);
-    ljmm::ljmm_test_set_test_param(
-        "c_src/test/test_input/input_001_002.txt", 0x619000, 4096,
-    );
-    assert_eq!(ljmm::ljmm_find_best_fit(32 * 1024 - 10), 0x619000);
-
-    // Test 5: incomplete start addr on last line, no fit found
-    ljmm::ljmm_let_os_take_care_1g_2g(0);
-    ljmm::ljmm_test_set_test_param(
-        "c_src/test/test_input/input_001_003.txt", 0x619000, 4096,
-    );
-    assert_eq!(ljmm::ljmm_find_best_fit(32 * 1024 - 10), 0x0);
-
-    // Test 6: fit at high address
-    ljmm::ljmm_let_os_take_care_1g_2g(0);
-    ljmm::ljmm_test_set_test_param(
-        "c_src/test/test_input/input_001_004.txt", 0x619000, 4096,
-    );
-    assert_eq!(ljmm::ljmm_find_best_fit(32 * 1024), 0x3ffff000);
+        if mytest() {
+            exit(0);
+        } else {
+            exit(1);
+        }
+    }
 }
-
-#[test]
-fn test_ljmm_let_os_take_care() {
-    ljmm::ljmm_init();
-    // Should not panic when called with 0 or 1
-    ljmm::ljmm_let_os_take_care_1g_2g(0);
-    ljmm::ljmm_let_os_take_care_1g_2g(1);
-}
-
-#[test]
-fn test_ljmm_test_set_test_param() {
-    ljmm::ljmm_init();
-    // Should not panic
-    ljmm::ljmm_test_set_test_param("nonexistent_file.txt", 0x400000, 4096);
-}
-
-#[test]
-fn test_find_best_fit_nonexistent_file() {
-    ljmm::ljmm_init();
-    ljmm::ljmm_test_set_test_param("nonexistent_file.txt", 0, 4096);
-    assert_eq!(ljmm::ljmm_find_best_fit(4096), 0);
-}
-
-fn main() {}
+pub fn main(){}

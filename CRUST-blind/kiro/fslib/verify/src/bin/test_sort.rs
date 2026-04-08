@@ -1,26 +1,38 @@
-use fslib::fst::Fst;
-use fslib::sort;
-
-#[test]
-fn test_isort() {
-    let mut fst = Fst::new();
-    fst.compile_str("0\t1\t5\t3\t1.0\n0\t1\t1\t7\t2.0\n0\t1\t3\t1\t3.0\n1\t0.0");
-    fst.arc_sort(0); // isort
-    assert_eq!(fst.flags & 0x01, 0x01);
-    assert_eq!(fst.states[0].arcs[0].ilabel, 1);
-    assert_eq!(fst.states[0].arcs[1].ilabel, 3);
-    assert_eq!(fst.states[0].arcs[2].ilabel, 5);
+use fslib::fst::{Fst, StateData, ArcData};
+pub fn assert_arc_equal(arc_a: &ArcData, arc_b: &ArcData) {
+    assert_eq!(arc_a.state, arc_b.state);
+    assert_eq!(arc_a.ilabel, arc_b.ilabel);
+    assert_eq!(arc_a.olabel, arc_b.olabel);
+    assert_eq!(arc_a.weight, arc_b.weight);
 }
-
-#[test]
-fn test_osort() {
-    let mut fst = Fst::new();
-    fst.compile_str("0\t1\t5\t3\t1.0\n0\t1\t1\t7\t2.0\n0\t1\t3\t1\t3.0\n1\t0.0");
-    fst.arc_sort(1); // osort
-    assert_eq!(fst.flags & 0x02, 0x02);
-    assert_eq!(fst.states[0].arcs[0].olabel, 1);
-    assert_eq!(fst.states[0].arcs[1].olabel, 3);
-    assert_eq!(fst.states[0].arcs[2].olabel, 7);
+pub fn assert_state_equal(state_a: &StateData, state_b: &StateData) {
+    assert_eq!(state_a.weight, state_b.weight);
+    assert_eq!(state_a.final_state, state_b.final_state);
 }
-
-fn main() {}
+pub fn assert_fst_equal(a: &Fst, b: &Fst) {
+    assert_eq!(a.start, b.start);
+    assert_eq!(a.sr_type, b.sr_type);
+    assert_eq!(a.n_states, b.n_states);
+    for st in 0..a.states.len().min(b.states.len()) {
+        let state_a = &a.states[st];
+        let state_b = &b.states[st];
+        assert_eq!(state_a.arcs.len(), state_b.arcs.len());
+        assert_state_equal(state_a, state_b);
+        for arc in 0..state_a.arcs.len().min(state_b.arcs.len()) {
+            assert_arc_equal(&state_a.arcs[arc], &state_b.arcs[arc]);
+        }
+    }
+}
+#[test]
+fn test_fst_sort() {
+    let str_a = "0 0 1 1\n0 0 0 0\n1";
+    let str_b = "0 0 0 0\n0 0 1 1\n1";
+    let mut fst_a = Fst::new();
+    fst_a.compile_str(str_a);
+    let mut fst_b = Fst::new();
+    fst_b.compile_str(str_b);
+    fst_a.arc_sort(0);
+    assert_fst_equal(&fst_a, &fst_b);
+}
+fn main() {
+}

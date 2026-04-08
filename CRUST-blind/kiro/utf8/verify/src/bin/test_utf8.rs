@@ -1,372 +1,341 @@
-use utf8::utf8;
-
-// "Hello Здравствуйте こんにちは 🚩😁"
-// 5 + 1 + 12*2 + 1 + 5*3 + 1 + 2*4 = 55 bytes, 27 chars
-const MIXED: &[u8] = "Hello Здравствуйте こんにちは 🚩😁".as_bytes();
-
+use utf8::utf8::{make_utf8_string, make_utf8_string_lossy, make_utf8_char_iter, next_utf8_char, free_owned_utf8_string, validate_utf8, slice_utf8_string, utf8_char_count, is_utf8_char_boundary, nth_utf8_char, unicode_code_point};
+use utf8::utf8::{Utf8Char};
 #[test]
-fn test_validate_utf8_valid() {
-    let v = utf8::validate_utf8(MIXED);
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 55);
+fn test_validate_utf8_ok() {
+    let validity = validate_utf8("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 5 + 1 + 12 * 2 + 1 + 5 * 3 + 1 + 2 * 4);
 }
 
 #[test]
-fn test_validate_utf8_empty() {
-    let v = utf8::validate_utf8(b"");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 0);
-}
+fn test_validate_utf8_boundary_ok() {
+    // last 1b -> 0(1111111)
+    let mut validity = validate_utf8(b"\x7F");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 1);
 
-#[test]
-fn test_validate_utf8_invalid() {
-    // "Hello Здравствуйте" = 30 bytes, then \xC0\xC0
-    let mut bytes = Vec::from(&b"Hello "[..]);
-    bytes.extend_from_slice("Здравствуйте".as_bytes());
-    bytes.extend_from_slice(b"\xC0\xC0");
-    bytes.extend_from_slice(" ".as_bytes());
-    bytes.extend_from_slice("こんにちは".as_bytes());
-    let v = utf8::validate_utf8(&bytes);
-    assert!(!v.valid);
-    assert_eq!(v.valid_upto, 30);
-}
+    // first 2b -> 110(00010) 10(000000)
+    validity = validate_utf8(b"\xC2\x80");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 2);
 
-#[test]
-fn test_validate_utf8_boundary_chars() {
-    // last 1-byte
-    let v = utf8::validate_utf8(b"\x7F");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 1);
+    // last 2b -> 110(11111) 10(111111)
+    validity = validate_utf8(b"\xDF\xBF");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 2);
 
-    // first 2-byte
-    let v = utf8::validate_utf8(b"\xC2\x80");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 2);
+    // first 3b -> 1110(0000) 10(100000) 10(000000)
+    validity = validate_utf8(b"\xE0\xA0\x80");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 3);
 
-    // last 2-byte
-    let v = utf8::validate_utf8(b"\xDF\xBF");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 2);
+    // last 3b -> 1110(1111) 10(111111) 10(111111)
+    validity = validate_utf8(b"\xEF\xBF\xBF");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 3);
 
-    // first 3-byte
-    let v = utf8::validate_utf8(b"\xE0\xA0\x80");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 3);
+    // first 4b -> 11110(000) 10(010000) 10(000000) 10(000000)
+    validity = validate_utf8(b"\xF0\x90\x80\x80");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 4);
 
-    // last 3-byte
-    let v = utf8::validate_utf8(b"\xEF\xBF\xBF");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 3);
-
-    // first 4-byte
-    let v = utf8::validate_utf8(b"\xF0\x90\x80\x80");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 4);
-
-    // last 4-byte
-    let v = utf8::validate_utf8(b"\xF7\xBF\xBF\xBF");
-    assert!(v.valid);
-    assert_eq!(v.valid_upto, 4);
+    // last 4b -> 11110(111) 10(111111) 10(111111) 10(111111)
+    validity = validate_utf8(b"\xF7\xBF\xBF\xBF");
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, 4);
 }
 
 #[test]
 fn test_surrogate_rejection() {
-    for seq in &[
-        b"\xED\xA0\x80".as_slice(),
-        b"\xED\xAC\x80",
-        b"\xED\xA0\x8C",
-        b"\xED\xBF\xBF",
-    ] {
-        let v = utf8::validate_utf8(seq);
-        assert!(!v.valid);
-        assert_eq!(v.valid_upto, 0);
-    }
+    let mut validity = validate_utf8(b"\xED\xA0\x80");
+    assert!(!validity.valid);
+    assert_eq!(validity.valid_upto, 0);
+
+    validity = validate_utf8(b"\xED\xAC\x80");
+    assert!(!validity.valid);
+    assert_eq!(validity.valid_upto, 0);
+
+    validity = validate_utf8(b"\xED\xA0\x8C");
+    assert!(!validity.valid);
+    assert_eq!(validity.valid_upto, 0);
+
+    validity = validate_utf8(b"\xED\xBF\xBF");
+    assert!(!validity.valid);
+    assert_eq!(validity.valid_upto, 0);
 }
 
 #[test]
-fn test_overlong_encoding() {
-    for seq in &[
-        b"\xC1\x88".as_slice(),
-        b"\xE0\x81\x88",
-        b"\xF0\x80\x81\x88",
-        b"\xC1\xBF",
-        b"\xE0\x9F\xBF",
-        b"\xF0\x8F\xBF\xBF",
-    ] {
-        let v = utf8::validate_utf8(seq);
-        assert!(!v.valid);
-        assert_eq!(v.valid_upto, 0);
-    }
+fn test_validate_utf8_err() {
+    let mut input: Vec<u8> = "Hello Здравствуйте".as_bytes().to_vec();
+    input.extend_from_slice(b"\xC0\xC0");
+    input.extend_from_slice(" こんにちは 🚩😁".as_bytes());
+    let validity = validate_utf8(&input);
+    assert!(!validity.valid);
+    assert_eq!(validity.valid_upto, 5 + 1 + 12 * 2);
+}
+
+fn assert_overlong_encodings(actual: Utf8Char, overlong: Utf8Char) {
+    assert_eq!(unicode_code_point(actual.clone()), unicode_code_point(overlong.clone()));
+    let mut validity = validate_utf8(actual.str.as_bytes());
+    assert!(validity.valid);
+    assert_eq!(validity.valid_upto, actual.byte_len as usize);
+    validity = validate_utf8(overlong.str.as_bytes());
+    assert!(!validity.valid);
+    assert_eq!(validity.valid_upto, 0);
 }
 
 #[test]
-fn test_validate_utf8_char() {
-    let cv = utf8::validate_utf8_char(b"H", 0);
-    assert!(cv.valid);
-    assert_eq!(cv.next_offset, 1);
+fn test_validate_utf8_overlong_encoding_err() {
+    assert_overlong_encodings(
+        Utf8Char { str: "H".to_string(), byte_len: 1 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xC1\x88").into_owned(), byte_len: 2 });
+    assert_overlong_encodings(
+        Utf8Char { str: "H".to_string(), byte_len: 1 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xE0\x81\x88").into_owned(), byte_len: 3 });
+    assert_overlong_encodings(
+        Utf8Char { str: "H".to_string(), byte_len: 1 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xF0\x80\x81\x88").into_owned(), byte_len: 4 });
 
-    let cv = utf8::validate_utf8_char("д".as_bytes(), 0);
-    assert!(cv.valid);
-    assert_eq!(cv.next_offset, 2);
+    assert_overlong_encodings(
+        Utf8Char { str: "д".to_string(), byte_len: 2 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xE0\x90\xB4").into_owned(), byte_len: 3 });
+    assert_overlong_encodings(
+        Utf8Char { str: "д".to_string(), byte_len: 2 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xF0\x80\x90\xB4").into_owned(), byte_len: 4 });
 
-    let cv = utf8::validate_utf8_char("こ".as_bytes(), 0);
-    assert!(cv.valid);
-    assert_eq!(cv.next_offset, 3);
+    assert_overlong_encodings(
+        Utf8Char { str: "こ".to_string(), byte_len: 3 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xF0\x83\x81\x93").into_owned(), byte_len: 4 });
 
-    let cv = utf8::validate_utf8_char("😁".as_bytes(), 0);
-    assert!(cv.valid);
-    assert_eq!(cv.next_offset, 4);
-
-    let cv = utf8::validate_utf8_char(b"\xC0", 0);
-    assert!(!cv.valid);
-    assert_eq!(cv.next_offset, 0);
+    // boundary characters
+    assert_overlong_encodings(
+        Utf8Char { str: "\x7F".to_string(), byte_len: 1 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xC1\xBF").into_owned(), byte_len: 2 });
+    assert_overlong_encodings(
+        Utf8Char { str: "\u{07FF}".to_string(), byte_len: 2 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xE0\x9F\xBF").into_owned(), byte_len: 3 });
+    assert_overlong_encodings(
+        Utf8Char { str: "\u{FFFF}".to_string(), byte_len: 3 },
+        Utf8Char { str: String::from_utf8_lossy(b"\xF0\x8F\xBF\xBF").into_owned(), byte_len: 4 });
 }
 
 #[test]
-fn test_make_utf8_string_valid() {
-    let s = utf8::make_utf8_string(b"Hello");
-    assert_eq!(s.str, "Hello");
-    assert_eq!(s.byte_len, 5);
+fn test_make_utf8_string_ok() {
+    let s = "Hello Здравствуйте こんにちは 🚩😁";
+    let ustr = make_utf8_string(s.as_bytes());
+    assert_eq!(ustr.byte_len, 5 + 1 + 12 * 2 + 1 + 5 * 3 + 1 + 2 * 4);
+    assert_eq!(ustr.str, s);
 }
 
 #[test]
-fn test_make_utf8_string_invalid() {
-    let s = utf8::make_utf8_string(b"\xC0\xC0");
-    assert_eq!(s.str, "");
-    assert_eq!(s.byte_len, 0);
+fn test_make_utf8_string_err() {
+    let mut input: Vec<u8> = "Hello Здравствуйте".as_bytes().to_vec();
+    input.extend_from_slice(b"\xC0\xC0");
+    input.extend_from_slice(" こんにちは 🚩😁".as_bytes());
+    let ustr = make_utf8_string(&input);
+    assert_eq!(ustr.str, "");
+    assert_eq!(ustr.byte_len, 0);
 }
 
 #[test]
-fn test_make_utf8_string_mixed() {
-    let s = utf8::make_utf8_string(MIXED);
-    assert_eq!(s.str, "Hello Здравствуйте こんにちは 🚩😁");
-    assert_eq!(s.byte_len, 55);
+fn test_make_utf8_string_lossy_ok() {
+    let s = "Hello Здравствуйте こんにちは 🚩😁";
+    let owned_ustr = make_utf8_string_lossy(s.as_bytes());
+    assert_eq!(owned_ustr.byte_len, 5 + 1 + 12 * 2 + 1 + 5 * 3 + 1 + 2 * 4);
+    assert_eq!(owned_ustr.str, s);
+    free_owned_utf8_string(&mut owned_ustr.clone());
 }
 
 #[test]
-fn test_make_utf8_string_lossy_valid() {
-    let s = utf8::make_utf8_string_lossy(MIXED);
-    assert_eq!(s.str, "Hello Здравствуйте こんにちは 🚩😁");
-    assert_eq!(s.byte_len, 55);
+fn test_make_utf8_string_lossy_invalid_sequence() {
+    let mut input: Vec<u8> = Vec::new();
+    input.extend_from_slice(b"\xC0");
+    input.extend_from_slice("He".as_bytes());
+    input.extend_from_slice(b"\xC0");
+    input.extend_from_slice("llo Здр".as_bytes());
+    input.extend_from_slice(b"\xC0");
+    input.extend_from_slice("авствуйте".as_bytes());
+    input.extend_from_slice(b"\xC0\xC0");
+    input.extend_from_slice(" こんに".as_bytes());
+    input.extend_from_slice(b"\xC0\xC0\xC0\xC0");
+    input.extend_from_slice("ちは 🚩".as_bytes());
+    input.extend_from_slice(b"\xC0");
+    input.extend_from_slice("😁".as_bytes());
+    input.extend_from_slice(b"\xC0");
+
+    let expected = "�He�llo Здр�авствуйте�� こんに����ちは 🚩�😁�";
+    let owned_ustr = make_utf8_string_lossy(&input);
+    assert_eq!(owned_ustr.byte_len, expected.len());
+    assert_eq!(owned_ustr.str, expected);
+    free_owned_utf8_string(&mut owned_ustr.clone());
 }
 
 #[test]
-fn test_make_utf8_string_lossy_simple_invalid() {
-    // "hello\xC0\xC0 world!" -> "hello\u{FFFD}\u{FFFD} world!" = 18 bytes
-    let mut bytes = Vec::from(b"hello" as &[u8]);
-    bytes.extend_from_slice(b"\xC0\xC0");
-    bytes.extend_from_slice(b" world!");
-    let s = utf8::make_utf8_string_lossy(&bytes);
-    assert_eq!(s.byte_len, 18);
-    assert_eq!(s.str, "hello\u{FFFD}\u{FFFD} world!");
+fn test_make_utf8_string_lossy_completely_invalid() {
+    let input = b"\xC0\xC0\xC0\xC0";
+    let expected = "����";
+    let owned_ustr = make_utf8_string_lossy(input);
+    assert_eq!(owned_ustr.byte_len, expected.len());
+    assert_eq!(owned_ustr.str, expected);
+    free_owned_utf8_string(&mut owned_ustr.clone());
 }
 
 #[test]
-fn test_make_utf8_string_lossy_all_invalid() {
-    let s = utf8::make_utf8_string_lossy(b"\xC0\xC0\xC0\xC0");
-    assert_eq!(s.byte_len, 12);
-    assert_eq!(s.str, "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}");
+fn test_make_utf8_string_slice_ok() {
+    let s = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let slice = slice_utf8_string(s, 6, 24);
+    assert_eq!(slice.byte_len, 12 * 2);
+    assert_eq!(&slice.str[..slice.byte_len], "Здравствуйте");
 }
 
 #[test]
-fn test_make_utf8_string_lossy_mixed_invalid() {
-    // "\xC0He\xC0llo Здр\xC0авствуйте\xC0\xC0 こんに\xC0\xC0\xC0\xC0ちは 🚩\xC0😁\xC0"
-    let mut bytes: Vec<u8> = Vec::new();
-    bytes.push(0xC0);
-    bytes.extend_from_slice(b"He");
-    bytes.push(0xC0);
-    bytes.extend_from_slice(b"llo ");
-    bytes.extend_from_slice("Здр".as_bytes());
-    bytes.push(0xC0);
-    bytes.extend_from_slice("авствуйте".as_bytes());
-    bytes.extend_from_slice(b"\xC0\xC0 ");
-    bytes.extend_from_slice("こんに".as_bytes());
-    bytes.extend_from_slice(b"\xC0\xC0\xC0\xC0");
-    bytes.extend_from_slice("ちは ".as_bytes());
-    bytes.extend_from_slice("🚩".as_bytes());
-    bytes.push(0xC0);
-    bytes.extend_from_slice("😁".as_bytes());
-    bytes.push(0xC0);
-    let s = utf8::make_utf8_string_lossy(&bytes);
-    assert_eq!(s.byte_len, 88);
+fn test_make_utf8_string_slice_start_out_of_bounds_ok() {
+    let s = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let slice = slice_utf8_string(s, 1000, 1);
+    assert_eq!(slice.byte_len, 0);
+    assert_eq!(slice.str, "");
 }
 
 #[test]
-fn test_make_utf8_string_lossy_empty() {
-    let s = utf8::make_utf8_string_lossy(b"");
-    assert_eq!(s.str, "");
-    assert_eq!(s.byte_len, 0);
+fn test_make_utf8_string_slice_end_out_of_bounds_ok() {
+    let s = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let slice = slice_utf8_string(s, 6, 1000);
+    assert_eq!(slice.byte_len, 12 * 2 + 1 + 5 * 3 + 1 + 2 * 4);
+    assert_eq!(&slice.str[..slice.byte_len], "Здравствуйте こんにちは 🚩😁");
 }
 
 #[test]
-fn test_as_utf8_string() {
-    let owned = utf8::make_utf8_string_lossy(b"test");
-    let s = utf8::as_utf8_string(&owned);
-    assert_eq!(s.str, "test");
-    assert_eq!(s.byte_len, 4);
+fn test_make_utf8_string_slice_start_non_boundary_err() {
+    let s = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let slice = slice_utf8_string(s, 7, 3);
+    assert_eq!(slice.str, "");
+    assert_eq!(slice.byte_len, 0);
 }
 
 #[test]
-fn test_free_owned_utf8_string() {
-    let mut owned = utf8::make_utf8_string_lossy(b"test");
-    utf8::free_owned_utf8_string(&mut owned);
-    assert_eq!(owned.str, "");
-    assert_eq!(owned.byte_len, 0);
-}
-
-#[test]
-fn test_slice_utf8_string_valid() {
-    let s = utf8::make_utf8_string(MIXED);
-    let sl = utf8::slice_utf8_string(s, 6, 24);
-    assert_eq!(sl.byte_len, 24);
-    assert_eq!(sl.str, "Здравствуйте");
-}
-
-#[test]
-fn test_slice_utf8_string_start_out_of_bounds() {
-    let s = utf8::make_utf8_string(MIXED);
-    let sl = utf8::slice_utf8_string(s, 1000, 1);
-    assert_eq!(sl.byte_len, 0);
-    assert_eq!(sl.str, "");
-}
-
-#[test]
-fn test_slice_utf8_string_end_out_of_bounds() {
-    let s = utf8::make_utf8_string(MIXED);
-    let sl = utf8::slice_utf8_string(s, 6, 1000);
-    assert_eq!(sl.byte_len, 49);
-    assert_eq!(sl.str, "Здравствуйте こんにちは 🚩😁");
-}
-
-#[test]
-fn test_slice_utf8_string_start_non_boundary() {
-    let s = utf8::make_utf8_string(MIXED);
-    let sl = utf8::slice_utf8_string(s, 7, 3);
-    // C returns NULL; Rust returns empty string
-    assert_eq!(sl.str, "");
-    assert_eq!(sl.byte_len, 0);
-}
-
-#[test]
-fn test_slice_utf8_string_end_non_boundary() {
-    let s = utf8::make_utf8_string(MIXED);
-    let sl = utf8::slice_utf8_string(s, 6, 3);
-    // C returns NULL; Rust returns empty string
-    assert_eq!(sl.str, "");
-    assert_eq!(sl.byte_len, 0);
+fn test_make_utf8_string_slice_end_non_boundary_err() {
+    let s = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let slice = slice_utf8_string(s, 6, 3);
+    assert_eq!(slice.str, "");
+    assert_eq!(slice.byte_len, 0);
 }
 
 #[test]
 fn test_utf8_char_iter() {
-    let s = utf8::make_utf8_string("Hдこ😁".as_bytes());
-    let mut iter = utf8::make_utf8_char_iter(s);
-
-    let ch = utf8::next_utf8_char(&mut iter);
+    let s = make_utf8_string("Hдこ😁".as_bytes());
+    let mut iter = make_utf8_char_iter(s);
+    let mut ch = next_utf8_char(&mut iter);
     assert_eq!(ch.byte_len, 1);
-    assert_eq!(ch.str, "H");
-
-    let ch = utf8::next_utf8_char(&mut iter);
+    assert_eq!(&ch.str[..ch.byte_len as usize], "H");
+    ch = next_utf8_char(&mut iter);
     assert_eq!(ch.byte_len, 2);
-    assert_eq!(ch.str, "д");
-
-    let ch = utf8::next_utf8_char(&mut iter);
+    assert_eq!(&ch.str[..ch.byte_len as usize], "д");
+    ch = next_utf8_char(&mut iter);
     assert_eq!(ch.byte_len, 3);
-    assert_eq!(ch.str, "こ");
-
-    let ch = utf8::next_utf8_char(&mut iter);
+    assert_eq!(&ch.str[..ch.byte_len as usize], "こ");
+    ch = next_utf8_char(&mut iter);
     assert_eq!(ch.byte_len, 4);
-    assert_eq!(ch.str, "😁");
+    assert_eq!(&ch.str[..ch.byte_len as usize], "😁");
 
-    // exhausted
-    let ch = utf8::next_utf8_char(&mut iter);
+    // iterator keeps returning empty when exhausted
+    ch = next_utf8_char(&mut iter);
     assert_eq!(ch.byte_len, 0);
     assert_eq!(ch.str, "");
-
-    // stays exhausted
-    let ch = utf8::next_utf8_char(&mut iter);
+    ch = next_utf8_char(&mut iter);
     assert_eq!(ch.byte_len, 0);
     assert_eq!(ch.str, "");
+}
+
+#[test]
+fn test_utf8_char_count_zero() {
+    let ustr = make_utf8_string(b"");
+    let count = utf8_char_count(ustr);
+    assert_eq!(count, 0);
 }
 
 #[test]
 fn test_utf8_char_count() {
-    let s = utf8::make_utf8_string(MIXED);
-    assert_eq!(utf8::utf8_char_count(s), 27);
-}
-
-#[test]
-fn test_utf8_char_count_empty() {
-    let s = utf8::make_utf8_string(b"");
-    assert_eq!(utf8::utf8_char_count(s), 0);
+    let ustr = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let count = utf8_char_count(ustr);
+    assert_eq!(count, 5 + 1 + 12 + 1 + 5 + 1 + 2);
 }
 
 #[test]
 fn test_is_utf8_char_boundary() {
-    // "Hдこ😁" bytes: H(1) д(2) こ(3) 😁(4) = 10 bytes + null
     let bytes = "Hдこ😁".as_bytes();
-    assert!(utf8::is_utf8_char_boundary(&bytes[0..]));  // H
-    assert!(utf8::is_utf8_char_boundary(&bytes[1..]));  // д start
-    assert!(!utf8::is_utf8_char_boundary(&bytes[2..])); // д cont
-    assert!(utf8::is_utf8_char_boundary(&bytes[3..]));  // こ start
-    assert!(!utf8::is_utf8_char_boundary(&bytes[4..])); // こ cont
-    assert!(!utf8::is_utf8_char_boundary(&bytes[5..])); // こ cont
-    assert!(utf8::is_utf8_char_boundary(&bytes[6..]));  // 😁 start
-    assert!(!utf8::is_utf8_char_boundary(&bytes[7..])); // 😁 cont
-    assert!(!utf8::is_utf8_char_boundary(&bytes[8..])); // 😁 cont
-    assert!(!utf8::is_utf8_char_boundary(&bytes[9..])); // 😁 cont
-    assert!(utf8::is_utf8_char_boundary(&bytes[10..])); // empty = boundary
+    let mut offset = 0;
+
+    assert!(is_utf8_char_boundary(&bytes[offset..]));   // H
+    offset += 1;
+    assert!(is_utf8_char_boundary(&bytes[offset..]));    // д byte 1
+    offset += 1;
+    assert!(!is_utf8_char_boundary(&bytes[offset..]));   // д byte 2
+    offset += 1;
+    assert!(is_utf8_char_boundary(&bytes[offset..]));    // こ byte 1
+    offset += 1;
+    assert!(!is_utf8_char_boundary(&bytes[offset..]));   // こ byte 2
+    offset += 1;
+    assert!(!is_utf8_char_boundary(&bytes[offset..]));   // こ byte 3
+    offset += 1;
+    assert!(is_utf8_char_boundary(&bytes[offset..]));    // 😁 byte 1
+    offset += 1;
+    assert!(!is_utf8_char_boundary(&bytes[offset..]));   // 😁 byte 2
+    offset += 1;
+    assert!(!is_utf8_char_boundary(&bytes[offset..]));   // 😁 byte 3
+    offset += 1;
+    assert!(!is_utf8_char_boundary(&bytes[offset..]));   // 😁 byte 4
+    offset += 1;
+    assert_eq!(&bytes[offset..], b"");
 }
 
 #[test]
-fn test_nth_utf8_char_first() {
-    let s = utf8::make_utf8_string(MIXED);
-    let ch = utf8::nth_utf8_char(s, 0);
-    assert_eq!(ch.byte_len, 1);
-    assert_eq!(ch.str, "H");
-}
-
-#[test]
-fn test_nth_utf8_char_middle() {
-    let s = utf8::make_utf8_string(MIXED);
-    let ch = utf8::nth_utf8_char(s, 20);
+fn test_nth_utf8_char_valid_index_ok() {
+    let ustr = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let ch = nth_utf8_char(ustr, 20);
     assert_eq!(ch.byte_len, 3);
-    assert_eq!(ch.str, "ん");
+    assert_eq!(&ch.str[..ch.byte_len as usize], "ん");
 }
 
 #[test]
-fn test_nth_utf8_char_last() {
-    let s = utf8::make_utf8_string(MIXED);
-    let ch = utf8::nth_utf8_char(s, 26);
+fn test_nth_utf8_char_first_index_ok() {
+    let ustr = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let ch = nth_utf8_char(ustr, 0);
+    assert_eq!(ch.byte_len, 1);
+    assert_eq!(ch.str.chars().next().unwrap(), 'H');
+}
+
+#[test]
+fn test_nth_utf8_char_last_index_ok() {
+    let ustr = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let ch = nth_utf8_char(ustr, 26);
     assert_eq!(ch.byte_len, 4);
-    assert_eq!(ch.str, "😁");
+    assert_eq!(&ch.str[..ch.byte_len as usize], "😁");
 }
 
 #[test]
-fn test_nth_utf8_char_out_of_bounds() {
-    let s = utf8::make_utf8_string(MIXED);
-    let ch = utf8::nth_utf8_char(s, 100);
-    // C returns NULL; Rust returns empty string
+fn test_nth_utf8_char_invalid_index_err() {
+    let ustr = make_utf8_string("Hello Здравствуйте こんにちは 🚩😁".as_bytes());
+    let ch = nth_utf8_char(ustr, 100);
     assert_eq!(ch.str, "");
     assert_eq!(ch.byte_len, 0);
 }
 
 #[test]
-fn test_nth_utf8_char_empty_string() {
-    let s = utf8::make_utf8_string(b"");
-    let ch = utf8::nth_utf8_char(s, 0);
+fn test_nth_utf8_char_empty_string_err() {
+    let ustr = make_utf8_string(b"");
+    let ch = nth_utf8_char(ustr, 0);
     assert_eq!(ch.str, "");
     assert_eq!(ch.byte_len, 0);
 }
 
 #[test]
 fn test_unicode_code_point() {
-    let s = utf8::make_utf8_string("Hдこ😁".as_bytes());
-    let mut iter = utf8::make_utf8_char_iter(s);
-
-    assert_eq!(utf8::unicode_code_point(utf8::next_utf8_char(&mut iter)), 72);
-    assert_eq!(utf8::unicode_code_point(utf8::next_utf8_char(&mut iter)), 1076);
-    assert_eq!(utf8::unicode_code_point(utf8::next_utf8_char(&mut iter)), 12371);
-    assert_eq!(utf8::unicode_code_point(utf8::next_utf8_char(&mut iter)), 128513);
+    let ustr = make_utf8_string("Hдこ😁".as_bytes());
+    let mut iter = make_utf8_char_iter(ustr);
+    assert_eq!(unicode_code_point(next_utf8_char(&mut iter)), 72);
+    assert_eq!(unicode_code_point(next_utf8_char(&mut iter)), 1076);
+    assert_eq!(unicode_code_point(next_utf8_char(&mut iter)), 12371);
+    assert_eq!(unicode_code_point(next_utf8_char(&mut iter)), 128513);
 }
 
 fn main() {}

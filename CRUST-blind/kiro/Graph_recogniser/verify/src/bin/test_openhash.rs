@@ -1,62 +1,39 @@
+use std::sync::Arc;
 use Graph_recogniser::openhash::OpenHashTable;
-
+static TEST_STRS: &[(&str, &str)] = &[
+    ("stefan", "manov"),
+    ("hristo", "tenchev"),
+    ("dimitar", "kajabachev"),
+    ("georgi", "popov"),
+    ("stanislav", "ivanov"),
+    ("nikola", "yolov"),
+    ("andrei", "radev"),
+    ("iulen", "dobrev"),
+    ("iasen", "bantchev"),
+    ("samuele", "carli"),
+    ("henning", "weiler"),
+    ("javier", "martin"),
+];
+static PERMUT: &[usize] = &[10, 0, 4, 3, 5, 3, 7, 11, 4, 11, 6, 0, 1, 8, 5, 1, 10, 3, 5, 2, 9];
 #[test]
-fn test_open_insert_and_find() {
-    let table = OpenHashTable::new(2);
-    let mut t = table.write().unwrap();
-    t.insert("stefan", "manov");
-    t.insert("hristo", "tenchev");
-    t.insert("dimitar", "kajabachev");
-    t.insert("georgi", "popov");
-    t.insert("stanislav", "ivanov");
-    t.insert("nikola", "yolov");
-    t.insert("andrei", "radev");
-
-    assert_eq!(t.find("stefan"), Some("manov"));
-    assert_eq!(t.find("hristo"), Some("tenchev"));
-    assert_eq!(t.find("dimitar"), Some("kajabachev"));
-    assert_eq!(t.find("georgi"), Some("popov"));
-    assert_eq!(t.find("stanislav"), Some("ivanov"));
-    assert_eq!(t.find("nikola"), Some("yolov"));
-    assert_eq!(t.find("andrei"), Some("radev"));
-}
-
-#[test]
-fn test_open_full_test_set() {
-    let table = OpenHashTable::new(2);
-    let mut t = table.write().unwrap();
-
-    let test_strs = [
-        ("stefan", "manov"),
-        ("hristo", "tenchev"),
-        ("dimitar", "kajabachev"),
-        ("georgi", "popov"),
-        ("stanislav", "ivanov"),
-        ("nikola", "yolov"),
-        ("andrei", "radev"),
-        ("iulen", "dobrev"),
-        ("iasen", "bantchev"),
-        ("samuele", "carli"),
-        ("henning", "weiler"),
-        ("javier", "martin"),
-    ];
-
-    for (k, v) in &test_strs {
-        t.insert(k, v);
+pub fn test_openhash() {
+    let tt = OpenHashTable::new(2);
+    {
+        let mut tt_write = tt.write().unwrap();
+        for &(key, value) in TEST_STRS.iter() {
+            tt_write.insert(key, value);
+        }
     }
-
-    let permut = [10, 0, 4, 3, 5, 3, 7, 11, 4, 11, 6, 0, 1, 8, 5, 1, 10, 3, 5, 2, 9];
-    for &i in &permut {
-        assert_eq!(t.find(test_strs[i].0), Some(test_strs[i].1));
+    {
+        let tt_read = tt.read().unwrap();
+        for &index in PERMUT.iter() {
+            assert_eq!(
+                tt_read.find(TEST_STRS[index].0),
+                Some(TEST_STRS[index].1),
+                "Key {} not found or incorrect value",
+                TEST_STRS[index].0
+            );
+        }
     }
 }
-
-#[test]
-fn test_open_free() {
-    let table = OpenHashTable::new(4);
-    let mut t = table.write().unwrap();
-    t.insert("key1", "val1");
-    t.free_open_hash_table();
-}
-
-fn main() {}
+fn main(){}

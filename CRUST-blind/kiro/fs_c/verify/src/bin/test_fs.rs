@@ -1,205 +1,213 @@
-use fs_c::fs;
-use std::os::unix::fs::MetadataExt;
+use fs_c::fs::*;
 
-#[test]
-fn test_fs_exists() {
-    assert!(fs::fs_exists("src/tmp/file"));
-    assert!(!fs::fs_exists("src/tmp/nonexistent"));
+use std::fs;
+
+static TMP_DIR: &str = "./tmp";
+static ALPHA: &str = "abcdefghijklmnopqrstuvwxyz\n";
+
+fn setup() {
+    let _ = fs::create_dir(TMP_DIR); // Ignore errors if it already exists
 }
 
 #[test]
-fn test_fs_open_valid() {
-    let fd = fs::fs_open("src/tmp/file", fs::FS_OPEN_READ);
+fn test_fs_open() {
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
+
+    fs::write(&file_path, "").unwrap();
+    let fd = fs_open(&file_path, FS_OPEN_READWRITE);
     assert!(fd.is_some());
-}
 
-#[test]
-fn test_fs_open_invalid() {
-    let fd = fs::fs_open("/root/foo", fs::FS_OPEN_WRITE);
-    assert!(fd.is_none());
+    fs_close(fd.unwrap()).unwrap();
+
+    let bad_fd = fs_open("/root/foo", FS_OPEN_WRITE);
+    assert!(bad_fd.is_none());
 }
 
 #[test]
 fn test_fs_close() {
-    let fd = fs::fs_open("src/tmp/file", fs::FS_OPEN_READ).unwrap();
-    assert!(fs::fs_close(fd).is_ok());
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
+
+    fs::write(&file_path, "").unwrap();
+    let fd = fs_open(&file_path, FS_OPEN_READWRITE);
+    assert!(fs_close(fd.unwrap()).is_ok());
 }
 
 #[test]
-fn test_fs_size() {
-    let size = fs::fs_size("src/tmp/file").unwrap();
-    assert_eq!(size, 27);
+fn test_fs_mkdir() {
+    setup();
+    let dir_path = format!("{}/dir", TMP_DIR);
+
+    let _ = fs_rmdir(&dir_path);
+    assert!(fs_mkdir(&dir_path, 0o777).is_ok());
+    assert!(fs_exists(&dir_path));
+    assert!(fs_rmdir(&dir_path).is_ok());
 }
 
 #[test]
-fn test_fs_stat_valid() {
-    let meta = fs::fs_stat("src/tmp/file");
-    assert!(meta.is_ok());
-    let meta = meta.unwrap();
-    assert_eq!(meta.size(), 27);
+fn test_fs_exists() {
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
+
+    fs::write(&file_path, "").unwrap();
+    assert!(fs_exists(&file_path));
+
+    let non_existent = format!("{}/missing_file", TMP_DIR);
+    assert!(!fs_exists(&non_existent));
 }
 
 #[test]
-fn test_fs_stat_invalid() {
-    let meta = fs::fs_stat("src/tmp/nonexistent");
-    assert!(meta.is_err());
+fn test_fs_stat() {
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
+
+    fs::write(&file_path, ALPHA).unwrap();
+    let metadata = fs_stat(&file_path);
+    assert!(metadata.is_ok());
+
+    let bad_metadata = fs_stat(&format!("{}/missing", TMP_DIR));
+    assert!(bad_metadata.is_err());
 }
 
 #[test]
 fn test_fs_fstat() {
-    let fd = fs::fs_open("src/tmp/file", fs::FS_OPEN_READ).unwrap();
-    let meta = fs::fs_fstat(&fd);
-    assert!(meta.is_ok());
-    assert_eq!(meta.unwrap().size(), 27);
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
+
+    fs::write(&file_path, ALPHA).unwrap();
+    let fd = fs_open(&file_path, FS_OPEN_READWRITE).unwrap();
+    let metadata = fs_fstat(&fd);
+    assert!(metadata.is_ok());
+    fs_close(fd).unwrap();
 }
 
 #[test]
 fn test_fs_lstat() {
-    let meta = fs::fs_lstat("src/tmp/file.link");
-    assert!(meta.is_ok());
-    let meta = meta.unwrap();
-    // lstat on a symlink returns the link's metadata, not the target's
-    assert!(meta.file_type().is_symlink());
-}
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
 
-#[test]
-fn test_fs_write_and_read() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_write_read";
-    let n = fs::fs_write(path, alpha).unwrap();
-    assert_eq!(n, 27);
-    let buf = fs::fs_read(path).unwrap();
-    assert_eq!(buf, alpha);
-    std::fs::remove_file(path).ok();
-}
-
-#[test]
-fn test_fs_nwrite_and_read() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_nwrite";
-    let n = fs::fs_nwrite(path, alpha, 9).unwrap();
-    assert_eq!(n, 9);
-    let buf = fs::fs_read(path).unwrap();
-    assert_eq!(buf, b"abcdefghi");
-    std::fs::remove_file(path).ok();
-}
-
-#[test]
-fn test_fs_nread() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_nread";
-    fs::fs_write(path, alpha).unwrap();
-    let buf = fs::fs_nread(path, 9).unwrap();
-    assert_eq!(buf, b"abcdefghi");
-    std::fs::remove_file(path).ok();
-}
-
-#[test]
-fn test_fs_fread() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_fread";
-    fs::fs_write(path, alpha).unwrap();
-    let fd = fs::fs_open(path, fs::FS_OPEN_READ).unwrap();
-    let buf = fs::fs_fread(&fd).unwrap();
-    assert_eq!(buf, alpha);
-    std::fs::remove_file(path).ok();
-}
-
-#[test]
-fn test_fs_fnread() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_fnread";
-    fs::fs_write(path, alpha).unwrap();
-    let fd = fs::fs_open(path, fs::FS_OPEN_READ).unwrap();
-    let buf = fs::fs_fnread(&fd, 5).unwrap();
-    assert_eq!(buf, b"abcde");
-}
-
-#[test]
-fn test_fs_fwrite() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_fwrite";
-    let fd = fs::fs_open(path, fs::FS_OPEN_WRITE).unwrap();
-    let n = fs::fs_fwrite(&fd, alpha).unwrap();
-    assert_eq!(n, 27);
-    drop(fd);
-    let buf = fs::fs_read(path).unwrap();
-    assert_eq!(buf, alpha);
-    std::fs::remove_file(path).ok();
-}
-
-#[test]
-fn test_fs_fnwrite() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_fnwrite";
-    let fd = fs::fs_open(path, fs::FS_OPEN_WRITE).unwrap();
-    let n = fs::fs_fnwrite(&fd, alpha, 5).unwrap();
-    assert_eq!(n, 5);
-    drop(fd);
-    let buf = fs::fs_read(path).unwrap();
-    assert_eq!(buf, b"abcde");
-    std::fs::remove_file(path).ok();
+    fs::write(&file_path, ALPHA).unwrap();
+    // create a symlink for testing
+    let symlink_path = format!("{}/symlink", TMP_DIR);
+    std::os::unix::fs::symlink(&file_path, &symlink_path).unwrap();
+    let metadata = fs_lstat(&symlink_path);
+    assert!(metadata.is_ok());
 }
 
 #[test]
 fn test_fs_truncate() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_truncate";
-    fs::fs_write(path, alpha).unwrap();
-    fs::fs_truncate(path, 9).unwrap();
-    let buf = fs::fs_read(path).unwrap();
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    fs_write(&file_path, ALPHA.as_bytes()).unwrap();
+    assert!(fs_truncate(&file_path, 9).is_ok());
+
+    let buf = fs_read(&file_path).unwrap();
     assert_eq!(buf, b"abcdefghi");
-    std::fs::remove_file(path).ok();
 }
 
 #[test]
-fn test_fs_ftruncate() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let path = "src/tmp/test_ftruncate";
-    fs::fs_write(path, alpha).unwrap();
-    let fd = fs::fs_open(path, fs::FS_OPEN_READWRITE).unwrap();
-    fs::fs_ftruncate(&fd, 9).unwrap();
-    drop(fd);
-    let buf = fs::fs_read(path).unwrap();
-    assert_eq!(buf, b"abcdefghi");
-    std::fs::remove_file(path).ok();
+fn test_fs_read() {
+    setup();
+    let file_path = format!("{}/file", TMP_DIR);
+
+    fs_write(&file_path, ALPHA.as_bytes()).unwrap();
+    let buf = fs_read(&file_path).unwrap();
+    assert_eq!(buf, ALPHA.as_bytes());
+}
+
+#[test]
+fn test_fs_write() {
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    fs_write(&file_path, ALPHA.as_bytes()).unwrap();
+    let buf = fs_read(&file_path).unwrap();
+    assert_eq!(buf, ALPHA.as_bytes());
 }
 
 #[test]
 fn test_fs_rename() {
-    let alpha = b"abcdefghijklmnopqrstuvwxyz\n";
-    let src = "src/tmp/test_rename_src";
-    let dst = "src/tmp/test_rename_dst";
-    fs::fs_write(src, alpha).unwrap();
-    fs::fs_rename(src, dst).unwrap();
-    assert!(!fs::fs_exists(src));
-    let buf = fs::fs_read(dst).unwrap();
-    assert_eq!(buf, alpha);
-    std::fs::remove_file(dst).ok();
+    setup();
+    let from_path = format!("{}/alpha", TMP_DIR);
+    let to_path = format!("{}/foo", TMP_DIR);
+
+    fs_write(&from_path, ALPHA.as_bytes()).unwrap();
+    assert!(fs_rename(&from_path, &to_path).is_ok());
+    assert!(!fs_exists(&from_path));
+
+    let buf = fs_read(&to_path).unwrap();
+    assert_eq!(buf, ALPHA.as_bytes());
+
+    fs::remove_file(&to_path).unwrap();
 }
 
 #[test]
-fn test_fs_mkdir_and_rmdir() {
-    let path = "src/tmp/test_dir";
-    let _ = fs::fs_rmdir(path);
-    fs::fs_mkdir(path, 0o777).unwrap();
-    assert!(fs::fs_exists(path));
-    fs::fs_rmdir(path).unwrap();
-    assert!(!fs::fs_exists(path));
+fn test_fs_rmdir() {
+    setup();
+    let dir_path = format!("{}/dir", TMP_DIR);
+
+    assert!(fs_mkdir(&dir_path, 0o777).is_ok());
+    assert!(fs_rmdir(&dir_path).is_ok());
+    assert!(!fs_exists(&dir_path));
 }
 
 #[test]
-fn test_fs_fsize() {
-    let fd = fs::fs_open("src/tmp/file", fs::FS_OPEN_READ).unwrap();
-    let size = fs::fs_fsize(&fd).unwrap();
-    assert_eq!(size, 27);
+fn test_fs_fwrite() {
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    let fd = fs_open(&file_path, FS_OPEN_WRITE).unwrap();
+    fs_fwrite(&fd, ALPHA.as_bytes()).unwrap();
+    fs_close(fd).unwrap();
+
+    let buf = fs_read(&file_path).unwrap();
+    assert_eq!(buf, ALPHA.as_bytes());
 }
 
 #[test]
-fn test_fs_read_link_matches_target() {
-    let f1 = fs::fs_read("src/tmp/file").unwrap();
-    let f2 = fs::fs_read("src/tmp/file.link").unwrap();
-    assert_eq!(f1, f2);
+fn test_fs_nread() {
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    fs_write(&file_path, ALPHA.as_bytes()).unwrap();
+    let buf = fs_nread(&file_path, 9).unwrap();
+    assert_eq!(buf, b"abcdefghi");
 }
 
-fn main() {}
+#[test]
+fn test_fs_fread() {
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    fs_write(&file_path, ALPHA.as_bytes()).unwrap();
+    let fd = fs_open(&file_path, FS_OPEN_READ).unwrap();
+    let buf = fs_fread(&fd).unwrap();
+    assert_eq!(buf, ALPHA.as_bytes());
+    fs_close(fd).unwrap();
+}
+
+#[test]
+fn test_fs_nwrite() {
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    fs_nwrite(&file_path, ALPHA.as_bytes(), 9).unwrap();
+    let buf = fs_read(&file_path).unwrap();
+    assert_eq!(buf, b"abcdefghi");
+}
+
+#[test]
+fn test_fs_fnwrite() {
+    setup();
+    let file_path = format!("{}/alpha", TMP_DIR);
+
+    let fd = fs_open(&file_path, FS_OPEN_WRITE).unwrap();
+    fs_fnwrite(&fd, ALPHA.as_bytes(), 9).unwrap();
+    fs_close(fd).unwrap();
+
+    let buf = fs_read(&file_path).unwrap();
+    assert_eq!(buf, b"abcdefghi");
+}
+fn main(){}

@@ -1,61 +1,55 @@
-use inversion_list::inversion_list::InversionList;
+use inversion_list::inversion_list::*;
 
 #[test]
-fn test_complement_1() {
-    // {0,1,2,3,5,7,8,9} cap=20 -> complement: {4,6,10..19}
-    let a = [1, 2, 3, 5, 7, 8, 9, 0, 2];
-    let set = InversionList::new(20, &a).unwrap();
-    let c = set.complement();
-    assert_eq!(c.capacity(), 20);
-    assert_eq!(c.support(), 12);
-    assert_eq!(c.intervals.len(), 3);
-    assert_eq!(c.intervals[0], (4, 5));
-    assert_eq!(c.intervals[1], (6, 7));
-    assert_eq!(c.intervals[2], (10, 20));
-}
+fn test() {
+    // We'll define helper to check the intervals after complement:
+    fn check_complement(
+        a: &[u32],
+        cap: u32,
+        expected_support: u32,
+        expected_intervals: &[(u32, u32)],
+    ) {
+        let set = InversionList::new(cap, a).expect("failed to create set");
+        let complement = set.complement();
+        assert_eq!(complement.capacity(), cap);
+        assert_eq!(complement.support(), expected_support);
+        assert_eq!(complement.intervals, expected_intervals);
+        println!("Complement of {:?} in [0..{}): OK", a, cap);
+    }
 
-#[test]
-fn test_complement_2() {
-    // {1,2,3,5,7,8,9} cap=20 -> complement: {0,4,6,10..19}
-    let a = [1, 2, 3, 5, 7, 8, 9, 2];
-    let set = InversionList::new(20, &a).unwrap();
-    let c = set.complement();
-    assert_eq!(c.capacity(), 20);
-    assert_eq!(c.support(), 13);
-    assert_eq!(c.intervals.len(), 4);
-    assert_eq!(c.intervals[0], (0, 1));
-    assert_eq!(c.intervals[1], (4, 5));
-    assert_eq!(c.intervals[2], (6, 7));
-    assert_eq!(c.intervals[3], (10, 20));
-}
+    // 1) a=[1,2,3,5,7,8,9,0,2], capacity=20 => expect support=12, intervals=6 pairs => 3 intervals in Rust
+    //   The original C code: couples = [4,5,6,7,10,20]
+    check_complement(
+        &[1, 2, 3, 5, 7, 8, 9, 0, 2],
+        20,
+        12,
+        &[(4, 5), (6, 7), (10, 20)],
+    );
 
-#[test]
-fn test_complement_3() {
-    // {1,2,3,5,7,8,9,19} cap=20 -> complement: {0,4,6,10..18}
-    let a = [1, 2, 3, 5, 7, 8, 9, 2, 19];
-    let set = InversionList::new(20, &a).unwrap();
-    let c = set.complement();
-    assert_eq!(c.capacity(), 20);
-    assert_eq!(c.support(), 12);
-    assert_eq!(c.intervals.len(), 4);
-    assert_eq!(c.intervals[0], (0, 1));
-    assert_eq!(c.intervals[1], (4, 5));
-    assert_eq!(c.intervals[2], (6, 7));
-    assert_eq!(c.intervals[3], (10, 19));
-}
+    // 2) a=[1,2,3,5,7,8,9,2], capacity=20 => support=13 => intervals => [0..1,4..5,6..7,10..20]?
+    check_complement(
+        &[1, 2, 3, 5, 7, 8, 9, 2],
+        20,
+        13,
+        &[(0, 1), (4, 5), (6, 7), (10, 20)],
+    );
 
-#[test]
-fn test_complement_4() {
-    // {0,1,2,3,5,7,8,9,19} cap=20 -> complement: {4,6,10..18}
-    let a = [1, 2, 3, 5, 7, 8, 9, 2, 19, 0];
-    let set = InversionList::new(20, &a).unwrap();
-    let c = set.complement();
-    assert_eq!(c.capacity(), 20);
-    assert_eq!(c.support(), 11);
-    assert_eq!(c.intervals.len(), 3);
-    assert_eq!(c.intervals[0], (4, 5));
-    assert_eq!(c.intervals[1], (6, 7));
-    assert_eq!(c.intervals[2], (10, 19));
-}
+    // 3) a=[1,2,3,5,7,8,9,2,19], capacity=20 => support=12 => intervals => [0..1,4..5,6..7,10..19]
+    check_complement(
+        &[1, 2, 3, 5, 7, 8, 9, 2, 19],
+        20,
+        12,
+        &[(0, 1), (4, 5), (6, 7), (10, 19)],
+    );
 
-fn main() {}
+    // 4) a=[1,2,3,5,7,8,9,2,19,0], capacity=20 => support=11 => intervals => [4..5,6..7,10..19]
+    check_complement(
+        &[1, 2, 3, 5, 7, 8, 9, 2, 19, 0],
+        20,
+        11,
+        &[(4, 5), (6, 7), (10, 19)],
+    );
+
+    println!("test_complement passed.");
+}
+fn main() {} // This is the entry point for the binary

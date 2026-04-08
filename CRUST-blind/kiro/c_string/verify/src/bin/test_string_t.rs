@@ -1,341 +1,283 @@
 use c_string::string_t::*;
+use std::vec::Vec;
 
-// --- new_string ---
+fn print_str(info: &str, str: &StringT) {
+    println!("{}: \"{}\"", info, string_bytes(str));
+}
+
 #[test]
 fn test_new_string() {
-    for &sz in &[0usize, 1, 2, 3, 12, 100] {
-        let s = new_string(sz);
-        assert_eq!(s.size, sz);
-        assert_eq!(s.bytes.len(), sz);
+    let sizes = [0, 1, 2, 3, 12, 100];
+    for &size in &sizes {
+        let str = new_string(size);
+        assert_eq!(str.size, size);
+        string_free(str);
     }
 }
 
-// --- new_string_from_bytes ---
 #[test]
 fn test_new_string_from_bytes() {
-    for &b in &["", "test", "some another test"] {
-        let s = new_string_from_bytes(b);
-        assert_eq!(s.size, b.len());
-        assert_eq!(string_bytes(&s), b);
+    let bytes = ["", "test", "some another test"];
+    for &byte in &bytes {
+        let str = new_string_from_bytes(byte);
+        assert_eq!(str.size, byte.len());
+        assert_eq!(string_bytes(&str), byte);
+        string_free(str);
     }
 }
 
-// --- string_len ---
 #[test]
 fn test_string_len() {
-    let cases = [("", 0), ("test", 4), ("some another test", 17)];
-    for &(b, expected) in &cases {
-        let s = new_string_from_bytes(b);
-        assert_eq!(string_len(&s), expected);
+    let bytes = ["", "test", "some another test"];
+    let len = [0, 4, 17];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        assert_eq!(str.size, byte.len());
+        assert_eq!(string_len(&str), len[idx]);
+        string_free(str);
     }
 }
 
-// --- string_bytes ---
 #[test]
 fn test_string_bytes() {
-    for &b in &["", "test", "some another test"] {
-        let s = new_string_from_bytes(b);
-        assert_eq!(string_bytes(&s), b);
-    }
-}
-
-// --- string_eq ---
-#[test]
-fn test_string_eq_equal() {
-    for &b in &["", "\n\n", "test", "some another test"] {
-        let a = new_string_from_bytes(b);
-        let c = new_string_from_bytes(b);
-        assert_eq!(string_eq(&a, &c), true);
+    let bytes = ["", "test", "some another test"];
+    for &byte in &bytes {
+        let str = new_string_from_bytes(byte);
+        let str_bytes = string_bytes(&str);
+        assert_eq!(str_bytes, byte);
+        string_free(str);
     }
 }
 
 #[test]
-fn test_string_eq_unequal() {
-    let a = new_string_from_bytes("hello");
-    let b = new_string_from_bytes("world");
-    assert_eq!(string_eq(&a, &b), false);
-
-    let c = new_string_from_bytes("hell");
-    assert_eq!(string_eq(&a, &c), false);
+fn test_string_eq() {
+    let left_bytes = ["", "\n\n", "test", "some another test"];
+    let right_bytes = ["", "\n\n", "test", "some another test"];
+    for (idx, &left_byte) in left_bytes.iter().enumerate() {
+        let left_str = new_string_from_bytes(left_byte);
+        let right_str = new_string_from_bytes(right_bytes[idx]);
+        assert_eq!(left_str.size, right_str.size);
+        assert!(string_eq(&left_str, &right_str));
+        string_free(left_str);
+        string_free(right_str);
+    }
 }
 
-// --- string_copy ---
 #[test]
 fn test_string_copy() {
-    for &b in &["", "test", "some another test"] {
-        let s = new_string_from_bytes(b);
-        let cp = string_copy(&s);
-        assert_eq!(string_eq(&s, &cp), true);
-        assert_eq!(cp.size, s.size);
-        assert_eq!(string_bytes(&cp), b);
+    let bytes = ["", "test", "some another test"];
+    for &byte in &bytes {
+        let str = new_string_from_bytes(byte);
+        let str_copy = string_copy(&str);
+        assert!(string_eq(&str, &str_copy));
+        string_free(str);
+        string_free(str_copy);
     }
 }
 
-// --- string_concat ---
 #[test]
 fn test_string_concat() {
-    let cases = [("", "", ""), ("first", "second", "firstsecond"), ("some another", " test", "some another test")];
-    for &(a, b, expected) in &cases {
-        let sa = new_string_from_bytes(a);
-        let sb = new_string_from_bytes(b);
-        let res = string_concat(&sa, &sb);
-        let exp = new_string_from_bytes(expected);
-        assert_eq!(string_eq(&res, &exp), true);
-        assert_eq!(res.size, expected.len());
+    let first = ["", "first", "some another"];
+    let second = ["", "second", " test"];
+    let res = ["", "firstsecond", "some another test"];
+    for (idx, &first_byte) in first.iter().enumerate() {
+        let first_str = new_string_from_bytes(first_byte);
+        let second_str = new_string_from_bytes(second[idx]);
+        let res_str = new_string_from_bytes(res[idx]);
+        let concat_str = string_concat(&first_str, &second_str);
+        assert!(string_eq(&concat_str, &res_str));
+        string_free(first_str);
+        string_free(second_str);
+        string_free(res_str);
+        string_free(concat_str);
     }
 }
 
-// --- string_substr ---
-#[test]
-fn test_string_substr() {
-    let cases = [("", 0, 0, ""), ("vfv\n\n", 1, 2, "fv"), ("test string", 5, 3, "str"), (" some another test  ", 0, 5, " some")];
-    for &(input, pos, len, expected) in &cases {
-        let s = new_string_from_bytes(input);
-        let sub = string_substr(&s, pos, len);
-        assert_eq!(sub.size, expected.len());
-        assert_eq!(string_bytes(&sub), expected);
-    }
-}
-
-// --- string_startswith ---
-#[test]
-fn test_string_startswith() {
-    let cases = [("", "", true), ("vfv\n\n", "vfv", true), ("test string", "test string", true),
-                 (" some another test  ", " some", true), ("1234", "2", false), ("hi", "hello", false)];
-    for &(input, prefix, expected) in &cases {
-        let s = new_string_from_bytes(input);
-        assert_eq!(string_startswith(&s, prefix), expected);
-    }
-}
-
-// --- string_endswith ---
-#[test]
-fn test_string_endswith() {
-    let cases = [("", "", true), ("vfv\n\n", "fv\n\n", true), ("test string", "test string", true),
-                 (" some another test  ", "test  ", true), ("1234", "2", false), ("hi", "hello", false)];
-    for &(input, suffix, expected) in &cases {
-        let s = new_string_from_bytes(input);
-        assert_eq!(string_endswith(&s, suffix), expected);
-    }
-}
-
-// --- string_find ---
-#[test]
-fn test_string_find() {
-    // C returns int: 0 for empty-in-empty, -1 for not found, position otherwise
-    // Rust returns Option<usize>: Some(0), None, Some(pos)
-    let s1 = new_string_from_bytes("");
-    assert_eq!(string_find(&s1, ""), Some(0));
-    assert_eq!(string_find(&s1, "x"), None);
-
-    let s2 = new_string_from_bytes("hello");
-    assert_eq!(string_find(&s2, ""), Some(0));
-    assert_eq!(string_find(&s2, "llo"), Some(2));
-    assert_eq!(string_find(&s2, "xyz"), None);
-    assert_eq!(string_find(&s2, "hello"), Some(0));
-    assert_eq!(string_find(&s2, "helloo"), None);
-
-    let s3 = new_string_from_bytes("vfv\n\n");
-    assert_eq!(string_find(&s3, "\n"), Some(3));
-
-    let s4 = new_string_from_bytes("test string");
-    assert_eq!(string_find(&s4, "no"), None);
-    assert_eq!(string_find(&s4, ""), Some(0));
-
-    let s5 = new_string_from_bytes(" some another test  ");
-    assert_eq!(string_find(&s5, "another"), Some(6));
-}
-
-// --- string_strip ---
 #[test]
 fn test_string_strip() {
-    // Normal cases
-    let cases = [("", ""), ("vfv\n\n", "vfv"), ("  test\t", "test"), (" some another test  ", "some another test")];
-    for &(input, expected) in &cases {
-        let s = new_string_from_bytes(input);
-        let stripped = string_strip(&s);
-        assert_eq!(string_bytes(&stripped), expected);
-        assert_eq!(stripped.size, expected.len());
+    let bytes = ["", "vfv\n\n", "  test\t", " some another test  "];
+    let stripped_bytes = ["", "vfv", "test", "some another test"];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        let stripped_str = string_strip(&str);
+        let exp_stripped_str = new_string_from_bytes(stripped_bytes[idx]);
+        assert!(string_eq(&stripped_str, &exp_stripped_str));
+        string_free(str);
+        string_free(stripped_str);
+        string_free(exp_stripped_str);
     }
 }
 
 #[test]
-fn test_string_strip_all_whitespace() {
-    // C behavior: all-whitespace returns copy of original (start_pos >= end_pos)
-    let s = new_string_from_bytes("   ");
-    let stripped = string_strip(&s);
-    assert_eq!(string_bytes(&stripped), "   ");
-    assert_eq!(stripped.size, 3);
-
-    let s2 = new_string_from_bytes("\t\n\r ");
-    let stripped2 = string_strip(&s2);
-    assert_eq!(string_bytes(&stripped2), "\t\n\r ");
-    assert_eq!(stripped2.size, 4);
-}
-
-// --- string_split ---
-#[test]
-fn test_string_split_empty() {
-    let s = new_string_from_bytes("");
-    let mut arr_size = 0;
-    let arr = string_split(&s, &mut arr_size);
-    assert_eq!(arr_size, 1);
-    assert_eq!(arr.len(), 1);
-    assert_eq!(string_bytes(&arr[0]), "");
-    assert_eq!(arr[0].size, 0);
-}
-
-#[test]
-fn test_string_split_single_word() {
-    let s = new_string_from_bytes("hello");
-    let mut arr_size = 0;
-    let arr = string_split(&s, &mut arr_size);
-    assert_eq!(arr_size, 1);
-    assert_eq!(string_bytes(&arr[0]), "hello");
-    assert_eq!(arr[0].size, 5);
-}
-
-#[test]
-fn test_string_split_leading_space() {
-    // C: " some string 124!" -> ["", "some", "string", "124!"], arr_size=4
-    let s = new_string_from_bytes(" some string 124!");
-    let mut arr_size = 0;
-    let arr = string_split(&s, &mut arr_size);
-    assert_eq!(arr_size, 4);
-    let expected = ["", "some", "string", "124!"];
-    for (i, exp) in expected.iter().enumerate() {
-        assert_eq!(string_bytes(&arr[i]), *exp);
-        assert_eq!(arr[i].size, exp.len());
+fn test_string_substr() {
+    let bytes = ["", "vfv\n\n", "test string", " some another test  "];
+    let substr_start_pos = [0, 1, 5, 0];
+    let substr_len = [0, 2, 3, 5];
+    let substr_bytes = ["", "fv", "str", " some"];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        let substr_str = string_substr(&str, substr_start_pos[idx], substr_len[idx]);
+        let expected_substr_str = new_string_from_bytes(substr_bytes[idx]);
+        assert!(string_eq(&substr_str, &expected_substr_str));
+        string_free(str);
+        string_free(substr_str);
+        string_free(expected_substr_str);
     }
 }
 
 #[test]
-fn test_string_split_no_leading_space() {
-    let s = new_string_from_bytes("Some github account: vnkrtv");
-    let mut arr_size = 0;
-    let arr = string_split(&s, &mut arr_size);
-    assert_eq!(arr_size, 4);
-    let expected = ["Some", "github", "account:", "vnkrtv"];
-    for (i, exp) in expected.iter().enumerate() {
-        assert_eq!(string_bytes(&arr[i]), *exp);
-        assert_eq!(arr[i].size, exp.len());
-    }
-}
-
-// --- string_split_by ---
-#[test]
-fn test_string_split_by_small_input() {
-    // size <= split_len returns copy
-    let s = new_string_from_bytes("W");
-    let mut arr_size = 0;
-    let arr = string_split_by(&s, &mut arr_size, "W");
-    assert_eq!(arr_size, 1);
-    assert_eq!(string_bytes(&arr[0]), "W");
-    assert_eq!(arr[0].size, 1);
-
-    let s2 = new_string_from_bytes("");
-    let mut arr_size2 = 0;
-    let arr2 = string_split_by(&s2, &mut arr_size2, "W");
-    assert_eq!(arr_size2, 1);
-    assert_eq!(string_bytes(&arr2[0]), "");
-    assert_eq!(arr2[0].size, 0);
-}
-
-#[test]
-fn test_string_split_by_single_char() {
-    let s = new_string_from_bytes("WsomeWstringW124!");
-    let mut arr_size = 0;
-    let arr = string_split_by(&s, &mut arr_size, "W");
-    assert_eq!(arr_size, 4);
-    let expected = ["", "some", "string", "124!"];
-    for (i, exp) in expected.iter().enumerate() {
-        assert_eq!(string_bytes(&arr[i]), *exp);
-        assert_eq!(arr[i].size, exp.len());
+fn test_string_startswith() {
+    let bytes = ["", "vfv\n\n", "test string", " some another test  ", "1234"];
+    let startswith_bytes = ["", "vfv", "test string", " some", "2"];
+    let res = [true, true, true, true, false];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        assert_eq!(string_startswith(&str, startswith_bytes[idx]), res[idx]);
+        string_free(str);
     }
 }
 
 #[test]
-fn test_string_split_by_no_leading_delim() {
-    let s = new_string_from_bytes("SomeWgithubWaccount:Wvnkrtv");
-    let mut arr_size = 0;
-    let arr = string_split_by(&s, &mut arr_size, "W");
-    assert_eq!(arr_size, 4);
-    let expected = ["Some", "github", "account:", "vnkrtv"];
-    for (i, exp) in expected.iter().enumerate() {
-        assert_eq!(string_bytes(&arr[i]), *exp);
-        assert_eq!(arr[i].size, exp.len());
+fn test_string_endswith() {
+    let bytes = ["", "vfv\n\n", "test string", " some another test  ", "1234"];
+    let endswith_bytes = ["", "fv\n\n", "test string", "test  ", "2"];
+    let res = [true, true, true, true, false];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        assert_eq!(string_endswith(&str, endswith_bytes[idx]), res[idx]);
+        string_free(str);
     }
 }
 
 #[test]
-fn test_string_split_by_multi_char_delim() {
-    // C: "helloABworldABfoo" by "AB" -> ["hello", "world", "fo"], arr_size=3
-    // Note: last element is "fo" not "foo" — this is the C behavior
-    let s = new_string_from_bytes("helloABworldABfoo");
-    let mut arr_size = 0;
-    let arr = string_split_by(&s, &mut arr_size, "AB");
-    assert_eq!(arr_size, 3);
-    let expected = ["hello", "world", "fo"];
-    for (i, exp) in expected.iter().enumerate() {
-        assert_eq!(string_bytes(&arr[i]), *exp);
-        assert_eq!(arr[i].size, exp.len());
+fn test_string_find() {
+    let bytes = ["", "vfv\n\n", "test string", "test string", " some another test  "];
+    let chars = ["", "\n", "no", "", "another"];
+    let expected_pos:Vec<Option<usize>> = vec![Some(0), Some(3), None, Some(0), Some(6)];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        assert_eq!(string_find(&str, chars[idx]), expected_pos[idx]);
+        string_free(str);
     }
 }
 
-// --- string_join_arr ---
 #[test]
-fn test_string_join_arr_single() {
-    let arr = vec![new_string_from_bytes("")];
-    let res = string_join_arr(&arr, 1, " ");
-    assert_eq!(string_bytes(&res), "");
-    assert_eq!(res.size, 0);
-
-    let arr2 = vec![new_string_from_bytes("1")];
-    let res2 = string_join_arr(&arr2, 1, " ");
-    assert_eq!(string_bytes(&res2), "1");
-    assert_eq!(res2.size, 1);
+fn test_string_split() {
+    let bytes = [
+        "",
+        "1",
+        "some",
+        " some string 124!",
+        "Some github account: vnkrtv",
+    ];
+    let expected_arr_size = [1, 1, 1, 4, 4];
+    let first_arr = vec![new_string_from_bytes("")];
+    let second_arr = vec![new_string_from_bytes("1")];
+    let third_arr = vec![new_string_from_bytes("some")];
+    let fourth_arr = vec![
+        new_string_from_bytes(""),
+        new_string_from_bytes("some"),
+        new_string_from_bytes("string"),
+        new_string_from_bytes("124!"),
+    ];
+    let fifth_arr = vec![
+        new_string_from_bytes("Some"),
+        new_string_from_bytes("github"),
+        new_string_from_bytes("account:"),
+        new_string_from_bytes("vnkrtv"),
+    ];
+    let arr_expected = vec![first_arr, second_arr, third_arr, fourth_arr, fifth_arr];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        let mut arr_size = 0;
+        let str_arr = string_split(&str, &mut arr_size);
+        let expected_str_arr = &arr_expected[idx];
+        assert_eq!(arr_size, expected_arr_size[idx]);
+        for (arr_idx, expected_str) in expected_str_arr.iter().enumerate() {
+            assert!(string_eq(&str_arr[arr_idx], expected_str));
+        }
+        string_free(str);
+        for s in str_arr {
+            string_free(s);
+        }
+    }
 }
 
 #[test]
-fn test_string_join_arr_multiple() {
-    let arr = vec![new_string_from_bytes("some"), new_string_from_bytes("string")];
-    let res = string_join_arr(&arr, 2, " ");
-    assert_eq!(string_bytes(&res), "some string");
-    assert_eq!(res.size, 11);
+fn test_string_split_by() {
+    let split_by_chars = "W";
+    let bytes = [
+        "",
+        "1",
+        "some",
+        "WsomeWstringW124!",
+        "SomeWgithubWaccount:Wvnkrtv",
+    ];
+    let expected_arr_size = [1, 1, 1, 4, 4];
+    let first_arr = vec![new_string_from_bytes("")];
+    let second_arr = vec![new_string_from_bytes("1")];
+    let third_arr = vec![new_string_from_bytes("some")];
+    let fourth_arr = vec![
+        new_string_from_bytes(""),
+        new_string_from_bytes("some"),
+        new_string_from_bytes("string"),
+        new_string_from_bytes("124!"),
+    ];
+    let fifth_arr = vec![
+        new_string_from_bytes("Some"),
+        new_string_from_bytes("github"),
+        new_string_from_bytes("account:"),
+        new_string_from_bytes("vnkrtv"),
+    ];
+    let arr_expected = vec![first_arr, second_arr, third_arr, fourth_arr, fifth_arr];
+    for (idx, &byte) in bytes.iter().enumerate() {
+        let str = new_string_from_bytes(byte);
+        let mut arr_size = 0;
+        let str_arr = string_split_by(&str, &mut arr_size, split_by_chars);
+        let expected_str_arr = &arr_expected[idx];
+        assert_eq!(arr_size, expected_arr_size[idx]);
+        for (arr_idx, expected_str) in expected_str_arr.iter().enumerate() {
+            assert!(string_eq(&str_arr[arr_idx], expected_str));
+        }
+        string_free(str);
+        for s in str_arr {
+            string_free(s);
+        }
+    }
 }
 
 #[test]
-fn test_string_join_arr_newline_sep() {
-    let arr = vec![new_string_from_bytes(""), new_string_from_bytes("some"), new_string_from_bytes("string")];
-    let res = string_join_arr(&arr, 3, "\n");
-    assert_eq!(string_bytes(&res), "\nsome\nstring");
-    assert_eq!(res.size, 12);
-}
-
-#[test]
-fn test_string_join_arr_multi_char_sep() {
-    let arr = vec![new_string_from_bytes("some"), new_string_from_bytes("string")];
-    let res = string_join_arr(&arr, 2, "SOME");
-    assert_eq!(string_bytes(&res), "someSOMEstring");
-    assert_eq!(res.size, 14);
-}
-
-// --- string_t_is_space_char ---
-#[test]
-fn test_is_space_char() {
-    assert_eq!(string_t_is_space_char(b' '), true);
-    assert_eq!(string_t_is_space_char(b'\t'), true);
-    assert_eq!(string_t_is_space_char(b'\n'), true);
-    assert_eq!(string_t_is_space_char(b'\r'), true);
-    assert_eq!(string_t_is_space_char(b'a'), false);
-    assert_eq!(string_t_is_space_char(b'0'), false);
-}
-
-// --- string_free (no-op in Rust, just ensure it doesn't panic) ---
-#[test]
-fn test_string_free() {
-    let s = new_string_from_bytes("test");
-    string_free(s);
+fn test_string_join_arr() {
+    let first_arr = vec![new_string_from_bytes("")];
+    let second_arr = vec![new_string_from_bytes("1")];
+    let third_arr = vec![
+        new_string_from_bytes("some"),
+        new_string_from_bytes("string"),
+    ];
+    let fourth_arr = vec![
+        new_string_from_bytes(""),
+        new_string_from_bytes("some"),
+        new_string_from_bytes("string"),
+    ];
+    let fifth_arr = vec![
+        new_string_from_bytes("some"),
+        new_string_from_bytes("string"),
+    ];
+    let str_arr = vec![first_arr, second_arr, third_arr, fourth_arr, fifth_arr];
+    let arr_size = [1, 1, 2, 3, 2];
+    let space_chars = [" ", " ", " ", "\n", "SOME"];
+    let expected_res_str = vec![
+        new_string_from_bytes(""),
+        new_string_from_bytes("1"),
+        new_string_from_bytes("some string"),
+        new_string_from_bytes("\nsome\nstring"),
+        new_string_from_bytes("someSOMEstring"),
+    ];
+    for (idx, arr) in str_arr.iter().enumerate() {
+        let res_str = string_join_arr(arr, arr_size[idx], space_chars[idx]);
+        assert!(string_eq(&res_str, &expected_res_str[idx]));
+        string_free(res_str);
+    }
 }
 
 fn main() {}

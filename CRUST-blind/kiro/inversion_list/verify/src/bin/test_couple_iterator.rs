@@ -1,14 +1,21 @@
-use inversion_list::inversion_list::{InversionList, InversionListCoupleIterator};
+use inversion_list::inversion_list::*;
 
 #[test]
-fn test_couple_iterator() {
+fn test() {
+    // Simulate the original test:
+    // We create a set with capacity=20 and values [1,2,3,4,10].
     let a = [1, 2, 3, 4, 10];
-    let set = InversionList::new(20, &a).unwrap();
-    let iter = InversionListCoupleIterator::new(&set);
-    for (i, (inf, sup)) in iter.enumerate() {
-        assert_eq!(set.intervals[i].0, inf);
-        assert_eq!(set.intervals[i].1, sup);
-    }
-}
+    let set = InversionList::new(20, &a).expect("Failed to create set");
 
-fn main() {}
+    // We iterate over the half-open intervals (the "couples") of `set`.
+    for (idx, (inf, sup)) in InversionListCoupleIterator::new(&set).enumerate() {
+        // In C, the test asserts that set->couples[idx*2] == get_inf(), etc.
+        // In this Rust library, we can directly get the stored intervals:
+        let (expected_inf, expected_sup) = set.intervals[idx];
+        assert_eq!(inf, expected_inf);
+        assert_eq!(sup, expected_sup);
+    }
+
+    println!("test_couple_iterator passed.");
+}
+fn main(){}

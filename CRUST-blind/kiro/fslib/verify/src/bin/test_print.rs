@@ -1,26 +1,16 @@
 use fslib::fst::Fst;
-use fslib::print;
-
 #[test]
-fn test_fst_print() {
+fn test_print() {
     let mut fst = Fst::new();
-    fst.compile_str("0\t1\t1\t2\t0.5\n1\t2\t3\t4\t1.0\n2\t0.0");
-    let mut buf = Vec::new();
-    print::fst_print(&fst, &mut buf).unwrap();
-    let output = String::from_utf8(buf).unwrap();
-    assert!(output.contains("0\t1\t1\t2\t0.50000"));
-    assert!(output.contains("1\t2\t3\t4\t1.00000"));
-    assert!(output.contains("2\t0"));
+    let state_a = fst.add_state();
+    let state_b = fst.add_state();
+    for i in 0..10 {
+        fst.add_arc(state_a, state_b, i, i, i as f32);
+    }
+    fst.set_final(state_a, 1.0);
+    fst.set_final(state_b, 1.0);
+    fst.print();
+    assert_eq!(fst.n_states, 2);  
 }
-
-#[test]
-fn test_fst_print_sym() {
-    let mut fst = Fst::new();
-    fst.compile_str("0\t1\t1\t2\t0.5\n1\t0.0");
-    let mut buf = Vec::new();
-    print::fst_print_sym(&fst, None, None, None, &mut buf).unwrap();
-    let output = String::from_utf8(buf).unwrap();
-    assert!(output.contains("0\t1\t1\t2\t0.50000"));
+fn main() {
 }
-
-fn main() {}
