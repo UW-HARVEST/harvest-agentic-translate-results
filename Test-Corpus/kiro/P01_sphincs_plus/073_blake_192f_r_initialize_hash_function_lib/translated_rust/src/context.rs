@@ -1,4 +1,4 @@
-use crate::params::*;
+use crate::params::SPX_N;
 
 #[repr(C)]
 pub struct SpxCtx {

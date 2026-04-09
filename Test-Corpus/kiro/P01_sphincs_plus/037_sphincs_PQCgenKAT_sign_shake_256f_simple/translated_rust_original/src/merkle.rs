@@ -13,27 +13,31 @@ pub fn merkle_sign(
     tree_addr: &mut [u32; 8],
     idx_leaf: u32,
 ) {
-    let mut steps = [0u32; SPX_WOTS_LEN];
-
-    chain_lengths(&mut steps, root);
-
     let sig_ptr = sig.as_mut_ptr();
 
     let mut info = LeafInfoX1 {
         wots_sig: sig_ptr,
         wots_sign_leaf: idx_leaf,
-        wots_steps: steps.as_mut_ptr(),
+        wots_steps: std::ptr::null(),
         leaf_addr: [0u32; 8],
         pk_addr: [0u32; 8],
     };
+
+    let mut steps = [0u32; SPX_WOTS_LEN];
+    chain_lengths(&mut steps, root);
+    info.wots_steps = steps.as_ptr();
 
     set_type(tree_addr, SPX_ADDR_TYPE_HASHTREE);
     set_type(&mut info.pk_addr, SPX_ADDR_TYPE_WOTSPK);
     copy_subtree_addr(&mut info.leaf_addr, wots_addr);
     copy_subtree_addr(&mut info.pk_addr, wots_addr);
 
-    let auth_path_ptr = unsafe { sig.as_mut_ptr().add(SPX_WOTS_BYTES) };
-    let auth_path = unsafe { std::slice::from_raw_parts_mut(auth_path_ptr, SPX_TREE_HEIGHT * SPX_N) };
+    let auth_path = unsafe {
+        std::slice::from_raw_parts_mut(
+            sig_ptr.add(SPX_WOTS_BYTES),
+            SPX_TREE_HEIGHT * SPX_N,
+        )
+    };
 
     wots_treehashx1(
         root,
@@ -63,4 +67,30 @@ pub fn merkle_gen_root(root: &mut [u8], ctx: &SpxCtx) {
         &mut top_tree_addr,
         !0u32,
     );
+}
+
+// --- extern "C" wrappers ---
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_merkle_sign(
+    sig: *mut u8,
+    root: *mut u8,
+    ctx: *const SpxCtx,
+    wots_addr: *mut u32,
+    tree_addr: *mut u32,
+    idx_leaf: u32,
+) {
+    let sig = unsafe { std::slice::from_raw_parts_mut(sig, SPX_WOTS_BYTES + SPX_TREE_HEIGHT * SPX_N) };
+    let root = unsafe { std::slice::from_raw_parts_mut(root, SPX_N) };
+    let ctx = unsafe { &*ctx };
+    let wots_addr = unsafe { &mut *(wots_addr as *mut [u32; 8]) };
+    let tree_addr = unsafe { &mut *(tree_addr as *mut [u32; 8]) };
+    merkle_sign(sig, root, ctx, wots_addr, tree_addr, idx_leaf);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_merkle_gen_root(root: *mut u8, ctx: *const SpxCtx) {
+    let root = unsafe { std::slice::from_raw_parts_mut(root, SPX_N) };
+    let ctx = unsafe { &*ctx };
+    merkle_gen_root(root, ctx);
 }
