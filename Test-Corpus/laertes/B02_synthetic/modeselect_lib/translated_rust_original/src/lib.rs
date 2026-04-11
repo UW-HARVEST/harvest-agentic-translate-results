@@ -7,8 +7,8 @@ extern "C" {
     fn time(__timer: *mut time_t) -> time_t;
 }
 pub type size_t = usize;
-pub type __time_t = libc::linux_like::linux::gnu::b64::x86_64::not_x32::c_long;
-pub type time_t = libc::linux_like::linux::gnu::b64::x86_64::not_x32::c_long;
+pub type __time_t = libc::c_long;
+pub type time_t = libc::c_long;
 pub const NULL: *mut libc::c_void = std::ptr::null_mut::<libc::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn classify_mode(mut mode: *const libc::c_char) -> libc::c_int {

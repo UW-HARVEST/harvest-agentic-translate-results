@@ -19,8 +19,8 @@ extern "C" {
     fn ferror(__stream: *mut FILE) -> libc::c_int;
 }
 pub type size_t = usize;
-pub type __off_t = libc::linux_like::linux::gnu::b64::x86_64::not_x32::c_long;
-pub type __off64_t = libc::linux_like::linux::gnu::b64::x86_64::not_x32::c_long;
+pub type __off_t = libc::c_long;
+pub type __off64_t = libc::c_long;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _IO_FILE {

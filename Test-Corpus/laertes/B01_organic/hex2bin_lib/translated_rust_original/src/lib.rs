@@ -9,10 +9,10 @@ pub type uint8_t = u8;
 pub unsafe extern "C" fn hex2bin<'a1>(
     mut bin: * mut u8,
     mut bin_maxlen: usize,
-    mut hex: * const libc::linux_like::linux::gnu::b64::x86_64::c_char,
+    mut hex: * const libc::c_char,
     mut hex_len: usize,
-    mut ignore: * const libc::linux_like::linux::gnu::b64::x86_64::c_char,
-    mut hex_end_p: Option<&'a1 mut * const libc::linux_like::linux::gnu::b64::x86_64::c_char>,
+    mut ignore: * const libc::c_char,
+    mut hex_end_p: Option<&'a1 mut * const libc::c_char>,
 ) -> libc::c_int {
     let mut bin_pos: size_t = 0 as libc::c_uint as size_t;
     let mut hex_pos: size_t = 0 as libc::c_uint as size_t;

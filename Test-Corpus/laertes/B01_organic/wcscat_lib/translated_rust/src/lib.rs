@@ -1,5 +1,5 @@
 pub type size_t = usize;
-pub type wchar_t = libc::linux_like::linux::gnu::b64::x86_64::wchar_t;
+pub type wchar_t = libc::wchar_t;
 #[no_mangle]
 pub unsafe extern "C" fn wcscat(
     mut dst: *mut wchar_t,

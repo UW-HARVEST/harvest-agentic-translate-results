@@ -5,7 +5,7 @@ extern "C" {
 pub type size_t = usize;
 #[no_mangle]
 pub unsafe extern "C" fn slice<'a1, 'a2>(
-    mut mystr: * mut libc::linux_like::linux::gnu::b64::x86_64::c_char,
+    mut mystr: * mut libc::c_char,
     mut start_ptr: Option<&'a1 mut libc::c_int>,
     mut stop_ptr: Option<&'a2 mut libc::c_int>,
 ) -> libc::c_int {

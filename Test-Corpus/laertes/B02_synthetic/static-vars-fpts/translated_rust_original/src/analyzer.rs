@@ -56,7 +56,7 @@ pub type tokenizer_next_fn = Option<unsafe extern "C"  fn() -> crate::src::analy
 pub type tokenizer_peek_fn = Option<unsafe extern "C"  fn() -> crate::src::analyzer::token_t>;
 pub type tokenizer_reset_fn = Option<unsafe extern "C"  fn() -> ()>;
 pub type tokenizer_load_fn =
-    Option<unsafe extern "C"  fn(_: * const libc::linux_like::linux::gnu::b64::x86_64::c_char,) -> libc::c_int>;
+    Option<unsafe extern "C"  fn(_: * const libc::c_char,) -> libc::c_int>;
 pub type tokenizer_get_stats_fn =
     Option<unsafe extern "C"  fn(_: * mut usize,_: * mut usize,_: * mut usize,) -> ()>;
 #[derive(Copy, Clone)]
@@ -65,7 +65,7 @@ pub struct tokenizer_ops_t {
     pub next_token: Option<unsafe extern "C"  fn() -> crate::src::analyzer::token_t>,
     pub peek_token: Option<unsafe extern "C"  fn() -> crate::src::analyzer::token_t>,
     pub reset: Option<unsafe extern "C"  fn() -> ()>,
-    pub load_text: Option<unsafe extern "C"  fn(_: * const libc::linux_like::linux::gnu::b64::x86_64::c_char,) -> libc::c_int>,
+    pub load_text: Option<unsafe extern "C"  fn(_: * const libc::c_char,) -> libc::c_int>,
     pub get_stats: Option<unsafe extern "C"  fn(_: * mut usize,_: * mut usize,_: * mut usize,) -> ()>,
 }
 impl std::default::Default for tokenizer_ops_t {
@@ -140,9 +140,9 @@ pub struct _IO_FILE {
     pub _mode: libc::c_int,
     pub _unused2: [libc::c_char; 20],
 }
-pub type __off64_t = libc::linux_like::linux::gnu::b64::x86_64::not_x32::c_long;
+pub type __off64_t = libc::c_long;
 pub type _IO_lock_t = ();
-pub type __off_t = libc::linux_like::linux::gnu::b64::x86_64::not_x32::c_long;
+pub type __off_t = libc::c_long;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _IO_marker {
