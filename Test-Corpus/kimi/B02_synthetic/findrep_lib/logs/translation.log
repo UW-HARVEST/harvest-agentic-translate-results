@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int findrep(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <string.h>\r\n#include <stdlib.h>\r\n\r\ntypedef int (*operation_func)(int, int);\r\ntypedef void (*string_processor)(char*, int);\r\n\r\nstatic int accumulator = 0;\r\nstatic int multiplier = 1;\r\nstatic int operation_count = 0;\r\n\r\nint add_to_accumulator(int a, int b) {\r\n    accumulator += (a + b);\r\n    operation_count++;\r\n    return accumulator;\r\n}\r\n\r\nint multiply_with_multiplier(int a, int b) {\r\n    multiplier *= (a * b);\r\n    operation_count++;\r\n    return multiplier;\r\n}\r\n\r\nint subtract_from_accumulator(int a, int b)
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, c_int};\nuse std::os::raw::c_int as RawCInt;\nuse std::sync::Mutex;\n\nstatic ACCUMULATOR: Mutex<i32> = Mutex::new(0);\nstatic MULTIPLIER: Mutex<i32> = Mutex::new(1);\nstatic OPERATION_COUNT: Mutex<i32> = Mutex::new(0);\n\ntype OperationFunc = fn(i32, i32) -> i32;\n\nfn add_to_accumulator(a: i32, b: i32) -> i32 {\n    let mut acc = ACCUMULATOR.lock().unwrap();\n    *acc += a + b;\n    let mut count = OPERATION_COUNT.lock().unwrap();\n    *count += 1;\n    *acc\n}\n\nfn multiply_with_multiplier(a: i32, b: i32) -> i32 {\n    let mut mul = MULTIPLIER.lock().unwrap();\n    *mul *= a * b;\n    let mut count = OPERATION_COUNT.lock().unwrap();\n    *count += 1;\n    *mul\n}\n\nfn subtract_from_accumulator(a: i32, b: i32) -> i32 {\n    let mut acc = ACCUMULATOR.lock().unwrap();\n    *acc -= a - b;\n    let mut count = OPERATION_COUNT.lock().unwrap();\n    *count += 1;\n    *acc\n}\n\nfn divide_multiplier(a: i32, b: i32) -> i32 {\n    let mut mul = MULTIPLIER.lock().unwrap();\n    if b != 0 {\n        *mul /= b;\n    }\n    let mut count = OPERATION_COUNT.lock().unwrap();\n    *count += 1;\n    *mul\n}\n\nfn process_octal_string(dest: &mut [u8], octal_val: i32) {\n    let s = format!(\"Octal: 0{:o}, Decimal: {}\", octal_val, octal_val);\n    let bytes = s.as_bytes();\n    let len = bytes.len().min(dest.len() - 1);\n    dest[..len].copy_from_slice(&bytes[..len]);\n    dest[len] = 0;\n}\n\nfn find_and_replace_char(str: &mut [u8], search_char: u8) {\n    for i in 0..str.len() {\n        if str[i] == 0 {\n            break;\n        }\n        if str[i] == search_char {\n            str[i] = b'X';\n            break;\n        }\n    }\n}\n\nfn validate_and_normalize(value: i32) -> i32 {\n    let is_nonzero = value != 0;\n    let _is_zero = value == 0;\n\n    let lower_threshold = 0o100;\n    let upper_threshold = 0o777;\n\n    if is_nonzero && value > 0 {\n        if value < lower_threshold {\n            return lower_threshold;\n        } else if value > upper_threshold {\n            return upper_threshold;\n        }\n    }\n\n    value\n}\n\nstatic OPERATIONS: [OperationFunc; 4] = [\n    add_to_accumulator,\n    multiply_with_multiplier,\n    subtract_from_accumulator,\n    divide_multiplier,\n];\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn findrep(param1: RawCInt, param2: RawCInt, param3: RawCInt, param4: RawCInt) -> RawCInt {\n    let param1 = param1 as i32;\n    let param2 = param2 as i32;\n    let param3 = param3 as i32;\n    let param4 = param4 as i32;\n\n    let mut result: i32 = 0;\n\n    let p1_valid = (param1 != 0) as i32;\n    let p2_valid = (param2 != 0) as i32;\n    let p3_valid = (param3 != 0) as i32;\n    let p4_valid = (param4 != 0) as i32;\n\n    let active_params = p1_valid + p2_valid + p3_valid + p4_valid;\n\n    let mode_add = 0o1;\n    let mode_multiply = 0o2;\n    let _mode_subtract = 0o3;\n    let _mode_divide = 0o4;\n\n    let normalized_p1 = validate_and_normalize(param1);\n    let normalized_p2 = validate_and_normalize(param2);\n    let normalized_p3 = validate_and_normalize(param3);\n    let normalized_p4 = validate_and_normalize(param4);\n\n    let mut message = [0u8; 100];\n    let mut search_buffer = [0u8; 100];\n\n    process_octal_string(&mut message, 0o123);\n    let s = b\"Function pointer example with static vars\";\n    let len = s.len().min(search_buffer.len() - 1);\n    search_buffer[..len].copy_from_slice(&s[..len]);\n    search_buffer[len] = 0;\n\n    let search_str = std::str::from_utf8(&search_buffer[..len]).unwrap_or(\"\");\n    if let Some(pos) = search_str.find('p') {\n        result += pos as i32;\n    }\n\n    let mut selected_op: OperationFunc;\n\n    if active_params >= mode_add {\n        selected_op = OPERATIONS[0];\n        result += selected_op(normalized_p1, normalized_p2);\n    }\n\n    if active_params >= mode_multiply {\n        selected_op = OPERATIONS[1];\n        result += selected_op(normalized_p3, normalized_p4);\n    }\n\n    {\n        let acc = ACCUMULATOR.lock().unwrap();\n        if *acc > 0o150 {\n            selected_op = OPERATIONS[2];\n            let subtract_result = selected_op(normalized_p1, normalized_p3);\n            result += subtract_result;\n        }\n    }\n\n    find_and_replace_char(&mut message, b'O');\n\n    let mut final_message = [0u8; 100];\n    final_message.copy_from_slice(&message);\n\n    let has_accumulator = {\n        let acc = ACCUMULATOR.lock().unwrap();\n        *acc != 0\n    };\n    let has_multiplier = {\n        let mul = MULTIPLIER.lock().unwrap();\n        *mul != 0\n    };\n    let both_active = has_accumulator && has_multiplier;\n\n    if both_active {\n        let acc = ACCUMULATOR.lock().unwrap();\n        let mul = MULTIPLIER.lock().unwrap();\n        result += *acc + *mul;\n    }\n\n    {\n        let mul = MULTIPLIER.lock().unwrap();\n        if *mul > 0o100 {\n            selected_op = OPERATIONS[3];\n            selected_op(*mul, 2);\n        }\n    }\n\n    {\n        let count = OPERATION_COUNT.lock().unwrap();\n        result += *count * 0o10;\n    }\n\n    let result_exists = result != 0;\n    if !result_exists {\n        result = 0o777;\n    }\n\n    result as RawCInt\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

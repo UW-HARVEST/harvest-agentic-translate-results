@@ -1,0 +1,22 @@
+{
+  "inferenceConfig": {
+    "maxTokens": 16384,
+    "temperature": 0.0
+  },
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "Please translate the following C project into a Rust project including Cargo manifest:\n\n{\"files\":[{\"path\":\"include/lib.h\",\"contents\":\"#include <stdint.h>\\n#include <stddef.h>\\n\\nint hex2bin(uint8_t *bin, size_t bin_maxlen, const char *hex,\\n                  size_t hex_len, const char *ignore, const char **hex_end_p);\\n\"},{\"path\":\"src/lib.c\",\"contents\":\"#include <string.h>\\r\\n\\r\\n#include \\\"lib.h\\\"\\r\\n\\r\\nint hex2bin(uint8_t *bin, size_t bin_maxlen, const char *hex,\\r\\n                  size_t hex_len, const char *ignore, const char **hex_end_p) {\\r\\n    size_t bin_pos = (size_t)0U;\\r\\n    size_t hex_pos = (size_t)0U;\\r\\n    int ret = 0;\\r\\n    unsigned char c;\\r\\n    unsigned char c_alpha0, c_alpha;\\r\\n    unsigned char c_num0, c_num;\\r\\n    uint8_t c_acc = 0U;\\r\\n    uint8_t c_val;\\r\\n    unsigned char state = 0U;\\r\\n    while (hex_pos < hex_len) {\\r\\n        c = (unsigned char)hex[hex_pos];\\r\\n        c_num = c ^ 48U;\\r\\n        c_num0 = (c_num - 10U) >> 8;\\r\\n        c_alpha = (c & ~32U) - 55U;\\r\\n        c_alpha0 = ((c_alpha - 10U) ^ (c_alpha - 16U)) >> 8;\\r\\n        if ((c_num0 | c_alpha0) == 0U) {\\r\\n            if (ignore != ((void *)0) && state == 0U &&\\r\\n                strchr(ignore, c) != ((void *)0)) {\\r\\n                hex_pos++;\\r\\n                continue;\\r\\n            }\\r\\n            break;\\r\\n        }\\r\\n        c_val = (uint8_t)((c_num0 & c_num) | (c_alpha0 & c_alpha));\\r\\n        if (bin_pos >= bin_maxlen) {\\r\\n            ret = -1;\\r\\n            break;\\r\\n        }\\r\\n        if (state == 0U) {\\r\\n            c_acc = c_val * 16U;\\r\\n        } else {\\r\\n            bin[bin_pos++] = c_acc | c_val;\\r\\n        }\\r\\n        state = ~state;\\r\\n        hex_pos++;\\r\\n    }\\r\\n    if (state != 0U) {\\r\\n        hex_pos--;\\r\\n        ret = -1;\\r\\n    }\\r\\n    if (ret != 0) {\\r\\n        bin_pos = (size_t)0U;\\r\\n    }\\r\\n    if (hex_end_p != ((void *)0)) {\\r\\n        *hex_end_p = &hex[hex_pos];\\r\\n    } else if (hex_pos != hex_len) {\\r\\n        ret = -1;\\r\\n    }\\r\\n    if (ret != 0) {\\r\\n        return ret;\\r\\n    }\\r\\n    return (int)bin_pos;\\r\\n}\\r\\n\"},{\"path\":\"CMakeLists.txt\",\"contents\":\"cmake_minimum_required(VERSION 3.10)\\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\\ncmake_path(GET parent FILENAME project_name)\\nproject(${project_name})\\nadd_library(${project_name} SHARED\\n    src/lib.c)\\n\\ntarget_include_directories(${project_name} PUBLIC include)\\ntarget_include_directories(${project_name} PRIVATE src)\\n\\ninstall(TARGETS ${project_name}\\n    DESTINATION lib)\\ninstall(DIRECTORY include/\\n    DESTINATION include)\\n\\n\"}]}\n\nreturn as JSON"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "modelId": "moonshotai.kimi-k2.5",
+  "system": [
+    {
+      "text": "You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:\n\n```\nPlease translate the following C project into a Rust project including Cargo manifest:\n\n{ \"files\": [\n{\n  \"path\": \"src/lib.c\",\n  \"contents\": \"int a_lib_function(const char* input) {\\n  return strlen(input);\\n}\"\n},\n{\n  \"path\": \"include/lib.h\",\n  \"contents\": \"int a_lib_function(const char* input);\\n}\"\n},\n{\n  \"path\": \"CMakeLists.txt\",\n  \"contents\": \"cmake_minimum_required(VERSION 3.10)\\nproject(noop)\\nadd_library(mylibname\\n    src/lib.c)\",\n}\n]\n}\n\nreturn as JSON\n```\n\nYou should return:\n\n```\n{ \"files\": [\n{\n  \"path\": \"src/lib.rs\",\n  \"contents\": \"use std::ffi::{CStr, c_char};\\nuse std::os::raw::c_int;\\n\\n#[unsafe(no_mangle)]\\npub extern \\\"C\\\" fn a_lib_function(input: *const c_char) -> c_int {\\n    let c_str = unsafe {\\n        CStr::from_ptr(input)\\n    };\\n    c_str.to_bytes().len() as c_int\\n}\"\n},\n{\n  \"path\": \"Cargo.toml\",\n  \"contents\": \"[package]\\nname = \\\"noop\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[dependencies]\\n\"\n}\n]\n}\n```"
+    }
+  ]
+}

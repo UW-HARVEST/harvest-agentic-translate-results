@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/match.h","contents":"#define N_SMOOTH 16\t/* Size of smoothing kernel */\ntypedef double float_t;\t/* Desired precision for floating-point vectors */\n\nint match(float_t *test, float_t *reference, int bins, double threshold);\ndouble spectral_contrast(float_t *a, float_t *b, int length);\n"},{"path":"src/match.c","contents":"#include <string.h> /* memcpy */\n#include \"match.h\"\n\nstatic double total(float_t *v, int length) {\n    double sum = 0;\n    int i;\n    for(i = 0; i < length; i++) sum += v[i];\n    return sum;\n}\n\nstatic void smoothen(float_t *v, int length) {\n    double sum;\n    int i, j;\n    for(i = 0; i < length; i++) {\n        sum = 0;\n        for(j = 0; j < N_SMOOTH && i + j < length; j++)\n            sum += v[i + j];\n        v[i] = sum / N_SMOOTH;\n    }\n}\n\nstatic void differentiate(float_t *v, int length) {\n    int i;\n    for(i = 0; i < length - 1; i++) v[i] = v[i + 1] - v[i];\n    v[length - 1] = 0;\n}\n\nstatic void preprocess(float_t *v, float_t *source, int length) {\n    memcpy(v, source, length * sizeof(*v));\n    smoothen(v, length);\n    differentiate(v, length);\n    smoothen(v, length);\n}\n\nint match(float_t *test, float_t *reference, int bins, double threshold) {\n    float_t t[bins], r[bins];\n    if(total(test, bins) < threshold * total(reference, bins)) return 0;\n    preprocess(t, test, bins);\n    preprocess(r, reference, bins);\n    return spectral_contrast(t, r, bins) >= threshold;\n}\n"},{"path":"src/spectral_contrast.c","contents":"#include <math.h> /* sqrt */\n\nstatic double dot_product(float_t *a, float_t *b, int length) {\n    double sum = 0;\n    int i;\n    for(i = 0; i < length; i++) sum += a[i] * b[i];\n    return sum;\n}\n\nstatic void normalize(float_t *v, int length) {\n    double magnitude = sqrt(dot_product(v, v, length));\n    int i;\n    for(i = 0; i < length; i++) v[i] /= magnitude;\
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::{c_double, c_int};\n\npub type FloatT = c_double;\n\nconst N_SMOOTH: usize = 16;\n\nfn total(v: &[FloatT]) -> c_double {\n    v.iter().sum()\n}\n\nfn smoothen(v: &mut [FloatT]) {\n    let length = v.len();\n    for i in 0..length {\n        let mut sum = 0.0;\n        for j in 0..N_SMOOTH {\n            if i + j >= length {\n                break;\n            }\n            sum += v[i + j];\n        }\n        v[i] = sum / N_SMOOTH as c_double;\n    }\n}\n\nfn differentiate(v: &mut [FloatT]) {\n    let length = v.len();\n    for i in 0..length.saturating_sub(1) {\n        v[i] = v[i + 1] - v[i];\n    }\n    if length > 0 {\n        v[length - 1] = 0.0;\n    }\n}\n\nfn preprocess(v: &mut [FloatT], source: &[FloatT]) {\n    v.copy_from_slice(source);\n    smoothen(v);\n    differentiate(v);\n    smoothen(v);\n}\n\nfn dot_product(a: &[FloatT], b: &[FloatT]) -> c_double {\n    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()\n}\n\nfn normalize(v: &mut [FloatT]) {\n    let magnitude = dot_product(v, v).sqrt();\n    if magnitude > 0.0 {\n        for elem in v.iter_mut() {\n            *elem /= magnitude;\n        }\n    }\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn spectral_contrast(a: *mut FloatT, b: *mut FloatT, length: c_int) -> c_double {\n    let len = length as usize;\n    let a_slice = unsafe { std::slice::from_raw_parts_mut(a, len) };\n    let b_slice = unsafe { std::slice::from_raw_parts_mut(b, len) };\n    normalize(a_slice);\n    normalize(b_slice);\n    dot_product(a_slice, b_slice)\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn match(test: *mut FloatT, reference: *mut FloatT, bins: c_int, threshold: c_double) -> c_int {\n    let bins_usize = bins as usize;\n    let test_slice = unsafe { std::slice::from_raw_parts(test, bins_usize) };\n    let reference_slice = unsafe { std::slice::from_raw_parts(reference, bins_usize) };\n    \n    if total(test_slice) < threshold * total(reference_slice) {\n        return 0;\n    }\n    \n    let mut t = vec![0.0; bins_usize];\n    let mut r = vec![0.0; bins_usize];\n    \n    preprocess(&mut t, test_slice);\n    preprocess(&mut r, reference_slice);\n    \n    if spectral_contrast(t.as_mut_ptr(), r.as_mut_ptr(), bins) >= threshold {\n        1\n    } else {\n        0\n    }\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"match\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n\n[lib]\nname = \"match\"\ncrate-type = [\"cdylib\"]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

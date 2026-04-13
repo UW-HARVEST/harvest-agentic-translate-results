@@ -1,0 +1,22 @@
+{
+  "inferenceConfig": {
+    "maxTokens": 16384,
+    "temperature": 0.0
+  },
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "Please translate the following C project into a Rust project including Cargo manifest:\n\n{\"files\":[{\"path\":\"include/lib.h\",\"contents\":\"#include <stdint.h>\\r\\n\\r\\ntypedef uint8_t tflac_u8;\\r\\ntypedef uint32_t tflac_u32;\\r\\ntypedef uint64_t tflac_u64;\\r\\ntypedef tflac_u64 tflac_uint;\\r\\n\\r\\nstruct tflac_bitwriter {\\r\\n    tflac_uint val;\\r\\n    tflac_u32 bits;\\r\\n    tflac_u32 pos;\\r\\n    tflac_u32 len;\\r\\n    tflac_u32 tot;\\r\\n    tflac_u8 *buffer;\\r\\n};\\r\\ntypedef struct tflac_bitwriter tflac_bitwriter;\\r\\n\\r\\nint bitwriter_add(tflac_bitwriter *bw, tflac_u32 bits,\\r\\n                                      tflac_uint val);\\r\\n\"},{\"path\":\"src/lib.c\",\"contents\":\"#include \\\"lib.h\\\"\\r\\n\\r\\nint bitwriter_add(tflac_bitwriter *bw, tflac_u32 bits,\\r\\n                                      tflac_uint val) {\\r\\n    const tflac_uint mask = (18446744073709551615UL) << 1;\\r\\n    tflac_u32 b;\\r\\n    int r;\\r\\n    val <<= ((8 * sizeof(tflac_uint)) - bits);\\r\\n    bw->tot += bits;\\r\\n    int i = 0;\\r\\n    while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100) {\\r\\n        b = (8 * sizeof(tflac_uint)) - bw->bits - 1;\\r\\n        b = b > bits ? bits : b;\\r\\n        bw->val |= (val >> bw->bits);\\r\\n        bw->bits += b;\\r\\n        bw->val &= mask;\\r\\n        val <<= b;\\r\\n        bits -= b;\\r\\n        i++;\\r\\n    }\\r\\n    bw->val |= (val >> bw->bits);\\r\\n    bw->bits += bits;\\r\\n    return 0;\\r\\n}\\r\\n\"},{\"path\":\"CMakeLists.txt\",\"contents\":\"cmake_minimum_required(VERSION 3.10)\\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\\ncmake_path(GET parent FILENAME project_name)\\nproject(${project_name})\\nadd_library(${project_name} SHARED\\n    src/lib.c)\\n\\ntarget_include_directories(${project_name} PUBLIC include)\\ntarget_include_directories(${project_name} PRIVATE src)\\n\\ninstall(TARGETS ${project_name}\\n    DESTINATION lib)\\ninstall(DIRECTORY include/\\n    DESTINATION include)\\n\\n\"}]}\n\nreturn as JSON"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "modelId": "moonshotai.kimi-k2.5",
+  "system": [
+    {
+      "text": "You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:\n\n```\nPlease translate the following C project into a Rust project including Cargo manifest:\n\n{ \"files\": [\n{\n  \"path\": \"src/lib.c\",\n  \"contents\": \"int a_lib_function(const char* input) {\\n  return strlen(input);\\n}\"\n},\n{\n  \"path\": \"include/lib.h\",\n  \"contents\": \"int a_lib_function(const char* input);\\n}\"\n},\n{\n  \"path\": \"CMakeLists.txt\",\n  \"contents\": \"cmake_minimum_required(VERSION 3.10)\\nproject(noop)\\nadd_library(mylibname\\n    src/lib.c)\",\n}\n]\n}\n\nreturn as JSON\n```\n\nYou should return:\n\n```\n{ \"files\": [\n{\n  \"path\": \"src/lib.rs\",\n  \"contents\": \"use std::ffi::{CStr, c_char};\\nuse std::os::raw::c_int;\\n\\n#[unsafe(no_mangle)]\\npub extern \\\"C\\\" fn a_lib_function(input: *const c_char) -> c_int {\\n    let c_str = unsafe {\\n        CStr::from_ptr(input)\\n    };\\n    c_str.to_bytes().len() as c_int\\n}\"\n},\n{\n  \"path\": \"Cargo.toml\",\n  \"contents\": \"[package]\\nname = \\\"noop\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[dependencies]\\n\"\n}\n]\n}\n```"
+    }
+  ]
+}

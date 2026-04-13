@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"#include <stdint.h>\n\ntypedef struct {\n    const uint8_t *buf;\n    int pos, limit;\n} bs_t;\n\ntypedef struct {\n    const uint8_t *sfbtab;\n    uint16_t part_23_length, big_values, scalefac_compress;\n    uint8_t global_gain, block_type, mixed_block_flag, n_long_sfb, n_short_sfb;\n    uint8_t table_select[3], region_count[3], subblock_gain[3];\n    uint8_t preflag, scalefac_scale, count1_table, scfsi;\n} L3_gr_info_t;\n\nint read_side_info(bs_t *bs, L3_gr_info_t *gr, const uint8_t *hdr);\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\n\nstatic uint32_t get_bits(bs_t *bs, int n) {\n    uint32_t next, cache = 0, s = bs->pos & 7;\n    int shl = n + s;\n    const uint8_t *p = bs->buf + (bs->pos >> 3);\n    if ((bs->pos += n) > bs->limit)\n        return 0;\n    next = *p++ & (255 >> s);\n    while ((shl -= 8) > 0) {\n        cache |= next << shl;\n        next = *p++;\n    }\n    return cache | (next >> -shl);\n}\n\nint read_side_info(bs_t *bs, L3_gr_info_t *gr, const uint8_t *hdr) {\n    static const uint8_t g_scf_long[8][23] = {\n        {6,  6,  6,  6,  6,  6,  8,  10, 12, 14, 16, 20,\n         24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0},\n        {12, 12, 12, 12, 12, 12, 16, 20, 24, 28, 32, 40,\n         48, 56, 64, 76, 90, 2,  2,  2,  2,  2,  0},\n        {6,  6,  6,  6,  6,  6,  8,  10, 12, 14, 16, 20,\n         24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0},\n        {6,  6,  6,  6,  6,  6,  8,  10, 12, 14, 16, 18,\n         22, 26, 32, 38, 46, 54, 62, 70, 76, 36, 0},\n        {6,  6,  6,  6,  6,  6,  8,  10, 12, 14, 16, 20,\n         24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0},\n        {4,  4,  4,  4,  4,  4,  6,  6,  8,  8,   10, 12,\n         16, 20, 24, 28, 34, 42, 50, 54, 76, 158, 0},\n        {4,  4,  4,  4,  4,  4,  6,  6,  6,  8,   10, 12,\n         16, 18, 22, 28, 34, 40, 46, 54, 54, 192, 0},\n        {4,  4,  4,  4
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::{c_int, c_uint};\n\n#[repr(C)]\npub struct bs_t {\n    pub buf: *const u8,\n    pub pos: c_int,\n    pub limit: c_int,\n}\n\n#[repr(C)]\npub struct L3_gr_info_t {\n    pub sfbtab: *const u8,\n    pub part_23_length: u16,\n    pub big_values: u16,\n    pub scalefac_compress: u16,\n    pub global_gain: u8,\n    pub block_type: u8,\n    pub mixed_block_flag: u8,\n    pub n_long_sfb: u8,\n    pub n_short_sfb: u8,\n    pub table_select: [u8; 3],\n    pub region_count: [u8; 3],\n    pub subblock_gain: [u8; 3],\n    pub preflag: u8,\n    pub scalefac_scale: u8,\n    pub count1_table: u8,\n    pub scfsi: u8,\n}\n\nstatic G_SCF_LONG: [[u8; 23]; 8] = [\n    [6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0],\n    [12, 12, 12, 12, 12, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 76, 90, 2, 2, 2, 2, 2, 0],\n    [6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0],\n    [6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 18, 22, 26, 32, 38, 46, 54, 62, 70, 76, 36, 0],\n    [6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0],\n    [4, 4, 4, 4, 4, 4, 6, 6, 8, 8, 10, 12, 16, 20, 24, 28, 34, 42, 50, 54, 76, 158, 0],\n    [4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 10, 12, 16, 18, 22, 28, 34, 40, 46, 54, 54, 192, 0],\n    [4, 4, 4, 4, 4, 4, 6, 6, 8, 10, 12, 16, 20, 24, 30, 38, 46, 56, 68, 84, 102, 26, 0],\n];\n\nstatic G_SCF_SHORT: [[u8; 40]; 8] = [\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0],\n    [8, 8, 8, 8, 8, 8, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 24, 24, 24, 28, 28, 28, 36, 36, 36, 2, 2, 2, 2, 2, 2, 2, 2, 2, 26, 26, 26, 0],\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 14, 14, 14, 18, 18, 18, 26, 26, 26, 32, 32, 32, 42, 42, 42, 18, 18, 18, 0],\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24, 24, 24, 32, 32, 32, 44, 44, 44, 12, 12, 12, 0],\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0],\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 22, 22, 22, 30, 30, 30, 56, 56, 56, 0],\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 6, 10, 10, 10, 12, 12, 12, 14, 14, 14, 16, 16, 16, 20, 20, 20, 26, 26, 26, 66, 66, 66, 0],\n    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 26, 26, 26, 34, 34, 34, 42, 42, 42, 12, 12, 12, 0],\n];\n\nstatic G_SCF_MIXED: [[u8; 40]; 8] = [\n    [6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0, 0, 0, 0],\n    [12, 12, 12, 4, 4, 4, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 24, 24, 24, 28, 28, 28, 36, 36, 36, 2, 2, 2, 2, 2, 2, 2, 2, 2, 26, 26, 26, 0],\n    [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 14, 14, 14, 18, 18, 18, 26, 26, 26, 32, 32, 32, 42, 42, 42, 18, 18, 18, 0, 0, 0, 0],\n    [6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24, 24, 24, 32, 32, 32, 44, 44, 44, 12, 12, 12, 0, 0, 0, 0],\n    [6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0, 0, 0, 0],\n    [4, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 22, 22, 22, 30, 30, 30, 56, 56, 56, 0, 0],\n    [4, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 6, 6, 6, 6, 6, 6, 10, 10, 10, 12, 12, 12, 14, 14, 14, 16, 16, 16, 20, 20, 20, 26, 26, 26, 66, 66, 66, 0, 0],\n    [4, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 6, 6, 6, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 26, 26, 26, 34, 34, 34, 42, 42, 42, 12, 12, 12, 0, 0],\n];\n\nfn get_bits(bs: &mut bs_t, n: c_int) -> u32 {\n    let s = (bs.pos & 7) as u32;\n    let shl = n + s as c_int;\n    let mut p = unsafe { bs.buf.add((bs.pos >> 3) as usize) };\n    bs.pos += n;\n    if bs.pos > bs.limit {\n        return 0;\n    }\n    let mut next = unsafe { (*p & (255 >> s)) as u32 };\n    p = unsafe { p.add(1) };\n    let mut cache: u32 = 0;\n    let mut remaining = shl - 8;\n    while remaining > 0 {\n        cache |= next << remaining;\n        next = unsafe { *p as u32 };\n        p = unsafe { p.add(1) };\n        remaining -= 8;\n    }\n    cache | (next >> (-remaining) as u32)\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn read_side_info(bs: *mut bs_t, gr: *mut L3_gr_info_t, hdr: *const u8) -> c_int {\n    let bs = unsafe { &mut *bs };\n    let hdr = unsafe { std::slice::from_raw_parts(hdr, 4) };\n    let mut gr = gr;\n    let mut scfsi: c_uint = 0;\n    let main_data_begin: c_int;\n    let mut part_23_sum: c_int = 0;\n    let mut sr_idx = (((hdr[2] >> 2) & 3) + (((hdr[1] >> 3) & 1) + ((hdr[1] >> 4) & 1)) * 3) as usize;\n    if sr_idx != 0 {\n        sr_idx -= 1;\n    }\n    let gr_count = if (hdr[3] & 0xC0) == 0xC0 { 1 } else { 2 };\n    let gr_count = if (hdr[1] & 0x8) != 0 {\n        let count = gr_count * 2;\n        main_data_begin = get_bits(bs, 9) as c_int;\n        scfsi = get_bits(bs, 7 + count);\n        count\n    } else {\n        let count = gr_count;\n        main_data_begin = (get_bits(bs, 8 + count) >> count) as c_int;\n        count\n    };\n    let mut remaining = gr_count;\n    loop {\n        if (hdr[3] & 0xC0) == 0xC0 {\n            scfsi <<= 4;\n        }\n        let gr_ref = unsafe { &mut *gr };\n        gr_ref.part_23_length = get_bits(bs, 12) as u16;\n        part_23_sum += gr_ref.part_23_length as c_int;\n        gr_ref.big_values = get_bits(bs, 9) as u16;\n        if gr_ref.big_values > 288 {\n            return -1;\n        }\n        gr_ref.global_gain = get_bits(bs, 8) as u8;\n        gr_ref.scalefac_compress = if (hdr[1] & 0x8) != 0 {\n            get_bits(bs, 4) as u16\n        } else {\n            get_bits(bs, 9) as u16\n        };\n        gr_ref.sfbtab = G_SCF_LONG[sr_idx].as_ptr();\n        gr_ref.n_long_sfb = 22;\n        gr_ref.n_short_sfb = 0;\n        let tables: c_uint;\n        if get_bits(bs, 1) != 0 {\n            gr_ref.block_type = get_bits(bs, 2) as u8;\n            if gr_ref.block_type == 0 {\n                return -1;\n            }\n            gr_ref.mixed_block_flag = get_bits(bs, 1) as u8;\n            gr_ref.region_count[0] = 7;\n            gr_ref.region_count[1] = 255;\n            if gr_ref.block_type == 2 {\n                scfsi &= 0x0F0F;\n                if gr_ref.mixed_block_flag == 0 {\n                    gr_ref.region_count[0] = 8;\n                    gr_ref.sfbtab = G_SCF_SHORT[sr_idx].as_ptr();\n                    gr_ref.n_long_sfb = 0;\n                    gr_ref.n_short_sfb = 39;\n                } else {\n                    gr_ref.sfbtab = G_SCF_MIXED[sr_idx].as_ptr();\n                    gr_ref.n_long_sfb = if (hdr[1] & 0x8) != 0 { 8 } else { 6 };\n                    gr_ref.n_short_sfb = 30;\n                }\n            }\n            tables = get_bits(bs, 10);\n            let tables = tables << 5;\n            gr_ref.subblock_gain[0] = get_bits(bs, 3) as u8;\n            gr_ref.subblock_gain[1] = get_bits(bs, 3) as u8;\n            gr_ref.subblock_gain[2] = get_bits(bs, 3) as u8;\n            tables\n        } else {\n            gr_ref.block_type = 0;\n            gr_ref.mixed_block_flag = 0;\n            tables = get_bits(bs, 15);\n            gr_ref.region_count[0] = get_bits(bs, 4) as u8;\n            gr_ref.region_count[1] = get_bits(bs, 3) as u8;\n            gr_ref.region_count[2] = 255;\n            tables\n        };\n        gr_ref.table_select[0] = (tables >> 10) as u8;\n        gr_ref.table_select[1] = ((tables >> 5) & 31) as u8;\n        gr_ref.table_select[2] = (tables & 31) as u8;\n        gr_ref.preflag = if (hdr[1] & 0x8) != 0 {\n            get_bits(bs, 1) as u8\n        } else {\n            (gr_ref.scalefac_compress >= 500) as u8\n        };\n        gr_ref.scalefac_scale = get_bits(bs, 1) as u8;\n        gr_ref.count1_table = get_bits(bs, 1) as u8;\n        gr_ref.scfsi = ((scfsi >> 12) & 15) as u8;\n        scfsi <<= 4;\n        gr = unsafe { gr.add(1) };\n        remaining -= 1;\n        if remaining == 0 {\n            break;\n        }\n    }\n    if part_23_sum + bs.pos > bs.limit + main_data_begin * 8 {\n        return -1;\n    }\n    main_data_begin\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

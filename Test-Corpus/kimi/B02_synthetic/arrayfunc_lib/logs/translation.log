@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the \"Software\"),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n\n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\nint arrayfunc(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the \"Software\"),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or sub
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::c_int;\n\n#[repr(C)]\npub struct Result {\n    pub value: c_int,\n    pub scaled: f64,\n    pub rank: c_int,\n}\n\n#[repr(C)]\npub struct ResultArray {\n    pub data: [Result; 10],\n    pub count: c_int,\n}\n\ntype OperationFunc = fn(c_int, c_int, c_int, c_int) -> c_int;\n\nfn add_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {\n    a + b\n}\n\nfn multiply_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {\n    a * b\n}\n\nfn subtract_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {\n    a - b\n}\n\nfn modulo_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {\n    if b == 0 {\n        return 0;\n    }\n    a % b\n}\n\nfn safe_double_to_int(d: f64) -> c_int {\n    if d >= i32::MAX as f64 {\n        return i32::MAX;\n    }\n    if d <= i32::MIN as f64 {\n        return i32::MIN;\n    }\n    if d.is_nan() {\n        return 0;\n    }\n    d as c_int\n}\n\nfn compute_scaled_value(base: c_int, scale_factor: f64) -> c_int {\n    let scaled = base as f64 * scale_factor;\n    safe_double_to_int(scaled)\n}\n\nfn compare_results_in_array(arr: &ResultArray, idx1: usize, idx2: usize) -> c_int {\n    if idx1 >= arr.count as usize || idx2 >= arr.count as usize {\n        return 0;\n    }\n\n    let ptr1 = &arr.data[idx1] as *const Result;\n    let ptr2 = &arr.data[idx2] as *const Result;\n\n    if ptr1 < ptr2 {\n        -1\n    } else if ptr1 > ptr2 {\n        1\n    } else {\n        0\n    }\n}\n\nfn init_result_array(arr: &mut ResultArray, values: &[c_int], count: usize) {\n    let actual_count = if count < 10 { count } else { 10 };\n    arr.count = actual_count as c_int;\n\n    for i in 0..actual_count {\n        arr.data[i] = Result {\n            value: values[i],\n            scaled: values[i] as f64 * 1.5,\n            rank: i as c_int,\n        };\n    }\n}\n\nfn process_with_foreach(arr: &mut ResultArray, op: OperationFunc) -> c_int {\n    let mut total = 0;\n\n    for i in 0..arr.count as usize {\n        let item = &mut arr.data[i];\n        let result = op(item.value, item.rank, 0, 0);\n        total += result;\n\n        let temp = result as f64 * 0.75;\n        item.scaled = temp;\n        item.value = safe_double_to_int(temp);\n    }\n\n    total\n}\n\nfn compute_weighted_sum(arr: &ResultArray) -> c_int {\n    let mut sum = 0;\n\n    for i in 0..arr.count as usize {\n        let current = &arr.data[i];\n        let base = &arr.data[0];\n\n        let current_ptr = current as *const Result;\n        let base_ptr = base as *const Result;\n\n        let weight = if current_ptr > base_ptr {\n            (current_ptr as usize - base_ptr as usize) / std::mem::size_of::<Result>()\n        } else {\n            1\n        };\n\n        let weighted = current.value as f64 * weight as f64 * 0.8;\n        sum += safe_double_to_int(weighted);\n    }\n\n    sum\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn arrayfunc(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let operations: [OperationFunc; 4] = [\n        add_operation,\n        multiply_operation,\n        subtract_operation,\n        modulo_operation,\n    ];\n\n    let values: [c_int; 8] = [\n        param1,\n        param2,\n        param3,\n        param4,\n        param1 + param2,\n        param2 - param3,\n        param3 * 2,\n        param4 / 2 + 1,\n    ];\n\n    let mut arr = ResultArray {\n        data: [\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n            Result { value: 0, scaled: 0.0, rank: 0 },\n        ],\n        count: 0,\n    };\n    init_result_array(&mut arr, &values, 8);\n\n    let mut result = 0;\n\n    for i in 0..4 {\n        result += process_with_foreach(&mut arr, operations[i]);\n    }\n\n    result += compute_weighted_sum(&arr);\n\n    for i in 0..(arr.count as usize - 1) {\n        let cmp = compare_results_in_array(&arr, i, i + 1);\n        result += cmp;\n    }\n\n    let final_scale = result as f64 * 0.333;\n    result = safe_double_to_int(final_scale);\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

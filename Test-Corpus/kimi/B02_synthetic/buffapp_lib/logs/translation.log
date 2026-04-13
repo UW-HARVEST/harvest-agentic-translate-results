@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the \"Software\"),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n\n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\nint buffapp(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or s
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{CStr, c_char, c_int};\nuse std::io::Write;\n\nstruct StringBuffer {\n    data: Vec<u8>,\n    capacity: usize,\n    length: usize,\n}\n\nimpl StringBuffer {\n    fn new(initial_capacity: usize) -> Option<Self> {\n        let mut data = Vec::with_capacity(initial_capacity);\n        data.push(0);\n        Some(StringBuffer {\n            data,\n            capacity: initial_capacity,\n            length: 0,\n        })\n    }\n\n    fn append(&mut self, str: &str) -> Result<(), ()> {\n        let str_len = str.len();\n        let required_capacity = self.length + str_len + 1;\n\n        if required_capacity > self.capacity {\n            let new_capacity = required_capacity * 2;\n            self.data.reserve(new_capacity - self.data.capacity());\n            self.capacity = new_capacity;\n        }\n\n        self.data.truncate(self.length);\n        self.data.extend_from_slice(str.as_bytes());\n        self.data.push(0);\n        self.length += str_len;\n\n        Ok(())\n    }\n\n    fn as_c_str(&self) -> *const c_char {\n        self.data.as_ptr() as *const c_char\n    }\n}\n\nfn get_operation_name(op_code: i32) -> &'static str {\n    match op_code {\n        0 => \"add\",\n        1 => \"subtract\",\n        2 => \"multiply\",\n        3 => \"divide\",\n        _ => \"unknown\",\n    }\n}\n\nfn perform_operation(a: i32, b: i32, operation: &str) -> i32 {\n    match operation {\n        \"add\" => a + b,\n        \"subtract\" => a - b,\n        \"multiply\" => a * b,\n        \"divide\" => {\n            if b != 0 {\n                a / b\n            } else {\n                0\n            }\n        }\n        _ => 0,\n    }\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn buffapp(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let mut log_buffer = StringBuffer::new(32).unwrap();\n    let mut result: i32 = 0;\n\n    let temp = format!(\"Starting computation with {} parameters\\n\", 4);\n    let _ = log_buffer.append(&temp);\n\n    let op1 = get_operation_name(param1 % 4);\n    let temp = format!(\"Operation 1: {}({}, {})\\n\", op1, param1, param2);\n    let _ = log_buffer.append(&temp);\n\n    let intermediate1 = perform_operation(param1, param2, op1);\n    result += intermediate1;\n\n    let op2 = get_operation_name(param3 % 4);\n    let temp = format!(\"Operation 2: {}({}, {})\\n\", op2, param3, param4);\n    let _ = log_buffer.append(&temp);\n\n    let intermediate2 = perform_operation(param3, param4, op2);\n    result += intermediate2;\n\n    let op3 = \"multiply\";\n    let temp = format!(\"Operation 3: {}({}, {})\\n\", op3, intermediate1, intermediate2);\n    let _ = log_buffer.append(&temp);\n\n    let intermediate3 = perform_operation(intermediate1, intermediate2, op3);\n\n    if intermediate3 != 0 {\n        result = result / intermediate3;\n    } else {\n        result = param1 + param2 + param3 + param4;\n    }\n\n    let temp = format!(\"Final result: {}\\n\", result);\n    let _ = log_buffer.append(&temp);\n\n    unsafe {\n        let c_str = CStr::from_ptr(log_buffer.as_c_str());\n        let _ = std::io::stdout().write_all(b\"Computation Log:\\n\");\n        let _ = std::io::stdout().write_all(c_str.to_bytes());\n        let _ = std::io::stdout().write_all(b\"\\n\");\n    }\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"buffapp\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"buffapp\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

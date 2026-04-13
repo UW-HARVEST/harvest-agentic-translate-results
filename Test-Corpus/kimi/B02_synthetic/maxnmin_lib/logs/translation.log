@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int maxnmin(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <stdlib.h>\r\n#include <string.h>\r\n#include <math.h>\r\n#include <limits.h>\r\n\r\n#define MAX_NODES 100\r\n#define MAX_NAME_LEN 50\r\n\r\ntypedef struct {\r\n    int id;\r\n    int parent_id;\r\n    char name[MAX_NAME_LEN];\r\n    double value;\r\n    int active;\r\n} Node;\r\n\r\nstatic Node node_storage[MAX_NODES];\r\nstatic int node_count = 0;\r\n\r\nint add_node(int id, int parent_id, const char *name, double value) {\r\n    if (node_count >= MAX_NODES) {\r\n        return -1;\r\n    }\r\n\r\n    Node new_node = {\r\n        .id = id,\r\n    
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, c_int, c_double};\nuse std::os::raw::c_int as RawCInt;\nuse std::sync::Mutex;\n\nconst MAX_NODES: usize = 100;\nconst MAX_NAME_LEN: usize = 50;\n\nstruct Node {\n    id: c_int,\n    parent_id: c_int,\n    name: [c_char; MAX_NAME_LEN],\n    value: c_double,\n    active: c_int,\n}\n\nstatic NODE_STORAGE: Mutex<[Option<Node>; MAX_NODES]> = Mutex::new([const { None }; MAX_NODES]);\nstatic NODE_COUNT: Mutex<usize> = Mutex::new(0);\n\nfn add_node_internal(id: c_int, parent_id: c_int, name: &[u8], value: c_double) -> c_int {\n    let mut count = NODE_COUNT.lock().unwrap();\n    if *count >= MAX_NODES {\n        return -1;\n    }\n\n    let mut storage = NODE_STORAGE.lock().unwrap();\n    let mut name_array = [0 as c_char; MAX_NAME_LEN];\n    let copy_len = name.len().min(MAX_NAME_LEN - 1);\n    for i in 0..copy_len {\n        name_array[i] = name[i] as c_char;\n    }\n\n    let new_node = Node {\n        id,\n        parent_id,\n        name: name_array,\n        value,\n        active: 1,\n    };\n\n    storage[*count] = Some(new_node);\n    let index = *count as c_int;\n    *count += 1;\n    index\n}\n\nfn find_node_by_id_internal(id: c_int) -> Option<usize> {\n    let storage = NODE_STORAGE.lock().unwrap();\n    let count = *NODE_COUNT.lock().unwrap();\n    for i in 0..count {\n        if let Some(ref node) = storage[i] {\n            if node.id == id && node.active != 0 {\n                return Some(i);\n            }\n        }\n    }\n    None\n}\n\nfn get_children_count_internal(parent_id: c_int) -> c_int {\n    let storage = NODE_STORAGE.lock().unwrap();\n    let count = *NODE_COUNT.lock().unwrap();\n    let mut result = 0;\n    for i in 0..count {\n        if let Some(ref node) = storage[i] {\n            if node.parent_id == parent_id && node.active != 0 {\n                result += 1;\n            }\n        }\n    }\n    result\n}\n\nfn calculate_subtree_sum_internal(node_id: c_int) -> c_double {\n    let idx = match find_node_by_id_internal(node_id) {\n        Some(i) => i,\n        None => return 0.0,\n    };\n\n    let storage = NODE_STORAGE.lock().unwrap();\n    let node = storage[idx].as_ref().unwrap();\n    let mut sum = node.value;\n    let target_id = node.id;\n    drop(storage);\n\n    let count = *NODE_COUNT.lock().unwrap();\n    let storage = NODE_STORAGE.lock().unwrap();\n    for i in 0..count {\n        if let Some(ref n) = storage[i] {\n            if n.parent_id == target_id && n.active != 0 {\n                drop(storage);\n                sum += calculate_subtree_sum_internal(n.id);\n                let storage = NODE_STORAGE.lock().unwrap();\n            }\n        }\n    }\n\n    sum\n}\n\nfn process_string_internal(s: &[u8]) -> c_int {\n    let mut result: c_int = 0;\n    for &c in s {\n        if c == 0 {\n            break;\n        }\n        result += c as c_int;\n    }\n    result\n}\n\nfn safe_double_to_int_internal(d: c_double) -> c_int {\n    if d > c_int::MAX as c_double {\n        return c_int::MAX;\n    }\n    if d < c_int::MIN as c_double {\n        return c_int::MIN;\n    }\n    if d.is_nan() {\n        return 0;\n    }\n    d as c_int\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn maxnmin(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let mut result: c_int = 0;\n\n    {\n        let mut count = NODE_COUNT.lock().unwrap();\n        *count = 0;\n        let mut storage = NODE_STORAGE.lock().unwrap();\n        for i in 0..MAX_NODES {\n            storage[i] = None;\n        }\n    }\n\n    add_node_internal(1, -1, b\"root\", 10.5);\n    add_node_internal(2, 1, b\"child1\", 20.7);\n    add_node_internal(3, 1, b\"child2\", 15.3);\n    add_node_internal(4, 2, b\"grandchild1\", 5.9);\n    add_node_internal(5, 2, b\"grandchild2\", 8.2);\n    add_node_internal(6, 3, b\"grandchild3\", 12.4);\n\n    let node_id = (param1 % 6) + 1;\n\n    if let Some(idx) = find_node_by_id_internal(node_id) {\n        let storage = NODE_STORAGE.lock().unwrap();\n        let node = storage[idx].as_ref().unwrap();\n        let name_bytes: Vec<u8> = node.name.iter()\n            .take_while(|&&c| c != 0)\n            .map(|&c| c as u8)\n            .collect();\n        drop(storage);\n\n        if !name_bytes.is_empty() {\n            result += process_string_internal(&name_bytes);\n        }\n\n        let subtree_sum = calculate_subtree_sum_internal(node_id);\n        let sum_as_int = safe_double_to_int_internal(subtree_sum);\n        result += sum_as_int;\n    }\n\n    let second_node_id = (param2 % 6) + 1;\n\n    if let Some(idx) = find_node_by_id_internal(second_node_id) {\n        let storage = NODE_STORAGE.lock().unwrap();\n        let node = storage[idx].as_ref().unwrap();\n        let value_multiplied = node.value * param3 as c_double;\n        drop(storage);\n\n        let converted_value = safe_double_to_int_internal(value_multiplied);\n        result += converted_value;\n    }\n\n    let parent_id = (param4 % 3) + 1;\n    let children = get_children_count_internal(parent_id);\n    result += children * 10;\n\n    let calculation = (param1 + param2) as c_double / (param3 + 1) as c_double;\n    let calculation = calculation * param4 as c_double;\n\n    let final_calc = safe_double_to_int_internal(calculation);\n    result += final_calc;\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

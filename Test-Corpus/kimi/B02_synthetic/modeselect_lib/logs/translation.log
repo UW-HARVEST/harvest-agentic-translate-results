@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int modeselect(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <string.h>\r\n#include <time.h>\r\n#include <math.h>\r\n\r\nint classify_mode(const char *mode) {\r\n    if (strcmp(mode, \"standard\") == 0) {\r\n        return 0x10;\r\n    } else if (strcmp(mode, \"enhanced\") == 0) {\r\n        return 0x20;\r\n    } else if (strcmp(mode, \"turbo\") == 0) {\r\n        return 0x30;\r\n    } else if (strcmp(mode, \"extreme\") == 0) {\r\n        return 0x40;\r\n    }\r\n    return 0x00;\r\n}\r\n\r\nint apply_multiplier(int base, int level) {\r\n    int result = base;\r\n\r\n    switch (level) {\r\n        case 4:
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::{c_int, c_long, c_double};\nuse std::time::{SystemTime, UNIX_EPOCH};\n\nfn classify_mode(mode: &str) -> c_int {\n    match mode {\n        \"standard\" => 0x10,\n        \"enhanced\" => 0x20,\n        \"turbo\" => 0x30,\n        \"extreme\" => 0x40,\n        _ => 0x00,\n    }\n}\n\nfn apply_multiplier(base: c_int, level: c_int) -> c_int {\n    let mut result = base;\n\n    match level {\n        4 => {\n            result += 0xFF;\n            result += 0xAB;\n            result += 0x7E;\n            result += 0x1C;\n            result += 0x05;\n        }\n        3 => {\n            result += 0xAB;\n            result += 0x7E;\n            result += 0x1C;\n            result += 0x05;\n        }\n        2 => {\n            result += 0x7E;\n            result += 0x1C;\n            result += 0x05;\n        }\n        1 => {\n            result += 0x1C;\n            result += 0x05;\n        }\n        0 => {\n            result += 0x05;\n        }\n        _ => {\n            result = 0xDEAD;\n        }\n    }\n\n    result\n}\n\nfn convert_time_factor(factor: c_double) -> c_int {\n    let scaled = factor * 1e12;\n    scaled as c_int\n}\n\nfn convert_negative_overflow(value: c_double) -> c_int {\n    let extreme = value * -1e15;\n    extreme as c_int\n}\n\nfn get_modified_time(offset_days: c_int, offset_hours: c_int) -> i64 {\n    let current = SystemTime::now()\n        .duration_since(UNIX_EPOCH)\n        .unwrap()\n        .as_secs() as i64;\n    let current = current >> 29;\n    let offset = (offset_days as i64 * 86400) + (offset_hours as i64 * 3600);\n    current + offset\n}\n\nfn hash_time_value(t: i64) -> c_int {\n    let mut hash: u32 = 0x5A5A5A5A;\n    let bytes = t.to_le_bytes();\n\n    for (i, &byte) in bytes.iter().enumerate() {\n        hash ^= (byte as u32) << ((i % 4) * 8);\n        hash = hash.wrapping_mul(0x1F);\n    }\n\n    (hash & 0x7FFFFFFF) as c_int\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn modeselect(mode_selector: c_int, time_offset: c_int, complexity: c_int, seed: c_int) -> c_int {\n    let mut result: c_int = 0;\n    let modes = [\"standard\", \"enhanced\", \"turbo\", \"extreme\"];\n\n    let mode_index = (mode_selector % 4 + 4) % 4;\n    let selected_mode = modes[mode_index as usize];\n    let mode_value = classify_mode(selected_mode);\n\n    println!(\"Selected mode: {} (0x{:X})\", selected_mode, mode_value);\n    result += mode_value;\n\n    let complexity_level = ((complexity % 5) + 5) % 5;\n    let multiplier = apply_multiplier(0xA0, complexity_level);\n\n    println!(\"Complexity level: {}, Multiplier: 0x{:X}\", complexity_level, multiplier);\n    result += multiplier;\n\n    let modified_time = get_modified_time(time_offset, ((seed % 24) + 24) % 24);\n    let time_hash = hash_time_value(modified_time);\n\n    println!(\"Modified time: {}, Hash: 0x{:X}\", modified_time, time_hash);\n    result += time_hash % 0x1000;\n\n    let factor1 = seed as c_double * 1e8;\n    let factor2 = time_offset as c_double * -1e7;\n\n    println!(\"Converting double {:.2e} to int (may overflow)...\", factor1);\n\n    let result1 = convert_time_factor(factor1);\n    println!(\"Result 1: {} (0x{:X})\", result1, result1);\n\n    println!(\"Converting double {:.2e} to int (may underflow)...\", factor2);\n    let result2 = convert_negative_overflow(factor2);\n    println!(\"Result 2: {} (0x{:X})\", result2, result2);\n\n    result ^= result1 & 0xFF;\n    result ^= result2 & 0xFF00;\n\n    result = result.wrapping_mul(0x10) + 0xBEEF;\n\n    println!(\"\\nFinal result: {} (0x{:X})\", result, result);\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===
