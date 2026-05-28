@@ -1,139 +1,80 @@
+// Translated from c_src/src/main.c
+use std::ffi::CString;
 use std::io::{self, Read};
+use std::os::raw::{c_char, c_double, c_int};
 
-mod stb_perlin;
+extern "C" {
+    fn printf(format: *const c_char, ...) -> c_int;
+}
 
-use stb_perlin::*;
+// Read all of stdin and split into whitespace-separated tokens, mirroring
+// scanf("%d%f...") which skips whitespace (including newlines).
+struct TokenStream {
+    data: String,
+    pos: usize,
+}
 
-fn inner(
-    which: i32,
-    x: f32,
-    y: f32,
-    z: f32,
-    x_wrap: i32,
-    y_wrap: i32,
-    z_wrap: i32,
-    seed: i32,
-    lacunarity: f32,
-    gain: f32,
-    offset: f32,
-    octaves: i32,
-) -> f32 {
-    match which {
-        0 => stb_perlin_noise3(x, y, z, x_wrap, y_wrap, z_wrap),
-        1 => stb_perlin_noise3_seed(x, y, z, x_wrap, y_wrap, z_wrap, seed),
-        2 => stb_perlin_ridge_noise3(x, y, z, lacunarity, gain, offset, octaves),
-        3 => stb_perlin_fbm_noise3(x, y, z, lacunarity, gain, octaves),
-        4 => stb_perlin_turbulence_noise3(x, y, z, lacunarity, gain, octaves),
-        5 => stb_perlin_noise3_wrap_nonpow2(x, y, z, x_wrap, y_wrap, z_wrap, seed as u8),
-        _ => f32::NAN,
+impl TokenStream {
+    fn new() -> Self {
+        let mut s = String::new();
+        io::stdin().read_to_string(&mut s).unwrap_or(0);
+        TokenStream { data: s, pos: 0 }
     }
-}
 
-/// Parse whitespace-separated tokens from stdin matching C's scanf behavior
-fn scanf_tokens(input: &str) -> Vec<&str> {
-    input.split_whitespace().collect()
-}
-
-fn parse_f32_scanf(s: &str) -> f32 {
-    // C's scanf %f parses the string to float
-    s.parse::<f32>().unwrap()
-}
-
-fn parse_i32_scanf(s: &str) -> i32 {
-    s.parse::<i32>().unwrap()
-}
-
-/// Format a f32 value using %.9g formatting (matching C's printf)
-fn format_9g(val: f32) -> String {
-    // %.9g uses 9 significant digits, choosing between fixed and scientific notation
-    let val = val as f64; // C's printf promotes float to double
-    if val == 0.0 {
-        // Check for negative zero
-        if val.is_sign_negative() {
-            return "-0".to_string();
+    fn next_token(&mut self) -> Option<&str> {
+        let bytes = self.data.as_bytes();
+        // skip whitespace
+        while self.pos < bytes.len() && bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
         }
-        return "0".to_string();
+        if self.pos >= bytes.len() {
+            return None;
+        }
+        let start = self.pos;
+        while self.pos < bytes.len() && !bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+        Some(&self.data[start..self.pos])
     }
 
-    if val.is_nan() {
-        return "nan".to_string();
-    }
-
-    if val.is_infinite() {
-        if val > 0.0 {
-            return "inf".to_string();
-        } else {
-            return "-inf".to_string();
+    fn next_i32(&mut self) -> i32 {
+        match self.next_token() {
+            Some(t) => t.parse::<i32>().unwrap_or(0),
+            None => 0,
         }
     }
 
-    // Use %g logic: if exponent < -4 or >= precision, use scientific notation
-    let precision = 9usize;
-    let abs_val = val.abs();
-    let exp = abs_val.log10().floor() as i32;
-
-    if exp < -4 || exp >= precision as i32 {
-        // Scientific notation with (precision - 1) digits after decimal point
-        let mut s = format!("{:.prec$e}", val, prec = precision - 1);
-        // Remove trailing zeros after decimal point (but keep at least the 'e')
-        if let Some(e_pos) = s.find('e') {
-            let mantissa = &s[..e_pos];
-            let exponent = &s[e_pos..];
-            let mantissa = mantissa.trim_end_matches('0').trim_end_matches('.');
-            // C uses e+XX or e-XX format with at least 2 digits
-            // Rust uses e notation differently, need to convert
-            let exp_part = &exponent[1..]; // skip 'e'
-            let (sign, digits) = if exp_part.starts_with('-') {
-                ("-", &exp_part[1..])
-            } else if exp_part.starts_with('+') {
-                ("+", &exp_part[1..])
-            } else {
-                ("+", exp_part)
-            };
-            let exp_num: i32 = digits.parse().unwrap();
-            s = format!("{}e{}{:02}", mantissa, sign, exp_num.abs());
-        }
-        s
-    } else {
-        // Fixed notation
-        // Number of decimal places = precision - (exp + 1), but at least 0
-        let decimal_places = if precision as i32 > exp + 1 {
-            (precision as i32 - exp - 1) as usize
-        } else {
-            0
-        };
-        let s = format!("{:.prec$}", val, prec = decimal_places);
-        // Remove trailing zeros after decimal point
-        if s.contains('.') {
-            let s = s.trim_end_matches('0').trim_end_matches('.');
-            s.to_string()
-        } else {
-            s
+    fn next_f32(&mut self) -> f32 {
+        match self.next_token() {
+            Some(t) => t.parse::<f32>().unwrap_or(0.0),
+            None => 0.0,
         }
     }
 }
 
 fn main() {
-    let mut input = String::new();
-    io::stdin().read_to_string(&mut input).unwrap();
-    let tokens: Vec<&str> = scanf_tokens(&input);
+    let mut ts = TokenStream::new();
 
-    let which = parse_i32_scanf(tokens[0]);
-    let x = parse_f32_scanf(tokens[1]);
-    let y = parse_f32_scanf(tokens[2]);
-    let z = parse_f32_scanf(tokens[3]);
-    let x_wrap = parse_i32_scanf(tokens[4]);
-    let y_wrap = parse_i32_scanf(tokens[5]);
-    let z_wrap = parse_i32_scanf(tokens[6]);
-    let seed = parse_i32_scanf(tokens[7]);
-    let lacunarity = parse_f32_scanf(tokens[8]);
-    let gain = parse_f32_scanf(tokens[9]);
-    let offset = parse_f32_scanf(tokens[10]);
-    let octaves = parse_i32_scanf(tokens[11]);
+    let which = ts.next_i32();
+    let x = ts.next_f32();
+    let y = ts.next_f32();
+    let z = ts.next_f32();
+    let x_wrap = ts.next_i32();
+    let y_wrap = ts.next_i32();
+    let z_wrap = ts.next_i32();
+    let seed = ts.next_i32();
+    let lacunarity = ts.next_f32();
+    let gain = ts.next_f32();
+    let offset = ts.next_f32();
+    let octaves = ts.next_i32();
 
-    let res = inner(
+    let res = driver::inner_rs(
         which, x, y, z, x_wrap, y_wrap, z_wrap, seed, lacunarity, gain, offset, octaves,
     );
 
-    println!("{}", format_9g(res));
+    // C: printf("%.9g\n", res); res is float promoted to double per C variadic rules.
+    let fmt = CString::new("%.9g\n").unwrap();
+    unsafe {
+        printf(fmt.as_ptr(), res as c_double);
+    }
 }
