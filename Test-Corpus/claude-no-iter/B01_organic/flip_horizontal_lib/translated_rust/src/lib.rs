@@ -1,0 +1,41 @@
+#![allow(non_camel_case_types)]
+
+use std::ffi::c_int;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct cp_pixel_t {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+#[repr(C)]
+pub struct cp_image_t {
+    pub w: c_int,
+    pub h: c_int,
+    pub pix: *mut cp_pixel_t,
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flip_horizontal(img: *mut cp_image_t) {
+    let img_ref = &*img;
+    let pix = img_ref.pix;
+    let w = img_ref.w;
+    let h = img_ref.h;
+    let flips = h / 2;
+    for i in 0..flips {
+        let a = pix.offset((w * i) as isize);
+        let b = pix.offset((w * (h - i - 1)) as isize);
+        let mut a = a;
+        let mut b = b;
+        for _j in 0..w {
+            let t = *a;
+            *a = *b;
+            *b = t;
+            a = a.offset(1);
+            b = b.offset(1);
+        }
+    }
+}
