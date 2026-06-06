@@ -1,0 +1,66 @@
+use crate::lzma_packet::LZMAPacket;
+use crate::lzma_state::LZMAState;
+use crate::substring_enumerator::SubstringEnumerator;
+
+const MIN_SUBSTRING: usize = 2;
+const MAX_SUBSTRING: usize = 273;
+
+pub struct PacketEnumerator<'a> {
+    /// A slice of input data.
+    pub data: &'a [u8],
+    /// An owned substring enumerator built on the same data.
+    pub substring_enumerator: Box<SubstringEnumerator<'a>>,
+}
+impl<'a> PacketEnumerator<'a> {
+    pub fn memory_usage(data_size: usize) -> usize {
+        std::mem::size_of::<PacketEnumerator>()
+            + SubstringEnumerator::memory_usage(data_size)
+    }
+    pub fn new(data: &'a [u8]) -> Self {
+        let substring_enumerator = Box::new(SubstringEnumerator::new(
+            data,
+            MIN_SUBSTRING,
+            MAX_SUBSTRING,
+        ));
+        PacketEnumerator {
+            data,
+            substring_enumerator,
+        }
+    }
+    pub fn for_each<F>(&self, state: &LZMAState, mut callback: F)
+    where
+        F: FnMut(&LZMAState, LZMAPacket),
+    {
+        // Always emit a literal packet for the next position.
+        callback(state, LZMAPacket::literal_packet());
+
+        if state.position > 0 {
+            // dists[0] is the most recent match distance; the byte we'd
+            // emit as a short rep is at position - dists[0] - 1.
+            let dist0 = state.dists[0] as usize;
+            // Guard against underflow.
+            if state.position > dist0 {
+                let rep0_position = state.position - dist0 - 1;
+                if self.data[state.position] == self.data[rep0_position] {
+                    callback(state, LZMAPacket::short_rep_packet());
+                }
+            }
+        }
+
+        // Capture state info before invoking substring callback (to avoid
+        // borrow conflicts).
+        let position = state.position;
+        let dists = state.dists;
+
+        self.substring_enumerator
+            .for_each(position, |offset, length| {
+                let dist = (position - offset - 1) as u32;
+                callback(state, LZMAPacket::match_packet(dist, length as u32));
+                for i in 0..4 {
+                    if dist == dists[i] {
+                        callback(state, LZMAPacket::long_rep_packet(i as u32, length as u32));
+                    }
+                }
+            });
+    }
+}
