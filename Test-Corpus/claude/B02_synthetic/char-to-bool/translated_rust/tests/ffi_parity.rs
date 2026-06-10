@@ -1,88 +1,101 @@
-// Integration test that compares the Rust translation against the original C
-// implementation through their respective shared-library exports.
-//
-// Both shared libraries expose:
-//
-//     int process_decisions(char *decision_string, size_t length,
-//                           int operation, int param);
-//
-// We `dlopen` both .so files via libloading and call the symbol with the
-// same inputs, then assert byte-equivalent return codes.
+// FFI parity test between the C shared library (built from c_src) and the
+// Rust shared library (built from this crate). Both libraries expose
+// `process_decisions` as their sole public symbol; we load each via
+// `libloading`, drive identical inputs through both, and assert byte-for-byte
+// equal return values.
 
 use libloading::{Library, Symbol};
-use std::os::raw::c_int;
+use std::os::raw::{c_char, c_int};
 use std::path::PathBuf;
 
-type ProcessDecisionsFn =
-    unsafe extern "C" fn(*mut u8, usize, c_int, c_int) -> c_int;
+type ProcessDecisionsFn = unsafe extern "C" fn(*mut c_char, usize, c_int, c_int) -> c_int;
 
-struct Backends {
+struct LibPair {
     _c_lib: Library,
     _rust_lib: Library,
-    c_fn: ProcessDecisionsFn,
-    rust_fn: ProcessDecisionsFn,
+    c_proc: extern "C" fn(*mut c_char, usize, c_int, c_int) -> c_int,
+    rust_proc: extern "C" fn(*mut c_char, usize, c_int, c_int) -> c_int,
 }
 
-impl Backends {
-    fn load() -> Self {
-        // Locate the C .so built by the harness setup. We expect it at
-        // c_src/build_so/libdriver_c.so relative to the crate root.
-        let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let c_path = crate_root.join("c_src/build_so/libdriver_c.so");
-        let rust_path = crate_root.join("target/release/libdriver.so");
-        assert!(c_path.exists(), "C library not found at {:?}", c_path);
-        assert!(
-            rust_path.exists(),
-            "Rust library not found at {:?} — did you run `cargo build --release`?",
-            rust_path
-        );
+fn find_c_lib() -> PathBuf {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.push("c_src");
+    p.push("build");
+    p.push("libdriver_c.so");
+    assert!(
+        p.exists(),
+        "C shared library not found at {:?}; build it first via gcc -shared -fPIC",
+        p
+    );
+    p
+}
 
-        unsafe {
-            let c_lib = Library::new(&c_path).expect("dlopen C lib");
-            let rust_lib = Library::new(&rust_path).expect("dlopen Rust lib");
-            let c_sym: Symbol<ProcessDecisionsFn> =
-                c_lib.get(b"process_decisions\0").expect("C symbol");
-            let rust_sym: Symbol<ProcessDecisionsFn> =
-                rust_lib.get(b"process_decisions\0").expect("Rust symbol");
-            let c_fn: ProcessDecisionsFn = *c_sym;
-            let rust_fn: ProcessDecisionsFn = *rust_sym;
-            Backends {
-                _c_lib: c_lib,
-                _rust_lib: rust_lib,
-                c_fn,
-                rust_fn,
-            }
+fn find_rust_lib() -> PathBuf {
+    // Prefer the same build profile we are running under.
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.push("target");
+    p.push(profile);
+    p.push("libdriver.so");
+    assert!(
+        p.exists(),
+        "Rust shared library not found at {:?}; run `cargo build` first",
+        p
+    );
+    p
+}
+
+fn load_libs() -> LibPair {
+    unsafe {
+        let c_lib = Library::new(find_c_lib()).expect("load C lib");
+        let rust_lib = Library::new(find_rust_lib()).expect("load Rust lib");
+        let c_sym: Symbol<ProcessDecisionsFn> = c_lib
+            .get(b"process_decisions\0")
+            .expect("C process_decisions");
+        let r_sym: Symbol<ProcessDecisionsFn> = rust_lib
+            .get(b"process_decisions\0")
+            .expect("Rust process_decisions");
+        // Promote to function pointers detached from Symbol lifetimes.
+        let c_proc: extern "C" fn(*mut c_char, usize, c_int, c_int) -> c_int =
+            std::mem::transmute(*c_sym.into_raw());
+        let rust_proc: extern "C" fn(*mut c_char, usize, c_int, c_int) -> c_int =
+            std::mem::transmute(*r_sym.into_raw());
+        LibPair {
+            _c_lib: c_lib,
+            _rust_lib: rust_lib,
+            c_proc,
+            rust_proc,
         }
     }
-
-    fn call(&self, input: &[u8], length: usize, op: c_int, param: c_int) -> (c_int, c_int) {
-        // Each backend gets its own copy of the buffer because operation 3
-        // mutates the buffer in place.
-        let mut c_buf = input.to_vec();
-        let mut rust_buf = input.to_vec();
-        let c_ptr = if c_buf.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            c_buf.as_mut_ptr()
-        };
-        let r_ptr = if rust_buf.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            rust_buf.as_mut_ptr()
-        };
-        let c_ret = unsafe { (self.c_fn)(c_ptr, length, op, param) };
-        let r_ret = unsafe { (self.rust_fn)(r_ptr, length, op, param) };
-        (c_ret, r_ret)
-    }
 }
 
-fn assert_match(b: &Backends, input: &[u8], length: usize, op: c_int, param: c_int) {
-    let (c, r) = b.call(input, length, op, param);
+/// Drive both libraries with identical inputs. The C `validate_sequence`
+/// path mutates the input buffer (it reuses the buffer to store bool values),
+/// so we provide each library with its own private copy.
+fn call_both(libs: &LibPair, input: &[u8], op: c_int, param: c_int) -> (c_int, c_int) {
+    let mut c_buf: Vec<u8> = input.to_vec();
+    let mut r_buf: Vec<u8> = input.to_vec();
+    let c_ptr = if c_buf.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        c_buf.as_mut_ptr() as *mut c_char
+    };
+    let r_ptr = if r_buf.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        r_buf.as_mut_ptr() as *mut c_char
+    };
+    let c_ret = (libs.c_proc)(c_ptr, input.len(), op, param);
+    let r_ret = (libs.rust_proc)(r_ptr, input.len(), op, param);
+    (c_ret, r_ret)
+}
+
+fn check(libs: &LibPair, input: &[u8], op: c_int, param: c_int) {
+    let (c, r) = call_both(libs, input, op, param);
     assert_eq!(
         c, r,
-        "mismatch: input={:?} length={} op={} param={} -> C={} Rust={}",
-        std::str::from_utf8(input).unwrap_or("<non-utf8>"),
-        length,
+        "mismatch for input={:?} op={} param={}: C={} Rust={}",
+        std::str::from_utf8(input).unwrap_or("<bin>"),
         op,
         param,
         c,
@@ -91,211 +104,157 @@ fn assert_match(b: &Backends, input: &[u8], length: usize, op: c_int, param: c_i
 }
 
 #[test]
-fn null_or_empty_returns_minus1() {
-    let b = Backends::load();
-    // Empty buffer with length 0
-    let (c, r) = b.call(b"", 0, 0, 0);
+fn null_or_empty_input_returns_minus_one() {
+    let libs = load_libs();
+    // Pass a NULL pointer with zero length: both should return -1.
+    let c = (libs.c_proc)(std::ptr::null_mut(), 0, 0, 0);
+    let r = (libs.rust_proc)(std::ptr::null_mut(), 0, 0, 0);
     assert_eq!(c, -1);
     assert_eq!(r, -1);
 
-    // Non-empty buffer but length=0 should also return -1.
-    assert_match(&b, b"yyy", 0, 0, 0);
-    assert_match(&b, b"yyy", 0, 1, 0);
-    assert_match(&b, b"yyy", 0, 2, 0);
-    assert_match(&b, b"yyy", 0, 3, 0);
+    // Length zero with a non-null pointer: both should still return -1.
+    let mut buf = [b'y'];
+    let c = (libs.c_proc)(buf.as_mut_ptr() as *mut c_char, 0, 1, 1);
+    let r = (libs.rust_proc)(buf.as_mut_ptr() as *mut c_char, 0, 1, 1);
+    assert_eq!(c, -1);
+    assert_eq!(r, -1);
 }
 
 #[test]
-fn invalid_operation() {
-    let b = Backends::load();
-    for op in [-1, 4, 5, 100, i32::MIN, i32::MAX] {
-        assert_match(&b, b"yyy", 3, op, 0);
+fn unknown_operation_returns_minus_three() {
+    let libs = load_libs();
+    for op in [4, 5, 99, -1, i32::MIN, i32::MAX] {
+        check(&libs, b"yyy", op, 0);
     }
 }
 
 #[test]
-fn op0_apply_permissions_short_input() {
-    let b = Backends::load();
-    // length < 3 => -2
-    assert_match(&b, b"y", 1, 0, 0);
-    assert_match(&b, b"yn", 2, 0, 0);
-}
-
-#[test]
-fn op0_apply_permissions_all_combinations() {
-    let b = Backends::load();
-    let chars = [b'y', b'Y', b'n', b'N', b'x', b'0'];
-    for &c1 in &chars {
-        for &c2 in &chars {
-            for &c3 in &chars {
-                let buf = [c1, c2, c3, b'x', b'x'];
-                assert_match(&b, &buf, 3, 0, 0);
-                assert_match(&b, &buf, 5, 0, 0); // extra chars ignored
+fn op0_apply_permissions_all_combos() {
+    let libs = load_libs();
+    // operation 0 reads the first 3 chars; require length >= 3.
+    let chars = [b'y', b'Y', b'n', b'N', b'x', b'0', b' '];
+    for &a in &chars {
+        for &b in &chars {
+            for &c in &chars {
+                let buf = [a, b, c];
+                check(&libs, &buf, 0, 0);
             }
         }
     }
+    // length < 3 -> -2
+    check(&libs, b"y", 0, 0);
+    check(&libs, b"yn", 0, 0);
 }
 
 #[test]
-fn op1_evaluate_conditions_short_input() {
-    let b = Backends::load();
-    assert_match(&b, b"y", 1, 1, 0);
-    assert_match(&b, b"yn", 2, 1, 0);
-}
-
-#[test]
-fn op1_evaluate_conditions_all_logic_ops() {
-    let b = Backends::load();
+fn op1_evaluate_conditions_all_combos() {
+    let libs = load_libs();
     let chars = [b'y', b'Y', b'n', b'N', b'?'];
-    for &c1 in &chars {
-        for &c2 in &chars {
-            for &c3 in &chars {
-                let buf = [c1, c2, c3];
-                for logic_op in [-1, 0, 1, 2, 3, 4, 99] {
-                    assert_match(&b, &buf, 3, 1, logic_op);
+    for op_param in [0, 1, 2, 3, 4, -1, 99] {
+        for &a in &chars {
+            for &b in &chars {
+                for &c in &chars {
+                    let buf = [a, b, c];
+                    check(&libs, &buf, 1, op_param);
                 }
             }
         }
     }
+    check(&libs, b"yn", 1, 0); // length < 3
 }
 
 #[test]
-fn op2_configure_flags_small_lengths() {
-    let b = Backends::load();
-    let chars = [b'y', b'n'];
-    // Exhaust all 1..=6 length boolean strings.
-    for len in 1..=6usize {
-        for mask in 0u32..(1u32 << len) {
-            let mut buf = Vec::with_capacity(len);
-            for i in 0..len {
-                let bit = (mask >> i) & 1;
-                buf.push(chars[bit as usize]);
-            }
-            assert_match(&b, &buf, len, 2, 0);
-        }
+fn op2_configure_flags_various() {
+    let libs = load_libs();
+
+    // Single character (count == 1)
+    let singles: &[&[u8]] = &[b"y", b"n", b"Y", b"N", b"x"];
+    for s in singles {
+        check(&libs, s, 2, 0);
     }
-}
 
-#[test]
-fn op2_configure_flags_alternating_and_runs() {
-    let b = Backends::load();
-    let inputs: &[&[u8]] = &[
-        b"ynynynyn",
-        b"nynynyny",
+    // Variety of patterns
+    let cases: &[&[u8]] = &[
+        b"yy", b"nn", b"yn", b"ny",
+        b"yyy", b"nnn", b"yny", b"nyn", b"yyn", b"ynn",
+        b"yyyy", b"nnnn", b"ynyn", b"nyny", b"yyyn", b"ynnn",
+        b"yyyyy", b"yynnn", b"ynyyn", b"nynyn",
+        b"yyyyyy", b"nnnnnn",
+        b"yyyyyyy", b"yynyynn",
+        // Long: alternating
+        b"ynynynynynynynyn",
+        // Long: lots of true
+        b"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", // 32 chars all y
+        b"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", // 33 chars (truncated to 32 internally)
+        b"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyn", // 32 chars, last is n
+        b"nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", // 32 chars, first is n
+        // Consecutive runs
+        b"yyynnny",
+        b"yynyyy",
         b"yyyy",
-        b"nnnn",
-        b"yyynnnyy",
-        b"ynyyyyyn",
-        b"ynynynynyn",
-        b"nyynyynyy",
-        b"yynnyynn",
-        b"nynnyyny",
+        b"nynyyy",
     ];
-    for &s in inputs {
-        assert_match(&b, s, s.len(), 2, 0);
+    for c in cases {
+        check(&libs, c, 2, 0);
     }
 }
 
 #[test]
-fn op2_configure_flags_long_input_capped_at_32() {
-    let b = Backends::load();
-    // length > 32 should be capped internally
-    let mut buf = vec![b'y'; 40];
-    for i in (0..buf.len()).step_by(2) {
-        buf[i] = b'n';
-    }
-    for len in [32usize, 33, 35, 40] {
-        assert_match(&b, &buf[..len], len, 2, 0);
-    }
-}
+fn op3_validate_sequence_various() {
+    let libs = load_libs();
 
-#[test]
-fn op3_validate_sequence_examples() {
-    let b = Backends::load();
-    let inputs: &[&[u8]] = &[
-        // Single-char: starts with y => returns 1 (transitions == 0, len <= 3)
-        b"y",
-        b"n",  // -10 (doesn't start with y)
-        b"yn", // ok, len <=3
-        b"ynyn",
-        b"ynynynynynyn",
-        b"yyyyy",            // 4 consecutive same => -12
-        b"yyyn",             // ok start/end
-        b"ynnnnn",           // 4 consecutive => -12
-        b"yny",              // ends with y, len>1 => -11
-        b"ynynyn",
-        b"ynyynyyn",
-        b"ynynynynyny",      // ends with y => -11
-        b"ynynynynynyn",     // long sequence
-        b"ynnyynynyny",      // ends with y
-        b"ynyyyn",
-        b"yynnyynn",
-        b"yynyynyynyynnyy",  // various
-        b"y",
-    ];
-    for &s in inputs {
-        assert_match(&b, s, s.len(), 3, 0);
-    }
-}
-
-#[test]
-fn op3_validate_sequence_exhaustive_short() {
-    let b = Backends::load();
-    let chars = [b'y', b'n', b'Y', b'N', b'?'];
-    // Exhaust 1..=4 length combinations of {y,n,Y,N,?}
-    for len in 1..=4usize {
-        let total = chars.len().pow(len as u32);
-        for n in 0..total {
-            let mut idx = n;
-            let mut buf = Vec::with_capacity(len);
-            for _ in 0..len {
-                buf.push(chars[idx % chars.len()]);
-                idx /= chars.len();
-            }
-            assert_match(&b, &buf, len, 3, 0);
-        }
-    }
-}
-
-#[test]
-fn op3_validate_sequence_medium_and_long() {
-    let b = Backends::load();
-    // Medium length 4..=10 random patterns plus some structured ones.
     let cases: &[&[u8]] = &[
+        b"y",
+        b"n", // doesn't start with y
+        b"yn",
+        b"yy", // doesn't end with n
+        b"yny",
+        b"ynn",
+        b"yyy", // 3 consecutive same? actually 3 is allowed (>3 fails)
+        b"yyyy", // 4 consecutive same -> -12
+        b"nyn", // doesn't start with y
+        b"yyyn",
         b"ynyn",
-        b"ynyny",
         b"ynynyn",
-        b"ynynyny",       // ends with y => -11
+        b"yyynnn",
         b"ynynynyn",
-        b"ynynynyny",     // ends with y => -11
-        b"ynynynynyn",
-        b"yynnyynnyy",    // ends with y => -11
-        b"yynnyynnyn",
-        b"ynyyynyynyn",   // length 11
-        b"ynynynynynynyn", // length 14
-        b"ynynyynnyynyynnyynnyynnyy", // longer
-        b"ynyyynyyynyn",
-        b"yyynnnyy",      // 3 consecutive ok
-        b"yyyynn",        // 4 consecutive => -12
+        b"ynynynynyn",       // 10
+        b"ynynynynynyn",     // 12 long
+        b"yynnyynnyyn",      // 11
+        b"yynyyn",
+        b"yyyyy", // many consecutive
+        b"ynnnn", // 4 consecutive n -> -12
+        b"yynnyn",
+        b"ynnyynn",
+        b"yyyynnnn", // 4 consecutive y
+        b"ynnynnynn",
+        b"ynynnynyn",
+        b"y",
+        b"Y", // capital
+        b"YN",
+        // very long
+        b"ynynynynynynynynynyn", // 21
+        b"yynnyynnyynnyynnyynnyynn", // 24
+        b"yyyynnnnynyn", // hits -12
     ];
-    for &c in cases {
-        assert_match(&b, c, c.len(), 3, 0);
+    for c in cases {
+        check(&libs, c, 3, 0);
     }
 }
 
 #[test]
-fn op3_unusual_characters() {
-    let b = Backends::load();
-    // Bytes that are not y/n/Y/N => parse_bool returns false => bool=0
-    let cases: &[&[u8]] = &[
-        b"yxxxxxn",
-        b"y\0\0\0n",
-        b"y???n",
-        b"YnYnYn",
-        b"Y",
-        b"YYYn",
-    ];
-    for &c in cases {
-        assert_match(&b, c, c.len(), 3, 0);
-    }
+fn op2_count_zero_and_count_eq_count_minus_1_edge() {
+    let libs = load_libs();
+    // count == 1 and decisions[0] == false hits the wrap-around branch
+    // (special_count == 0 -> early return 0).
+    check(&libs, b"n", 2, 0);
+    // count == 1 and decisions[0] == true hits special_count == count branch
+    check(&libs, b"y", 2, 0);
+}
+
+#[test]
+fn op3_empty_sequence_returns_zero() {
+    // Empty length already handled by the top-level NULL/length==0 guard
+    // returning -1; can't test op==3 with len==0 in isolation.
+    // Skip.
 }

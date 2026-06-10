@@ -1,129 +1,117 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Translated to Rust to produce byte-identical output.
+// Translated from MIT Lincoln Laboratory C source.
 
 use std::io::{self, Read, Write};
+use std::process::ExitCode;
 
-mod decisions;
+mod lib_decisions;
 
 const MAX_INPUT_SIZE: usize = 1024;
 
-/// Mirror of C `fgets` behavior:
-/// - Reads up to `buf.len() - 1` bytes, or until a newline (newline included if present),
-///   or until EOF.
-/// - Returns `None` if EOF is encountered before any byte is read.
-/// - Returns the number of bytes read (excluding the implicit null terminator).
-/// The buffer is *not* required to be null-terminated by the caller; we don't store
-/// a null since Rust slices carry their length.
-fn fgets(buf: &mut [u8], stdin: &mut impl Read) -> Option<usize> {
-    let max = buf.len().saturating_sub(1);
-    let mut count = 0usize;
-    let mut single = [0u8; 1];
-    while count < max {
-        match stdin.read(&mut single) {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                buf[count] = single[0];
-                count += 1;
-                if single[0] == b'\n' {
-                    break;
-                }
-            }
-            Err(_) => return None,
+/// Mimic C's `fgets`: reads at most `max - 1` bytes from `reader` into a
+/// `Vec<u8>`, stopping at end-of-file or after a newline byte (which is kept
+/// in the buffer when present). Returns `Ok(None)` if no bytes were read
+/// before encountering EOF (mirroring `fgets` returning `NULL`).
+fn fgets<R: Read>(reader: &mut R, max: usize) -> io::Result<Option<Vec<u8>>> {
+    if max == 0 {
+        return Ok(None);
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let mut byte = [0u8; 1];
+    while buf.len() + 1 < max {
+        let n = reader.read(&mut byte)?;
+        if n == 0 {
+            break;
+        }
+        buf.push(byte[0]);
+        if byte[0] == b'\n' {
+            break;
         }
     }
-    if count == 0 {
-        return None;
+    if buf.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(buf))
     }
-    Some(count)
 }
 
-/// Mirror of C `atoi`:
-/// - Skips leading whitespace (matches isspace: space, \t, \n, \v, \f, \r).
-/// - Reads optional '+' or '-'.
-/// - Reads ASCII digits until a non-digit is encountered.
-/// - Returns 0 if no conversion can be performed.
-/// - Uses wrapping arithmetic (C's atoi is UB on overflow; we choose a deterministic behavior).
+/// Mimic C's `atoi`: skip leading whitespace, optional sign, then parse
+/// decimal digits until the first non-digit byte.
 fn atoi(s: &[u8]) -> i32 {
     let mut i = 0usize;
     while i < s.len()
         && matches!(
             s[i],
-            b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r'
+            b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c
         )
     {
         i += 1;
     }
-    let mut sign: i32 = 1;
-    if i < s.len() && (s[i] == b'-' || s[i] == b'+') {
+    let mut neg = false;
+    if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
         if s[i] == b'-' {
-            sign = -1;
+            neg = true;
         }
         i += 1;
     }
-    let mut result: i32 = 0;
+    let mut result: i64 = 0;
     while i < s.len() && s[i].is_ascii_digit() {
-        result = result
-            .wrapping_mul(10)
-            .wrapping_add((s[i] - b'0') as i32);
+        result = result.wrapping_mul(10).wrapping_add((s[i] - b'0') as i64);
         i += 1;
     }
-    result.wrapping_mul(sign)
+    let result = if neg { result.wrapping_neg() } else { result };
+    result as i32
 }
 
-fn main() {
-    let exit_code = run();
-    std::process::exit(exit_code);
-}
-
-fn run() -> i32 {
+fn main_impl() -> i32 {
     let stdin = io::stdin();
     let mut handle = stdin.lock();
 
-    let mut input_buffer = [0u8; MAX_INPUT_SIZE];
-
     // Read operation number
-    let n = match fgets(&mut input_buffer, &mut handle) {
-        Some(n) => n,
-        None => {
+    let line1 = match fgets(&mut handle, MAX_INPUT_SIZE) {
+        Ok(Some(v)) => v,
+        _ => {
             let _ = writeln!(io::stderr(), "Error reading operation");
             return 1;
         }
     };
-    let operation = atoi(&input_buffer[..n]);
+    let operation = atoi(&line1);
 
     // Read parameter
-    let n = match fgets(&mut input_buffer, &mut handle) {
-        Some(n) => n,
-        None => {
+    let line2 = match fgets(&mut handle, MAX_INPUT_SIZE) {
+        Ok(Some(v)) => v,
+        _ => {
             let _ = writeln!(io::stderr(), "Error reading parameter");
             return 1;
         }
     };
-    let param = atoi(&input_buffer[..n]);
+    let param = atoi(&line2);
 
     // Read decision string
-    let n = match fgets(&mut input_buffer, &mut handle) {
-        Some(n) => n,
-        None => {
+    let mut line3 = match fgets(&mut handle, MAX_INPUT_SIZE) {
+        Ok(Some(v)) => v,
+        _ => {
             let _ = writeln!(io::stderr(), "Error reading decision string");
             return 1;
         }
     };
 
-    // Strip trailing newline if present
-    let mut len = n;
-    if len > 0 && input_buffer[len - 1] == b'\n' {
-        input_buffer[len - 1] = 0;
-        len -= 1;
+    // Remove trailing newline if present
+    if !line3.is_empty() && *line3.last().unwrap() == b'\n' {
+        line3.pop();
     }
+    let len = line3.len();
 
-    let result = decisions::process_decisions(&mut input_buffer[..len], len, operation, param);
+    // Call the library function
+    let result = lib_decisions::process_decisions(&line3, len, operation, param);
 
-    // Match printf("%d\n", result)
+    // Print result to stdout
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    let _ = write!(out, "{}\n", result);
-    let _ = out.flush();
+    let _ = writeln!(out, "{}", result);
 
     0
+}
+
+fn main() -> ExitCode {
+    ExitCode::from(main_impl() as u8)
 }

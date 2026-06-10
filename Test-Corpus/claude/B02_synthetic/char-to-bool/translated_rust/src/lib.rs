@@ -1,49 +1,33 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Translated to Rust to produce byte-identical output.
-//
-// This crate exposes the public C API of the original library so that
-// callers (including integration tests loading the Rust .so via libloading)
-// can invoke it just like the original C implementation.
+// Library entry point exposing the C-compatible API for the decisions
+// processor. This crate is built as both an `rlib` (for the binary) and a
+// `cdylib` (for FFI parity testing against the original C shared library).
 
-pub mod decisions;
+pub mod lib_decisions;
 
-use core::ffi::c_int;
+use std::os::raw::{c_char, c_int};
 
-/// C-ABI export mirroring `int process_decisions(char *, size_t, int, int)`
-/// from c_src/src/lib.c.
+/// C-compatible export of `process_decisions`.
+///
+/// Mirrors the original C signature:
+/// ```c
+/// int process_decisions(char *decision_string, size_t length,
+///                       int operation, int param);
+/// ```
 ///
 /// # Safety
-/// `decision_string` must point to at least `length` writable bytes when
-/// `operation == 3` (the C version reuses the buffer in `validate_sequence`).
-/// For other operations a read-only buffer is sufficient. A null pointer is
-/// permitted only when `length == 0` — exactly the C contract.
+/// `decision_string` must either be null or point to at least `length`
+/// readable bytes. The C version may temporarily reuse the buffer (rule
+/// validation), so the buffer must also be writable when `operation == 3`.
 #[no_mangle]
 pub unsafe extern "C" fn process_decisions(
-    decision_string: *mut u8,
+    decision_string: *mut c_char,
     length: usize,
     operation: c_int,
     param: c_int,
 ) -> c_int {
-    // Mirror the C code's NULL-or-empty guard. The C function returns -1 if
-    // either the pointer is NULL or the length is zero.
     if decision_string.is_null() || length == 0 {
         return -1;
     }
-
-    let buf: &mut [u8] = core::slice::from_raw_parts_mut(decision_string, length);
-    decisions::process_decisions(buf, length, operation as i32, param as i32) as c_int
+    let slice = std::slice::from_raw_parts(decision_string as *const u8, length);
+    lib_decisions::process_decisions(slice, length, operation, param)
 }
-
-// Re-export `_init` and `_fini` so the Rust .so's dynamic symbol table mirrors
-// the C .so byte-for-byte. The C shared library picks up these stubs from
-// crti.o / crtn.o; for the Rust cdylib we provide them ourselves and use
-// `-nostartfiles` (applied via build.rs) to suppress crti/crtn so we don't
-// double-define them. These stubs are skipped under `cfg(test)` because the
-// test harness builds the lib as an executable that still links crti.o.
-#[cfg(not(test))]
-#[no_mangle]
-pub unsafe extern "C" fn _init() {}
-
-#[cfg(not(test))]
-#[no_mangle]
-pub unsafe extern "C" fn _fini() {}

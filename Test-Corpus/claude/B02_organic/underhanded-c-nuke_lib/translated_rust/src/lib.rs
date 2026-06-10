@@ -1,29 +1,37 @@
+// Translation of c_src/src/match.c and c_src/src/spectral_contrast.c
+//
+// Important type-aliasing note:
+//
+// `match.h` does:
+//     typedef double float_t;
+// so within `match.c` (which includes `match.h`), `float_t` is `double`.
+//
+// `spectral_contrast.c` does NOT include `match.h`. It only includes
+// `<math.h>`, where the standard C99 `float_t` typedef is defined.
+// On x86-64 Linux glibc (FLT_EVAL_METHOD == 0), `float_t` is `float`
+// (verified: sizeof(float_t) == 4).
+//
+// This means:
+//   - `match` is compiled with `float_t` == `double` (8 bytes).
+//   - `spectral_contrast` is compiled with `float_t` == `float` (4 bytes).
+//
+// The two translation units disagree on the type, but the linker only
+// matches by symbol name, so when `match` calls `spectral_contrast`,
+// it passes a `double*` that `spectral_contrast` treats as `float*`.
+// This is technically a bug in the C code, but we must reproduce its
+// behaviour byte-identically.
+
+#![allow(non_camel_case_types)]
+
 use std::ffi::c_int;
-use std::slice;
 
 const N_SMOOTH: usize = 16;
 
-// In `match.h`, `float_t` is defined as a typedef for `double` (8 bytes).
-// However, `spectral_contrast.c` only includes <math.h>, which on this
-// platform (where __FLT_EVAL_METHOD__ == 0) defines `float_t` as `float`
-// (4 bytes). This is an underhanded C "bug" baked into the ground-truth
-// C source — the same memory is reinterpreted at different element widths
-// depending on which translation unit is acting on it. We must replicate
-// this behavior precisely.
-
-// Type used by `match` and its helpers (smoothen, differentiate, total,
-// preprocess) — matches `match.h`.
-type FloatT = f64;
-
-// Type used inside the spectral_contrast translation unit — matches the
-// `<math.h>` definition of `float_t` on this platform.
-type FloatTSpectral = f32;
-
 // ---------------------------------------------------------------------------
-// match.c helpers (operate on f64)
+// match.c — `float_t` == `double` (f64) within this translation unit.
 // ---------------------------------------------------------------------------
 
-fn total(v: &[FloatT]) -> f64 {
+fn total_match(v: &[f64]) -> f64 {
     let mut sum: f64 = 0.0;
     for i in 0..v.len() {
         sum += v[i];
@@ -31,7 +39,7 @@ fn total(v: &[FloatT]) -> f64 {
     sum
 }
 
-fn smoothen(v: &mut [FloatT]) {
+fn smoothen_match(v: &mut [f64]) {
     let length = v.len();
     for i in 0..length {
         let mut sum: f64 = 0.0;
@@ -44,7 +52,7 @@ fn smoothen(v: &mut [FloatT]) {
     }
 }
 
-fn differentiate(v: &mut [FloatT]) {
+fn differentiate_match(v: &mut [f64]) {
     let length = v.len();
     if length == 0 {
         return;
@@ -55,77 +63,98 @@ fn differentiate(v: &mut [FloatT]) {
     v[length - 1] = 0.0;
 }
 
-fn preprocess(dest: &mut [FloatT], source: &[FloatT]) {
-    dest.copy_from_slice(source);
-    smoothen(dest);
-    differentiate(dest);
-    smoothen(dest);
+fn preprocess_match(v: &mut [f64], source: &[f64]) {
+    // memcpy(v, source, length * sizeof(*v));
+    v.copy_from_slice(source);
+    smoothen_match(v);
+    differentiate_match(v);
+    smoothen_match(v);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn r#match(
+    test: *mut f64,
+    reference: *mut f64,
+    bins: c_int,
+    threshold: f64,
+) -> c_int {
+    // Reproduce the C source ordering exactly:
+    //
+    //     float_t t[bins], r[bins];
+    //     if(total(test, bins) < threshold * total(reference, bins)) return 0;
+    //     preprocess(t, test, bins);
+    //     preprocess(r, reference, bins);
+    //     return spectral_contrast(t, r, bins) >= threshold;
+    //
+    // (Note: the VLA declaration has no observable effect besides
+    // reserving stack space; in C the early-return path never reads
+    // from t or r, so we can declare the buffers after the check.)
+
+    let n = bins as usize;
+    let test_slice = std::slice::from_raw_parts(test, n);
+    let reference_slice = std::slice::from_raw_parts(reference, n);
+
+    if total_match(test_slice) < threshold * total_match(reference_slice) {
+        return 0;
+    }
+
+    let mut t: Vec<f64> = vec![0.0; n];
+    let mut r: Vec<f64> = vec![0.0; n];
+
+    preprocess_match(&mut t, test_slice);
+    preprocess_match(&mut r, reference_slice);
+
+    // spectral_contrast was compiled with `float_t == float`, so it
+    // reinterprets these double buffers as float buffers. Pass the
+    // raw pointer cast to *mut f32 to reproduce that aliasing.
+    let result = spectral_contrast(t.as_mut_ptr() as *mut f32, r.as_mut_ptr() as *mut f32, bins);
+
+    if result >= threshold {
+        1
+    } else {
+        0
+    }
 }
 
 // ---------------------------------------------------------------------------
-// spectral_contrast.c helpers (operate on f32 — the <math.h> float_t)
+// spectral_contrast.c — `float_t` == `float` (f32) within this translation
+// unit (because it only includes <math.h>, not match.h).
 // ---------------------------------------------------------------------------
 
-fn dot_product_f32(a: &[FloatTSpectral], b: &[FloatTSpectral]) -> f64 {
+fn dot_product_sc(a: &[f32], b: &[f32]) -> f64 {
     let mut sum: f64 = 0.0;
     for i in 0..a.len() {
-        // C: sum += a[i] * b[i]; where a[i], b[i] are floats. The
-        // multiplication is done at float precision (f32), then promoted
-        // to double for the accumulation.
+        // C: sum += a[i] * b[i];  with a[i], b[i] of type float.
+        // The C expression `a[i] * b[i]` is a float multiplication,
+        // then promoted to double when added to `sum`.
         sum += (a[i] * b[i]) as f64;
     }
     sum
 }
 
-fn normalize_f32(v: &mut [FloatTSpectral]) {
-    let magnitude = dot_product_f32(v, v).sqrt();
+fn normalize_sc(v: &mut [f32]) {
+    // double magnitude = sqrt(dot_product(v, v, length));
+    let magnitude: f64 = dot_product_sc(v, v).sqrt();
     let length = v.len();
     for i in 0..length {
-        // C: v[i] /= magnitude; where v[i] is float and magnitude is double.
-        // The division is performed at double precision after promoting v[i],
-        // then converted back to float on store.
+        // C: v[i] /= magnitude;
+        // v[i] is float, magnitude is double. The division is performed
+        // in double (v[i] promoted to double), then the result is
+        // converted back to float on assignment.
         v[i] = ((v[i] as f64) / magnitude) as f32;
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn spectral_contrast(
-    a: *mut FloatT, // matches match.h signature, but interpreted as f32* inside
-    b: *mut FloatT,
+    a: *mut f32,
+    b: *mut f32,
     length: c_int,
 ) -> f64 {
-    let len = length as usize;
-    // Reinterpret as f32 slices — this is the exact C behavior of
-    // spectral_contrast.c, which sees `float_t` as `float`.
-    let a_slice = unsafe { slice::from_raw_parts_mut(a as *mut FloatTSpectral, len) };
-    let b_slice = unsafe { slice::from_raw_parts_mut(b as *mut FloatTSpectral, len) };
-    normalize_f32(a_slice);
-    normalize_f32(b_slice);
-    dot_product_f32(a_slice, b_slice)
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn r#match(
-    test: *mut FloatT,
-    reference: *mut FloatT,
-    bins: c_int,
-    threshold: f64,
-) -> c_int {
-    let bins_usize = bins as usize;
-    let test_slice = unsafe { slice::from_raw_parts(test, bins_usize) };
-    let reference_slice = unsafe { slice::from_raw_parts(reference, bins_usize) };
-
-    if total(test_slice) < threshold * total(reference_slice) {
-        return 0;
-    }
-
-    // C uses VLAs: float_t t[bins], r[bins]; (i.e., double[bins]).
-    let mut t: Vec<FloatT> = vec![0.0; bins_usize];
-    let mut r: Vec<FloatT> = vec![0.0; bins_usize];
-
-    preprocess(&mut t, test_slice);
-    preprocess(&mut r, reference_slice);
-
-    let sc = unsafe { spectral_contrast(t.as_mut_ptr(), r.as_mut_ptr(), bins) };
-    if sc >= threshold { 1 } else { 0 }
+    let n = length as usize;
+    let a_slice = std::slice::from_raw_parts_mut(a, n);
+    let b_slice = std::slice::from_raw_parts_mut(b, n);
+    normalize_sc(a_slice);
+    normalize_sc(b_slice);
+    dot_product_sc(a_slice, b_slice)
 }

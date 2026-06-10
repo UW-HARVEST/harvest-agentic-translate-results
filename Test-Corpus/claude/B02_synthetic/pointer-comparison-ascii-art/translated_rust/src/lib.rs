@@ -1,11 +1,5 @@
-// lib.rs - Library entry point. Re-exports modules and provides
-// #[no_mangle] C-ABI wrappers used by the cdylib so that external
-// callers (e.g. integration tests via libloading) can exercise the
-// same public API exposed by the C library.
+// lib.rs - Library crate root, exposes scene/shape modules and the C-ABI FFI layer.
 
-#[macro_use]
-pub mod out;
-pub mod shape;
 pub mod scene;
-pub mod util;
+pub mod shape;
 pub mod ffi;

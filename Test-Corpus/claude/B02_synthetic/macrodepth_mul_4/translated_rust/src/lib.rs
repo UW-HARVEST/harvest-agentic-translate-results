@@ -1,108 +1,75 @@
-// SPDX-License-Identifier: MIT
-// Rust translation of c_src/src/mdcore.c (and supporting macros from mdmacros.h)
-//
-// The C code is parameterized at compile-time by:
-//   OP     ∈ {add, sub, mul}     (selected via CMake cache variable)
-//   REPEAT ∈ {0,1,2,3,4,5,6,7}   (selected via CMake cache variable)
-//
-// We mirror that with Cargo features `add`/`sub`/`mul` and `repeat_0`..`repeat_7`.
+// Translated from C source by deterministic translation.
+// Preserves byte-identical stdout for the same inputs as the original C binary.
 
-use std::ffi::c_char;
-use std::os::raw::c_int;
+use std::ffi::c_int;
 
-// ------------ Compile-time selection of OP ------------
+// ---- Compile-time selection mirroring CMake cache variables ----
 
+// REPEAT: pick exactly one of the numeric features.
+#[cfg(feature = "0")]
+pub const REPEAT: c_int = 0;
+#[cfg(all(feature = "1", not(feature = "0")))]
+pub const REPEAT: c_int = 1;
+#[cfg(all(feature = "2", not(any(feature = "0", feature = "1"))))]
+pub const REPEAT: c_int = 2;
+#[cfg(all(feature = "3", not(any(feature = "0", feature = "1", feature = "2"))))]
+pub const REPEAT: c_int = 3;
+#[cfg(all(feature = "4", not(any(feature = "0", feature = "1", feature = "2", feature = "3"))))]
+pub const REPEAT: c_int = 4;
+#[cfg(all(
+    feature = "5",
+    not(any(feature = "0", feature = "1", feature = "2", feature = "3", feature = "4"))
+))]
+pub const REPEAT: c_int = 5;
+#[cfg(all(
+    feature = "6",
+    not(any(
+        feature = "0",
+        feature = "1",
+        feature = "2",
+        feature = "3",
+        feature = "4",
+        feature = "5"
+    ))
+))]
+pub const REPEAT: c_int = 6;
+#[cfg(all(
+    feature = "7",
+    not(any(
+        feature = "0",
+        feature = "1",
+        feature = "2",
+        feature = "3",
+        feature = "4",
+        feature = "5",
+        feature = "6"
+    ))
+))]
+pub const REPEAT: c_int = 7;
+
+// Fallback (when no REPEAT feature is enabled at all): default to 5
+// (matches the CMake default of REPEAT="5").
+#[cfg(not(any(
+    feature = "0",
+    feature = "1",
+    feature = "2",
+    feature = "3",
+    feature = "4",
+    feature = "5",
+    feature = "6",
+    feature = "7"
+)))]
+pub const REPEAT: c_int = 5;
+
+// OP: pick exactly one of {add, sub, mul} (default add when none enabled).
 #[cfg(feature = "sub")]
-mod op_select {
-    pub const OP_NAME: &[u8] = b"sub\0";
-    #[inline]
-    pub fn step(acc: &mut i32, i: i32) {
-        *acc = acc.wrapping_sub(i);
-    }
-    pub const INIT: i32 = 0;
-    pub const OP_FN: unsafe extern "C" fn(i32, i32) -> i32 = super::op_sub;
-}
-
+pub const OP_NAME: &str = "sub";
 #[cfg(all(feature = "mul", not(feature = "sub")))]
-mod op_select {
-    pub const OP_NAME: &[u8] = b"mul\0";
-    #[inline]
-    pub fn step(acc: &mut i32, i: i32) {
-        *acc = acc.wrapping_mul(i.wrapping_add(1));
-    }
-    pub const INIT: i32 = 1;
-    pub const OP_FN: unsafe extern "C" fn(i32, i32) -> i32 = super::op_mul;
-}
-
-// `add` is the default and the fallback when no OP feature is selected.
+pub const OP_NAME: &str = "mul";
 #[cfg(all(not(feature = "sub"), not(feature = "mul")))]
-mod op_select {
-    pub const OP_NAME: &[u8] = b"add\0";
-    #[inline]
-    pub fn step(acc: &mut i32, i: i32) {
-        *acc = acc.wrapping_add(i);
-    }
-    pub const INIT: i32 = 0;
-    pub const OP_FN: unsafe extern "C" fn(i32, i32) -> i32 = super::op_add;
-}
+pub const OP_NAME: &str = "add";
 
-// ------------ Compile-time selection of REPEAT ------------
-
-#[cfg(feature = "repeat_0")]
-const REPEAT: i32 = 0;
-#[cfg(all(feature = "repeat_1", not(feature = "repeat_0")))]
-const REPEAT: i32 = 1;
-#[cfg(all(feature = "repeat_2", not(feature = "repeat_0"), not(feature = "repeat_1")))]
-const REPEAT: i32 = 2;
-#[cfg(all(
-    feature = "repeat_3",
-    not(feature = "repeat_0"),
-    not(feature = "repeat_1"),
-    not(feature = "repeat_2")
-))]
-const REPEAT: i32 = 3;
-#[cfg(all(
-    feature = "repeat_4",
-    not(feature = "repeat_0"),
-    not(feature = "repeat_1"),
-    not(feature = "repeat_2"),
-    not(feature = "repeat_3")
-))]
-const REPEAT: i32 = 4;
-#[cfg(all(
-    feature = "repeat_6",
-    not(feature = "repeat_0"),
-    not(feature = "repeat_1"),
-    not(feature = "repeat_2"),
-    not(feature = "repeat_3"),
-    not(feature = "repeat_4"),
-    not(feature = "repeat_5")
-))]
-const REPEAT: i32 = 6;
-#[cfg(all(
-    feature = "repeat_7",
-    not(feature = "repeat_0"),
-    not(feature = "repeat_1"),
-    not(feature = "repeat_2"),
-    not(feature = "repeat_3"),
-    not(feature = "repeat_4"),
-    not(feature = "repeat_5"),
-    not(feature = "repeat_6")
-))]
-const REPEAT: i32 = 7;
-// Default value (matches CMakeLists.txt default of "5")
-#[cfg(all(
-    not(feature = "repeat_0"),
-    not(feature = "repeat_1"),
-    not(feature = "repeat_2"),
-    not(feature = "repeat_3"),
-    not(feature = "repeat_4"),
-    not(feature = "repeat_6"),
-    not(feature = "repeat_7"),
-))]
-const REPEAT: i32 = 5;
-
-// ------------ The three op_* primitives (always present) ------------
+// ---- Operations ----
 
 #[unsafe(no_mangle)]
 pub extern "C" fn op_add(a: c_int, b: c_int) -> c_int {
@@ -119,54 +86,101 @@ pub extern "C" fn op_mul(a: c_int, b: c_int) -> c_int {
     a.wrapping_mul(b)
 }
 
-// ------------ Helpers ------------
-
-/// Equivalent to the `RUN_LOOP(OP, acc, REPEAT)` macro: this is the C
-/// preprocessor manually unrolling REPEAT iterations of `STEP_OP(op, acc, i)`
-/// with `i = 0, 1, ..., REPEAT-1`.
+// Return the operation function pointer for the currently-selected OP.
 #[inline]
-fn run_loop(acc: &mut i32) {
-    let mut i: i32 = 0;
-    while i < REPEAT {
-        op_select::step(acc, i);
+fn selected_op() -> extern "C" fn(c_int, c_int) -> c_int {
+    #[cfg(feature = "sub")]
+    {
+        op_sub
+    }
+    #[cfg(all(feature = "mul", not(feature = "sub")))]
+    {
+        op_mul
+    }
+    #[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+    {
+        op_add
+    }
+}
+
+// STEP_add(acc, i): acc += i
+// STEP_sub(acc, i): acc -= i
+// STEP_mul(acc, i): acc *= (i + 1)
+#[inline]
+fn step(acc: c_int, i: c_int) -> c_int {
+    #[cfg(feature = "sub")]
+    {
+        acc.wrapping_sub(i)
+    }
+    #[cfg(all(feature = "mul", not(feature = "sub")))]
+    {
+        acc.wrapping_mul(i.wrapping_add(1))
+    }
+    #[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+    {
+        acc.wrapping_add(i)
+    }
+}
+
+// INIT_add 0, INIT_sub 0, INIT_mul 1
+#[inline]
+fn init_for() -> c_int {
+    #[cfg(feature = "sub")]
+    {
+        0
+    }
+    #[cfg(all(feature = "mul", not(feature = "sub")))]
+    {
+        1
+    }
+    #[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+    {
+        0
+    }
+}
+
+// Apply n steps with i = 0..n-1.
+#[inline]
+fn apply_steps(acc: &mut c_int, n: c_int) {
+    let mut i: c_int = 0;
+    while i < n {
+        *acc = step(*acc, i);
         i += 1;
     }
 }
 
-/// Equivalent to the `accum_<OP>` static function generated by `DEFINE_ACCUM`.
-/// At runtime, dispatches on `n` and runs `n` unrolled steps (n in [0,6]).
-/// For n outside [0,6], does nothing — matching the C `default: break`.
-fn accum_op(n: i32) -> i32 {
-    let mut acc: i32 = op_select::INIT;
-    if (0..=6).contains(&n) {
-        let mut i: i32 = 0;
-        while i < n {
-            op_select::step(&mut acc, i);
-            i += 1;
-        }
+// Compile-time-unrolled RUN_LOOP using REPEAT.
+#[inline]
+fn run_loop(acc: &mut c_int) {
+    apply_steps(acc, REPEAT);
+}
+
+// `accum_<OP>` — file-scope static in C, switching on n at runtime.
+// We emit it under the same final symbol name `accum_<OP>` for parity.
+#[inline]
+fn accum_impl(n: c_int) -> c_int {
+    let mut acc = init_for();
+    // Mirrors DISPATCH_REP: switch over n in 0..=6, default no-op.
+    match n {
+        0 => {}
+        1 => apply_steps(&mut acc, 1),
+        2 => apply_steps(&mut acc, 2),
+        3 => apply_steps(&mut acc, 3),
+        4 => apply_steps(&mut acc, 4),
+        5 => apply_steps(&mut acc, 5),
+        6 => apply_steps(&mut acc, 6),
+        _ => {}
     }
     acc
 }
 
-// ------------ Globals ------------
-
-#[unsafe(no_mangle)]
-pub static G_OP: unsafe extern "C" fn(c_int, c_int) -> c_int = op_select::OP_FN;
-
-#[repr(transparent)]
-pub struct CStrPtr(pub *const c_char);
-// Safety: G_OP_NAME points to a static byte string with a trailing NUL.
-unsafe impl Sync for CStrPtr {}
-
-#[unsafe(no_mangle)]
-pub static G_OP_NAME: CStrPtr = CStrPtr(op_select::OP_NAME.as_ptr() as *const c_char);
-
-// ------------ Exposed helpers ------------
+// ---- Helpers (extern "C" so they can be called from C as well) ----
 
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
-    let r = unsafe { (op_select::OP_FN)(a, b) };
-    let mut acc: i32 = op_select::INIT;
+    let f = selected_op();
+    let r = f(a, b);
+    let mut acc = init_for();
     run_loop(&mut acc);
     println!("helper.call={} helper.acc={}", r, acc);
     r.wrapping_add(acc)
@@ -174,43 +188,70 @@ pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
-    let fp: unsafe extern "C" fn(c_int, c_int) -> c_int = op_select::OP_FN;
-    let r = unsafe { fp(a, b) };
+    let fp = selected_op();
+    let r = fp(a, b);
     println!("helper.ptr={}", r);
     r
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn use_generated(n: c_int) -> c_int {
-    let r = accum_op(n);
+    let r = accum_impl(n);
     println!("gen.acc={}", r);
     r
 }
 
-// ------------ Internal items used by the binary driver ------------
+// ---- Global variables matching C `G_OP` and `G_OP_NAME` ----
 
-pub mod driver_support {
-    //! Re-exports for the binary `main.rs`. These are not part of the
-    //! C-visible ABI; they only exist so `main.rs` can drive the same
-    //! compile-time configuration as `lib.rs`.
+// `G_OP_NAME` — NUL-terminated C string holding the OP name.
+// In C this is `const char *G_OP_NAME = "add";` — a single pointer-sized
+// global. We use `&'static [u8; N]` which is ABI-compatible with `const char *`.
+#[cfg(feature = "sub")]
+#[unsafe(no_mangle)]
+pub static G_OP_NAME: &[u8; 4] = b"sub\0";
+#[cfg(all(feature = "mul", not(feature = "sub")))]
+#[unsafe(no_mangle)]
+pub static G_OP_NAME: &[u8; 4] = b"mul\0";
+#[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+#[unsafe(no_mangle)]
+pub static G_OP_NAME: &[u8; 4] = b"add\0";
 
-    pub fn op_name_cstr() -> &'static str {
-        // Strip the trailing NUL we keep for the C `const char *`.
-        let bytes = super::op_select::OP_NAME;
-        let trimmed = &bytes[..bytes.len() - 1];
-        // Safety: OP_NAME is a literal ASCII byte string above.
-        std::str::from_utf8(trimmed).unwrap()
+// `G_OP` — function pointer to the selected operation.
+#[unsafe(no_mangle)]
+pub static G_OP: extern "C" fn(c_int, c_int) -> c_int = {
+    #[cfg(feature = "sub")]
+    {
+        op_sub
     }
-
-    pub fn op_init() -> i32 {
-        super::op_select::INIT
+    #[cfg(all(feature = "mul", not(feature = "sub")))]
+    {
+        op_mul
     }
-
-    pub fn op_call(a: i32, b: i32) -> i32 {
-        unsafe { (super::op_select::OP_FN)(a, b) }
+    #[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+    {
+        op_add
     }
+};
 
-    pub fn run_loop(acc: &mut i32) {
-        super::run_loop(acc);
-    }
+// ---- Public re-exports for use by the binary driver ----
+
+#[inline]
+pub fn driver_op(a: c_int, b: c_int) -> c_int {
+    let f = selected_op();
+    f(a, b)
+}
+
+#[inline]
+pub fn driver_run_loop(acc: &mut c_int) {
+    run_loop(acc);
+}
+
+#[inline]
+pub fn driver_init_for() -> c_int {
+    init_for()
+}
+
+#[inline]
+pub fn driver_op_name() -> &'static str {
+    OP_NAME
 }
