@@ -1,0 +1,315 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_synthetic/031_disjoint_arrays/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.31s
+Target name: driver
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.10s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:9 ~ driver[fa08]::fma_array)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn fma_array(
+    mut out: *mut ::core::ffi::c_int,
+    mut mul1: *const ::core::ffi::c_int,
+    mut mul2: *const ::core::ffi::c_int,
+    mut add: *const ::core::ffi::c_int,
+    mut len: ::core::ffi::c_int,
+) {
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < len {
+        *out.offset(i as isize) =
+            *mul1.offset(i as isize) * *mul2.offset(i as isize) + *add.offset(i as isize);
+        i += 1;
+    }
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+fma_array(
+        out.as_mut_ptr(),
+        ones.as_mut_ptr(),
+        data,
+        zeros.as_mut_ptr(),
+        len,
+    );
+```
+
+The file contains the following imports:
+```rust
+use ::driver;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn fma_array(out: &mut [i32], mul1: &[i32], mul2: &[i32], add: &[i32], len: i32) {
+    let len = len as usize;
+    for i in 0..len {
+        out[i] = mul1[i] * mul2[i] + add[i];
+    }
+}
+</FUNC>
+
+<CALL>
+fma_array(
+    &mut out[..len as usize],
+    &ones[..len as usize],
+    &data[..len as usize],
+    &zeros[..len as usize],
+    len,
+);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/main.rs:17:1: 30:2 (#0)
+src/main.rs:52:5: 58:7 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*const i32`
+  --> src/main.rs:49:6
+   |
+49 |     &data[..len as usize],
+   |      ^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 3 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 4 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 5 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Rolling back changes[00m
+[96m Translating DefId(0:10 ~ driver[fa08]::call_fma)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn call_fma(
+    mut data: *const ::core::ffi::c_int,
+    mut len: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    if len == 0 as ::core::ffi::c_int {
+        return 0 as ::core::ffi::c_int;
+    }
+    let vla = len as usize;
+    let mut out: Vec<::core::ffi::c_int> = ::std::vec::from_elem(0, vla);
+    let vla_0 = len as usize;
+    let mut ones: Vec<::core::ffi::c_int> = ::std::vec::from_elem(0, vla_0);
+    let vla_1 = len as usize;
+    let mut zeros: Vec<::core::ffi::c_int> = ::std::vec::from_elem(0, vla_1);
+    *out.as_mut_ptr().offset(0 as ::core::ffi::c_int as isize) = 0 as ::core::ffi::c_int;
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < len {
+        *ones.as_mut_ptr().offset(i as isize) = 1 as ::core::ffi::c_int;
+        *zeros.as_mut_ptr().offset(i as isize) = 0 as ::core::ffi::c_int;
+        i += 1;
+    }
+    fma_array(
+        out.as_mut_ptr(),
+        ones.as_mut_ptr(),
+        data,
+        zeros.as_mut_ptr(),
+        len,
+    );
+    return *out
+        .as_mut_ptr()
+        .offset((len - 1 as ::core::ffi::c_int) as isize);
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut result: ::core::ffi::c_int = call_fma(&raw mut data as *mut ::core::ffi::c_int, i);
+```
+
+The file contains the following imports:
+```rust
+use ::driver;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 2 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 3 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 4 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 5 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Rolling back changes[00m
+[96m Translating DefId(0:11 ~ driver[fa08]::main_0)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe fn main_0() -> ::core::ffi::c_int {
+    let mut data: [::core::ffi::c_int; 100] = [0; 100];
+    let mut i: ::core::ffi::c_int = 0;
+    i = 0 as ::core::ffi::c_int;
+    while i < 100 as ::core::ffi::c_int {
+        if scanf(
+            b"%d\0" as *const u8 as *const ::core::ffi::c_char,
+            (&raw mut data as *mut ::core::ffi::c_int).offset(i as isize)
+                as *mut ::core::ffi::c_int,
+        ) != 1 as ::core::ffi::c_int
+        {
+            break;
+        }
+        i += 1;
+    }
+    let mut result: ::core::ffi::c_int = call_fma(&raw mut data as *mut ::core::ffi::c_int, i);
+    printf(b"%d\n\0" as *const u8 as *const ::core::ffi::c_char, result);
+    return 0 as ::core::ffi::c_int;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+unsafe { ::std::process::exit(main_0() as i32) }
+```
+
+The file contains the following imports:
+```rust
+use ::driver;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 2 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 3 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 4 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 5 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Rolling back changes[00m
+[96m Translating DefId(0:14 ~ driver[fa08]::main)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub fn main() {
+    unsafe { ::std::process::exit(main_0() as i32) }
+}
+```
+
+
+The file contains the following imports:
+```rust
+use ::driver;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 2 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 3 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 4 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Attempt 5 of 5[00m
+[96m Model exception[00m
+[96m Bedrock API error HTTP 401: {"error":{"code":"invalid_api_key","message":"The security token included in the request is expired","param":null,"type":"permission_denied_error"}}[00m
+[96m Trying again[00m
+[96m Rolling back changes[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_synthetic/031_disjoint_arrays/translated_rust

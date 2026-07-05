@@ -1,0 +1,215 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_organic/flip_horizontal_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: flip_horizontal_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.37s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: flip_horizontal_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.53s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:7 ~ flip_horizontal_lib[8c30]::src::lib::flip_horizontal)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn flip_horizontal(mut img: *mut cp_image_t) {
+    let mut pix: *mut cp_pixel_t = (*img).pix;
+    let mut w: ::core::ffi::c_int = (*img).w;
+    let mut h: ::core::ffi::c_int = (*img).h;
+    let mut flips: ::core::ffi::c_int = h / 2 as ::core::ffi::c_int;
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < flips {
+        let mut a: *mut cp_pixel_t = pix.offset((w * i) as isize);
+        let mut b: *mut cp_pixel_t = pix.offset((w * (h - i - 1 as ::core::ffi::c_int)) as isize);
+        let mut j: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+        while j < w {
+            let mut t: cp_pixel_t = *a;
+            *a = *b;
+            *b = t;
+            a = a.offset(1);
+            b = b.offset(1);
+            j += 1;
+        }
+        i += 1;
+    }
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn flip_horizontal(img: &mut cp_image_t) {
+    let w = img.w as usize;
+    let h = img.h as usize;
+    let flips = h / 2;
+
+    for i in 0..flips {
+        let top_start = w * i;
+        let bottom_start = w * (h - i - 1);
+
+        for j in 0..w {
+            img.pix.swap(top_start + j, bottom_start + j);
+        }
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:19:1: 39:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0061]: this function takes 1 argument but 2 arguments were supplied
+    --> src/lib.rs:30:21
+     |
+30   |             img.pix.swap(top_start + j, bottom_start + j);
+     |                     ^^^^ -------------  ---------------- argument of type `usize` unexpected
+     |                          |
+     |                          expected *-ptr, found `usize`
+     |
+     = note: expected raw pointer `*mut cp_pixel_t`
+                       found type `usize`
+note: associated function defined here
+    --> /opt/rustup/toolchains/nightly-2022-08-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mut_ptr.rs:1516:25
+     |
+1516 |     pub const unsafe fn swap(self, with: *mut T)
+     |                         ^^^^
+help: remove the extra argument
+     |
+30   |             img.pix.swap(/* *mut cp_pixel_t */);
+     |                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn flip_horizontal(img: &mut cp_image_t) {
+    let w = img.w as usize;
+    let h = img.h as usize;
+    let flips = h / 2;
+
+    for i in 0..flips {
+        let top = w * i;
+        let bottom = w * (h - i - 1);
+
+        for j in 0..w {
+            let a = top + j;
+            let b = bottom + j;
+            let t = img.pix[a];
+            img.pix[a] = img.pix[b];
+            img.pix[b] = t;
+        }
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:19:1: 39:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut cp_pixel_t`
+  --> src/lib.rs:32:21
+   |
+32 |             let t = img.pix[a];
+   |                     ^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut cp_pixel_t`
+  --> src/lib.rs:33:13
+   |
+33 |             img.pix[a] = img.pix[b];
+   |             ^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut cp_pixel_t`
+  --> src/lib.rs:33:26
+   |
+33 |             img.pix[a] = img.pix[b];
+   |                          ^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut cp_pixel_t`
+  --> src/lib.rs:34:13
+   |
+34 |             img.pix[b] = t;
+   |             ^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to 4 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 3 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn flip_horizontal(img: &mut cp_image_t) {
+    let w = img.w as isize;
+    let h = img.h as isize;
+    let flips = h / 2;
+
+    for i in 0..flips {
+        let mut a = img.pix.wrapping_offset(w * i);
+        let mut b = img.pix.wrapping_offset(w * (h - i - 1));
+
+        for _ in 0..w {
+            unsafe {
+                core::ptr::swap(a, b);
+                a = a.wrapping_offset(1);
+                b = b.wrapping_offset(1);
+            }
+        }
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:19:1: 39:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:19:1: 39:2 (#0) -> src/lib.rs:20:1: 37:2 (#0)[00m
+[96m src/lib.rs:19:1: 39:2 (#0) -> src/lib.rs:20:1: 37:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_organic/flip_horizontal_lib/translated_rust

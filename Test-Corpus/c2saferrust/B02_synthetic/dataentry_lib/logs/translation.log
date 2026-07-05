@@ -1,0 +1,1100 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B02_synthetic/dataentry_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.35s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.44s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:23 ~ dataentry_lib[ca4d]::src::lib::modify_entries)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn modify_entries(
+    mut entries: *mut DataEntry,
+    mut count: ::core::ffi::c_int,
+    mut multiplier: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut current: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    let mut last: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    let mut total: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut temp_value: ::core::ffi::c_int = 0;
+    if entries.is_null() {
+        return -(1 as ::core::ffi::c_int);
+    }
+    current = entries;
+    last = entries.offset(count as isize);
+    while current < last {
+        temp_value = (*current).value;
+        if temp_value != 0 {
+            (*current).value = temp_value * multiplier;
+            total += (*current).value;
+        }
+        current = current.offset(1);
+    }
+    return total;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+result = modify_entries(entries, count, param2);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+
+<FUNC>
+fn modify_entries(entries: &mut [DataEntry], multiplier: i32) -> i32 {
+    let mut total = 0;
+    for entry in entries.iter_mut() {
+        let temp_value = entry.value;
+        if temp_value != 0 {
+            entry.value = temp_value * multiplier;
+            total += entry.value;
+        }
+    }
+    total
+}
+</FUNC>
+
+<CALL>
+result = modify_entries(&mut entries[..count as usize], param2);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:117:1: 140:2 (#0)
+src/lib.rs:191:17: 191:65 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut DataEntry`
+   --> src/lib.rs:180:46
+    |
+180 |                 result = modify_entries(&mut entries[..count as usize], param2);
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+
+<FUNC>
+fn modify_entries(entries: *mut DataEntry, count: i32, multiplier: i32) -> i32 {
+    if entries.is_null() {
+        return -1;
+    }
+
+    let len = match usize::try_from(count) {
+        Ok(len) => len,
+        Err(_) => return 0,
+    };
+
+    let entries = unsafe { std::slice::from_raw_parts_mut(entries, len) };
+
+    let mut total = 0;
+    for entry in entries.iter_mut() {
+        let temp_value = entry.value;
+        if temp_value != 0 {
+            entry.value = temp_value * multiplier;
+            total += entry.value;
+        }
+    }
+    total
+}
+</FUNC>
+
+<CALL>
+result = modify_entries(entries, count, param2);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:117:1: 140:2 (#0)
+src/lib.rs:191:17: 191:65 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:75:1: 87:2 (#0) -> src/lib.rs:76:1: 88:2 (#0)[00m
+[96m src/lib.rs:75:1: 87:2 (#0) -> src/lib.rs:76:1: 88:2 (#0)[00m
+[96m src/lib.rs:47:1: 61:2 (#0) -> src/lib.rs:48:1: 62:2 (#0)[00m
+[96m src/lib.rs:47:1: 61:2 (#0) -> src/lib.rs:48:1: 62:2 (#0)[00m
+[96m src/lib.rs:62:1: 74:2 (#0) -> src/lib.rs:63:1: 75:2 (#0)[00m
+[96m src/lib.rs:62:1: 74:2 (#0) -> src/lib.rs:63:1: 75:2 (#0)[00m
+[96m src/lib.rs:88:1: 116:2 (#0) -> src/lib.rs:89:1: 117:2 (#0)[00m
+[96m src/lib.rs:88:1: 116:2 (#0) -> src/lib.rs:89:1: 117:2 (#0)[00m
+[96m src/lib.rs:117:1: 140:2 (#0) -> src/lib.rs:118:1: 139:2 (#0)[00m
+[96m src/lib.rs:117:1: 140:2 (#0) -> src/lib.rs:118:1: 139:2 (#0)[00m
+[96m src/lib.rs:142:1: 227:2 (#0) -> src/lib.rs:142:1: 227:2 (#0)[00m
+[96m src/lib.rs:142:1: 227:2 (#0) -> src/lib.rs:142:1: 227:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:20 ~ dataentry_lib[ca4d]::src::lib::create_entries)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn create_entries(
+    mut count: ::core::ffi::c_int,
+    mut base_id: ::core::ffi::c_int,
+) -> *mut DataEntry {
+    let mut entries: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    let mut i: ::core::ffi::c_int = 0;
+    let mut temp_name: [::core::ffi::c_char; 32] = [0; 32];
+    entries = malloc((count as size_t).wrapping_mul(::core::mem::size_of::<DataEntry>() as size_t))
+        as *mut DataEntry;
+    if entries.is_null() || count <= 0 as ::core::ffi::c_int {
+        return ::core::ptr::null_mut::<DataEntry>();
+    }
+    i = 0 as ::core::ffi::c_int;
+    while i < count {
+        (*entries.offset(i as isize)).id = base_id + i;
+        (*entries.offset(i as isize)).value = (base_id + i) * 10 as ::core::ffi::c_int;
+        sprintf(
+            &raw mut temp_name as *mut ::core::ffi::c_char,
+            b"Entry_%d\0" as *const u8 as *const ::core::ffi::c_char,
+            base_id + i,
+        );
+        strcpy(
+            &raw mut (*entries.offset(i as isize)).name as *mut ::core::ffi::c_char,
+            &raw mut temp_name as *mut ::core::ffi::c_char,
+        );
+        i += 1;
+    }
+    return entries;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+entries = create_entries(count, 200 as ::core::ffi::c_int);
+```
+Call site 2:
+```rust
+entries = create_entries(count, 100 as ::core::ffi::c_int);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.38s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+use std::convert::TryFrom;
+</IMPORTS>
+
+<FUNC>
+fn create_entries(count: ::core::ffi::c_int, base_id: ::core::ffi::c_int) -> Vec<DataEntry> {
+    let count_usize = match usize::try_from(count) {
+        Ok(v) if v > 0 => v,
+        _ => return Vec::new(),
+    };
+
+    let mut entries = Vec::with_capacity(count_usize);
+
+    for i in 0..count_usize {
+        let i_c_int = i as ::core::ffi::c_int;
+        let id = base_id + i_c_int;
+        let value = id * 10;
+        let name_string = format!("Entry_{}", id);
+
+        let mut name = [0 as ::core::ffi::c_char; 32];
+        for (dst, src) in name.iter_mut().zip(name_string.bytes()) {
+            *dst = src as ::core::ffi::c_char;
+        }
+
+        entries.push(DataEntry { id, value, name });
+    }
+
+    entries
+}
+</FUNC>
+
+<CALL>
+entries = create_entries(count, 200 as ::core::ffi::c_int);
+</CALL>
+
+<CALL>
+entries = create_entries(count, 100 as ::core::ffi::c_int);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:89:1: 117:2 (#0)
+src/lib.rs:187:13: 187:72 (#0)
+src/lib.rs:164:13: 164:72 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0308]: mismatched types
+   --> src/lib.rs:162:23
+    |
+146 |     let mut entries: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    |                      -------------- expected due to this type
+...
+162 |             entries = create_entries(count, 100 as ::core::ffi::c_int);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected *-ptr, found struct `Vec`
+    |
+    = note: expected raw pointer `*mut DataEntry`
+                    found struct `Vec<DataEntry>`
+
+error[E0308]: mismatched types
+   --> src/lib.rs:185:23
+    |
+146 |     let mut entries: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    |                      -------------- expected due to this type
+...
+185 |             entries = create_entries(count, 200 as ::core::ffi::c_int);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected *-ptr, found struct `Vec`
+    |
+    = note: expected raw pointer `*mut DataEntry`
+                    found struct `Vec<DataEntry>`
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+use std::convert::TryFrom;
+</IMPORTS>
+
+<FUNC>
+fn create_entries(count: ::core::ffi::c_int, base_id: ::core::ffi::c_int) -> *mut DataEntry {
+    let count_usize = match usize::try_from(count) {
+        Ok(v) if v > 0 => v,
+        _ => return ::core::ptr::null_mut(),
+    };
+
+    let mut entries = Vec::with_capacity(count_usize);
+
+    for i in 0..count_usize {
+        let i_c_int = i as ::core::ffi::c_int;
+        let id = base_id + i_c_int;
+        let value = id * 10;
+
+        let mut name = [0 as ::core::ffi::c_char; 32];
+        let name_string = format!("Entry_{}", id);
+        for (idx, byte) in name_string.bytes().take(31).enumerate() {
+            name[idx] = byte as ::core::ffi::c_char;
+        }
+
+        entries.push(DataEntry { id, value, name });
+    }
+
+    let boxed = entries.into_boxed_slice();
+    Box::into_raw(boxed) as *mut DataEntry
+}
+</FUNC>
+
+<CALL>
+entries = create_entries(count, 200 as ::core::ffi::c_int);
+</CALL>
+
+<CALL>
+entries = create_entries(count, 100 as ::core::ffi::c_int);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:89:1: 117:2 (#0)
+src/lib.rs:187:13: 187:72 (#0)
+src/lib.rs:164:13: 164:72 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:76:1: 88:2 (#0) -> src/lib.rs:78:1: 90:2 (#0)[00m
+[96m src/lib.rs:76:1: 88:2 (#0) -> src/lib.rs:78:1: 90:2 (#0)[00m
+[96m src/lib.rs:48:1: 62:2 (#0) -> src/lib.rs:50:1: 64:2 (#0)[00m
+[96m src/lib.rs:48:1: 62:2 (#0) -> src/lib.rs:50:1: 64:2 (#0)[00m
+[96m src/lib.rs:63:1: 75:2 (#0) -> src/lib.rs:65:1: 77:2 (#0)[00m
+[96m src/lib.rs:63:1: 75:2 (#0) -> src/lib.rs:65:1: 77:2 (#0)[00m
+[96m src/lib.rs:89:1: 117:2 (#0) -> src/lib.rs:91:1: 115:2 (#0)[00m
+[96m src/lib.rs:89:1: 117:2 (#0) -> src/lib.rs:91:1: 115:2 (#0)[00m
+[96m src/lib.rs:118:1: 139:2 (#0) -> src/lib.rs:117:1: 138:2 (#0)[00m
+[96m src/lib.rs:118:1: 139:2 (#0) -> src/lib.rs:117:1: 138:2 (#0)[00m
+[96m src/lib.rs:142:1: 227:2 (#0) -> src/lib.rs:141:1: 226:2 (#0)[00m
+[96m src/lib.rs:142:1: 227:2 (#0) -> src/lib.rs:141:1: 226:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:18 ~ dataentry_lib[ca4d]::src::lib::process_name)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn process_name(
+    mut dest: *mut ::core::ffi::c_char,
+    mut src: *const ::core::ffi::c_char,
+    mut max_len: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut len: ::core::ffi::c_int = 0;
+    if dest.is_null() || *dest as ::core::ffi::c_int == '\0' as i32 {
+        return -(1 as ::core::ffi::c_int);
+    }
+    strcpy(dest, src);
+    len = strlen(dest) as ::core::ffi::c_int;
+    return len;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+result = process_name(
+                &raw mut buffer as *mut ::core::ffi::c_char,
+                b"TestName\0" as *const u8 as *const ::core::ffi::c_char,
+                NAME_LENGTH,
+            );
+```
+
+The file contains the following imports:
+```rust
+use std::convert::TryFrom;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn process_name(dest: &mut String, src: &str, max_len: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    if dest.is_empty() {
+        return -1;
+    }
+
+    let max_len_usize = usize::try_from(max_len).unwrap_or(0);
+    let truncated: String = src.chars().take(max_len_usize).collect();
+    dest.clear();
+    dest.push_str(&truncated);
+
+    ::core::ffi::c_int::try_from(dest.len()).unwrap_or(::core::ffi::c_int::MAX)
+}
+</FUNC>
+
+<CALL>
+let mut buffer_str = String::from(" ");
+result = process_name(&mut buffer_str, "TestName", NAME_LENGTH);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:65:1: 77:2 (#0)
+src/lib.rs:214:13: 218:15 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00mTesting sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.39s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.57s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:78:1: 90:2 (#0) -> src/lib.rs:79:1: 91:2 (#0)[00m
+[96m src/lib.rs:78:1: 90:2 (#0) -> src/lib.rs:79:1: 91:2 (#0)[00m
+[96m src/lib.rs:50:1: 64:2 (#0) -> src/lib.rs:51:1: 65:2 (#0)[00m
+[96m src/lib.rs:50:1: 64:2 (#0) -> src/lib.rs:51:1: 65:2 (#0)[00m
+[96m src/lib.rs:65:1: 77:2 (#0) -> src/lib.rs:66:1: 77:2 (#0)[00m
+[96m src/lib.rs:65:1: 77:2 (#0) -> src/lib.rs:66:1: 77:2 (#0)[00m
+[96m src/lib.rs:91:1: 115:2 (#0) -> src/lib.rs:92:1: 116:2 (#0)[00m
+[96m src/lib.rs:91:1: 115:2 (#0) -> src/lib.rs:92:1: 116:2 (#0)[00m
+[96m src/lib.rs:117:1: 138:2 (#0) -> src/lib.rs:118:1: 139:2 (#0)[00m
+[96m src/lib.rs:117:1: 138:2 (#0) -> src/lib.rs:118:1: 139:2 (#0)[00m
+[96m src/lib.rs:141:1: 226:2 (#0) -> src/lib.rs:142:1: 224:2 (#0)[00m
+[96m src/lib.rs:141:1: 226:2 (#0) -> src/lib.rs:142:1: 224:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:17 ~ dataentry_lib[ca4d]::src::lib::find_entry)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn find_entry(
+    mut entries: *mut DataEntry,
+    mut count: ::core::ffi::c_int,
+    mut target_id: ::core::ffi::c_int,
+) -> *mut DataEntry {
+    let mut ptr: *mut DataEntry = entries;
+    let mut end: *mut DataEntry = entries.offset(count as isize);
+    while ptr < end {
+        if (*ptr).id == target_id {
+            return ptr;
+        }
+        ptr = ptr.offset(1);
+    }
+    return ::core::ptr::null_mut::<DataEntry>();
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+found = find_entry(entries, count, 100 as ::core::ffi::c_int + param2);
+```
+
+The file contains the following imports:
+```rust
+use std::convert::TryFrom;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn find_entry(
+    entries: &mut [DataEntry],
+    target_id: ::core::ffi::c_int,
+) -> Option<&mut DataEntry> {
+    entries.iter_mut().find(|entry| entry.id == target_id)
+}
+</FUNC>
+
+<CALL>
+found = find_entry(entries, 100 as ::core::ffi::c_int + param2)
+    .map_or(::core::ptr::null_mut(), |entry| entry as *mut DataEntry);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:51:1: 65:2 (#0)
+src/lib.rs:168:17: 168:88 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0308]: mismatched types
+   --> src/lib.rs:161:36
+    |
+161 |                 found = find_entry(entries, 100 as ::core::ffi::c_int + param2)
+    |                         ---------- ^^^^^^^ expected `&mut [DataEntry]`, found *-ptr
+    |                         |
+    |                         arguments to this function are incorrect
+    |
+    = note: expected mutable reference `&mut [DataEntry]`
+                     found raw pointer `*mut DataEntry`
+note: function defined here
+   --> src/lib.rs:52:4
+    |
+52  | fn find_entry(
+    |    ^^^^^^^^^^
+53  |     entries: &mut [DataEntry],
+    |     -------------------------
+54  |     target_id: ::core::ffi::c_int,
+    |     -----------------------------
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn find_entry(
+    entries: *mut DataEntry,
+    count: ::core::ffi::c_int,
+    target_id: ::core::ffi::c_int,
+) -> *mut DataEntry {
+    let len = usize::try_from(count).ok().unwrap_or(0);
+    if len == 0 || entries.is_null() {
+        return ::core::ptr::null_mut();
+    }
+
+    let entries = unsafe { std::slice::from_raw_parts_mut(entries, len) };
+    entries
+        .iter_mut()
+        .find(|entry| entry.id == target_id)
+        .map_or(::core::ptr::null_mut(), |entry| entry as *mut DataEntry)
+}
+</FUNC>
+
+<CALL>
+found = find_entry(entries, count, 100 as ::core::ffi::c_int + param2);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:51:1: 65:2 (#0)
+src/lib.rs:168:17: 168:88 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:79:1: 91:2 (#0) -> src/lib.rs:82:1: 94:2 (#0)[00m
+[96m src/lib.rs:79:1: 91:2 (#0) -> src/lib.rs:82:1: 94:2 (#0)[00m
+[96m src/lib.rs:51:1: 65:2 (#0) -> src/lib.rs:52:1: 67:2 (#0)[00m
+[96m src/lib.rs:51:1: 65:2 (#0) -> src/lib.rs:52:1: 67:2 (#0)[00m
+[96m src/lib.rs:66:1: 77:2 (#0) -> src/lib.rs:69:1: 80:2 (#0)[00m
+[96m src/lib.rs:66:1: 77:2 (#0) -> src/lib.rs:69:1: 80:2 (#0)[00m
+[96m src/lib.rs:92:1: 116:2 (#0) -> src/lib.rs:95:1: 119:2 (#0)[00m
+[96m src/lib.rs:92:1: 116:2 (#0) -> src/lib.rs:95:1: 119:2 (#0)[00m
+[96m src/lib.rs:118:1: 139:2 (#0) -> src/lib.rs:121:1: 142:2 (#0)[00m
+[96m src/lib.rs:118:1: 139:2 (#0) -> src/lib.rs:121:1: 142:2 (#0)[00m
+[96m src/lib.rs:142:1: 224:2 (#0) -> src/lib.rs:145:1: 227:2 (#0)[00m
+[96m src/lib.rs:142:1: 224:2 (#0) -> src/lib.rs:145:1: 227:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:19 ~ dataentry_lib[ca4d]::src::lib::calculate_lookup)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn calculate_lookup(
+    mut row: ::core::ffi::c_int,
+    mut col: ::core::ffi::c_int,
+    mut result: *mut ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut temp: ::core::ffi::c_int = 0;
+    temp = lookup_table[row as usize][col as usize];
+    if temp != 0 {
+        *result = temp * 2 as ::core::ffi::c_int;
+        return 1 as ::core::ffi::c_int;
+    }
+    return 0 as ::core::ffi::c_int;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+result = calculate_lookup(param1, param2, &raw mut lookup_result);
+```
+The function uses the following global variables:
+```rust
+static mut lookup_table: [[::core::ffi::c_int; 3]; 4] = [
+    [
+        10 as ::core::ffi::c_int,
+        20 as ::core::ffi::c_int,
+        30 as ::core::ffi::c_int,
+    ],
+    [
+        40 as ::core::ffi::c_int,
+        50 as ::core::ffi::c_int,
+        60 as ::core::ffi::c_int,
+    ],
+    [
+        70 as ::core::ffi::c_int,
+        80 as ::core::ffi::c_int,
+        90 as ::core::ffi::c_int,
+    ],
+    [
+        100 as ::core::ffi::c_int,
+        110 as ::core::ffi::c_int,
+        120 as ::core::ffi::c_int,
+    ],
+];
+```
+The file contains the following imports:
+```rust
+use std::convert::TryFrom;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.50s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn calculate_lookup(row: i32, col: i32, result: &mut i32) -> i32 {
+    let row = match usize::try_from(row) {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+    let col = match usize::try_from(col) {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+
+    let temp = match lookup_table.get(row).and_then(|r| r.get(col)).copied() {
+        Some(value) => value,
+        None => return 0,
+    };
+
+    if temp != 0 {
+        *result = temp * 2;
+        1
+    } else {
+        0
+    }
+}
+</FUNC>
+
+<CALL>
+result = calculate_lookup(param1, param2, &mut lookup_result);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:82:1: 94:2 (#0)
+src/lib.rs:207:17: 207:83 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0133]: use of mutable static is unsafe and requires unsafe function or block
+  --> src/lib.rs:93:22
+   |
+93 |     let temp = match lookup_table.get(row).and_then(|r| r.get(col)).copied() {
+   |                      ^^^^^^^^^^^^^^^^^^^^^ use of mutable static
+   |
+   = note: mutable statics can be mutated by multiple threads: aliasing violations or data races will cause undefined behavior
+
+For more information about this error, try `rustc --explain E0133`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn calculate_lookup(row: i32, col: i32, result: &mut i32) -> i32 {
+    let row = match usize::try_from(row) {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+    let col = match usize::try_from(col) {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+
+    let temp = unsafe {
+        match lookup_table.get(row).and_then(|r| r.get(col)).copied() {
+            Some(value) => value,
+            None => return 0,
+        }
+    };
+
+    if temp != 0 {
+        *result = temp * 2;
+        1
+    } else {
+        0
+    }
+}
+</FUNC>
+
+<CALL>
+result = calculate_lookup(param1, param2, &mut lookup_result);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:82:1: 94:2 (#0)
+src/lib.rs:207:17: 207:83 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:82:1: 94:2 (#0) -> src/lib.rs:83:1: 106:2 (#0)[00m
+[96m src/lib.rs:82:1: 94:2 (#0) -> src/lib.rs:83:1: 106:2 (#0)[00m
+[96m src/lib.rs:52:1: 67:2 (#0) -> src/lib.rs:53:1: 68:2 (#0)[00m
+[96m src/lib.rs:52:1: 67:2 (#0) -> src/lib.rs:53:1: 68:2 (#0)[00m
+[96m src/lib.rs:69:1: 80:2 (#0) -> src/lib.rs:70:1: 81:2 (#0)[00m
+[96m src/lib.rs:69:1: 80:2 (#0) -> src/lib.rs:70:1: 81:2 (#0)[00m
+[96m src/lib.rs:95:1: 119:2 (#0) -> src/lib.rs:108:1: 132:2 (#0)[00m
+[96m src/lib.rs:95:1: 119:2 (#0) -> src/lib.rs:108:1: 132:2 (#0)[00m
+[96m src/lib.rs:121:1: 142:2 (#0) -> src/lib.rs:134:1: 155:2 (#0)[00m
+[96m src/lib.rs:121:1: 142:2 (#0) -> src/lib.rs:134:1: 155:2 (#0)[00m
+[96m src/lib.rs:145:1: 227:2 (#0) -> src/lib.rs:158:1: 240:2 (#0)[00m
+[96m src/lib.rs:145:1: 227:2 (#0) -> src/lib.rs:158:1: 240:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:24 ~ dataentry_lib[ca4d]::src::lib::dataentry)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn dataentry(
+    mut mode: ::core::ffi::c_int,
+    mut param1: ::core::ffi::c_int,
+    mut param2: ::core::ffi::c_int,
+    mut param3: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut entries: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    let mut found: *mut DataEntry = ::core::ptr::null_mut::<DataEntry>();
+    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut count: ::core::ffi::c_int = 0;
+    let mut lookup_result: ::core::ffi::c_int = 0;
+    let mut buffer: [::core::ffi::c_char; 32] = [0; 32];
+    let mut i: ::core::ffi::c_int = 0;
+    buffer[0 as ::core::ffi::c_int as usize] = 'T' as i32 as ::core::ffi::c_char;
+    buffer[1 as ::core::ffi::c_int as usize] = '\0' as i32 as ::core::ffi::c_char;
+    match mode {
+        1 => {
+            count = if param1 > 0 as ::core::ffi::c_int {
+                param1
+            } else {
+                5 as ::core::ffi::c_int
+            };
+            entries = create_entries(count, 100 as ::core::ffi::c_int);
+            if entries.is_null() || count == 0 as ::core::ffi::c_int {
+                result = -(1 as ::core::ffi::c_int);
+            } else {
+                found = find_entry(entries, count, 100 as ::core::ffi::c_int + param2);
+                if found.is_null() || (*found).id == 0 as ::core::ffi::c_int {
+                    result = -(2 as ::core::ffi::c_int);
+                } else {
+                    result = (*found).value;
+                    strcpy(
+                        &raw mut buffer as *mut ::core::ffi::c_char,
+                        &raw mut (*found).name as *mut ::core::ffi::c_char,
+                    );
+                }
+                free(entries as *mut ::core::ffi::c_void);
+            }
+        }
+        2 => {
+            count = if param1 > 0 as ::core::ffi::c_int {
+                param1
+            } else {
+                3 as ::core::ffi::c_int
+            };
+            entries = create_entries(count, 200 as ::core::ffi::c_int);
+            if entries.is_null() {
+                result = -(1 as ::core::ffi::c_int);
+            } else {
+                result = modify_entries(entries, count, param2);
+                if result != 0 {
+                    result += param3;
+                }
+                free(entries as *mut ::core::ffi::c_void);
+            }
+        }
+        3 => {
+            if param1 >= 0 as ::core::ffi::c_int
+                && param1 < 4 as ::core::ffi::c_int
+                && param2 >= 0 as ::core::ffi::c_int
+                && param2 < 3 as ::core::ffi::c_int
+            {
+                result = calculate_lookup(param1, param2, &raw mut lookup_result);
+                if result != 0 {
+                    result = lookup_result + param3;
+                }
+            }
+        }
+        _ => {
+            strcpy(
+                &raw mut buffer as *mut ::core::ffi::c_char,
+                b"Default\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            result = process_name(
+                &raw mut buffer as *mut ::core::ffi::c_char,
+                b"TestName\0" as *const u8 as *const ::core::ffi::c_char,
+                NAME_LENGTH,
+            );
+            count = strlen(&raw mut buffer as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
+            if count != 0 {
+                result = count * param1;
+            }
+        }
+    }
+    return result;
+}
+```
+
+The function uses the following global variables:
+```rust
+pub const NAME_LENGTH: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
+```
+The file contains the following imports:
+```rust
+use std::convert::TryFrom;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: dataentry_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.48s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn dataentry(mode: i32, param1: i32, param2: i32, param3: i32) -> i32 {
+    let mut result = 0;
+    let mut count = 0;
+    let mut lookup_result = 0;
+    let mut buffer = String::from("T");
+
+    match mode {
+        1 => {
+            count = if param1 > 0 { param1 } else { 5 };
+            let entries = create_entries(count, 100);
+            if entries.is_null() || count == 0 {
+                result = -1;
+            } else {
+                let found = find_entry(entries, count, 100 + param2);
+                if found.is_null() || unsafe { (*found).id } == 0 {
+                    result = -2;
+                } else {
+                    result = unsafe { (*found).value };
+                    buffer = unsafe {
+                        let name_ptr = (*found).name.as_ptr();
+                        std::ffi::CStr::from_ptr(name_ptr)
+                            .to_string_lossy()
+                            .into_owned()
+                    };
+                }
+                free(entries as *mut std::ffi::c_void);
+            }
+        }
+        2 => {
+            count = if param1 > 0 { param1 } else { 3 };
+            let entries = create_entries(count, 200);
+            if entries.is_null() {
+                result = -1;
+            } else {
+                result = modify_entries(entries, count, param2);
+                if result != 0 {
+                    result += param3;
+                }
+                free(entries as *mut std::ffi::c_void);
+            }
+        }
+        3 => {
+            if (0..4).contains(&param1) && (0..3).contains(&param2) {
+                result = calculate_lookup(param1, param2, &mut lookup_result);
+                if result != 0 {
+                    result = lookup_result + param3;
+                }
+            }
+        }
+        _ => {
+            buffer = "Default".to_string();
+            result = process_name(&mut buffer, "TestName", NAME_LENGTH);
+            count = i32::try_from(buffer.len()).unwrap_or(i32::MAX);
+            if count != 0 {
+                result = count * param1;
+            }
+        }
+    }
+
+    result
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:158:1: 240:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0133]: call to unsafe function is unsafe and requires unsafe function or block
+   --> src/lib.rs:184:17
+    |
+184 |                 free(entries as *mut std::ffi::c_void);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+
+error[E0133]: call to unsafe function is unsafe and requires unsafe function or block
+   --> src/lib.rs:197:17
+    |
+197 |                 free(entries as *mut std::ffi::c_void);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+
+For more information about this error, try `rustc --explain E0133`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn dataentry(mode: i32, param1: i32, param2: i32, param3: i32) -> i32 {
+    let mut result = 0;
+    let mut count = 0;
+    let mut lookup_result = 0;
+    let mut buffer = String::from("T");
+
+    match mode {
+        1 => {
+            count = if param1 > 0 { param1 } else { 5 };
+            let entries = create_entries(count, 100);
+            if entries.is_null() || count == 0 {
+                result = -1;
+            } else {
+                let found = find_entry(entries, count, 100 + param2);
+                if found.is_null() || unsafe { (*found).id } == 0 {
+                    result = -2;
+                } else {
+                    result = unsafe { (*found).value };
+                    buffer = unsafe {
+                        let name_ptr = (*found).name.as_ptr();
+                        std::ffi::CStr::from_ptr(name_ptr)
+                            .to_string_lossy()
+                            .into_owned()
+                    };
+                }
+            }
+        }
+        2 => {
+            count = if param1 > 0 { param1 } else { 3 };
+            let entries = create_entries(count, 200);
+            if entries.is_null() {
+                result = -1;
+            } else {
+                result = modify_entries(entries, count, param2);
+                if result != 0 {
+                    result += param3;
+                }
+            }
+        }
+        3 => {
+            if (0..4).contains(&param1) && (0..3).contains(&param2) {
+                result = calculate_lookup(param1, param2, &mut lookup_result);
+                if result != 0 {
+                    result = lookup_result + param3;
+                }
+            }
+        }
+        _ => {
+            buffer = "Default".to_string();
+            result = process_name(&mut buffer, "TestName", NAME_LENGTH);
+            count = i32::try_from(buffer.len()).unwrap_or(i32::MAX);
+            if count != 0 {
+                result = count * param1;
+            }
+        }
+    }
+
+    result
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:158:1: 240:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:83:1: 106:2 (#0) -> src/lib.rs:84:1: 107:2 (#0)[00m
+[96m src/lib.rs:83:1: 106:2 (#0) -> src/lib.rs:84:1: 107:2 (#0)[00m
+[96m src/lib.rs:53:1: 68:2 (#0) -> src/lib.rs:54:1: 69:2 (#0)[00m
+[96m src/lib.rs:53:1: 68:2 (#0) -> src/lib.rs:54:1: 69:2 (#0)[00m
+[96m src/lib.rs:70:1: 81:2 (#0) -> src/lib.rs:71:1: 82:2 (#0)[00m
+[96m src/lib.rs:70:1: 81:2 (#0) -> src/lib.rs:71:1: 82:2 (#0)[00m
+[96m src/lib.rs:108:1: 132:2 (#0) -> src/lib.rs:109:1: 133:2 (#0)[00m
+[96m src/lib.rs:108:1: 132:2 (#0) -> src/lib.rs:109:1: 133:2 (#0)[00m
+[96m src/lib.rs:134:1: 155:2 (#0) -> src/lib.rs:135:1: 156:2 (#0)[00m
+[96m src/lib.rs:134:1: 155:2 (#0) -> src/lib.rs:135:1: 156:2 (#0)[00m
+[96m src/lib.rs:158:1: 240:2 (#0) -> src/lib.rs:159:1: 217:2 (#0)[00m
+[96m src/lib.rs:158:1: 240:2 (#0) -> src/lib.rs:159:1: 217:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B02_synthetic/dataentry_lib/translated_rust

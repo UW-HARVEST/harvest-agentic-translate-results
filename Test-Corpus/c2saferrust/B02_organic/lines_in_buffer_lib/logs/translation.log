@@ -1,0 +1,132 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B02_organic/lines_in_buffer_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.38s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.33s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:10 ~ driver[5f71]::src::lib::UTIL_createLinePointers)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn UTIL_createLinePointers(
+    mut buffer: *mut ::core::ffi::c_char,
+    mut numLines: size_t,
+    mut bufferSize: size_t,
+) -> *mut *const ::core::ffi::c_char {
+    let mut lineIndex: size_t = 0 as size_t;
+    let mut pos: size_t = 0 as size_t;
+    let bufferPtrs: *mut ::core::ffi::c_void = malloc(
+        numLines.wrapping_mul(::core::mem::size_of::<*mut *const ::core::ffi::c_char>() as size_t),
+    ) as *mut ::core::ffi::c_void;
+    let linePointers: *mut *const ::core::ffi::c_char =
+        bufferPtrs as *mut *const ::core::ffi::c_char;
+    if bufferPtrs.is_null() {
+        return ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
+    }
+    while lineIndex < numLines && pos < bufferSize {
+        let mut len: size_t = 0 as size_t;
+        let fresh0 = lineIndex;
+        lineIndex = lineIndex.wrapping_add(1);
+        let ref mut fresh1 = *linePointers.offset(fresh0 as isize);
+        *fresh1 = buffer.offset(pos as isize);
+        while pos.wrapping_add(len) < bufferSize
+            && *buffer.offset(pos.wrapping_add(len) as isize) as ::core::ffi::c_int != '\0' as i32
+        {
+            len = len.wrapping_add(1);
+        }
+        pos = (pos as ::core::ffi::c_ulong).wrapping_add(len as ::core::ffi::c_ulong) as size_t
+            as size_t;
+        if pos < bufferSize {
+            pos = pos.wrapping_add(1);
+        }
+    }
+    if lineIndex != numLines {
+        free(bufferPtrs);
+        return ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
+    }
+    return linePointers;
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn UTIL_createLinePointers(
+    buffer: &mut [u8],
+    numLines: usize,
+    bufferSize: usize,
+) -> Option<Vec<&[u8]>> {
+    let effective_size = bufferSize.min(buffer.len());
+    let mut line_pointers = Vec::with_capacity(numLines);
+    let mut pos = 0usize;
+
+    while line_pointers.len() < numLines && pos < effective_size {
+        let start = pos;
+        let mut len = 0usize;
+
+        while pos + len < effective_size && buffer[pos + len] != 0 {
+            len += 1;
+        }
+
+        line_pointers.push(&buffer[start..start + len]);
+        pos += len;
+
+        if pos < effective_size {
+            pos += 1;
+        }
+    }
+
+    if line_pointers.len() != numLines {
+        return None;
+    }
+
+    Some(line_pointers)
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:8:1: 45:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:8:1: 45:2 (#0) -> src/lib.rs:9:1: 39:2 (#0)[00m
+[96m src/lib.rs:8:1: 45:2 (#0) -> src/lib.rs:9:1: 39:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B02_organic/lines_in_buffer_lib/translated_rust

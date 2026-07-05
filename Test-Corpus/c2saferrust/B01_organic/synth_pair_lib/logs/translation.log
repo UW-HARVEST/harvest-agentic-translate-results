@@ -1,0 +1,282 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_organic/synth_pair_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: synth_pair_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.34s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: synth_pair_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.35s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:8 ~ synth_pair_lib[5376]::src::lib::mp3d_scale_pcm)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn mp3d_scale_pcm(mut sample: ::core::ffi::c_float) -> int16_t {
+    if sample as ::core::ffi::c_double >= 32766.5f64 {
+        return 32767 as ::core::ffi::c_int as int16_t;
+    }
+    if sample as ::core::ffi::c_double <= -32767.5f64 {
+        return -(32768 as ::core::ffi::c_int) as int16_t;
+    }
+    let mut s: int16_t = (sample + 0.5f32) as int16_t;
+    s = (s as ::core::ffi::c_int
+        - ((s as ::core::ffi::c_int) < 0 as ::core::ffi::c_int) as ::core::ffi::c_int)
+        as int16_t;
+    return s;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+*pcm.offset((16 as ::core::ffi::c_int * nch) as isize) = mp3d_scale_pcm(a) as mp3d_sample_t;
+```
+Call site 2:
+```rust
+*pcm.offset(0 as ::core::ffi::c_int as isize) = mp3d_scale_pcm(a) as mp3d_sample_t;
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+
+<FUNC>
+fn mp3d_scale_pcm(sample: f32) -> i16 {
+    if sample >= 32766.5 {
+        return 32767;
+    }
+    if sample <= -32767.5 {
+        return -32768;
+    }
+
+    let s = (sample + 0.5) as i16;
+    s - if s < 0 { 1 } else { 0 }
+}
+</FUNC>
+
+<CALL>
+pcm[16 * nch as usize] = mp3d_scale_pcm(a) as mp3d_sample_t;
+</CALL>
+
+<CALL>
+pcm[0] = mp3d_scale_pcm(a) as mp3d_sample_t;
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:4:1: 16:2 (#0)
+src/lib.rs:65:5: 65:97 (#0)
+src/lib.rs:47:5: 47:88 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut i16`
+  --> src/lib.rs:47:5
+   |
+47 |     pcm[0] = mp3d_scale_pcm(a) as mp3d_sample_t;
+   |     ^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i16`
+  --> src/lib.rs:65:5
+   |
+65 |     pcm[16 * nch as usize] = mp3d_scale_pcm(a) as mp3d_sample_t;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+
+<FUNC>
+fn mp3d_scale_pcm(sample: f32) -> i16 {
+    if sample >= 32766.5 {
+        return 32767;
+    }
+    if sample <= -32767.5 {
+        return -32768;
+    }
+
+    let s = (sample + 0.5) as i16;
+    s - if s < 0 { 1 } else { 0 }
+}
+</FUNC>
+
+<CALL>
+*pcm.offset((16 * nch) as isize) = mp3d_scale_pcm(a) as mp3d_sample_t;
+</CALL>
+
+<CALL>
+*pcm.offset(0) = mp3d_scale_pcm(a) as mp3d_sample_t;
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:4:1: 16:2 (#0)
+src/lib.rs:65:5: 65:97 (#0)
+src/lib.rs:47:5: 47:88 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:4:1: 16:2 (#0) -> src/lib.rs:5:1: 15:2 (#0)[00m
+[96m src/lib.rs:4:1: 16:2 (#0) -> src/lib.rs:5:1: 15:2 (#0)[00m
+[96m src/lib.rs:18:1: 66:2 (#0) -> src/lib.rs:18:1: 66:2 (#0)[00m
+[96m src/lib.rs:18:1: 66:2 (#0) -> src/lib.rs:18:1: 66:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ synth_pair_lib[5376]::src::lib::synth_pair)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn synth_pair(
+    mut pcm: *mut mp3d_sample_t,
+    mut nch: ::core::ffi::c_int,
+    mut z: *const ::core::ffi::c_float,
+) {
+    let mut a: ::core::ffi::c_float = 0.;
+    a = (*z.offset((14 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        - *z.offset(0 as ::core::ffi::c_int as isize))
+        * 29 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += (*z.offset((1 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        + *z.offset((13 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize))
+        * 213 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += (*z.offset((12 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        - *z.offset((2 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize))
+        * 459 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += (*z.offset((3 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        + *z.offset((11 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize))
+        * 2037 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += (*z.offset((10 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        - *z.offset((4 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize))
+        * 5153 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += (*z.offset((5 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        + *z.offset((9 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize))
+        * 6574 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += (*z.offset((8 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        - *z.offset((6 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize))
+        * 37489 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += *z.offset((7 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * 75038 as ::core::ffi::c_int as ::core::ffi::c_float;
+    *pcm.offset(0 as ::core::ffi::c_int as isize) = mp3d_scale_pcm(a) as mp3d_sample_t;
+    z = z.offset(2 as ::core::ffi::c_int as isize);
+    a = *z.offset((14 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * 104 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += *z.offset((12 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * 1567 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += *z.offset((10 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * 9727 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += *z.offset((8 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * 64019 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += *z.offset((6 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * -(9975 as ::core::ffi::c_int) as ::core::ffi::c_float;
+    a += *z.offset((4 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * -(45 as ::core::ffi::c_int) as ::core::ffi::c_float;
+    a += *z.offset((2 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * 146 as ::core::ffi::c_int as ::core::ffi::c_float;
+    a += *z.offset((0 as ::core::ffi::c_int * 64 as ::core::ffi::c_int) as isize)
+        * -(5 as ::core::ffi::c_int) as ::core::ffi::c_float;
+    *pcm.offset((16 as ::core::ffi::c_int * nch) as isize) = mp3d_scale_pcm(a) as mp3d_sample_t;
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: synth_pair_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.47s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn synth_pair(pcm: &mut [mp3d_sample_t], nch: i32, z: &[f32]) {
+    let nch = nch as usize;
+
+    let mut a: f32 =
+        (z[14 * 64] - z[0]) * 29.0;
+    a += (z[1 * 64] + z[13 * 64]) * 213.0;
+    a += (z[12 * 64] - z[2 * 64]) * 459.0;
+    a += (z[3 * 64] + z[11 * 64]) * 2037.0;
+    a += (z[10 * 64] - z[4 * 64]) * 5153.0;
+    a += (z[5 * 64] + z[9 * 64]) * 6574.0;
+    a += (z[8 * 64] - z[6 * 64]) * 37489.0;
+    a += z[7 * 64] * 75038.0;
+    pcm[0] = mp3d_scale_pcm(a) as mp3d_sample_t;
+
+    let z = &z[2..];
+    let mut a: f32 = z[14 * 64] * 104.0;
+    a += z[12 * 64] * 1567.0;
+    a += z[10 * 64] * 9727.0;
+    a += z[8 * 64] * 64019.0;
+    a += z[6 * 64] * -9975.0;
+    a += z[4 * 64] * -45.0;
+    a += z[2 * 64] * 146.0;
+    a += z[0] * -5.0;
+    pcm[16 * nch] = mp3d_scale_pcm(a) as mp3d_sample_t;
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:18:1: 66:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:5:1: 15:2 (#0) -> src/lib.rs:6:1: 16:2 (#0)[00m
+[96m src/lib.rs:5:1: 15:2 (#0) -> src/lib.rs:6:1: 16:2 (#0)[00m
+[96m src/lib.rs:18:1: 66:2 (#0) -> src/lib.rs:19:1: 43:2 (#0)[00m
+[96m src/lib.rs:18:1: 66:2 (#0) -> src/lib.rs:19:1: 43:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_organic/synth_pair_lib/translated_rust

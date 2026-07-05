@@ -1,0 +1,147 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_synthetic/003_string_slicing_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: String_Slice
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.51s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: String_Slice
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.35s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:9 ~ String_Slice[51f3]::src::slicing::slice)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn slice(
+    mut mystr: *mut ::core::ffi::c_char,
+    mut start_ptr: *mut ::core::ffi::c_int,
+    mut stop_ptr: *mut ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut len: size_t = strlen(mystr);
+    let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut start: ::core::ffi::c_int = 0;
+    let mut stop: ::core::ffi::c_int = 0;
+    if !start_ptr.is_null() {
+        start = *start_ptr;
+        if start as size_t > len {
+            printf(
+                b"Error: start is off the end of the string!\n\0" as *const u8
+                    as *const ::core::ffi::c_char,
+            );
+            return 1 as ::core::ffi::c_int;
+        }
+    } else {
+        start = 0 as ::core::ffi::c_int;
+    }
+    if !stop_ptr.is_null() {
+        stop = *stop_ptr;
+        if stop as size_t > len {
+            printf(
+                b"Error: stop is off the end of the string!\n\0" as *const u8
+                    as *const ::core::ffi::c_char,
+            );
+            return 1 as ::core::ffi::c_int;
+        }
+        if stop <= start {
+            printf(
+                b"Error: stop must come after start!\n\0" as *const u8
+                    as *const ::core::ffi::c_char,
+            );
+            return 1 as ::core::ffi::c_int;
+        }
+    } else {
+        stop = len as ::core::ffi::c_int;
+    }
+    printf(
+        b"%.*s\n\0" as *const u8 as *const ::core::ffi::c_char,
+        stop - start,
+        mystr.offset(start as isize),
+    );
+    return 0 as ::core::ffi::c_int;
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn slice(mystr: &str, start_ptr: Option<i32>, stop_ptr: Option<i32>) -> i32 {
+    let len = mystr.len();
+    let start = if let Some(start) = start_ptr {
+        if start < 0 || start as usize > len {
+            println!("Error: start is off the end of the string!");
+            return 1;
+        }
+        start
+    } else {
+        0
+    };
+
+    let stop = if let Some(stop) = stop_ptr {
+        if stop < 0 || stop as usize > len {
+            println!("Error: stop is off the end of the string!");
+            return 1;
+        }
+        if stop <= start {
+            println!("Error: stop must come after start!");
+            return 1;
+        }
+        stop
+    } else {
+        len as i32
+    };
+
+    let start = start as usize;
+    let stop = stop as usize;
+
+    if !mystr.is_char_boundary(start) || !mystr.is_char_boundary(stop) {
+        println!("Error: indices must lie on UTF-8 character boundaries!");
+        return 1;
+    }
+
+    println!("{}", &mystr[start..stop]);
+    0
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/slicing.rs:7:1: 53:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/slicing.rs:7:1: 53:2 (#0) -> src/slicing.rs:8:1: 44:2 (#0)[00m
+[96m src/slicing.rs:7:1: 53:2 (#0) -> src/slicing.rs:8:1: 44:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_synthetic/003_string_slicing_lib/translated_rust

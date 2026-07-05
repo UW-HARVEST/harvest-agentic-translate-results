@@ -1,0 +1,3139 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B02_organic/get_predict_func_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.60s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:9 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample)[00m
+[96m Translating Chunk 0[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pred: i32, mut i: i32)
+*/
+pred = (18 as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 4 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 3 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 2 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 1 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+                / 16 as ::core::ffi::c_int;
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pred: i32, mut i: i32)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pred = (
+    18 * psamp[((i - 1) & 7) as usize]
+        - 4 * psamp[((i - 2) & 7) as usize]
+        + 3 * psamp[((i - 3) & 7) as usize]
+        - 2 * psamp[((i - 4) & 7) as usize]
+        + psamp[((i - 5) & 7) as usize]
+) / 16;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:71:13: 85:44 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:73:10
+   |
+73 |     18 * psamp[((i - 1) & 7) as usize]
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:74:15
+   |
+74 |         - 4 * psamp[((i - 2) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:75:15
+   |
+75 |         + 3 * psamp[((i - 3) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:76:15
+   |
+76 |         - 2 * psamp[((i - 4) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:77:11
+   |
+77 |         + psamp[((i - 5) & 7) as usize]
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to 5 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pred = (18 * *psamp.add(((i - 1) & 7) as usize)
+    - 4 * *psamp.add(((i - 2) & 7) as usize)
+    + 3 * *psamp.add(((i - 3) & 7) as usize)
+    - 2 * *psamp.add(((i - 4) & 7) as usize)
+    + *psamp.add(((i - 5) & 7) as usize))
+    / 16;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:71:13: 85:44 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:17:1: 200:2 (#0) -> src/lib.rs:18:1: 193:2 (#0)[00m
+[96m src/lib.rs:17:1: 23:4 (#0) -> src/lib.rs:18:1: 24:4 (#0)[00m
+[96m src/lib.rs:200:1: 200:2 (#0) -> src/lib.rs:193:1: 193:2 (#0)[00m
+[96m src/lib.rs:71:13: 85:44 (#0) -> src/lib.rs:72:13: 77:10 (#0)[00m
+[96m src/lib.rs:71:13: 85:44 (#0) -> src/lib.rs:72:13: 77:10 (#0)[00m
+[96m src/lib.rs:88:13: 111:44 (#0) -> src/lib.rs:81:13: 104:44 (#0)[00m
+[96m src/lib.rs:88:13: 111:44 (#0) -> src/lib.rs:81:13: 104:44 (#0)[00m
+[96m src/lib.rs:114:13: 137:44 (#0) -> src/lib.rs:107:13: 130:44 (#0)[00m
+[96m src/lib.rs:114:13: 137:44 (#0) -> src/lib.rs:107:13: 130:44 (#0)[00m
+[96m src/lib.rs:162:13: 193:45 (#0) -> src/lib.rs:155:13: 186:45 (#0)[00m
+[96m src/lib.rs:162:13: 193:45 (#0) -> src/lib.rs:155:13: 186:45 (#0)[00m
+[96m src/lib.rs:23:5: 199:17 (#0) -> src/lib.rs:24:5: 192:17 (#0)[00m
+[96m src/lib.rs:23:5: 71:12 (#0) -> src/lib.rs:24:5: 72:12 (#0)[00m
+[96m src/lib.rs:86:1: 88:12 (#0) -> src/lib.rs:79:1: 81:12 (#0)[00m
+[96m src/lib.rs:112:1: 114:12 (#0) -> src/lib.rs:105:1: 107:12 (#0)[00m
+[96m src/lib.rs:138:1: 162:12 (#0) -> src/lib.rs:131:1: 155:12 (#0)[00m
+[96m src/lib.rs:194:1: 199:17 (#0) -> src/lib.rs:187:1: 192:17 (#0)[00m
+[96m src/lib.rs:255:1: 268:2 (#0) -> src/lib.rs:248:1: 261:2 (#0)[00m
+[96m src/lib.rs:255:1: 268:2 (#0) -> src/lib.rs:248:1: 261:2 (#0)[00m
+[96m src/lib.rs:385:1: 665:2 (#0) -> src/lib.rs:378:1: 658:2 (#0)[00m
+[96m src/lib.rs:385:1: 388:4 (#0) -> src/lib.rs:378:1: 381:4 (#0)[00m
+[96m src/lib.rs:665:1: 665:2 (#0) -> src/lib.rs:658:1: 658:2 (#0)[00m
+[96m src/lib.rs:391:13: 409:16 (#0) -> src/lib.rs:384:13: 402:16 (#0)[00m
+[96m src/lib.rs:391:13: 409:16 (#0) -> src/lib.rs:384:13: 402:16 (#0)[00m
+[96m src/lib.rs:412:13: 430:16 (#0) -> src/lib.rs:405:13: 423:16 (#0)[00m
+[96m src/lib.rs:412:13: 430:16 (#0) -> src/lib.rs:405:13: 423:16 (#0)[00m
+[96m src/lib.rs:433:13: 451:16 (#0) -> src/lib.rs:426:13: 444:16 (#0)[00m
+[96m src/lib.rs:433:13: 451:16 (#0) -> src/lib.rs:426:13: 444:16 (#0)[00m
+[96m src/lib.rs:454:13: 472:16 (#0) -> src/lib.rs:447:13: 465:16 (#0)[00m
+[96m src/lib.rs:454:13: 472:16 (#0) -> src/lib.rs:447:13: 465:16 (#0)[00m
+[96m src/lib.rs:475:13: 493:16 (#0) -> src/lib.rs:468:13: 486:16 (#0)[00m
+[96m src/lib.rs:475:13: 493:16 (#0) -> src/lib.rs:468:13: 486:16 (#0)[00m
+[96m src/lib.rs:496:13: 514:16 (#0) -> src/lib.rs:489:13: 507:16 (#0)[00m
+[96m src/lib.rs:496:13: 514:16 (#0) -> src/lib.rs:489:13: 507:16 (#0)[00m
+[96m src/lib.rs:517:13: 535:16 (#0) -> src/lib.rs:510:13: 528:16 (#0)[00m
+[96m src/lib.rs:517:13: 535:16 (#0) -> src/lib.rs:510:13: 528:16 (#0)[00m
+[96m src/lib.rs:538:13: 556:16 (#0) -> src/lib.rs:531:13: 549:16 (#0)[00m
+[96m src/lib.rs:538:13: 556:16 (#0) -> src/lib.rs:531:13: 549:16 (#0)[00m
+[96m src/lib.rs:559:13: 577:16 (#0) -> src/lib.rs:552:13: 570:16 (#0)[00m
+[96m src/lib.rs:559:13: 577:16 (#0) -> src/lib.rs:552:13: 570:16 (#0)[00m
+[96m src/lib.rs:580:13: 598:16 (#0) -> src/lib.rs:573:13: 591:16 (#0)[00m
+[96m src/lib.rs:580:13: 598:16 (#0) -> src/lib.rs:573:13: 591:16 (#0)[00m
+[96m src/lib.rs:601:13: 619:16 (#0) -> src/lib.rs:594:13: 612:16 (#0)[00m
+[96m src/lib.rs:601:13: 619:16 (#0) -> src/lib.rs:594:13: 612:16 (#0)[00m
+[96m src/lib.rs:622:13: 640:16 (#0) -> src/lib.rs:615:13: 633:16 (#0)[00m
+[96m src/lib.rs:622:13: 640:16 (#0) -> src/lib.rs:615:13: 633:16 (#0)[00m
+[96m src/lib.rs:643:13: 661:16 (#0) -> src/lib.rs:636:13: 654:16 (#0)[00m
+[96m src/lib.rs:643:13: 661:16 (#0) -> src/lib.rs:636:13: 654:16 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.53s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:388:5: 664:16 (#0) -> src/lib.rs:381:5: 657:16 (#0)[00m
+[96m src/lib.rs:388:5: 391:12 (#0) -> src/lib.rs:381:5: 384:12 (#0)[00m
+[96m src/lib.rs:410:1: 412:12 (#0) -> src/lib.rs:403:1: 405:12 (#0)[00m
+[96m src/lib.rs:431:1: 433:12 (#0) -> src/lib.rs:424:1: 426:12 (#0)[00m
+[96m src/lib.rs:452:1: 454:12 (#0) -> src/lib.rs:445:1: 447:12 (#0)[00m
+[96m src/lib.rs:473:1: 475:12 (#0) -> src/lib.rs:466:1: 468:12 (#0)[00m
+[96m src/lib.rs:494:1: 496:12 (#0) -> src/lib.rs:487:1: 489:12 (#0)[00m
+[96m src/lib.rs:515:1: 517:12 (#0) -> src/lib.rs:508:1: 510:12 (#0)[00m
+[96m src/lib.rs:536:1: 538:12 (#0) -> src/lib.rs:529:1: 531:12 (#0)[00m
+[96m src/lib.rs:557:1: 559:12 (#0) -> src/lib.rs:550:1: 552:12 (#0)[00m
+[96m src/lib.rs:578:1: 580:12 (#0) -> src/lib.rs:571:1: 573:12 (#0)[00m
+[96m src/lib.rs:599:1: 601:12 (#0) -> src/lib.rs:592:1: 594:12 (#0)[00m
+[96m src/lib.rs:620:1: 622:12 (#0) -> src/lib.rs:613:1: 615:12 (#0)[00m
+[96m src/lib.rs:641:1: 643:12 (#0) -> src/lib.rs:634:1: 636:12 (#0)[00m
+[96m src/lib.rs:662:1: 664:16 (#0) -> src/lib.rs:655:1: 657:16 (#0)[00m
+[96m src/lib.rs:201:1: 208:2 (#0) -> src/lib.rs:194:1: 201:2 (#0)[00m
+[96m src/lib.rs:201:1: 208:2 (#0) -> src/lib.rs:194:1: 201:2 (#0)[00m
+[96m src/lib.rs:667:1: 938:2 (#0) -> src/lib.rs:660:1: 931:2 (#0)[00m
+[96m src/lib.rs:667:1: 668:4 (#0) -> src/lib.rs:660:1: 661:4 (#0)[00m
+[96m src/lib.rs:938:1: 938:2 (#0) -> src/lib.rs:931:1: 931:2 (#0)[00m
+[96m src/lib.rs:672:13: 691:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:672:13: 691:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:694:13: 713:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:694:13: 713:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:716:13: 735:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:716:13: 735:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:738:13: 757:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:738:13: 757:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:760:13: 779:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:760:13: 779:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:782:13: 801:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:782:13: 801:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:804:13: 823:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:804:13: 823:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:826:13: 845:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:826:13: 845:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:848:13: 867:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:848:13: 867:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:870:13: 889:43 (#0) -> src/lib.rs:863:13: 882:43 (#0)[00m
+[96m src/lib.rs:870:13: 889:43 (#0) -> src/lib.rs:863:13: 882:43 (#0)[00m
+[96m src/lib.rs:892:13: 911:43 (#0) -> src/lib.rs:885:13: 904:43 (#0)[00m
+[96m src/lib.rs:892:13: 911:43 (#0) -> src/lib.rs:885:13: 904:43 (#0)[00m
+[96m src/lib.rs:914:13: 933:43 (#0) -> src/lib.rs:907:13: 926:43 (#0)[00m
+[96m src/lib.rs:914:13: 933:43 (#0) -> src/lib.rs:907:13: 926:43 (#0)[00m
+[96m src/lib.rs:668:5: 937:19 (#0) -> src/lib.rs:661:5: 930:19 (#0)[00m
+[96m src/lib.rs:668:5: 672:12 (#0) -> src/lib.rs:661:5: 665:12 (#0)[00m
+[96m src/lib.rs:692:1: 694:12 (#0) -> src/lib.rs:685:1: 687:12 (#0)[00m
+[96m src/lib.rs:714:1: 716:12 (#0) -> src/lib.rs:707:1: 709:12 (#0)[00m
+[96m src/lib.rs:736:1: 738:12 (#0) -> src/lib.rs:729:1: 731:12 (#0)[00m
+[96m src/lib.rs:758:1: 760:12 (#0) -> src/lib.rs:751:1: 753:12 (#0)[00m
+[96m src/lib.rs:780:1: 782:12 (#0) -> src/lib.rs:773:1: 775:12 (#0)[00m
+[96m src/lib.rs:802:1: 804:12 (#0) -> src/lib.rs:795:1: 797:12 (#0)[00m
+[96m src/lib.rs:824:1: 826:12 (#0) -> src/lib.rs:817:1: 819:12 (#0)[00m
+[96m src/lib.rs:846:1: 848:12 (#0) -> src/lib.rs:839:1: 841:12 (#0)[00m
+[96m src/lib.rs:868:1: 870:12 (#0) -> src/lib.rs:861:1: 863:12 (#0)[00m
+[96m src/lib.rs:890:1: 892:12 (#0) -> src/lib.rs:883:1: 885:12 (#0)[00m
+[96m src/lib.rs:912:1: 914:12 (#0) -> src/lib.rs:905:1: 907:12 (#0)[00m
+[96m src/lib.rs:934:1: 937:19 (#0) -> src/lib.rs:927:1: 930:19 (#0)[00m
+[96m src/lib.rs:301:1: 324:2 (#0) -> src/lib.rs:294:1: 317:2 (#0)[00m
+[96m src/lib.rs:301:1: 324:2 (#0) -> src/lib.rs:294:1: 317:2 (#0)[00m
+[96m src/lib.rs:219:1: 229:2 (#0) -> src/lib.rs:212:1: 222:2 (#0)[00m
+[96m src/lib.rs:219:1: 229:2 (#0) -> src/lib.rs:212:1: 222:2 (#0)[00m
+[96m src/lib.rs:269:1: 282:2 (#0) -> src/lib.rs:262:1: 275:2 (#0)[00m
+[96m src/lib.rs:269:1: 282:2 (#0) -> src/lib.rs:262:1: 275:2 (#0)[00m
+[96m src/lib.rs:209:1: 218:2 (#0) -> src/lib.rs:202:1: 211:2 (#0)[00m
+[96m src/lib.rs:209:1: 218:2 (#0) -> src/lib.rs:202:1: 211:2 (#0)[00m
+[96m src/lib.rs:325:1: 348:2 (#0) -> src/lib.rs:318:1: 341:2 (#0)[00m
+[96m src/lib.rs:325:1: 348:2 (#0) -> src/lib.rs:318:1: 341:2 (#0)[00m
+[96m src/lib.rs:230:1: 240:2 (#0) -> src/lib.rs:223:1: 233:2 (#0)[00m
+[96m src/lib.rs:230:1: 240:2 (#0) -> src/lib.rs:223:1: 233:2 (#0)[00m
+[96m src/lib.rs:283:1: 300:2 (#0) -> src/lib.rs:276:1: 293:2 (#0)[00m
+[96m src/lib.rs:283:1: 300:2 (#0) -> src/lib.rs:276:1: 293:2 (#0)[00m
+[96m src/lib.rs:349:1: 366:2 (#0) -> src/lib.rs:342:1: 359:2 (#0)[00m
+[96m src/lib.rs:349:1: 366:2 (#0) -> src/lib.rs:342:1: 359:2 (#0)[00m
+[96m src/lib.rs:241:1: 254:2 (#0) -> src/lib.rs:234:1: 247:2 (#0)[00m
+[96m src/lib.rs:241:1: 254:2 (#0) -> src/lib.rs:234:1: 247:2 (#0)[00m
+[96m src/lib.rs:367:1: 384:2 (#0) -> src/lib.rs:360:1: 377:2 (#0)[00m
+[96m src/lib.rs:367:1: 384:2 (#0) -> src/lib.rs:360:1: 377:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample)[00m
+[96m Translating Chunk 1[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pred: i32, mut i: i32)
+*/
+pred = (72 as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 16 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 12 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 8 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 5 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 3 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 3 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 1 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+                / 64 as ::core::ffi::c_int;
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pred: i32, mut i: i32)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pred = (
+    72 * psamp[((i - 1) & 7) as usize]
+        - 16 * psamp[((i - 2) & 7) as usize]
+        + 12 * psamp[((i - 3) & 7) as usize]
+        - 8 * psamp[((i - 4) & 7) as usize]
+        + 5 * psamp[((i - 5) & 7) as usize]
+        - 3 * psamp[((i - 6) & 7) as usize]
+        + 3 * psamp[((i - 7) & 7) as usize]
+        - psamp[((i - 8) & 7) as usize]
+) / 64;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:81:13: 104:44 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:83:10
+   |
+83 |     72 * psamp[((i - 1) & 7) as usize]
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:84:16
+   |
+84 |         - 16 * psamp[((i - 2) & 7) as usize]
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:85:16
+   |
+85 |         + 12 * psamp[((i - 3) & 7) as usize]
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:86:15
+   |
+86 |         - 8 * psamp[((i - 4) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:87:15
+   |
+87 |         + 5 * psamp[((i - 5) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:88:15
+   |
+88 |         - 3 * psamp[((i - 6) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:89:15
+   |
+89 |         + 3 * psamp[((i - 7) & 7) as usize]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:90:11
+   |
+90 |         - psamp[((i - 8) & 7) as usize]
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to 8 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pred = (
+    72 * unsafe { *psamp.offset(((i - 1) & 7) as isize) }
+        - 16 * unsafe { *psamp.offset(((i - 2) & 7) as isize) }
+        + 12 * unsafe { *psamp.offset(((i - 3) & 7) as isize) }
+        - 8 * unsafe { *psamp.offset(((i - 4) & 7) as isize) }
+        + 5 * unsafe { *psamp.offset(((i - 5) & 7) as isize) }
+        - 3 * unsafe { *psamp.offset(((i - 6) & 7) as isize) }
+        + 3 * unsafe { *psamp.offset(((i - 7) & 7) as isize) }
+        - unsafe { *psamp.offset(((i - 8) & 7) as isize) }
+) / 64;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:81:13: 104:44 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:18:1: 193:2 (#0) -> src/lib.rs:19:1: 181:2 (#0)[00m
+[96m src/lib.rs:18:1: 24:4 (#0) -> src/lib.rs:19:1: 25:4 (#0)[00m
+[96m src/lib.rs:193:1: 193:2 (#0) -> src/lib.rs:181:1: 181:2 (#0)[00m
+[96m src/lib.rs:72:13: 77:10 (#0) -> src/lib.rs:73:13: 78:10 (#0)[00m
+[96m src/lib.rs:72:13: 77:10 (#0) -> src/lib.rs:73:13: 78:10 (#0)[00m
+[96m src/lib.rs:81:13: 104:44 (#0) -> src/lib.rs:82:13: 91:8 (#0)[00m
+[96m src/lib.rs:81:13: 104:44 (#0) -> src/lib.rs:82:13: 91:8 (#0)[00m
+[96m src/lib.rs:107:13: 130:44 (#0) -> src/lib.rs:95:13: 118:44 (#0)[00m
+[96m src/lib.rs:107:13: 130:44 (#0) -> src/lib.rs:95:13: 118:44 (#0)[00m
+[96m src/lib.rs:155:13: 186:45 (#0) -> src/lib.rs:143:13: 174:45 (#0)[00m
+[96m src/lib.rs:155:13: 186:45 (#0) -> src/lib.rs:143:13: 174:45 (#0)[00m
+[96m src/lib.rs:24:5: 192:17 (#0) -> src/lib.rs:25:5: 180:17 (#0)[00m
+[96m src/lib.rs:24:5: 72:12 (#0) -> src/lib.rs:25:5: 73:12 (#0)[00m
+[96m src/lib.rs:79:1: 81:12 (#0) -> src/lib.rs:80:1: 82:12 (#0)[00m
+[96m src/lib.rs:105:1: 107:12 (#0) -> src/lib.rs:93:1: 95:12 (#0)[00m
+[96m src/lib.rs:131:1: 155:12 (#0) -> src/lib.rs:119:1: 143:12 (#0)[00m
+[96m src/lib.rs:187:1: 192:17 (#0) -> src/lib.rs:175:1: 180:17 (#0)[00m
+[96m src/lib.rs:248:1: 261:2 (#0) -> src/lib.rs:236:1: 249:2 (#0)[00m
+[96m src/lib.rs:248:1: 261:2 (#0) -> src/lib.rs:236:1: 249:2 (#0)[00m
+[96m src/lib.rs:378:1: 658:2 (#0) -> src/lib.rs:366:1: 646:2 (#0)[00m
+[96m src/lib.rs:378:1: 381:4 (#0) -> src/lib.rs:366:1: 369:4 (#0)[00m
+[96m src/lib.rs:658:1: 658:2 (#0) -> src/lib.rs:646:1: 646:2 (#0)[00m
+[96m src/lib.rs:384:13: 402:16 (#0) -> src/lib.rs:372:13: 390:16 (#0)[00m
+[96m src/lib.rs:384:13: 402:16 (#0) -> src/lib.rs:372:13: 390:16 (#0)[00m
+[96m src/lib.rs:405:13: 423:16 (#0) -> src/lib.rs:393:13: 411:16 (#0)[00m
+[96m src/lib.rs:405:13: 423:16 (#0) -> src/lib.rs:393:13: 411:16 (#0)[00m
+[96m src/lib.rs:426:13: 444:16 (#0) -> src/lib.rs:414:13: 432:16 (#0)[00m
+[96m src/lib.rs:426:13: 444:16 (#0) -> src/lib.rs:414:13: 432:16 (#0)[00m
+[96m src/lib.rs:447:13: 465:16 (#0) -> src/lib.rs:435:13: 453:16 (#0)[00m
+[96m src/lib.rs:447:13: 465:16 (#0) -> src/lib.rs:435:13: 453:16 (#0)[00m
+[96m src/lib.rs:468:13: 486:16 (#0) -> src/lib.rs:456:13: 474:16 (#0)[00m
+[96m src/lib.rs:468:13: 486:16 (#0) -> src/lib.rs:456:13: 474:16 (#0)[00m
+[96m src/lib.rs:489:13: 507:16 (#0) -> src/lib.rs:477:13: 495:16 (#0)[00m
+[96m src/lib.rs:489:13: 507:16 (#0) -> src/lib.rs:477:13: 495:16 (#0)[00m
+[96m src/lib.rs:510:13: 528:16 (#0) -> src/lib.rs:498:13: 516:16 (#0)[00m
+[96m src/lib.rs:510:13: 528:16 (#0) -> src/lib.rs:498:13: 516:16 (#0)[00m
+[96m src/lib.rs:531:13: 549:16 (#0) -> src/lib.rs:519:13: 537:16 (#0)[00m
+[96m src/lib.rs:531:13: 549:16 (#0) -> src/lib.rs:519:13: 537:16 (#0)[00m
+[96m src/lib.rs:552:13: 570:16 (#0) -> src/lib.rs:540:13: 558:16 (#0)[00m
+[96m src/lib.rs:552:13: 570:16 (#0) -> src/lib.rs:540:13: 558:16 (#0)[00m
+[96m src/lib.rs:573:13: 591:16 (#0) -> src/lib.rs:561:13: 579:16 (#0)[00m
+[96m src/lib.rs:573:13: 591:16 (#0) -> src/lib.rs:561:13: 579:16 (#0)[00m
+[96m src/lib.rs:594:13: 612:16 (#0) -> src/lib.rs:582:13: 600:16 (#0)[00m
+[96m src/lib.rs:594:13: 612:16 (#0) -> src/lib.rs:582:13: 600:16 (#0)[00m
+[96m src/lib.rs:615:13: 633:16 (#0) -> src/lib.rs:603:13: 621:16 (#0)[00m
+[96m src/lib.rs:615:13: 633:16 (#0) -> src/lib.rs:603:13: 621:16 (#0)[00m
+[96m src/lib.rs:636:13: 654:16 (#0) -> src/lib.rs:624:13: 642:16 (#0)[00m
+[96m src/lib.rs:636:13: 654:16 (#0) -> src/lib.rs:624:13: 642:16 (#0)[00m
+[96m src/lib.rs:381:5: 657:16 (#0) -> src/lib.rs:369:5: 645:16 (#0)[00m
+[96m src/lib.rs:381:5: 384:12 (#0) -> src/lib.rs:369:5: 372:12 (#0)[00m
+[96m src/lib.rs:403:1: 405:12 (#0) -> src/lib.rs:391:1: 393:12 (#0)[00m
+[96m src/lib.rs:424:1: 426:12 (#0) -> src/lib.rs:412:1: 414:12 (#0)[00m
+[96m src/lib.rs:445:1: 447:12 (#0) -> src/lib.rs:433:1: 435:12 (#0)[00m
+[96m src/lib.rs:466:1: 468:12 (#0) -> src/lib.rs:454:1: 456:12 (#0)[00m
+[96m src/lib.rs:487:1: 489:12 (#0) -> src/lib.rs:475:1: 477:12 (#0)[00m
+[96m src/lib.rs:508:1: 510:12 (#0) -> src/lib.rs:496:1: 498:12 (#0)[00m
+[96m src/lib.rs:529:1: 531:12 (#0) -> src/lib.rs:517:1: 519:12 (#0)[00m
+[96m src/lib.rs:550:1: 552:12 (#0) -> src/lib.rs:538:1: 540:12 (#0)[00m
+[96m src/lib.rs:571:1: 573:12 (#0) -> src/lib.rs:559:1: 561:12 (#0)[00m
+[96m src/lib.rs:592:1: 594:12 (#0) -> src/lib.rs:580:1: 582:12 (#0)[00m
+[96m src/lib.rs:613:1: 615:12 (#0) -> src/lib.rs:601:1: 603:12 (#0)[00m
+[96m src/lib.rs:634:1: 636:12 (#0) -> src/lib.rs:622:1: 624:12 (#0)[00m
+[96m src/lib.rs:655:1: 657:16 (#0) -> src/lib.rs:643:1: 645:16 (#0)[00m
+[96m src/lib.rs:194:1: 201:2 (#0) -> src/lib.rs:182:1: 189:2 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.54s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:194:1: 201:2 (#0) -> src/lib.rs:182:1: 189:2 (#0)[00m
+[96m src/lib.rs:660:1: 931:2 (#0) -> src/lib.rs:648:1: 919:2 (#0)[00m
+[96m src/lib.rs:660:1: 661:4 (#0) -> src/lib.rs:648:1: 649:4 (#0)[00m
+[96m src/lib.rs:931:1: 931:2 (#0) -> src/lib.rs:919:1: 919:2 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:653:13: 672:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:653:13: 672:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:675:13: 694:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:675:13: 694:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:697:13: 716:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:697:13: 716:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:719:13: 738:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:719:13: 738:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:741:13: 760:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:741:13: 760:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:763:13: 782:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:763:13: 782:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:785:13: 804:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:785:13: 804:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:807:13: 826:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:807:13: 826:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:829:13: 848:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:829:13: 848:43 (#0)[00m
+[96m src/lib.rs:863:13: 882:43 (#0) -> src/lib.rs:851:13: 870:43 (#0)[00m
+[96m src/lib.rs:863:13: 882:43 (#0) -> src/lib.rs:851:13: 870:43 (#0)[00m
+[96m src/lib.rs:885:13: 904:43 (#0) -> src/lib.rs:873:13: 892:43 (#0)[00m
+[96m src/lib.rs:885:13: 904:43 (#0) -> src/lib.rs:873:13: 892:43 (#0)[00m
+[96m src/lib.rs:907:13: 926:43 (#0) -> src/lib.rs:895:13: 914:43 (#0)[00m
+[96m src/lib.rs:907:13: 926:43 (#0) -> src/lib.rs:895:13: 914:43 (#0)[00m
+[96m src/lib.rs:661:5: 930:19 (#0) -> src/lib.rs:649:5: 918:19 (#0)[00m
+[96m src/lib.rs:661:5: 665:12 (#0) -> src/lib.rs:649:5: 653:12 (#0)[00m
+[96m src/lib.rs:685:1: 687:12 (#0) -> src/lib.rs:673:1: 675:12 (#0)[00m
+[96m src/lib.rs:707:1: 709:12 (#0) -> src/lib.rs:695:1: 697:12 (#0)[00m
+[96m src/lib.rs:729:1: 731:12 (#0) -> src/lib.rs:717:1: 719:12 (#0)[00m
+[96m src/lib.rs:751:1: 753:12 (#0) -> src/lib.rs:739:1: 741:12 (#0)[00m
+[96m src/lib.rs:773:1: 775:12 (#0) -> src/lib.rs:761:1: 763:12 (#0)[00m
+[96m src/lib.rs:795:1: 797:12 (#0) -> src/lib.rs:783:1: 785:12 (#0)[00m
+[96m src/lib.rs:817:1: 819:12 (#0) -> src/lib.rs:805:1: 807:12 (#0)[00m
+[96m src/lib.rs:839:1: 841:12 (#0) -> src/lib.rs:827:1: 829:12 (#0)[00m
+[96m src/lib.rs:861:1: 863:12 (#0) -> src/lib.rs:849:1: 851:12 (#0)[00m
+[96m src/lib.rs:883:1: 885:12 (#0) -> src/lib.rs:871:1: 873:12 (#0)[00m
+[96m src/lib.rs:905:1: 907:12 (#0) -> src/lib.rs:893:1: 895:12 (#0)[00m
+[96m src/lib.rs:927:1: 930:19 (#0) -> src/lib.rs:915:1: 918:19 (#0)[00m
+[96m src/lib.rs:294:1: 317:2 (#0) -> src/lib.rs:282:1: 305:2 (#0)[00m
+[96m src/lib.rs:294:1: 317:2 (#0) -> src/lib.rs:282:1: 305:2 (#0)[00m
+[96m src/lib.rs:212:1: 222:2 (#0) -> src/lib.rs:200:1: 210:2 (#0)[00m
+[96m src/lib.rs:212:1: 222:2 (#0) -> src/lib.rs:200:1: 210:2 (#0)[00m
+[96m src/lib.rs:262:1: 275:2 (#0) -> src/lib.rs:250:1: 263:2 (#0)[00m
+[96m src/lib.rs:262:1: 275:2 (#0) -> src/lib.rs:250:1: 263:2 (#0)[00m
+[96m src/lib.rs:202:1: 211:2 (#0) -> src/lib.rs:190:1: 199:2 (#0)[00m
+[96m src/lib.rs:202:1: 211:2 (#0) -> src/lib.rs:190:1: 199:2 (#0)[00m
+[96m src/lib.rs:318:1: 341:2 (#0) -> src/lib.rs:306:1: 329:2 (#0)[00m
+[96m src/lib.rs:318:1: 341:2 (#0) -> src/lib.rs:306:1: 329:2 (#0)[00m
+[96m src/lib.rs:223:1: 233:2 (#0) -> src/lib.rs:211:1: 221:2 (#0)[00m
+[96m src/lib.rs:223:1: 233:2 (#0) -> src/lib.rs:211:1: 221:2 (#0)[00m
+[96m src/lib.rs:276:1: 293:2 (#0) -> src/lib.rs:264:1: 281:2 (#0)[00m
+[96m src/lib.rs:276:1: 293:2 (#0) -> src/lib.rs:264:1: 281:2 (#0)[00m
+[96m src/lib.rs:342:1: 359:2 (#0) -> src/lib.rs:330:1: 347:2 (#0)[00m
+[96m src/lib.rs:342:1: 359:2 (#0) -> src/lib.rs:330:1: 347:2 (#0)[00m
+[96m src/lib.rs:234:1: 247:2 (#0) -> src/lib.rs:222:1: 235:2 (#0)[00m
+[96m src/lib.rs:234:1: 247:2 (#0) -> src/lib.rs:222:1: 235:2 (#0)[00m
+[96m src/lib.rs:360:1: 377:2 (#0) -> src/lib.rs:348:1: 365:2 (#0)[00m
+[96m src/lib.rs:360:1: 377:2 (#0) -> src/lib.rs:348:1: 365:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample)[00m
+[96m Translating Chunk 2[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pred: i32, mut i: i32)
+*/
+pred = (76 as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 17 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 10 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 7 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 5 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 4 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + 4 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - 3 as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+                / 64 as ::core::ffi::c_int;
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pred: i32, mut i: i32)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pred = (76 * psamp[((i - 1) & 7) as usize]
+    - 17 * psamp[((i - 2) & 7) as usize]
+    + 10 * psamp[((i - 3) & 7) as usize]
+    - 7 * psamp[((i - 4) & 7) as usize]
+    + 5 * psamp[((i - 5) & 7) as usize]
+    - 4 * psamp[((i - 6) & 7) as usize]
+    + 4 * psamp[((i - 7) & 7) as usize]
+    - 3 * psamp[((i - 8) & 7) as usize])
+    / 64;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:95:13: 118:44 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:96:26
+   |
+96 |             pred = (76 * psamp[((i - 1) & 7) as usize]
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:97:12
+   |
+97 |     - 17 * psamp[((i - 2) & 7) as usize]
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:98:12
+   |
+98 |     + 10 * psamp[((i - 3) & 7) as usize]
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:99:11
+   |
+99 |     - 7 * psamp[((i - 4) & 7) as usize]
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:100:11
+    |
+100 |     + 5 * psamp[((i - 5) & 7) as usize]
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:101:11
+    |
+101 |     - 4 * psamp[((i - 6) & 7) as usize]
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:102:11
+    |
+102 |     + 4 * psamp[((i - 7) & 7) as usize]
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:103:11
+    |
+103 |     - 3 * psamp[((i - 8) & 7) as usize])
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to 8 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pred = (76 * unsafe { *psamp.add(((i - 1) & 7) as usize) }
+    - 17 * unsafe { *psamp.add(((i - 2) & 7) as usize) }
+    + 10 * unsafe { *psamp.add(((i - 3) & 7) as usize) }
+    - 7 * unsafe { *psamp.add(((i - 4) & 7) as usize) }
+    + 5 * unsafe { *psamp.add(((i - 5) & 7) as usize) }
+    - 4 * unsafe { *psamp.add(((i - 6) & 7) as usize) }
+    + 4 * unsafe { *psamp.add(((i - 7) & 7) as usize) }
+    - 3 * unsafe { *psamp.add(((i - 8) & 7) as usize) })
+    / 64;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:95:13: 118:44 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:19:1: 181:2 (#0) -> src/lib.rs:20:1: 168:2 (#0)[00m
+[96m src/lib.rs:19:1: 25:4 (#0) -> src/lib.rs:20:1: 26:4 (#0)[00m
+[96m src/lib.rs:181:1: 181:2 (#0) -> src/lib.rs:168:1: 168:2 (#0)[00m
+[96m src/lib.rs:73:13: 78:10 (#0) -> src/lib.rs:74:13: 79:10 (#0)[00m
+[96m src/lib.rs:73:13: 78:10 (#0) -> src/lib.rs:74:13: 79:10 (#0)[00m
+[96m src/lib.rs:82:13: 91:8 (#0) -> src/lib.rs:83:13: 92:8 (#0)[00m
+[96m src/lib.rs:82:13: 91:8 (#0) -> src/lib.rs:83:13: 92:8 (#0)[00m
+[96m src/lib.rs:95:13: 118:44 (#0) -> src/lib.rs:96:13: 104:10 (#0)[00m
+[96m src/lib.rs:95:13: 118:44 (#0) -> src/lib.rs:96:13: 104:10 (#0)[00m
+[96m src/lib.rs:143:13: 174:45 (#0) -> src/lib.rs:130:13: 161:45 (#0)[00m
+[96m src/lib.rs:143:13: 174:45 (#0) -> src/lib.rs:130:13: 161:45 (#0)[00m
+[96m src/lib.rs:25:5: 180:17 (#0) -> src/lib.rs:26:5: 167:17 (#0)[00m
+[96m src/lib.rs:25:5: 73:12 (#0) -> src/lib.rs:26:5: 74:12 (#0)[00m
+[96m src/lib.rs:80:1: 82:12 (#0) -> src/lib.rs:81:1: 83:12 (#0)[00m
+[96m src/lib.rs:93:1: 95:12 (#0) -> src/lib.rs:94:1: 96:12 (#0)[00m
+[96m src/lib.rs:119:1: 143:12 (#0) -> src/lib.rs:106:1: 130:12 (#0)[00m
+[96m src/lib.rs:175:1: 180:17 (#0) -> src/lib.rs:162:1: 167:17 (#0)[00m
+[96m src/lib.rs:236:1: 249:2 (#0) -> src/lib.rs:223:1: 236:2 (#0)[00m
+[96m src/lib.rs:236:1: 249:2 (#0) -> src/lib.rs:223:1: 236:2 (#0)[00m
+[96m src/lib.rs:366:1: 646:2 (#0) -> src/lib.rs:353:1: 633:2 (#0)[00m
+[96m src/lib.rs:366:1: 369:4 (#0) -> src/lib.rs:353:1: 356:4 (#0)[00m
+[96m src/lib.rs:646:1: 646:2 (#0) -> src/lib.rs:633:1: 633:2 (#0)[00m
+[96m src/lib.rs:372:13: 390:16 (#0) -> src/lib.rs:359:13: 377:16 (#0)[00m
+[96m src/lib.rs:372:13: 390:16 (#0) -> src/lib.rs:359:13: 377:16 (#0)[00m
+[96m src/lib.rs:393:13: 411:16 (#0) -> src/lib.rs:380:13: 398:16 (#0)[00m
+[96m src/lib.rs:393:13: 411:16 (#0) -> src/lib.rs:380:13: 398:16 (#0)[00m
+[96m src/lib.rs:414:13: 432:16 (#0) -> src/lib.rs:401:13: 419:16 (#0)[00m
+[96m src/lib.rs:414:13: 432:16 (#0) -> src/lib.rs:401:13: 419:16 (#0)[00m
+[96m src/lib.rs:435:13: 453:16 (#0) -> src/lib.rs:422:13: 440:16 (#0)[00m
+[96m src/lib.rs:435:13: 453:16 (#0) -> src/lib.rs:422:13: 440:16 (#0)[00m
+[96m src/lib.rs:456:13: 474:16 (#0) -> src/lib.rs:443:13: 461:16 (#0)[00m
+[96m src/lib.rs:456:13: 474:16 (#0) -> src/lib.rs:443:13: 461:16 (#0)[00m
+[96m src/lib.rs:477:13: 495:16 (#0) -> src/lib.rs:464:13: 482:16 (#0)[00m
+[96m src/lib.rs:477:13: 495:16 (#0) -> src/lib.rs:464:13: 482:16 (#0)[00m
+[96m src/lib.rs:498:13: 516:16 (#0) -> src/lib.rs:485:13: 503:16 (#0)[00m
+[96m src/lib.rs:498:13: 516:16 (#0) -> src/lib.rs:485:13: 503:16 (#0)[00m
+[96m src/lib.rs:519:13: 537:16 (#0) -> src/lib.rs:506:13: 524:16 (#0)[00m
+[96m src/lib.rs:519:13: 537:16 (#0) -> src/lib.rs:506:13: 524:16 (#0)[00m
+[96m src/lib.rs:540:13: 558:16 (#0) -> src/lib.rs:527:13: 545:16 (#0)[00m
+[96m src/lib.rs:540:13: 558:16 (#0) -> src/lib.rs:527:13: 545:16 (#0)[00m
+[96m src/lib.rs:561:13: 579:16 (#0) -> src/lib.rs:548:13: 566:16 (#0)[00m
+[96m src/lib.rs:561:13: 579:16 (#0) -> src/lib.rs:548:13: 566:16 (#0)[00m
+[96m src/lib.rs:582:13: 600:16 (#0) -> src/lib.rs:569:13: 587:16 (#0)[00m
+[96m src/lib.rs:582:13: 600:16 (#0) -> src/lib.rs:569:13: 587:16 (#0)[00m
+[96m src/lib.rs:603:13: 621:16 (#0) -> src/lib.rs:590:13: 608:16 (#0)[00m
+[96m src/lib.rs:603:13: 621:16 (#0) -> src/lib.rs:590:13: 608:16 (#0)[00m
+[96m src/lib.rs:624:13: 642:16 (#0) -> src/lib.rs:611:13: 629:16 (#0)[00m
+[96m src/lib.rs:624:13: 642:16 (#0) -> src/lib.rs:611:13: 629:16 (#0)[00m
+[96m src/lib.rs:369:5: 645:16 (#0) -> src/lib.rs:356:5: 632:16 (#0)[00m
+[96m src/lib.rs:369:5: 372:12 (#0) -> src/lib.rs:356:5: 359:12 (#0)[00m
+[96m src/lib.rs:391:1: 393:12 (#0) -> src/lib.rs:378:1: 380:12 (#0)[00m
+[96m src/lib.rs:412:1: 414:12 (#0) -> src/lib.rs:399:1: 401:12 (#0)[00m
+[96m src/lib.rs:433:1: 435:12 (#0) -> src/lib.rs:420:1: 422:12 (#0)[00m
+[96m src/lib.rs:454:1: 456:12 (#0) -> src/lib.rs:441:1: 443:12 (#0)[00m
+[96m src/lib.rs:475:1: 477:12 (#0) -> src/lib.rs:462:1: 464:12 (#0)[00m
+[96m src/lib.rs:496:1: 498:12 (#0) -> src/lib.rs:483:1: 485:12 (#0)[00m
+[96m src/lib.rs:517:1: 519:12 (#0) -> src/lib.rs:504:1: 506:12 (#0)[00m
+[96m src/lib.rs:538:1: 540:12 (#0) -> src/lib.rs:525:1: 527:12 (#0)[00m
+[96m src/lib.rs:559:1: 561:12 (#0) -> src/lib.rs:546:1: 548:12 (#0)[00m
+[96m src/lib.rs:580:1: 582:12 (#0) -> src/lib.rs:567:1: 569:12 (#0)[00m
+[96m src/lib.rs:601:1: 603:12 (#0) -> src/lib.rs:588:1: 590:12 (#0)[00m
+[96m src/lib.rs:622:1: 624:12 (#0) -> src/lib.rs:609:1: 611:12 (#0)[00m
+[96m src/lib.rs:643:1: 645:16 (#0) -> src/lib.rs:630:1: 632:16 (#0)[00m
+[96m src/lib.rs:182:1: 189:2 (#0) -> src/lib.rs:169:1: 176:2 (#0)[00m
+[96m src/lib.rs:182:1: 189:2 (#0) -> src/lib.rs:169:1: 176:2 (#0)[00m
+[96m src/lib.rs:648:1: 919:2 (#0) -> src/lib.rs:635:1: 906:2 (#0)[00m
+[96m src/lib.rs:648:1: 649:4 (#0) -> src/lib.rs:635:1: 636:4 (#0)[00m
+[96m src/lib.rs:919:1: 919:2 (#0) -> src/lib.rs:906:1: 906:2 (#0)[00m
+[96m src/lib.rs:653:13: 672:43 (#0) -> src/lib.rs:640:13: 659:43 (#0)[00m
+[96m src/lib.rs:653:13: 672:43 (#0) -> src/lib.rs:640:13: 659:43 (#0)[00m
+[96m src/lib.rs:675:13: 694:43 (#0) -> src/lib.rs:662:13: 681:43 (#0)[00m
+[96m src/lib.rs:675:13: 694:43 (#0) -> src/lib.rs:662:13: 681:43 (#0)[00m
+[96m src/lib.rs:697:13: 716:43 (#0) -> src/lib.rs:684:13: 703:43 (#0)[00m
+[96m src/lib.rs:697:13: 716:43 (#0) -> src/lib.rs:684:13: 703:43 (#0)[00m
+[96m src/lib.rs:719:13: 738:43 (#0) -> src/lib.rs:706:13: 725:43 (#0)[00m
+[96m src/lib.rs:719:13: 738:43 (#0) -> src/lib.rs:706:13: 725:43 (#0)[00m
+[96m src/lib.rs:741:13: 760:43 (#0) -> src/lib.rs:728:13: 747:43 (#0)[00m
+[96m src/lib.rs:741:13: 760:43 (#0) -> src/lib.rs:728:13: 747:43 (#0)[00m
+[96m src/lib.rs:763:13: 782:43 (#0) -> src/lib.rs:750:13: 769:43 (#0)[00m
+[96m src/lib.rs:763:13: 782:43 (#0) -> src/lib.rs:750:13: 769:43 (#0)[00m
+[96m src/lib.rs:785:13: 804:43 (#0) -> src/lib.rs:772:13: 791:43 (#0)[00m
+[96m src/lib.rs:785:13: 804:43 (#0) -> src/lib.rs:772:13: 791:43 (#0)[00m
+[96m src/lib.rs:807:13: 826:43 (#0) -> src/lib.rs:794:13: 813:43 (#0)[00m
+[96m src/lib.rs:807:13: 826:43 (#0) -> src/lib.rs:794:13: 813:43 (#0)[00m
+[96m src/lib.rs:829:13: 848:43 (#0) -> src/lib.rs:816:13: 835:43 (#0)[00m
+[96m src/lib.rs:829:13: 848:43 (#0) -> src/lib.rs:816:13: 835:43 (#0)[00m
+[96m src/lib.rs:851:13: 870:43 (#0) -> src/lib.rs:838:13: 857:43 (#0)[00m
+[96m src/lib.rs:851:13: 870:43 (#0) -> src/lib.rs:838:13: 857:43 (#0)[00m
+[96m src/lib.rs:873:13: 892:43 (#0) -> src/lib.rs:860:13: 879:43 (#0)[00m
+[96m src/lib.rs:873:13: 892:43 (#0) -> src/lib.rs:860:13: 879:43 (#0)[00m
+[96m src/lib.rs:895:13: 914:43 (#0) -> src/lib.rs:882:13: 901:43 (#0)[00m
+[96m src/lib.rs:895:13: 914:43 (#0) -> src/lib.rs:882:13: 901:43 (#0)[00m
+[96m src/lib.rs:649:5: 918:19 (#0) -> src/lib.rs:636:5: 905:19 (#0)[00m
+[96m src/lib.rs:649:5: 653:12 (#0) -> src/lib.rs:636:5: 640:12 (#0)[00m
+[96m src/lib.rs:673:1: 675:12 (#0) -> src/lib.rs:660:1: 662:12 (#0)[00m
+[96m src/lib.rs:695:1: 697:12 (#0) -> src/lib.rs:682:1: 684:12 (#0)[00m
+[96m src/lib.rs:717:1: 719:12 (#0) -> src/lib.rs:704:1: 706:12 (#0)[00m
+[96m src/lib.rs:739:1: 741:12 (#0) -> src/lib.rs:726:1: 728:12 (#0)[00m
+[96m src/lib.rs:761:1: 763:12 (#0) -> src/lib.rs:748:1: 750:12 (#0)[00m
+[96m src/lib.rs:783:1: 785:12 (#0) -> src/lib.rs:770:1: 772:12 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.62s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:805:1: 807:12 (#0) -> src/lib.rs:792:1: 794:12 (#0)[00m
+[96m src/lib.rs:827:1: 829:12 (#0) -> src/lib.rs:814:1: 816:12 (#0)[00m
+[96m src/lib.rs:849:1: 851:12 (#0) -> src/lib.rs:836:1: 838:12 (#0)[00m
+[96m src/lib.rs:871:1: 873:12 (#0) -> src/lib.rs:858:1: 860:12 (#0)[00m
+[96m src/lib.rs:893:1: 895:12 (#0) -> src/lib.rs:880:1: 882:12 (#0)[00m
+[96m src/lib.rs:915:1: 918:19 (#0) -> src/lib.rs:902:1: 905:19 (#0)[00m
+[96m src/lib.rs:282:1: 305:2 (#0) -> src/lib.rs:269:1: 292:2 (#0)[00m
+[96m src/lib.rs:282:1: 305:2 (#0) -> src/lib.rs:269:1: 292:2 (#0)[00m
+[96m src/lib.rs:200:1: 210:2 (#0) -> src/lib.rs:187:1: 197:2 (#0)[00m
+[96m src/lib.rs:200:1: 210:2 (#0) -> src/lib.rs:187:1: 197:2 (#0)[00m
+[96m src/lib.rs:250:1: 263:2 (#0) -> src/lib.rs:237:1: 250:2 (#0)[00m
+[96m src/lib.rs:250:1: 263:2 (#0) -> src/lib.rs:237:1: 250:2 (#0)[00m
+[96m src/lib.rs:190:1: 199:2 (#0) -> src/lib.rs:177:1: 186:2 (#0)[00m
+[96m src/lib.rs:190:1: 199:2 (#0) -> src/lib.rs:177:1: 186:2 (#0)[00m
+[96m src/lib.rs:306:1: 329:2 (#0) -> src/lib.rs:293:1: 316:2 (#0)[00m
+[96m src/lib.rs:306:1: 329:2 (#0) -> src/lib.rs:293:1: 316:2 (#0)[00m
+[96m src/lib.rs:211:1: 221:2 (#0) -> src/lib.rs:198:1: 208:2 (#0)[00m
+[96m src/lib.rs:211:1: 221:2 (#0) -> src/lib.rs:198:1: 208:2 (#0)[00m
+[96m src/lib.rs:264:1: 281:2 (#0) -> src/lib.rs:251:1: 268:2 (#0)[00m
+[96m src/lib.rs:264:1: 281:2 (#0) -> src/lib.rs:251:1: 268:2 (#0)[00m
+[96m src/lib.rs:330:1: 347:2 (#0) -> src/lib.rs:317:1: 334:2 (#0)[00m
+[96m src/lib.rs:330:1: 347:2 (#0) -> src/lib.rs:317:1: 334:2 (#0)[00m
+[96m src/lib.rs:222:1: 235:2 (#0) -> src/lib.rs:209:1: 222:2 (#0)[00m
+[96m src/lib.rs:222:1: 235:2 (#0) -> src/lib.rs:209:1: 222:2 (#0)[00m
+[96m src/lib.rs:348:1: 365:2 (#0) -> src/lib.rs:335:1: 352:2 (#0)[00m
+[96m src/lib.rs:348:1: 365:2 (#0) -> src/lib.rs:335:1: 352:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample)[00m
+[96m Translating Chunk 3[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32)
+*/
+pred = ((*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                [0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [1 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [2 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [3 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [4 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [5 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [6 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + (*ridx).firfx[(pfcn - 12 as ::core::ffi::c_int) as usize]
+                    [7 as ::core::ffi::c_int as usize] as ::core::ffi::c_int
+                    * *psamp
+                        .offset((i - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+                / 256 as ::core::ffi::c_int;
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let fir = &ridx.firfx[(pfcn - 12) as usize];
+pred = (
+    fir[0] as i32 * psamp[((i - 1) & 7) as usize]
+        + fir[1] as i32 * psamp[((i - 2) & 7) as usize]
+        + fir[2] as i32 * psamp[((i - 3) & 7) as usize]
+        + fir[3] as i32 * psamp[((i - 4) & 7) as usize]
+        + fir[4] as i32 * psamp[((i - 5) & 7) as usize]
+        + fir[5] as i32 * psamp[((i - 6) & 7) as usize]
+        + fir[6] as i32 * psamp[((i - 7) & 7) as usize]
+        + fir[7] as i32 * psamp[((i - 8) & 7) as usize]
+) / 256;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:130:13: 161:45 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0609]: no field `firfx` on type `*mut btac1c_idxstate_s`
+   --> src/lib.rs:131:29
+    |
+131 |             let fir = &ridx.firfx[(pfcn - 12) as usize];
+    |                        -----^^^^^
+    |                        |
+    |                        help: `ridx` is a raw pointer; try dereferencing it: `(*ridx).firfx`
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:133:21
+    |
+133 |     fir[0] as i32 * psamp[((i - 1) & 7) as usize]
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:134:27
+    |
+134 |         + fir[1] as i32 * psamp[((i - 2) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:135:27
+    |
+135 |         + fir[2] as i32 * psamp[((i - 3) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:136:27
+    |
+136 |         + fir[3] as i32 * psamp[((i - 4) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:137:27
+    |
+137 |         + fir[4] as i32 * psamp[((i - 5) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:138:27
+    |
+138 |         + fir[5] as i32 * psamp[((i - 6) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:139:27
+    |
+139 |         + fir[6] as i32 * psamp[((i - 7) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:140:27
+    |
+140 |         + fir[7] as i32 * psamp[((i - 8) & 7) as usize]
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0608, E0609.
+For more information about an error, try `rustc --explain E0608`.
+error: could not compile `driver` due to 9 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let fir = unsafe { &(*ridx).firfx[(pfcn - 12) as usize] };
+pred = (
+    fir[0] as i32 * unsafe { *psamp.offset(((i - 1) & 7) as isize) }
+        + fir[1] as i32 * unsafe { *psamp.offset(((i - 2) & 7) as isize) }
+        + fir[2] as i32 * unsafe { *psamp.offset(((i - 3) & 7) as isize) }
+        + fir[3] as i32 * unsafe { *psamp.offset(((i - 4) & 7) as isize) }
+        + fir[4] as i32 * unsafe { *psamp.offset(((i - 5) & 7) as isize) }
+        + fir[5] as i32 * unsafe { *psamp.offset(((i - 6) & 7) as isize) }
+        + fir[6] as i32 * unsafe { *psamp.offset(((i - 7) & 7) as isize) }
+        + fir[7] as i32 * unsafe { *psamp.offset(((i - 8) & 7) as isize) }
+) / 256;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:130:13: 161:45 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:20:1: 168:2 (#0) -> src/lib.rs:21:1: 149:2 (#0)[00m
+[96m src/lib.rs:20:1: 26:4 (#0) -> src/lib.rs:21:1: 27:4 (#0)[00m
+[96m src/lib.rs:168:1: 168:2 (#0) -> src/lib.rs:149:1: 149:2 (#0)[00m
+[96m src/lib.rs:74:13: 79:10 (#0) -> src/lib.rs:75:13: 80:10 (#0)[00m
+[96m src/lib.rs:74:13: 79:10 (#0) -> src/lib.rs:75:13: 80:10 (#0)[00m
+[96m src/lib.rs:83:13: 92:8 (#0) -> src/lib.rs:84:13: 93:8 (#0)[00m
+[96m src/lib.rs:83:13: 92:8 (#0) -> src/lib.rs:84:13: 93:8 (#0)[00m
+[96m src/lib.rs:96:13: 104:10 (#0) -> src/lib.rs:97:13: 105:10 (#0)[00m
+[96m src/lib.rs:96:13: 104:10 (#0) -> src/lib.rs:97:13: 105:10 (#0)[00m
+[96m src/lib.rs:130:13: 161:45 (#0) -> src/lib.rs:131:13: 141:9 (#0)[00m
+[96m src/lib.rs:130:13: 161:45 (#0) -> src/lib.rs:131:13: 141:9 (#0)[00m
+[96m src/lib.rs:26:5: 167:17 (#0) -> src/lib.rs:27:5: 148:17 (#0)[00m
+[96m src/lib.rs:26:5: 74:12 (#0) -> src/lib.rs:27:5: 75:12 (#0)[00m
+[96m src/lib.rs:81:1: 83:12 (#0) -> src/lib.rs:82:1: 84:12 (#0)[00m
+[96m src/lib.rs:94:1: 96:12 (#0) -> src/lib.rs:95:1: 97:12 (#0)[00m
+[96m src/lib.rs:106:1: 130:12 (#0) -> src/lib.rs:107:1: 131:12 (#0)[00m
+[96m src/lib.rs:162:1: 167:17 (#0) -> src/lib.rs:143:1: 148:17 (#0)[00m
+[96m src/lib.rs:223:1: 236:2 (#0) -> src/lib.rs:204:1: 217:2 (#0)[00m
+[96m src/lib.rs:223:1: 236:2 (#0) -> src/lib.rs:204:1: 217:2 (#0)[00m
+[96m src/lib.rs:353:1: 633:2 (#0) -> src/lib.rs:334:1: 614:2 (#0)[00m
+[96m src/lib.rs:353:1: 356:4 (#0) -> src/lib.rs:334:1: 337:4 (#0)[00m
+[96m src/lib.rs:633:1: 633:2 (#0) -> src/lib.rs:614:1: 614:2 (#0)[00m
+[96m src/lib.rs:359:13: 377:16 (#0) -> src/lib.rs:340:13: 358:16 (#0)[00m
+[96m src/lib.rs:359:13: 377:16 (#0) -> src/lib.rs:340:13: 358:16 (#0)[00m
+[96m src/lib.rs:380:13: 398:16 (#0) -> src/lib.rs:361:13: 379:16 (#0)[00m
+[96m src/lib.rs:380:13: 398:16 (#0) -> src/lib.rs:361:13: 379:16 (#0)[00m
+[96m src/lib.rs:401:13: 419:16 (#0) -> src/lib.rs:382:13: 400:16 (#0)[00m
+[96m src/lib.rs:401:13: 419:16 (#0) -> src/lib.rs:382:13: 400:16 (#0)[00m
+[96m src/lib.rs:422:13: 440:16 (#0) -> src/lib.rs:403:13: 421:16 (#0)[00m
+[96m src/lib.rs:422:13: 440:16 (#0) -> src/lib.rs:403:13: 421:16 (#0)[00m
+[96m src/lib.rs:443:13: 461:16 (#0) -> src/lib.rs:424:13: 442:16 (#0)[00m
+[96m src/lib.rs:443:13: 461:16 (#0) -> src/lib.rs:424:13: 442:16 (#0)[00m
+[96m src/lib.rs:464:13: 482:16 (#0) -> src/lib.rs:445:13: 463:16 (#0)[00m
+[96m src/lib.rs:464:13: 482:16 (#0) -> src/lib.rs:445:13: 463:16 (#0)[00m
+[96m src/lib.rs:485:13: 503:16 (#0) -> src/lib.rs:466:13: 484:16 (#0)[00m
+[96m src/lib.rs:485:13: 503:16 (#0) -> src/lib.rs:466:13: 484:16 (#0)[00m
+[96m src/lib.rs:506:13: 524:16 (#0) -> src/lib.rs:487:13: 505:16 (#0)[00m
+[96m src/lib.rs:506:13: 524:16 (#0) -> src/lib.rs:487:13: 505:16 (#0)[00m
+[96m src/lib.rs:527:13: 545:16 (#0) -> src/lib.rs:508:13: 526:16 (#0)[00m
+[96m src/lib.rs:527:13: 545:16 (#0) -> src/lib.rs:508:13: 526:16 (#0)[00m
+[96m src/lib.rs:548:13: 566:16 (#0) -> src/lib.rs:529:13: 547:16 (#0)[00m
+[96m src/lib.rs:548:13: 566:16 (#0) -> src/lib.rs:529:13: 547:16 (#0)[00m
+[96m src/lib.rs:569:13: 587:16 (#0) -> src/lib.rs:550:13: 568:16 (#0)[00m
+[96m src/lib.rs:569:13: 587:16 (#0) -> src/lib.rs:550:13: 568:16 (#0)[00m
+[96m src/lib.rs:590:13: 608:16 (#0) -> src/lib.rs:571:13: 589:16 (#0)[00m
+[96m src/lib.rs:590:13: 608:16 (#0) -> src/lib.rs:571:13: 589:16 (#0)[00m
+[96m src/lib.rs:611:13: 629:16 (#0) -> src/lib.rs:592:13: 610:16 (#0)[00m
+[96m src/lib.rs:611:13: 629:16 (#0) -> src/lib.rs:592:13: 610:16 (#0)[00m
+[96m src/lib.rs:356:5: 632:16 (#0) -> src/lib.rs:337:5: 613:16 (#0)[00m
+[96m src/lib.rs:356:5: 359:12 (#0) -> src/lib.rs:337:5: 340:12 (#0)[00m
+[96m src/lib.rs:378:1: 380:12 (#0) -> src/lib.rs:359:1: 361:12 (#0)[00m
+[96m src/lib.rs:399:1: 401:12 (#0) -> src/lib.rs:380:1: 382:12 (#0)[00m
+[96m src/lib.rs:420:1: 422:12 (#0) -> src/lib.rs:401:1: 403:12 (#0)[00m
+[96m src/lib.rs:441:1: 443:12 (#0) -> src/lib.rs:422:1: 424:12 (#0)[00m
+[96m src/lib.rs:462:1: 464:12 (#0) -> src/lib.rs:443:1: 445:12 (#0)[00m
+[96m src/lib.rs:483:1: 485:12 (#0) -> src/lib.rs:464:1: 466:12 (#0)[00m
+[96m src/lib.rs:504:1: 506:12 (#0) -> src/lib.rs:485:1: 487:12 (#0)[00m
+[96m src/lib.rs:525:1: 527:12 (#0) -> src/lib.rs:506:1: 508:12 (#0)[00m
+[96m src/lib.rs:546:1: 548:12 (#0) -> src/lib.rs:527:1: 529:12 (#0)[00m
+[96m src/lib.rs:567:1: 569:12 (#0) -> src/lib.rs:548:1: 550:12 (#0)[00m
+[96m src/lib.rs:588:1: 590:12 (#0) -> src/lib.rs:569:1: 571:12 (#0)[00m
+[96m src/lib.rs:609:1: 611:12 (#0) -> src/lib.rs:590:1: 592:12 (#0)[00m
+[96m src/lib.rs:630:1: 632:16 (#0) -> src/lib.rs:611:1: 613:16 (#0)[00m
+[96m src/lib.rs:169:1: 176:2 (#0) -> src/lib.rs:150:1: 157:2 (#0)[00m
+[96m src/lib.rs:169:1: 176:2 (#0) -> src/lib.rs:150:1: 157:2 (#0)[00m
+[96m src/lib.rs:635:1: 906:2 (#0) -> src/lib.rs:616:1: 887:2 (#0)[00m
+[96m src/lib.rs:635:1: 636:4 (#0) -> src/lib.rs:616:1: 617:4 (#0)[00m
+[96m src/lib.rs:906:1: 906:2 (#0) -> src/lib.rs:887:1: 887:2 (#0)[00m
+[96m src/lib.rs:640:13: 659:43 (#0) -> src/lib.rs:621:13: 640:43 (#0)[00m
+[96m src/lib.rs:640:13: 659:43 (#0) -> src/lib.rs:621:13: 640:43 (#0)[00m
+[96m src/lib.rs:662:13: 681:43 (#0) -> src/lib.rs:643:13: 662:43 (#0)[00m
+[96m src/lib.rs:662:13: 681:43 (#0) -> src/lib.rs:643:13: 662:43 (#0)[00m
+[96m src/lib.rs:684:13: 703:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:684:13: 703:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:706:13: 725:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:706:13: 725:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:728:13: 747:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:728:13: 747:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:750:13: 769:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:750:13: 769:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:772:13: 791:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:772:13: 791:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:794:13: 813:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:794:13: 813:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:816:13: 835:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:816:13: 835:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:838:13: 857:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:838:13: 857:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:860:13: 879:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:860:13: 879:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:882:13: 901:43 (#0) -> src/lib.rs:863:13: 882:43 (#0)[00m
+[96m src/lib.rs:882:13: 901:43 (#0) -> src/lib.rs:863:13: 882:43 (#0)[00m
+[96m src/lib.rs:636:5: 905:19 (#0) -> src/lib.rs:617:5: 886:19 (#0)[00m
+[96m src/lib.rs:636:5: 640:12 (#0) -> src/lib.rs:617:5: 621:12 (#0)[00m
+[96m src/lib.rs:660:1: 662:12 (#0) -> src/lib.rs:641:1: 643:12 (#0)[00m
+[96m src/lib.rs:682:1: 684:12 (#0) -> src/lib.rs:663:1: 665:12 (#0)[00m
+[96m src/lib.rs:704:1: 706:12 (#0) -> src/lib.rs:685:1: 687:12 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.55s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:726:1: 728:12 (#0) -> src/lib.rs:707:1: 709:12 (#0)[00m
+[96m src/lib.rs:748:1: 750:12 (#0) -> src/lib.rs:729:1: 731:12 (#0)[00m
+[96m src/lib.rs:770:1: 772:12 (#0) -> src/lib.rs:751:1: 753:12 (#0)[00m
+[96m src/lib.rs:792:1: 794:12 (#0) -> src/lib.rs:773:1: 775:12 (#0)[00m
+[96m src/lib.rs:814:1: 816:12 (#0) -> src/lib.rs:795:1: 797:12 (#0)[00m
+[96m src/lib.rs:836:1: 838:12 (#0) -> src/lib.rs:817:1: 819:12 (#0)[00m
+[96m src/lib.rs:858:1: 860:12 (#0) -> src/lib.rs:839:1: 841:12 (#0)[00m
+[96m src/lib.rs:880:1: 882:12 (#0) -> src/lib.rs:861:1: 863:12 (#0)[00m
+[96m src/lib.rs:902:1: 905:19 (#0) -> src/lib.rs:883:1: 886:19 (#0)[00m
+[96m src/lib.rs:269:1: 292:2 (#0) -> src/lib.rs:250:1: 273:2 (#0)[00m
+[96m src/lib.rs:269:1: 292:2 (#0) -> src/lib.rs:250:1: 273:2 (#0)[00m
+[96m src/lib.rs:187:1: 197:2 (#0) -> src/lib.rs:168:1: 178:2 (#0)[00m
+[96m src/lib.rs:187:1: 197:2 (#0) -> src/lib.rs:168:1: 178:2 (#0)[00m
+[96m src/lib.rs:237:1: 250:2 (#0) -> src/lib.rs:218:1: 231:2 (#0)[00m
+[96m src/lib.rs:237:1: 250:2 (#0) -> src/lib.rs:218:1: 231:2 (#0)[00m
+[96m src/lib.rs:177:1: 186:2 (#0) -> src/lib.rs:158:1: 167:2 (#0)[00m
+[96m src/lib.rs:177:1: 186:2 (#0) -> src/lib.rs:158:1: 167:2 (#0)[00m
+[96m src/lib.rs:293:1: 316:2 (#0) -> src/lib.rs:274:1: 297:2 (#0)[00m
+[96m src/lib.rs:293:1: 316:2 (#0) -> src/lib.rs:274:1: 297:2 (#0)[00m
+[96m src/lib.rs:198:1: 208:2 (#0) -> src/lib.rs:179:1: 189:2 (#0)[00m
+[96m src/lib.rs:198:1: 208:2 (#0) -> src/lib.rs:179:1: 189:2 (#0)[00m
+[96m src/lib.rs:251:1: 268:2 (#0) -> src/lib.rs:232:1: 249:2 (#0)[00m
+[96m src/lib.rs:251:1: 268:2 (#0) -> src/lib.rs:232:1: 249:2 (#0)[00m
+[96m src/lib.rs:317:1: 334:2 (#0) -> src/lib.rs:298:1: 315:2 (#0)[00m
+[96m src/lib.rs:317:1: 334:2 (#0) -> src/lib.rs:298:1: 315:2 (#0)[00m
+[96m src/lib.rs:209:1: 222:2 (#0) -> src/lib.rs:190:1: 203:2 (#0)[00m
+[96m src/lib.rs:209:1: 222:2 (#0) -> src/lib.rs:190:1: 203:2 (#0)[00m
+[96m src/lib.rs:335:1: 352:2 (#0) -> src/lib.rs:316:1: 333:2 (#0)[00m
+[96m src/lib.rs:335:1: 352:2 (#0) -> src/lib.rs:316:1: 333:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample)[00m
+[96m Translating Chunk 4[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+*/
+let mut pred: ::core::ffi::c_int = 0;
+    let mut p0: ::core::ffi::c_int = 0;
+    let mut p1: ::core::ffi::c_int = 0;
+    let mut i: ::core::ffi::c_int = 0;
+    i = idx;
+    match pfcn {
+        0 => {
+            pred = *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+        }
+        1 => {
+            pred = 2 as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+        }
+        2 => {
+            pred = 3 as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                >> 1 as ::core::ffi::c_int;
+        }
+        3 => {
+            pred = 5 as ::core::ffi::c_int
+                * *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                - *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                >> 2 as ::core::ffi::c_int;
+        }
+        4 => {
+            p0 = *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            p1 = *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            pred = p0 - (p1 >> 1 as ::core::ffi::c_int);
+        }
+        5 => {
+            p0 = *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            p1 = *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            pred = 3 as ::core::ffi::c_int * p0 - p1 >> 2 as ::core::ffi::c_int;
+        }
+        6 => {
+            p0 = *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            p1 = *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            pred = 5 as ::core::ffi::c_int * p0 - p1 >> 3 as ::core::ffi::c_int;
+        }
+        7 => {
+           /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+        8 => {
+           /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+        9 => {
+           /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+        10 => {
+            p0 = *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            p1 = *psamp.offset((i - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            pred = 5 as ::core::ffi::c_int * p0 - p1 >> 4 as ::core::ffi::c_int;
+        }
+        11 => {
+            p0 = *psamp.offset((i - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            p1 = *psamp.offset((i - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+                + *psamp.offset((i - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+            pred = p0 + p1 >> 3 as ::core::ffi::c_int;
+        }
+        12 | 13 | 14 | 15 => {
+           /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32, fir: &[i16; 8])
+        </CHUNK> */        }
+        _ => {
+            pred = 0 as ::core::ffi::c_int;
+        }
+    }
+    return pred;
+/*
+The variables live at this point are:
+(mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+There are some pieces of code that are not shown here, between the tags <CHUNK> and </CHUNK>. Note the variables that are live at the beginning and end of each chunk, and ensure that the translation of the surrounding code maintains these variables. You cannot change the variables that are live at the beginning and end of each chunk. In your translation, make sure that these comments containing chunks are preserved. In other words, keep the portions with /* <CHUNK> ... </CHUNK> */ unchanged.
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let mut pred: i32 = 0;
+let mut p0: i32 = 0;
+let mut p1: i32 = 0;
+let i = idx;
+
+let s = |n: i32| -> i32 { psamp[((i - n) & 7) as usize] };
+
+match pfcn {
+    0 => {
+        pred = s(1);
+    }
+    1 => {
+        pred = 2 * s(1) - s(2);
+    }
+    2 => {
+        pred = (3 * s(1) - s(2)) >> 1;
+    }
+    3 => {
+        pred = (5 * s(1) - s(2)) >> 2;
+    }
+    4 => {
+        p0 = s(1) + s(2);
+        p1 = s(2) + s(3);
+        pred = p0 - (p1 >> 1);
+    }
+    5 => {
+        p0 = s(1) + s(2);
+        p1 = s(2) + s(3);
+        pred = (3 * p0 - p1) >> 2;
+    }
+    6 => {
+        p0 = s(1) + s(2);
+        p1 = s(2) + s(3);
+        pred = (5 * p0 - p1) >> 3;
+    }
+    7 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+    8 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+    9 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+    10 => {
+        p0 = s(1) + s(2) + s(3) + s(4);
+        p1 = s(5) + s(6) + s(7) + s(8);
+        pred = (5 * p0 - p1) >> 4;
+    }
+    11 => {
+        p0 = s(1) + s(2) + s(3) + s(4);
+        p1 = s(5) + s(6) + s(7) + s(8);
+        pred = (p0 + p1) >> 3;
+    }
+    12 | 13 | 14 | 15 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32, fir: &[i16; 8])
+        </CHUNK> */        }
+    _ => {
+        pred = 0;
+    }
+}
+
+pred
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:27:5: 75:12 (#0)
+src/lib.rs:82:1: 84:12 (#0)
+src/lib.rs:95:1: 97:12 (#0)
+src/lib.rs:107:1: 131:12 (#0)
+src/lib.rs:143:1: 148:17 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0608]: cannot index into a value of type `*mut i32`
+  --> src/lib.rs:33:27
+   |
+33 | let s = |n: i32| -> i32 { psamp[((i - n) & 7) as usize] };
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let mut pred: i32 = 0;
+let mut p0: i32 = 0;
+let mut p1: i32 = 0;
+let mut i: i32 = idx;
+
+match pfcn {
+    0 => {
+        pred = psamp.wrapping_offset(((i - 1) & 7) as isize).read();
+    }
+    1 => {
+        pred = 2 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            - psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+    }
+    2 => {
+        pred = (3 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            - psamp.wrapping_offset(((i - 2) & 7) as isize).read())
+            >> 1;
+    }
+    3 => {
+        pred = (5 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            - psamp.wrapping_offset(((i - 2) & 7) as isize).read())
+            >> 2;
+    }
+    4 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+        pred = p0 - (p1 >> 1);
+    }
+    5 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+        pred = (3 * p0 - p1) >> 2;
+    }
+    6 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+        pred = (5 * p0 - p1) >> 3;
+    }
+    7 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+    8 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+    9 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pred: i32, mut i: i32)
+        </CHUNK> */        }
+    10 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 4) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 5) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 6) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 7) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 8) & 7) as isize).read();
+        pred = (5 * p0 - p1) >> 4;
+    }
+    11 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 4) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 5) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 6) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 7) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 8) & 7) as isize).read();
+        pred = (p0 + p1) >> 3;
+    }
+    12 | 13 | 14 | 15 => {
+       /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s, mut pred: i32, mut i: i32, fir: &[i16; 8])
+        </CHUNK> */        }
+    _ => {
+        pred = 0;
+    }
+}
+
+pred
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:27:5: 75:12 (#0)
+src/lib.rs:82:1: 84:12 (#0)
+src/lib.rs:95:1: 97:12 (#0)
+src/lib.rs:107:1: 131:12 (#0)
+src/lib.rs:143:1: 148:17 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:21:1: 149:2 (#0) -> src/lib.rs:22:1: 149:2 (#0)[00m
+[96m src/lib.rs:21:1: 27:4 (#0) -> src/lib.rs:22:1: 28:4 (#0)[00m
+[96m src/lib.rs:149:1: 149:2 (#0) -> src/lib.rs:149:1: 149:2 (#0)[00m
+[91m Failed to modify src/lib.rs:75:13: 80:10 (#0)! Text mismatch[00m
+[96m src/lib.rs:75:13: 80:10 (#0) -> src/lib.rs:73:8: 78:10 (#0)[00m
+[91m Failed to modify src/lib.rs:75:13: 80:10 (#0)! Text mismatch[00m
+[96m src/lib.rs:75:13: 80:10 (#0) -> src/lib.rs:73:8: 78:10 (#0)[00m
+[91m Failed to modify src/lib.rs:84:13: 93:8 (#0)! Text mismatch[00m
+[96m src/lib.rs:84:13: 93:8 (#0) -> src/lib.rs:82:8: 91:8 (#0)[00m
+[91m Failed to modify src/lib.rs:84:13: 93:8 (#0)! Text mismatch[00m
+[96m src/lib.rs:84:13: 93:8 (#0) -> src/lib.rs:82:8: 91:8 (#0)[00m
+[91m Failed to modify src/lib.rs:97:13: 105:10 (#0)! Text mismatch[00m
+[96m src/lib.rs:97:13: 105:10 (#0) -> src/lib.rs:95:8: 103:10 (#0)[00m
+[91m Failed to modify src/lib.rs:97:13: 105:10 (#0)! Text mismatch[00m
+[96m src/lib.rs:97:13: 105:10 (#0) -> src/lib.rs:95:8: 103:10 (#0)[00m
+[91m Failed to modify src/lib.rs:131:13: 141:9 (#0)! Text mismatch[00m
+[96m src/lib.rs:131:13: 141:9 (#0) -> src/lib.rs:129:8: 139:9 (#0)[00m
+[91m Failed to modify src/lib.rs:131:13: 141:9 (#0)! Text mismatch[00m
+[96m src/lib.rs:131:13: 141:9 (#0) -> src/lib.rs:129:8: 139:9 (#0)[00m
+[96m src/lib.rs:27:5: 148:17 (#0) -> src/lib.rs:28:5: 147:5 (#0)[00m
+[96m src/lib.rs:27:5: 75:12 (#0) -> src/lib.rs:28:5: 73:7 (#0)[00m
+[96m src/lib.rs:82:1: 84:12 (#0) -> src/lib.rs:80:1: 82:7 (#0)[00m
+[96m src/lib.rs:95:1: 97:12 (#0) -> src/lib.rs:93:1: 95:7 (#0)[00m
+[96m src/lib.rs:107:1: 131:12 (#0) -> src/lib.rs:105:1: 129:7 (#0)[00m
+[96m src/lib.rs:143:1: 148:17 (#0) -> src/lib.rs:141:1: 147:5 (#0)[00m
+[96m src/lib.rs:204:1: 217:2 (#0) -> src/lib.rs:204:1: 217:2 (#0)[00m
+[96m src/lib.rs:204:1: 217:2 (#0) -> src/lib.rs:204:1: 217:2 (#0)[00m
+[96m src/lib.rs:334:1: 614:2 (#0) -> src/lib.rs:334:1: 614:2 (#0)[00m
+[96m src/lib.rs:334:1: 337:4 (#0) -> src/lib.rs:334:1: 337:4 (#0)[00m
+[96m src/lib.rs:614:1: 614:2 (#0) -> src/lib.rs:614:1: 614:2 (#0)[00m
+[96m src/lib.rs:340:13: 358:16 (#0) -> src/lib.rs:340:13: 358:16 (#0)[00m
+[96m src/lib.rs:340:13: 358:16 (#0) -> src/lib.rs:340:13: 358:16 (#0)[00m
+[96m src/lib.rs:361:13: 379:16 (#0) -> src/lib.rs:361:13: 379:16 (#0)[00m
+[96m src/lib.rs:361:13: 379:16 (#0) -> src/lib.rs:361:13: 379:16 (#0)[00m
+[96m src/lib.rs:382:13: 400:16 (#0) -> src/lib.rs:382:13: 400:16 (#0)[00m
+[96m src/lib.rs:382:13: 400:16 (#0) -> src/lib.rs:382:13: 400:16 (#0)[00m
+[96m src/lib.rs:403:13: 421:16 (#0) -> src/lib.rs:403:13: 421:16 (#0)[00m
+[96m src/lib.rs:403:13: 421:16 (#0) -> src/lib.rs:403:13: 421:16 (#0)[00m
+[96m src/lib.rs:424:13: 442:16 (#0) -> src/lib.rs:424:13: 442:16 (#0)[00m
+[96m src/lib.rs:424:13: 442:16 (#0) -> src/lib.rs:424:13: 442:16 (#0)[00m
+[96m src/lib.rs:445:13: 463:16 (#0) -> src/lib.rs:445:13: 463:16 (#0)[00m
+[96m src/lib.rs:445:13: 463:16 (#0) -> src/lib.rs:445:13: 463:16 (#0)[00m
+[96m src/lib.rs:466:13: 484:16 (#0) -> src/lib.rs:466:13: 484:16 (#0)[00m
+[96m src/lib.rs:466:13: 484:16 (#0) -> src/lib.rs:466:13: 484:16 (#0)[00m
+[96m src/lib.rs:487:13: 505:16 (#0) -> src/lib.rs:487:13: 505:16 (#0)[00m
+[96m src/lib.rs:487:13: 505:16 (#0) -> src/lib.rs:487:13: 505:16 (#0)[00m
+[96m src/lib.rs:508:13: 526:16 (#0) -> src/lib.rs:508:13: 526:16 (#0)[00m
+[96m src/lib.rs:508:13: 526:16 (#0) -> src/lib.rs:508:13: 526:16 (#0)[00m
+[96m src/lib.rs:529:13: 547:16 (#0) -> src/lib.rs:529:13: 547:16 (#0)[00m
+[96m src/lib.rs:529:13: 547:16 (#0) -> src/lib.rs:529:13: 547:16 (#0)[00m
+[96m src/lib.rs:550:13: 568:16 (#0) -> src/lib.rs:550:13: 568:16 (#0)[00m
+[96m src/lib.rs:550:13: 568:16 (#0) -> src/lib.rs:550:13: 568:16 (#0)[00m
+[96m src/lib.rs:571:13: 589:16 (#0) -> src/lib.rs:571:13: 589:16 (#0)[00m
+[96m src/lib.rs:571:13: 589:16 (#0) -> src/lib.rs:571:13: 589:16 (#0)[00m
+[96m src/lib.rs:592:13: 610:16 (#0) -> src/lib.rs:592:13: 610:16 (#0)[00m
+[96m src/lib.rs:592:13: 610:16 (#0) -> src/lib.rs:592:13: 610:16 (#0)[00m
+[96m src/lib.rs:337:5: 613:16 (#0) -> src/lib.rs:337:5: 613:16 (#0)[00m
+[96m src/lib.rs:337:5: 340:12 (#0) -> src/lib.rs:337:5: 340:12 (#0)[00m
+[96m src/lib.rs:359:1: 361:12 (#0) -> src/lib.rs:359:1: 361:12 (#0)[00m
+[96m src/lib.rs:380:1: 382:12 (#0) -> src/lib.rs:380:1: 382:12 (#0)[00m
+[96m src/lib.rs:401:1: 403:12 (#0) -> src/lib.rs:401:1: 403:12 (#0)[00m
+[96m src/lib.rs:422:1: 424:12 (#0) -> src/lib.rs:422:1: 424:12 (#0)[00m
+[96m src/lib.rs:443:1: 445:12 (#0) -> src/lib.rs:443:1: 445:12 (#0)[00m
+[96m src/lib.rs:464:1: 466:12 (#0) -> src/lib.rs:464:1: 466:12 (#0)[00m
+[96m src/lib.rs:485:1: 487:12 (#0) -> src/lib.rs:485:1: 487:12 (#0)[00m
+[96m src/lib.rs:506:1: 508:12 (#0) -> src/lib.rs:506:1: 508:12 (#0)[00m
+[96m src/lib.rs:527:1: 529:12 (#0) -> src/lib.rs:527:1: 529:12 (#0)[00m
+[96m src/lib.rs:548:1: 550:12 (#0) -> src/lib.rs:548:1: 550:12 (#0)[00m
+[96m src/lib.rs:569:1: 571:12 (#0) -> src/lib.rs:569:1: 571:12 (#0)[00m
+[96m src/lib.rs:590:1: 592:12 (#0) -> src/lib.rs:590:1: 592:12 (#0)[00m
+[96m src/lib.rs:611:1: 613:16 (#0) -> src/lib.rs:611:1: 613:16 (#0)[00m
+[96m src/lib.rs:150:1: 157:2 (#0) -> src/lib.rs:150:1: 157:2 (#0)[00m
+[96m src/lib.rs:150:1: 157:2 (#0) -> src/lib.rs:150:1: 157:2 (#0)[00m
+[96m src/lib.rs:616:1: 887:2 (#0) -> src/lib.rs:616:1: 887:2 (#0)[00m
+[96m src/lib.rs:616:1: 617:4 (#0) -> src/lib.rs:616:1: 617:4 (#0)[00m
+[96m src/lib.rs:887:1: 887:2 (#0) -> src/lib.rs:887:1: 887:2 (#0)[00m
+[96m src/lib.rs:621:13: 640:43 (#0) -> src/lib.rs:621:13: 640:43 (#0)[00m
+[96m src/lib.rs:621:13: 640:43 (#0) -> src/lib.rs:621:13: 640:43 (#0)[00m
+[96m src/lib.rs:643:13: 662:43 (#0) -> src/lib.rs:643:13: 662:43 (#0)[00m
+[96m src/lib.rs:643:13: 662:43 (#0) -> src/lib.rs:643:13: 662:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:863:13: 882:43 (#0) -> src/lib.rs:863:13: 882:43 (#0)[00m
+[96m src/lib.rs:863:13: 882:43 (#0) -> src/lib.rs:863:13: 882:43 (#0)[00m
+[96m src/lib.rs:617:5: 886:19 (#0) -> src/lib.rs:617:5: 886:19 (#0)[00m
+[96m src/lib.rs:617:5: 621:12 (#0) -> src/lib.rs:617:5: 621:12 (#0)[00m
+[96m src/lib.rs:641:1: 643:12 (#0) -> src/lib.rs:641:1: 643:12 (#0)[00m
+[96m src/lib.rs:663:1: 665:12 (#0) -> src/lib.rs:663:1: 665:12 (#0)[00m
+[96m src/lib.rs:685:1: 687:12 (#0) -> src/lib.rs:685:1: 687:12 (#0)[00m
+[96m src/lib.rs:707:1: 709:12 (#0) -> src/lib.rs:707:1: 709:12 (#0)[00m
+[96m src/lib.rs:729:1: 731:12 (#0) -> src/lib.rs:729:1: 731:12 (#0)[00m
+[96m src/lib.rs:751:1: 753:12 (#0) -> src/lib.rs:751:1: 753:12 (#0)[00m
+[96m src/lib.rs:773:1: 775:12 (#0) -> src/lib.rs:773:1: 775:12 (#0)[00m
+[96m src/lib.rs:795:1: 797:12 (#0) -> src/lib.rs:795:1: 797:12 (#0)[00m
+[96m src/lib.rs:817:1: 819:12 (#0) -> src/lib.rs:817:1: 819:12 (#0)[00m
+[96m src/lib.rs:839:1: 841:12 (#0) -> src/lib.rs:839:1: 841:12 (#0)[00m
+[96m src/lib.rs:861:1: 863:12 (#0) -> src/lib.rs:861:1: 863:12 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.54s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:883:1: 886:19 (#0) -> src/lib.rs:883:1: 886:19 (#0)[00m
+[96m src/lib.rs:250:1: 273:2 (#0) -> src/lib.rs:250:1: 273:2 (#0)[00m
+[96m src/lib.rs:250:1: 273:2 (#0) -> src/lib.rs:250:1: 273:2 (#0)[00m
+[96m src/lib.rs:168:1: 178:2 (#0) -> src/lib.rs:168:1: 178:2 (#0)[00m
+[96m src/lib.rs:168:1: 178:2 (#0) -> src/lib.rs:168:1: 178:2 (#0)[00m
+[96m src/lib.rs:218:1: 231:2 (#0) -> src/lib.rs:218:1: 231:2 (#0)[00m
+[96m src/lib.rs:218:1: 231:2 (#0) -> src/lib.rs:218:1: 231:2 (#0)[00m
+[96m src/lib.rs:158:1: 167:2 (#0) -> src/lib.rs:158:1: 167:2 (#0)[00m
+[96m src/lib.rs:158:1: 167:2 (#0) -> src/lib.rs:158:1: 167:2 (#0)[00m
+[96m src/lib.rs:274:1: 297:2 (#0) -> src/lib.rs:274:1: 297:2 (#0)[00m
+[96m src/lib.rs:274:1: 297:2 (#0) -> src/lib.rs:274:1: 297:2 (#0)[00m
+[96m src/lib.rs:179:1: 189:2 (#0) -> src/lib.rs:179:1: 189:2 (#0)[00m
+[96m src/lib.rs:179:1: 189:2 (#0) -> src/lib.rs:179:1: 189:2 (#0)[00m
+[96m src/lib.rs:232:1: 249:2 (#0) -> src/lib.rs:232:1: 249:2 (#0)[00m
+[96m src/lib.rs:232:1: 249:2 (#0) -> src/lib.rs:232:1: 249:2 (#0)[00m
+[96m src/lib.rs:298:1: 315:2 (#0) -> src/lib.rs:298:1: 315:2 (#0)[00m
+[96m src/lib.rs:298:1: 315:2 (#0) -> src/lib.rs:298:1: 315:2 (#0)[00m
+[96m src/lib.rs:190:1: 203:2 (#0) -> src/lib.rs:190:1: 203:2 (#0)[00m
+[96m src/lib.rs:190:1: 203:2 (#0) -> src/lib.rs:190:1: 203:2 (#0)[00m
+[96m src/lib.rs:316:1: 333:2 (#0) -> src/lib.rs:316:1: 333:2 (#0)[00m
+[96m src/lib.rs:316:1: 333:2 (#0) -> src/lib.rs:316:1: 333:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn BTAC1C2_PredictSample(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+   /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+        </CHUNK> */}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+There are some pieces of code that are not shown here, in comments between the tags <CHUNK> and </CHUNK>. Note the variables that are live at the beginning and end of each chunk, and ensure that the translation of the surrounding code maintains these variables. You cannot change the variables that are live at the beginning and end of each chunk.In your translation, make sure that these comments containing chunks are preserved. In other words, keep the portions with /* <CHUNK> ... </CHUNK> */ unchanged.
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+<FUNC>
+fn BTAC1C2_PredictSample(
+    psamp: &mut i32,
+    idx: i32,
+    pfcn: i32,
+    ridx: &mut btac1c_idxstate,
+) -> i32 {
+    /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+        </CHUNK> */
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:22:1: 28:4 (#0)
+src/lib.rs:149:1: 149:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:36:22
+   |
+36 |         pred = psamp.wrapping_offset(((i - 1) & 7) as isize).read();
+   |                      ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:39:26
+   |
+39 |         pred = 2 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+   |                          ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:40:21
+   |
+40 |             - psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:43:27
+   |
+43 |         pred = (3 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+   |                           ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:44:21
+   |
+44 |             - psamp.wrapping_offset(((i - 2) & 7) as isize).read())
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:48:27
+   |
+48 |         pred = (5 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+   |                           ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:49:21
+   |
+49 |             - psamp.wrapping_offset(((i - 2) & 7) as isize).read())
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:53:20
+   |
+53 |         p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+   |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:54:21
+   |
+54 |             + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:55:20
+   |
+55 |         p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+   |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:56:21
+   |
+56 |             + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:60:20
+   |
+60 |         p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+   |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:61:21
+   |
+61 |             + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:62:20
+   |
+62 |         p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+   |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:63:21
+   |
+63 |             + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:67:20
+   |
+67 |         p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+   |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:68:21
+   |
+68 |             + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:69:20
+   |
+69 |         p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+   |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:70:21
+   |
+70 |             + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+   |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:74:29
+   |
+74 |         pred = (18 * *psamp.add(((i - 1) & 7) as usize)
+   |                             ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:75:18
+   |
+75 |     - 4 * *psamp.add(((i - 2) & 7) as usize)
+   |                  ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:76:18
+   |
+76 |     + 3 * *psamp.add(((i - 3) & 7) as usize)
+   |                  ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:77:18
+   |
+77 |     - 2 * *psamp.add(((i - 4) & 7) as usize)
+   |                  ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:78:14
+   |
+78 |     + *psamp.add(((i - 5) & 7) as usize))
+   |              ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:84:26
+   |
+84 |     72 * unsafe { *psamp.offset(((i - 1) & 7) as isize) }
+   |                          ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:85:32
+   |
+85 |         - 16 * unsafe { *psamp.offset(((i - 2) & 7) as isize) }
+   |                                ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:86:32
+   |
+86 |         + 12 * unsafe { *psamp.offset(((i - 3) & 7) as isize) }
+   |                                ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:87:31
+   |
+87 |         - 8 * unsafe { *psamp.offset(((i - 4) & 7) as isize) }
+   |                               ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:88:31
+   |
+88 |         + 5 * unsafe { *psamp.offset(((i - 5) & 7) as isize) }
+   |                               ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:89:31
+   |
+89 |         - 3 * unsafe { *psamp.offset(((i - 6) & 7) as isize) }
+   |                               ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:90:31
+   |
+90 |         + 3 * unsafe { *psamp.offset(((i - 7) & 7) as isize) }
+   |                               ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:91:27
+   |
+91 |         - unsafe { *psamp.offset(((i - 8) & 7) as isize) }
+   |                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:96:38
+   |
+96 |         pred = (76 * unsafe { *psamp.add(((i - 1) & 7) as usize) }
+   |                                      ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:97:28
+   |
+97 |     - 17 * unsafe { *psamp.add(((i - 2) & 7) as usize) }
+   |                            ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:98:28
+   |
+98 |     + 10 * unsafe { *psamp.add(((i - 3) & 7) as usize) }
+   |                            ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+  --> src/lib.rs:99:27
+   |
+99 |     - 7 * unsafe { *psamp.add(((i - 4) & 7) as usize) }
+   |                           ^^^ method not found in `&mut i32`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+   |
+7  | use std::ops::Add;
+   |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:100:27
+    |
+100 |     + 5 * unsafe { *psamp.add(((i - 5) & 7) as usize) }
+    |                           ^^^ method not found in `&mut i32`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+    |
+7   | use std::ops::Add;
+    |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:101:27
+    |
+101 |     - 4 * unsafe { *psamp.add(((i - 6) & 7) as usize) }
+    |                           ^^^ method not found in `&mut i32`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+    |
+7   | use std::ops::Add;
+    |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:102:27
+    |
+102 |     + 4 * unsafe { *psamp.add(((i - 7) & 7) as usize) }
+    |                           ^^^ method not found in `&mut i32`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+    |
+7   | use std::ops::Add;
+    |
+
+error[E0599]: no method named `add` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:103:27
+    |
+103 |     - 3 * unsafe { *psamp.add(((i - 8) & 7) as usize) })
+    |                           ^^^ method not found in `&mut i32`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
+    |
+7   | use std::ops::Add;
+    |
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:108:20
+    |
+108 |         p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+    |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:109:21
+    |
+109 |             + psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:110:21
+    |
+110 |             + psamp.wrapping_offset(((i - 3) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:111:21
+    |
+111 |             + psamp.wrapping_offset(((i - 4) & 7) as isize).read();
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:112:20
+    |
+112 |         p1 = psamp.wrapping_offset(((i - 5) & 7) as isize).read()
+    |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:113:21
+    |
+113 |             + psamp.wrapping_offset(((i - 6) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:114:21
+    |
+114 |             + psamp.wrapping_offset(((i - 7) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:115:21
+    |
+115 |             + psamp.wrapping_offset(((i - 8) & 7) as isize).read();
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:119:20
+    |
+119 |         p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+    |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:120:21
+    |
+120 |             + psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:121:21
+    |
+121 |             + psamp.wrapping_offset(((i - 3) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:122:21
+    |
+122 |             + psamp.wrapping_offset(((i - 4) & 7) as isize).read();
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:123:20
+    |
+123 |         p1 = psamp.wrapping_offset(((i - 5) & 7) as isize).read()
+    |                    ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:124:21
+    |
+124 |             + psamp.wrapping_offset(((i - 6) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:125:21
+    |
+125 |             + psamp.wrapping_offset(((i - 7) & 7) as isize).read()
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `wrapping_offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:126:21
+    |
+126 |             + psamp.wrapping_offset(((i - 8) & 7) as isize).read();
+    |                     ^^^^^^^^^^^^^^^ help: there is an associated function with a similar name: `wrapping_abs`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:132:37
+    |
+132 |     fir[0] as i32 * unsafe { *psamp.offset(((i - 1) & 7) as isize) }
+    |                                     ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:133:43
+    |
+133 |         + fir[1] as i32 * unsafe { *psamp.offset(((i - 2) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:134:43
+    |
+134 |         + fir[2] as i32 * unsafe { *psamp.offset(((i - 3) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:135:43
+    |
+135 |         + fir[3] as i32 * unsafe { *psamp.offset(((i - 4) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:136:43
+    |
+136 |         + fir[4] as i32 * unsafe { *psamp.offset(((i - 5) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:137:43
+    |
+137 |         + fir[5] as i32 * unsafe { *psamp.offset(((i - 6) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:138:43
+    |
+138 |         + fir[6] as i32 * unsafe { *psamp.offset(((i - 7) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0599]: no method named `offset` found for mutable reference `&mut i32` in the current scope
+   --> src/lib.rs:139:43
+    |
+139 |         + fir[7] as i32 * unsafe { *psamp.offset(((i - 8) & 7) as isize) }
+    |                                           ^^^^^^ method not found in `&mut i32`
+
+error[E0605]: non-primitive cast: `for<'r, 's> fn(&'r mut i32, i32, i32, &'s mut btac1c_idxstate_s) -> i32 {BTAC1C2_PredictSample}` as `unsafe extern "C" fn(*mut i32, i32, i32, *mut btac1c_idxstate_s) -> i32`
+   --> src/lib.rs:606:17
+    |
+606 | /                 BTAC1C2_PredictSample
+607 | |                     as unsafe extern "C" fn(
+608 | |                         *mut ::core::ffi::c_int,
+609 | |                         ::core::ffi::c_int,
+610 | |                         ::core::ffi::c_int,
+611 | |                         *mut btac1c_idxstate,
+612 | |                     ) -> ::core::ffi::c_int,
+    | |___________________________________________^ invalid cast
+
+Some errors have detailed explanations: E0599, E0605.
+For more information about an error, try `rustc --explain E0599`.
+error: could not compile `driver` due to 65 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+<FUNC>
+unsafe extern "C" fn BTAC1C2_PredictSample(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    /* <CHUNK>
+        Some code here that uses the following variables:
+        (mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+        At the end of this chunk, the following variables are live:
+        (mut psamp: *mut i32, mut idx: i32, mut pfcn: i32, mut ridx: *mut src::lib::btac1c_idxstate_s)
+        </CHUNK> */
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:22:1: 28:4 (#0)
+src/lib.rs:149:1: 149:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:22:1: 149:2 (#0) -> src/lib.rs:23:1: 151:2 (#0)[00m
+[96m src/lib.rs:22:1: 28:4 (#0) -> src/lib.rs:23:1: 29:4 (#0)[00m
+[96m src/lib.rs:149:1: 149:2 (#0) -> src/lib.rs:150:1: 151:2 (#0)[00m
+[96m src/lib.rs:73:8: 78:10 (#0) -> src/lib.rs:74:8: 79:10 (#0)[00m
+[96m src/lib.rs:73:8: 78:10 (#0) -> src/lib.rs:74:8: 79:10 (#0)[00m
+[96m src/lib.rs:82:8: 91:8 (#0) -> src/lib.rs:83:8: 92:8 (#0)[00m
+[96m src/lib.rs:82:8: 91:8 (#0) -> src/lib.rs:83:8: 92:8 (#0)[00m
+[96m src/lib.rs:95:8: 103:10 (#0) -> src/lib.rs:96:8: 104:10 (#0)[00m
+[96m src/lib.rs:95:8: 103:10 (#0) -> src/lib.rs:96:8: 104:10 (#0)[00m
+[96m src/lib.rs:129:8: 139:9 (#0) -> src/lib.rs:130:8: 140:9 (#0)[00m
+[96m src/lib.rs:129:8: 139:9 (#0) -> src/lib.rs:130:8: 140:9 (#0)[00m
+[91m Failed to modify src/lib.rs:28:5: 147:5 (#0)! Text mismatch[00m
+[96m src/lib.rs:28:5: 147:5 (#0) -> src/lib.rs:29:5: 148:5 (#0)[00m
+[91m Failed to modify src/lib.rs:28:5: 73:7 (#0)! Text mismatch[00m
+[96m src/lib.rs:28:5: 73:7 (#0) -> src/lib.rs:29:5: 74:7 (#0)[00m
+[96m src/lib.rs:80:1: 82:7 (#0) -> src/lib.rs:81:1: 83:7 (#0)[00m
+[96m src/lib.rs:93:1: 95:7 (#0) -> src/lib.rs:94:1: 96:7 (#0)[00m
+[96m src/lib.rs:105:1: 129:7 (#0) -> src/lib.rs:106:1: 130:7 (#0)[00m
+[96m src/lib.rs:141:1: 147:5 (#0) -> src/lib.rs:142:1: 148:5 (#0)[00m
+[96m src/lib.rs:204:1: 217:2 (#0) -> src/lib.rs:207:1: 220:2 (#0)[00m
+[96m src/lib.rs:204:1: 217:2 (#0) -> src/lib.rs:207:1: 220:2 (#0)[00m
+[96m src/lib.rs:334:1: 614:2 (#0) -> src/lib.rs:337:1: 617:2 (#0)[00m
+[96m src/lib.rs:334:1: 337:4 (#0) -> src/lib.rs:337:1: 340:4 (#0)[00m
+[96m src/lib.rs:614:1: 614:2 (#0) -> src/lib.rs:617:1: 617:2 (#0)[00m
+[96m src/lib.rs:340:13: 358:16 (#0) -> src/lib.rs:343:13: 361:16 (#0)[00m
+[96m src/lib.rs:340:13: 358:16 (#0) -> src/lib.rs:343:13: 361:16 (#0)[00m
+[96m src/lib.rs:361:13: 379:16 (#0) -> src/lib.rs:364:13: 382:16 (#0)[00m
+[96m src/lib.rs:361:13: 379:16 (#0) -> src/lib.rs:364:13: 382:16 (#0)[00m
+[96m src/lib.rs:382:13: 400:16 (#0) -> src/lib.rs:385:13: 403:16 (#0)[00m
+[96m src/lib.rs:382:13: 400:16 (#0) -> src/lib.rs:385:13: 403:16 (#0)[00m
+[96m src/lib.rs:403:13: 421:16 (#0) -> src/lib.rs:406:13: 424:16 (#0)[00m
+[96m src/lib.rs:403:13: 421:16 (#0) -> src/lib.rs:406:13: 424:16 (#0)[00m
+[96m src/lib.rs:424:13: 442:16 (#0) -> src/lib.rs:427:13: 445:16 (#0)[00m
+[96m src/lib.rs:424:13: 442:16 (#0) -> src/lib.rs:427:13: 445:16 (#0)[00m
+[96m src/lib.rs:445:13: 463:16 (#0) -> src/lib.rs:448:13: 466:16 (#0)[00m
+[96m src/lib.rs:445:13: 463:16 (#0) -> src/lib.rs:448:13: 466:16 (#0)[00m
+[96m src/lib.rs:466:13: 484:16 (#0) -> src/lib.rs:469:13: 487:16 (#0)[00m
+[96m src/lib.rs:466:13: 484:16 (#0) -> src/lib.rs:469:13: 487:16 (#0)[00m
+[96m src/lib.rs:487:13: 505:16 (#0) -> src/lib.rs:490:13: 508:16 (#0)[00m
+[96m src/lib.rs:487:13: 505:16 (#0) -> src/lib.rs:490:13: 508:16 (#0)[00m
+[96m src/lib.rs:508:13: 526:16 (#0) -> src/lib.rs:511:13: 529:16 (#0)[00m
+[96m src/lib.rs:508:13: 526:16 (#0) -> src/lib.rs:511:13: 529:16 (#0)[00m
+[96m src/lib.rs:529:13: 547:16 (#0) -> src/lib.rs:532:13: 550:16 (#0)[00m
+[96m src/lib.rs:529:13: 547:16 (#0) -> src/lib.rs:532:13: 550:16 (#0)[00m
+[96m src/lib.rs:550:13: 568:16 (#0) -> src/lib.rs:553:13: 571:16 (#0)[00m
+[96m src/lib.rs:550:13: 568:16 (#0) -> src/lib.rs:553:13: 571:16 (#0)[00m
+[96m src/lib.rs:571:13: 589:16 (#0) -> src/lib.rs:574:13: 592:16 (#0)[00m
+[96m src/lib.rs:571:13: 589:16 (#0) -> src/lib.rs:574:13: 592:16 (#0)[00m
+[96m src/lib.rs:592:13: 610:16 (#0) -> src/lib.rs:595:13: 613:16 (#0)[00m
+[96m src/lib.rs:592:13: 610:16 (#0) -> src/lib.rs:595:13: 613:16 (#0)[00m
+[96m src/lib.rs:337:5: 613:16 (#0) -> src/lib.rs:340:5: 616:16 (#0)[00m
+[96m src/lib.rs:337:5: 340:12 (#0) -> src/lib.rs:340:5: 343:12 (#0)[00m
+[96m src/lib.rs:359:1: 361:12 (#0) -> src/lib.rs:362:1: 364:12 (#0)[00m
+[96m src/lib.rs:380:1: 382:12 (#0) -> src/lib.rs:383:1: 385:12 (#0)[00m
+[96m src/lib.rs:401:1: 403:12 (#0) -> src/lib.rs:404:1: 406:12 (#0)[00m
+[96m src/lib.rs:422:1: 424:12 (#0) -> src/lib.rs:425:1: 427:12 (#0)[00m
+[96m src/lib.rs:443:1: 445:12 (#0) -> src/lib.rs:446:1: 448:12 (#0)[00m
+[96m src/lib.rs:464:1: 466:12 (#0) -> src/lib.rs:467:1: 469:12 (#0)[00m
+[96m src/lib.rs:485:1: 487:12 (#0) -> src/lib.rs:488:1: 490:12 (#0)[00m
+[96m src/lib.rs:506:1: 508:12 (#0) -> src/lib.rs:509:1: 511:12 (#0)[00m
+[96m src/lib.rs:527:1: 529:12 (#0) -> src/lib.rs:530:1: 532:12 (#0)[00m
+[96m src/lib.rs:548:1: 550:12 (#0) -> src/lib.rs:551:1: 553:12 (#0)[00m
+[96m src/lib.rs:569:1: 571:12 (#0) -> src/lib.rs:572:1: 574:12 (#0)[00m
+[96m src/lib.rs:590:1: 592:12 (#0) -> src/lib.rs:593:1: 595:12 (#0)[00m
+[96m src/lib.rs:611:1: 613:16 (#0) -> src/lib.rs:614:1: 616:16 (#0)[00m
+[96m src/lib.rs:150:1: 157:2 (#0) -> src/lib.rs:153:1: 160:2 (#0)[00m
+[96m src/lib.rs:150:1: 157:2 (#0) -> src/lib.rs:153:1: 160:2 (#0)[00m
+[96m src/lib.rs:616:1: 887:2 (#0) -> src/lib.rs:619:1: 890:2 (#0)[00m
+[96m src/lib.rs:616:1: 617:4 (#0) -> src/lib.rs:619:1: 620:4 (#0)[00m
+[96m src/lib.rs:887:1: 887:2 (#0) -> src/lib.rs:890:1: 890:2 (#0)[00m
+[96m src/lib.rs:621:13: 640:43 (#0) -> src/lib.rs:624:13: 643:43 (#0)[00m
+[96m src/lib.rs:621:13: 640:43 (#0) -> src/lib.rs:624:13: 643:43 (#0)[00m
+[96m src/lib.rs:643:13: 662:43 (#0) -> src/lib.rs:646:13: 665:43 (#0)[00m
+[96m src/lib.rs:643:13: 662:43 (#0) -> src/lib.rs:646:13: 665:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:668:13: 687:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:668:13: 687:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:690:13: 709:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:690:13: 709:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:712:13: 731:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:712:13: 731:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:734:13: 753:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:734:13: 753:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:756:13: 775:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:756:13: 775:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:778:13: 797:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:778:13: 797:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:800:13: 819:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:800:13: 819:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:822:13: 841:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:822:13: 841:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:844:13: 863:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:844:13: 863:43 (#0)[00m
+[96m src/lib.rs:863:13: 882:43 (#0) -> src/lib.rs:866:13: 885:43 (#0)[00m
+[96m src/lib.rs:863:13: 882:43 (#0) -> src/lib.rs:866:13: 885:43 (#0)[00m
+[96m src/lib.rs:617:5: 886:19 (#0) -> src/lib.rs:620:5: 889:19 (#0)[00m
+[96m src/lib.rs:617:5: 621:12 (#0) -> src/lib.rs:620:5: 624:12 (#0)[00m
+[96m src/lib.rs:641:1: 643:12 (#0) -> src/lib.rs:644:1: 646:12 (#0)[00m
+[96m src/lib.rs:663:1: 665:12 (#0) -> src/lib.rs:666:1: 668:12 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.54s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:685:1: 687:12 (#0) -> src/lib.rs:688:1: 690:12 (#0)[00m
+[96m src/lib.rs:707:1: 709:12 (#0) -> src/lib.rs:710:1: 712:12 (#0)[00m
+[96m src/lib.rs:729:1: 731:12 (#0) -> src/lib.rs:732:1: 734:12 (#0)[00m
+[96m src/lib.rs:751:1: 753:12 (#0) -> src/lib.rs:754:1: 756:12 (#0)[00m
+[96m src/lib.rs:773:1: 775:12 (#0) -> src/lib.rs:776:1: 778:12 (#0)[00m
+[96m src/lib.rs:795:1: 797:12 (#0) -> src/lib.rs:798:1: 800:12 (#0)[00m
+[96m src/lib.rs:817:1: 819:12 (#0) -> src/lib.rs:820:1: 822:12 (#0)[00m
+[96m src/lib.rs:839:1: 841:12 (#0) -> src/lib.rs:842:1: 844:12 (#0)[00m
+[96m src/lib.rs:861:1: 863:12 (#0) -> src/lib.rs:864:1: 866:12 (#0)[00m
+[96m src/lib.rs:883:1: 886:19 (#0) -> src/lib.rs:886:1: 889:19 (#0)[00m
+[96m src/lib.rs:250:1: 273:2 (#0) -> src/lib.rs:253:1: 276:2 (#0)[00m
+[96m src/lib.rs:250:1: 273:2 (#0) -> src/lib.rs:253:1: 276:2 (#0)[00m
+[96m src/lib.rs:168:1: 178:2 (#0) -> src/lib.rs:171:1: 181:2 (#0)[00m
+[96m src/lib.rs:168:1: 178:2 (#0) -> src/lib.rs:171:1: 181:2 (#0)[00m
+[96m src/lib.rs:218:1: 231:2 (#0) -> src/lib.rs:221:1: 234:2 (#0)[00m
+[96m src/lib.rs:218:1: 231:2 (#0) -> src/lib.rs:221:1: 234:2 (#0)[00m
+[96m src/lib.rs:158:1: 167:2 (#0) -> src/lib.rs:161:1: 170:2 (#0)[00m
+[96m src/lib.rs:158:1: 167:2 (#0) -> src/lib.rs:161:1: 170:2 (#0)[00m
+[96m src/lib.rs:274:1: 297:2 (#0) -> src/lib.rs:277:1: 300:2 (#0)[00m
+[96m src/lib.rs:274:1: 297:2 (#0) -> src/lib.rs:277:1: 300:2 (#0)[00m
+[96m src/lib.rs:179:1: 189:2 (#0) -> src/lib.rs:182:1: 192:2 (#0)[00m
+[96m src/lib.rs:179:1: 189:2 (#0) -> src/lib.rs:182:1: 192:2 (#0)[00m
+[96m src/lib.rs:232:1: 249:2 (#0) -> src/lib.rs:235:1: 252:2 (#0)[00m
+[96m src/lib.rs:232:1: 249:2 (#0) -> src/lib.rs:235:1: 252:2 (#0)[00m
+[96m src/lib.rs:298:1: 315:2 (#0) -> src/lib.rs:301:1: 318:2 (#0)[00m
+[96m src/lib.rs:298:1: 315:2 (#0) -> src/lib.rs:301:1: 318:2 (#0)[00m
+[96m src/lib.rs:190:1: 203:2 (#0) -> src/lib.rs:193:1: 206:2 (#0)[00m
+[96m src/lib.rs:190:1: 203:2 (#0) -> src/lib.rs:193:1: 206:2 (#0)[00m
+[96m src/lib.rs:316:1: 333:2 (#0) -> src/lib.rs:319:1: 336:2 (#0)[00m
+[96m src/lib.rs:316:1: 333:2 (#0) -> src/lib.rs:319:1: 336:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:15 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_PredictSample_Pfn5)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn5(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let mut p0: ::core::ffi::c_int = 0;
+    let mut p1: ::core::ffi::c_int = 0;
+    p0 = *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    p1 = *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    return 3 as ::core::ffi::c_int * p0 - p1 >> 2 as ::core::ffi::c_int;
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+<FUNC>
+fn BTAC1C2_PredictSample_Pfn5(
+    psamp: &[i32],
+    idx: i32,
+    pfcn: i32,
+    ridx: &mut btac1c_idxstate,
+) -> i32 {
+    let _ = pfcn;
+    let _ = ridx;
+
+    let i1 = ((idx - 1) & 7) as usize;
+    let i2 = ((idx - 2) & 7) as usize;
+    let i3 = ((idx - 3) & 7) as usize;
+
+    let p0 = psamp[i1] + psamp[i2];
+    let p1 = psamp[i2] + psamp[i3];
+    (3 * p0 - p1) >> 2
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:207:1: 220:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0605]: non-primitive cast: `for<'r, 's> fn(&'r [i32], i32, i32, &'s mut btac1c_idxstate_s) -> i32 {BTAC1C2_PredictSample_Pfn5}` as `unsafe extern "C" fn(*mut i32, i32, i32, *mut btac1c_idxstate_s) -> i32`
+   --> src/lib.rs:464:17
+    |
+464 | /                 BTAC1C2_PredictSample_Pfn5
+465 | |                     as unsafe extern "C" fn(
+466 | |                         *mut ::core::ffi::c_int,
+467 | |                         ::core::ffi::c_int,
+468 | |                         ::core::ffi::c_int,
+469 | |                         *mut btac1c_idxstate,
+470 | |                     ) -> ::core::ffi::c_int,
+    | |___________________________________________^ invalid cast
+
+error[E0605]: non-primitive cast: `for<'r, 's> fn(&'r [i32], i32, i32, &'s mut btac1c_idxstate_s) -> i32 {BTAC1C2_PredictSample_Pfn5}` as `unsafe extern "C" fn(*mut i32, i32, i32, *mut btac1c_idxstate_s) -> i32`
+   --> src/lib.rs:751:21
+    |
+751 | /                     BTAC1C2_PredictSample_Pfn5
+752 | |                         as unsafe extern "C" fn(
+753 | |                             *mut ::core::ffi::c_int,
+754 | |                             ::core::ffi::c_int,
+755 | |                             ::core::ffi::c_int,
+756 | |                             *mut btac1c_idxstate,
+757 | |                         ) -> ::core::ffi::c_int,
+    | |_______________________________________________^ invalid cast
+
+For more information about this error, try `rustc --explain E0605`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+<FUNC>
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn5(
+    psamp: *mut ::core::ffi::c_int,
+    idx: ::core::ffi::c_int,
+    pfcn: ::core::ffi::c_int,
+    ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let _ = pfcn;
+    let _ = ridx;
+
+    let psamp = ::core::slice::from_raw_parts(psamp, 8);
+
+    let i1 = ((idx - 1) & 7) as usize;
+    let i2 = ((idx - 2) & 7) as usize;
+    let i3 = ((idx - 3) & 7) as usize;
+
+    let p0 = psamp[i1] + psamp[i2];
+    let p1 = psamp[i2] + psamp[i3];
+    (3 * p0 - p1) >> 2
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:207:1: 220:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:23:1: 151:2 (#0) -> src/lib.rs:24:1: 152:2 (#0)[00m
+[96m src/lib.rs:23:1: 29:4 (#0) -> src/lib.rs:24:1: 30:4 (#0)[00m
+[96m src/lib.rs:150:1: 151:2 (#0) -> src/lib.rs:151:1: 152:2 (#0)[00m
+[96m src/lib.rs:74:8: 79:10 (#0) -> src/lib.rs:75:8: 80:10 (#0)[00m
+[96m src/lib.rs:74:8: 79:10 (#0) -> src/lib.rs:75:8: 80:10 (#0)[00m
+[96m src/lib.rs:83:8: 92:8 (#0) -> src/lib.rs:84:8: 93:8 (#0)[00m
+[96m src/lib.rs:83:8: 92:8 (#0) -> src/lib.rs:84:8: 93:8 (#0)[00m
+[96m src/lib.rs:96:8: 104:10 (#0) -> src/lib.rs:97:8: 105:10 (#0)[00m
+[96m src/lib.rs:96:8: 104:10 (#0) -> src/lib.rs:97:8: 105:10 (#0)[00m
+[96m src/lib.rs:130:8: 140:9 (#0) -> src/lib.rs:131:8: 141:9 (#0)[00m
+[96m src/lib.rs:130:8: 140:9 (#0) -> src/lib.rs:131:8: 141:9 (#0)[00m
+[96m src/lib.rs:29:5: 148:5 (#0) -> src/lib.rs:30:5: 149:5 (#0)[00m
+[96m src/lib.rs:29:5: 74:7 (#0) -> src/lib.rs:30:5: 75:7 (#0)[00m
+[96m src/lib.rs:81:1: 83:7 (#0) -> src/lib.rs:82:1: 84:7 (#0)[00m
+[96m src/lib.rs:94:1: 96:7 (#0) -> src/lib.rs:95:1: 97:7 (#0)[00m
+[96m src/lib.rs:106:1: 130:7 (#0) -> src/lib.rs:107:1: 131:7 (#0)[00m
+[96m src/lib.rs:142:1: 148:5 (#0) -> src/lib.rs:143:1: 149:5 (#0)[00m
+[96m src/lib.rs:207:1: 220:2 (#0) -> src/lib.rs:208:1: 226:2 (#0)[00m
+[96m src/lib.rs:207:1: 220:2 (#0) -> src/lib.rs:208:1: 226:2 (#0)[00m
+[96m src/lib.rs:337:1: 617:2 (#0) -> src/lib.rs:344:1: 624:2 (#0)[00m
+[96m src/lib.rs:337:1: 340:4 (#0) -> src/lib.rs:344:1: 347:4 (#0)[00m
+[96m src/lib.rs:617:1: 617:2 (#0) -> src/lib.rs:624:1: 624:2 (#0)[00m
+[96m src/lib.rs:343:13: 361:16 (#0) -> src/lib.rs:350:13: 368:16 (#0)[00m
+[96m src/lib.rs:343:13: 361:16 (#0) -> src/lib.rs:350:13: 368:16 (#0)[00m
+[96m src/lib.rs:364:13: 382:16 (#0) -> src/lib.rs:371:13: 389:16 (#0)[00m
+[96m src/lib.rs:364:13: 382:16 (#0) -> src/lib.rs:371:13: 389:16 (#0)[00m
+[96m src/lib.rs:385:13: 403:16 (#0) -> src/lib.rs:392:13: 410:16 (#0)[00m
+[96m src/lib.rs:385:13: 403:16 (#0) -> src/lib.rs:392:13: 410:16 (#0)[00m
+[96m src/lib.rs:406:13: 424:16 (#0) -> src/lib.rs:413:13: 431:16 (#0)[00m
+[96m src/lib.rs:406:13: 424:16 (#0) -> src/lib.rs:413:13: 431:16 (#0)[00m
+[96m src/lib.rs:427:13: 445:16 (#0) -> src/lib.rs:434:13: 452:16 (#0)[00m
+[96m src/lib.rs:427:13: 445:16 (#0) -> src/lib.rs:434:13: 452:16 (#0)[00m
+[96m src/lib.rs:448:13: 466:16 (#0) -> src/lib.rs:455:13: 473:16 (#0)[00m
+[96m src/lib.rs:448:13: 466:16 (#0) -> src/lib.rs:455:13: 473:16 (#0)[00m
+[96m src/lib.rs:469:13: 487:16 (#0) -> src/lib.rs:476:13: 494:16 (#0)[00m
+[96m src/lib.rs:469:13: 487:16 (#0) -> src/lib.rs:476:13: 494:16 (#0)[00m
+[96m src/lib.rs:490:13: 508:16 (#0) -> src/lib.rs:497:13: 515:16 (#0)[00m
+[96m src/lib.rs:490:13: 508:16 (#0) -> src/lib.rs:497:13: 515:16 (#0)[00m
+[96m src/lib.rs:511:13: 529:16 (#0) -> src/lib.rs:518:13: 536:16 (#0)[00m
+[96m src/lib.rs:511:13: 529:16 (#0) -> src/lib.rs:518:13: 536:16 (#0)[00m
+[96m src/lib.rs:532:13: 550:16 (#0) -> src/lib.rs:539:13: 557:16 (#0)[00m
+[96m src/lib.rs:532:13: 550:16 (#0) -> src/lib.rs:539:13: 557:16 (#0)[00m
+[96m src/lib.rs:553:13: 571:16 (#0) -> src/lib.rs:560:13: 578:16 (#0)[00m
+[96m src/lib.rs:553:13: 571:16 (#0) -> src/lib.rs:560:13: 578:16 (#0)[00m
+[96m src/lib.rs:574:13: 592:16 (#0) -> src/lib.rs:581:13: 599:16 (#0)[00m
+[96m src/lib.rs:574:13: 592:16 (#0) -> src/lib.rs:581:13: 599:16 (#0)[00m
+[96m src/lib.rs:595:13: 613:16 (#0) -> src/lib.rs:602:13: 620:16 (#0)[00m
+[96m src/lib.rs:595:13: 613:16 (#0) -> src/lib.rs:602:13: 620:16 (#0)[00m
+[96m src/lib.rs:340:5: 616:16 (#0) -> src/lib.rs:347:5: 623:16 (#0)[00m
+[96m src/lib.rs:340:5: 343:12 (#0) -> src/lib.rs:347:5: 350:12 (#0)[00m
+[96m src/lib.rs:362:1: 364:12 (#0) -> src/lib.rs:369:1: 371:12 (#0)[00m
+[96m src/lib.rs:383:1: 385:12 (#0) -> src/lib.rs:390:1: 392:12 (#0)[00m
+[96m src/lib.rs:404:1: 406:12 (#0) -> src/lib.rs:411:1: 413:12 (#0)[00m
+[96m src/lib.rs:425:1: 427:12 (#0) -> src/lib.rs:432:1: 434:12 (#0)[00m
+[96m src/lib.rs:446:1: 448:12 (#0) -> src/lib.rs:453:1: 455:12 (#0)[00m
+[96m src/lib.rs:467:1: 469:12 (#0) -> src/lib.rs:474:1: 476:12 (#0)[00m
+[96m src/lib.rs:488:1: 490:12 (#0) -> src/lib.rs:495:1: 497:12 (#0)[00m
+[96m src/lib.rs:509:1: 511:12 (#0) -> src/lib.rs:516:1: 518:12 (#0)[00m
+[96m src/lib.rs:530:1: 532:12 (#0) -> src/lib.rs:537:1: 539:12 (#0)[00m
+[96m src/lib.rs:551:1: 553:12 (#0) -> src/lib.rs:558:1: 560:12 (#0)[00m
+[96m src/lib.rs:572:1: 574:12 (#0) -> src/lib.rs:579:1: 581:12 (#0)[00m
+[96m src/lib.rs:593:1: 595:12 (#0) -> src/lib.rs:600:1: 602:12 (#0)[00m
+[96m src/lib.rs:614:1: 616:16 (#0) -> src/lib.rs:621:1: 623:16 (#0)[00m
+[96m src/lib.rs:153:1: 160:2 (#0) -> src/lib.rs:154:1: 161:2 (#0)[00m
+[96m src/lib.rs:153:1: 160:2 (#0) -> src/lib.rs:154:1: 161:2 (#0)[00m
+[96m src/lib.rs:619:1: 890:2 (#0) -> src/lib.rs:626:1: 897:2 (#0)[00m
+[96m src/lib.rs:619:1: 620:4 (#0) -> src/lib.rs:626:1: 627:4 (#0)[00m
+[96m src/lib.rs:890:1: 890:2 (#0) -> src/lib.rs:897:1: 897:2 (#0)[00m
+[96m src/lib.rs:624:13: 643:43 (#0) -> src/lib.rs:631:13: 650:43 (#0)[00m
+[96m src/lib.rs:624:13: 643:43 (#0) -> src/lib.rs:631:13: 650:43 (#0)[00m
+[96m src/lib.rs:646:13: 665:43 (#0) -> src/lib.rs:653:13: 672:43 (#0)[00m
+[96m src/lib.rs:646:13: 665:43 (#0) -> src/lib.rs:653:13: 672:43 (#0)[00m
+[96m src/lib.rs:668:13: 687:43 (#0) -> src/lib.rs:675:13: 694:43 (#0)[00m
+[96m src/lib.rs:668:13: 687:43 (#0) -> src/lib.rs:675:13: 694:43 (#0)[00m
+[96m src/lib.rs:690:13: 709:43 (#0) -> src/lib.rs:697:13: 716:43 (#0)[00m
+[96m src/lib.rs:690:13: 709:43 (#0) -> src/lib.rs:697:13: 716:43 (#0)[00m
+[96m src/lib.rs:712:13: 731:43 (#0) -> src/lib.rs:719:13: 738:43 (#0)[00m
+[96m src/lib.rs:712:13: 731:43 (#0) -> src/lib.rs:719:13: 738:43 (#0)[00m
+[96m src/lib.rs:734:13: 753:43 (#0) -> src/lib.rs:741:13: 760:43 (#0)[00m
+[96m src/lib.rs:734:13: 753:43 (#0) -> src/lib.rs:741:13: 760:43 (#0)[00m
+[96m src/lib.rs:756:13: 775:43 (#0) -> src/lib.rs:763:13: 782:43 (#0)[00m
+[96m src/lib.rs:756:13: 775:43 (#0) -> src/lib.rs:763:13: 782:43 (#0)[00m
+[96m src/lib.rs:778:13: 797:43 (#0) -> src/lib.rs:785:13: 804:43 (#0)[00m
+[96m src/lib.rs:778:13: 797:43 (#0) -> src/lib.rs:785:13: 804:43 (#0)[00m
+[96m src/lib.rs:800:13: 819:43 (#0) -> src/lib.rs:807:13: 826:43 (#0)[00m
+[96m src/lib.rs:800:13: 819:43 (#0) -> src/lib.rs:807:13: 826:43 (#0)[00m
+[96m src/lib.rs:822:13: 841:43 (#0) -> src/lib.rs:829:13: 848:43 (#0)[00m
+[96m src/lib.rs:822:13: 841:43 (#0) -> src/lib.rs:829:13: 848:43 (#0)[00m
+[96m src/lib.rs:844:13: 863:43 (#0) -> src/lib.rs:851:13: 870:43 (#0)[00m
+[96m src/lib.rs:844:13: 863:43 (#0) -> src/lib.rs:851:13: 870:43 (#0)[00m
+[96m src/lib.rs:866:13: 885:43 (#0) -> src/lib.rs:873:13: 892:43 (#0)[00m
+[96m src/lib.rs:866:13: 885:43 (#0) -> src/lib.rs:873:13: 892:43 (#0)[00m
+[96m src/lib.rs:620:5: 889:19 (#0) -> src/lib.rs:627:5: 896:19 (#0)[00m
+[96m src/lib.rs:620:5: 624:12 (#0) -> src/lib.rs:627:5: 631:12 (#0)[00m
+[96m src/lib.rs:644:1: 646:12 (#0) -> src/lib.rs:651:1: 653:12 (#0)[00m
+[96m src/lib.rs:666:1: 668:12 (#0) -> src/lib.rs:673:1: 675:12 (#0)[00m
+[96m src/lib.rs:688:1: 690:12 (#0) -> src/lib.rs:695:1: 697:12 (#0)[00m
+[96m src/lib.rs:710:1: 712:12 (#0) -> src/lib.rs:717:1: 719:12 (#0)[00m
+[96m src/lib.rs:732:1: 734:12 (#0) -> src/lib.rs:739:1: 741:12 (#0)[00m
+[96m src/lib.rs:754:1: 756:12 (#0) -> src/lib.rs:761:1: 763:12 (#0)[00m
+[96m src/lib.rs:776:1: 778:12 (#0) -> src/lib.rs:783:1: 785:12 (#0)[00m
+[96m src/lib.rs:798:1: 800:12 (#0) -> src/lib.rs:805:1: 807:12 (#0)[00m
+[96m src/lib.rs:820:1: 822:12 (#0) -> src/lib.rs:827:1: 829:12 (#0)[00m
+[96m src/lib.rs:842:1: 844:12 (#0) -> src/lib.rs:849:1: 851:12 (#0)[00m
+[96m src/lib.rs:864:1: 866:12 (#0) -> src/lib.rs:871:1: 873:12 (#0)[00m
+[96m src/lib.rs:886:1: 889:19 (#0) -> src/lib.rs:893:1: 896:19 (#0)[00m
+[96m src/lib.rs:253:1: 276:2 (#0) -> src/lib.rs:260:1: 283:2 (#0)[00m
+[96m src/lib.rs:253:1: 276:2 (#0) -> src/lib.rs:260:1: 283:2 (#0)[00m
+[96m src/lib.rs:171:1: 181:2 (#0) -> src/lib.rs:172:1: 182:2 (#0)[00m
+[96m src/lib.rs:171:1: 181:2 (#0) -> src/lib.rs:172:1: 182:2 (#0)[00m
+[96m src/lib.rs:221:1: 234:2 (#0) -> src/lib.rs:228:1: 241:2 (#0)[00m
+[96m src/lib.rs:221:1: 234:2 (#0) -> src/lib.rs:228:1: 241:2 (#0)[00m
+[96m src/lib.rs:161:1: 170:2 (#0) -> src/lib.rs:162:1: 171:2 (#0)[00m
+[96m src/lib.rs:161:1: 170:2 (#0) -> src/lib.rs:162:1: 171:2 (#0)[00m
+[96m src/lib.rs:277:1: 300:2 (#0) -> src/lib.rs:284:1: 307:2 (#0)[00m
+[96m src/lib.rs:277:1: 300:2 (#0) -> src/lib.rs:284:1: 307:2 (#0)[00m
+[96m src/lib.rs:182:1: 192:2 (#0) -> src/lib.rs:183:1: 193:2 (#0)[00m
+[96m src/lib.rs:182:1: 192:2 (#0) -> src/lib.rs:183:1: 193:2 (#0)[00m
+[96m src/lib.rs:235:1: 252:2 (#0) -> src/lib.rs:242:1: 259:2 (#0)[00m
+[96m src/lib.rs:235:1: 252:2 (#0) -> src/lib.rs:242:1: 259:2 (#0)[00m
+[96m src/lib.rs:301:1: 318:2 (#0) -> src/lib.rs:308:1: 325:2 (#0)[00m
+[96m src/lib.rs:301:1: 318:2 (#0) -> src/lib.rs:308:1: 325:2 (#0)[00m
+[96m src/lib.rs:193:1: 206:2 (#0) -> src/lib.rs:194:1: 207:2 (#0)[00m
+[96m src/lib.rs:193:1: 206:2 (#0) -> src/lib.rs:194:1: 207:2 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.55s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:319:1: 336:2 (#0) -> src/lib.rs:326:1: 343:2 (#0)[00m
+[96m src/lib.rs:319:1: 336:2 (#0) -> src/lib.rs:326:1: 343:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:22 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_GetPredictFunc)[00m
+[96m Translating Chunk 0[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut fcn: *mut std::ffi::c_void)
+*/
+fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn0
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+/*
+The variables live at this point are:
+(mut fcn: *mut std::ffi::c_void)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let fcn = BTAC1C2_PredictSample_Pfn0;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:350:13: 368:16 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:24:1: 152:2 (#0) -> src/lib.rs:25:1: 153:2 (#0)[00m
+[96m src/lib.rs:24:1: 30:4 (#0) -> src/lib.rs:25:1: 31:4 (#0)[00m
+[96m src/lib.rs:151:1: 152:2 (#0) -> src/lib.rs:152:1: 153:2 (#0)[00m
+[96m src/lib.rs:75:8: 80:10 (#0) -> src/lib.rs:76:8: 81:10 (#0)[00m
+[96m src/lib.rs:75:8: 80:10 (#0) -> src/lib.rs:76:8: 81:10 (#0)[00m
+[96m src/lib.rs:84:8: 93:8 (#0) -> src/lib.rs:85:8: 94:8 (#0)[00m
+[96m src/lib.rs:84:8: 93:8 (#0) -> src/lib.rs:85:8: 94:8 (#0)[00m
+[96m src/lib.rs:97:8: 105:10 (#0) -> src/lib.rs:98:8: 106:10 (#0)[00m
+[96m src/lib.rs:97:8: 105:10 (#0) -> src/lib.rs:98:8: 106:10 (#0)[00m
+[96m src/lib.rs:131:8: 141:9 (#0) -> src/lib.rs:132:8: 142:9 (#0)[00m
+[96m src/lib.rs:131:8: 141:9 (#0) -> src/lib.rs:132:8: 142:9 (#0)[00m
+[96m src/lib.rs:30:5: 149:5 (#0) -> src/lib.rs:31:5: 150:5 (#0)[00m
+[96m src/lib.rs:30:5: 75:7 (#0) -> src/lib.rs:31:5: 76:7 (#0)[00m
+[96m src/lib.rs:82:1: 84:7 (#0) -> src/lib.rs:83:1: 85:7 (#0)[00m
+[96m src/lib.rs:95:1: 97:7 (#0) -> src/lib.rs:96:1: 98:7 (#0)[00m
+[96m src/lib.rs:107:1: 131:7 (#0) -> src/lib.rs:108:1: 132:7 (#0)[00m
+[96m src/lib.rs:143:1: 149:5 (#0) -> src/lib.rs:144:1: 150:5 (#0)[00m
+[96m src/lib.rs:208:1: 226:2 (#0) -> src/lib.rs:209:1: 227:2 (#0)[00m
+[96m src/lib.rs:208:1: 226:2 (#0) -> src/lib.rs:209:1: 227:2 (#0)[00m
+[96m src/lib.rs:344:1: 624:2 (#0) -> src/lib.rs:345:1: 608:2 (#0)[00m
+[96m src/lib.rs:344:1: 347:4 (#0) -> src/lib.rs:345:1: 348:4 (#0)[00m
+[96m src/lib.rs:624:1: 624:2 (#0) -> src/lib.rs:608:1: 608:2 (#0)[00m
+[91m Failed to modify src/lib.rs:350:13: 368:16 (#0)! Text mismatch[00m
+[96m src/lib.rs:350:13: 368:16 (#0) -> src/lib.rs:351:13: 351:38 (#0)[00m
+[91m Failed to modify src/lib.rs:350:13: 368:16 (#0)! Text mismatch[00m
+[96m src/lib.rs:350:13: 368:16 (#0) -> src/lib.rs:351:13: 351:38 (#0)[00m
+[96m src/lib.rs:371:13: 389:16 (#0) -> src/lib.rs:355:13: 373:16 (#0)[00m
+[96m src/lib.rs:371:13: 389:16 (#0) -> src/lib.rs:355:13: 373:16 (#0)[00m
+[96m src/lib.rs:392:13: 410:16 (#0) -> src/lib.rs:376:13: 394:16 (#0)[00m
+[96m src/lib.rs:392:13: 410:16 (#0) -> src/lib.rs:376:13: 394:16 (#0)[00m
+[96m src/lib.rs:413:13: 431:16 (#0) -> src/lib.rs:397:13: 415:16 (#0)[00m
+[96m src/lib.rs:413:13: 431:16 (#0) -> src/lib.rs:397:13: 415:16 (#0)[00m
+[96m src/lib.rs:434:13: 452:16 (#0) -> src/lib.rs:418:13: 436:16 (#0)[00m
+[96m src/lib.rs:434:13: 452:16 (#0) -> src/lib.rs:418:13: 436:16 (#0)[00m
+[96m src/lib.rs:455:13: 473:16 (#0) -> src/lib.rs:439:13: 457:16 (#0)[00m
+[96m src/lib.rs:455:13: 473:16 (#0) -> src/lib.rs:439:13: 457:16 (#0)[00m
+[96m src/lib.rs:476:13: 494:16 (#0) -> src/lib.rs:460:13: 478:16 (#0)[00m
+[96m src/lib.rs:476:13: 494:16 (#0) -> src/lib.rs:460:13: 478:16 (#0)[00m
+[96m src/lib.rs:497:13: 515:16 (#0) -> src/lib.rs:481:13: 499:16 (#0)[00m
+[96m src/lib.rs:497:13: 515:16 (#0) -> src/lib.rs:481:13: 499:16 (#0)[00m
+[96m src/lib.rs:518:13: 536:16 (#0) -> src/lib.rs:502:13: 520:16 (#0)[00m
+[96m src/lib.rs:518:13: 536:16 (#0) -> src/lib.rs:502:13: 520:16 (#0)[00m
+[96m src/lib.rs:539:13: 557:16 (#0) -> src/lib.rs:523:13: 541:16 (#0)[00m
+[96m src/lib.rs:539:13: 557:16 (#0) -> src/lib.rs:523:13: 541:16 (#0)[00m
+[96m src/lib.rs:560:13: 578:16 (#0) -> src/lib.rs:544:13: 562:16 (#0)[00m
+[96m src/lib.rs:560:13: 578:16 (#0) -> src/lib.rs:544:13: 562:16 (#0)[00m
+[96m src/lib.rs:581:13: 599:16 (#0) -> src/lib.rs:565:13: 583:16 (#0)[00m
+[96m src/lib.rs:581:13: 599:16 (#0) -> src/lib.rs:565:13: 583:16 (#0)[00m
+[96m src/lib.rs:602:13: 620:16 (#0) -> src/lib.rs:586:13: 604:16 (#0)[00m
+[96m src/lib.rs:602:13: 620:16 (#0) -> src/lib.rs:586:13: 604:16 (#0)[00m
+[96m src/lib.rs:347:5: 623:16 (#0) -> src/lib.rs:348:5: 607:16 (#0)[00m
+[96m src/lib.rs:347:5: 350:12 (#0) -> src/lib.rs:348:5: 351:12 (#0)[00m
+[96m src/lib.rs:369:1: 371:12 (#0) -> src/lib.rs:353:1: 355:12 (#0)[00m
+[96m src/lib.rs:390:1: 392:12 (#0) -> src/lib.rs:374:1: 376:12 (#0)[00m
+[96m src/lib.rs:411:1: 413:12 (#0) -> src/lib.rs:395:1: 397:12 (#0)[00m
+[96m src/lib.rs:432:1: 434:12 (#0) -> src/lib.rs:416:1: 418:12 (#0)[00m
+[96m src/lib.rs:453:1: 455:12 (#0) -> src/lib.rs:437:1: 439:12 (#0)[00m
+[96m src/lib.rs:474:1: 476:12 (#0) -> src/lib.rs:458:1: 460:12 (#0)[00m
+[96m src/lib.rs:495:1: 497:12 (#0) -> src/lib.rs:479:1: 481:12 (#0)[00m
+[96m src/lib.rs:516:1: 518:12 (#0) -> src/lib.rs:500:1: 502:12 (#0)[00m
+[96m src/lib.rs:537:1: 539:12 (#0) -> src/lib.rs:521:1: 523:12 (#0)[00m
+[96m src/lib.rs:558:1: 560:12 (#0) -> src/lib.rs:542:1: 544:12 (#0)[00m
+[96m src/lib.rs:579:1: 581:12 (#0) -> src/lib.rs:563:1: 565:12 (#0)[00m
+[96m src/lib.rs:600:1: 602:12 (#0) -> src/lib.rs:584:1: 586:12 (#0)[00m
+[96m src/lib.rs:621:1: 623:16 (#0) -> src/lib.rs:605:1: 607:16 (#0)[00m
+[96m src/lib.rs:154:1: 161:2 (#0) -> src/lib.rs:155:1: 162:2 (#0)[00m
+[96m src/lib.rs:154:1: 161:2 (#0) -> src/lib.rs:155:1: 162:2 (#0)[00m
+[96m src/lib.rs:626:1: 897:2 (#0) -> src/lib.rs:610:1: 881:2 (#0)[00m
+[96m src/lib.rs:626:1: 627:4 (#0) -> src/lib.rs:610:1: 611:4 (#0)[00m
+[96m src/lib.rs:897:1: 897:2 (#0) -> src/lib.rs:881:1: 881:2 (#0)[00m
+[96m src/lib.rs:631:13: 650:43 (#0) -> src/lib.rs:615:13: 634:43 (#0)[00m
+[96m src/lib.rs:631:13: 650:43 (#0) -> src/lib.rs:615:13: 634:43 (#0)[00m
+[96m src/lib.rs:653:13: 672:43 (#0) -> src/lib.rs:637:13: 656:43 (#0)[00m
+[96m src/lib.rs:653:13: 672:43 (#0) -> src/lib.rs:637:13: 656:43 (#0)[00m
+[96m src/lib.rs:675:13: 694:43 (#0) -> src/lib.rs:659:13: 678:43 (#0)[00m
+[96m src/lib.rs:675:13: 694:43 (#0) -> src/lib.rs:659:13: 678:43 (#0)[00m
+[96m src/lib.rs:697:13: 716:43 (#0) -> src/lib.rs:681:13: 700:43 (#0)[00m
+[96m src/lib.rs:697:13: 716:43 (#0) -> src/lib.rs:681:13: 700:43 (#0)[00m
+[96m src/lib.rs:719:13: 738:43 (#0) -> src/lib.rs:703:13: 722:43 (#0)[00m
+[96m src/lib.rs:719:13: 738:43 (#0) -> src/lib.rs:703:13: 722:43 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.55s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:741:13: 760:43 (#0) -> src/lib.rs:725:13: 744:43 (#0)[00m
+[96m src/lib.rs:741:13: 760:43 (#0) -> src/lib.rs:725:13: 744:43 (#0)[00m
+[96m src/lib.rs:763:13: 782:43 (#0) -> src/lib.rs:747:13: 766:43 (#0)[00m
+[96m src/lib.rs:763:13: 782:43 (#0) -> src/lib.rs:747:13: 766:43 (#0)[00m
+[96m src/lib.rs:785:13: 804:43 (#0) -> src/lib.rs:769:13: 788:43 (#0)[00m
+[96m src/lib.rs:785:13: 804:43 (#0) -> src/lib.rs:769:13: 788:43 (#0)[00m
+[96m src/lib.rs:807:13: 826:43 (#0) -> src/lib.rs:791:13: 810:43 (#0)[00m
+[96m src/lib.rs:807:13: 826:43 (#0) -> src/lib.rs:791:13: 810:43 (#0)[00m
+[96m src/lib.rs:829:13: 848:43 (#0) -> src/lib.rs:813:13: 832:43 (#0)[00m
+[96m src/lib.rs:829:13: 848:43 (#0) -> src/lib.rs:813:13: 832:43 (#0)[00m
+[96m src/lib.rs:851:13: 870:43 (#0) -> src/lib.rs:835:13: 854:43 (#0)[00m
+[96m src/lib.rs:851:13: 870:43 (#0) -> src/lib.rs:835:13: 854:43 (#0)[00m
+[96m src/lib.rs:873:13: 892:43 (#0) -> src/lib.rs:857:13: 876:43 (#0)[00m
+[96m src/lib.rs:873:13: 892:43 (#0) -> src/lib.rs:857:13: 876:43 (#0)[00m
+[96m src/lib.rs:627:5: 896:19 (#0) -> src/lib.rs:611:5: 880:19 (#0)[00m
+[96m src/lib.rs:627:5: 631:12 (#0) -> src/lib.rs:611:5: 615:12 (#0)[00m
+[96m src/lib.rs:651:1: 653:12 (#0) -> src/lib.rs:635:1: 637:12 (#0)[00m
+[96m src/lib.rs:673:1: 675:12 (#0) -> src/lib.rs:657:1: 659:12 (#0)[00m
+[96m src/lib.rs:695:1: 697:12 (#0) -> src/lib.rs:679:1: 681:12 (#0)[00m
+[96m src/lib.rs:717:1: 719:12 (#0) -> src/lib.rs:701:1: 703:12 (#0)[00m
+[96m src/lib.rs:739:1: 741:12 (#0) -> src/lib.rs:723:1: 725:12 (#0)[00m
+[96m src/lib.rs:761:1: 763:12 (#0) -> src/lib.rs:745:1: 747:12 (#0)[00m
+[96m src/lib.rs:783:1: 785:12 (#0) -> src/lib.rs:767:1: 769:12 (#0)[00m
+[96m src/lib.rs:805:1: 807:12 (#0) -> src/lib.rs:789:1: 791:12 (#0)[00m
+[96m src/lib.rs:827:1: 829:12 (#0) -> src/lib.rs:811:1: 813:12 (#0)[00m
+[96m src/lib.rs:849:1: 851:12 (#0) -> src/lib.rs:833:1: 835:12 (#0)[00m
+[96m src/lib.rs:871:1: 873:12 (#0) -> src/lib.rs:855:1: 857:12 (#0)[00m
+[96m src/lib.rs:893:1: 896:19 (#0) -> src/lib.rs:877:1: 880:19 (#0)[00m
+[96m src/lib.rs:260:1: 283:2 (#0) -> src/lib.rs:261:1: 284:2 (#0)[00m
+[96m src/lib.rs:260:1: 283:2 (#0) -> src/lib.rs:261:1: 284:2 (#0)[00m
+[96m src/lib.rs:172:1: 182:2 (#0) -> src/lib.rs:173:1: 183:2 (#0)[00m
+[96m src/lib.rs:172:1: 182:2 (#0) -> src/lib.rs:173:1: 183:2 (#0)[00m
+[96m src/lib.rs:228:1: 241:2 (#0) -> src/lib.rs:229:1: 242:2 (#0)[00m
+[96m src/lib.rs:228:1: 241:2 (#0) -> src/lib.rs:229:1: 242:2 (#0)[00m
+[96m src/lib.rs:162:1: 171:2 (#0) -> src/lib.rs:163:1: 172:2 (#0)[00m
+[96m src/lib.rs:162:1: 171:2 (#0) -> src/lib.rs:163:1: 172:2 (#0)[00m
+[96m src/lib.rs:284:1: 307:2 (#0) -> src/lib.rs:285:1: 308:2 (#0)[00m
+[96m src/lib.rs:284:1: 307:2 (#0) -> src/lib.rs:285:1: 308:2 (#0)[00m
+[96m src/lib.rs:183:1: 193:2 (#0) -> src/lib.rs:184:1: 194:2 (#0)[00m
+[96m src/lib.rs:183:1: 193:2 (#0) -> src/lib.rs:184:1: 194:2 (#0)[00m
+[96m src/lib.rs:242:1: 259:2 (#0) -> src/lib.rs:243:1: 260:2 (#0)[00m
+[96m src/lib.rs:242:1: 259:2 (#0) -> src/lib.rs:243:1: 260:2 (#0)[00m
+[96m src/lib.rs:308:1: 325:2 (#0) -> src/lib.rs:309:1: 326:2 (#0)[00m
+[96m src/lib.rs:308:1: 325:2 (#0) -> src/lib.rs:309:1: 326:2 (#0)[00m
+[96m src/lib.rs:194:1: 207:2 (#0) -> src/lib.rs:195:1: 208:2 (#0)[00m
+[96m src/lib.rs:194:1: 207:2 (#0) -> src/lib.rs:195:1: 208:2 (#0)[00m
+[96m src/lib.rs:326:1: 343:2 (#0) -> src/lib.rs:327:1: 344:2 (#0)[00m
+[96m src/lib.rs:326:1: 343:2 (#0) -> src/lib.rs:327:1: 344:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:22 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_GetPredictFunc)[00m
+[96m Translating Chunk 1[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut fcn: *mut std::ffi::c_void)
+*/
+fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn1
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+/*
+The variables live at this point are:
+(mut fcn: *mut std::ffi::c_void)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let fcn = BTAC1C2_PredictSample_Pfn1;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:355:13: 373:16 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:25:1: 153:2 (#0) -> src/lib.rs:26:1: 154:2 (#0)[00m
+[96m src/lib.rs:25:1: 31:4 (#0) -> src/lib.rs:26:1: 32:4 (#0)[00m
+[96m src/lib.rs:152:1: 153:2 (#0) -> src/lib.rs:153:1: 154:2 (#0)[00m
+[96m src/lib.rs:76:8: 81:10 (#0) -> src/lib.rs:77:8: 82:10 (#0)[00m
+[96m src/lib.rs:76:8: 81:10 (#0) -> src/lib.rs:77:8: 82:10 (#0)[00m
+[96m src/lib.rs:85:8: 94:8 (#0) -> src/lib.rs:86:8: 95:8 (#0)[00m
+[96m src/lib.rs:85:8: 94:8 (#0) -> src/lib.rs:86:8: 95:8 (#0)[00m
+[96m src/lib.rs:98:8: 106:10 (#0) -> src/lib.rs:99:8: 107:10 (#0)[00m
+[96m src/lib.rs:98:8: 106:10 (#0) -> src/lib.rs:99:8: 107:10 (#0)[00m
+[96m src/lib.rs:132:8: 142:9 (#0) -> src/lib.rs:133:8: 143:9 (#0)[00m
+[96m src/lib.rs:132:8: 142:9 (#0) -> src/lib.rs:133:8: 143:9 (#0)[00m
+[96m src/lib.rs:31:5: 150:5 (#0) -> src/lib.rs:32:5: 151:5 (#0)[00m
+[96m src/lib.rs:31:5: 76:7 (#0) -> src/lib.rs:32:5: 77:7 (#0)[00m
+[96m src/lib.rs:83:1: 85:7 (#0) -> src/lib.rs:84:1: 86:7 (#0)[00m
+[96m src/lib.rs:96:1: 98:7 (#0) -> src/lib.rs:97:1: 99:7 (#0)[00m
+[96m src/lib.rs:108:1: 132:7 (#0) -> src/lib.rs:109:1: 133:7 (#0)[00m
+[96m src/lib.rs:144:1: 150:5 (#0) -> src/lib.rs:145:1: 151:5 (#0)[00m
+[96m src/lib.rs:209:1: 227:2 (#0) -> src/lib.rs:210:1: 228:2 (#0)[00m
+[96m src/lib.rs:209:1: 227:2 (#0) -> src/lib.rs:210:1: 228:2 (#0)[00m
+[96m src/lib.rs:345:1: 608:2 (#0) -> src/lib.rs:346:1: 592:2 (#0)[00m
+[96m src/lib.rs:345:1: 348:4 (#0) -> src/lib.rs:346:1: 349:4 (#0)[00m
+[96m src/lib.rs:608:1: 608:2 (#0) -> src/lib.rs:592:1: 592:2 (#0)[00m
+[96m src/lib.rs:351:13: 351:38 (#0) -> src/lib.rs:352:13: 352:38 (#0)[00m
+[96m src/lib.rs:351:13: 351:38 (#0) -> src/lib.rs:352:13: 352:38 (#0)[00m
+[91m Failed to modify src/lib.rs:355:13: 373:16 (#0)! Text mismatch[00m
+[96m src/lib.rs:355:13: 373:16 (#0) -> src/lib.rs:356:13: 356:38 (#0)[00m
+[91m Failed to modify src/lib.rs:355:13: 373:16 (#0)! Text mismatch[00m
+[96m src/lib.rs:355:13: 373:16 (#0) -> src/lib.rs:356:13: 356:38 (#0)[00m
+[96m src/lib.rs:376:13: 394:16 (#0) -> src/lib.rs:360:13: 378:16 (#0)[00m
+[96m src/lib.rs:376:13: 394:16 (#0) -> src/lib.rs:360:13: 378:16 (#0)[00m
+[96m src/lib.rs:397:13: 415:16 (#0) -> src/lib.rs:381:13: 399:16 (#0)[00m
+[96m src/lib.rs:397:13: 415:16 (#0) -> src/lib.rs:381:13: 399:16 (#0)[00m
+[96m src/lib.rs:418:13: 436:16 (#0) -> src/lib.rs:402:13: 420:16 (#0)[00m
+[96m src/lib.rs:418:13: 436:16 (#0) -> src/lib.rs:402:13: 420:16 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.54s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m src/lib.rs:439:13: 457:16 (#0) -> src/lib.rs:423:13: 441:16 (#0)[00m
+[96m src/lib.rs:439:13: 457:16 (#0) -> src/lib.rs:423:13: 441:16 (#0)[00m
+[96m src/lib.rs:460:13: 478:16 (#0) -> src/lib.rs:444:13: 462:16 (#0)[00m
+[96m src/lib.rs:460:13: 478:16 (#0) -> src/lib.rs:444:13: 462:16 (#0)[00m
+[96m src/lib.rs:481:13: 499:16 (#0) -> src/lib.rs:465:13: 483:16 (#0)[00m
+[96m src/lib.rs:481:13: 499:16 (#0) -> src/lib.rs:465:13: 483:16 (#0)[00m
+[96m src/lib.rs:502:13: 520:16 (#0) -> src/lib.rs:486:13: 504:16 (#0)[00m
+[96m src/lib.rs:502:13: 520:16 (#0) -> src/lib.rs:486:13: 504:16 (#0)[00m
+[96m src/lib.rs:523:13: 541:16 (#0) -> src/lib.rs:507:13: 525:16 (#0)[00m
+[96m src/lib.rs:523:13: 541:16 (#0) -> src/lib.rs:507:13: 525:16 (#0)[00m
+[96m src/lib.rs:544:13: 562:16 (#0) -> src/lib.rs:528:13: 546:16 (#0)[00m
+[96m src/lib.rs:544:13: 562:16 (#0) -> src/lib.rs:528:13: 546:16 (#0)[00m
+[96m src/lib.rs:565:13: 583:16 (#0) -> src/lib.rs:549:13: 567:16 (#0)[00m
+[96m src/lib.rs:565:13: 583:16 (#0) -> src/lib.rs:549:13: 567:16 (#0)[00m
+[96m src/lib.rs:586:13: 604:16 (#0) -> src/lib.rs:570:13: 588:16 (#0)[00m
+[96m src/lib.rs:586:13: 604:16 (#0) -> src/lib.rs:570:13: 588:16 (#0)[00m
+[96m src/lib.rs:348:5: 607:16 (#0) -> src/lib.rs:349:5: 591:16 (#0)[00m
+[96m src/lib.rs:348:5: 351:12 (#0) -> src/lib.rs:349:5: 352:12 (#0)[00m
+[96m src/lib.rs:353:1: 355:12 (#0) -> src/lib.rs:354:1: 356:12 (#0)[00m
+[96m src/lib.rs:374:1: 376:12 (#0) -> src/lib.rs:358:1: 360:12 (#0)[00m
+[96m src/lib.rs:395:1: 397:12 (#0) -> src/lib.rs:379:1: 381:12 (#0)[00m
+[96m src/lib.rs:416:1: 418:12 (#0) -> src/lib.rs:400:1: 402:12 (#0)[00m
+[96m src/lib.rs:437:1: 439:12 (#0) -> src/lib.rs:421:1: 423:12 (#0)[00m
+[96m src/lib.rs:458:1: 460:12 (#0) -> src/lib.rs:442:1: 444:12 (#0)[00m
+[96m src/lib.rs:479:1: 481:12 (#0) -> src/lib.rs:463:1: 465:12 (#0)[00m
+[96m src/lib.rs:500:1: 502:12 (#0) -> src/lib.rs:484:1: 486:12 (#0)[00m
+[96m src/lib.rs:521:1: 523:12 (#0) -> src/lib.rs:505:1: 507:12 (#0)[00m
+[96m src/lib.rs:542:1: 544:12 (#0) -> src/lib.rs:526:1: 528:12 (#0)[00m
+[96m src/lib.rs:563:1: 565:12 (#0) -> src/lib.rs:547:1: 549:12 (#0)[00m
+[96m src/lib.rs:584:1: 586:12 (#0) -> src/lib.rs:568:1: 570:12 (#0)[00m
+[96m src/lib.rs:605:1: 607:16 (#0) -> src/lib.rs:589:1: 591:16 (#0)[00m
+[96m src/lib.rs:155:1: 162:2 (#0) -> src/lib.rs:156:1: 163:2 (#0)[00m
+[96m src/lib.rs:155:1: 162:2 (#0) -> src/lib.rs:156:1: 163:2 (#0)[00m
+[96m src/lib.rs:610:1: 881:2 (#0) -> src/lib.rs:594:1: 865:2 (#0)[00m
+[96m src/lib.rs:610:1: 611:4 (#0) -> src/lib.rs:594:1: 595:4 (#0)[00m
+[96m src/lib.rs:881:1: 881:2 (#0) -> src/lib.rs:865:1: 865:2 (#0)[00m
+[96m src/lib.rs:615:13: 634:43 (#0) -> src/lib.rs:599:13: 618:43 (#0)[00m
+[96m src/lib.rs:615:13: 634:43 (#0) -> src/lib.rs:599:13: 618:43 (#0)[00m
+[96m src/lib.rs:637:13: 656:43 (#0) -> src/lib.rs:621:13: 640:43 (#0)[00m
+[96m src/lib.rs:637:13: 656:43 (#0) -> src/lib.rs:621:13: 640:43 (#0)[00m
+[96m src/lib.rs:659:13: 678:43 (#0) -> src/lib.rs:643:13: 662:43 (#0)[00m
+[96m src/lib.rs:659:13: 678:43 (#0) -> src/lib.rs:643:13: 662:43 (#0)[00m
+[96m src/lib.rs:681:13: 700:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:681:13: 700:43 (#0) -> src/lib.rs:665:13: 684:43 (#0)[00m
+[96m src/lib.rs:703:13: 722:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:703:13: 722:43 (#0) -> src/lib.rs:687:13: 706:43 (#0)[00m
+[96m src/lib.rs:725:13: 744:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:725:13: 744:43 (#0) -> src/lib.rs:709:13: 728:43 (#0)[00m
+[96m src/lib.rs:747:13: 766:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:747:13: 766:43 (#0) -> src/lib.rs:731:13: 750:43 (#0)[00m
+[96m src/lib.rs:769:13: 788:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:769:13: 788:43 (#0) -> src/lib.rs:753:13: 772:43 (#0)[00m
+[96m src/lib.rs:791:13: 810:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:791:13: 810:43 (#0) -> src/lib.rs:775:13: 794:43 (#0)[00m
+[96m src/lib.rs:813:13: 832:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:813:13: 832:43 (#0) -> src/lib.rs:797:13: 816:43 (#0)[00m
+[96m src/lib.rs:835:13: 854:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:835:13: 854:43 (#0) -> src/lib.rs:819:13: 838:43 (#0)[00m
+[96m src/lib.rs:857:13: 876:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:857:13: 876:43 (#0) -> src/lib.rs:841:13: 860:43 (#0)[00m
+[96m src/lib.rs:611:5: 880:19 (#0) -> src/lib.rs:595:5: 864:19 (#0)[00m
+[96m src/lib.rs:611:5: 615:12 (#0) -> src/lib.rs:595:5: 599:12 (#0)[00m
+[96m src/lib.rs:635:1: 637:12 (#0) -> src/lib.rs:619:1: 621:12 (#0)[00m
+[96m src/lib.rs:657:1: 659:12 (#0) -> src/lib.rs:641:1: 643:12 (#0)[00m
+[96m src/lib.rs:679:1: 681:12 (#0) -> src/lib.rs:663:1: 665:12 (#0)[00m
+[96m src/lib.rs:701:1: 703:12 (#0) -> src/lib.rs:685:1: 687:12 (#0)[00m
+[96m src/lib.rs:723:1: 725:12 (#0) -> src/lib.rs:707:1: 709:12 (#0)[00m
+[96m src/lib.rs:745:1: 747:12 (#0) -> src/lib.rs:729:1: 731:12 (#0)[00m
+[96m src/lib.rs:767:1: 769:12 (#0) -> src/lib.rs:751:1: 753:12 (#0)[00m
+[96m src/lib.rs:789:1: 791:12 (#0) -> src/lib.rs:773:1: 775:12 (#0)[00m
+[96m src/lib.rs:811:1: 813:12 (#0) -> src/lib.rs:795:1: 797:12 (#0)[00m
+[96m src/lib.rs:833:1: 835:12 (#0) -> src/lib.rs:817:1: 819:12 (#0)[00m
+[96m src/lib.rs:855:1: 857:12 (#0) -> src/lib.rs:839:1: 841:12 (#0)[00m
+[96m src/lib.rs:877:1: 880:19 (#0) -> src/lib.rs:861:1: 864:19 (#0)[00m
+[96m src/lib.rs:261:1: 284:2 (#0) -> src/lib.rs:262:1: 285:2 (#0)[00m
+[96m src/lib.rs:261:1: 284:2 (#0) -> src/lib.rs:262:1: 285:2 (#0)[00m
+[96m src/lib.rs:173:1: 183:2 (#0) -> src/lib.rs:174:1: 184:2 (#0)[00m
+[96m src/lib.rs:173:1: 183:2 (#0) -> src/lib.rs:174:1: 184:2 (#0)[00m
+[96m src/lib.rs:229:1: 242:2 (#0) -> src/lib.rs:230:1: 243:2 (#0)[00m
+[96m src/lib.rs:229:1: 242:2 (#0) -> src/lib.rs:230:1: 243:2 (#0)[00m
+[96m src/lib.rs:163:1: 172:2 (#0) -> src/lib.rs:164:1: 173:2 (#0)[00m
+[96m src/lib.rs:163:1: 172:2 (#0) -> src/lib.rs:164:1: 173:2 (#0)[00m
+[96m src/lib.rs:285:1: 308:2 (#0) -> src/lib.rs:286:1: 309:2 (#0)[00m
+[96m src/lib.rs:285:1: 308:2 (#0) -> src/lib.rs:286:1: 309:2 (#0)[00m
+[96m src/lib.rs:184:1: 194:2 (#0) -> src/lib.rs:185:1: 195:2 (#0)[00m
+[96m src/lib.rs:184:1: 194:2 (#0) -> src/lib.rs:185:1: 195:2 (#0)[00m
+[96m src/lib.rs:243:1: 260:2 (#0) -> src/lib.rs:244:1: 261:2 (#0)[00m
+[96m src/lib.rs:243:1: 260:2 (#0) -> src/lib.rs:244:1: 261:2 (#0)[00m
+[96m src/lib.rs:309:1: 326:2 (#0) -> src/lib.rs:310:1: 327:2 (#0)[00m
+[96m src/lib.rs:309:1: 326:2 (#0) -> src/lib.rs:310:1: 327:2 (#0)[00m
+[96m src/lib.rs:195:1: 208:2 (#0) -> src/lib.rs:196:1: 209:2 (#0)[00m
+[96m src/lib.rs:195:1: 208:2 (#0) -> src/lib.rs:196:1: 209:2 (#0)[00m
+[96m src/lib.rs:327:1: 344:2 (#0) -> src/lib.rs:328:1: 345:2 (#0)[00m
+[96m src/lib.rs:327:1: 344:2 (#0) -> src/lib.rs:328:1: 345:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:22 ~ get_predict_func_lib[11e4]::src::lib::BTAC1C2_GetPredictFunc)[00m
+[96m Translating Chunk 2[00m
+[97m Here is a piece of code from a larger function:
+```rust
+/*
+The variables live at this point are:
+(mut fcn: *mut std::ffi::c_void)
+*/
+fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn2
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+/*
+The variables live at this point are:
+(mut fcn: *mut std::ffi::c_void)
+*/
+```
+
+
+Convert this piece of code to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible.
+Follow the following format for your output: Place the translation between the tags <FUNC> and </FUNC>.
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+let fcn = BTAC1C2_PredictSample_Pfn2;
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:360:13: 378:16 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:26:1: 154:2 (#0) -> src/lib.rs:27:1: 155:2 (#0)[00m
+[96m src/lib.rs:26:1: 32:4 (#0) -> src/lib.rs:27:1: 33:4 (#0)[00m
+[96m src/lib.rs:153:1: 154:2 (#0) -> src/lib.rs:154:1: 155:2 (#0)[00m
+[96m src/lib.rs:77:8: 82:10 (#0) -> src/lib.rs:78:8: 83:10 (#0)[00m
+[96m src/lib.rs:77:8: 82:10 (#0) -> src/lib.rs:78:8: 83:10 (#0)[00m
+[96m src/lib.rs:86:8: 95:8 (#0) -> src/lib.rs:87:8: 96:8 (#0)[00m
+[96m src/lib.rs:86:8: 95:8 (#0) -> src/lib.rs:87:8: 96:8 (#0)[00m
+[96m src/lib.rs:99:8: 107:10 (#0) -> src/lib.rs:100:8: 108:10 (#0)[00m
+[96m src/lib.rs:99:8: 107:10 (#0) -> src/lib.rs:100:8: 108:10 (#0)[00m
+[96m src/lib.rs:133:8: 143:9 (#0) -> src/lib.rs:134:8: 144:9 (#0)[00m
+[96m src/lib.rs:133:8: 143:9 (#0) -> src/lib.rs:134:8: 144:9 (#0)[00m
+[96m src/lib.rs:32:5: 151:5 (#0) -> src/lib.rs:33:5: 152:5 (#0)[00m
+[96m src/lib.rs:32:5: 77:7 (#0) -> src/lib.rs:33:5: 78:7 (#0)[00m
+[96m src/lib.rs:84:1: 86:7 (#0) -> src/lib.rs:85:1: 87:7 (#0)[00m
+[96m src/lib.rs:97:1: 99:7 (#0) -> src/lib.rs:98:1: 100:7 (#0)[00m
+[96m src/lib.rs:109:1: 133:7 (#0) -> src/lib.rs:110:1: 134:7 (#0)[00m
+[96m src/lib.rs:145:1: 151:5 (#0) -> src/lib.rs:146:1: 152:5 (#0)[00m
+[96m src/lib.rs:210:1: 228:2 (#0) -> src/lib.rs:211:1: 229:2 (#0)[00m
+[96m src/lib.rs:210:1: 228:2 (#0) -> src/lib.rs:211:1: 229:2 (#0)[00m
+[96m src/lib.rs:346:1: 592:2 (#0) -> src/lib.rs:347:1: 576:2 (#0)[00m
+[96m src/lib.rs:346:1: 349:4 (#0) -> src/lib.rs:347:1: 350:4 (#0)[00m
+[96m src/lib.rs:592:1: 592:2 (#0) -> src/lib.rs:576:1: 576:2 (#0)[00m
+[96m src/lib.rs:352:13: 352:38 (#0) -> src/lib.rs:353:13: 353:38 (#0)[00m
+[96m src/lib.rs:352:13: 352:38 (#0) -> src/lib.rs:353:13: 353:38 (#0)[00m
+[96m src/lib.rs:356:13: 356:38 (#0) -> src/lib.rs:357:13: 357:38 (#0)[00m
+[96m src/lib.rs:356:13: 356:38 (#0) -> src/lib.rs:357:13: 357:38 (#0)[00m
+[91m Failed to modify src/lib.rs:360:13: 378:16 (#0)! Text mismatch[00m
+[96m src/lib.rs:360:13: 378:16 (#0) -> src/lib.rs:361:13: 361:38 (#0)[00m
+[91m Failed to modify src/lib.rs:360:13: 378:16 (#0)! Text mismatch[00m
+[96m src/lib.rs:360:13: 378:16 (#0) -> src/lib.rs:361:13: 361:38 (#0)[00m
+[96m src/lib.rs:381:13: 399:16 (#0) -> src/lib.rs:365:13: 383:16 (#0)[00m
+[96m src/lib.rs:381:13: 399:16 (#0) -> src/lib.rs:365:13: 383:16 (#0)[00m
+[96m src/lib.rs:402:13: 420:16 (#0) -> src/lib.rs:386:13: 404:16 (#0)[00m
+[96m src/lib.rs:402:13: 420:16 (#0) -> src/lib.rs:386:13: 404:16 (#0)[00m
+[96m src/lib.rs:423:13: 441:16 (#0) -> src/lib.rs:407:13: 425:16 (#0)[00m
+[96m src/lib.rs:423:13: 441:16 (#0) -> src/lib.rs:407:13: 425:16 (#0)[00m
+[96m src/lib.rs:444:13: 462:16 (#0) -> src/lib.rs:428:13: 446:16 (#0)[00m
+[96m src/lib.rs:444:13: 462:16 (#0) -> src/lib.rs:428:13: 446:16 (#0)[00m
+[96m src/lib.rs:465:13: 483:16 (#0) -> src/lib.rs:449:13: 467:16 (#0)[00m
+[96m src/lib.rs:465:13: 483:16 (#0) -> src/lib.rs:449:13: 467:16 (#0)[00m
+[96m src/lib.rs:486:13: 504:16 (#0) -> src/lib.rs:470:13: 488:16 (#0)[00m
+[96m src/lib.rs:486:13: 504:16 (#0) -> src/lib.rs:470:13: 488:16 (#0)[00m
+[96m src/lib.rs:507:13: 525:16 (#0) -> src/lib.rs:491:13: 509:16 (#0)[00m
+[96m src/lib.rs:507:13: 525:16 (#0) -> src/lib.rs:491:13: 509:16 (#0)[00m
+[96m src/lib.rs:528:13: 546:16 (#0) -> src/lib.rs:512:13: 530:16 (#0)[00m
+[96m src/lib.rs:528:13: 546:16 (#0) -> src/lib.rs:512:13: 530:16 (#0)[00m
+[96m src/lib.rs:549:13: 567:16 (#0) -> src/lib.rs:533:13: 551:16 (#0)[00m
+[96m src/lib.rs:549:13: 567:16 (#0) -> src/lib.rs:533:13: 551:16 (#0)[00m
+[96m src/lib.rs:570:13: 588:16 (#0) -> src/lib.rs:554:13: 572:16 (#0)[00m
+[96m src/lib.rs:570:13: 588:16 (#0) -> src/lib.rs:554:13: 572:16 (#0)[00m
+[96m src/lib.rs:349:5: 591:16 (#0) -> src/lib.rs:350:5: 575:16 (#0)[00m
+[96m src/lib.rs:349:5: 352:12 (#0) -> src/lib.rs:350:5: 353:12 (#0)[00m
+[96m src/lib.rs:354:1: 356:12 (#0) -> src/lib.rs:355:1: 357:12 (#0)[00m
+[96m src/lib.rs:358:1: 360:12 (#0) -> src/lib.rs:359:1: 361:12 (#0)[00m
+[96m src/lib.rs:379:1: 381:12 (#0) -> src/lib.rs:363:1: 365:12 (#0)[00m
+[96m src/lib.rs:400:1: 402:12 (#0) -> src/lib.rs:384:1: 386:12 (#0)[00m
+[96m src/lib.rs:421:1: 423:12 (#0) -> src/lib.rs:405:1: 407:12 (#0)[00m
+[96m src/lib.rs:442:1: 444:12 (#0) -> src/lib.rs:426:1: 428:12 (#0)[00m
+[96m src/lib.rs:463:1: 465:12 (#0) -> src/lib.rs:447:1: 449:12 (#0)[00m
+[96m src/lib.rs:484:1: 486:12 (#0) -> src/lib.rs:468:1: 470:12 (#0)[00m
+[96m src/lib.rs:505:1: 507:12 (#0) -> src/lib.rs:489:1: 491:12 (#0)[00m
+[96m src/lib.rs:526:1: 528:12 (#0) -> src/lib.rs:510:1: 512:12 (#0)[00m
+[96m src/lib.rs:547:1: 549:12 (#0) -> src/lib.rs:531:1: 533:12 (#0)[00m
+[96m src/lib.rs:568:1: 570:12 (#0) -> src/lib.rs:552:1: 554:12 (#0)[00m
+[96m src/lib.rs:589:1: 591:16 (#0) -> src/lib.rs:573:1: 575:16 (#0)[00m
+[96m src/lib.rs:156:1: 163:2 (#0) -> src/lib.rs:157:1: 164:2 (#0)[00m
+[96m src/lib.rs:156:1: 163:2 (#0) -> src/lib.rs:157:1: 164:2 (#0)[00m
+[96m src/lib.rs:594:1: 865:2 (#0) -> src/lib.rs:578:1: 849:2 (#0)[00m
+[96m src/lib.rs:594:1: 595:4 (#0) -> src/lib.rs:578:1: 579:4 (#0)[00m
+[96m src/lib.rs:865:1: 865:2 (#0) -> src/lib.rs:849:1: 849:2 (#0)[00m
+[96m src/lib.rs:599:13: 618:43 (#0) -> src/lib.rs:583:13: 602:43 (#0)[00m
+[96m src/lib.rs:599:13: 618:43 (#0) -> src/lib.rs:583:13: 602:43 (#0)[00m
+[96m src/lib.rs:621:13: 640:43 (#0) -> src/lib.rs:605:13: 624:43 (#0)[00m
+[96m src/lib.rs:621:13: 640:43 (#0) -> src/lib.rs:605:13: 624:43 (#0)[00m
+[96m src/lib.rs:643:13: 662:43 (#0) -> src/lib.rs:627:13: 646:43 (#0)[00m
+[96m src/lib.rs:643:13: 662:43 (#0) -> src/lib.rs:627:13: 646:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:649:13: 668:43 (#0)[00m
+[96m src/lib.rs:665:13: 684:43 (#0) -> src/lib.rs:649:13: 668:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:671:13: 690:43 (#0)[00m
+[96m src/lib.rs:687:13: 706:43 (#0) -> src/lib.rs:671:13: 690:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:693:13: 712:43 (#0)[00m
+[96m src/lib.rs:709:13: 728:43 (#0) -> src/lib.rs:693:13: 712:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:715:13: 734:43 (#0)[00m
+[96m src/lib.rs:731:13: 750:43 (#0) -> src/lib.rs:715:13: 734:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:737:13: 756:43 (#0)[00m
+[96m src/lib.rs:753:13: 772:43 (#0) -> src/lib.rs:737:13: 756:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:759:13: 778:43 (#0)[00m
+[96m src/lib.rs:775:13: 794:43 (#0) -> src/lib.rs:759:13: 778:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:781:13: 800:43 (#0)[00m
+[96m src/lib.rs:797:13: 816:43 (#0) -> src/lib.rs:781:13: 800:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:803:13: 822:43 (#0)[00m
+[96m src/lib.rs:819:13: 838:43 (#0) -> src/lib.rs:803:13: 822:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:825:13: 844:43 (#0)[00m
+[96m src/lib.rs:841:13: 860:43 (#0) -> src/lib.rs:825:13: 844:43 (#0)[00m
+[96m src/lib.rs:595:5: 864:19 (#0) -> src/lib.rs:579:5: 848:19 (#0)[00m
+[96m src/lib.rs:595:5: 599:12 (#0) -> src/lib.rs:579:5: 583:12 (#0)[00m
+[96m src/lib.rs:619:1: 621:12 (#0) -> src/lib.rs:603:1: 605:12 (#0)[00m
+[96m src/lib.rs:641:1: 643:12 (#0) -> src/lib.rs:625:1: 627:12 (#0)[00m
+[96m src/lib.rs:663:1: 665:12 (#0) -> src/lib.rs:647:1: 649:12 (#0)[00m
+[96m src/lib.rs:685:1: 687:12 (#0) -> src/lib.rs:669:1: 671:12 (#0)[00m
+[96m src/lib.rs:707:1: 709:12 (#0) -> src/lib.rs:691:1: 693:12 (#0)[00m
+[96m src/lib.rs:729:1: 731:12 (#0) -> src/lib.rs:713:1: 715:12 (#0)[00m
+[96m src/lib.rs:751:1: 753:12 (#0) -> src/lib.rs:735:1: 737:12 (#0)[00m
+[96m src/lib.rs:773:1: 775:12 (#0) -> src/lib.rs:757:1: 759:12 (#0)[00m
+[96m src/lib.rs:795:1: 797:12 (#0) -> src/lib.rs:779:1: 781:12 (#0)[00m
+[96m src/lib.rs:817:1: 819:12 (#0) -> src/lib.rs:801:1: 803:12 (#0)[00mTesting sysroot consistency...
+Done
+Target name: get_predict_func_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.53s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B02_organic/get_predict_func_lib/translated_rust

@@ -1,0 +1,295 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_synthetic/026_goto_and_static_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.29s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.34s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:8 ~ driver[5f71]::src::driver::multi_stage)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn multi_stage(
+    mut x: ::core::ffi::c_int,
+    mut z: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    if x != 1 as ::core::ffi::c_int {
+        printf(b"Error: x != 1\n\0" as *const u8 as *const ::core::ffi::c_char);
+        result = 1 as ::core::ffi::c_int;
+    } else if y != 2 as ::core::ffi::c_int {
+        printf(b"Error: x == 1 but y != 2\n\0" as *const u8 as *const ::core::ffi::c_char);
+        result = 2 as ::core::ffi::c_int;
+    } else if z != 3 as ::core::ffi::c_int {
+        printf(
+            b"Error: x == 1 and y == 2, but z != 3\n\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        result = 3 as ::core::ffi::c_int;
+    } else {
+        printf(b"Ok!\n\0" as *const u8 as *const ::core::ffi::c_char);
+        return result;
+    }
+    printf(b"Operation failed\n\0" as *const u8 as *const ::core::ffi::c_char);
+    return result;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut result: ::core::ffi::c_int = multi_stage(x, z);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn multi_stage(x: i32, z: i32) -> i32 {
+    let mut result = 0;
+
+    if x != 1 {
+        println!("Error: x != 1");
+        result = 1;
+    } else if y != 2 {
+        println!("Error: x == 1 but y != 2");
+        result = 2;
+    } else if z != 3 {
+        println!("Error: x == 1 and y == 2, but z != 3");
+        result = 3;
+    } else {
+        println!("Ok!");
+        return result;
+    }
+
+    println!("Operation failed");
+    result
+}
+</FUNC>
+
+<CALL>
+let mut result: ::core::ffi::c_int = multi_stage(x, z);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:5:1: 27:2 (#0)
+src/driver.rs:35:5: 35:60 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0133]: use of mutable static is unsafe and requires unsafe function or block
+  --> src/driver.rs:12:15
+   |
+12 |     } else if y != 2 {
+   |               ^ use of mutable static
+   |
+   = note: mutable statics can be mutated by multiple threads: aliasing violations or data races will cause undefined behavior
+
+For more information about this error, try `rustc --explain E0133`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn multi_stage(x: i32, z: i32) -> i32 {
+    let y = unsafe { y };
+
+    if x != 1 {
+        println!("Error: x != 1");
+        println!("Operation failed");
+        1
+    } else if y != 2 {
+        println!("Error: x == 1 but y != 2");
+        println!("Operation failed");
+        2
+    } else if z != 3 {
+        println!("Error: x == 1 and y == 2, but z != 3");
+        println!("Operation failed");
+        3
+    } else {
+        println!("Ok!");
+        0
+    }
+}
+</FUNC>
+
+<CALL>
+let mut result: ::core::ffi::c_int = multi_stage(x, z) as ::core::ffi::c_int;
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:5:1: 27:2 (#0)
+src/driver.rs:35:5: 35:60 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0530]: let bindings cannot shadow statics
+ --> src/driver.rs:7:9
+  |
+5 | static mut y: ::core::ffi::c_int = 123 as ::core::ffi::c_int;
+  | ------------------------------------------------------------- the static `y` is defined here
+6 | fn multi_stage(x: i32, z: i32) -> i32 {
+7 |     let y = unsafe { y };
+  |         ^ cannot be named the same as a static
+
+For more information about this error, try `rustc --explain E0530`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 3 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn multi_stage(x: i32, z: i32) -> i32 {
+    let y_value = unsafe { y };
+
+    if x != 1 {
+        println!("Error: x != 1");
+        println!("Operation failed");
+        1
+    } else if y_value != 2 {
+        println!("Error: x == 1 but y != 2");
+        println!("Operation failed");
+        2
+    } else if z != 3 {
+        println!("Error: x == 1 and y == 2, but z != 3");
+        println!("Operation failed");
+        3
+    } else {
+        println!("Ok!");
+        0
+    }
+}
+</FUNC>
+
+<CALL>
+let mut result: ::core::ffi::c_int = multi_stage(x, z) as ::core::ffi::c_int;
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:5:1: 27:2 (#0)
+src/driver.rs:35:5: 35:60 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:5:1: 27:2 (#0) -> src/driver.rs:6:1: 25:2 (#0)[00m
+[96m src/driver.rs:5:1: 27:2 (#0) -> src/driver.rs:6:1: 25:2 (#0)[00m
+[96m src/driver.rs:29:1: 40:2 (#0) -> src/driver.rs:28:1: 39:2 (#0)[00m
+[96m src/driver.rs:29:1: 40:2 (#0) -> src/driver.rs:28:1: 39:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ driver[5f71]::src::driver::driver)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn driver(
+    mut x: ::core::ffi::c_int,
+    mut local_y: ::core::ffi::c_int,
+    mut z: ::core::ffi::c_int,
+) {
+    y = local_y;
+    let mut result: ::core::ffi::c_int = multi_stage(x, z);
+    printf(
+        b"Result: %d\n\0" as *const u8 as *const ::core::ffi::c_char,
+        result,
+    );
+}
+```
+
+The function uses the following global variables:
+```rust
+static mut y: ::core::ffi::c_int = 123 as ::core::ffi::c_int;
+```
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.34s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn driver(x: i32, local_y: i32, z: i32) {
+    unsafe {
+        y = local_y;
+    }
+    let result: i32 = multi_stage(x, z);
+    println!("Result: {}", result);
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:28:1: 39:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:6:1: 25:2 (#0) -> src/driver.rs:7:1: 26:2 (#0)[00m
+[96m src/driver.rs:6:1: 25:2 (#0) -> src/driver.rs:7:1: 26:2 (#0)[00m
+[96m src/driver.rs:28:1: 39:2 (#0) -> src/driver.rs:29:1: 35:2 (#0)[00m
+[96m src/driver.rs:28:1: 39:2 (#0) -> src/driver.rs:29:1: 35:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_synthetic/026_goto_and_static_lib/translated_rust

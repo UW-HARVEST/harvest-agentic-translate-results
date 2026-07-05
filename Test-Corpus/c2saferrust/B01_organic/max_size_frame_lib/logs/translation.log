@@ -1,0 +1,106 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_organic/max_size_frame_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: max_size_frame_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.35s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: max_size_frame_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.32s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:8 ~ max_size_frame_lib[a49e]::src::lib::max_size_frame)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn max_size_frame(
+    mut blocksize: tflac_u32,
+    mut channels: tflac_u32,
+    mut bitdepth: tflac_u32,
+) -> tflac_u32 {
+    return (18 as tflac_u32).wrapping_add(channels).wrapping_add(
+        blocksize
+            .wrapping_mul(bitdepth)
+            .wrapping_mul(
+                channels
+                    .wrapping_mul((channels != 2 as tflac_u32) as ::core::ffi::c_int as tflac_u32),
+            )
+            .wrapping_add(
+                blocksize
+                    .wrapping_mul(bitdepth)
+                    .wrapping_mul((channels == 2 as tflac_u32) as ::core::ffi::c_int as tflac_u32),
+            )
+            .wrapping_add(
+                blocksize
+                    .wrapping_mul(bitdepth.wrapping_add(
+                        (bitdepth != 32 as tflac_u32) as ::core::ffi::c_int as tflac_u32,
+                    ))
+                    .wrapping_mul((channels == 2 as tflac_u32) as ::core::ffi::c_int as tflac_u32),
+            )
+            .wrapping_add(7 as ::core::ffi::c_int as tflac_u32)
+            .wrapping_div(8 as tflac_u32),
+    );
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn max_size_frame(blocksize: tflac_u32, channels: tflac_u32, bitdepth: tflac_u32) -> tflac_u32 {
+    let bits = if channels == 2 {
+        let left_right = blocksize.wrapping_mul(bitdepth);
+        let side = blocksize.wrapping_mul(bitdepth.wrapping_add((bitdepth != 32) as tflac_u32));
+        left_right.wrapping_add(side)
+    } else {
+        blocksize
+            .wrapping_mul(bitdepth)
+            .wrapping_mul(channels)
+    };
+
+    18u32
+        .wrapping_add(channels)
+        .wrapping_add(bits.wrapping_add(7).wrapping_div(8))
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:5:1: 32:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:5:1: 32:2 (#0) -> src/lib.rs:6:1: 20:2 (#0)[00m
+[96m src/lib.rs:5:1: 32:2 (#0) -> src/lib.rs:6:1: 20:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_organic/max_size_frame_lib/translated_rust

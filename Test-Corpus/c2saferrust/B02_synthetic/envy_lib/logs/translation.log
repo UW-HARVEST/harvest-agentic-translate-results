@@ -1,0 +1,853 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B02_synthetic/envy_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: envy_lib
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+    Checking c2rust-bitfields v0.22.1
+    Finished dev [unoptimized + debuginfo] target(s) in 4.86s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: envy_lib
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+    Checking c2rust-bitfields v0.22.1
+    Finished dev [unoptimized + debuginfo] target(s) in 5.08s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:26 ~ envy_lib[f47d]::src::lib::init_config_from_env)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn init_config_from_env(mut flags: *mut ConfigFlags) {
+    let mut verbose_env: *mut ::core::ffi::c_char =
+        getenv(b"PROG_VERBOSE\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut debug_env: *mut ::core::ffi::c_char =
+        getenv(b"PROG_DEBUG\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut optimize_env: *mut ::core::ffi::c_char =
+        getenv(b"PROG_OPTIMIZE\0" as *const u8 as *const ::core::ffi::c_char);
+    (*flags).set_verbose(
+        (if !verbose_env.is_null() && !strchr(verbose_env, '1' as i32).is_null() {
+            1 as ::core::ffi::c_int
+        } else {
+            0 as ::core::ffi::c_int
+        }) as ::core::ffi::c_uint as ::core::ffi::c_uint,
+    );
+    (*flags).set_debug(
+        (if !debug_env.is_null() && !strchr(debug_env, '1' as i32).is_null() {
+            1 as ::core::ffi::c_int
+        } else {
+            0 as ::core::ffi::c_int
+        }) as ::core::ffi::c_uint as ::core::ffi::c_uint,
+    );
+    (*flags).set_optimize(
+        (if !optimize_env.is_null() {
+            1 as ::core::ffi::c_int
+        } else {
+            0 as ::core::ffi::c_int
+        }) as ::core::ffi::c_uint as ::core::ffi::c_uint,
+    );
+    (*flags).set_cache_enabled(1 as ::core::ffi::c_uint as ::core::ffi::c_uint);
+    (*flags).set_log_level(0o3 as ::core::ffi::c_uint as ::core::ffi::c_uint);
+    (*flags).set_reserved(0 as ::core::ffi::c_uint as ::core::ffi::c_uint);
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+init_config_from_env(&raw mut state.flags);
+```
+
+The file contains the following imports:
+```rust
+use ::c2rust_bitfields;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+use std::env;
+</IMPORTS>
+
+<FUNC>
+pub fn init_config_from_env(flags: &mut ConfigFlags) {
+    let verbose = env::var("PROG_VERBOSE")
+        .ok()
+        .is_some_and(|v| v.contains('1'));
+    let debug = env::var("PROG_DEBUG")
+        .ok()
+        .is_some_and(|v| v.contains('1'));
+    let optimize = env::var("PROG_OPTIMIZE").is_ok();
+
+    flags.set_verbose(verbose as u32);
+    flags.set_debug(debug as u32);
+    flags.set_optimize(optimize as u32);
+    flags.set_cache_enabled(1u32);
+    flags.set_log_level(0o3u32);
+    flags.set_reserved(0u32);
+}
+</FUNC>
+
+<CALL>
+init_config_from_env(&mut state.flags);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:124:1: 155:2 (#0)
+src/lib.rs:222:5: 222:48 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+   Compiling c2rust-bitfields v0.22.1
+error[E0658]: use of unstable library feature 'is_some_with'
+   --> src/lib.rs:129:10
+    |
+129 |         .is_some_and(|v| v.contains('1'));
+    |          ^^^^^^^^^^^
+    |
+    = note: see issue #93050 <https://github.com/rust-lang/rust/issues/93050> for more information
+    = help: add `#![feature(is_some_with)]` to the crate attributes to enable
+
+error[E0658]: use of unstable library feature 'is_some_with'
+   --> src/lib.rs:132:10
+    |
+132 |         .is_some_and(|v| v.contains('1'));
+    |          ^^^^^^^^^^^
+    |
+    = note: see issue #93050 <https://github.com/rust-lang/rust/issues/93050> for more information
+    = help: add `#![feature(is_some_with)]` to the crate attributes to enable
+
+For more information about this error, try `rustc --explain E0658`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+use std::env;
+</IMPORTS>
+
+<FUNC>
+pub fn init_config_from_env(flags: &mut ConfigFlags) {
+    let verbose = match env::var("PROG_VERBOSE") {
+        Ok(v) => v.contains('1'),
+        Err(_) => false,
+    };
+    let debug = match env::var("PROG_DEBUG") {
+        Ok(v) => v.contains('1'),
+        Err(_) => false,
+    };
+    let optimize = env::var("PROG_OPTIMIZE").is_ok();
+
+    flags.set_verbose(verbose as u32);
+    flags.set_debug(debug as u32);
+    flags.set_optimize(optimize as u32);
+    flags.set_cache_enabled(1u32);
+    flags.set_log_level(0o3u32);
+    flags.set_reserved(0u32);
+}
+</FUNC>
+
+<CALL>
+init_config_from_env(&mut state.flags);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:124:1: 155:2 (#0)
+src/lib.rs:222:5: 222:48 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:182:1: 194:2 (#0) -> src/lib.rs:171:1: 183:2 (#0)[00m
+[96m src/lib.rs:182:1: 194:2 (#0) -> src/lib.rs:171:1: 183:2 (#0)[00m
+[96m src/lib.rs:157:1: 180:2 (#0) -> src/lib.rs:146:1: 169:2 (#0)[00m
+[96m src/lib.rs:157:1: 180:2 (#0) -> src/lib.rs:146:1: 169:2 (#0)[00m
+[96m src/lib.rs:95:1: 122:2 (#0) -> src/lib.rs:97:1: 124:2 (#0)[00m
+[96m src/lib.rs:95:1: 122:2 (#0) -> src/lib.rs:97:1: 124:2 (#0)[00m
+[96m src/lib.rs:124:1: 155:2 (#0) -> src/lib.rs:126:1: 143:2 (#0)[00m
+[96m src/lib.rs:124:1: 155:2 (#0) -> src/lib.rs:126:1: 143:2 (#0)[00m
+[96m src/lib.rs:196:1: 321:2 (#0) -> src/lib.rs:185:1: 310:2 (#0)[00m
+[96m src/lib.rs:196:1: 321:2 (#0) -> src/lib.rs:185:1: 310:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:25 ~ envy_lib[f47d]::src::lib::parse_env_numeric)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn parse_env_numeric(
+    mut env_name: *const ::core::ffi::c_char,
+    mut default_val: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut env_value: *mut ::core::ffi::c_char = getenv(env_name);
+    if env_value.is_null() {
+        return default_val;
+    }
+    let mut invalid_char: *mut ::core::ffi::c_char = strchr(env_value, ',' as i32);
+    if !invalid_char.is_null() {
+        fprintf(
+            stderr as *mut FILE,
+            b"Warning: Invalid character in %s\n\0" as *const u8 as *const ::core::ffi::c_char,
+            env_name,
+        );
+        return default_val;
+    }
+    invalid_char = strchr(env_value, ';' as i32);
+    if !invalid_char.is_null() {
+        fprintf(
+            stderr as *mut FILE,
+            b"Warning: Semicolon found in %s\n\0" as *const u8 as *const ::core::ffi::c_char,
+            env_name,
+        );
+        return default_val;
+    }
+    return atoi(env_value);
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut base_offset: ::core::ffi::c_int = parse_env_numeric(
+        b"PROG_BASE_OFFSET\0" as *const u8 as *const ::core::ffi::c_char,
+        0o100 as ::core::ffi::c_int,
+    );
+```
+Call site 2:
+```rust
+let mut multiplier: ::core::ffi::c_int = parse_env_numeric(
+        b"PROG_MULTIPLIER\0" as *const u8 as *const ::core::ffi::c_char,
+        0o12 as ::core::ffi::c_int,
+    );
+```
+
+The file contains the following imports:
+```rust
+std::env
+```
+```rust
+use ::c2rust_bitfields;
+```
+```rust
+use std::env;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: envy_lib
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+    Checking c2rust-bitfields v0.22.1
+    Finished dev [unoptimized + debuginfo] target(s) in 4.92s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: envy_lib
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+    Checking c2rust-bitfields v0.22.1
+    Finished dev [unoptimized + debuginfo] target(s) in 4.95s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn parse_env_numeric(env_name: &str, default_val: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    match env::var(env_name) {
+        Ok(env_value) => {
+            if env_value.contains(',') {
+                eprintln!("Warning: Invalid character in {}", env_name);
+                default_val
+            } else if env_value.contains(';') {
+                eprintln!("Warning: Semicolon found in {}", env_name);
+                default_val
+            } else {
+                env_value
+                    .trim()
+                    .parse::<::core::ffi::c_int>()
+                    .unwrap_or(0)
+            }
+        }
+        Err(_) => default_val,
+    }
+}
+</FUNC>
+
+<CALL>
+let mut base_offset: ::core::ffi::c_int =
+    parse_env_numeric("PROG_BASE_OFFSET", 0o100 as ::core::ffi::c_int);
+</CALL>
+
+<CALL>
+let mut multiplier: ::core::ffi::c_int =
+    parse_env_numeric("PROG_MULTIPLIER", 0o12 as ::core::ffi::c_int);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:97:1: 124:2 (#0)
+src/lib.rs:212:5: 215:7 (#0)
+src/lib.rs:216:5: 219:7 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:171:1: 183:2 (#0) -> src/lib.rs:164:1: 176:2 (#0)[00m
+[96m src/lib.rs:171:1: 183:2 (#0) -> src/lib.rs:164:1: 176:2 (#0)[00m
+[96m src/lib.rs:146:1: 169:2 (#0) -> src/lib.rs:139:1: 162:2 (#0)[00m
+[96m src/lib.rs:146:1: 169:2 (#0) -> src/lib.rs:139:1: 162:2 (#0)[00m
+[96m src/lib.rs:97:1: 124:2 (#0) -> src/lib.rs:98:1: 116:2 (#0)[00m
+[96m src/lib.rs:97:1: 124:2 (#0) -> src/lib.rs:98:1: 116:2 (#0)[00m
+[96m src/lib.rs:126:1: 143:2 (#0) -> src/lib.rs:119:1: 136:2 (#0)[00m
+[96m src/lib.rs:126:1: 143:2 (#0) -> src/lib.rs:119:1: 136:2 (#0)[00m
+[96m src/lib.rs:185:1: 310:2 (#0) -> src/lib.rs:178:1: 299:2 (#0)[00m
+[96m src/lib.rs:185:1: 310:2 (#0) -> src/lib.rs:178:1: 299:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:27 ~ envy_lib[f47d]::src::lib::perform_operation)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn perform_operation(
+    mut val1: ::core::ffi::c_int,
+    mut val2: ::core::ffi::c_int,
+    mut flags: *mut ConfigFlags,
+) -> ::core::ffi::c_int {
+    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut operation_mode: ::core::ffi::c_int = 0o755 as ::core::ffi::c_int;
+    if (*flags).optimize() != 0 {
+        result = val1 + val2;
+    } else {
+        result = val1 * (*flags).log_level() as ::core::ffi::c_int + val2 / 2 as ::core::ffi::c_int;
+    }
+    if (*flags).debug() != 0 {
+        printf(
+            b"Debug: operation_mode = %o (octal)\n\0" as *const u8 as *const ::core::ffi::c_char,
+            operation_mode,
+        );
+        printf(
+            b"Debug: result before adjustment = %d\n\0" as *const u8 as *const ::core::ffi::c_char,
+            result,
+        );
+    }
+    return result;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+result = perform_operation(param1, param2, &raw mut state.flags);
+```
+
+The file contains the following imports:
+```rust
+std::env
+```
+```rust
+use ::c2rust_bitfields;
+```
+```rust
+use std::env;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn perform_operation(val1: i32, val2: i32, flags: &ConfigFlags) -> i32 {
+    let mut result: i32;
+    let operation_mode: i32 = 0o755;
+
+    if flags.optimize() != 0 {
+        result = val1 + val2;
+    } else {
+        result = val1 * flags.log_level() as i32 + val2 / 2;
+    }
+
+    if flags.debug() != 0 {
+        println!("Debug: operation_mode = {:o} (octal)", operation_mode);
+        println!("Debug: result before adjustment = {}", result);
+    }
+
+    result
+}
+</FUNC>
+
+<CALL>
+result = perform_operation(param1, param2, &state.flags);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:139:1: 162:2 (#0)
+src/lib.rs:238:5: 238:70 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:164:1: 176:2 (#0) -> src/lib.rs:159:1: 171:2 (#0)[00m
+[96m src/lib.rs:164:1: 176:2 (#0) -> src/lib.rs:159:1: 171:2 (#0)[00m
+[96m src/lib.rs:139:1: 162:2 (#0) -> src/lib.rs:140:1: 156:2 (#0)[00m
+[96m src/lib.rs:139:1: 162:2 (#0) -> src/lib.rs:140:1: 156:2 (#0)[00m
+[96m src/lib.rs:98:1: 116:2 (#0) -> src/lib.rs:99:1: 117:2 (#0)[00m
+[96m src/lib.rs:98:1: 116:2 (#0) -> src/lib.rs:99:1: 117:2 (#0)[00m
+[96m src/lib.rs:119:1: 136:2 (#0) -> src/lib.rs:120:1: 137:2 (#0)[00m
+[96m src/lib.rs:119:1: 136:2 (#0) -> src/lib.rs:120:1: 137:2 (#0)[00m
+[96m src/lib.rs:178:1: 299:2 (#0) -> src/lib.rs:173:1: 294:2 (#0)[00m
+[96m src/lib.rs:178:1: 299:2 (#0) -> src/lib.rs:173:1: 294:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:28 ~ envy_lib[f47d]::src::lib::apply_bit_operations)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn apply_bit_operations(
+    mut value: ::core::ffi::c_int,
+    mut flags: *mut ConfigFlags,
+) -> ::core::ffi::c_int {
+    let mut adjusted: ::core::ffi::c_int = value;
+    if (*flags).verbose() != 0 {
+        adjusted = adjusted << 1 as ::core::ffi::c_int;
+    }
+    if (*flags).cache_enabled() != 0 {
+        adjusted = adjusted | 0xf as ::core::ffi::c_int;
+    }
+    return adjusted;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+result = apply_bit_operations(result, &raw mut state.flags);
+```
+
+The file contains the following imports:
+```rust
+use std::env;
+```
+```rust
+std::env
+```
+```rust
+use ::c2rust_bitfields;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: envy_lib
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+    Checking c2rust-bitfields v0.22.1
+    Finished dev [unoptimized + debuginfo] target(s) in 5.22s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn apply_bit_operations(mut value: i32, flags: &ConfigFlags) -> i32 {
+    if flags.verbose() != 0 {
+        value <<= 1;
+    }
+    if flags.cache_enabled() != 0 {
+        value |= 0xf;
+    }
+    value
+}
+</FUNC>
+
+<CALL>
+result = apply_bit_operations(result, &state.flags);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:159:1: 171:2 (#0)
+src/lib.rs:240:5: 240:65 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:159:1: 171:2 (#0) -> src/lib.rs:160:1: 168:2 (#0)[00m
+[96m src/lib.rs:159:1: 171:2 (#0) -> src/lib.rs:160:1: 168:2 (#0)[00m
+[96m src/lib.rs:140:1: 156:2 (#0) -> src/lib.rs:141:1: 157:2 (#0)[00m
+[96m src/lib.rs:140:1: 156:2 (#0) -> src/lib.rs:141:1: 157:2 (#0)[00m
+[96m src/lib.rs:99:1: 117:2 (#0) -> src/lib.rs:100:1: 118:2 (#0)[00m
+[96m src/lib.rs:99:1: 117:2 (#0) -> src/lib.rs:100:1: 118:2 (#0)[00m
+[96m src/lib.rs:120:1: 137:2 (#0) -> src/lib.rs:121:1: 138:2 (#0)[00m
+[96m src/lib.rs:120:1: 137:2 (#0) -> src/lib.rs:121:1: 138:2 (#0)[00m
+[96m src/lib.rs:173:1: 294:2 (#0) -> src/lib.rs:171:1: 292:2 (#0)[00m
+[96m src/lib.rs:173:1: 294:2 (#0) -> src/lib.rs:171:1: 292:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:29 ~ envy_lib[f47d]::src::lib::envy)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn envy(
+    mut param1: ::core::ffi::c_int,
+    mut param2: ::core::ffi::c_int,
+    mut param3: ::core::ffi::c_int,
+    mut param4: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut state: ProcessState = ProcessState {
+        flags: ConfigFlags {
+            verbose_debug_optimize_cache_enabled_log_level_reserved: [0; 1],
+            c2rust_padding: [0; 3],
+        },
+        base_value: 0,
+        multiplier: 0,
+        operation: 0,
+    };
+    let mut state_backup: ProcessState = ProcessState {
+        flags: ConfigFlags {
+            verbose_debug_optimize_cache_enabled_log_level_reserved: [0; 1],
+            c2rust_padding: [0; 3],
+        },
+        base_value: 0,
+        multiplier: 0,
+        operation: 0,
+    };
+    let mut buffer: [::core::ffi::c_char; 256] = [0; 256];
+    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    init_config_from_env(&raw mut state.flags);
+    let mut base_offset: ::core::ffi::c_int = parse_env_numeric(
+        b"PROG_BASE_OFFSET\0" as *const u8 as *const ::core::ffi::c_char,
+        0o100 as ::core::ffi::c_int,
+    );
+    let mut multiplier: ::core::ffi::c_int = parse_env_numeric(
+        b"PROG_MULTIPLIER\0" as *const u8 as *const ::core::ffi::c_char,
+        0o12 as ::core::ffi::c_int,
+    );
+    if state.flags.verbose() != 0 {
+        printf(b"Verbose mode enabled\n\0" as *const u8 as *const ::core::ffi::c_char);
+        printf(
+            b"Base offset: %d (from octal 0100)\n\0" as *const u8 as *const ::core::ffi::c_char,
+            base_offset,
+        );
+        printf(
+            b"Multiplier: %d (from octal 012)\n\0" as *const u8 as *const ::core::ffi::c_char,
+            multiplier,
+        );
+    }
+    state.base_value = param1;
+    state.multiplier = multiplier;
+    state.operation = '+' as i32 as ::core::ffi::c_char;
+    memcpy(
+        &raw mut state_backup as *mut ::core::ffi::c_void,
+        &raw mut state as *const ::core::ffi::c_void,
+        ::core::mem::size_of::<ProcessState>() as size_t,
+    );
+    if state.flags.debug() != 0 {
+        printf(
+            b"Debug: Created state backup using memcpy\n\0" as *const u8
+                as *const ::core::ffi::c_char,
+        );
+        printf(
+            b"Debug: Backup base_value = %d\n\0" as *const u8 as *const ::core::ffi::c_char,
+            state_backup.base_value,
+        );
+    }
+    result = perform_operation(param1, param2, &raw mut state.flags);
+    if param3 != 0 as ::core::ffi::c_int {
+        result += param3 * state.multiplier;
+    }
+    if param4 != 0 as ::core::ffi::c_int {
+        result += param4 >> 2 as ::core::ffi::c_int;
+    }
+    result = apply_bit_operations(result, &raw mut state.flags);
+    result += base_offset;
+    snprintf(
+        &raw mut buffer as *mut ::core::ffi::c_char,
+        BUFFER_SIZE as size_t,
+        b"Result:%d:Complete\0" as *const u8 as *const ::core::ffi::c_char,
+        result,
+    );
+    let mut colon_pos: *mut ::core::ffi::c_char =
+        strchr(&raw mut buffer as *mut ::core::ffi::c_char, ':' as i32);
+    if !colon_pos.is_null() {
+        if state.flags.verbose() != 0 {
+            printf(
+                b"Found colon at position: %ld\n\0" as *const u8 as *const ::core::ffi::c_char,
+                colon_pos.offset_from(&raw mut buffer as *mut ::core::ffi::c_char)
+                    as ::core::ffi::c_long,
+            );
+        }
+        let mut second_colon: *mut ::core::ffi::c_char = strchr(
+            colon_pos.offset(1 as ::core::ffi::c_int as isize),
+            ':' as i32,
+        );
+        if !second_colon.is_null() && state.flags.debug() as ::core::ffi::c_int != 0 {
+            printf(
+                b"Debug: Result string format validated\n\0" as *const u8
+                    as *const ::core::ffi::c_char,
+            );
+        }
+    }
+    if result < 0 as ::core::ffi::c_int {
+        memcpy(
+            &raw mut state as *mut ::core::ffi::c_void,
+            &raw mut state_backup as *const ::core::ffi::c_void,
+            ::core::mem::size_of::<ProcessState>() as size_t,
+        );
+        result = state.base_value;
+        if state.flags.verbose() != 0 {
+            printf(b"Restored state from backup\n\0" as *const u8 as *const ::core::ffi::c_char);
+        }
+    }
+    if state.flags.verbose() != 0 {
+        printf(
+            b"Final result: %d\n\0" as *const u8 as *const ::core::ffi::c_char,
+            result,
+        );
+        printf(
+            b"Configuration - Debug: %d, Optimize: %d, Log Level: %d\n\0" as *const u8
+                as *const ::core::ffi::c_char,
+            state.flags.debug() as ::core::ffi::c_int,
+            state.flags.optimize() as ::core::ffi::c_int,
+            state.flags.log_level() as ::core::ffi::c_int,
+        );
+    }
+    return result;
+}
+```
+
+The function uses the following global variables:
+```rust
+pub const BUFFER_SIZE: ::core::ffi::c_int = 256 as ::core::ffi::c_int;
+```
+The file contains the following imports:
+```rust
+std::env
+```
+```rust
+use ::c2rust_bitfields;
+```
+```rust
+use std::env;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn envy(
+    param1: ::core::ffi::c_int,
+    param2: ::core::ffi::c_int,
+    param3: ::core::ffi::c_int,
+    param4: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut state = ProcessState {
+        flags: ConfigFlags {
+            verbose_debug_optimize_cache_enabled_log_level_reserved: [0; 1],
+            c2rust_padding: [0; 3],
+        },
+        base_value: 0,
+        multiplier: 0,
+        operation: 0,
+    };
+    let mut state_backup = ProcessState {
+        flags: ConfigFlags {
+            verbose_debug_optimize_cache_enabled_log_level_reserved: [0; 1],
+            c2rust_padding: [0; 3],
+        },
+        base_value: 0,
+        multiplier: 0,
+        operation: 0,
+    };
+    let mut result: ::core::ffi::c_int = 0;
+
+    init_config_from_env(&mut state.flags);
+
+    let base_offset = parse_env_numeric("PROG_BASE_OFFSET", 0o100);
+    let multiplier = parse_env_numeric("PROG_MULTIPLIER", 0o12);
+
+    if state.flags.verbose() != 0 {
+        println!("Verbose mode enabled");
+        println!("Base offset: {} (from octal 0100)", base_offset);
+        println!("Multiplier: {} (from octal 012)", multiplier);
+    }
+
+    state.base_value = param1;
+    state.multiplier = multiplier;
+    state.operation = '+' as ::core::ffi::c_char;
+
+    state_backup = state;
+
+    if state.flags.debug() != 0 {
+        println!("Debug: Created state backup using memcpy");
+        println!("Debug: Backup base_value = {}", state_backup.base_value);
+    }
+
+    result = perform_operation(param1, param2, &mut state.flags);
+
+    if param3 != 0 {
+        result += param3 * state.multiplier;
+    }
+
+    if param4 != 0 {
+        result += param4 >> 2;
+    }
+
+    result = apply_bit_operations(result, &mut state.flags);
+    result += base_offset;
+
+    let buffer = format!("Result:{}:Complete", result);
+
+    if let Some(colon_pos) = buffer.find(':') {
+        if state.flags.verbose() != 0 {
+            println!("Found colon at position: {}", colon_pos);
+        }
+
+        if buffer[colon_pos + 1..].contains(':') && state.flags.debug() != 0 {
+            println!("Debug: Result string format validated");
+        }
+    }
+
+    if result < 0 {
+        state = state_backup;
+        result = state.base_value;
+
+        if state.flags.verbose() != 0 {
+            println!("Restored state from backup");
+        }
+    }
+
+    if state.flags.verbose() != 0 {
+        println!("Final result: {}", result);
+        println!(
+            "Configuration - Debug: {}, Optimize: {}, Log Level: {}",
+            state.flags.debug() as ::core::ffi::c_int,
+            state.flags.optimize() as ::core::ffi::c_int,
+            state.flags.log_level() as ::core::ffi::c_int,
+        );
+    }
+
+    result
+}
+</FUNC>Testing sysroot consistency...
+Done
+Target name: envy_lib
+   Compiling proc-macro2 v1.0.103
+   Compiling unicode-ident v1.0.22
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling c2rust-bitfields-derive v0.22.1
+    Checking c2rust-bitfields v0.22.1
+    Finished dev [unoptimized + debuginfo] target(s) in 7.16s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:171:1: 292:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:160:1: 168:2 (#0) -> src/lib.rs:161:1: 169:2 (#0)[00m
+[96m src/lib.rs:160:1: 168:2 (#0) -> src/lib.rs:161:1: 169:2 (#0)[00m
+[96m src/lib.rs:141:1: 157:2 (#0) -> src/lib.rs:142:1: 158:2 (#0)[00m
+[96m src/lib.rs:141:1: 157:2 (#0) -> src/lib.rs:142:1: 158:2 (#0)[00m
+[96m src/lib.rs:100:1: 118:2 (#0) -> src/lib.rs:101:1: 119:2 (#0)[00m
+[96m src/lib.rs:100:1: 118:2 (#0) -> src/lib.rs:101:1: 119:2 (#0)[00m
+[96m src/lib.rs:121:1: 138:2 (#0) -> src/lib.rs:122:1: 139:2 (#0)[00m
+[96m src/lib.rs:121:1: 138:2 (#0) -> src/lib.rs:122:1: 139:2 (#0)[00m
+[96m src/lib.rs:171:1: 292:2 (#0) -> src/lib.rs:172:1: 265:2 (#0)[00m
+[96m src/lib.rs:171:1: 292:2 (#0) -> src/lib.rs:172:1: 265:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B02_synthetic/envy_lib/translated_rust
