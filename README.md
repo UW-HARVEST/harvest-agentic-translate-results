@@ -18,14 +18,14 @@ results/
 │   │   │       └── logs/               # Agent logs
 │   │   └── ...
 │   └── ...
-├── CRUST/                  # CRUST-bench results (cargo test)
+├── CRUST/                  # CRUST-bench, test-repair setting (agent given the ground-truth tests)
 │   └── <agent>/
 │       └── <project>/
 │           ├── result.json
 │           ├── src/                     # Translated Rust source
 │           ├── c_src/                   # Original C source (copied in)
 │           └── logs/
-└── CRUST-blind/            # CRUST-bench blind mode (no ground-truth tests)
+└── CRUST-blind/            # CRUST-bench, self-generated tests setting (ground-truth tests withheld; agent writes its own)
     └── <agent>/
         └── <project>/
             ├── translate/               # Agent's translation
