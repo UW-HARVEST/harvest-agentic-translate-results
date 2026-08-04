@@ -1,0 +1,849 @@
+
+
+
+
+
+
+
+
+
+
+pub type btac1c_idxstate = btac1c_idxstate_s;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct btac1c_idxstate_s {
+    pub idx: btac1c_u16,
+    pub lpred: btac1c_s16,
+    pub rpred: btac1c_s16,
+    pub tag: btac1c_byte,
+    pub bcfcn: btac1c_byte,
+    pub bsfcn: btac1c_byte,
+    pub usefx: btac1c_byte,
+    pub firfx: [[btac1c_s16; 8]; 4],
+}
+pub type btac1c_s16 = ::core::ffi::c_short;
+pub type btac1c_byte = ::core::ffi::c_uchar;
+pub type btac1c_u16 = ::core::ffi::c_ushort;
+unsafe extern "C" fn BTAC1C2_PredictSample(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+     let mut pred: i32 = 0;
+let mut p0: i32 = 0;
+let mut p1: i32 = 0;
+let mut i: i32 = idx;
+
+match pfcn {
+    0 => {
+        pred = psamp.wrapping_offset(((i - 1) & 7) as isize).read();
+    }
+    1 => {
+        pred = 2 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            - psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+    }
+    2 => {
+        pred = (3 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            - psamp.wrapping_offset(((i - 2) & 7) as isize).read())
+            >> 1;
+    }
+    3 => {
+        pred = (5 * psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            - psamp.wrapping_offset(((i - 2) & 7) as isize).read())
+            >> 2;
+    }
+    4 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+        pred = p0 - (p1 >> 1);
+    }
+    5 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+        pred = (3 * p0 - p1) >> 2;
+    }
+    6 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read();
+        pred = (5 * p0 - p1) >> 3;
+    }
+    7 => {
+        pred = (18 * *psamp.add(((i - 1) & 7) as usize)
+    - 4 * *psamp.add(((i - 2) & 7) as usize)
+    + 3 * *psamp.add(((i - 3) & 7) as usize)
+    - 2 * *psamp.add(((i - 4) & 7) as usize)
+    + *psamp.add(((i - 5) & 7) as usize))
+    / 16;
+
+        }
+    8 => {
+        pred = (
+    72 * unsafe { *psamp.offset(((i - 1) & 7) as isize) }
+        - 16 * unsafe { *psamp.offset(((i - 2) & 7) as isize) }
+        + 12 * unsafe { *psamp.offset(((i - 3) & 7) as isize) }
+        - 8 * unsafe { *psamp.offset(((i - 4) & 7) as isize) }
+        + 5 * unsafe { *psamp.offset(((i - 5) & 7) as isize) }
+        - 3 * unsafe { *psamp.offset(((i - 6) & 7) as isize) }
+        + 3 * unsafe { *psamp.offset(((i - 7) & 7) as isize) }
+        - unsafe { *psamp.offset(((i - 8) & 7) as isize) }
+) / 64;
+
+        }
+    9 => {
+        pred = (76 * unsafe { *psamp.add(((i - 1) & 7) as usize) }
+    - 17 * unsafe { *psamp.add(((i - 2) & 7) as usize) }
+    + 10 * unsafe { *psamp.add(((i - 3) & 7) as usize) }
+    - 7 * unsafe { *psamp.add(((i - 4) & 7) as usize) }
+    + 5 * unsafe { *psamp.add(((i - 5) & 7) as usize) }
+    - 4 * unsafe { *psamp.add(((i - 6) & 7) as usize) }
+    + 4 * unsafe { *psamp.add(((i - 7) & 7) as usize) }
+    - 3 * unsafe { *psamp.add(((i - 8) & 7) as usize) })
+    / 64;
+
+        }
+    10 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 4) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 5) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 6) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 7) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 8) & 7) as isize).read();
+        pred = (5 * p0 - p1) >> 4;
+    }
+    11 => {
+        p0 = psamp.wrapping_offset(((i - 1) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 2) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 3) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 4) & 7) as isize).read();
+        p1 = psamp.wrapping_offset(((i - 5) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 6) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 7) & 7) as isize).read()
+            + psamp.wrapping_offset(((i - 8) & 7) as isize).read();
+        pred = (p0 + p1) >> 3;
+    }
+    12 | 13 | 14 | 15 => {
+        let fir = unsafe { &(*ridx).firfx[(pfcn - 12) as usize] };
+pred = (
+    fir[0] as i32 * unsafe { *psamp.offset(((i - 1) & 7) as isize) }
+        + fir[1] as i32 * unsafe { *psamp.offset(((i - 2) & 7) as isize) }
+        + fir[2] as i32 * unsafe { *psamp.offset(((i - 3) & 7) as isize) }
+        + fir[3] as i32 * unsafe { *psamp.offset(((i - 4) & 7) as isize) }
+        + fir[4] as i32 * unsafe { *psamp.offset(((i - 5) & 7) as isize) }
+        + fir[5] as i32 * unsafe { *psamp.offset(((i - 6) & 7) as isize) }
+        + fir[6] as i32 * unsafe { *psamp.offset(((i - 7) & 7) as isize) }
+        + fir[7] as i32 * unsafe { *psamp.offset(((i - 8) & 7) as isize) }
+) / 256;
+
+        }
+    _ => {
+        pred = 0;
+    }
+}
+
+pred
+
+
+}
+
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn0(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn1(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return 2 as ::core::ffi::c_int
+        * *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn2(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return 3 as ::core::ffi::c_int
+        * *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        >> 1 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn3(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return 5 as ::core::ffi::c_int
+        * *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        >> 2 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn4(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let mut p0: ::core::ffi::c_int = 0;
+    let mut p1: ::core::ffi::c_int = 0;
+    p0 = *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    p1 = *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    return p0 - (p1 >> 1 as ::core::ffi::c_int);
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn5(
+    psamp: *mut ::core::ffi::c_int,
+    idx: ::core::ffi::c_int,
+    pfcn: ::core::ffi::c_int,
+    ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let _ = pfcn;
+    let _ = ridx;
+
+    let psamp = ::core::slice::from_raw_parts(psamp, 8);
+
+    let i1 = ((idx - 1) & 7) as usize;
+    let i2 = ((idx - 2) & 7) as usize;
+    let i3 = ((idx - 3) & 7) as usize;
+
+    let p0 = psamp[i1] + psamp[i2];
+    let p1 = psamp[i2] + psamp[i3];
+    (3 * p0 - p1) >> 2
+}
+
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn6(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let mut p0: ::core::ffi::c_int = 0;
+    let mut p1: ::core::ffi::c_int = 0;
+    p0 = *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    p1 = *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    return 5 as ::core::ffi::c_int * p0 - p1 >> 3 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn7(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return (18 as ::core::ffi::c_int
+        * *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 4 as ::core::ffi::c_int
+            * *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 3 as ::core::ffi::c_int
+            * *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 2 as ::core::ffi::c_int
+            * *psamp.offset((idx - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 1 as ::core::ffi::c_int
+            * *psamp.offset((idx - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+        / 16 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn8(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return (72 as ::core::ffi::c_int
+        * *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 16 as ::core::ffi::c_int
+            * *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 12 as ::core::ffi::c_int
+            * *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 8 as ::core::ffi::c_int
+            * *psamp.offset((idx - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 5 as ::core::ffi::c_int
+            * *psamp.offset((idx - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 3 as ::core::ffi::c_int
+            * *psamp.offset((idx - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 3 as ::core::ffi::c_int
+            * *psamp.offset((idx - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 1 as ::core::ffi::c_int
+            * *psamp.offset((idx - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+        / 64 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn9(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    return (76 as ::core::ffi::c_int
+        * *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 17 as ::core::ffi::c_int
+            * *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 10 as ::core::ffi::c_int
+            * *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 7 as ::core::ffi::c_int
+            * *psamp.offset((idx - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 5 as ::core::ffi::c_int
+            * *psamp.offset((idx - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 4 as ::core::ffi::c_int
+            * *psamp.offset((idx - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + 4 as ::core::ffi::c_int
+            * *psamp.offset((idx - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        - 3 as ::core::ffi::c_int
+            * *psamp.offset((idx - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize))
+        / 64 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn10(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let mut p0: ::core::ffi::c_int = 0;
+    let mut p1: ::core::ffi::c_int = 0;
+    p0 = *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    p1 = *psamp.offset((idx - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    return 5 as ::core::ffi::c_int * p0 - p1 >> 3 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_PredictSample_Pfn11(
+    mut psamp: *mut ::core::ffi::c_int,
+    mut idx: ::core::ffi::c_int,
+    mut pfcn: ::core::ffi::c_int,
+    mut ridx: *mut btac1c_idxstate,
+) -> ::core::ffi::c_int {
+    let mut p0: ::core::ffi::c_int = 0;
+    let mut p1: ::core::ffi::c_int = 0;
+    p0 = *psamp.offset((idx - 1 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 2 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 3 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 4 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    p1 = *psamp.offset((idx - 5 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 6 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 7 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize)
+        + *psamp.offset((idx - 8 as ::core::ffi::c_int & 7 as ::core::ffi::c_int) as isize);
+    return p0 + p1 >> 1 as ::core::ffi::c_int;
+}
+unsafe extern "C" fn BTAC1C2_GetPredictFunc(
+    mut pfcn: ::core::ffi::c_int,
+) -> *mut ::core::ffi::c_void {
+    let mut fcn: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
+    match pfcn {
+        0 => {
+            let fcn = BTAC1C2_PredictSample_Pfn0;
+
+        }
+        1 => {
+            let fcn = BTAC1C2_PredictSample_Pfn1;
+
+        }
+        2 => {
+            let fcn = BTAC1C2_PredictSample_Pfn2;
+
+        }
+        3 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn3
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        4 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn4
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        5 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn5
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        6 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn6
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        7 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn7
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        8 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn8
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        9 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn9
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        10 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn10
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        11 => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample_Pfn11
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+        _ => {
+            fcn = ::core::mem::transmute::<
+                Option<
+                    unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+                >,
+                *mut ::core::ffi::c_void,
+            >(Some(
+                BTAC1C2_PredictSample
+                    as unsafe extern "C" fn(
+                        *mut ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        ::core::ffi::c_int,
+                        *mut btac1c_idxstate,
+                    ) -> ::core::ffi::c_int,
+            ));
+        }
+    }
+    return fcn;
+}
+#[no_mangle]
+pub unsafe extern "C" fn get_predict_func(mut pfcn: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut fcn: *mut ::core::ffi::c_void = BTAC1C2_GetPredictFunc(pfcn);
+    match pfcn {
+        0 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn0
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        1 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn1
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        2 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn2
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        3 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn3
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        4 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn4
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        5 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn5
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        6 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn6
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        7 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn7
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        8 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn8
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        9 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn9
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        10 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn10
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        11 => {
+            result = (fcn
+                == ::core::mem::transmute::<
+                    Option<
+                        unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                    >,
+                    *mut ::core::ffi::c_void,
+                >(Some(
+                    BTAC1C2_PredictSample_Pfn11
+                        as unsafe extern "C" fn(
+                            *mut ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            ::core::ffi::c_int,
+                            *mut btac1c_idxstate,
+                        ) -> ::core::ffi::c_int,
+                ))) as ::core::ffi::c_int;
+        }
+        _ => {}
+    }
+    return result;
+}

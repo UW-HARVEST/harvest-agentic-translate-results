@@ -1,0 +1,307 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_synthetic/006_static_alias_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: StaticAlias
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.36s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: StaticAlias
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.47s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:7 ~ StaticAlias[14f5]::src::staticalias::static_alias)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn static_alias(
+    mut outer: *mut ::core::ffi::c_int,
+) -> *mut ::core::ffi::c_int {
+    static mut inner: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+    if *outer >= inner {
+        inner += *outer;
+        return &raw mut inner;
+    } else {
+        *outer += inner;
+        return outer;
+    };
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn static_alias(outer: &mut i32) -> &mut i32 {
+    static INNER: std::sync::Mutex<i32> = std::sync::Mutex::new(1);
+
+    let mut inner = INNER.lock().unwrap();
+    if *outer >= *inner {
+        *inner += *outer;
+        Box::leak(Box::new(*inner))
+    } else {
+        *outer += *inner;
+        outer
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/staticalias.rs:5:1: 16:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0308]: mismatched types
+  --> src/staticalias.rs:27:36
+   |
+27 |         running_sum = static_alias(running_sum);
+   |                       ------------ ^^^^^^^^^^^ expected `&mut i32`, found *-ptr
+   |                       |
+   |                       arguments to this function are incorrect
+   |
+   = note: expected mutable reference `&mut i32`
+                    found raw pointer `*mut i32`
+note: function defined here
+  --> src/staticalias.rs:6:8
+   |
+6  | pub fn static_alias(outer: &mut i32) -> &mut i32 {
+   |        ^^^^^^^^^^^^ ---------------
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+use std::sync::Mutex;
+</IMPORTS>
+
+<FUNC>
+pub fn static_alias(mut outer: *mut i32) -> *mut i32 {
+    static INNER: Mutex<i32> = Mutex::new(1);
+
+    let mut inner = INNER.lock().unwrap();
+    unsafe {
+        if *outer >= *inner {
+            *inner += *outer;
+            outer = (&mut *inner) as *mut i32;
+        } else {
+            *outer += *inner;
+        }
+    }
+    outer
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/staticalias.rs:5:1: 16:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/staticalias.rs:5:1: 16:2 (#0) -> src/staticalias.rs:7:1: 20:2 (#0)[00m
+[96m src/staticalias.rs:5:1: 16:2 (#0) -> src/staticalias.rs:7:1: 20:2 (#0)[00m
+[96m src/staticalias.rs:18:1: 32:2 (#0) -> src/staticalias.rs:23:1: 37:2 (#0)[00m
+[96m src/staticalias.rs:18:1: 32:2 (#0) -> src/staticalias.rs:23:1: 37:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:9 ~ StaticAlias[14f5]::src::staticalias::driver)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn driver(
+    mut initial_value: ::core::ffi::c_int,
+    mut iterations: ::core::ffi::c_int,
+) {
+    let mut running_sum: *mut ::core::ffi::c_int = &raw mut initial_value;
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < iterations {
+        running_sum = static_alias(running_sum);
+        printf(
+            b"%d\n\0" as *const u8 as *const ::core::ffi::c_char,
+            *running_sum,
+        );
+        i += 1;
+    }
+}
+```
+
+
+The file contains the following imports:
+```rust
+use std::sync::Mutex;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn driver(mut initial_value: i32, iterations: i32) {
+    let mut running_sum = initial_value;
+    let mut i = 0;
+    while i < iterations {
+        running_sum = static_alias(running_sum);
+        println!("{}", running_sum);
+        i += 1;
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/staticalias.rs:23:1: 37:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0308]: mismatched types
+  --> src/staticalias.rs:28:36
+   |
+28 |         running_sum = static_alias(running_sum);
+   |                       ------------ ^^^^^^^^^^^ expected *-ptr, found `i32`
+   |                       |
+   |                       arguments to this function are incorrect
+   |
+   = note: expected raw pointer `*mut i32`
+                     found type `i32`
+note: function defined here
+  --> src/staticalias.rs:8:8
+   |
+8  | pub fn static_alias(mut outer: *mut i32) -> *mut i32 {
+   |        ^^^^^^^^^^^^ -------------------
+
+error[E0308]: mismatched types
+  --> src/staticalias.rs:28:23
+   |
+25 |     let mut running_sum = initial_value;
+   |                           ------------- expected due to this value
+...
+28 |         running_sum = static_alias(running_sum);
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `i32`, found *-ptr
+   |
+   = note:     expected type `i32`
+           found raw pointer `*mut i32`
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn driver(mut initial_value: i32, iterations: i32) {
+    let mut running_sum = &mut initial_value;
+    let mut i = 0;
+    while i < iterations {
+        running_sum = static_alias(running_sum);
+        println!("{}", *running_sum);
+        i += 1;
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/staticalias.rs:23:1: 37:2 (#0)
+[96m Attempting to compile the new code[00mTesting sysroot consistency...
+Done
+Target name: StaticAlias
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.33s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0308]: mismatched types
+  --> src/staticalias.rs:28:23
+   |
+25 |     let mut running_sum = &mut initial_value;
+   |                           ------------------ expected due to this value
+...
+28 |         running_sum = static_alias(running_sum);
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&mut i32`, found *-ptr
+   |
+   = note: expected mutable reference `&mut i32`
+                    found raw pointer `*mut i32`
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 3 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn driver(mut initial_value: i32, iterations: i32) {
+    let mut running_sum: *mut i32 = &mut initial_value as *mut i32;
+    let mut i = 0;
+    while i < iterations {
+        running_sum = static_alias(running_sum);
+        println!("{}", initial_value);
+        i += 1;
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/staticalias.rs:23:1: 37:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/staticalias.rs:7:1: 20:2 (#0) -> src/staticalias.rs:8:1: 21:2 (#0)[00m
+[96m src/staticalias.rs:7:1: 20:2 (#0) -> src/staticalias.rs:8:1: 21:2 (#0)[00m
+[96m src/staticalias.rs:23:1: 37:2 (#0) -> src/staticalias.rs:24:1: 32:2 (#0)[00m
+[96m src/staticalias.rs:23:1: 37:2 (#0) -> src/staticalias.rs:24:1: 32:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_synthetic/006_static_alias_lib/translated_rust

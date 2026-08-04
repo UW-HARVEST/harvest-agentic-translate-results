@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int hatch(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <stdlib.h>\r\n#include <string.h>\r\n#include <time.h>\r\n\r\nstatic int global_counter = 0;\r\nstatic int global_accumulator = 0;\r\n\r\ntypedef int (*operation_func)(int, int, int);\r\ntypedef void (*modifier_func)(int, int);\r\n\r\nvoid increment_counter(int value, int unused_param) {\r\n    global_counter += value;\r\n}\r\n\r\nvoid update_accumulator(int value, int unused_param) {\r\n    global_accumulator = global_accumulator * 2 + value;\r\n}\r\n\r\nint apply_operation(operation_func op, int a, int b, int c) {\r\n    return op(a, b, c);\r\n}\r\n
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, c_int, c_long, c_void};\nuse std::mem::MaybeUninit;\nuse std::os::raw::c_double;\nuse std::ptr;\nuse std::time::{SystemTime, UNIX_EPOCH};\n\nstatic mut GLOBAL_COUNTER: c_int = 0;\nstatic mut GLOBAL_ACCUMULATOR: c_int = 0;\n\ntype OperationFunc = fn(c_int, c_int, c_int) -> c_int;\ntype ModifierFunc = fn(c_int, c_int);\n\nfn increment_counter(value: c_int, _unused_param: c_int) {\n    unsafe {\n        GLOBAL_COUNTER += value;\n    }\n}\n\nfn update_accumulator(value: c_int, _unused_param: c_int) {\n    unsafe {\n        GLOBAL_ACCUMULATOR = GLOBAL_ACCUMULATOR * 2 + value;\n    }\n}\n\nfn apply_operation(op: OperationFunc, a: c_int, b: c_int, c: c_int) -> c_int {\n    op(a, b, c)\n}\n\nfn add_three(a: c_int, b: c_int, c: c_int) -> c_int {\n    a + b + c\n}\n\nfn multiply_add(a: c_int, b: c_int, c: c_int) -> c_int {\n    (a * b) + c\n}\n\nfn complex_calc(a: c_int, b: c_int, c: c_int) -> c_int {\n    unsafe {\n        (a - b) * c + GLOBAL_COUNTER\n    }\n}\n\n#[repr(C)]\nstruct DataRecord {\n    id: c_int,\n    value: c_int,\n    timestamp: c_long,\n    name: [c_char; 32],\n}\n\nfn shift_array_data(arr: &mut [c_int], shift_by: c_int) {\n    let shift_by = shift_by as usize;\n    let size = arr.len();\n    if shift_by > 0 && shift_by < size {\n        arr.copy_within(shift_by..size, 0);\n        for i in (size - shift_by)..size {\n            arr[i] = 0;\n        }\n    }\n}\n\nfn process_pointer_data(ptr: *const c_int, multiplier: c_int) -> c_int {\n    unsafe {\n        let value = *ptr;\n        value * multiplier + GLOBAL_ACCUMULATOR\n    }\n}\n\nfn compute_with_dynamic_memory(base: c_int, count: c_int) -> c_int {\n    let count = count as usize;\n    let mut temp_array: Vec<c_int> = Vec::with_capacity(count);\n    \n    for i in 0..count {\n        temp_array.push(base + (i as c_int) * 3);\n    }\n    \n    let mut sum: c_int = 0;\n    for i in 0..count {\n        sum += temp_array[i];\n    }\n    \n    sum\n}\n\nfn get_time_based_value(seed: c_int) -> c_int {\n    let current_time = SystemTime::now()\n        .duration_since(UNIX_EPOCH)\n        .unwrap()\n        .as_secs() as c_long;\n    \n    let reference_time = current_time - ((seed as c_long) * 3600);\n    \n    let diff = (current_time - reference_time) as c_double;\n    \n    ((diff / 100.0) as c_int) + seed\n}\n\nfn manipulate_records(records: &mut [DataRecord], shift: c_int) -> c_int {\n    let shift = shift as usize;\n    let num_records = records.len();\n    let mut total: c_int = 0;\n    \n    if shift > 0 && shift < num_records {\n        records.copy_within(shift..num_records, 0);\n    }\n    \n    let new_len = num_records - shift;\n    for i in 0..new_len {\n        total += records[i].value;\n    }\n    \n    total\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn hatch(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let mut result: c_int = 0;\n    \n    let mut mod_func: ModifierFunc = increment_counter;\n    mod_func(param1, 999);\n    \n    mod_func = update_accumulator;\n    mod_func(param2, 888);\n    \n    let mut op_func: OperationFunc = add_three;\n    result += apply_operation(op_func, param1, param2, param3);\n    \n    op_func = multiply_add;\n    result += apply_operation(op_func, param2, param3, param4);\n    \n    op_func = complex_calc;\n    result += apply_operation(op_func, param1, param3, param4);\n    \n    let mut dynamic_data: Vec<c_int> = Vec::with_capacity(10);\n    for i in 0..10 {\n        dynamic_data.push(param1 + i as c_int);\n    }\n    \n    result += process_pointer_data(dynamic_data.as_ptr().add(5), param2);\n    \n    shift_array_data(&mut dynamic_data, 3);\n    result += dynamic_data[0];\n    \n    drop(dynamic_data);\n    \n    result += get_time_based_value(param3);\n    \n    let mut records: Vec<MaybeUninit<DataRecord>> = Vec::with_capacity(5);\n    unsafe {\n        records.set_len(5);\n    }\n    \n    for i in 0..5 {\n        let timestamp = SystemTime::now()\n            .duration_since(UNIX_EPOCH)\n            .unwrap()\n            .as_secs() as c_long;\n        \n        let name_str = format!(\"Record_{}\", i);\n        let mut name: [c_char; 32] = [0; 32];\n        for (j, byte) in name_str.bytes().enumerate() {\n            if j >= 31 {\n                break;\n            }\n            name[j] = byte as c_char;\n        }\n        \n        let record = DataRecord {\n            id: i as c_int,\n            value: param4 + (i as c_int) * 10,\n            timestamp,\n            name,\n        };\n        \n        unsafe {\n            ptr::write(records[i].as_mut_ptr(), record);\n        }\n    }\n    \n    let records_slice = unsafe {\n        std::slice::from_raw_parts_mut(\n            records.as_mut_ptr() as *mut DataRecord,\n            5\n        )\n    };\n    \n    result += manipulate_records(records_slice, 2);\n    \n    unsafe {\n        for i in 0..5 {\n            ptr::drop_in_place(records[i].as_mut_ptr());\n        }\n    }\n    \n    drop(records);\n    \n    result += compute_with_dynamic_memory(param1, 8);\n    \n    unsafe {\n        result += GLOBAL_COUNTER + GLOBAL_ACCUMULATOR;\n    }\n    \n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

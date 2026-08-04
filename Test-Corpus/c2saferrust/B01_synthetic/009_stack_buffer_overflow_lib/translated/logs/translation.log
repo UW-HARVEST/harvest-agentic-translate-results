@@ -1,0 +1,707 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_synthetic/009_stack_buffer_overflow_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.37s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.42s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.34s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:9 ~ driver[5f71]::src::driver::printIntLine)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn printIntLine(mut intNumber: ::core::ffi::c_int) {
+    printf(
+        b"%d\n\0" as *const u8 as *const ::core::ffi::c_char,
+        intNumber,
+    );
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn printIntLine(intNumber: i32) {
+    println!("{}", intNumber);
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:12:1: 17:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:12:1: 17:2 (#0) -> src/driver.rs:13:1: 15:2 (#0)[00m
+[96m src/driver.rs:12:1: 17:2 (#0) -> src/driver.rs:13:1: 15:2 (#0)[00m
+[96m src/driver.rs:6:1: 10:2 (#0) -> src/driver.rs:7:1: 11:2 (#0)[00m
+[96m src/driver.rs:6:1: 10:2 (#0) -> src/driver.rs:7:1: 11:2 (#0)[00m
+[96m src/driver.rs:33:1: 47:2 (#0) -> src/driver.rs:32:1: 46:2 (#0)[00m
+[96m src/driver.rs:33:1: 47:2 (#0) -> src/driver.rs:32:1: 46:2 (#0)[00m
+[96m src/driver.rs:48:1: 63:2 (#0) -> src/driver.rs:47:1: 62:2 (#0)[00m
+[96m src/driver.rs:48:1: 63:2 (#0) -> src/driver.rs:47:1: 62:2 (#0)[00m
+[96m src/driver.rs:65:1: 68:2 (#0) -> src/driver.rs:64:1: 67:2 (#0)[00m
+[96m src/driver.rs:65:1: 68:2 (#0) -> src/driver.rs:64:1: 67:2 (#0)[00m
+[96m src/driver.rs:19:1: 32:2 (#0) -> src/driver.rs:18:1: 31:2 (#0)[00m
+[96m src/driver.rs:19:1: 32:2 (#0) -> src/driver.rs:18:1: 31:2 (#0)[00m
+[96m src/driver.rs:70:1: 77:2 (#0) -> src/driver.rs:69:1: 76:2 (#0)[00m
+[96m src/driver.rs:70:1: 77:2 (#0) -> src/driver.rs:69:1: 76:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:8 ~ driver[5f71]::src::driver::printLine)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn printLine(mut line: *const ::core::ffi::c_char) {
+    if !line.is_null() {
+        printf(b"%s\n\0" as *const u8 as *const ::core::ffi::c_char, line);
+    }
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+printLine(b"Calling bad()...\0" as *const u8 as *const ::core::ffi::c_char);
+```
+Call site 2:
+```rust
+printLine(
+            b"ERROR: Array index is out-of-bounds\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+```
+Call site 3:
+```rust
+printLine(b"Finished good()\0" as *const u8 as *const ::core::ffi::c_char);
+```
+Call site 4:
+```rust
+printLine(b"Finished bad()\0" as *const u8 as *const ::core::ffi::c_char);
+```
+Call site 5:
+```rust
+printLine(b"ERROR: Array index is negative.\0" as *const u8 as *const ::core::ffi::c_char);
+```
+Call site 6:
+```rust
+printLine(b"Calling good()...\0" as *const u8 as *const ::core::ffi::c_char);
+```
+Call site 7:
+```rust
+printLine(b"ERROR: Array index is negative.\0" as *const u8 as *const ::core::ffi::c_char);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn printLine(line: &str) {
+    println!("{}", line);
+}
+</FUNC>
+
+<CALL>
+printLine("Calling bad()...");
+</CALL>
+
+<CALL>
+printLine("ERROR: Array index is out-of-bounds");
+</CALL>
+
+<CALL>
+printLine("Finished good()");
+</CALL>
+
+<CALL>
+printLine("Finished bad()");
+</CALL>
+
+<CALL>
+printLine("ERROR: Array index is negative.");
+</CALL>
+
+<CALL>
+printLine("Calling good()...");
+</CALL>
+
+<CALL>
+printLine("ERROR: Array index is negative.");
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:7:1: 11:2 (#0)
+src/driver.rs:73:5: 73:81 (#0)
+src/driver.rs:58:9: 60:11 (#0)
+src/driver.rs:72:5: 72:80 (#0)
+src/driver.rs:75:5: 75:79 (#0)
+src/driver.rs:44:9: 44:100 (#0)
+src/driver.rs:70:5: 70:82 (#0)
+src/driver.rs:29:9: 29:100 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:13:1: 15:2 (#0) -> src/driver.rs:13:1: 15:2 (#0)[00m
+[96m src/driver.rs:13:1: 15:2 (#0) -> src/driver.rs:13:1: 15:2 (#0)[00m
+[96m src/driver.rs:7:1: 11:2 (#0) -> src/driver.rs:8:1: 10:2 (#0)[00m
+[96m src/driver.rs:7:1: 11:2 (#0) -> src/driver.rs:8:1: 10:2 (#0)[00m
+[96m src/driver.rs:32:1: 46:2 (#0) -> src/driver.rs:32:1: 46:2 (#0)[00m
+[96m src/driver.rs:32:1: 46:2 (#0) -> src/driver.rs:32:1: 46:2 (#0)[00m
+[96m src/driver.rs:47:1: 62:2 (#0) -> src/driver.rs:47:1: 60:2 (#0)[00m
+[96m src/driver.rs:47:1: 62:2 (#0) -> src/driver.rs:47:1: 60:2 (#0)[00m
+[96m src/driver.rs:64:1: 67:2 (#0) -> src/driver.rs:62:1: 65:2 (#0)[00m
+[96m src/driver.rs:64:1: 67:2 (#0) -> src/driver.rs:62:1: 65:2 (#0)[00m
+[96m src/driver.rs:18:1: 31:2 (#0) -> src/driver.rs:18:1: 31:2 (#0)[00m
+[96m src/driver.rs:18:1: 31:2 (#0) -> src/driver.rs:18:1: 31:2 (#0)[00m
+[96m src/driver.rs:69:1: 76:2 (#0) -> src/driver.rs:67:1: 74:2 (#0)[00m
+[96m src/driver.rs:69:1: 76:2 (#0) -> src/driver.rs:67:1: 74:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:16 ~ driver[5f71]::src::driver::goodB2G)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn goodB2G(mut data: ::core::ffi::c_int) {
+    let mut i: ::core::ffi::c_int = 0;
+    let mut buffer: [::core::ffi::c_int; 10] = [0 as ::core::ffi::c_int; 10];
+    if data >= 0 as ::core::ffi::c_int && data < 10 as ::core::ffi::c_int {
+        buffer[data as usize] = 1 as ::core::ffi::c_int;
+        i = 0 as ::core::ffi::c_int;
+        while i < 10 as ::core::ffi::c_int {
+            printIntLine(buffer[i as usize]);
+            i += 1;
+        }
+    } else {
+        printLine(
+            b"ERROR: Array index is out-of-bounds\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+    };
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+goodB2G(data);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.40s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.33s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+fn goodB2G(data: i32) {
+    let mut buffer = [0i32; 10];
+
+    if (0..10).contains(&data) {
+        buffer[data as usize] = 1;
+        for value in buffer {
+            printIntLine(value);
+        }
+    } else {
+        printLine("ERROR: Array index is out-of-bounds");
+    }
+}
+</FUNC>
+<CALL>
+goodB2G(data);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:47:1: 60:2 (#0)
+src/driver.rs:64:5: 64:19 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:13:1: 15:2 (#0) -> src/driver.rs:14:1: 16:2 (#0)[00m
+[96m src/driver.rs:13:1: 15:2 (#0) -> src/driver.rs:14:1: 16:2 (#0)[00m
+[96m src/driver.rs:8:1: 10:2 (#0) -> src/driver.rs:9:1: 11:2 (#0)[00m
+[96m src/driver.rs:8:1: 10:2 (#0) -> src/driver.rs:9:1: 11:2 (#0)[00m
+[96m src/driver.rs:32:1: 46:2 (#0) -> src/driver.rs:33:1: 47:2 (#0)[00m
+[96m src/driver.rs:32:1: 46:2 (#0) -> src/driver.rs:33:1: 47:2 (#0)[00m
+[96m src/driver.rs:47:1: 60:2 (#0) -> src/driver.rs:48:1: 59:2 (#0)[00m
+[96m src/driver.rs:47:1: 60:2 (#0) -> src/driver.rs:48:1: 59:2 (#0)[00m
+[96m src/driver.rs:62:1: 65:2 (#0) -> src/driver.rs:62:1: 65:2 (#0)[00m
+[96m src/driver.rs:62:1: 65:2 (#0) -> src/driver.rs:62:1: 65:2 (#0)[00m
+[96m src/driver.rs:18:1: 31:2 (#0) -> src/driver.rs:19:1: 32:2 (#0)[00m
+[96m src/driver.rs:18:1: 31:2 (#0) -> src/driver.rs:19:1: 32:2 (#0)[00m
+[96m src/driver.rs:67:1: 74:2 (#0) -> src/driver.rs:67:1: 74:2 (#0)[00m
+[96m src/driver.rs:67:1: 74:2 (#0) -> src/driver.rs:67:1: 74:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:13 ~ driver[5f71]::src::driver::goodG2B)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+unsafe extern "C" fn goodG2B() {
+    let mut data: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
+    let mut i: ::core::ffi::c_int = 0;
+    let mut buffer: [::core::ffi::c_int; 10] = [0 as ::core::ffi::c_int; 10];
+    if data >= 0 as ::core::ffi::c_int {
+        buffer[data as usize] = 1 as ::core::ffi::c_int;
+        i = 0 as ::core::ffi::c_int;
+        while i < 10 as ::core::ffi::c_int {
+            printIntLine(buffer[i as usize]);
+            i += 1;
+        }
+    } else {
+        printLine(b"ERROR: Array index is negative.\0" as *const u8 as *const ::core::ffi::c_char);
+    };
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+goodG2B();
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+<FUNC>
+fn goodG2B() {
+    let data: i32 = 7;
+    let mut buffer = [0i32; 10];
+
+    if data >= 0 {
+        buffer[data as usize] = 1;
+        for &value in &buffer {
+            printIntLine(value);
+        }
+    } else {
+        printLine("ERROR: Array index is negative.");
+    }
+}
+</FUNC>
+<CALL>
+goodG2B();
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:33:1: 47:2 (#0)
+src/driver.rs:63:5: 63:15 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:14:1: 16:2 (#0) -> src/driver.rs:15:1: 17:2 (#0)[00m
+[96m src/driver.rs:14:1: 16:2 (#0) -> src/driver.rs:15:1: 17:2 (#0)[00m
+[96m src/driver.rs:9:1: 11:2 (#0) -> src/driver.rs:10:1: 12:2 (#0)[00m
+[96m src/driver.rs:9:1: 11:2 (#0) -> src/driver.rs:10:1: 12:2 (#0)[00m
+[96m src/driver.rs:33:1: 47:2 (#0) -> src/driver.rs:34:1: 46:2 (#0)[00m
+[96m src/driver.rs:33:1: 47:2 (#0) -> src/driver.rs:34:1: 46:2 (#0)[00m
+[96m src/driver.rs:48:1: 59:2 (#0) -> src/driver.rs:48:1: 59:2 (#0)[00m
+[96m src/driver.rs:48:1: 59:2 (#0) -> src/driver.rs:48:1: 59:2 (#0)[00m
+[96m src/driver.rs:62:1: 65:2 (#0) -> src/driver.rs:62:1: 65:2 (#0)[00m
+[96m src/driver.rs:62:1: 65:2 (#0) -> src/driver.rs:62:1: 65:2 (#0)[00m
+[96m src/driver.rs:19:1: 32:2 (#0) -> src/driver.rs:20:1: 33:2 (#0)[00m
+[96m src/driver.rs:19:1: 32:2 (#0) -> src/driver.rs:20:1: 33:2 (#0)[00m
+[96m src/driver.rs:67:1: 74:2 (#0) -> src/driver.rs:67:1: 74:2 (#0)[00m
+[96m src/driver.rs:67:1: 74:2 (#0) -> src/driver.rs:67:1: 74:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:10 ~ driver[5f71]::src::driver::bad)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn bad(mut data: ::core::ffi::c_int) {
+    let mut i: ::core::ffi::c_int = 0;
+    let mut buffer: [::core::ffi::c_int; 10] = [0 as ::core::ffi::c_int; 10];
+    if data >= 0 as ::core::ffi::c_int {
+        buffer[data as usize] = 1 as ::core::ffi::c_int;
+        i = 0 as ::core::ffi::c_int;
+        while i < 10 as ::core::ffi::c_int {
+            printIntLine(buffer[i as usize]);
+            i += 1;
+        }
+    } else {
+        printLine(b"ERROR: Array index is negative.\0" as *const u8 as *const ::core::ffi::c_char);
+    };
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+bad(badData);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn bad(data: i32) {
+    let mut buffer = [0i32; 10];
+
+    if data < 0 {
+        printLine(b"ERROR: Array index is negative.\0" as *const u8 as *const ::core::ffi::c_char);
+        return;
+    }
+
+    let index = data as usize;
+    if index >= buffer.len() {
+        printLine(b"ERROR: Array index is out-of-bounds\0" as *const u8 as *const ::core::ffi::c_char);
+        return;
+    }
+
+    buffer[index] = 1;
+
+    for &value in &buffer {
+        printIntLine(value);
+    }
+}
+</FUNC>
+
+<CALL>
+bad(badData);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00mTesting sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.34s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.38s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Replacing:[00m
+src/driver.rs:20:1: 33:2 (#0)
+src/driver.rs:72:5: 72:18 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+error[E0308]: mismatched types
+  --> src/driver.rs:25:19
+   |
+25 |         printLine(b"ERROR: Array index is negative.\0" as *const u8 as *const ::core::ffi::c_char);
+   |         --------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&str`, found *-ptr
+   |         |
+   |         arguments to this function are incorrect
+   |
+   = note: expected reference `&str`
+            found raw pointer `*const i8`
+note: function defined here
+  --> src/driver.rs:11:8
+   |
+11 | pub fn printLine(line: &str) {
+   |        ^^^^^^^^^ ----------
+
+error[E0308]: mismatched types
+  --> src/driver.rs:31:19
+   |
+31 |         printLine(b"ERROR: Array index is out-of-bounds\0" as *const u8 as *const ::core::ffi::c_char);
+   |         --------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&str`, found *-ptr
+   |         |
+   |         arguments to this function are incorrect
+   |
+   = note: expected reference `&str`
+            found raw pointer `*const i8`
+note: function defined here
+  --> src/driver.rs:11:8
+   |
+11 | pub fn printLine(line: &str) {
+   |        ^^^^^^^^^ ----------
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn bad(data: i32) {
+    let mut buffer = [0i32; 10];
+
+    if data < 0 {
+        printLine("ERROR: Array index is negative.");
+        return;
+    }
+
+    let index = data as usize;
+    if index >= buffer.len() {
+        printLine("ERROR: Array index is out-of-bounds");
+        return;
+    }
+
+    buffer[index] = 1;
+
+    for &value in &buffer {
+        printIntLine(value);
+    }
+}
+</FUNC>
+
+<CALL>
+bad(badData);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:20:1: 33:2 (#0)
+src/driver.rs:72:5: 72:18 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:15:1: 17:2 (#0) -> src/driver.rs:16:1: 18:2 (#0)[00m
+[96m src/driver.rs:15:1: 17:2 (#0) -> src/driver.rs:16:1: 18:2 (#0)[00m
+[96m src/driver.rs:10:1: 12:2 (#0) -> src/driver.rs:11:1: 13:2 (#0)[00m
+[96m src/driver.rs:10:1: 12:2 (#0) -> src/driver.rs:11:1: 13:2 (#0)[00m
+[96m src/driver.rs:34:1: 46:2 (#0) -> src/driver.rs:42:1: 54:2 (#0)[00m
+[96m src/driver.rs:34:1: 46:2 (#0) -> src/driver.rs:42:1: 54:2 (#0)[00m
+[96m src/driver.rs:48:1: 59:2 (#0) -> src/driver.rs:56:1: 67:2 (#0)[00m
+[96m src/driver.rs:48:1: 59:2 (#0) -> src/driver.rs:56:1: 67:2 (#0)[00m
+[96m src/driver.rs:62:1: 65:2 (#0) -> src/driver.rs:70:1: 73:2 (#0)[00m
+[96m src/driver.rs:62:1: 65:2 (#0) -> src/driver.rs:70:1: 73:2 (#0)[00m
+[96m src/driver.rs:20:1: 33:2 (#0) -> src/driver.rs:21:1: 40:2 (#0)[00m
+[96m src/driver.rs:20:1: 33:2 (#0) -> src/driver.rs:21:1: 40:2 (#0)[00m
+[96m src/driver.rs:67:1: 74:2 (#0) -> src/driver.rs:75:1: 82:2 (#0)[00m
+[96m src/driver.rs:67:1: 74:2 (#0) -> src/driver.rs:75:1: 82:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:19 ~ driver[5f71]::src::driver::good)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn good(mut data: ::core::ffi::c_int) {
+    goodG2B();
+    goodB2G(data);
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+good(goodData);
+```
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn good(data: i32) {
+    goodG2B();
+    goodB2G(data);
+}
+</FUNC>
+
+<CALL>
+good(goodData);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:70:1: 73:2 (#0)
+src/driver.rs:77:5: 77:20 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:16:1: 18:2 (#0) -> src/driver.rs:17:1: 19:2 (#0)[00m
+[96m src/driver.rs:16:1: 18:2 (#0) -> src/driver.rs:17:1: 19:2 (#0)[00m
+[96m src/driver.rs:11:1: 13:2 (#0) -> src/driver.rs:12:1: 14:2 (#0)[00m
+[96m src/driver.rs:11:1: 13:2 (#0) -> src/driver.rs:12:1: 14:2 (#0)[00m
+[96m src/driver.rs:42:1: 54:2 (#0) -> src/driver.rs:43:1: 55:2 (#0)[00m
+[96m src/driver.rs:42:1: 54:2 (#0) -> src/driver.rs:43:1: 55:2 (#0)[00m
+[96m src/driver.rs:56:1: 67:2 (#0) -> src/driver.rs:57:1: 68:2 (#0)[00m
+[96m src/driver.rs:56:1: 67:2 (#0) -> src/driver.rs:57:1: 68:2 (#0)[00m
+[96m src/driver.rs:70:1: 73:2 (#0) -> src/driver.rs:71:1: 74:2 (#0)[00m
+[96m src/driver.rs:70:1: 73:2 (#0) -> src/driver.rs:71:1: 74:2 (#0)[00m
+[96m src/driver.rs:21:1: 40:2 (#0) -> src/driver.rs:22:1: 41:2 (#0)[00m
+[96m src/driver.rs:21:1: 40:2 (#0) -> src/driver.rs:22:1: 41:2 (#0)[00m
+[96m src/driver.rs:75:1: 82:2 (#0) -> src/driver.rs:77:1: 84:2 (#0)[00m
+[96m src/driver.rs:75:1: 82:2 (#0) -> src/driver.rs:77:1: 84:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:20 ~ driver[5f71]::src::driver::driver)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn driver(mut goodData: ::core::ffi::c_int, mut badData: ::core::ffi::c_int) {
+    printLine(b"Calling good()...\0" as *const u8 as *const ::core::ffi::c_char);
+    good(goodData);
+    printLine(b"Finished good()\0" as *const u8 as *const ::core::ffi::c_char);
+    printLine(b"Calling bad()...\0" as *const u8 as *const ::core::ffi::c_char);
+    bad(badData);
+    printLine(b"Finished bad()\0" as *const u8 as *const ::core::ffi::c_char);
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+Testing sysroot consistency...
+Done
+Target name: driver
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.33s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn driver(good_data: i32, bad_data: i32) {
+    printLine("Calling good()...");
+    good(good_data);
+    printLine("Finished good()");
+    printLine("Calling bad()...");
+    bad(bad_data);
+    printLine("Finished bad()");
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/driver.rs:77:1: 84:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/driver.rs:17:1: 19:2 (#0) -> src/driver.rs:18:1: 20:2 (#0)[00m
+[96m src/driver.rs:17:1: 19:2 (#0) -> src/driver.rs:18:1: 20:2 (#0)[00m
+[96m src/driver.rs:12:1: 14:2 (#0) -> src/driver.rs:13:1: 15:2 (#0)[00m
+[96m src/driver.rs:12:1: 14:2 (#0) -> src/driver.rs:13:1: 15:2 (#0)[00m
+[96m src/driver.rs:43:1: 55:2 (#0) -> src/driver.rs:44:1: 56:2 (#0)[00m
+[96m src/driver.rs:43:1: 55:2 (#0) -> src/driver.rs:44:1: 56:2 (#0)[00m
+[96m src/driver.rs:57:1: 68:2 (#0) -> src/driver.rs:58:1: 69:2 (#0)[00m
+[96m src/driver.rs:57:1: 68:2 (#0) -> src/driver.rs:58:1: 69:2 (#0)[00m
+[96m src/driver.rs:71:1: 74:2 (#0) -> src/driver.rs:72:1: 75:2 (#0)[00m
+[96m src/driver.rs:71:1: 74:2 (#0) -> src/driver.rs:72:1: 75:2 (#0)[00m
+[96m src/driver.rs:22:1: 41:2 (#0) -> src/driver.rs:23:1: 42:2 (#0)[00m
+[96m src/driver.rs:22:1: 41:2 (#0) -> src/driver.rs:23:1: 42:2 (#0)[00m
+[96m src/driver.rs:77:1: 84:2 (#0) -> src/driver.rs:78:1: 85:2 (#0)[00m
+[96m src/driver.rs:77:1: 84:2 (#0) -> src/driver.rs:78:1: 85:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_synthetic/009_stack_buffer_overflow_lib/translated_rust

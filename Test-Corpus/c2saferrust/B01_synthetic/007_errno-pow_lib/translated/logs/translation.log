@@ -1,0 +1,111 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_synthetic/007_errno-pow_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: pow
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.36s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: pow
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.37s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:17 ~ pow[7b29]::src::pow::my_pow)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn my_pow(
+    mut base: ::core::ffi::c_double,
+    mut exponent: ::core::ffi::c_double,
+) -> ::core::ffi::c_double {
+    *__errno_location() = 0 as ::core::ffi::c_int;
+    let mut result: ::core::ffi::c_double = pow(base, exponent);
+    if *__errno_location() == EDOM {
+        fprintf(
+            stderr as *mut FILE,
+            b"Domain error: pow(%.2f, %.2f) is undefined in the real number domain.\n\0"
+                as *const u8 as *const ::core::ffi::c_char,
+            base,
+            exponent,
+        );
+        return -(1 as ::core::ffi::c_int) as ::core::ffi::c_double;
+    } else if *__errno_location() == ERANGE {
+        fprintf(
+            stderr as *mut FILE,
+            b"Range error: pow(%.2f, %.2f) caused overflow or underflow.\n\0" as *const u8
+                as *const ::core::ffi::c_char,
+            base,
+            exponent,
+        );
+        return -(1 as ::core::ffi::c_int) as ::core::ffi::c_double;
+    }
+    return result;
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<IMPORTS>
+</IMPORTS>
+<FUNC>
+pub fn my_pow(base: f64, exponent: f64) -> f64 {
+    let result = base.powf(exponent);
+
+    if result.is_nan() && !base.is_nan() && !exponent.is_nan() {
+        eprintln!(
+            "Domain error: pow({:.2}, {:.2}) is undefined in the real number domain.",
+            base, exponent
+        );
+        -1.0
+    } else if result.is_infinite() || (result == 0.0 && base != 0.0 && exponent < 0.0) {
+        eprintln!(
+            "Range error: pow({:.2}, {:.2}) caused overflow or underflow.",
+            base, exponent
+        );
+        -1.0
+    } else {
+        result
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/pow.rs:59:1: 85:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/pow.rs:59:1: 85:2 (#0) -> src/pow.rs:60:1: 78:2 (#0)[00m
+[96m src/pow.rs:59:1: 85:2 (#0) -> src/pow.rs:60:1: 78:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_synthetic/007_errno-pow_lib/translated_rust

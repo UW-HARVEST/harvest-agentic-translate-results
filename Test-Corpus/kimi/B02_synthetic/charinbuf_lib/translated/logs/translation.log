@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the \"Software\"),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n\n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\nint charinbuf(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, c_int, CStr, CString};\nuse std::os::raw::c_void;\nuse std::ptr;\nuse std::sync::atomic::{AtomicI32, Ordering};\n\nstatic COUNTER: AtomicI32 = AtomicI32::new(0);\n\ntype OperationFunc = Option<unsafe extern \"C\" fn(c_int) -> c_int>;\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn increment_counter(value: c_int) -> c_int {\n    COUNTER.fetch_add(value, Ordering::SeqCst) + value\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn decrement_counter(value: c_int) -> c_int {\n    COUNTER.fetch_sub(value, Ordering::SeqCst) - value\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn multiply_counter(value: c_int) -> c_int {\n    let old = COUNTER.load(Ordering::SeqCst);\n    let new = old * value;\n    COUNTER.store(new, Ordering::SeqCst);\n    new\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn reset_counter(value: c_int) -> c_int {\n    COUNTER.store(value, Ordering::SeqCst);\n    value\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn is_string_empty(str: *const c_char) -> c_int {\n    if str.is_null() {\n        return 1;\n    }\n    if *str != 0 {\n        return 0;\n    }\n    1\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn find_char_in_buffer(buffer: *const c_char, size: usize, target: c_char) -> *mut c_char {\n    if buffer.is_null() {\n        return ptr::null_mut();\n    }\n    let slice = std::slice::from_raw_parts(buffer as *const u8, size);\n    match slice.iter().position(|&b| b as i8 == target) {\n        Some(pos) => buffer.add(pos) as *mut c_char,\n        None => ptr::null_mut(),\n    }\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn create_buffer(initial: *const c_char) -> *mut c_char {\n    if initial.is_null() {\n        return ptr::null_mut();\n    }\n    let c_str = match CStr::from_ptr(initial).to_str() {\n        Ok(s) => s,\n        Err(_) => return ptr::null_mut(),\n    };\n    match CString::new(c_str) {\n        Ok(cstring) => cstring.into_raw(),\n        Err(_) => ptr::null_mut(),\n    }\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn validate_uint16_range(value: c_int) -> c_int {\n    if value < 0 {\n        return 0;\n    }\n    if value > u16::MAX as c_int {\n        return 0;\n    }\n    1\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn apply_operation(op: OperationFunc, value: c_int) -> c_int {\n    match op {\n        Some(func) => func(value),\n        None => -1,\n    }\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn charinbuf(mode: c_int, value: c_int, opt1: c_int, opt2: c_int) -> c_int {\n    let mut result: c_int = 0;\n    let mut buffer: *mut c_char = ptr::null_mut();\n    let mut found_pos: *mut c_char = ptr::null_mut();\n    let test_string: *const c_char = b\"\\0\".as_ptr() as *const c_char;\n    let non_empty_string: *const c_char = b\"Hello, World!\\0\".as_ptr() as *const c_char;\n    let mut current_op: OperationFunc = None;\n\n    COUNTER.store(0, Ordering::SeqCst);\n\n    match mode {\n        0 => {\n            println!(\"Mode 0: UINT16_MAX validation\");\n            println!(\"Checking if value {} is within uint16_t range...\", value);\n\n            if validate_uint16_range(value) != 0 {\n                println!(\"Value {} is valid (0 <= value <= {})\", value, u16::MAX);\n                result = value;\n            } else {\n                println!(\"Value {} is out of range for uint16_t\", value);\n                result = -1;\n            }\n\n            println!(\"UINT16_MAX constant value: {}\", u16::MAX);\n        }\n\n        1 => {\n            println!(\"Mode 1: String empty check by dereference\");\n\n            if is_string_empty(test_string) != 0 {\n                println!(\"Test string is empty (checked with *string)\");\n                result = 0;\n            } else {\n                println!(\"Test string is not empty\");\n                result = 1;\n            }\n\n            if is_string_empty(non_empty_string) != 0 {\n                println!(\"Non-empty string check failed!\");\n            } else {\n                println!(\"Non-empty string correctly identified\");\n                result += 10;\n            }\n        }\n\n        2 => {\n            println!(\"Mode 2: Dynamic memory allocation and free\");\n\n            let initial = b\"Testing malloc and free\\0\".as_ptr() as *const c_char;\n            buffer = create_buffer(initial);\n\n            if !buffer.is_null() {\n                let c_str = CStr::from_ptr(buffer);\n                let len = c_str.to_bytes().len();\n                println!(\"Buffer allocated: '{}'\", c_str.to_str().unwrap_or(\"<invalid utf8>\"));\n                println!(\"Buffer length: {}\", len);\n                result = len as c_int;\n\n                let _ = CString::from_raw(buffer);\n                println!(\"Buffer freed successfully\");\n                buffer = ptr::null_mut();\n            } else {\n                println!(\"Failed to allocate buffer\");\n                result = -1;\n            }\n        }\n\n        3 => {\n            println!(\"Mode 3: Function pointers with static counter\");\n\n            current_op = Some(reset_counter);\n            result = apply_operation(current_op, value);\n            println!(\"Counter reset to: {}\", result);\n\n            current_op = Some(increment_counter);\n            result = apply_operation(current_op, opt1);\n            println!(\"Counter after increment by {}: {}\", opt1, result);\n\n            current_op = Some(multiply_counter);\n            result = apply_operation(current_op, opt2);\n            println!(\"Counter after multiply by {}: {}\", opt2, result);\n\n            current_op = Some(decrement_counter);\n            result = apply_operation(current_op, 5);\n            println!(\"Counter after decrement by 5: {}\", result);\n\n            println!(\"Final static counter value: {}\", COUNTER.load(Ordering::SeqCst));\n        }\n\n        4 => {\n            println!(\"Mode 4: Using memchr to find character\");\n\n            let initial = b\"Search for character X in this buffer\\0\".as_ptr() as *const c_char;\n            buffer = create_buffer(initial);\n\n            if !buffer.is_null() {\n                let c_str = CStr::from_ptr(buffer);\n                let buf_size = c_str.to_bytes().len();\n                let search_char: c_char = 'X' as c_char;\n\n                println!(\"Searching for '{}' in: '{}'\", 'X', c_str.to_str().unwrap_or(\"<invalid utf8>\"));\n                found_pos = find_char_in_buffer(buffer, buf_size, search_char);\n\n                if !found_pos.is_null() {\n                    result = found_pos.offset_from(buffer) as c_int;\n                    println!(\"Found '{}' at position: {}\", 'X', result);\n                } else {\n                    println!(\"Character '{}' not found\", 'X');\n                    result = -1;\n                }\n\n                let _ = CString::from_raw(buffer);\n                buffer = ptr::null_mut();\n            }\n        }\n\n        _ => {\n            println!(\"Invalid mode: {}\", mode);\n            result = -1;\n        }\n    }\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"staticlib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

@@ -1,0 +1,1016 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B02_synthetic/fallcalc_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling libc v0.2.186
+   Compiling shlex v2.0.1
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 2.87s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 3.00s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:24 ~ fallcalc_lib[b00e]::src::lib::safe_double_to_int)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn safe_double_to_int(mut d: ::core::ffi::c_double) -> ::core::ffi::c_int {
+    if if ::core::mem::size_of::<::core::ffi::c_double>() as usize
+        == ::core::mem::size_of::<::core::ffi::c_float>() as usize
+    {
+        __isnanf(d as ::core::ffi::c_float)
+    } else if ::core::mem::size_of::<::core::ffi::c_double>() as usize
+        == ::core::mem::size_of::<::core::ffi::c_double>() as usize
+    {
+        __isnan(d)
+    } else {
+        __isnanl(::f128::f128::new(d))
+    } != 0
+    {
+        return 0 as ::core::ffi::c_int;
+    }
+    if if ::core::mem::size_of::<::core::ffi::c_double>() as usize
+        == ::core::mem::size_of::<::core::ffi::c_float>() as usize
+    {
+        __isinff(d as ::core::ffi::c_float)
+    } else if ::core::mem::size_of::<::core::ffi::c_double>() as usize
+        == ::core::mem::size_of::<::core::ffi::c_double>() as usize
+    {
+        __isinf(d)
+    } else {
+        __isinfl(::f128::f128::new(d))
+    } != 0
+    {
+        return if d > 0 as ::core::ffi::c_int as ::core::ffi::c_double {
+            INT_MAX
+        } else {
+            INT_MIN
+        };
+    }
+    if d >= INT_MAX as ::core::ffi::c_double {
+        return INT_MAX;
+    }
+    if d <= INT_MIN as ::core::ffi::c_double {
+        return INT_MIN;
+    }
+    return d as ::core::ffi::c_int;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut result: ::core::ffi::c_int = safe_double_to_int(sum);
+```
+Call site 2:
+```rust
+let mut converted: ::core::ffi::c_int = safe_double_to_int(floating_calc);
+```
+The function uses the following global variables:
+```rust
+pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+```
+```rust
+pub const INT_MIN: ::core::ffi::c_int = -__INT_MAX__ - 1 as ::core::ffi::c_int;
+```
+The file contains the following imports:
+```rust
+use ::f128;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn safe_double_to_int(d: f64) -> i32 {
+    if d.is_nan() {
+        return 0;
+    }
+    if d.is_infinite() {
+        return if d.is_sign_positive() { INT_MAX } else { INT_MIN };
+    }
+    if d >= INT_MAX as f64 {
+        return INT_MAX;
+    }
+    if d <= INT_MIN as f64 {
+        return INT_MIN;
+    }
+    d as i32
+}
+</FUNC>
+
+<CALL>
+let mut result: ::core::ffi::c_int = safe_double_to_int(sum);
+</CALL>
+
+<CALL>
+let mut converted: ::core::ffi::c_int = safe_double_to_int(floating_calc);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:25:1: 65:2 (#0)
+src/lib.rs:154:5: 154:66 (#0)
+src/lib.rs:210:5: 210:79 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:25:1: 65:2 (#0) -> src/lib.rs:26:1: 40:2 (#0)[00m
+[96m src/lib.rs:25:1: 65:2 (#0) -> src/lib.rs:26:1: 40:2 (#0)[00m
+[96m src/lib.rs:131:1: 157:2 (#0) -> src/lib.rs:107:1: 133:2 (#0)[00m
+[96m src/lib.rs:131:1: 157:2 (#0) -> src/lib.rs:107:1: 133:2 (#0)[00m
+[96m src/lib.rs:82:1: 129:2 (#0) -> src/lib.rs:58:1: 105:2 (#0)[00m
+[96m src/lib.rs:82:1: 129:2 (#0) -> src/lib.rs:58:1: 105:2 (#0)[00m
+[96m src/lib.rs:67:1: 80:2 (#0) -> src/lib.rs:43:1: 56:2 (#0)[00m
+[96m src/lib.rs:67:1: 80:2 (#0) -> src/lib.rs:43:1: 56:2 (#0)[00m
+[96m src/lib.rs:159:1: 178:2 (#0) -> src/lib.rs:135:1: 154:2 (#0)[00m
+[96m src/lib.rs:159:1: 178:2 (#0) -> src/lib.rs:135:1: 154:2 (#0)[00m
+[96m src/lib.rs:180:1: 222:2 (#0) -> src/lib.rs:156:1: 198:2 (#0)[00m
+[96m src/lib.rs:180:1: 222:2 (#0) -> src/lib.rs:156:1: 198:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:28 ~ fallcalc_lib[b00e]::src::lib::foreach_sum)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn foreach_sum(
+    mut array: *mut ::core::ffi::c_int,
+    mut count: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut total: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut element: ::core::ffi::c_int = 0;
+    let mut keep: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+    let mut idx: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut size: ::core::ffi::c_int = count;
+    while keep != 0 && idx < size {
+        element = *array.offset(idx as isize);
+        while keep != 0 {
+            total += element;
+            keep = (keep == 0) as ::core::ffi::c_int;
+        }
+        keep = (keep == 0) as ::core::ffi::c_int;
+        idx += 1;
+    }
+    return total;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut foreach_result: ::core::ffi::c_int = foreach_sum(data_array, array_size);
+```
+
+The file contains the following imports:
+```rust
+use ::f128;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn foreach_sum(array: &[i32], count: i32) -> i32 {
+    let size = count.max(0) as usize;
+    array.iter().take(size).copied().sum()
+}
+</FUNC>
+
+<CALL>
+let mut foreach_result: ::core::ffi::c_int = foreach_sum(&data_array[..], array_size);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:135:1: 154:2 (#0)
+src/lib.rs:176:5: 176:86 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+   Compiling f128 v0.2.9
+error[E0608]: cannot index into a value of type `*mut i32`
+   --> src/lib.rs:162:63
+    |
+162 |     let mut foreach_result: ::core::ffi::c_int = foreach_sum(&data_array[..], array_size);
+    |                                                               ^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0608`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00mTesting sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling shlex v2.0.1
+   Compiling libc v0.2.186
+   Compiling find-msvc-tools v0.1.9
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 3.02s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 3.07s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn foreach_sum(array: *mut ::core::ffi::c_int, count: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    if array.is_null() || count <= 0 {
+        return 0;
+    }
+
+    let size = count as usize;
+    let slice = unsafe { ::core::slice::from_raw_parts(array as *const ::core::ffi::c_int, size) };
+    slice.iter().copied().sum()
+}
+</FUNC>
+
+<CALL>
+let mut foreach_result: ::core::ffi::c_int = foreach_sum(data_array, array_size);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:135:1: 154:2 (#0)
+src/lib.rs:176:5: 176:86 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:26:1: 40:2 (#0) -> src/lib.rs:27:1: 41:2 (#0)[00m
+[96m src/lib.rs:26:1: 40:2 (#0) -> src/lib.rs:27:1: 41:2 (#0)[00m
+[96m src/lib.rs:107:1: 133:2 (#0) -> src/lib.rs:108:1: 134:2 (#0)[00m
+[96m src/lib.rs:107:1: 133:2 (#0) -> src/lib.rs:108:1: 134:2 (#0)[00m
+[96m src/lib.rs:58:1: 105:2 (#0) -> src/lib.rs:59:1: 106:2 (#0)[00m
+[96m src/lib.rs:58:1: 105:2 (#0) -> src/lib.rs:59:1: 106:2 (#0)[00m
+[96m src/lib.rs:43:1: 56:2 (#0) -> src/lib.rs:44:1: 57:2 (#0)[00m
+[96m src/lib.rs:43:1: 56:2 (#0) -> src/lib.rs:44:1: 57:2 (#0)[00m
+[96m src/lib.rs:135:1: 154:2 (#0) -> src/lib.rs:136:1: 144:2 (#0)[00m
+[96m src/lib.rs:135:1: 154:2 (#0) -> src/lib.rs:136:1: 144:2 (#0)[00m
+[96m src/lib.rs:156:1: 198:2 (#0) -> src/lib.rs:147:1: 189:2 (#0)[00m
+[96m src/lib.rs:156:1: 198:2 (#0) -> src/lib.rs:147:1: 189:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:25 ~ fallcalc_lib[b00e]::src::lib::process_array_reverse)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn process_array_reverse(
+    mut end: *mut ::core::ffi::c_int,
+    mut count: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut sum: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut ptr: *mut ::core::ffi::c_int = end;
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < count {
+        sum += *ptr;
+        ptr = ptr.offset(-1);
+        i += 1;
+    }
+    return sum;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut reverse_sum: ::core::ffi::c_int = process_array_reverse(last_element, array_size);
+```
+
+The file contains the following imports:
+```rust
+use ::f128;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn process_array_reverse(values: &[i32]) -> i32 {
+    values.iter().rev().copied().sum()
+}
+</FUNC>
+
+<CALL>
+let reverse_sum: ::core::ffi::c_int = process_array_reverse(&array[..array_size as usize]);
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:44:1: 57:2 (#0)
+src/lib.rs:171:5: 171:95 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling shlex v2.0.1
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+   Compiling f128 v0.2.9
+error[E0425]: cannot find value `array` in this scope
+   --> src/lib.rs:162:66
+    |
+162 |     let reverse_sum: ::core::ffi::c_int = process_array_reverse(&array[..array_size as usize]);
+    |                                                                  ^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `driver` due to previous error
+
+Please re-generate the translation of the code and call-sites. Remember to follow the same format with <FUNC></FUNC>, <CALL></CALL> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn process_array_reverse(values: &[::core::ffi::c_int]) -> ::core::ffi::c_int {
+    values.iter().rev().copied().sum()
+}
+</FUNC>
+
+<CALL>
+let reverse_sum: ::core::ffi::c_int = {
+    let count = array_size as usize;
+    let start = last_element.wrapping_sub(count.saturating_sub(1));
+    let values = unsafe { ::core::slice::from_raw_parts(start, count) };
+    process_array_reverse(values)
+};
+</CALL>
+
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:44:1: 57:2 (#0)
+src/lib.rs:171:5: 171:95 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:27:1: 41:2 (#0) -> src/lib.rs:28:1: 42:2 (#0)[00m
+[96m src/lib.rs:27:1: 41:2 (#0) -> src/lib.rs:28:1: 42:2 (#0)[00m
+[96m src/lib.rs:108:1: 134:2 (#0) -> src/lib.rs:99:1: 125:2 (#0)[00m
+[96m src/lib.rs:108:1: 134:2 (#0) -> src/lib.rs:99:1: 125:2 (#0)[00m
+[96m src/lib.rs:59:1: 106:2 (#0) -> src/lib.rs:50:1: 97:2 (#0)[00m
+[96m src/lib.rs:59:1: 106:2 (#0) -> src/lib.rs:50:1: 97:2 (#0)[00m
+[96m src/lib.rs:44:1: 57:2 (#0) -> src/lib.rs:45:1: 47:2 (#0)[00m
+[96m src/lib.rs:44:1: 57:2 (#0) -> src/lib.rs:45:1: 47:2 (#0)[00m
+[96m src/lib.rs:136:1: 144:2 (#0) -> src/lib.rs:127:1: 135:2 (#0)[00m
+[96m src/lib.rs:136:1: 144:2 (#0) -> src/lib.rs:127:1: 135:2 (#0)[00m
+[96m src/lib.rs:147:1: 189:2 (#0) -> src/lib.rs:138:1: 185:2 (#0)[00m
+[96m src/lib.rs:147:1: 189:2 (#0) -> src/lib.rs:138:1: 185:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:26 ~ fallcalc_lib[b00e]::src::lib::switch_fallthrough_calculator)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn switch_fallthrough_calculator(
+    mut value: ::core::ffi::c_int,
+    mut operation: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut result: ::core::ffi::c_int = value;
+    let mut current_block_5: u64;
+    match operation {
+        0 => {
+            result *= OCTAL_BASE;
+            current_block_5 = 5023088878038355716;
+        }
+        1 => {
+            current_block_5 = 5023088878038355716;
+        }
+        2 => {
+            current_block_5 = 16023805999610312643;
+        }
+        3 => {
+            result *= 3 as ::core::ffi::c_int;
+            current_block_5 = 8515868523999336537;
+        }
+        4 => {
+            current_block_5 = 8515868523999336537;
+        }
+        _ => {
+            result = 0 as ::core::ffi::c_int;
+            current_block_5 = 14523784380283086299;
+        }
+    }
+    match current_block_5 {
+        5023088878038355716 => {
+            result += OCTAL_FLAG;
+            current_block_5 = 16023805999610312643;
+        }
+        8515868523999336537 => {
+            result += OCTAL_MASK_2;
+            current_block_5 = 14523784380283086299;
+        }
+        _ => {}
+    }
+    match current_block_5 {
+        16023805999610312643 => {
+            result &= OCTAL_MASK_1;
+        }
+        _ => {}
+    }
+    return result;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut switch_result: ::core::ffi::c_int =
+        switch_fallthrough_calculator(param2, param3 % 5 as ::core::ffi::c_int);
+```
+The function uses the following global variables:
+```rust
+pub const OCTAL_MASK_2: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
+```
+```rust
+pub const OCTAL_MASK_1: ::core::ffi::c_int = 0o777 as ::core::ffi::c_int;
+```
+```rust
+pub const OCTAL_BASE: ::core::ffi::c_int = 0o10 as ::core::ffi::c_int;
+```
+```rust
+pub const OCTAL_FLAG: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
+```
+The file contains the following imports:
+```rust
+use ::f128;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling libc v0.2.186
+   Compiling shlex v2.0.1
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 3.57s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 2.98s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn switch_fallthrough_calculator(mut value: i32, operation: i32) -> i32 {
+    match operation {
+        0 => {
+            value *= OCTAL_BASE;
+            value += OCTAL_FLAG;
+            value &= OCTAL_MASK_1;
+            value
+        }
+        1 => {
+            value += OCTAL_FLAG;
+            value &= OCTAL_MASK_1;
+            value
+        }
+        2 => {
+            value &= OCTAL_MASK_1;
+            value
+        }
+        3 => {
+            value *= 3;
+            value += OCTAL_MASK_2;
+            value
+        }
+        4 => {
+            value += OCTAL_MASK_2;
+            value
+        }
+        _ => 0,
+    }
+}
+</FUNC>
+
+<CALL>
+let mut switch_result: i32 =
+        switch_fallthrough_calculator(param2, param3 % 5);
+</CALL>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:50:1: 97:2 (#0)
+src/lib.rs:168:5: 169:81 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:28:1: 42:2 (#0) -> src/lib.rs:29:1: 43:2 (#0)[00m
+[96m src/lib.rs:28:1: 42:2 (#0) -> src/lib.rs:29:1: 43:2 (#0)[00m
+[96m src/lib.rs:99:1: 125:2 (#0) -> src/lib.rs:82:1: 108:2 (#0)[00m
+[96m src/lib.rs:99:1: 125:2 (#0) -> src/lib.rs:82:1: 108:2 (#0)[00m
+[96m src/lib.rs:50:1: 97:2 (#0) -> src/lib.rs:51:1: 79:2 (#0)[00m
+[96m src/lib.rs:50:1: 97:2 (#0) -> src/lib.rs:51:1: 79:2 (#0)[00m
+[96m src/lib.rs:45:1: 47:2 (#0) -> src/lib.rs:46:1: 48:2 (#0)[00m
+[96m src/lib.rs:45:1: 47:2 (#0) -> src/lib.rs:46:1: 48:2 (#0)[00m
+[96m src/lib.rs:127:1: 135:2 (#0) -> src/lib.rs:110:1: 118:2 (#0)[00m
+[96m src/lib.rs:127:1: 135:2 (#0) -> src/lib.rs:110:1: 118:2 (#0)[00m
+[96m src/lib.rs:138:1: 185:2 (#0) -> src/lib.rs:121:1: 168:2 (#0)[00m
+[96m src/lib.rs:138:1: 185:2 (#0) -> src/lib.rs:121:1: 168:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:27 ~ fallcalc_lib[b00e]::src::lib::allocate_and_compute)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn allocate_and_compute(
+    mut size: ::core::ffi::c_int,
+    mut multiplier: ::core::ffi::c_double,
+) -> ::core::ffi::c_int {
+    let mut points: *mut DataPoint =
+        malloc((size as size_t).wrapping_mul(::core::mem::size_of::<DataPoint>() as size_t))
+            as *mut DataPoint;
+    if points.is_null() {
+        return -(1 as ::core::ffi::c_int);
+    }
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < size {
+        (*points.offset(i as isize)).value = i * OCTAL_BASE;
+        (*points.offset(i as isize)).coefficient = i as ::core::ffi::c_double * multiplier;
+        i += 1;
+    }
+    let mut sum: ::core::ffi::c_double = 0.0f64;
+    let mut i_0: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i_0 < size {
+        sum += (*points.offset(i_0 as isize)).value as ::core::ffi::c_double
+            * (*points.offset(i_0 as isize)).coefficient;
+        i_0 += 1;
+    }
+    let mut result: ::core::ffi::c_int = safe_double_to_int(sum);
+    free(points as *mut ::core::ffi::c_void);
+    return result;
+}
+```
+Here are its call sites
+Call site 1:
+```rust
+let mut alloc_result: ::core::ffi::c_int = allocate_and_compute(
+        param4 % 10 as ::core::ffi::c_int + 1 as ::core::ffi::c_int,
+        1.5f64,
+    );
+```
+
+The file contains the following imports:
+```rust
+use ::f128;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. If the function signature changed in translation, its callsites will need to be modified as well. Place each callsite translation (in the same order it appears above) between <CALL> and </CALL>. Note that even if the callsite is only a single statement, the translation can be mutiple statements. For example, you may need to declare new variables, or convert between types, either before or after the call. The translation should be such that the surrounding code is not affected by the changes.
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn allocate_and_compute(
+    size: ::core::ffi::c_int,
+    multiplier: ::core::ffi::c_double,
+) -> ::core::ffi::c_int {
+    if size <= 0 {
+        return safe_double_to_int(0.0);
+    }
+
+    let size_usize = size as usize;
+    let mut points = vec![
+        DataPoint {
+            value: 0,
+            coefficient: 0.0,
+        };
+        size_usize
+    ];
+
+    for (i, point) in points.iter_mut().enumerate() {
+        let i_c_int = i as ::core::ffi::c_int;
+        point.value = i_c_int * OCTAL_BASE;
+        point.coefficient = i_c_int as ::core::ffi::c_double * multiplier;
+    }
+
+    let sum: ::core::ffi::c_double = points
+        .iter()
+        .map(|point| point.value as ::core::ffi::c_double * point.coefficient)
+        .sum();
+
+    safe_double_to_int(sum)
+}
+</FUNC>
+<CALL>
+let mut alloc_result: ::core::ffi::c_int = allocate_and_compute(
+    param4 % 10 as ::core::ffi::c_int + 1 as ::core::ffi::c_int,
+    1.5f64,
+);
+</CALL>
+<IMPORTS>
+</IMPORTS>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:82:1: 108:2 (#0)
+src/lib.rs:157:5: 160:7 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:29:1: 43:2 (#0) -> src/lib.rs:30:1: 44:2 (#0)[00m
+[96m src/lib.rs:29:1: 43:2 (#0) -> src/lib.rs:30:1: 44:2 (#0)[00m
+[96m src/lib.rs:82:1: 108:2 (#0) -> src/lib.rs:83:1: 112:2 (#0)[00m
+[96m src/lib.rs:82:1: 108:2 (#0) -> src/lib.rs:83:1: 112:2 (#0)[00m
+[96m src/lib.rs:51:1: 79:2 (#0) -> src/lib.rs:52:1: 80:2 (#0)[00m
+[96m src/lib.rs:51:1: 79:2 (#0) -> src/lib.rs:52:1: 80:2 (#0)[00m
+[96m src/lib.rs:46:1: 48:2 (#0) -> src/lib.rs:47:1: 49:2 (#0)[00m
+[96m src/lib.rs:46:1: 48:2 (#0) -> src/lib.rs:47:1: 49:2 (#0)[00m
+[96m src/lib.rs:110:1: 118:2 (#0) -> src/lib.rs:115:1: 123:2 (#0)[00m
+[96m src/lib.rs:110:1: 118:2 (#0) -> src/lib.rs:115:1: 123:2 (#0)[00m
+[96m src/lib.rs:121:1: 168:2 (#0) -> src/lib.rs:126:1: 173:2 (#0)[00m
+[96m src/lib.rs:121:1: 168:2 (#0) -> src/lib.rs:126:1: 173:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+[96m Translating DefId(0:29 ~ fallcalc_lib[b00e]::src::lib::fallcalc)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn fallcalc(
+    mut param1: ::core::ffi::c_int,
+    mut param2: ::core::ffi::c_int,
+    mut param3: ::core::ffi::c_int,
+    mut param4: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut base_value: ::core::ffi::c_int = param1 * OCTAL_MASK_2 + param2;
+    let mut array_size: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
+    let mut data_array: *mut ::core::ffi::c_int = malloc(
+        (array_size as size_t).wrapping_mul(::core::mem::size_of::<::core::ffi::c_int>() as size_t),
+    ) as *mut ::core::ffi::c_int;
+    if data_array.is_null() {
+        return -(1 as ::core::ffi::c_int);
+    }
+    let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    while i < array_size {
+        *data_array.offset(i as isize) = (i + 1 as ::core::ffi::c_int) * OCTAL_BASE + param1;
+        i += 1;
+    }
+    let mut foreach_result: ::core::ffi::c_int = foreach_sum(data_array, array_size);
+    let mut last_element: *mut ::core::ffi::c_int = data_array
+        .offset(array_size as isize)
+        .offset(-(1 as ::core::ffi::c_int as isize));
+    let mut reverse_sum: ::core::ffi::c_int = process_array_reverse(last_element, array_size);
+    let mut switch_result: ::core::ffi::c_int =
+        switch_fallthrough_calculator(param2, param3 % 5 as ::core::ffi::c_int);
+    let mut floating_calc: ::core::ffi::c_double = param1 as ::core::ffi::c_double * 3.7f64
+        + param2 as ::core::ffi::c_double * 2.3f64
+        - param3 as ::core::ffi::c_double * 0.5f64;
+    let mut converted: ::core::ffi::c_int = safe_double_to_int(floating_calc);
+    let mut alloc_result: ::core::ffi::c_int = allocate_and_compute(
+        param4 % 10 as ::core::ffi::c_int + 1 as ::core::ffi::c_int,
+        1.5f64,
+    );
+    result = base_value + foreach_result + reverse_sum + switch_result + converted + alloc_result;
+    if param3 > OCTAL_FLAG {
+        result |= OCTAL_FLAG;
+    }
+    free(data_array as *mut ::core::ffi::c_void);
+    result &= OCTAL_MASK_1;
+    return result;
+}
+```
+
+The function uses the following global variables:
+```rust
+pub const OCTAL_MASK_2: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
+```
+```rust
+pub const OCTAL_FLAG: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
+```
+```rust
+pub const OCTAL_MASK_1: ::core::ffi::c_int = 0o777 as ::core::ffi::c_int;
+```
+The file contains the following imports:
+```rust
+use ::f128;
+```
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00mTesting sysroot consistency...
+Done
+Target name: fallcalc_lib
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling libc v0.2.186
+   Compiling shlex v2.0.1
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+    Checking f128 v0.2.9
+    Finished dev [unoptimized + debuginfo] target(s) in 2.79s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn fallcalc(
+    param1: ::core::ffi::c_int,
+    param2: ::core::ffi::c_int,
+    param3: ::core::ffi::c_int,
+    param4: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let base_value: ::core::ffi::c_int = param1 * OCTAL_MASK_2 + param2;
+
+    let array_size: ::core::ffi::c_int = 5;
+    let data_array: Vec<::core::ffi::c_int> = (0..array_size)
+        .map(|i| (i + 1) * OCTAL_BASE + param1)
+        .collect();
+
+    let foreach_result: ::core::ffi::c_int = foreach_sum(data_array.as_ptr(), array_size);
+
+    let reverse_sum: ::core::ffi::c_int =
+        process_array_reverse(data_array.as_ptr().wrapping_add((array_size - 1) as usize), array_size);
+
+    let switch_result: ::core::ffi::c_int =
+        switch_fallthrough_calculator(param2, param3 % 5);
+
+    let floating_calc: ::core::ffi::c_double =
+        param1 as ::core::ffi::c_double * 3.7
+            + param2 as ::core::ffi::c_double * 2.3
+            - param3 as ::core::ffi::c_double * 0.5;
+
+    let converted: ::core::ffi::c_int = safe_double_to_int(floating_calc);
+
+    let alloc_result: ::core::ffi::c_int =
+        allocate_and_compute(param4 % 10 + 1, 1.5);
+
+    let mut result: ::core::ffi::c_int =
+        base_value + foreach_result + reverse_sum + switch_result + converted + alloc_result;
+
+    if param3 > OCTAL_FLAG {
+        result |= OCTAL_FLAG;
+    }
+
+    result &= OCTAL_MASK_1;
+    result
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:126:1: 173:2 (#0)
+[96m Attempting to compile the new code[00m
+[91m Compilation failed.[00m
+[91m Giving feedback and trying again[00m
+[97m The translation generated the following compile error:
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling autocfg v1.5.1
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+   Compiling cc v1.2.65
+   Compiling num-traits v0.2.19
+   Compiling f128_internal v0.2.2
+   Compiling f128_input v0.2.1
+   Compiling f128 v0.2.9
+error[E0308]: mismatched types
+   --> src/lib.rs:140:58
+    |
+140 |     let foreach_result: ::core::ffi::c_int = foreach_sum(data_array.as_ptr(), array_size);
+    |                                              ----------- ^^^^^^^^^^^^^^^^^^^ types differ in mutability
+    |                                              |
+    |                                              arguments to this function are incorrect
+    |
+    = note: expected raw pointer `*mut i32`
+               found raw pointer `*const i32`
+note: function defined here
+   --> src/lib.rs:116:8
+    |
+116 | pub fn foreach_sum(array: *mut ::core::ffi::c_int, count: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    |        ^^^^^^^^^^^ ------------------------------  -------------------------
+
+error[E0061]: this function takes 1 argument but 2 arguments were supplied
+   --> src/lib.rs:143:9
+    |
+143 |         process_array_reverse(data_array.as_ptr().wrapping_add((array_size - 1) as usize), array_size);
+    |         ^^^^^^^^^^^^^^^^^^^^^ -----------------------------------------------------------  ---------- argument of type `i32` unexpected
+    |                               |
+    |                               expected `&[i32]`, found *-ptr
+    |
+    = note: expected reference `&[i32]`
+             found raw pointer `*const i32`
+note: function defined here
+   --> src/lib.rs:48:8
+    |
+48  | pub fn process_array_reverse(values: &[::core::ffi::c_int]) -> ::core::ffi::c_int {
+    |        ^^^^^^^^^^^^^^^^^^^^^ -----------------------------
+help: remove the extra argument
+    |
+143 |         process_array_reverse(/* &[i32] */);
+    |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Some errors have detailed explanations: E0061, E0308.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `driver` due to 2 previous errors
+
+Please re-generate the translation of the code. Remember to follow the same format with <FUNC></FUNC> and <IMPORTS></IMPORTS> tags (if any). DO NOT include markdown characters like '```' or '```rust' in your translation.[00m
+[96m Attempt 2 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn fallcalc(
+    param1: ::core::ffi::c_int,
+    param2: ::core::ffi::c_int,
+    param3: ::core::ffi::c_int,
+    param4: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let base_value: ::core::ffi::c_int = param1 * OCTAL_MASK_2 + param2;
+
+    let array_size: ::core::ffi::c_int = 5;
+    let mut data_array: Vec<::core::ffi::c_int> = (0..array_size)
+        .map(|i| (i + 1) * OCTAL_BASE + param1)
+        .collect();
+
+    let foreach_result: ::core::ffi::c_int = foreach_sum(data_array.as_mut_ptr(), array_size);
+
+    let reverse_sum: ::core::ffi::c_int = process_array_reverse(&data_array);
+
+    let switch_result: ::core::ffi::c_int =
+        switch_fallthrough_calculator(param2, param3 % 5);
+
+    let floating_calc: ::core::ffi::c_double =
+        param1 as ::core::ffi::c_double * 3.7
+            + param2 as ::core::ffi::c_double * 2.3
+            - param3 as ::core::ffi::c_double * 0.5;
+
+    let converted: ::core::ffi::c_int = safe_double_to_int(floating_calc);
+
+    let alloc_result: ::core::ffi::c_int =
+        allocate_and_compute(param4 % 10 + 1, 1.5);
+
+    let mut result: ::core::ffi::c_int =
+        base_value + foreach_result + reverse_sum + switch_result + converted + alloc_result;
+
+    if param3 > OCTAL_FLAG {
+        result |= OCTAL_FLAG;
+    }
+
+    result &= OCTAL_MASK_1;
+    result
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:126:1: 173:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:30:1: 44:2 (#0) -> src/lib.rs:31:1: 45:2 (#0)[00m
+[96m src/lib.rs:30:1: 44:2 (#0) -> src/lib.rs:31:1: 45:2 (#0)[00m
+[96m src/lib.rs:83:1: 112:2 (#0) -> src/lib.rs:84:1: 113:2 (#0)[00m
+[96m src/lib.rs:83:1: 112:2 (#0) -> src/lib.rs:84:1: 113:2 (#0)[00m
+[96m src/lib.rs:52:1: 80:2 (#0) -> src/lib.rs:53:1: 81:2 (#0)[00m
+[96m src/lib.rs:52:1: 80:2 (#0) -> src/lib.rs:53:1: 81:2 (#0)[00m
+[96m src/lib.rs:47:1: 49:2 (#0) -> src/lib.rs:48:1: 50:2 (#0)[00m
+[96m src/lib.rs:47:1: 49:2 (#0) -> src/lib.rs:48:1: 50:2 (#0)[00m
+[96m src/lib.rs:115:1: 123:2 (#0) -> src/lib.rs:116:1: 124:2 (#0)[00m
+[96m src/lib.rs:115:1: 123:2 (#0) -> src/lib.rs:116:1: 124:2 (#0)[00m
+[96m src/lib.rs:126:1: 173:2 (#0) -> src/lib.rs:127:1: 166:2 (#0)[00m
+[96m src/lib.rs:126:1: 173:2 (#0) -> src/lib.rs:127:1: 166:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B02_synthetic/fallcalc_lib/translated_rust

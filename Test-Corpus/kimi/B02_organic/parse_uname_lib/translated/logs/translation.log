@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"typedef struct os_data {\n    char *os_name;\n    char *os_version;\n    char *os_major;\n    char *os_minor;\n    char *os_codename;\n    char *os_platform;\n    char *os_build;\n    char *os_uname;\n    char *os_arch;\n} os_data;\n\nvoid parse_uname_string (char *uname, os_data *osd);\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\n\n#include <stdlib.h>\n#include <string.h>\n#include <regex.h>\n#include <stdio.h>\n\n/**\n * @brief Looks for the OS architecture in a string. Possibles architectures\n *        are x86_64, i386, i686, sparc, amd64, ia64, AIX, armv6, armv7.\n *        The function will return a pointer to allocated memory that must\n *        be de-allocated by the caller.\n *\n * @param[in] os_header String that contains the architecture. Usually uname.\n * @retval A string pointer to the architecture. NULL if not found.\n */\nchar * get_os_arch(char * os_header) {\n    const char * ARCHS[] = { \"x86_64\", \"i386\", \"i686\", \"sparc\", \"amd64\", \"i86pc\", \"ia64\", \"AIX\", \"armv6\", \"armv7\", \"aarch64\", \"arm64\", NULL };\n    char * os_arch = NULL;\n    int i;\n\n    for (i = 0; ARCHS[i]; i++) {\n        if (strstr(os_header, ARCHS[i])) {\n            os_arch = strdup(ARCHS[i]);\n            break;\n        }\n    }\n\n    return os_arch;\n}\n\nint w_regexec(const char * pattern, const char * string, size_t nmatch, regmatch_t * pmatch) {\n    regex_t regex;\n    int result;\n\n    if (!(pattern && string)) {\n        return 0;\n    }\n\n    if (regcomp(&regex, pattern, REG_EXTENDED)) {\n        fprintf(stderr, \"Couldn't compile regular expression '%s'\\n\", pattern);\n        return 0;\n    }\n\n    result = regexec(&regex, string, nmatch, pmatch, 0);\n    regfree(&regex);\n    return !result;\n}\n\n/**\n * @brief Parses an OS uname string. All the OUT parameters are pointers\n *        to allocated me
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, CStr, CString};\nuse std::ptr;\n\n#[repr(C)]\npub struct os_data {\n    pub os_name: *mut c_char,\n    pub os_version: *mut c_char,\n    pub os_major: *mut c_char,\n    pub os_minor: *mut c_char,\n    pub os_codename: *mut c_char,\n    pub os_platform: *mut c_char,\n    pub os_build: *mut c_char,\n    pub os_uname: *mut c_char,\n    pub os_arch: *mut c_char,\n}\n\nimpl os_data {\n    fn new() -> Self {\n        os_data {\n            os_name: ptr::null_mut(),\n            os_version: ptr::null_mut(),\n            os_major: ptr::null_mut(),\n            os_minor: ptr::null_mut(),\n            os_codename: ptr::null_mut(),\n            os_platform: ptr::null_mut(),\n            os_build: ptr::null_mut(),\n            os_uname: ptr::null_mut(),\n            os_arch: ptr::null_mut(),\n        }\n    }\n}\n\nfn get_os_arch(os_header: &str) -> Option<String> {\n    const ARCHS: &[&str] = &[\n        \"x86_64\", \"i386\", \"i686\", \"sparc\", \"amd64\", \"i86pc\",\n        \"ia64\", \"AIX\", \"armv6\", \"armv7\", \"aarch64\", \"arm64\",\n    ];\n    \n    for arch in ARCHS {\n        if os_header.contains(arch) {\n            return Some(arch.to_string());\n        }\n    }\n    None\n}\n\nfn w_regexec(pattern: &str, string: &str) -> Option<(usize, usize)> {\n    let regex = regex::Regex::new(pattern).ok()?;\n    regex.captures(string).and_then(|caps| {\n        caps.get(1).map(|m| (m.start(), m.end()))\n    })\n}\n\nfn strdup_rust(s: &str) -> *mut c_char {\n    match CString::new(s) {\n        Ok(cstr) => cstr.into_raw(),\n        Err(_) => ptr::null_mut(),\n    }\n}\n\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn parse_uname_string(uname: *mut c_char, osd: *mut os_data) {\n    if osd.is_null() {\n        return;\n    }\n    \n    let uname_str = unsafe {\n        match CStr::from_ptr(uname).to_str() {\n            Ok(s) => s.to_string(),\n            Err(_) => return,\n        }\n    };\n    \n    let mut osd_ref = unsafe { &mut *osd };\n    \n    if let Some(pos) = uname_str.find(\" [Ver: \") {\n        let (name_part, rest) = uname_str.split_at(pos);\n        let mut str_tmp = rest[7..].to_string();\n        if str_tmp.ends_with(']') {\n            str_tmp.pop();\n        }\n        \n        osd_ref.os_name = strdup_rust(name_part);\n        \n        if let Some((start, end)) = w_regexec(r\"^([0-9]+)\\.*\", &str_tmp) {\n            let major = &str_tmp[start..end];\n            osd_ref.os_major = strdup_rust(major);\n        }\n        \n        if let Some((start, end)) = w_regexec(r\"^[0-9]+\\.([0-9]+)\\.*\", &str_tmp) {\n            let minor = &str_tmp[start..end];\n            osd_ref.os_minor = strdup_rust(minor);\n        }\n        \n        if let Some((start, end)) = w_regexec(r\"^[0-9]+\\.[0-9]+\\.([0-9]+(\\.[0-9]+)*)\\.*\", &str_tmp) {\n            let build = &str_tmp[start..end];\n            osd_ref.os_build = strdup_rust(build);\n        }\n        \n        osd_ref.os_version = strdup_rust(&str_tmp);\n        osd_ref.os_platform = strdup_rust(\"windows\");\n    } else {\n        let mut remaining = uname_str.clone();\n        \n        if let Some(pos) = remaining.find(\" [\") {\n            let name_part = &remaining[..pos];\n            let mut str_tmp = remaining[pos + 2..].to_string();\n            \n            osd_ref.os_name = strdup_rust(&str_tmp);\n            \n            if let Some(cstr) = unsafe { CStr::from_ptr(osd_ref.os_name).to_str().ok() } {\n                let name_owned = cstr.to_string();\n                \n                if let Some(colon_pos) = name_owned.find(\": \") {\n                    let name_only = &name_owned[..colon_pos];\n                    let version_start = colon_pos + 2;\n                    let mut version = name_owned[version_start..].to_string();\n                    \n                    unsafe {\n                        if !osd_ref.os_name.is_null() {\n                            let _ = CString::from_raw(osd_ref.os_name);\n                        }\n                    }\n                    osd_ref.os_name = strdup_rust(name_only);\n                    \n                    if version.ends_with(']') {\n                        version.pop();\n                    }\n                    \n                    if let Some(paren_pos) = version.find(\" (\") {\n                        let version_only = &version[..paren_pos];\n                        let mut codename = version[paren_pos + 2..].to_string();\n                        if codename.ends_with(')') {\n                            codename.pop();\n                        }\n                        osd_ref.os_codename = strdup_rust(&codename);\n                        version = version_only.to_string();\n                    }\n                    \n                    if let Some((start, end)) = w_regexec(r\"^([0-9]+)\\.*\", &version) {\n                        let major = &version[start..end];\n                        osd_ref.os_major = strdup_rust(major);\n                    }\n                    \n                    if let Some((start, end)) = w_regexec(r\"^[0-9]+\\.([0-9]+)\\.*\", &version) {\n                        let minor = &version[start..end];\n                        osd_ref.os_minor = strdup_rust(minor);\n                    }\n                    \n                    osd_ref.os_version = strdup_rust(&version);\n                } else {\n                    let mut name_trimmed = name_owned;\n                    if name_trimmed.ends_with(']') {\n                        name_trimmed.pop();\n                    }\n                    unsafe {\n                        if !osd_ref.os_name.is_null() {\n                            let _ = CString::from_raw(osd_ref.os_name);\n                        }\n                    }\n                    osd_ref.os_name = strdup_rust(&name_trimmed);\n                }\n                \n                if let Some(pipe_pos) = name_owned.find('|') {\n                    let platform = &name_owned[pipe_pos + 1..];\n                    let name_only = &name_owned[..pipe_pos];\n                    \n                    unsafe {\n                        if !osd_ref.os_name.is_null() {\n                            let _ = CString::from_raw(osd_ref.os_name);\n                        }\n                    }\n                    osd_ref.os_name = strdup_rust(name_only);\n                    osd_ref.os_platform = strdup_rust(platform);\n                }\n            }\n        }\n        \n        if let Some(arch) = get_os_arch(&uname_str) {\n            osd_ref.os_arch = strdup_rust(&arch);\n        }\n    }\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"driver\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"driver\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nregex = \"1.10\"\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

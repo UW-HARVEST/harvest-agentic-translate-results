@@ -1,0 +1,994 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
+
+[39m
+[38;5;252m[0m[?25l[38;5;141m> [0m[0m[0m
+[0m[0m
+I'll start by understanding the project structure, build configurations, and then systematically verify the C-to-Rust translation.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading directory: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust[0m
+↱ Operation 2: Reading file: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/Cargo.toml[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust[0m [38;5;244m(11 entries)[0m
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m163 bytes[0m from /tmp/harvest-work-aVOPAo/translated_rust/Cargo.toml
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /tmp/harvest-work-aVOPAo/translated_rust/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.1s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/c_src/src/lib.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/src/lib.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m22 bytes[0m from /tmp/harvest-work-aVOPAo/translated_rust/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m33217 bytes[0m from /tmp/harvest-work-aVOPAo/translated_rust/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m37476 bytes[0m from /tmp/harvest-work-aVOPAo/translated_rust/src/lib.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow I have a clear picture. Let me create a plan and execute it.[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[0m[ ] Check feature combinations - Cargo.toml has no [features] section, so only default config
+[0m[ ] Run cargo check to verify Rust compiles
+[0m[ ] Build C shared library
+[0m[ ] Build Rust shared library
+[0m[ ] Compare nm -D symbols between C and Rust .so files
+[0m[ ] Add missing exports to Rust if needed
+[0m[ ] Add libloading dev-dependency and write integration tests
+[0m[ ] Run tests and fix mismatches[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNo [38;5;10m[features][0m section in Cargo.toml — only one configuration to test. Step 0 done.[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mCheck feature combinations - Cargo.toml has no [features] section, so only default config[23m
+[0m[ ] Run cargo check to verify Rust compiles[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow let's run cargo check and build the C library in parallel:[0m[0m
+[?25l[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-aVOPAo/translated_rust && timeout 120 cargo check 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run cargo check on the Rust translation
+
+I will run the following command: [38;5;141mcd /tmp/harvest-work-aVOPAo/translated_rust/c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON 2>&1 && cmake --build . 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C shared library
+
+   Compiling libc v0.2.184
+    Checking translated_rust v0.1.0 (/tmp/harvest-work-aVOPAo/translated_rust)
+warning: variable does not need to be mutable
+   --> src/lib.rs:936:13
+    |
+936 |         let mut blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize_shift as usize);
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_stralloc`
+   --> src/lib.rs:929:1
+    |
+929 | / pub unsafe extern "C" fn stbds_stralloc(
+930 | |     a: *mut stbds_string_arena,
+931 | |     str: *mut i8,
+932 | | ) -> *mut i8 {
+    | |____________^ function `stbds_stralloc` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_strreset`
+   --> src/lib.rs:980:1
+    |
+980 | pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `stbds_strreset` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `STBDS_SH_NONE` is never used
+  --> src/lib.rs:31:7
+   |
+31 | const STBDS_SH_NONE: u8 = 0;
+   |       ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `translated_rust` (lib) generated 4 warnings (run `cargo fix --lib -p translated_rust` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.92s
+[38;5;244m - Completed in 0.966s[0m
+
+CMake Error at CMakeLists.txt:2 (cmake_path):
+  Unknown CMake command "cmake_path".
+
+
+-- Configuring incomplete, errors occurred!
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[38;5;141m> [0mRust compiles fine (just warnings). The C build failed due to old CMake version not supporting [38;5;10mcmake_path[0m. Let me fix the CMake invocation:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcmake --version 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake version
+
+cmake3 version 3.17.5
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mcmake_path[0m requires CMake 3.20+. I need to work around this. The CMakeLists.txt just derives the project name from the parent directory. I can pass it directly:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-aVOPAo/translated_rust/c_src && rm -rf build && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_PROJECT_translated_rust_INCLUDE="" 2>&1 || true
+# The project name is derived from parent dir. Let's just manually compile it.
+cd /tmp/harvest-work-aVOPAo/translated_rust/c_src
+gcc -shared -fPIC -O2 -o build/libtranslated_rust_c.so src/lib.c -Iinclude -Isrc -lm 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library manually with gcc
+
+CMake Error at CMakeLists.txt:2 (cmake_path):
+  Unknown CMake command "cmake_path".
+
+
+-- Configuring incomplete, errors occurred!
+[38;5;244m - Completed in 0.169s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/harvest-work-aVOPAo/translated_rust/c_src/build/[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check if the .so was built
+
+total 40
+drwxr-xr-x 3 scheschb amazon  4096 Apr  7 10:19 .
+drwxr-xr-x 5 scheschb amazon  4096 Apr  7 10:19 ..
+-rw-r--r-- 1 scheschb amazon  2337 Apr  7 10:19 CMakeCache.txt
+drwxr-xr-x 2 scheschb amazon  4096 Apr  7 10:19 CMakeFiles
+-rwxr-xr-x 1 scheschb amazon 21768 Apr  7 10:19 libtranslated_rust_c.so
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mC library built. Now let's build the Rust library and compare symbols:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-aVOPAo/translated_rust && timeout 120 cargo build 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust shared library
+
+   Compiling libc v0.2.184
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-aVOPAo/translated_rust)
+warning: variable does not need to be mutable
+   --> src/lib.rs:936:13
+    |
+936 |         let mut blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize_shift as usize);
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_stralloc`
+   --> src/lib.rs:929:1
+    |
+929 | / pub unsafe extern "C" fn stbds_stralloc(
+930 | |     a: *mut stbds_string_arena,
+931 | |     str: *mut i8,
+932 | | ) -> *mut i8 {
+    | |____________^ function `stbds_stralloc` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_strreset`
+   --> src/lib.rs:980:1
+    |
+980 | pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `stbds_strreset` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `STBDS_SH_NONE` is never used
+  --> src/lib.rs:31:7
+   |
+31 | const STBDS_SH_NONE: u8 = 0;
+   |       ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `translated_rust` (lib) generated 4 warnings (run `cargo fix --lib -p translated_rust` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.84s
+[38;5;244m - Completed in 0.890s[0m
+
+[?25l[0m[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mRun cargo check to verify Rust compiles[23m
+[38;5;10m[x] [3m[38;5;244mBuild C shared library[23m
+[38;5;10m[x] [3m[38;5;244mBuild Rust shared library[23m
+[0m[ ] Compare nm -D symbols between C and Rust .so files[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow let's compare the exported symbols:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mecho "=== C symbols ===" && nm -D /tmp/harvest-work-aVOPAo/translated_rust/c_src/build/libtranslated_rust_c.so | grep ' T ' | awk '{print $3}' | sort && echo "=== Rust symbols ===" && nm -D /tmp/harvest-work-aVOPAo/translated_rust/target/debug/libhm_geti_lib.so | grep ' T ' | awk '{print $3}' | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols between C and Rust .so files
+
+=== C symbols ===
+_fini
+hm_geti
+_init
+stbds_arrfreef
+stbds_arrgrowf
+stbds_hash_bytes
+stbds_hash_string
+stbds_hmdel_key
+stbds_hmfree_func
+stbds_hmget_key
+stbds_hmget_key_ts
+stbds_hmput_default
+stbds_hmput_key
+stbds_rand_seed
+stbds_shmode_func
+stbds_stralloc
+stbds_strreset
+strkey
+=== Rust symbols ===
+hm_geti
+stbds_arrfreef
+stbds_arrgrowf
+stbds_hash_bytes
+stbds_hash_string
+stbds_hmdel_key
+stbds_hmfree_func
+stbds_hmget_key
+stbds_hmget_key_ts
+stbds_hmput_default
+stbds_hmput_key
+stbds_rand_seed
+stbds_shmode_func
+stbds_stralloc
+stbds_strreset
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141m# Find missing symbols in Rust
+comm -23 <(nm -D /tmp/harvest-work-aVOPAo/translated_rust/c_src/build/libtranslated_rust_c.so | grep ' T ' | awk '{print $3}' | grep -v '^_' | sort) <(nm -D /tmp/harvest-work-aVOPAo/translated_rust/target/debug/libhm_geti_lib.so | grep ' T ' | awk '{print $3}' | sort)[0m[38;5;244m (using tool: shell)[0m
+Purpose: Find symbols in C but missing from Rust
+
+strkey
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mThe Rust .so is missing [38;5;10mstrkey[0m. This is a helper function in the C code. Let me add it to the Rust code:[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mCompare nm -D symbols between C and Rust .so files[23m
+[0m[ ] Add missing exports to Rust if needed[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mThe C [38;5;10mstrkey[0m function uses a static buffer and [38;5;10msprintf[0m. Let me add it to the Rust code:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add missing strkey export to match C .so
+
+[48;2;40;67;43m[39m+       1104[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstatic[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m buffer[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m[[38;2;180;142;173mu8[38;2;192;197;206m;[38;2;192;197;206m [38;2;208;135;112m256[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;180;142;173mu8[38;2;192;197;206m;[38;2;192;197;206m [38;2;208;135;112m256[38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+       1105[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+       1106[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+       1107[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mstrkey[38;2;192;197;206m([38;2;191;97;106mn[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+       1108[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m s [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mformat![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtest_[38;2;208;135;112m{}[38;2;150;181;180m\0[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m n[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+       1109[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m bytes [38;2;192;197;206m=[38;2;192;197;206m s.[38;2;150;181;180mas_bytes[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+       1110[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mcopy_nonoverlapping[38;2;192;197;206m([38;2;192;197;206mbytes.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m buffer.[38;2;150;181;180mas_mut_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m bytes.[38;2;150;181;180mlen[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+       1111[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    buffer.[38;2;150;181;180mas_mut_ptr[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+       1112[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+       1113[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;43;48;59m[39m  1104, 1114[0m:[39m[48;2;43;48;59m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
+[0m[48;2;43;48;59m[39m  1105, 1115[0m:[39m[48;2;43;48;59m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mhm_geti[38;2;192;197;206m([38;2;191;97;106mnum[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[K
+Updating: [38;5;141mtranslated_rust/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-aVOPAo/translated_rust && timeout 120 cargo build 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild Rust library with strkey added
+
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-aVOPAo/translated_rust)
+warning: variable does not need to be mutable
+   --> src/lib.rs:936:13
+    |
+936 |         let mut blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize_shift as usize);
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_stralloc`
+   --> src/lib.rs:929:1
+    |
+929 | / pub unsafe extern "C" fn stbds_stralloc(
+930 | |     a: *mut stbds_string_arena,
+931 | |     str: *mut i8,
+932 | | ) -> *mut i8 {
+    | |____________^ function `stbds_stralloc` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_strreset`
+   --> src/lib.rs:980:1
+    |
+980 | pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `stbds_strreset` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `STBDS_SH_NONE` is never used
+  --> src/lib.rs:31:7
+   |
+31 | const STBDS_SH_NONE: u8 = 0;
+   |       ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: creating a mutable reference to mutable static
+    --> src/lib.rs:1110:46
+     |
+1110 |     ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.as_mut_ptr(), bytes.len());
+     |                                              ^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+     |
+     = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+     = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+     = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: creating a mutable reference to mutable static
+    --> src/lib.rs:1111:5
+     |
+1111 |     buffer.as_mut_ptr()
+     |     ^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+     |
+     = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+     = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+
+warning: `translated_rust` (lib) generated 6 warnings (run `cargo fix --lib -p translated_rust` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.25s
+[38;5;244m - Completed in 0.303s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcomm -23 <(nm -D /tmp/harvest-work-aVOPAo/translated_rust/c_src/build/libtranslated_rust_c.so | grep ' T ' | awk '{print $3}' | grep -v '^_' | sort) <(nm -D /tmp/harvest-work-aVOPAo/translated_rust/target/debug/libhm_geti_lib.so | grep ' T ' | awk '{print $3}' | sort)[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify no more missing symbols
+
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[38;5;141m> [0mAll symbols match now. Let me mark step 5 done and move to writing tests.[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mAdd missing exports to Rust if needed[23m
+[0m[ ] Add libloading dev-dependency and write integration tests[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow let me add [38;5;10mlibloading[0m to dev-dependencies and write the integration tests. I'll test functions from lowest-level to highest:[0m[0m
+[0m[0m
+1. [38;5;10mstbds_rand_seed[0m - sets global seed[0m[0m
+2. [38;5;10mstbds_hash_bytes[0m - pure hash function[0m[0m
+3. [38;5;10mstbds_hash_string[0m - pure hash function[0m[0m
+4. [38;5;10mstrkey[0m - string formatting helper[0m[0m
+5. [38;5;10mstbds_arrgrowf[0m / [38;5;10mstbds_arrfreef[0m - array allocation[0m[0m
+6. [38;5;10mhm_geti[0m - the full integration test (exercises all hashmap functions)[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslated_rust/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     13[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[39m  13, 16[0m:[39m[49m [workspace]
+[0m[K
+Updating: [38;5;141mtranslated_rust/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/harvest-work-aVOPAo/translated_rust/tests[0m[38;5;244m (using tool: shell)[0m
+Purpose: Create tests directory
+
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[38;5;141m> [0mNow I'll write the integration test file. I need to load both .so files via libloading and compare outputs for every exported function.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/tests/ffi_compare.rs[0m[38;5;244m (using tool: write)[0m
+
+[48;2;40;67;43m[39m+      1[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mlibloading[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206mLibrary[38;2;192;197;206m,[38;2;192;197;206m Symbol[38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      2[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mCString[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      3[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      4[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m Library[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+      5[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mLibrary[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mc_src/build/libtranslated_rust_c.so[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+      6[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+      7[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      8[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m Library[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+      9[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mLibrary[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtarget/debug/libhm_geti_lib.so[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     10[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     11[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     13[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 1. stbds_rand_seed – sets global state, no return to compare,[K
+[0m[48;2;40;67;43m[39m+     14[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m    but we verify it doesn't crash and affects hash output.[K
+[0m[48;2;40;67;43m[39m+     15[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     16[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     17[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_stbds_rand_seed[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     18[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     19[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     20[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     21[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m seed [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;180;142;173musize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m42[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0xdeadbeef[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m::[38;2;208;135;112mMAX[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     24[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mc_seed[38;2;192;197;206m([38;2;192;197;206mseed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     25[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mr_seed[38;2;192;197;206m([38;2;192;197;206mseed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     26[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     27[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 2. stbds_hash_bytes – compare byte-for-byte hash output[K
+[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     34[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_stbds_hash_bytes[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*const [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hash_bytes[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*const [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+     41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hash_bytes[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m test_data[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;192;197;206m&[38;2;192;197;206m[[38;2;180;142;173mu8[38;2;192;197;206m][38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[K
+[0m[48;2;40;67;43m[39m+     44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mb[38;2;192;197;206m"[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140ma[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mab[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mabc[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mabcd[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mabcdefgh[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mabcdefghijklmnop[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m"[38;2;150;181;180m\x00[38;2;150;181;180m\x01[38;2;150;181;180m\x02[38;2;150;181;180m\x03[38;2;150;181;180m\x04[38;2;150;181;180m\x05[38;2;150;181;180m\x06[38;2;150;181;180m\x07[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mhello world this is a longer test string for hashing[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m seeds [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;180;142;173musize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m42[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0x31415926[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0xdeadbeefcafebabe[38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m data [38;2;192;197;206min[38;2;192;197;206m test_data [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     51[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mseed [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mseeds [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_val[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mdata.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m data.[38;2;150;181;180mlen[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m seed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     53[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m r_val [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mdata.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m data.[38;2;150;181;180mlen[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m seed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     54[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_val[38;2;192;197;206m,[38;2;192;197;206m r_val[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mhash_bytes mismatch for data={:?} seed={}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m data[38;2;192;197;206m,[38;2;192;197;206m seed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     59[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     60[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     61[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 3. stbds_hash_string – compare string hash output[K
+[0m[48;2;40;67;43m[39m+     62[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     64[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_stbds_hash_string[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     66[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     67[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*const [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+     69[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hash_string[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*const [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+     71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hash_string[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     72[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m strings [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m[[38;2;192;197;206m"[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140ma[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mhello[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mtest_42[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140ma longer string for testing[38;2;192;197;206m"[38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m seeds [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;180;142;173musize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m42[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0x31415926[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0xdeadbeefcafebabe[38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     75[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m s [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mstrings [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m cs [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mCString[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206ms[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mseed [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mseeds [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_val[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mcs.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m seed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m r_val [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mcs.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m seed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     81[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_val[38;2;192;197;206m,[38;2;192;197;206m r_val[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mhash_string mismatch for str={:?} seed={}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m s[38;2;192;197;206m,[38;2;192;197;206m seed[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     82[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     83[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     84[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     85[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     86[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     87[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     88[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 4. strkey – compare formatted string output[K
+[0m[48;2;40;67;43m[39m+     89[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+     90[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+     91[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_strkey[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     92[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     93[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     94[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     95[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstrkey[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     96[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstrkey[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     97[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     98[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m n [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m42[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m100[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m999[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m999[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m::[38;2;208;135;112mMAX[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m::[38;2;208;135;112mMIN[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     99[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_ptr[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mn[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    100[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_ptr [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mn[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    101[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_str[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mCStr[38;2;192;197;206m::[38;2;192;197;206mfrom_ptr[38;2;192;197;206m([38;2;180;142;173mc_ptr[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mi8[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    102[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_str [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mCStr[38;2;192;197;206m::[38;2;192;197;206mfrom_ptr[38;2;192;197;206m([38;2;192;197;206mr_ptr [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mi8[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    103[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_str[38;2;192;197;206m,[38;2;192;197;206m r_str[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mstrkey mismatch for n={}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m n[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    104[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    105[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    106[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    107[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    108[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    109[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 5. stbds_arrgrowf / stbds_arrfreef – allocation round-trip[K
+[0m[48;2;40;67;43m[39m+    110[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    111[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    112[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_arrgrowf_arrfreef[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    113[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    114[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    115[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    116[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_grow[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    117[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_arrgrowf[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    118[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_grow[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    119[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_arrgrowf[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    120[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_arrfreef[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    121[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_arrfreef[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    122[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    123[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Allocate from null, elemsize=4, addlen=0, min_cap=10[K
+[0m[48;2;40;67;43m[39m+    124[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_arr[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_grow[38;2;192;197;206m([38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m10[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    125[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_arr [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_grow[38;2;192;197;206m([38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m10[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    126[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206m![38;2;180;142;173mc_arr[38;2;192;197;206m.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    127[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206m![38;2;192;197;206mr_arr.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    128[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    129[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Read back the header: length should be 0, capacity >= 10[K
+[0m[48;2;40;67;43m[39m+    130[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Header is at (ptr - sizeof(header))[K
+[0m[48;2;40;67;43m[39m+    131[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m hdr_size [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m32[38;2;180;142;173musize[38;2;192;197;206m;[38;2;192;197;206m [38;2;101;115;126m//[38;2;101;115;126m stbds_array_header: 4 fields * 8 bytes on 64-bit[K
+[0m[48;2;40;67;43m[39m+    132[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_hdr[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mc_arr[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206mhdr_size[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    133[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_hdr [38;2;192;197;206m=[38;2;192;197;206m r_arr.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206mhdr_size[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    134[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_len[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;180;142;173mc_hdr[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    135[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_len [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206mr_hdr [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    136[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_cap[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;180;142;173mc_hdr[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    137[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_cap [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mr_hdr [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    138[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_len[38;2;192;197;206m,[38;2;192;197;206m r_len[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mlength mismatch after arrgrowf[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    139[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_cap[38;2;192;197;206m,[38;2;192;197;206m r_cap[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mcapacity mismatch after arrgrowf[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    140[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    141[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_free[38;2;192;197;206m([38;2;180;142;173mc_arr[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    142[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_free[38;2;192;197;206m([38;2;192;197;206mr_arr[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    143[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    144[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    145[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    146[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    147[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 6. hm_geti – the full integration test[K
+[0m[48;2;40;67;43m[39m+    148[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m    Both C and Rust should run without assertion failures.[K
+[0m[48;2;40;67;43m[39m+    149[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    150[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    151[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_hm_geti[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    152[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    153[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    154[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    155[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Both libraries have their own global seed state.[K
+[0m[48;2;40;67;43m[39m+    156[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Reset seeds to same value so hash tables behave identically.[K
+[0m[48;2;40;67;43m[39m+    157[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    158[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    159[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mhm_geti[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    160[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mhm_geti[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    161[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    162[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mnum [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m32[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m64[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m100[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    163[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;101;115;126m//[38;2;101;115;126m Reset seed before each run so behavior is deterministic[K
+[0m[48;2;40;67;43m[39m+    164[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mc_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    165[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mr_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    166[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206mnum[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    167[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206mnum[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    168[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    169[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    170[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    171[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    172[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    173[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 7. stbds_hmput_key / stbds_hmget_key / stbds_hmfree_func[K
+[0m[48;2;40;67;43m[39m+    174[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m    Direct low-level hashmap operations compared between C and Rust[K
+[0m[48;2;40;67;43m[39m+    175[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    176[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    177[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_hmput_hmget_hmfree[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    178[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    179[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    180[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    181[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    182[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    183[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_put[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    184[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmput_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    185[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_put[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    186[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmput_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    187[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_get[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    188[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmget_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    189[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_get[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    190[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmget_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    191[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    192[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    193[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    194[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    195[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    196[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    197[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    198[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    199[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Entry: { int key; int value; } = 8 bytes[K
+[0m[48;2;40;67;43m[39m+    200[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m elemsize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    201[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m keysize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    202[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    203[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Put keys 0,2,4,...,18 with value = key*5[K
+[0m[48;2;40;67;43m[39m+    204[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_map[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    205[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m r_map[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    206[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    207[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m i [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m..[38;2;208;135;112m20[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mstep_by[38;2;192;197;206m([38;2;208;135;112m2[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    208[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    209[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_put[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m key [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    210[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;101;115;126m//[38;2;101;115;126m Write key and value into the new slot[K
+[0m[48;2;40;67;43m[39m+    211[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m hdr_ptr [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[38;2;192;197;206m [38;2;101;115;126m//[38;2;101;115;126m header[K
+[0m[48;2;40;67;43m[39m+    212[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m temp [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mhdr_ptr [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    213[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m entry [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206melemsize [38;2;192;197;206m*[38;2;192;197;206m temp [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    214[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    215[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i [38;2;192;197;206m*[38;2;192;197;206m [38;2;208;135;112m5[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    216[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    217[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m key2[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    218[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r_map [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_put[38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m key2 [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    219[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m hdr_ptr [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    220[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m temp [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mhdr_ptr [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    221[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m entry [38;2;192;197;206m=[38;2;192;197;206m r_map.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206melemsize [38;2;192;197;206m*[38;2;192;197;206m temp [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    222[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    223[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i [38;2;192;197;206m*[38;2;192;197;206m [38;2;208;135;112m5[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    224[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    225[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    226[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Get each key and compare temp (index) values[K
+[0m[48;2;40;67;43m[39m+    227[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m i [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m..[38;2;208;135;112m20[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    228[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    229[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m r_key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    230[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_get[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_key[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    231[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_res [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_get[38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m r_key [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    232[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mc_res[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    233[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r_map [38;2;192;197;206m=[38;2;192;197;206m r_res[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    234[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    235[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_hdr[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    236[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_hdr [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    237[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_temp[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mc_hdr[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    238[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_temp [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206mr_hdr.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    239[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    240[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mif[38;2;192;197;206m i [38;2;192;197;206m%[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    241[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;101;115;126m//[38;2;101;115;126m Key exists[K
+[0m[48;2;40;67;43m[39m+    242[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert![38;2;192;197;206m([38;2;180;142;173mc_temp[38;2;192;197;206m [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC: key {} should exist[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    243[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206mr_temp [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mRust: key {} should exist[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    244[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;101;115;126m//[38;2;101;115;126m Compare stored values[K
+[0m[48;2;40;67;43m[39m+    245[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_val[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206melemsize [38;2;192;197;206m*[38;2;192;197;206m [38;2;180;142;173mc_temp[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    246[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m r_val [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206melemsize [38;2;192;197;206m*[38;2;192;197;206m r_temp [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    247[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_val[38;2;192;197;206m,[38;2;192;197;206m r_val[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mvalue mismatch for key {}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    248[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    249[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;101;115;126m//[38;2;101;115;126m Key doesn't exist[K
+[0m[48;2;40;67;43m[39m+    250[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_temp[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC: key {} should not exist[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    251[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;192;197;206mr_temp[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mRust: key {} should not exist[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    252[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    253[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    254[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    255[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Free[K
+[0m[48;2;40;67;43m[39m+    256[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_free[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    257[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_free[38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    258[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    259[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    260[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    261[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    262[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 8. stbds_hmdel_key – test deletion[K
+[0m[48;2;40;67;43m[39m+    263[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    264[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    265[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_hmdel_key[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    266[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    267[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    268[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    269[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    270[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    271[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_put[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    272[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmput_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    273[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_put[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    274[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmput_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    275[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_get[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    276[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmget_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    277[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_get[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    278[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmget_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    279[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_del[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    280[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmdel_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    281[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_del[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    282[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmdel_key[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    283[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    284[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    285[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    286[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    287[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    288[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    289[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    290[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    291[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m elemsize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    292[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m keysize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    293[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    294[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_map[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    295[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m r_map[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    296[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    297[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Insert keys 0..10[K
+[0m[48;2;40;67;43m[39m+    298[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m i [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m..[38;2;208;135;112m10[38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    299[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    300[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_put[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m key [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    301[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m hdr [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    302[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m temp [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206mhdr.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    303[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m entry [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206melemsize [38;2;192;197;206m*[38;2;192;197;206m temp [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    304[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    305[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i [38;2;192;197;206m*[38;2;192;197;206m [38;2;208;135;112m10[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    306[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    307[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m key2[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    308[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r_map [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_put[38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m key2 [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    309[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m hdr [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    310[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m temp [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206mhdr.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    311[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m entry [38;2;192;197;206m=[38;2;192;197;206m r_map.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206melemsize [38;2;192;197;206m*[38;2;192;197;206m temp [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    312[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    313[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mentry [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i [38;2;192;197;206m*[38;2;192;197;206m [38;2;208;135;112m10[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    314[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    315[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    316[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Delete even keys[K
+[0m[48;2;40;67;43m[39m+    317[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m i [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m..[38;2;208;135;112m10[38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mstep_by[38;2;192;197;206m([38;2;208;135;112m2[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    318[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    319[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_del[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m key [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    320[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m key2[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    321[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r_map [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_del[38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m key2 [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    322[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    323[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    324[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Verify: even keys gone, odd keys still present[K
+[0m[48;2;40;67;43m[39m+    325[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m i [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m..[38;2;208;135;112m10[38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    326[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    327[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m r_key[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m i[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    328[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_get[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_key[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    329[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r_map [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_get[38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m r_key [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m,[38;2;192;197;206m keysize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    330[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    331[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_temp[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    332[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_temp [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    333[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    334[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_temp[38;2;192;197;206m [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m r_temp [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mexistence mismatch for key {} after delete[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    335[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mif[38;2;192;197;206m i [38;2;192;197;206m%[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    336[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_temp[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC: deleted key {} should be gone[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    337[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;192;197;206mr_temp[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mRust: deleted key {} should be gone[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m i[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    338[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    339[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    340[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    341[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_free[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    342[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_free[38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    343[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    344[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    345[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    346[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    347[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 9. stbds_hmput_default – test default value mechanism[K
+[0m[48;2;40;67;43m[39m+    348[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    349[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    350[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_hmput_default[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    351[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    352[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    353[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    354[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    355[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    356[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_def[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    357[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmput_default[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    358[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_def[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    359[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmput_default[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    360[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    361[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    362[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    363[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    364[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    365[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    366[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    367[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    368[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m elemsize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    369[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    370[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Call with null - should allocate and return pointer to element[0][K
+[0m[48;2;40;67;43m[39m+    371[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_def[38;2;192;197;206m([38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    372[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_map [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_def[38;2;192;197;206m([38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull_mut[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    373[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206m![38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    374[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206m![38;2;192;197;206mr_map.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    375[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    376[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m The header length should be 1[K
+[0m[48;2;40;67;43m[39m+    377[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_len[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    378[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_len [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    379[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_len[38;2;192;197;206m,[38;2;192;197;206m r_len[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mlength mismatch after hmput_default[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    380[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_len[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    381[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    382[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Calling again should be a no-op (already has default)[K
+[0m[48;2;40;67;43m[39m+    383[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_map2[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_def[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    384[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_map2 [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_def[38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    385[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_map2[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC: hmput_default should return same pointer[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    386[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;192;197;206mr_map[38;2;192;197;206m,[38;2;192;197;206m r_map2[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mRust: hmput_default should return same pointer[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    387[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    388[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mc_free[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    389[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mr_free[38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    390[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    391[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    392[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    393[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    394[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m 10. stbds_shmode_func – test string hashmap mode init[K
+[0m[48;2;40;67;43m[39m+    395[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ============================================================[K
+[0m[48;2;40;67;43m[39m+    396[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    397[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mtest_shmode_func[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    398[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    399[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_lib[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    400[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    401[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    402[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_seed[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_rand_seed[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    403[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    404[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_shmode_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    405[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_fn[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173musize[38;2;192;197;206m, [38;2;180;142;173mi32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;43;48;59m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    406[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_shmode_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    407[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    408[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    409[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m r_free[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206munsafe [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[K
+[0m[48;2;40;67;43m[39m+    410[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mstbds_hmfree_func[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    411[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    412[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m elemsize for a string map entry: { char* key; int value; } = 16 bytes on 64-bit[K
+[0m[48;2;40;67;43m[39m+    413[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m elemsize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    414[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    415[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mmode [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;208;135;112m2[38;2;180;142;173mi32[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m3[38;2;180;142;173mi32[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;101;115;126m//[38;2;101;115;126m STBDS_SH_STRDUP=2, STBDS_SH_ARENA=3[K
+[0m[48;2;40;67;43m[39m+    416[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mc_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    417[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mr_seed[38;2;192;197;206m([38;2;208;135;112m0x31415926[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    418[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    419[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_map[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_fn[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m,[38;2;192;197;206m mode[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    420[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_map [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mr_fn[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m,[38;2;192;197;206m mode[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    421[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206m![38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    422[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206m![38;2;192;197;206mr_map.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    423[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    424[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;101;115;126m//[38;2;101;115;126m Check header length = 1[K
+[0m[48;2;40;67;43m[39m+    425[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_len[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    426[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m r_len [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    427[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_len[38;2;192;197;206m,[38;2;192;197;206m r_len[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mlength mismatch for shmode_func mode={}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m mode[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    428[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206massert_eq![38;2;192;197;206m([38;2;180;142;173mc_len[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    429[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    430[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mc_free[38;2;192;197;206m([38;2;180;142;173mc_map[38;2;192;197;206m.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    431[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mr_free[38;2;192;197;206m([38;2;192;197;206mr_map.[38;2;150;181;180msub[38;2;192;197;206m([38;2;192;197;206melemsize[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m elemsize[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    432[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    433[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    434[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[K
+Creating: [38;5;141m/tmp/harvest-work-aVOPAo/translated_rust/tests/ffi_compare.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mAdd libloading dev-dependency and write integration tests[23m
+[0m[ ] Run tests and fix mismatches[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow let's run the tests:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harvest-work-aVOPAo/translated_rust && timeout 600 cargo test -- --test-threads=1 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run all integration tests
+
+    Updating crates.io index
+     Locking 3 packages to latest compatible versions
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling translated_rust v0.1.0 (/tmp/harvest-work-aVOPAo/translated_rust)
+warning: variable does not need to be mutable
+   --> src/lib.rs:936:13
+    |
+936 |         let mut blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize_shift as usize);
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_stralloc`
+   --> src/lib.rs:929:1
+    |
+929 | / pub unsafe extern "C" fn stbds_stralloc(
+930 | |     a: *mut stbds_string_arena,
+931 | |     str: *mut i8,
+932 | | ) -> *mut i8 {
+    | |____________^ function `stbds_stralloc` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `stbds_string_arena` is more private than the item `stbds_strreset`
+   --> src/lib.rs:980:1
+    |
+980 | pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `stbds_strreset` is reachable at visibility `pub`
+    |
+note: but type `stbds_string_arena` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:66:1
+    |
+ 66 | struct stbds_string_arena {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `STBDS_SH_NONE` is never used
+  --> src/lib.rs:31:7
+   |
+31 | const STBDS_SH_NONE: u8 = 0;
+   |       ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: creating a mutable reference to mutable static
+    --> src/lib.rs:1110:46
+     |
+1110 |     ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.as_mut_ptr(), bytes.len());
+     |                                              ^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+     |
+     = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+     = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+     = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: creating a mutable reference to mutable static
+    --> src/lib.rs:1111:5
+     |
+1111 |     buffer.as_mut_ptr()
+     |     ^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+     |
+     = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+     = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+
+warning: `translated_rust` (lib test) generated 6 warnings (run `cargo fix --lib -p translated_rust --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s
+     Running unittests src/lib.rs (target/debug/deps/hm_geti_lib-05dd541afd46a8dd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ffi_compare.rs (target/debug/deps/ffi_compare-e3858b04c1699fa4)
+
+running 10 tests
+test test_arrgrowf_arrfreef ... ok
+test test_hm_geti ... ok
+test test_hmdel_key ... ok
+test test_hmput_default ... ok
+test test_hmput_hmget_hmfree ... ok
+test test_shmode_func ... ok
+test test_stbds_hash_bytes ... ok
+test test_stbds_hash_string ... ok
+test test_stbds_rand_seed ... ok
+test test_strkey ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[38;5;244m - Completed in 0.609s[0m
+
+[?25l[0m[38;5;141m> [0mAll 10 tests pass. Let me mark the final task complete:[0m[0m
+[?25l[0m[0m[38;5;11mTODO:
+[39m[38;5;10m[x] [3m[38;5;244mCheck feature combinations - Cargo.toml has no [features] section, so only default config[23m
+[38;5;10m[x] [3m[38;5;244mRun cargo check to verify Rust compiles[23m
+[38;5;10m[x] [3m[38;5;244mBuild C shared library[23m
+[38;5;10m[x] [3m[38;5;244mBuild Rust shared library[23m
+[38;5;10m[x] [3m[38;5;244mCompare nm -D symbols between C and Rust .so files[23m
+[38;5;10m[x] [3m[38;5;244mAdd missing exports to Rust if needed[23m
+[38;5;10m[x] [3m[38;5;244mAdd libloading dev-dependency and write integration tests[23m
+[38;5;10m[x] [3m[38;5;244mRun tests and fix mismatches[23m[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mAll verification complete. Here's the summary:[0m[0m
+[0m[0m
+[38;5;252m[1m## Results[0m[0m
+[0m[0m
+[1mFeature combinations:[22m None — Cargo.toml has no [38;5;10m[features][0m section, so only the default configuration exists.[0m[0m
+[0m[0m
+[1mSymbol comparison ([38;5;10mnm -D[0m):[22m One missing symbol found and fixed:[0m[0m
+- [38;5;10mstrkey[0m — added to Rust as a [38;5;10m#[no_mangle][0m export matching the C implementation (static buffer + [38;5;10msprintf[0m equivalent)[0m[0m
+[0m[0m
+[1mIntegration tests (10/10 passing):[22m[0m[0m
+[0m[0m
+| Test | What it verifies |[0m[0m
+|------|-----------------|[0m[0m
+| [38;5;10mtest_stbds_rand_seed[0m | Global seed setting doesn't crash |[0m[0m
+| [38;5;10mtest_stbds_hash_bytes[0m | SipHash byte hashing matches C across 45 input/seed combos |[0m[0m
+| [38;5;10mtest_stbds_hash_string[0m | String hashing matches C across 25 input/seed combos |[0m[0m
+| [38;5;10mtest_strkey[0m | String formatting matches C for edge cases (0, -1, MAX, MIN) |[0m[0m
+| [38;5;10mtest_arrgrowf_arrfreef[0m | Array allocation: length=0, capacity matches |[0m[0m
+| [38;5;10mtest_hm_geti[0m | Full hashmap integration (put/get/delete/free) for num=0..100 |[0m[0m
+| [38;5;10mtest_hmput_hmget_hmfree[0m | Direct low-level put/get with 10 keys, verify indices match |[0m[0m
+| [38;5;10mtest_hmdel_key[0m | Deletion of even keys, verify odd keys survive |[0m[0m
+| [38;5;10mtest_hmput_default[0m | Default value allocation, idempotency |[0m[0m
+| [38;5;10mtest_shmode_func[0m | String hashmap mode initialization (STRDUP + ARENA modes) |[0m[0m
+[0m[0m
+[1mFiles modified:[22m[0m[0m
+- [38;5;10msrc/lib.rs[0m — added [38;5;10mstrkey[0m export[0m[0m
+- [38;5;10mCargo.toml[0m — added [38;5;10mlibloading = "0.8"[0m to dev-dependencies[0m[0m
+- [38;5;10mtests/ffi_compare.rs[0m — new integration test file[0m[0m
+[38;5;8m
+ ▸ Credits: 8.99 • Time: 3m 26s
+
+[0m[1G[0m[0m[?25h

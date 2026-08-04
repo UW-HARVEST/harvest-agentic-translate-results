@@ -1,0 +1,227 @@
+=== OPENROUTER REQUEST ===
+Model: google/gemini-3.1-pro-preview
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"void hsl_to_rgb(float *dest, const float *src);\n"},{"path":"src/lib.c","contents":"#include <math.h>\n\n#include \"lib.h\"\n\nvoid hsl_to_rgb(float *dest, const float *src) {\n    float h = src[0];\n    float s = src[1];\n    float l = src[2];\n    float c, m, x;\n    if (s == 0) {\n        dest[0] = l;\n        dest[1] = l;\n        dest[2] = l;\n        return;\n    }\n    c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;\n    m = 1.0f * (l - 0.5f * c);\n    x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2) - 1.0f));\n    if (h >= 0.0f && h < 60.0f) {\n        dest[0] = c + m;\n        dest[1] = x + m;\n        dest[2] = m;\n    } else if (h >= 60.0f && h < 120.0f) {\n        dest[0] = x + m;\n        dest[1] = c + m;\n        dest[2] = m;\n    } else if (h < 120.0f && h < 180.0f) {\n        dest[0] = m;\n        dest[1] = c + m;\n        dest[2] = x + m;\n    } else if (h >= 180.0f && h < 240.0f) {\n        dest[0] = m;\n        dest[1] = x + m;\n        dest[2] = c + m;\n    } else if (h >= 240.0f && h < 300.0f) {\n        dest[0] = x + m;\n        dest[1] = m;\n        dest[2] = c + m;\n    } else if (h >= 300.0f && h < 360.0f) {\n        dest[0] = c + m;\n        dest[1] = m;\n        dest[2] = x + m;\n    } else {\n        dest[0] = m;\n        dest[1] = m;\n        dest[2] = m;\n    }\n}\n"},{"path":"CMakeLists.txt","contents":"cmake_minimum_required(VERSION 3.10)\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\ncmake_path(GET parent FILENAME project_name)\nproject(${project_name})\nadd_library(${project_name} SHARED\n    src/lib.c)\n\ntarget_include_directories(${project_name} PUBLIC include)\ntarget_include_directories(${project_name} PRIVATE src)\n\ntarget_link_libraries(${project_name} PRIVATE m)\n\ninstall(TARGETS ${project_name}\n    DESTINATION lib)\ninstall(DIRECTORY include/\n    DESTINATION include)\n\n"}]}
+
+return as J
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776187970-OOIJde7ZedUHApH5JwDB","object":"chat.completion","created":1776187970,"model":"google/gemini-3.1-pro-preview-20260219","provider":"Google","system_fingerprint":null,"choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"STOP","message":{"role":"assistant","content":"{\n  \"files\": [\n    {\n      \"path\": \"src/lib.rs\",\n      \"contents\": \"use std::os::raw::c_float;\\n\\n#[unsafe(no_mangle)]\\npub extern \\\"C\\\" fn hsl_to_rgb(dest: *mut c_float, src: *const c_float) {\\n    unsafe {\\n        let h = *src.add(0);\\n        let s = *src.add(1);\\n        let l = *src.add(2);\\n\\n        if s == 0.0 {\\n            *dest.add(0) = l;\\n            *dest.add(1) = l;\\n            *dest.add(2) = l;\\n            return;\\n        }\\n\\n        let c = (1.0 - (2.0 * l - 1.0).abs()) * s;\\n        let m = 1.0 * (l - 0.5 * c);\\n        let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());\\n\\n        if h >= 0.0 && h < 60.0 {\\n            *dest.add(0) = c + m;\\n           

@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int get_predict_func(int pfcn);\r\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\r\n\r\ntypedef unsigned short btac1c_u16;\r\ntypedef signed short btac1c_s16;\r\ntypedef unsigned char btac1c_byte;\r\ntypedef struct btac1c_idxstate_s btac1c_idxstate;\r\nstruct btac1c_idxstate_s {\r\n    btac1c_u16 idx;\r\n    btac1c_s16 lpred;\r\n    btac1c_s16 rpred;\r\n    btac1c_byte tag;\r\n    btac1c_byte bcfcn;\r\n    btac1c_byte bsfcn;\r\n    btac1c_byte usefx;\r\n    btac1c_s16 firfx[4][8];\r\n};\r\n\r\nstatic int BTAC1C2_PredictSample(int *psamp, int idx, int pfcn, btac1c_idxstate *ridx) {\r\n    int pred, p0, p1;\r\n    int i;\r\n    i = idx;\r\n    switch (pfcn) {\r\n    case 0:\r\n        pred = psamp[(i - 1) & 7];\r\n        break;\r\n    case 1:\r\n        pred = 2 * psamp[(i - 1) & 7] - psamp[(i - 2) & 7];\r\n        break;\r\n    case 2:\r\n        pred = (3 * psamp[(i - 1) & 7] - psamp[(i - 2) & 7]) >> 1;\r\n        break;\r\n    case 3:\r\n        pred = (5 * psamp[(i - 1) & 7] - psamp[(i - 2) & 7]) >> 2;\r\n        break;\r\n    case 4:\r\n        p0 = (psamp[(i - 1) & 7] + psamp[(i - 2) & 7]);\r\n        p1 = (psamp[(i - 2) & 7] + psamp[(i - 3) & 7]);\r\n        pred = p0 - (p1 >> 1);\r\n        break;\r\n    case 5:\r\n        p0 = (psamp[(i - 1) & 7] + psamp[(i - 2) & 7]);\r\n        p1 = (psamp[(i - 2) & 7] + psamp[(i - 3) & 7]);\r\n        pred = (3 * p0 - p1) >> 2;\r\n        break;\r\n    case 6:\r\n        p0 = (psamp[(i - 1) & 7] + psamp[(i - 2) & 7]);\r\n        p1 = (psamp[(i - 2) & 7] + psamp[(i - 3) & 7]);\r\n        pred = (5 * p0 - p1) >> 3;\r\n        break;\r\n    case 7:\r\n        pred = (18 * psamp[(i - 1) & 7] - 4 * psamp[(i - 2) & 7] +\r\n                3 * psamp[(i - 3) & 7] - 2 * psamp[(i - 4) & 7] +\r\n                1 * psamp[(i - 5) & 7]) /\r\n               16;\r\n        break;\r\n    case 8:\r\
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::{c_int, c_void};\n\n#[repr(C)]\nstruct Btac1cIdxstate {\n    idx: u16,\n    lpred: i16,\n    rpred: i16,\n    tag: u8,\n    bcfcn: u8,\n    bsfcn: u8,\n    usefx: u8,\n    firfx: [[i16; 8]; 4],\n}\n\nfn btac1c2_predict_sample(psamp: &[i32; 8], idx: usize, pfcn: i32, ridx: *const Btac1cIdxstate) -> i32 {\n    let i = idx;\n    match pfcn {\n        0 => psamp[(i.wrapping_sub(1)) & 7],\n        1 => 2 * psamp[(i.wrapping_sub(1)) & 7] - psamp[(i.wrapping_sub(2)) & 7],\n        2 => (3 * psamp[(i.wrapping_sub(1)) & 7] - psamp[(i.wrapping_sub(2)) & 7]) >> 1,\n        3 => (5 * psamp[(i.wrapping_sub(1)) & 7] - psamp[(i.wrapping_sub(2)) & 7]) >> 2,\n        4 => {\n            let p0 = psamp[(i.wrapping_sub(1)) & 7] + psamp[(i.wrapping_sub(2)) & 7];\n            let p1 = psamp[(i.wrapping_sub(2)) & 7] + psamp[(i.wrapping_sub(3)) & 7];\n            p0 - (p1 >> 1)\n        }\n        5 => {\n            let p0 = psamp[(i.wrapping_sub(1)) & 7] + psamp[(i.wrapping_sub(2)) & 7];\n            let p1 = psamp[(i.wrapping_sub(2)) & 7] + psamp[(i.wrapping_sub(3)) & 7];\n            (3 * p0 - p1) >> 2\n        }\n        6 => {\n            let p0 = psamp[(i.wrapping_sub(1)) & 7] + psamp[(i.wrapping_sub(2)) & 7];\n            let p1 = psamp[(i.wrapping_sub(2)) & 7] + psamp[(i.wrapping_sub(3)) & 7];\n            (5 * p0 - p1) >> 3\n        }\n        7 => (18 * psamp[(i.wrapping_sub(1)) & 7] - 4 * psamp[(i.wrapping_sub(2)) & 7]\n            + 3 * psamp[(i.wrapping_sub(3)) & 7] - 2 * psamp[(i.wrapping_sub(4)) & 7]\n            + 1 * psamp[(i.wrapping_sub(5)) & 7]) / 16,\n        8 => (72 * psamp[(i.wrapping_sub(1)) & 7] - 16 * psamp[(i.wrapping_sub(2)) & 7]\n            + 12 * psamp[(i.wrapping_sub(3)) & 7] - 8 * psamp[(i.wrapping_sub(4)) & 7]\n            + 5 * psamp[(i.wrapping_sub(5)) & 7] - 3 * psamp[(i.wrapping_sub(6)) & 7]\n            + 3 * psamp[(i.wrapping_sub(7)) & 7] - 1 * psamp[(i.wrapping_sub(8)) & 7]) / 64,\n        9 => (76 * psamp[(i.wrapping_sub(1)) & 7] - 17 * psamp[(i.wrapping_sub(2)) & 7]\n            + 10 * psamp[(i.wrapping_sub(3)) & 7] - 7 * psamp[(i.wrapping_sub(4)) & 7]\n            + 5 * psamp[(i.wrapping_sub(5)) & 7] - 4 * psamp[(i.wrapping_sub(6)) & 7]\n            + 4 * psamp[(i.wrapping_sub(7)) & 7] - 3 * psamp[(i.wrapping_sub(8)) & 7]) / 64,\n        10 => {\n            let p0 = psamp[(i.wrapping_sub(1)) & 7] + psamp[(i.wrapping_sub(2)) & 7]\n                + psamp[(i.wrapping_sub(3)) & 7] + psamp[(i.wrapping_sub(4)) & 7];\n            let p1 = psamp[(i.wrapping_sub(5)) & 7] + psamp[(i.wrapping_sub(6)) & 7]\n                + psamp[(i.wrapping_sub(7)) & 7] + psamp[(i.wrapping_sub(8)) & 7];\n            (5 * p0 - p1) >> 3\n        }\n        11 => {\n            let p0 = psamp[(i.wrapping_sub(1)) & 7] + psamp[(i.wrapping_sub(2)) & 7]\n                + psamp[(i.wrapping_sub(3)) & 7] + psamp[(i.wrapping_sub(4)) & 7];\n            let p1 = psamp[(i.wrapping_sub(5)) & 7] + psamp[(i.wrapping_sub(6)) & 7]\n                + psamp[(i.wrapping_sub(7)) & 7] + psamp[(i.wrapping_sub(8)) & 7];\n            (p0 + p1) >> 1\n        }\n        12..=15 => {\n            let fx = unsafe { &(*ridx).firfx[(pfcn - 12) as usize] };\n            (fx[0] as i32 * psamp[(i.wrapping_sub(1)) & 7]\n                + fx[1] as i32 * psamp[(i.wrapping_sub(2)) & 7]\n                + fx[2] as i32 * psamp[(i.wrapping_sub(3)) & 7]\n                + fx[3] as i32 * psamp[(i.wrapping_sub(4)) & 7]\n                + fx[4] as i32 * psamp[(i.wrapping_sub(5)) & 7]\n                + fx[5] as i32 * psamp[(i.wrapping_sub(6)) & 7]\n                + fx[6] as i32 * psamp[(i.wrapping_sub(7)) & 7]\n                + fx[7] as i32 * psamp[(i.wrapping_sub(8)) & 7]) / 256\n        }\n        _ => 0,\n    }\n}\n\nfn btac1c2_predict_sample_pfn0(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    psamp[(idx.wrapping_sub(1)) & 7]\n}\n\nfn btac1c2_predict_sample_pfn1(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    2 * psamp[(idx.wrapping_sub(1)) & 7] - psamp[(idx.wrapping_sub(2)) & 7]\n}\n\nfn btac1c2_predict_sample_pfn2(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    (3 * psamp[(idx.wrapping_sub(1)) & 7] - psamp[(idx.wrapping_sub(2)) & 7]) >> 1\n}\n\nfn btac1c2_predict_sample_pfn3(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    (5 * psamp[(idx.wrapping_sub(1)) & 7] - psamp[(idx.wrapping_sub(2)) & 7]) >> 2\n}\n\nfn btac1c2_predict_sample_pfn4(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    let p0 = psamp[(idx.wrapping_sub(1)) & 7] + psamp[(idx.wrapping_sub(2)) & 7];\n    let p1 = psamp[(idx.wrapping_sub(2)) & 7] + psamp[(idx.wrapping_sub(3)) & 7];\n    p0 - (p1 >> 1)\n}\n\nfn btac1c2_predict_sample_pfn5(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    let p0 = psamp[(idx.wrapping_sub(1)) & 7] + psamp[(idx.wrapping_sub(2)) & 7];\n    let p1 = psamp[(idx.wrapping_sub(2)) & 7] + psamp[(idx.wrapping_sub(3)) & 7];\n    (3 * p0 - p1) >> 2\n}\n\nfn btac1c2_predict_sample_pfn6(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    let p0 = psamp[(idx.wrapping_sub(1)) & 7] + psamp[(idx.wrapping_sub(2)) & 7];\n    let p1 = psamp[(idx.wrapping_sub(2)) & 7] + psamp[(idx.wrapping_sub(3)) & 7];\n    (5 * p0 - p1) >> 3\n}\n\nfn btac1c2_predict_sample_pfn7(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    (18 * psamp[(idx.wrapping_sub(1)) & 7] - 4 * psamp[(idx.wrapping_sub(2)) & 7]\n        + 3 * psamp[(idx.wrapping_sub(3)) & 7] - 2 * psamp[(idx.wrapping_sub(4)) & 7]\n        + 1 * psamp[(idx.wrapping_sub(5)) & 7]) / 16\n}\n\nfn btac1c2_predict_sample_pfn8(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    (72 * psamp[(idx.wrapping_sub(1)) & 7] - 16 * psamp[(idx.wrapping_sub(2)) & 7]\n        + 12 * psamp[(idx.wrapping_sub(3)) & 7] - 8 * psamp[(idx.wrapping_sub(4)) & 7]\n        + 5 * psamp[(idx.wrapping_sub(5)) & 7] - 3 * psamp[(idx.wrapping_sub(6)) & 7]\n        + 3 * psamp[(idx.wrapping_sub(7)) & 7] - 1 * psamp[(idx.wrapping_sub(8)) & 7]) / 64\n}\n\nfn btac1c2_predict_sample_pfn9(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    (76 * psamp[(idx.wrapping_sub(1)) & 7] - 17 * psamp[(idx.wrapping_sub(2)) & 7]\n        + 10 * psamp[(idx.wrapping_sub(3)) & 7] - 7 * psamp[(idx.wrapping_sub(4)) & 7]\n        + 5 * psamp[(idx.wrapping_sub(5)) & 7] - 4 * psamp[(idx.wrapping_sub(6)) & 7]\n        + 4 * psamp[(idx.wrapping_sub(7)) & 7] - 3 * psamp[(idx.wrapping_sub(8)) & 7]) / 64\n}\n\nfn btac1c2_predict_sample_pfn10(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    let p0 = psamp[(idx.wrapping_sub(1)) & 7] + psamp[(idx.wrapping_sub(2)) & 7]\n        + psamp[(idx.wrapping_sub(3)) & 7] + psamp[(idx.wrapping_sub(4)) & 7];\n    let p1 = psamp[(idx.wrapping_sub(5)) & 7] + psamp[(idx.wrapping_sub(6)) & 7]\n        + psamp[(idx.wrapping_sub(7)) & 7] + psamp[(idx.wrapping_sub(8)) & 7];\n    (5 * p0 - p1) >> 3\n}\n\nfn btac1c2_predict_sample_pfn11(psamp: &[i32; 8], idx: usize, _pfcn: i32, _ridx: *const Btac1cIdxstate) -> i32 {\n    let p0 = psamp[(idx.wrapping_sub(1)) & 7] + psamp[(idx.wrapping_sub(2)) & 7]\n        + psamp[(idx.wrapping_sub(3)) & 7] + psamp[(idx.wrapping_sub(4)) & 7];\n    let p1 = psamp[(idx.wrapping_sub(5)) & 7] + psamp[(idx.wrapping_sub(6)) & 7]\n        + psamp[(idx.wrapping_sub(7)) & 7] + psamp[(idx.wrapping_sub(8)) & 7];\n    (p0 + p1) >> 1\n}\n\ntype PredictFn = fn(&[i32; 8], usize, i32, *const Btac1cIdxstate) -> i32;\n\nfn btac1c2_get_predict_func(pfcn: i32) -> PredictFn {\n    match pfcn {\n        0 => btac1c2_predict_sample_pfn0,\n        1 => btac1c2_predict_sample_pfn1,\n        2 => btac1c2_predict_sample_pfn2,\n        3 => btac1c2_predict_sample_pfn3,\n        4 => btac1c2_predict_sample_pfn4,\n        5 => btac1c2_predict_sample_pfn5,\n        6 => btac1c2_predict_sample_pfn6,\n        7 => btac1c2_predict_sample_pfn7,\n        8 => btac1c2_predict_sample_pfn8,\n        9 => btac1c2_predict_sample_pfn9,\n        10 => btac1c2_predict_sample_pfn10,\n        11 => btac1c2_predict_sample_pfn11,\n        _ => btac1c2_predict_sample,\n    }\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn get_predict_func(pfcn: c_int) -> c_int {\n    let fcn = btac1c2_get_predict_func(pfcn);\n    let result = match pfcn {\n        0 => fcn as *const c_void == btac1c2_predict_sample_pfn0 as *const c_void,\n        1 => fcn as *const c_void == btac1c2_predict_sample_pfn1 as *const c_void,\n        2 => fcn as *const c_void == btac1c2_predict_sample_pfn2 as *const c_void,\n        3 => fcn as *const c_void == btac1c2_predict_sample_pfn3 as *const c_void,\n        4 => fcn as *const c_void == btac1c2_predict_sample_pfn4 as *const c_void,\n        5 => fcn as *const c_void == btac1c2_predict_sample_pfn5 as *const c_void,\n        6 => fcn as *const c_void == btac1c2_predict_sample_pfn6 as *const c_void,\n        7 => fcn as *const c_void == btac1c2_predict_sample_pfn7 as *const c_void,\n        8 => fcn as *const c_void == btac1c2_predict_sample_pfn8 as *const c_void,\n        9 => fcn as *const c_void == btac1c2_predict_sample_pfn9 as *const c_void,\n        10 => fcn as *const c_void == btac1c2_predict_sample_pfn10 as *const c_void,\n        11 => fcn as *const c_void == btac1c2_predict_sample_pfn11 as *const c_void,\n        _ => false,\n    };\n    result as c_int\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"btac1c\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"btac1c\"\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

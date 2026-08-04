@@ -1,0 +1,147 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_organic/rgb_to_hsv_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: rgb_to_hsv_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.35s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: rgb_to_hsv_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.32s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:5 ~ rgb_to_hsv_lib[b739]::src::lib::rgb_to_hsv)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn rgb_to_hsv(
+    mut dest: *mut ::core::ffi::c_float,
+    mut src: *const ::core::ffi::c_float,
+) {
+    let mut r: ::core::ffi::c_float = *src.offset(0 as ::core::ffi::c_int as isize);
+    let mut g: ::core::ffi::c_float = *src.offset(1 as ::core::ffi::c_int as isize);
+    let mut b: ::core::ffi::c_float = *src.offset(2 as ::core::ffi::c_int as isize);
+    let mut h: ::core::ffi::c_float = 0 as ::core::ffi::c_int as ::core::ffi::c_float;
+    let mut s: ::core::ffi::c_float = 0 as ::core::ffi::c_int as ::core::ffi::c_float;
+    let mut v: ::core::ffi::c_float = 0 as ::core::ffi::c_int as ::core::ffi::c_float;
+    let mut min: ::core::ffi::c_float = r;
+    let mut max: ::core::ffi::c_float = r;
+    let mut delta: ::core::ffi::c_float = 0.;
+    min = if min < g { min } else { g };
+    min = if min < b { min } else { b };
+    max = if max > g { max } else { g };
+    max = if max > b { max } else { b };
+    delta = max - min;
+    v = max;
+    if delta == 0 as ::core::ffi::c_int as ::core::ffi::c_float
+        || max == 0 as ::core::ffi::c_int as ::core::ffi::c_float
+    {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = h;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = s;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = v;
+        return;
+    }
+    s = delta / max;
+    if r == max {
+        h = (g - b) / delta;
+    } else if g == max {
+        h = 2 as ::core::ffi::c_int as ::core::ffi::c_float + (b - r) / delta;
+    } else {
+        h = 4 as ::core::ffi::c_int as ::core::ffi::c_float + (r - g) / delta;
+    }
+    h *= 60 as ::core::ffi::c_int as ::core::ffi::c_float;
+    if h < 0 as ::core::ffi::c_int as ::core::ffi::c_float {
+        h += 360 as ::core::ffi::c_int as ::core::ffi::c_float;
+    }
+    *dest.offset(0 as ::core::ffi::c_int as isize) = h;
+    *dest.offset(1 as ::core::ffi::c_int as isize) = s;
+    *dest.offset(2 as ::core::ffi::c_int as isize) = v;
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn rgb_to_hsv(dest: &mut [f32; 3], src: &[f32; 3]) {
+    let r = src[0];
+    let g = src[1];
+    let b = src[2];
+
+    let mut h = 0.0f32;
+    let s;
+    let v;
+
+    let min = r.min(g).min(b);
+    let max = r.max(g).max(b);
+    let delta = max - min;
+
+    v = max;
+
+    if delta == 0.0 || max == 0.0 {
+        dest[0] = h;
+        dest[1] = 0.0;
+        dest[2] = v;
+        return;
+    }
+
+    s = delta / max;
+
+    if r == max {
+        h = (g - b) / delta;
+    } else if g == max {
+        h = 2.0 + (b - r) / delta;
+    } else {
+        h = 4.0 + (r - g) / delta;
+    }
+
+    h *= 60.0;
+    if h < 0.0 {
+        h += 360.0;
+    }
+
+    dest[0] = h;
+    dest[1] = s;
+    dest[2] = v;
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:2:1: 44:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:2:1: 44:2 (#0) -> src/lib.rs:3:1: 43:2 (#0)[00m
+[96m src/lib.rs:2:1: 44:2 (#0) -> src/lib.rs:3:1: 43:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_organic/rgb_to_hsv_lib/translated_rust

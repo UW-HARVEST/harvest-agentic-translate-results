@@ -1,0 +1,171 @@
+=== OPENROUTER REQUEST ===
+Model: google/gemini-3.1-pro-preview
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"#include <stdint.h>\n\ntypedef struct cn_rnd_t {\n    uint64_t state[2];\n} cn_rnd_t;\n\ndouble next_double(cn_rnd_t *rnd);\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\r\n\r\nstatic uint64_t cn_rnd_next(cn_rnd_t *rnd) {\r\n    uint64_t x = rnd->state[0];\r\n    uint64_t y = rnd->state[1];\r\n    rnd->state[0] = y;\r\n    x ^= x << 23;\r\n    x ^= x >> 17;\r\n    x ^= y ^ (y >> 26);\r\n    rnd->state[1] = x;\r\n    return x + y;\r\n}\r\n\r\ndouble next_double(cn_rnd_t *rnd) {\r\n    uint64_t value = cn_rnd_next(rnd);\r\n    uint64_t exponent = 1023;\r\n    uint64_t mantissa = value >> 12;\r\n    uint64_t result = (exponent << 52) | mantissa;\r\n    return *(double *)&result - 1.0;\r\n}\r\n"},{"path":"CMakeLists.txt","contents":"cmake_minimum_required(VERSION 3.10)\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\ncmake_path(GET parent FILENAME project_name)\nproject(${project_name})\nadd_library(${project_name} SHARED\n    src/lib.c)\n\ntarget_include_directories(${project_name} PUBLIC include)\ntarget_include_directories(${project_name} PRIVATE src)\n\ninstall(TARGETS ${project_name}\n    DESTINATION lib)\ninstall(DIRECTORY include/\n    DESTINATION include)\n\n"}]}
+
+return as JSON
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776188266-W7sJqV8j3ImwA8O5omPg","object":"chat.completion","created":1776188266,"model":"google/gemini-3.1-pro-preview-20260219","provider":"Google","system_fingerprint":null,"choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"STOP","message":{"role":"assistant","content":"{\n  \"files\": [\n    {\n      \"path\": \"src/lib.rs\",\n      \"contents\": \"#[repr(C)]\\npub struct cn_rnd_t {\\n    pub state: [u64; 2],\\n}\\n\\nimpl cn_rnd_t {\\n    fn next(&mut self) -> u64 {\\n        let mut x = self.state[0];\\n        let y = self.state[1];\\n        self.state[0] = y;\\n        x ^= x << 23;\\n        x ^= x >> 17;\\n        x ^= y ^ (y >> 26);\\n        self.state[1] = x;\\n        x.wrapping_add(y)\\n    }\\n}\\n\\n#[unsafe(no_mangle)]\\npub extern \\\"C\\\" fn next_double(rnd: *mut cn_rnd_t) -> f64 {\\n    let rnd_ref = unsafe { &mut *rnd };\\n    let value = rnd_ref.next();\\n    let exponent: u64 = 1023;\\n    let mantissa = value >> 12;\\n    let result = (exponent << 52) | mantissa;\\n    f64::from_bits(result) - 1.0\\n}\\n\"\n    },\n    {\n      \"path\": \"Cargo.toml\",\n      \"contents\": \"[package]\\nname = \\\"project_name\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[lib]\\ncrate-type = [\\\"cdylib\\\", \\\"rlib\\\"]\\n\\n[dependencies]\\n\"\n    }\n  ]\n

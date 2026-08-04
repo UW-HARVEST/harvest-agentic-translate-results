@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"#include <stdint.h>\r\n\r\ntypedef uint8_t tflac_u8;\r\ntypedef uint32_t tflac_u32;\r\n\r\nstruct tflac {\r\n    tflac_u32 samplerate;\r\n    tflac_u32 channels;\r\n    tflac_u32 bitdepth;\r\n    tflac_u8 channel_mode;\r\n    tflac_u32 frame_header;\r\n    tflac_u32 cur_blocksize;\r\n};\r\ntypedef struct tflac tflac;\r\n\r\nvoid update_frame_header(tflac *t);\r\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\r\n\r\nenum TFLAC_CHANNEL_MODE {\r\n    TFLAC_CHANNEL_INDEPENDENT = 0,\r\n    TFLAC_CHANNEL_LEFT_SIDE = 1,\r\n    TFLAC_CHANNEL_SIDE_RIGHT = 2,\r\n    TFLAC_CHANNEL_MID_SIDE = 3,\r\n    TFLAC_CHANNEL_MODE_COUNT = 4,\r\n};\r\n\r\nvoid update_frame_header(tflac *t) {\r\n    t->frame_header = 0xFFF8U << 16;\r\n    switch (t->cur_blocksize) {\r\n    case 192:\r\n        t->frame_header |= (0x01U << 12);\r\n        break;\r\n    case 576:\r\n        t->frame_header |= (0x02U << 12);\r\n        break;\r\n    case 1152:\r\n        t->frame_header |= (0x03U << 12);\r\n        break;\r\n    case 2304:\r\n        t->frame_header |= (0x04U << 12);\r\n        break;\r\n    case 4608:\r\n        t->frame_header |= (0x05U << 12);\r\n        break;\r\n    case 256:\r\n        t->frame_header |= (0x08U << 12);\r\n        break;\r\n    case 512:\r\n        t->frame_header |= (0x09U << 12);\r\n        break;\r\n    case 1024:\r\n        t->frame_header |= (0x0AU << 12);\r\n        break;\r\n    case 2048:\r\n        t->frame_header |= (0x0BU << 12);\r\n        break;\r\n    case 4096:\r\n        t->frame_header |= (0x0CU << 12);\r\n        break;\r\n    case 8192:\r\n        t->frame_header |= (0x0DU << 12);\r\n        break;\r\n    case 16384:\r\n        t->frame_header |= (0x0EU << 12);\r\n        break;\r\n    case 32768:\r\n        t->frame_header |= (0x0FU << 12);\r\n        break;\r\n    default: {\r\n        t->frame_header |=\r\n    
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::{c_uint, c_uchar};\n\n#[repr(C)]\npub struct tflac {\n    pub samplerate: c_uint,\n    pub channels: c_uint,\n    pub bitdepth: c_uint,\n    pub channel_mode: c_uchar,\n    pub frame_header: c_uint,\n    pub cur_blocksize: c_uint,\n}\n\n#[repr(u8)]\nenum TflacChannelMode {\n    Independent = 0,\n    LeftSide = 1,\n    SideRight = 2,\n    MidSide = 3,\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn update_frame_header(t: *mut tflac) {\n    let t = unsafe { &mut *t };\n    \n    t.frame_header = 0xFFF8u32 << 16;\n    \n    match t.cur_blocksize {\n        192 => t.frame_header |= 0x01u32 << 12,\n        576 => t.frame_header |= 0x02u32 << 12,\n        1152 => t.frame_header |= 0x03u32 << 12,\n        2304 => t.frame_header |= 0x04u32 << 12,\n        4608 => t.frame_header |= 0x05u32 << 12,\n        256 => t.frame_header |= 0x08u32 << 12,\n        512 => t.frame_header |= 0x09u32 << 12,\n        1024 => t.frame_header |= 0x0Au32 << 12,\n        2048 => t.frame_header |= 0x0Bu32 << 12,\n        4096 => t.frame_header |= 0x0Cu32 << 12,\n        8192 => t.frame_header |= 0x0Du32 << 12,\n        16384 => t.frame_header |= 0x0Eu32 << 12,\n        32768 => t.frame_header |= 0x0Fu32 << 12,\n        _ => {\n            t.frame_header |= if t.cur_blocksize <= 256 {\n                0x06u32 << 12\n            } else {\n                0x07u32 << 12\n            };\n        }\n    }\n    \n    match t.samplerate {\n        88200 => t.frame_header |= 0x01u32 << 8,\n        176400 => t.frame_header |= 0x02u32 << 8,\n        192000 => t.frame_header |= 0x03u32 << 8,\n        8000 => t.frame_header |= 0x04u32 << 8,\n        16000 => t.frame_header |= 0x05u32 << 8,\n        22050 => t.frame_header |= 0x06u32 << 8,\n        24000 => t.frame_header |= 0x07u32 << 8,\n        32000 => t.frame_header |= 0x08u32 << 8,\n        44100 => t.frame_header |= 0x09u32 << 8,\n        48000 => t.frame_header |= 0x0Au32 << 8,\n        96000 => t.frame_header |= 0x0Bu32 << 8,\n        _ => {\n            if t.samplerate % 1000 == 0 && t.samplerate / 1000 < 256 {\n                t.frame_header |= 0x0Cu32 << 8;\n            } else if t.samplerate < 65536 {\n                t.frame_header |= 0x0Du32 << 8;\n            } else if t.samplerate % 10 == 0 && t.samplerate / 10 < 65536 {\n                t.frame_header |= 0x0Eu32 << 8;\n            }\n        }\n    }\n    \n    let mode = (t.channel_mode % 4) as u8;\n    match mode {\n        0 => t.frame_header |= (t.channels - 1) << 4,\n        1 => t.frame_header |= 0x08u32 << 4,\n        2 => t.frame_header |= 0x09u32 << 4,\n        3 => t.frame_header |= 0x0Au32 << 4,\n        _ => {}\n    }\n    \n    match t.bitdepth {\n        8 => t.frame_header |= 1u32 << 1,\n        12 => t.frame_header |= 2u32 << 1,\n        16 => t.frame_header |= 4u32 << 1,\n        20 => t.frame_header |= 5u32 << 1,\n        24 => t.frame_header |= 6u32 << 1,\n        32 => t.frame_header |= 7u32 << 1,\n        _ => {}\n    }\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"tflac\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"tflac\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

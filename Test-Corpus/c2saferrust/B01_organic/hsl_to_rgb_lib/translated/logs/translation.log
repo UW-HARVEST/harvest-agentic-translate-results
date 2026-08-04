@@ -1,0 +1,160 @@
+source: /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2rust/B01_organic/hsl_to_rgb_lib/translated_rust_original
+model: bedrock-gpt54 via https://bedrock-mantle.us-west-2.api.aws/openai/v1
+
+=== C2SaferRust pre-process ===
+done
+
+=== C2SaferRust Docker (gpt-5.4 via Bedrock) ===
+Testing sysroot consistency...
+Done
+Target name: hsl_to_rgb_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 2.04s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+Testing sysroot consistency...
+Done
+Target name: hsl_to_rgb_lib
+   Compiling libc v0.2.186
+   Compiling driver v0.0.0 (/work/rust_WIP)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.32s
+Target name: build-script-build
+Target custom-build:build-script-build is not supported
+[96m Translating code in directory: /work/rust[00m
+[96m Selected tests: [][00m
+[96m Creating a WIP directory which is a copy of the original[00m
+[96m Now working in /work/rust_WIP[00m
+[96m Running slicer[00m
+[96m Translating DefId(0:8 ~ hsl_to_rgb_lib[ddac]::src::lib::hsl_to_rgb)[00m
+[96m Translating the whole function[00m
+[97m Here is a function:
+```rust
+pub unsafe extern "C" fn hsl_to_rgb(
+    mut dest: *mut ::core::ffi::c_float,
+    mut src: *const ::core::ffi::c_float,
+) {
+    let mut h: ::core::ffi::c_float = *src.offset(0 as ::core::ffi::c_int as isize);
+    let mut s: ::core::ffi::c_float = *src.offset(1 as ::core::ffi::c_int as isize);
+    let mut l: ::core::ffi::c_float = *src.offset(2 as ::core::ffi::c_int as isize);
+    let mut c: ::core::ffi::c_float = 0.;
+    let mut m: ::core::ffi::c_float = 0.;
+    let mut x: ::core::ffi::c_float = 0.;
+    if s == 0 as ::core::ffi::c_int as ::core::ffi::c_float {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = l;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = l;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = l;
+        return;
+    }
+    c = (1.0f32 - fabsf(2.0f32 * l - 1.0f32)) * s;
+    m = 1.0f32 * (l - 0.5f32 * c);
+    x = c
+        * (1.0f32
+            - fabsf(fmodf(h / 60.0f32, 2 as ::core::ffi::c_int as ::core::ffi::c_float) - 1.0f32));
+    if h >= 0.0f32 && h < 60.0f32 {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = c + m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = x + m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = m;
+    } else if h >= 60.0f32 && h < 120.0f32 {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = x + m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = c + m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = m;
+    } else if h < 120.0f32 && h < 180.0f32 {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = c + m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = x + m;
+    } else if h >= 180.0f32 && h < 240.0f32 {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = x + m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = c + m;
+    } else if h >= 240.0f32 && h < 300.0f32 {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = x + m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = c + m;
+    } else if h >= 300.0f32 && h < 360.0f32 {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = c + m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = x + m;
+    } else {
+        *dest.offset(0 as ::core::ffi::c_int as isize) = m;
+        *dest.offset(1 as ::core::ffi::c_int as isize) = m;
+        *dest.offset(2 as ::core::ffi::c_int as isize) = m;
+    };
+}
+```
+
+
+
+Convert the function to idiomatic Rust, meaning Rust code that does not make use of features like unsafe, raw pointers, and the C API whenever possible. Do not change the function name.
+
+Follow the following format for your output: Place the function translation between the tags <FUNC> and </FUNC>. 
+
+
+Any functions or variables without definitions are defined elsewhere in the code. Do not attempt to redefine them or import them.
+If you are using any new functions and you need new imports for those, place them between the tags <IMPORTS> and </IMPORTS>. This should be only *new* imports. Do not include existing imports.
+DO NOT include markdown characters like "```" or "```rust" in your translation.
+[00m
+[96m Attempt 1 of 5[00m
+[96m Generated translations.[00m
+--------------
+<FUNC>
+pub fn hsl_to_rgb(dest: &mut [f32; 3], src: &[f32; 3]) {
+    let h = src[0];
+    let s = src[1];
+    let l = src[2];
+
+    if s == 0.0 {
+        dest[0] = l;
+        dest[1] = l;
+        dest[2] = l;
+        return;
+    }
+
+    let c = (1.0_f32 - (2.0_f32 * l - 1.0_f32).abs()) * s;
+    let m = l - 0.5_f32 * c;
+    let x = c * (1.0_f32 - ((h / 60.0_f32).rem_euclid(2.0_f32) - 1.0_f32).abs());
+
+    if h >= 0.0 && h < 60.0 {
+        dest[0] = c + m;
+        dest[1] = x + m;
+        dest[2] = m;
+    } else if h >= 60.0 && h < 120.0 {
+        dest[0] = x + m;
+        dest[1] = c + m;
+        dest[2] = m;
+    } else if h >= 120.0 && h < 180.0 {
+        dest[0] = m;
+        dest[1] = c + m;
+        dest[2] = x + m;
+    } else if h >= 180.0 && h < 240.0 {
+        dest[0] = m;
+        dest[1] = x + m;
+        dest[2] = c + m;
+    } else if h >= 240.0 && h < 300.0 {
+        dest[0] = x + m;
+        dest[1] = m;
+        dest[2] = c + m;
+    } else if h >= 300.0 && h < 360.0 {
+        dest[0] = c + m;
+        dest[1] = m;
+        dest[2] = x + m;
+    } else {
+        dest[0] = m;
+        dest[1] = m;
+        dest[2] = m;
+    }
+}
+</FUNC>
+--------------
+[96m Replacing spans with translations.[00m
+[96m Replacing:[00m
+src/lib.rs:6:1: 56:2 (#0)
+[96m Attempting to compile the new code[00m
+[92m Compilation successful.[00m
+[96m Changing spans in slices.json[00m
+[96m src/lib.rs:6:1: 56:2 (#0) -> src/lib.rs:7:1: 52:2 (#0)[00m
+[96m src/lib.rs:6:1: 56:2 (#0) -> src/lib.rs:7:1: 52:2 (#0)[00m
+[96m Writing slices.json[00m
+[96m Running dataflow analysis[00m
+
+c2saferrust translation collected into /local/home/scheschb/reserach/TRACTOR/harvest-agentic/results/Test-Corpus/c2saferrust/B01_organic/hsl_to_rgb_lib/translated_rust
