@@ -1,0 +1,25 @@
+[package]
+name = "zstd_rs"
+version = "1.5.7"
+edition = "2021"
+
+[lib]
+name = "zstd"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+# C relies on 2's-complement wrapping arithmetic (the C source is peppered with
+# `/* intentional overflow */`). C unsigned math wraps by definition, so the
+# Rust translation must wrap too to be byte-identical. Disable overflow checks.
+overflow-checks = false
+
+[profile.dev]
+# Same rationale as release: match C wrapping arithmetic for the tested cdylib.
+overflow-checks = false
+
+[workspace]
+
+[dev-dependencies]
+libloading = "0.8"
