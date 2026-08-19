@@ -1,0 +1,46 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# Compiled as a cdylib so the translated code exposes the same dynamic symbol
+# surface as `c_src/src/main.c` built with `gcc -shared` (bad, good, main,
+# printIntLine, printLine). The rlib is used by the test helper examples.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+# The library exports `#[no_mangle] extern "C" fn main` to mirror the C `.so`,
+# which cannot coexist with the entry point libtest generates for a unit-test
+# harness. All verification happens in tests/ through dlopen on the .so instead.
+test = false
+doctest = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+[features]
+default = []
+
+# `harness = false` so that this test binary's `main` can re-execute itself as
+# the child process that dlopens one of the two shared objects (see the module
+# docs in tests/subprocess_diff.rs).
+[[test]]
+name = "subprocess_diff"
+path = "tests/subprocess_diff.rs"
+harness = false
+
+# Ditto: `main` re-executes itself as the scanf probe.
+[[test]]
+name = "scanf_probe"
+path = "tests/scanf_probe.rs"
+harness = false
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

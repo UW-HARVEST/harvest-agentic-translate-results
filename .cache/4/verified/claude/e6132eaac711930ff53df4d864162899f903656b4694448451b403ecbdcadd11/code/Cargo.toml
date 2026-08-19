@@ -1,0 +1,31 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# The translated program logic lives in the library so that it can be exported
+# across the C ABI (`driver_main`) and loaded with dlopen(), exactly the way the
+# C translation unit can be (`gcc -shared -Dmain=driver_main src/main.c`).
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `harness = false`: the differential test binary needs full control over
+# `main` so that it can re-exec itself as a `dlopen()` runner child.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

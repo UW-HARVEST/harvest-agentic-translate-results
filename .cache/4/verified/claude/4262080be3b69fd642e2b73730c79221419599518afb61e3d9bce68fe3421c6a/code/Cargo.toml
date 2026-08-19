@@ -1,0 +1,28 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+description = "Rust translation of the C `driver` library (c_src/)."
+publish = false
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The differential suite redirects the process-wide stdout/stderr file
+# descriptors to observe what libc `printf` writes inside the loaded `.so`s, so
+# it must run sequentially and cannot share fd 1 with libtest's own progress
+# output. It therefore provides its own `main`.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

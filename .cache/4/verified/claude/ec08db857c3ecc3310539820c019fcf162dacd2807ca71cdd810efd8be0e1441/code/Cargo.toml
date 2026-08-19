@@ -1,0 +1,34 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# `c_src/CMakeLists.txt` is `add_executable(driver src/main.c)`, so the binary is
+# the artifact under test. The library target only exists so that the same
+# translated code can be linked into both the executable and the `driver_ffi`
+# cdylib (which mirrors `gcc -shared` on the C source) without duplication; it
+# deliberately exports no `#[no_mangle]` symbols of its own, because a
+# `#[no_mangle] fn main` in an rlib collides with every test harness's entry
+# point.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+# NOTE: this crate has no cargo features, and `c_src/CMakeLists.txt` has no
+# options or `#ifdef`s either, so there is exactly one build configuration to
+# verify. See CONFIGS.md.
+[features]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+members = ["ffi"]
