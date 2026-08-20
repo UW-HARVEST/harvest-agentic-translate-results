@@ -1,17 +1,35 @@
 [package]
 name = "driver"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
-path = "src/lib.rs"
 name = "driver"
-
-[dependencies]
-libc = "0.2"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
 
 [dev-dependencies]
 libloading = "0.8"
+
+# harness = false: the differential tests capture file descriptor 1, so they
+# must run sequentially with all progress reporting on stderr (see
+# tests/common/mod.rs::Runner).
+[[test]]
+name = "valid_paths"
+path = "tests/valid_paths.rs"
+harness = false
+
+[[test]]
+name = "error_paths"
+path = "tests/error_paths.rs"
+harness = false
+
+[[test]]
+name = "symbol_parity"
+path = "tests/symbol_parity.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
 
 [workspace]

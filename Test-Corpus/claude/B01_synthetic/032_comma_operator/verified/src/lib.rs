@@ -1,57 +1,23 @@
-// Library exports for the translated Rust code, used for FFI testing.
-// The implementation uses libc's printf/scanf to mirror C's stdout output
-// byte-for-byte.
+// C-ABI surface of the translation of c_src/src/main.c.
+//
+// `nm -D` on the shared library built from the C source exports exactly two
+// symbols: `driver` and `main`.  Both are re-exported here with the same names
+// and the same C signatures so that an external caller (and the differential
+// test suite) cannot tell the two libraries apart.
+
+#[path = "imp.rs"]
+pub mod imp;
 
 use std::os::raw::c_int;
 
-extern "C" {
-    fn printf(fmt: *const u8, ...) -> c_int;
-    fn __isoc99_scanf(fmt: *const u8, ...) -> c_int;
-}
-
-/// Mirrors the C `driver(int x)` function exactly.
-///
-/// ```c
-/// void driver(int x) {
-///     for (int i = 0, j = 0; i < x; i++, j += 2) {
-///         printf("%d %d\n", i, j);
-///     }
-/// }
-/// ```
+/// `void driver(int x)`
 #[no_mangle]
 pub extern "C" fn driver(x: c_int) {
-    let mut i: c_int = 0;
-    let mut j: c_int = 0;
-    while i < x {
-        unsafe {
-            printf(b"%d %d\n\0".as_ptr(), i, j);
-        }
-        i = i.wrapping_add(1);
-        j = j.wrapping_add(2);
-    }
+    imp::driver_stdout(x as i32);
 }
 
-/// Mirrors the C `main` function. Reads an integer from stdin and calls driver.
-///
-/// ```c
-/// int main() {
-///     int x = 0;
-///     scanf("%d", &x);
-///     driver(x);
-///     return 0;
-/// }
-/// ```
-// Gate the `main` export behind `not(test)`: cargo test compiles the rlib
-// alongside the test binary, and Rust auto-generates a `main` for the test
-// harness — exporting our own `main` here would clash. The cdylib produced by
-// `cargo build` does include this symbol, matching the C .so exports.
-#[cfg(not(test))]
+/// `int main(void)`
 #[no_mangle]
 pub extern "C" fn main() -> c_int {
-    let mut x: c_int = 0;
-    unsafe {
-        __isoc99_scanf(b"%d\0".as_ptr(), &mut x as *mut c_int);
-    }
-    driver(x);
-    0
+    imp::c_main() as c_int
 }

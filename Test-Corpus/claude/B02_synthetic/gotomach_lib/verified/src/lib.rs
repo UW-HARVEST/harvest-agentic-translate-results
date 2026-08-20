@@ -1,22 +1,78 @@
+// Rust translation of c_src/src/lib.c
+//
 // Copyright 2025 MIT Lincoln Laboratory
-// Translated from C to Rust preserving exact output behavior.
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_void;
-use std::os::raw::{c_char, c_int};
+#![allow(non_camel_case_types)]
 
+use std::ffi::{c_char, c_int, c_void};
+
+// ---------------------------------------------------------------------------
+// libc bindings.
+//
+// We deliberately go through the platform C library for allocation and for
+// printing so that the observable behaviour (including malloc(0) returning a
+// non-NULL pointer, and stdout buffering / interleaving with any C code in the
+// same process) is byte-for-byte identical to the original C library.
+// ---------------------------------------------------------------------------
+extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
+
+/// `UINT16_MAX` from <stdint.h>.
 const UINT16_MAX: c_int = 65535;
 
-type OperationFn = unsafe extern "C" fn(value: c_int, unused_param: c_int, unused_context: *mut c_void) -> c_int;
+/// #define LOG_MSG(level, msg) printf("[" #level "] " msg "\n")
+///
+/// The C preprocessor stringizes `level` and concatenates the literals, so the
+/// resulting call is `printf("[<LEVEL>] <msg>\n")`.  The message never contains
+/// a `%`, so passing it as the format string is faithful to the original.
+macro_rules! log_msg {
+    ($level:ident, $msg:expr) => {{
+        // Build the concatenated, NUL terminated literal at compile time.
+        const S: &str = concat!("[", stringify!($level), "] ", $msg, "\n\0");
+        unsafe {
+            printf(S.as_ptr() as *const c_char);
+        }
+    }};
+}
 
+// typedef int (*operation_fn)(int value, int unused_param, void *unused_context);
+type operation_fn = Option<unsafe extern "C" fn(c_int, c_int, *mut c_void) -> c_int>;
+
+// typedef struct { ... } ProcessorState;
 #[repr(C)]
 struct ProcessorState {
     results: *mut c_int,
     capacity: usize,
     count: usize,
-    operation: Option<OperationFn>,
+    operation: operation_fn,
     status: c_char,
 }
 
+// static bool is_valid_state(ProcessorState *state)
 unsafe fn is_valid_state(state: *mut ProcessorState) -> bool {
     if (*state).status != 0 {
         return (*state).count < (*state).capacity;
@@ -24,38 +80,55 @@ unsafe fn is_valid_state(state: *mut ProcessorState) -> bool {
     false
 }
 
+// static bool check_char_flag(char flag)
 fn check_char_flag(flag: c_char) -> bool {
     flag != 0
 }
 
+// int process_value(int value, int unused_param, void *unused_context)
 #[unsafe(no_mangle)]
-pub extern "C" fn process_value(value: c_int, _unused_param: c_int, _unused_context: *mut c_void) -> c_int {
-    value + 10
+pub unsafe extern "C" fn process_value(
+    value: c_int,
+    _unused_param: c_int,
+    _unused_context: *mut c_void,
+) -> c_int {
+    value.wrapping_add(10)
 }
 
+// int double_value(int value, int unused_param, void *unused_context)
 #[unsafe(no_mangle)]
-pub extern "C" fn double_value(value: c_int, _unused_param: c_int, _unused_context: *mut c_void) -> c_int {
-    value * 2
+pub unsafe extern "C" fn double_value(
+    value: c_int,
+    _unused_param: c_int,
+    _unused_context: *mut c_void,
+) -> c_int {
+    value.wrapping_mul(2)
 }
 
+// int triple_value(int value, int unused_param, void *unused_context)
 #[unsafe(no_mangle)]
-pub extern "C" fn triple_value(value: c_int, _unused_param: c_int, _unused_context: *mut c_void) -> c_int {
-    value * 3
+pub unsafe extern "C" fn triple_value(
+    value: c_int,
+    _unused_param: c_int,
+    _unused_context: *mut c_void,
+) -> c_int {
+    value.wrapping_mul(3)
 }
 
-unsafe fn init_processor(capacity: usize, op: Option<OperationFn>) -> *mut ProcessorState {
-    let state = libc::malloc(std::mem::size_of::<ProcessorState>()) as *mut ProcessorState;
+// static ProcessorState* init_processor(size_t capacity, operation_fn op)
+unsafe fn init_processor(capacity: usize, op: operation_fn) -> *mut ProcessorState {
+    let state = malloc(core::mem::size_of::<ProcessorState>()) as *mut ProcessorState;
     if state.is_null() {
-        return std::ptr::null_mut();
+        return core::ptr::null_mut();
     }
 
-    let results = libc::malloc(capacity.wrapping_mul(std::mem::size_of::<c_int>())) as *mut c_int;
+    let results = malloc(capacity.wrapping_mul(core::mem::size_of::<c_int>())) as *mut c_int;
+    core::ptr::write(core::ptr::addr_of_mut!((*state).results), results);
     if results.is_null() {
-        libc::free(state as *mut c_void);
-        return std::ptr::null_mut();
+        free(state as *mut c_void);
+        return core::ptr::null_mut();
     }
 
-    (*state).results = results;
     (*state).capacity = capacity;
     (*state).count = 0;
     (*state).operation = op;
@@ -64,123 +137,136 @@ unsafe fn init_processor(capacity: usize, op: Option<OperationFn>) -> *mut Proce
     state
 }
 
+// static void cleanup_processor(ProcessorState *state)
 unsafe fn cleanup_processor(state: *mut ProcessorState) {
     if !state.is_null() {
         if !(*state).results.is_null() {
-            libc::free((*state).results as *mut c_void);
+            free((*state).results as *mut c_void);
         }
-        libc::free(state as *mut c_void);
+        free(state as *mut c_void);
     }
 }
 
-// Use libc::printf to match C's stdio buffering exactly.
-unsafe fn log_msg(msg: &[u8]) {
-    // msg must include the trailing \n and null terminator
-    libc::printf(msg.as_ptr() as *const c_char);
-}
-
+// int gotomach(int iterations, int seed, int mode, int threshold)
 #[unsafe(no_mangle)]
-pub extern "C" fn gotomach(iterations: c_int, seed: c_int, mode: c_int, threshold: c_int) -> c_int {
-    unsafe {
-        let mut state: *mut ProcessorState = std::ptr::null_mut();
-        let mut temp_buffer: *mut c_int = std::ptr::null_mut();
-        let mut result: c_int = 0;
-        let selected_op: Option<OperationFn>;
+pub unsafe extern "C" fn gotomach(
+    iterations: c_int,
+    seed: c_int,
+    mode: c_int,
+    threshold: c_int,
+) -> c_int {
+    let mut state: *mut ProcessorState = core::ptr::null_mut();
+    let mut temp_buffer: *mut c_int = core::ptr::null_mut();
+    let mut result: c_int = 0;
+    #[allow(unused_assignments)]
+    let mut selected_op: operation_fn = None;
 
-        log_msg(b"[INFO] Starting gotomach function\n\0");
+    log_msg!(INFO, "Starting gotomach function");
 
-        'cleanup: loop {
-            if iterations < 0 || iterations > UINT16_MAX {
-                log_msg(b"[ERROR] Invalid iteration count\n\0");
-                result = -1;
-                break 'cleanup;
-            }
-
-            if seed < 0 || seed > UINT16_MAX {
-                log_msg(b"[ERROR] Invalid seed value\n\0");
-                result = -2;
-                break 'cleanup;
-            }
-
-            selected_op = match mode {
-                0 => Some(process_value as OperationFn),
-                1 => Some(double_value as OperationFn),
-                2 => Some(triple_value as OperationFn),
-                _ => {
-                    log_msg(b"[WARNING] Invalid mode, using default\n\0");
-                    Some(process_value as OperationFn)
-                }
-            };
-
-            state = init_processor(iterations as usize, selected_op);
-            if state.is_null() {
-                log_msg(b"[ERROR] Failed to initialize processor\n\0");
-                result = -3;
-                break 'cleanup;
-            }
-
-            temp_buffer = libc::malloc((iterations as usize).wrapping_mul(std::mem::size_of::<c_int>())) as *mut c_int;
-            if temp_buffer.is_null() {
-                log_msg(b"[ERROR] Failed to allocate temporary buffer\n\0");
-                result = -4;
-                break 'cleanup;
-            }
-
-            if !check_char_flag((*state).status) {
-                log_msg(b"[ERROR] Invalid state status\n\0");
-                result = -5;
-                break 'cleanup;
-            }
-
-            let mut current_value: c_int = seed;
-            let mut early_break = false;
-            let mut i: c_int = 0;
-            while i < iterations {
-                if !is_valid_state(state) {
-                    log_msg(b"[ERROR] State became invalid during processing\n\0");
-                    result = -6;
-                    break 'cleanup;
-                }
-
-                let op = (*state).operation.unwrap();
-                let computed = op(current_value, 0, std::ptr::null_mut());
-                *temp_buffer.add(i as usize) = computed;
-
-                if computed < threshold {
-                    let count = (*state).count;
-                    *(*state).results.add(count) = computed;
-                    (*state).count = count + 1;
-                }
-
-                current_value = computed % 1000;
-
-                if (*state).count >= UINT16_MAX as usize {
-                    log_msg(b"[WARNING] Reached maximum count\n\0");
-                    early_break = true;
-                    break;
-                }
-
-                i += 1;
-            }
-            let _ = early_break;
-
-            result = 0;
-            let count = (*state).count;
-            let mut i: usize = 0;
-            while i < count {
-                result = result.wrapping_add(*(*state).results.add(i));
-                i += 1;
-            }
-
-            log_msg(b"[INFO] Processing completed successfully\n\0");
+    // Replicates the `goto cleanup` control flow of the C original: every
+    // early exit falls through to the shared cleanup block below.
+    'cleanup: loop {
+        if iterations < 0 || iterations > UINT16_MAX {
+            log_msg!(ERROR, "Invalid iteration count");
+            result = -1;
             break 'cleanup;
         }
 
-        if !temp_buffer.is_null() {
-            libc::free(temp_buffer as *mut c_void);
+        if seed < 0 || seed > UINT16_MAX {
+            log_msg!(ERROR, "Invalid seed value");
+            result = -2;
+            break 'cleanup;
         }
-        cleanup_processor(state);
 
-        result
+        match mode {
+            0 => {
+                selected_op = Some(process_value);
+            }
+            1 => {
+                selected_op = Some(double_value);
+            }
+            2 => {
+                selected_op = Some(triple_value);
+            }
+            _ => {
+                log_msg!(WARNING, "Invalid mode, using default");
+                selected_op = Some(process_value);
+            }
+        }
+
+        state = init_processor(iterations as usize, selected_op);
+        if state.is_null() {
+            log_msg!(ERROR, "Failed to initialize processor");
+            result = -3;
+            break 'cleanup;
+        }
+
+        temp_buffer =
+            malloc((iterations as usize).wrapping_mul(core::mem::size_of::<c_int>())) as *mut c_int;
+        if temp_buffer.is_null() {
+            log_msg!(ERROR, "Failed to allocate temporary buffer");
+            result = -4;
+            break 'cleanup;
+        }
+
+        if !check_char_flag((*state).status) {
+            log_msg!(ERROR, "Invalid state status");
+            result = -5;
+            break 'cleanup;
+        }
+
+        let mut current_value: c_int = seed;
+        let mut broke_out = false;
+        let mut i: c_int = 0;
+        while i < iterations {
+            if !is_valid_state(state) {
+                log_msg!(ERROR, "State became invalid during processing");
+                result = -6;
+                broke_out = true;
+                break;
+            }
+
+            let op = (*state).operation.unwrap();
+            let produced = op(current_value, 0, core::ptr::null_mut());
+            *temp_buffer.offset(i as isize) = produced;
+
+            if produced < threshold {
+                let count = (*state).count;
+                *(*state).results.add(count) = produced;
+                (*state).count = count + 1;
+            }
+
+            current_value = produced % 1000;
+
+            if (*state).count >= UINT16_MAX as usize {
+                log_msg!(WARNING, "Reached maximum count");
+                break;
+            }
+
+            i += 1;
+        }
+
+        if broke_out {
+            break 'cleanup;
+        }
+
+        result = 0;
+        let count = (*state).count;
+        let mut j: usize = 0;
+        while j < count {
+            result = result.wrapping_add(*(*state).results.add(j));
+            j += 1;
+        }
+
+        log_msg!(INFO, "Processing completed successfully");
+        break 'cleanup;
     }
+
+    // cleanup:
+    if !temp_buffer.is_null() {
+        free(temp_buffer as *mut c_void);
+    }
+    cleanup_processor(state);
+
+    result
 }

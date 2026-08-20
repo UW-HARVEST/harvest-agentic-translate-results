@@ -1,91 +1,31 @@
-use std::io::{self, Read, Write};
+// C ABI surface of the translation.  Every symbol exported by the C shared
+// object (`nm -D` on a `gcc -shared -fPIC` build of c_src/src/main.c) is
+// re-exported here with the exact same name:
+//
+//   T driver
+//   T main
+//
+// `print_hex` is `static` in the C source, so it is intentionally NOT exported.
 
-fn print_hex(p: &[u8]) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    for b in p {
-        write!(out, "{:02x}", b).unwrap();
-    }
-    writeln!(out).unwrap();
-}
+#[path = "driver_impl.rs"]
+#[allow(dead_code)] // some helpers are unused when this crate is built as a test harness
+mod imp;
 
+use std::os::raw::c_int;
+
+/// `void driver(int x)`
 #[no_mangle]
-pub extern "C" fn driver(x: core::ffi::c_int) {
-    let bytes = (x as i32).to_ne_bytes();
-    print_hex(&bytes);
+pub extern "C" fn driver(x: c_int) {
+    imp::driver_stdout(x as i32);
 }
 
-/// Read a single integer from stdin in a manner similar to C's `scanf("%d", ...)`.
-/// Skips leading whitespace, then reads an optional sign followed by decimal digits.
-/// If parsing fails, returns 0 (matching the initial value of `x` in the C code).
-pub fn scanf_int<R: Read>(reader: &mut R) -> i32 {
-    let mut byte = [0u8; 1];
-
-    // Skip leading whitespace
-    loop {
-        match reader.read(&mut byte) {
-            Ok(0) => return 0,
-            Ok(_) => {
-                if !byte[0].is_ascii_whitespace() {
-                    break;
-                }
-            }
-            Err(_) => return 0,
-        }
-    }
-
-    let mut buf: Vec<u8> = Vec::new();
-
-    // Optional sign
-    if byte[0] == b'+' || byte[0] == b'-' {
-        buf.push(byte[0]);
-        match reader.read(&mut byte) {
-            Ok(0) => {
-                // No digits after sign — scanf would not assign; return 0.
-                return 0;
-            }
-            Ok(_) => {}
-            Err(_) => return 0,
-        }
-    }
-
-    // Must have at least one digit
-    if !byte[0].is_ascii_digit() {
-        return 0;
-    }
-
-    buf.push(byte[0]);
-
-    // Read remaining digits
-    loop {
-        match reader.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) => {
-                if byte[0].is_ascii_digit() {
-                    buf.push(byte[0]);
-                } else {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-
-    let s = std::str::from_utf8(&buf).unwrap_or("");
-    // Use wrapping parse to mimic C's behavior on overflow as best we can.
-    s.parse::<i32>().unwrap_or_else(|_| {
-        // On overflow, scanf has undefined behavior; fall back to wrapping i64 parse.
-        s.parse::<i64>().map(|v| v as i32).unwrap_or(0)
-    })
-}
-
+/// `int main(void)`
+///
+/// The `cfg(not(test))` guard only matters when rustc compiles this crate as a
+/// unit-test harness (which generates its own entry point); the cdylib that the
+/// differential tests load is always built without `cfg(test)`.
 #[cfg(not(test))]
-#[cfg(target_os = "linux")]
 #[no_mangle]
-pub extern "C" fn main() -> core::ffi::c_int {
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let x = scanf_int(&mut handle);
-    driver(x);
-    0
+pub extern "C" fn main() -> c_int {
+    imp::run_main() as c_int
 }

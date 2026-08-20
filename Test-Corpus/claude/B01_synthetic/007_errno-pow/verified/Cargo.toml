@@ -7,13 +7,15 @@ edition = "2021"
 name = "driver"
 path = "src/main.rs"
 
-[dependencies]
-libc = "0.2"
-
-[dev-dependencies]
-libloading = "0.8"
-
 [profile.release]
-opt-level = 3
+opt-level = 2
 
 [workspace]
+
+[dev-dependencies]
+# Differential test harness only (see SYMBOLS.md): `libloading` dlopens
+# libc/libm to build an independent FFI oracle, `libc` provides the raw
+# fork/execve/pipe calls needed to reproduce argc==0 and SIGPIPE conditions.
+# Randomized inputs use a self-contained seeded splitmix64 in tests/common.
+libloading = "0.8"
+libc = "0.2"

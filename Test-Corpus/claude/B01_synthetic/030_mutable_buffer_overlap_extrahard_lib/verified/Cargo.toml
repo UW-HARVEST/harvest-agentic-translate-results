@@ -1,17 +1,37 @@
 [package]
 name = "driver"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
+name = "driver"
 crate-type = ["cdylib"]
 path = "src/lib.rs"
-name = "driver"
-
-[profile.release]
-opt-level = 3
 
 [dev-dependencies]
 libloading = "0.8"
+libc = "0.2"
+
+# The C reference library (see c_src/CMakeLists.txt) is compiled with no
+# undefined-behaviour instrumentation whatsoever, and its observable behaviour on
+# a NULL / out-of-range pointer is a plain SIGSEGV. Rust's debug-only UB checks
+# turn exactly those accesses into a non-unwinding panic (SIGABRT + a message on
+# stderr), which is an ABI-visible divergence from the C for every such input.
+# The shared library must behave identically in every profile, so the checks are
+# switched off for the unoptimised profiles too. (Signed-overflow wrapping is
+# already expressed explicitly with `wrapping_mul`/`wrapping_add`, so
+# `overflow-checks` has no bearing on the arithmetic.)
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
 
 [workspace]

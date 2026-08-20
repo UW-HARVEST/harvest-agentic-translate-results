@@ -1,148 +1,150 @@
 // Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// Rust translation of c_src/src/driver.c
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
 //
-// To produce byte-identical output to the original C program, this translation
-// has to match what glibc's <ctype.h> macros do, NOT what the externally
-// linked ctype function symbols do. The macros bypass the function calls and
-// instead index into the per-locale ctype tables exposed by glibc through
-// `__ctype_b_loc()`, `__ctype_tolower_loc()`, and `__ctype_toupper_loc()`.
-//
-// As a result, e.g. `isdigit('0')` from the macro returns the `_ISdigit` bit
-// (2048) rather than 1 — and that is what the C driver prints. We replicate
-// that behavior here.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_char;
-use std::ffi::c_int;
-use std::ffi::c_ushort;
+//! Rust translation of `c_src/` — the `driver` shared library.
+//!
+//! The C build globs the whole of `c_src/` into one shared object.  That is a
+//! single translation unit, `src/driver.c`, whose only public header is
+//! `include/driver.h`, declaring one function:
+//!
+//! ```c
+//! void driver(char c);
+//! ```
+//!
+//! `nm -D` on the reference `libdriver.so` confirms `driver` is the complete
+//! exported public ABI.  There are no namespace/renaming macros in the public
+//! header, so the linker symbol is plainly `driver`.
 
-// LC_ALL is defined in glibc's <locale.h>. On Linux/glibc its value is 6.
-const LC_ALL: c_int = 6;
+mod ctype;
+mod ffi;
 
-// glibc <ctype.h> bitmask constants. With little-endian (x86_64), _ISbit(b)
-// is `(1 << b) << 8` for b<8 and `(1 << b) >> 8` for b>=8 — but the table
-// returned by __ctype_b_loc is an array of `unsigned short`, so the values
-// are simply the bit positions in that 16-bit word:
-const _IS_UPPER: c_ushort = 1 << 8; // 0x0100
-const _IS_LOWER: c_ushort = 1 << 9; // 0x0200
-const _IS_ALPHA: c_ushort = 1 << 10; // 0x0400
-const _IS_DIGIT: c_ushort = 1 << 11; // 0x0800
-const _IS_XDIGIT: c_ushort = 1 << 12; // 0x1000
-const _IS_SPACE: c_ushort = 1 << 13; // 0x2000
-const _IS_PRINT: c_ushort = 1 << 14; // 0x4000
-const _IS_GRAPH: c_ushort = 1 << 15; // 0x8000
-const _IS_BLANK: c_ushort = 1 << 0; // 0x0001
-const _IS_CNTRL: c_ushort = 1 << 1; // 0x0002
-const _IS_PUNCT: c_ushort = 1 << 2; // 0x0004
-const _IS_ALNUM: c_ushort = 1 << 3; // 0x0008
+use core::ffi::{c_char, c_int};
 
-unsafe extern "C" {
-    fn setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
-
-    // glibc-internal accessors used by the <ctype.h> macros.
-    fn __ctype_b_loc() -> *mut *const c_ushort;
-    fn __ctype_tolower_loc() -> *mut *const c_int;
-    fn __ctype_toupper_loc() -> *mut *const c_int;
-
-    fn printf(fmt: *const c_char, ...) -> c_int;
+/// Format strings, byte for byte as they appear in `driver.c`, each with the
+/// implicit C string terminator appended.
+mod fmt {
+    pub const ALPHANUMERIC: &[u8] = b"alphanumeric: %d\n\0";
+    pub const ALPHABETIC: &[u8] = b"alphabetic: %d\n\0";
+    pub const LOWERCASE: &[u8] = b"lowercase: %d\n\0";
+    pub const UPPERCASE: &[u8] = b"uppercase: %d\n\0";
+    pub const DIGIT: &[u8] = b"digit: %d\n\0";
+    pub const HEXADECIMAL: &[u8] = b"hexadecimal: %d\n\0";
+    pub const CONTROL: &[u8] = b"control: %d\n\0";
+    pub const GRAPHICAL: &[u8] = b"graphical: %d\n\0";
+    pub const SPACE: &[u8] = b"space: %d\n\0";
+    pub const BLANK: &[u8] = b"blank: %d\n\0";
+    pub const PRINTING: &[u8] = b"printing: %d\n\0";
+    pub const PUNCTUATION: &[u8] = b"punctuation: %d\n\0";
+    pub const TO_LOWER: &[u8] = b"to lower: %c\n\0";
+    pub const TO_UPPER: &[u8] = b"to upper: %c\n\0";
 }
 
-// Replicate `(*__ctype_b_loc())[c] & mask`. The table is indexed by the
-// character value treated as an int. The pointer is offset by 128 inside
-// glibc so that EOF (-1) and other negative chars in [-128, -1] are valid.
-unsafe fn ctype_b_lookup(c: c_int) -> c_ushort {
+/// The `"C"` locale name passed to `setlocale`.
+const LOCALE_C: &[u8] = b"C\0";
+
+/// Emits one `printf("<label>: %d\n", value)` line.
+fn print_int(format: &[u8], value: c_int) {
+    // SAFETY: `format` is a `'static` NUL-terminated byte literal from `fmt`
+    // containing exactly one `%d`, matched here by a single `c_int` argument.
     unsafe {
-        let table = *__ctype_b_loc();
-        // The table[-128 .. 256] is valid; indexing with `c` works because
-        // glibc's __ctype_b_loc returns a pointer already offset by 128.
-        *table.offset(c as isize)
+        ffi::printf(format.as_ptr() as *const c_char, value);
     }
 }
 
-unsafe fn ctype_tolower_lookup(c: c_int) -> c_int {
+/// Emits one `printf("<label>: %c\n", value)` line.
+///
+/// `%c` makes `printf` convert the `int` argument to `unsigned char`, so a
+/// negative conversion-table result is printed as its low byte — matching the C
+/// library for `char` values that sign-extend to a negative index.
+fn print_char(format: &[u8], value: c_int) {
+    // SAFETY: `format` is a `'static` NUL-terminated byte literal from `fmt`
+    // containing exactly one `%c`, matched here by a single `c_int` argument,
+    // which is the type `%c` consumes after default argument promotion.
     unsafe {
-        let table = *__ctype_tolower_loc();
-        *table.offset(c as isize)
+        ffi::printf(format.as_ptr() as *const c_char, value);
     }
 }
 
-unsafe fn ctype_toupper_lookup(c: c_int) -> c_int {
-    unsafe {
-        let table = *__ctype_toupper_loc();
-        *table.offset(c as isize)
-    }
-}
-
+/// Translation of `void driver(char c)` from `c_src/src/driver.c`.
+///
+/// # Why the parameter is `c_int` and not `c_char`
+///
+/// The C prototype is `void driver(char c)`, and on every C ABI a `char`
+/// argument is *delivered* in an `int`-sized register or stack slot, of which
+/// the callee reads only the low byte.  GCC compiles the C callee's parameter
+/// to exactly that, at every optimisation level:
+///
+/// ```text
+/// mov  %edi,%eax
+/// mov  %al,-0x4(%rbp)     ; only the low 8 bits are ever stored
+/// movsbq -0x4(%rbp),%rax  ; ...and sign-extended from that byte
+/// ```
+///
+/// So `driver` provably observes nothing but the low 8 bits of whatever the
+/// caller passed, and a caller that passes `256` through a `void driver(int)`
+/// prototype gets `driver('\0')`'s behaviour.
+///
+/// Declaring the Rust parameter as `c_char` instead attaches LLVM's `signext`
+/// attribute, which entitles an **optimised** build to assume the caller
+/// already sign-extended the byte and to use the raw 32-bit register as the
+/// `<ctype.h>` table index.  It does: a release build compiled
+/// `mov %edi,%ebx; movslq %ebx,%rbx`, so `driver(256)` indexed `table[256]` —
+/// outside the `-128 ..= 255` range glibc's tables are defined over.  That is
+/// both an out-of-bounds read and a visible divergence from the C library
+/// (`control: 0` where C prints `control: 2`).
+///
+/// Accepting the widened `c_int` and narrowing it here reproduces the C
+/// callee's `mov %al` for *every* possible argument, and is ABI-identical for
+/// callers that use the correct `char` prototype.
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(c: c_char) {
-    // C's char-to-int promotion is sign-extending on platforms (like x86_64
-    // Linux) where char is signed. `c_char as c_int` matches that.
-    let ci: c_int = c as c_int;
+pub extern "C" fn driver(c: c_int) {
+    driver_impl(c as u8 as c_char)
+}
 
+/// The body of `driver`, in terms of the `char` the C source declares.
+///
+/// The statement order, the format strings and the `<ctype.h>` interface used
+/// on each line are preserved exactly as written in the C source.
+fn driver_impl(c: c_char) {
+    // SAFETY: `LOCALE_C` is a `'static` NUL-terminated byte literal, and
+    // `setlocale` only reads it.  The returned string is discarded, exactly as
+    // the C code discards it.
     unsafe {
-        setlocale(LC_ALL, b"C\0".as_ptr() as *const c_char);
-
-        // Each macro from glibc's <ctype.h> evaluates to
-        // `((*__ctype_b_loc())[(int)(c)] & (unsigned short int) <mask>)`,
-        // promoted to int when used as a printf argument. The result is the
-        // masked-off bit (or zero), not 0/1.
-        let bits = ctype_b_lookup(ci);
-
-        printf(
-            b"alphanumeric: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_ALNUM) as c_int,
-        );
-        printf(
-            b"alphabetic: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_ALPHA) as c_int,
-        );
-        printf(
-            b"lowercase: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_LOWER) as c_int,
-        );
-        printf(
-            b"uppercase: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_UPPER) as c_int,
-        );
-        printf(
-            b"digit: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_DIGIT) as c_int,
-        );
-        printf(
-            b"hexadecimal: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_XDIGIT) as c_int,
-        );
-        printf(
-            b"control: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_CNTRL) as c_int,
-        );
-        printf(
-            b"graphical: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_GRAPH) as c_int,
-        );
-        printf(
-            b"space: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_SPACE) as c_int,
-        );
-        printf(
-            b"blank: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_BLANK) as c_int,
-        );
-        printf(
-            b"printing: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_PRINT) as c_int,
-        );
-        printf(
-            b"punctuation: %d\n\0".as_ptr() as *const c_char,
-            (bits & _IS_PUNCT) as c_int,
-        );
-        printf(
-            b"to lower: %c\n\0".as_ptr() as *const c_char,
-            ctype_tolower_lookup(ci),
-        );
-        printf(
-            b"to upper: %c\n\0".as_ptr() as *const c_char,
-            ctype_toupper_lookup(ci),
-        );
+        ffi::setlocale(ffi::LC_ALL, LOCALE_C.as_ptr() as *const c_char);
     }
+
+    print_int(fmt::ALPHANUMERIC, ctype::isalnum(c));
+    print_int(fmt::ALPHABETIC, ctype::isalpha(c));
+    print_int(fmt::LOWERCASE, ctype::islower(c));
+    print_int(fmt::UPPERCASE, ctype::isupper(c));
+    print_int(fmt::DIGIT, ctype::isdigit(c));
+    print_int(fmt::HEXADECIMAL, ctype::isxdigit(c));
+    print_int(fmt::CONTROL, ctype::iscntrl(c));
+    print_int(fmt::GRAPHICAL, ctype::isgraph(c));
+    print_int(fmt::SPACE, ctype::isspace(c));
+    print_int(fmt::BLANK, ctype::isblank(c));
+    print_int(fmt::PRINTING, ctype::isprint(c));
+    print_int(fmt::PUNCTUATION, ctype::ispunct(c));
+    print_char(fmt::TO_LOWER, ctype::tolower(c));
+    print_char(fmt::TO_UPPER, ctype::toupper(c));
 }

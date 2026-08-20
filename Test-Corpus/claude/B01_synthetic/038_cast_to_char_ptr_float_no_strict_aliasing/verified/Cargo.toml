@@ -7,7 +7,18 @@ edition = "2021"
 name = "driver"
 path = "src/main.rs"
 
+# C-ABI shared library mirroring the symbols that c_src/src/main.c exports when
+# built with `gcc -shared` (`driver`, `main`).  Used by the differential tests
+# in tests/, which dlopen both this .so and the C .so via libloading.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

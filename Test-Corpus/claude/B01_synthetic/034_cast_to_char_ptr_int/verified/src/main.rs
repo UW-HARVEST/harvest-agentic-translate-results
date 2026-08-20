@@ -1,86 +1,61 @@
-use std::io::{self, Read, Write};
+// `driver` executable — mirrors `int main(void)` from c_src/src/main.c.
+//
+// The whole translation lives in driver_impl.rs, which is also compiled into
+// the cdylib (src/lib.rs) so the binary and the exported C ABI symbols share
+// one implementation.
 
-fn print_hex(p: &[u8]) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    for b in p {
-        write!(out, "{:02x}", b).unwrap();
-    }
-    writeln!(out).unwrap();
+#[path = "driver_impl.rs"]
+#[allow(dead_code)] // `driver_stdout` is only used by the cdylib's `driver` export
+mod imp;
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+const SIGPIPE: i32 = 13;
+const SIG_DFL: usize = 0;
+const SIG_ERR: usize = usize::MAX; // (sighandler_t)-1
+
+extern "C" {
+    fn signal(signum: i32, handler: usize) -> usize;
 }
 
-fn driver(x: i32) {
-    let bytes = x.to_ne_bytes();
-    print_hex(&bytes);
+/// The `SIGPIPE` disposition this process was started with.
+///
+/// A C program simply inherits it: started normally it is `SIG_DFL`, so writing
+/// to a pipe with no reader kills the process, and started from a parent that
+/// ignores `SIGPIPE` it is `SIG_IGN`, so the write fails with `EPIPE` instead.
+/// Rust's runtime overwrites it with `SIG_IGN` before calling `main`, which would
+/// make the translation survive where the C build dies — so the original value is
+/// captured in an ELF constructor (those run before the Rust runtime does) and
+/// restored at the top of `main`.
+static INHERITED_SIGPIPE: AtomicUsize = AtomicUsize::new(SIG_DFL);
+
+extern "C" fn capture_inherited_sigpipe() {
+    // `signal` returns the previous handler, so setting and immediately putting
+    // back reads the disposition without changing it.  Nothing can raise SIGPIPE
+    // this early, so the momentary change is unobservable.
+    unsafe {
+        let previous = signal(SIGPIPE, SIG_DFL);
+        if previous != SIG_ERR {
+            signal(SIGPIPE, previous);
+            INHERITED_SIGPIPE.store(previous, Ordering::SeqCst);
+        }
+    }
 }
 
-/// Read a single integer from stdin in a manner similar to C's `scanf("%d", ...)`.
-/// Skips leading whitespace, then reads an optional sign followed by decimal digits.
-/// If parsing fails, returns 0 (matching the initial value of `x` in the C code).
-fn scanf_int<R: Read>(reader: &mut R) -> i32 {
-    let mut byte = [0u8; 1];
+/// Run `capture_inherited_sigpipe` before `main` (and therefore before the Rust
+/// runtime installs its own `SIGPIPE` handler).
+#[used]
+#[link_section = ".init_array"]
+static INIT_SIGPIPE_CAPTURE: extern "C" fn() = capture_inherited_sigpipe;
 
-    // Skip leading whitespace
-    loop {
-        match reader.read(&mut byte) {
-            Ok(0) => return 0,
-            Ok(_) => {
-                if !byte[0].is_ascii_whitespace() {
-                    break;
-                }
-            }
-            Err(_) => return 0,
-        }
+fn restore_inherited_sigpipe() {
+    unsafe {
+        signal(SIGPIPE, INHERITED_SIGPIPE.load(Ordering::SeqCst));
     }
-
-    let mut buf: Vec<u8> = Vec::new();
-
-    // Optional sign
-    if byte[0] == b'+' || byte[0] == b'-' {
-        buf.push(byte[0]);
-        match reader.read(&mut byte) {
-            Ok(0) => {
-                // No digits after sign — scanf would not assign; return 0.
-                return 0;
-            }
-            Ok(_) => {}
-            Err(_) => return 0,
-        }
-    }
-
-    // Must have at least one digit
-    if !byte[0].is_ascii_digit() {
-        return 0;
-    }
-
-    buf.push(byte[0]);
-
-    // Read remaining digits
-    loop {
-        match reader.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) => {
-                if byte[0].is_ascii_digit() {
-                    buf.push(byte[0]);
-                } else {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-
-    let s = std::str::from_utf8(&buf).unwrap_or("");
-    // Use wrapping parse to mimic C's behavior on overflow as best we can.
-    s.parse::<i32>().unwrap_or_else(|_| {
-        // On overflow, scanf has undefined behavior; fall back to wrapping i64 parse.
-        s.parse::<i64>().map(|v| v as i32).unwrap_or(0)
-    })
 }
 
 fn main() {
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let x = scanf_int(&mut handle);
-    driver(x);
+    restore_inherited_sigpipe();
+    // C's `main` returns 0 unconditionally.
+    let _ = imp::run_main();
 }

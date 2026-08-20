@@ -1,74 +1,162 @@
+// Rust translation of c_src/src/lib.c
+//
 // Copyright 2025 MIT Lincoln Laboratory
-// Translated to Rust to produce byte-identical output.
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_double, c_int, c_long, c_void};
+#![allow(non_camel_case_types)]
+
+use core::ffi::{c_char, c_double, c_int, c_long, c_void};
+
+// ---------------------------------------------------------------------------
+// Bindings to the exact same C runtime routines the original translation unit
+// used.  Re-using libc's `printf` / `memchr` / `pow` guarantees byte-identical
+// output and identical search / floating point semantics.
+// ---------------------------------------------------------------------------
 
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
-    fn memchr(s: *const c_void, c: c_int, n: usize) -> *mut c_void;
-    fn pow(x: c_double, y: c_double) -> c_double;
+    #[link_name = "printf"]
+    fn c_printf(fmt: *const c_char, ...) -> c_int;
+
+    #[link_name = "memchr"]
+    fn c_memchr(s: *const c_void, c: c_int, n: usize) -> *mut c_void;
 }
 
-/// Mimic C's `(int)value` cast on x86_64 (cvttsd2si):
-/// - NaN, +Inf, -Inf, and any value outside the i32 range yield INT_MIN.
-/// - Otherwise truncate toward zero.
-#[unsafe(no_mangle)]
-pub extern "C" fn convert_double_to_int(value: f64) -> c_int {
+#[link(name = "m")]
+unsafe extern "C" {
+    #[link_name = "pow"]
+    fn c_pow(x: c_double, y: c_double) -> c_double;
+}
+
+/// `printf("literal")` – no variadic arguments.
+macro_rules! cprint {
+    ($lit:expr) => {{
+        unsafe {
+            c_printf(concat!($lit, "\0").as_ptr() as *const c_char);
+        }
+    }};
+    ($lit:expr, $($arg:expr),+ $(,)?) => {{
+        unsafe {
+            c_printf(concat!($lit, "\0").as_ptr() as *const c_char, $($arg),+);
+        }
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// Helpers reproducing C's implementation-defined / undefined conversions as
+// they actually behave on the reference platform (x86-64 SysV, signed `char`,
+// SSE2 `cvttsd2si` for double->int).
+// ---------------------------------------------------------------------------
+
+/// Reproduces `(int)value` for an arbitrary `double` on x86-64: out-of-range
+/// and NaN inputs yield the "integer indefinite" value `0x80000000`.
+#[inline]
+fn double_to_int_trunc(value: f64) -> i32 {
     if value.is_nan() {
-        return c_int::MIN;
+        return i32::MIN;
     }
-    // i32::MIN and i32::MAX are exactly representable as f64.
-    let min_f = c_int::MIN as f64; // -2147483648.0
-    // c_int::MAX = 2147483647; as f64 is exact, +1.0 = 2147483648.0 exact.
-    let upper_excl = (c_int::MAX as f64) + 1.0;
-    if value >= min_f && value < upper_excl {
-        value as c_int
-    } else {
-        c_int::MIN
+    let truncated = value.trunc();
+    if truncated >= 2147483648.0 || truncated < -2147483648.0 {
+        return i32::MIN;
     }
+    truncated as i32
 }
 
+// ---------------------------------------------------------------------------
+// int convert_double_to_int(double value)
+// ---------------------------------------------------------------------------
+
 #[unsafe(no_mangle)]
-pub extern "C" fn find_value_in_buffer(buffer: *const c_char, size: usize, search_val: c_int) -> c_int {
-    // Replicate `char target = (char)search_val;` (signed char on x86_64),
-    // then sign-extend to int when passing to memchr.
-    let target = search_val as i8;
-    let result = unsafe { memchr(buffer as *const c_void, target as c_int, size) };
+pub extern "C" fn convert_double_to_int(value: c_double) -> c_int {
+    double_to_int_trunc(value) as c_int
+}
+
+// ---------------------------------------------------------------------------
+// int find_value_in_buffer(const char *buffer, size_t size, int search_val)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn find_value_in_buffer(
+    buffer: *const c_char,
+    size: usize,
+    search_val: c_int,
+) -> c_int {
+    // `char target = (char)search_val;` then `memchr` re-widens it through
+    // the default integer promotions before converting to `unsigned char`.
+    let target: i8 = search_val as i8;
+    let result = unsafe { c_memchr(buffer as *const c_void, target as c_int, size) };
     if !result.is_null() {
-        let diff = (result as isize) - (buffer as isize);
-        return diff as c_int;
+        return (result as usize).wrapping_sub(buffer as usize) as isize as c_int;
     }
     -1
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn process_negation(var1: c_int) -> c_int {
-    // !!var1
-    if var1 != 0 { 1 } else { 0 }
-}
+// ---------------------------------------------------------------------------
+// int process_negation(int var1)
+// ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
-pub extern "C" fn create_numeric_buffer(buffer: *mut c_char, size: c_int, seed: c_int) {
-    // for (int i=0; i<size; i++) buffer[i] = (char)((seed + i*7) % 256);
-    for i in 0..size {
-        // Use wrapping arithmetic to mimic C int overflow behavior on the operands.
-        let val = seed.wrapping_add(i.wrapping_mul(7)) % 256;
+pub extern "C" fn process_negation(var1: c_int) -> c_int {
+    let var2: c_int = if var1 != 0 { 1 } else { 0 };
+    var2
+}
+
+// ---------------------------------------------------------------------------
+// void create_numeric_buffer(char *buffer, int size, int seed)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn create_numeric_buffer(buffer: *mut c_char, size: c_int, seed: c_int) {
+    let mut i: i32 = 0;
+    while i < size {
+        // (char)((seed + i * 7) % 256)
+        let v = seed.wrapping_add(i.wrapping_mul(7)).wrapping_rem(256);
         unsafe {
-            *buffer.offset(i as isize) = val as c_char;
+            *buffer.offset(i as isize) = v as i8 as c_char;
         }
+        i = i.wrapping_add(1);
     }
 }
 
+// ---------------------------------------------------------------------------
+// double calculate_with_doubles(int a, int b, int c)
+// ---------------------------------------------------------------------------
+
 #[unsafe(no_mangle)]
-pub extern "C" fn calculate_with_doubles(a: c_int, b: c_int, c: c_int) -> f64 {
+pub extern "C" fn calculate_with_doubles(a: c_int, b: c_int, c: c_int) -> c_double {
     let mut result: f64 = 0.0;
+
     if b != 0 {
         result = (a as f64) / (b as f64);
     }
-    let exp = (c % 10) as f64;
-    result *= unsafe { pow(10.0, exp) };
+
+    result *= unsafe { c_pow(10.0, (c.wrapping_rem(10)) as f64) };
+
     result
 }
+
+// ---------------------------------------------------------------------------
+// int doubleneg(int param1, int param2, int param3, int param4)
+// ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
 pub extern "C" fn doubleneg(
@@ -77,183 +165,116 @@ pub extern "C" fn doubleneg(
     param3: c_int,
     param4: c_int,
 ) -> c_int {
-    let mut result: c_int = 0;
+    let mut result: i32 = 0;
+    // `char buffer[256];` – uninitialised in C, fully written by
+    // create_numeric_buffer() before any read.
     let mut buffer: [c_char; 256] = [0; 256];
+    let bufptr: *mut c_char = buffer.as_mut_ptr();
+    let i: i32;
 
-    unsafe {
-        printf(b"=== Starting foo() execution ===\n\0".as_ptr() as *const c_char);
-        printf(
-            b"Parameters: %d, %d, %d, %d\n\0".as_ptr() as *const c_char,
-            param1,
-            param2,
-            param3,
-            param4,
-        );
+    cprint!("=== Starting foo() execution ===\n");
+    cprint!("Parameters: %d, %d, %d, %d\n", param1, param2, param3, param4);
 
-        printf(b"\n--- Integer Negation Test ---\n\0".as_ptr() as *const c_char);
-    }
-
-    let negation_test = param1;
-    let negation_result = process_negation(negation_test);
-    unsafe {
-        printf(
-            b"Original value: %d\n\0".as_ptr() as *const c_char,
-            negation_test,
-        );
-        printf(
-            b"After !!negation: %d\n\0".as_ptr() as *const c_char,
-            negation_result,
-        );
-    }
+    cprint!("\n--- Integer Negation Test ---\n");
+    let negation_test: i32 = param1;
+    let negation_result: i32 = if negation_test != 0 { 1 } else { 0 };
+    cprint!("Original value: %d\n", negation_test);
+    cprint!("After !!negation: %d\n", negation_result);
     result = result.wrapping_add(negation_result.wrapping_mul(10));
 
-    let neg_p2 = process_negation(param2);
-    let neg_p3 = process_negation(param3);
-    let neg_p4 = process_negation(param4);
-    unsafe {
-        printf(
-            b"Double negation results: %d, %d, %d\n\0".as_ptr() as *const c_char,
-            neg_p2,
-            neg_p3,
-            neg_p4,
-        );
-    }
+    let neg_p2: i32 = if param2 != 0 { 1 } else { 0 };
+    let neg_p3: i32 = if param3 != 0 { 1 } else { 0 };
+    let neg_p4: i32 = if param4 != 0 { 1 } else { 0 };
+    cprint!("Double negation results: %d, %d, %d\n", neg_p2, neg_p3, neg_p4);
     result = result
         .wrapping_add(neg_p2)
         .wrapping_add(neg_p3)
         .wrapping_add(neg_p4);
 
-    unsafe {
-        printf(b"\n--- Double to Int Conversion Test ---\n\0".as_ptr() as *const c_char);
-    }
+    cprint!("\n--- Double to Int Conversion Test ---\n");
 
-    let large_double = calculate_with_doubles(param1, param2, param3);
-    unsafe {
-        printf(
-            b"Calculated double value: %e\n\0".as_ptr() as *const c_char,
-            large_double,
-        );
-    }
+    let large_double: f64 = calculate_with_doubles(param1, param2, param3);
+    cprint!("Calculated double value: %e\n", large_double);
 
-    let converted_int = convert_double_to_int(large_double);
-    unsafe {
-        printf(
-            b"Converted to int (may be UB): %d\n\0".as_ptr() as *const c_char,
-            converted_int,
-        );
-    }
+    let converted_int: i32 = convert_double_to_int(large_double);
+    cprint!("Converted to int (may be UB): %d\n", converted_int);
 
-    let negative_large = -1.0_f64 * unsafe { pow(2.0, 40.0) };
-    unsafe {
-        printf(
-            b"Very large negative double: %e\n\0".as_ptr() as *const c_char,
-            negative_large,
-        );
-    }
-    let converted_neg = convert_double_to_int(negative_large);
-    unsafe {
-        printf(
-            b"Converted to int (UB likely): %d\n\0".as_ptr() as *const c_char,
-            converted_neg,
-        );
-    }
+    let negative_large: f64 = -1.0 * unsafe { c_pow(2.0, 40.0) };
+    cprint!("Very large negative double: %e\n", negative_large);
+    let converted_neg: i32 = convert_double_to_int(negative_large);
+    cprint!("Converted to int (UB likely): %d\n", converted_neg);
 
-    result = result
-        .wrapping_add(converted_int % 1000)
-        .wrapping_add(converted_neg % 1000);
+    result = result.wrapping_add(
+        converted_int
+            .wrapping_rem(1000)
+            .wrapping_add(converted_neg.wrapping_rem(1000)),
+    );
 
-    unsafe {
-        printf(b"\n--- Memchr Search Test ---\n\0".as_ptr() as *const c_char);
-    }
+    cprint!("\n--- Memchr Search Test ---\n");
 
-    create_numeric_buffer(buffer.as_mut_ptr(), 256, param1);
+    unsafe { create_numeric_buffer(bufptr, 256, param1) };
 
-    let search_values: [c_int; 4] = [param2 % 256, param3 % 256, param4 % 256, 42];
-    let num_searches = search_values.len();
+    let search_values: [i32; 4] = [
+        param2.wrapping_rem(256),
+        param3.wrapping_rem(256),
+        param4.wrapping_rem(256),
+        42,
+    ];
+    let num_searches: i32 = search_values.len() as i32;
 
-    unsafe {
-        printf(b"Searching buffer for values...\n\0".as_ptr() as *const c_char);
-    }
-    for i in 0..num_searches {
-        let pos = find_value_in_buffer(buffer.as_ptr(), 256, search_values[i]);
+    cprint!("Searching buffer for values...\n");
+    let mut i_loop: i32 = 0;
+    while i_loop < num_searches {
+        let sv = search_values[i_loop as usize];
+        let pos: i32 = unsafe { find_value_in_buffer(bufptr, 256, sv) };
         if pos >= 0 {
-            unsafe {
-                printf(
-                    b"Found value %d at position %d\n\0".as_ptr() as *const c_char,
-                    search_values[i],
-                    pos,
-                );
-            }
+            cprint!("Found value %d at position %d\n", sv, pos);
             result = result.wrapping_add(pos);
         } else {
-            unsafe {
-                printf(
-                    b"Value %d not found\n\0".as_ptr() as *const c_char,
-                    search_values[i],
-                );
-            }
+            cprint!("Value %d not found\n", sv);
         }
+        i_loop = i_loop.wrapping_add(1);
     }
 
-    let direct_search =
-        unsafe { memchr(buffer.as_ptr() as *const c_void, 100, 256) } as *mut c_char;
+    let direct_search = unsafe { c_memchr(bufptr as *const c_void, 100, 256) } as *const c_char;
     if !direct_search.is_null() {
-        let offset = (direct_search as isize) - (buffer.as_ptr() as isize);
-        unsafe {
-            printf(
-                b"Direct memchr found byte 100 at offset: %ld\n\0".as_ptr() as *const c_char,
-                offset as c_long,
-            );
-        }
-        result = result.wrapping_add(offset as c_int);
+        let off = (direct_search as usize).wrapping_sub(bufptr as usize) as isize as i64;
+        cprint!(
+            "Direct memchr found byte 100 at offset: %ld\n",
+            off as c_long,
+        );
+        result = result.wrapping_add(off as i32);
     }
 
-    unsafe {
-        printf(b"\n--- Combined Feature Test ---\n\0".as_ptr() as *const c_char);
-    }
-    for i in 0..10_i32 {
-        let search_byte = param1.wrapping_add(i.wrapping_mul(param2)) % 256;
-        let found = unsafe { memchr(buffer.as_ptr() as *const c_void, search_byte, 256) };
-        let found_flag: c_int = if !found.is_null() { 1 } else { 0 };
-        unsafe {
-            printf(
-                b"Search %d: byte=%d, found=%d\n\0".as_ptr() as *const c_char,
-                i,
-                search_byte,
-                found_flag,
-            );
-        }
+    cprint!("\n--- Combined Feature Test ---\n");
+    let mut j: i32 = 0;
+    while j < 10 {
+        let search_byte: i32 = param1
+            .wrapping_add(j.wrapping_mul(param2))
+            .wrapping_rem(256);
+        let found = unsafe { c_memchr(bufptr as *const c_void, search_byte, 256) };
+        let found_flag: i32 = if !found.is_null() { 1 } else { 0 }; // Double negation on pointer
+        cprint!("Search %d: byte=%d, found=%d\n", j, search_byte, found_flag);
         result = result.wrapping_add(found_flag);
+        j = j.wrapping_add(1);
     }
+    i = j;
+    let _ = i;
 
-    let infinity_val = f64::INFINITY;
-    let nan_val = f64::NAN;
+    let infinity_val: f64 = f64::INFINITY;
+    let nan_val: f64 = f64::NAN;
 
-    unsafe {
-        printf(b"\n--- Special Double Values ---\n\0".as_ptr() as *const c_char);
-        printf(b"Converting INFINITY to int: \0".as_ptr() as *const c_char);
-    }
-    let inf_as_int = convert_double_to_int(infinity_val);
-    unsafe {
-        printf(
-            b"%d (undefined behavior)\n\0".as_ptr() as *const c_char,
-            inf_as_int,
-        );
-        printf(b"Converting NAN to int: \0".as_ptr() as *const c_char);
-    }
-    let nan_as_int = convert_double_to_int(nan_val);
-    unsafe {
-        printf(
-            b"%d (undefined behavior)\n\0".as_ptr() as *const c_char,
-            nan_as_int,
-        );
+    cprint!("\n--- Special Double Values ---\n");
+    cprint!("Converting INFINITY to int: ");
+    let inf_as_int: i32 = convert_double_to_int(infinity_val);
+    cprint!("%d (undefined behavior)\n", inf_as_int);
 
-        printf(b"\n=== Final Result ===\n\0".as_ptr() as *const c_char);
-        printf(
-            b"Accumulated result: %d\n\0".as_ptr() as *const c_char,
-            result,
-        );
-    }
+    cprint!("Converting NAN to int: ");
+    let nan_as_int: i32 = convert_double_to_int(nan_val);
+    cprint!("%d (undefined behavior)\n", nan_as_int);
 
-    result
+    cprint!("\n=== Final Result ===\n");
+    cprint!("Accumulated result: %d\n", result);
+
+    result as c_int
 }

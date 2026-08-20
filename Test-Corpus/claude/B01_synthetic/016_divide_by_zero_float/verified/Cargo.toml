@@ -3,16 +3,32 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The original C translation unit (c_src/src/main.c) is built as an executable
+# by c_src/CMakeLists.txt, but all of its non-`static` functions are ordinary
+# external symbols. `src/lib.rs` re-exports those same symbols through the C
+# ABI so the translation can be loaded and driven with `dlopen`/`libloading`
+# exactly like a shared object built from the C source.
 [lib]
 name = "driver"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
-[profile.release]
-opt-level = 3
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+# The C code has no build-time configuration at all: c_src/CMakeLists.txt
+# declares no `option()`/`add_definitions()` and c_src/src/main.c contains no
+# `#ifdef`/`#if` conditional compilation. There is therefore exactly ONE valid
+# configuration, and this crate defines no Cargo features to mirror that.
+[features]
+default = []
 
 [dev-dependencies]
 libloading = "0.8"
 libc = "0.2"
+
+[profile.release]
+panic = "abort"
 
 [workspace]

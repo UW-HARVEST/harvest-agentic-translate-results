@@ -1,107 +1,161 @@
-// Library translation of c_src/src/main.c to Rust.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// This crate exposes C-ABI symbols matching the original C program so that
-// integration tests can load both the C .so and the Rust .so via libloading
-// and compare behavior byte-for-byte.
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::CStr;
-use std::io::{self, Write};
-#[cfg(not(test))]
-use std::io::Read;
-use std::os::raw::c_char;
-#[cfg(not(test))]
-use std::os::raw::c_int;
+//! `#[no_mangle] extern "C"` wrappers that give the Rust cdylib the exact same
+//! exported surface a shared-library build of `c_src/src/main.c` has:
+//!
+//! ```text
+//! T bad
+//! T good
+//! T main
+//! T printLine
+//! ```
+//!
+//! Everything writes to / reads from the raw file descriptors 1 and 0 with
+//! unbuffered `write(2)` / `read(2)` calls so that the bytes a caller observes
+//! do not depend on any hidden Rust-side buffering (C's `printf` is buffered but
+//! its buffer is flushed by the caller / at process exit; the resulting byte
+//! stream is identical).
 
-/// C: `void printLine(const char *line)`
-/// Prints `line` followed by a newline if `line` is non-null.
+#![allow(non_snake_case)] // `printLine` is the C spelling and must be kept.
+// Compiling this file as a unit-test harness excludes the `main` export (see the
+// bottom of the file), which leaves the stdin side of the translation unreached.
+#![cfg_attr(test, allow(dead_code))]
+
+use std::ffi::{c_char, c_int, CStr};
+use std::io::Write;
+
+#[path = "prog.rs"]
+mod prog;
+
+extern "C" {
+    fn write(fd: c_int, buf: *const u8, count: usize) -> isize;
+    #[link_name = "__errno_location"]
+    fn errno_location() -> *mut c_int;
+}
+
+const EINTR: c_int = 4;
+
+fn last_errno() -> c_int {
+    unsafe { *errno_location() }
+}
+
+/// Unbuffered writer over a raw file descriptor.
+struct FdWriter(c_int);
+
+impl Write for FdWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        loop {
+            let n = unsafe { write(self.0, buf.as_ptr(), buf.len()) };
+            if n >= 0 {
+                return Ok(n as usize);
+            }
+            if last_errno() == EINTR {
+                continue;
+            }
+            return Err(std::io::Error::from_raw_os_error(last_errno()));
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// `const char *` -> optional byte string, `NULL` mapping to `None`.
+///
+/// # Safety
+/// `p` must be NULL or point to a NUL-terminated string, exactly as C's
+/// `printLine` requires of its argument.
+unsafe fn cstr_bytes<'a>(p: *const c_char) -> Option<&'a [u8]> {
+    if p.is_null() {
+        None
+    } else {
+        Some(CStr::from_ptr(p).to_bytes())
+    }
+}
+
+/// `void printLine(const char *line)`
+///
+/// # Safety
+/// See [`cstr_bytes`].
 #[no_mangle]
 pub unsafe extern "C" fn printLine(line: *const c_char) {
-    if !line.is_null() {
-        // Replicate printf("%s\n", line) — read until NUL, then write a '\n'.
-        let cs = CStr::from_ptr(line);
-        let bytes = cs.to_bytes();
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
-        let _ = out.write_all(bytes);
-        let _ = out.write_all(b"\n");
-        let _ = out.flush();
-    }
+    let mut out = FdWriter(1);
+    prog::print_line(cstr_bytes(line), &mut out);
 }
 
-/// C: `void bad()`
-/// In the original C, `data` is uninitialized and passed to `printLine`.
-/// On the platforms this program targets, the stack slot reads as NULL,
-/// so nothing is printed. Replicate that observed behavior by passing NULL.
+/// `void bad()`
+///
+/// Reproduces the `bad()` of the *executable* build (see `prog::BAD_DATA`):
+/// `printLine` is handed a non-NULL pointer to an empty string.  The C
+/// function's own output here is undefined-behaviour garbage that depends on the
+/// caller's stack contents, not on the source, so it differs between the
+/// executable and the shared-library build of the very same `main.c`.
 #[no_mangle]
 pub unsafe extern "C" fn bad() {
-    let data: *const c_char = std::ptr::null();
-    printLine(data);
+    let mut out = FdWriter(1);
+    prog::bad(&mut out);
 }
 
-/// C: `void good()` — sets `data = "string"` and calls `printLine(data)`.
+/// `void good()`
 #[no_mangle]
 pub unsafe extern "C" fn good() {
-    // Static, NUL-terminated string literal.
-    let data: *const c_char = b"string\0".as_ptr() as *const c_char;
-    printLine(data);
+    let mut out = FdWriter(1);
+    prog::good(&mut out);
 }
 
-/// Mimic C's `scanf("%d", &x)` for a single decimal integer:
-#[cfg(not(test))]
-/// - skip leading ASCII whitespace
-/// - optional '+' / '-' sign
-/// - read consecutive ASCII digits
-/// On any failure, returns 0 (matching the C program where x is initialized to 0).
-fn scanf_int(input: &[u8]) -> i32 {
-    let mut i = 0usize;
-    while i < input.len() && (input[i] as char).is_ascii_whitespace() {
-        i += 1;
-    }
-    if i >= input.len() {
-        return 0;
-    }
-    let mut negative = false;
-    if input[i] == b'-' {
-        negative = true;
-        i += 1;
-    } else if input[i] == b'+' {
-        i += 1;
-    }
-    let start = i;
-    let mut value: i64 = 0;
-    while i < input.len() && (input[i] as char).is_ascii_digit() {
-        value = value
-            .wrapping_mul(10)
-            .wrapping_add((input[i] - b'0') as i64);
-        i += 1;
-    }
-    if i == start {
-        return 0;
-    }
-    let result = if negative { -value } else { value };
-    result as i32
-}
-
-/// C: `int main()`
-/// Reads an int from stdin and dispatches to `good()` or `bad()`.
+/// The library's `stdin`, shared by every call to [`main`].
 ///
-/// Gated out of `cargo test` because the test harness defines its own `main`
-/// entry point, which would otherwise conflict with this `#[no_mangle]` export.
-/// The release/debug cdylib still exports `main`.
+/// libc's `stdin` is one process-global `FILE`, so a C caller that invokes the
+/// exported `main` twice sees the second conversion continue where the first
+/// stopped — including the character the first one pushed back. Measured on the
+/// C `.so` with `so_runner <lib> main 3`: `"--5"` yields bad/good/bad and
+/// `"5x7"` yields good/bad/bad. A per-call reader would answer good/good and
+/// good/bad/good respectively, so this state has to outlive the call.
+#[cfg(not(test))]
+fn stdin_state() -> &'static std::sync::Mutex<prog::CStdin> {
+    static S: std::sync::OnceLock<std::sync::Mutex<prog::CStdin>> = std::sync::OnceLock::new();
+    S.get_or_init(|| std::sync::Mutex::new(prog::CStdin::new()))
+}
+
+/// `int main()`
+///
+/// `#[cfg(not(test))]` keeps this out of the way of libtest's own generated
+/// `main` when the crate is compiled as a unit-test harness.
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn main() -> c_int {
-    let mut x: i32 = 0;
+    let mut input = stdin_state()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut out = FdWriter(1);
+    let rc = prog::run(&mut *input, &mut out) as c_int;
 
-    let mut buf = Vec::new();
-    if io::stdin().read_to_end(&mut buf).is_ok() {
-        x = scanf_int(&buf);
-    }
-
-    if x != 0 {
-        good();
-    } else {
-        bad();
-    }
-    0
+    // libc rewinds a seekable stdin to the logical stream position when the
+    // process exits. Doing it at the end of every call is observationally the
+    // same (the next conversion re-reads from that position) and avoids
+    // registering an `atexit` handler from a library that may be `dlclose`d.
+    input.reposition_if_seekable();
+    rc
 }

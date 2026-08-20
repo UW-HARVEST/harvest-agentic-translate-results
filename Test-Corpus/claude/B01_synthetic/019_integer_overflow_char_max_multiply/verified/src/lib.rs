@@ -1,141 +1,74 @@
-#![allow(clashing_extern_declarations)]
-#![allow(unused_assignments)]
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Library translation of the C source. Public extern "C" wrappers expose the
-// same symbol names that the C build produces, so external callers (including
-// libloading-based integration tests) can invoke them through the FFI boundary
-// in exactly the same way as the C shared library.
+//! C-ABI surface of the translated `driver` program.
+//!
+//! `c_src/src/main.c` compiles to a shared object that exports exactly five
+//! dynamic symbols: `printLine`, `printHexCharLine`, `bad`, `good` and `main`
+//! (`goodG2B` / `goodB2G` are `static`). This module re-exports the same five
+//! names with the same C signatures so the Rust `cdylib` is a drop-in
+//! replacement and can be compared against the C `.so` symbol for symbol.
 
-use std::ffi::CStr;
+#[path = "imp.rs"]
+mod imp;
+
 use std::os::raw::{c_char, c_int};
 
-const CHAR_MAX: i8 = i8::MAX;
-
-fn print_hex_char_line_impl(char_hex: i8) {
-    // C: printf("%02x\n", charHex);
-    // In C, signed char is promoted to int via vararg promotion (sign-extended),
-    // then %x interprets it as unsigned int.
-    let promoted = char_hex as i32;
-    let as_unsigned = promoted as u32;
-    // Forward through libc::printf so output goes through the same FILE*
-    // stdout used by the C .so when both are loaded into one process.
-    unsafe {
-        let fmt = b"%02x\n\0".as_ptr() as *const c_char;
-        printf_u32(fmt, as_unsigned);
-    }
-}
-
-fn print_line_impl(line: &CStr) {
-    unsafe {
-        let fmt = b"%s\n\0".as_ptr() as *const c_char;
-        printf_ptr(fmt, line.as_ptr());
-    }
-}
-
-// The standard `printf` is variadic. Rust stable doesn't permit declaring a
-// variadic extern, but we can declare two non-variadic shims with different
-// link names and let the linker resolve them all to libc's `printf`. To
-// avoid the `clashing_extern_declarations` warning, declare each in its own
-// module with distinct local names but the same `link_name`.
-mod libc_shims {
-    use std::os::raw::{c_char, c_int};
-    extern "C" {
-        #[link_name = "printf"]
-        pub fn printf_u32(fmt: *const c_char, arg: u32) -> c_int;
-    }
-    extern "C" {
-        #[link_name = "printf"]
-        pub fn printf_ptr(fmt: *const c_char, arg: *const c_char) -> c_int;
-    }
-    extern "C" {
-        #[link_name = "scanf"]
-        pub fn scanf_int(fmt: *const c_char, arg: *mut c_int) -> c_int;
-    }
-}
-use libc_shims::{printf_ptr, printf_u32, scanf_int};
-
-/// Equivalent of C `printLine(const char *line)`.
+/// `void printLine(const char * line)`
+///
+/// # Safety
+/// `line` must be NULL or a valid pointer to a NUL-terminated byte string.
 #[no_mangle]
 pub unsafe extern "C" fn printLine(line: *const c_char) {
-    if !line.is_null() {
-        let s = CStr::from_ptr(line);
-        print_line_impl(s);
+    if line.is_null() {
+        // The C code checks `line != NULL` and prints nothing otherwise.
+        imp::print_line(None);
+        return;
     }
+    let bytes = std::ffi::CStr::from_ptr(line).to_bytes();
+    imp::print_line(Some(bytes));
 }
 
-/// Equivalent of C `printHexCharLine(char charHex)`.
+/// `void printHexCharLine(char charHex)`
 #[no_mangle]
-pub unsafe extern "C" fn printHexCharLine(char_hex: c_char) {
-    // c_char is i8 on this platform; treat it as a signed char (i8) like C.
-    print_hex_char_line_impl(char_hex as i8);
+pub extern "C" fn printHexCharLine(char_hex: c_char) {
+    imp::print_hex_char_line(char_hex as i8);
 }
 
-/// Equivalent of C `bad()`.
+/// `void bad(void)`
 #[no_mangle]
-pub unsafe extern "C" fn bad() {
-    let data: i8 = CHAR_MAX;
-    if data > 0 {
-        // C: char result = data * 2;
-        let result = (data as i32).wrapping_mul(2) as i8;
-        print_hex_char_line_impl(result);
-    }
+pub extern "C" fn bad() {
+    imp::bad();
 }
 
-unsafe fn good_g2b() {
-    let data: i8 = 2;
-    if data > 0 {
-        let result = (data as i32).wrapping_mul(2) as i8;
-        print_hex_char_line_impl(result);
-    }
-}
-
-unsafe fn good_b2g() {
-    let mut data: i8;
-    data = b' ' as i8;
-    data = CHAR_MAX;
-    if data > 0 {
-        if data < (CHAR_MAX / 2) {
-            let result = (data as i32).wrapping_mul(2) as i8;
-            print_hex_char_line_impl(result);
-        } else {
-            let s = b"data value is too large to perform arithmetic safely.\0";
-            let cstr = CStr::from_bytes_with_nul(s).unwrap();
-            print_line_impl(cstr);
-        }
-    }
-    let _ = data;
-}
-
-/// Equivalent of C `good()`.
+/// `void good(void)`
 #[no_mangle]
-pub unsafe extern "C" fn good() {
-    good_g2b();
-    good_b2g();
+pub extern "C" fn good() {
+    imp::good();
 }
 
-/// Equivalent of C `main()`.
-///
-/// We expose this as a free function with the symbol name `main`. When the
-/// crate is built as a `cdylib`, this becomes a regular dynamic export
-/// (matching the C .so). When the crate is compiled as part of a Rust test
-/// binary, the test harness needs to define its own `main`, so we hide our
-/// export under `cfg(not(test))`.
-#[cfg(not(test))]
+/// `int main(void)` — reads one integer from stdin and dispatches.
 #[no_mangle]
-pub unsafe extern "C" fn main() -> c_int {
-    rust_main_impl()
-}
-
-#[doc(hidden)]
-pub unsafe fn rust_main_impl() -> c_int {
-    let mut x: c_int = 0;
-    let fmt = b"%d\0".as_ptr() as *const c_char;
-    scanf_int(fmt, &mut x as *mut c_int);
-
-    if x != 0 {
-        good();
-    } else {
-        bad();
-    }
-    0
+pub extern "C" fn main() -> c_int {
+    imp::program_main() as c_int
 }

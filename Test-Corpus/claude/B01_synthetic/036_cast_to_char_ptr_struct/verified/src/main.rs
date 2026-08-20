@@ -1,93 +1,39 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Translated from C to Rust.
+//! Executable entry point, mirroring the C program built by
+//! `c_src/CMakeLists.txt` (`add_executable(driver src/main.c)`).
+//!
+//! The implementation lives in `imp.rs`, which is also compiled into the
+//! cdylib. It is included by path rather than through the library crate
+//! because the library exports a C-ABI symbol named `main`, which would
+//! collide with this binary's entry point at link time.
 
-use std::io::{self, Read, Write};
+use std::os::raw::c_int;
 
-#[repr(C)]
-struct House {
-    floors: i32,
-    bedrooms: i32,
-    bathrooms: f64,
-}
+#[path = "imp.rs"]
+mod imp;
 
-fn print_hex(bytes: &[u8]) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    for b in bytes {
-        write!(out, "{:02x}", b).unwrap();
-    }
-    writeln!(out).unwrap();
-}
+/// `SIGPIPE` on Linux.
+const SIGPIPE: c_int = 13;
+/// `SIG_DFL`; glibc's `sighandler_t` is pointer-sized.
+const SIG_DFL: usize = 0;
 
-fn driver(floors: i32) {
-    // Mirror `house_t house = {0};` then field assignments.
-    let house = House {
-        floors,
-        bedrooms: 3,
-        bathrooms: 2.0,
-    };
-
-    // Build the byte representation matching the C struct layout on x86_64.
-    // Layout: [floors:i32][bedrooms:i32][bathrooms:f64], no padding (4+4+8 = 16 bytes).
-    let mut bytes = [0u8; std::mem::size_of::<House>()];
-    let f = house.floors.to_le_bytes();
-    let b = house.bedrooms.to_le_bytes();
-    let ba = house.bathrooms.to_le_bytes();
-    bytes[0..4].copy_from_slice(&f);
-    bytes[4..8].copy_from_slice(&b);
-    bytes[8..16].copy_from_slice(&ba);
-    print_hex(&bytes);
-}
-
-/// Mimic C's `scanf("%d", &x)` for a single decimal integer:
-/// - Skip leading whitespace (including newlines).
-/// - Optional sign.
-/// - Read digits until a non-digit or EOF.
-/// - If no digits are read, behave like scanf returning 0 matches; the C code
-///   leaves `x` at its initialized value of 0 in that case.
-fn scanf_int(input: &[u8]) -> i32 {
-    let mut i = 0usize;
-    // Skip whitespace
-    while i < input.len() {
-        let c = input[i];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' || c == 0x0b || c == 0x0c {
-            i += 1;
-        } else {
-            break;
-        }
-    }
-    if i >= input.len() {
-        return 0;
-    }
-    let mut neg = false;
-    if input[i] == b'-' {
-        neg = true;
-        i += 1;
-    } else if input[i] == b'+' {
-        i += 1;
-    }
-    let mut any = false;
-    let mut val: i64 = 0;
-    while i < input.len() {
-        let c = input[i];
-        if c.is_ascii_digit() {
-            val = val.wrapping_mul(10).wrapping_add((c - b'0') as i64);
-            any = true;
-            i += 1;
-        } else {
-            break;
-        }
-    }
-    if !any {
-        return 0;
-    }
-    let result = if neg { val.wrapping_neg() } else { val };
-    result as i32
+extern "C" {
+    fn signal(signum: c_int, handler: usize) -> usize;
 }
 
 fn main() {
-    let mut buf = Vec::new();
-    io::stdin().read_to_end(&mut buf).unwrap();
-    let x = scanf_int(&buf);
-    driver(x);
+    // A C program starts with the default disposition for SIGPIPE, so writing
+    // to a pipe whose reader has gone away kills it with signal 13. The Rust
+    // runtime instead installs SIG_IGN before `main`, which would turn that
+    // into an ignored `EPIPE` and an exit status of 0. Restore the C startup
+    // state so the translated program dies exactly like the original.
+    //
+    // This is deliberately *not* done in the cdylib: a shared library must not
+    // change the host process's signal disposition, and the C shared library
+    // does not do so either.
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
+    }
+
+    // The C `main` returns 0; the process exit status is therefore always 0.
+    let _ = imp::run_main();
 }

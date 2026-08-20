@@ -1,3 +1,5 @@
+// Translated from c_src/src/main.c
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -21,35 +23,47 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
-fn print_hex_char_line(char_hex: i8) {
-    // C: printf("%02x\n", charHex);
-    // The signed char is promoted to int via sign-extension by default
-    // argument promotion, then printf("%x") reinterprets that int as
-    // unsigned int. Reproduce that behavior here.
-    let promoted: i32 = char_hex as i32;
-    let as_unsigned: u32 = promoted as u32;
-    println!("{:02x}", as_unsigned);
+/// Mirrors:
+///     void printHexCharLine (char charHex) { printf("%02x\n", charHex); }
+///
+/// `char` is signed on the reference platform (x86-64 Linux), and the default
+/// argument promotions widen it to `int` before printf consumes it.  `%02x`
+/// then reinterprets that `int` as an `unsigned int`, so negative characters
+/// print as eight hex digits (e.g. -128 -> "ffffff80") while non-negative ones
+/// print zero-padded to a minimum width of two (e.g. 5 -> "05").
+fn print_hex_char_line(char_hex: i8, out: &mut impl Write) {
+    let promoted = char_hex as i32; // default argument promotion (sign extend)
+    let as_unsigned = promoted as u32; // %x reinterpretation
+    let _ = write!(out, "{:02x}\n", as_unsigned);
 }
 
 fn main() {
-    // C: char data; data = ' ';
-    // On Linux x86_64 with GCC's default, `char` is signed.
+    // char data; data = ' ';
     let mut data: i8 = b' ' as i8;
 
-    // C: fscanf(stdin, "%c", &data);
-    // %c reads exactly one byte (no whitespace skipping). If the read
-    // fails (e.g. EOF on empty stdin), `data` is left untouched.
+    // fscanf(stdin, "%c", &data);
+    // "%c" consumes exactly one byte with no leading-whitespace skipping.  On
+    // EOF (or a read failure) the conversion never happens, so `data` keeps its
+    // previous value of ' '.
     let mut buf = [0u8; 1];
-    let read_count = std::io::stdin().read(&mut buf).unwrap_or(0);
-    if read_count == 1 {
+    let stdin = std::io::stdin();
+    let mut handle = stdin.lock();
+    if let Ok(1) = handle.read(&mut buf) {
         data = buf[0] as i8;
     }
 
-    // C: char result = data + 1;
-    // In C this performs an int-promoted addition and then assigns back
-    // to a (signed) char. For values 0x7F..0xFF this wraps around.
-    let result: i8 = data.wrapping_add(1);
-    print_hex_char_line(result);
+    {
+        // char result = data + 1;
+        // The addition happens in `int` and is truncated back to `char`,
+        // wrapping on overflow as gcc does.
+        let result: i8 = data.wrapping_add(1);
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        print_hex_char_line(result, &mut out);
+        let _ = out.flush();
+    }
+
+    // return 0;
 }

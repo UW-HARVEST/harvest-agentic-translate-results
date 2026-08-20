@@ -1,88 +1,49 @@
 // Copyright 2025 MIT Lincoln Laboratory
-// Translated to Rust - byte-identical output required.
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_char;
-use std::ffi::c_int;
+//! Rust translation of the C `driver` library (`c_src/`).
+//!
+//! The C build (`c_src/CMakeLists.txt`) globs the whole of `c_src/src` into one
+//! shared library. That library exports exactly four public symbols:
+//!
+//! ```text
+//! T bad
+//! T driver
+//! T good
+//! T printLine
+//! ```
+//!
+//! All four are reproduced here with their exact C signatures and linker names.
+//! `driver` is the only symbol declared in the public header `include/driver.h`;
+//! `printLine`, `bad` and `good` have external linkage in `src/driver.c` and are
+//! therefore part of the exported ABI as well. The header contains no namespace
+//! or function-renaming macros, so the source-level names *are* the final linker
+//! symbol names.
 
-extern "C" {
-    fn printf(format: *const c_char, ...) -> c_int;
-}
+// The C library uses lowerCamelCase identifiers. Preserve them verbatim so the
+// emitted linker symbols match the C shared library byte for byte.
+#![allow(non_snake_case)]
 
-/// Prints the given C string followed by a newline, if not NULL.
-#[unsafe(no_mangle)]
-pub extern "C" fn printLine(line: *const c_char) {
-    if !line.is_null() {
-        // printf("%s\n", line);
-        let fmt = b"%s\n\0".as_ptr() as *const c_char;
-        unsafe {
-            printf(fmt, line);
-        }
-    }
-}
+mod driver;
 
-/// Reproduces the C helperBad() bug: returns a pointer to a stack-allocated
-/// buffer that is no longer valid after the function returns. This is
-/// undefined behavior in the original C code; we mirror its structure here.
-fn helper_bad() -> *mut c_char {
-    let mut char_string: [c_char; 17] = [
-        b'h' as c_char,
-        b'e' as c_char,
-        b'l' as c_char,
-        b'p' as c_char,
-        b'e' as c_char,
-        b'r' as c_char,
-        b'B' as c_char,
-        b'a' as c_char,
-        b'd' as c_char,
-        b' ' as c_char,
-        b's' as c_char,
-        b't' as c_char,
-        b'r' as c_char,
-        b'i' as c_char,
-        b'n' as c_char,
-        b'g' as c_char,
-        0,
-    ];
-    char_string.as_mut_ptr()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn bad() {
-    printLine(helper_bad());
-}
-
-/// Returns a pointer to a static (program-lifetime) C string.
-fn helper_good1() -> *mut c_char {
-    static CHAR_STRING: [u8; 19] = *b"helperGood1 string\0";
-    CHAR_STRING.as_ptr() as *mut c_char
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn good() {
-    printLine(helper_good1());
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn driver(use_good: c_int) {
-    if use_good != 0 {
-        good();
-    } else {
-        bad();
-    }
-}
-
-// The C shared library, when linked through GCC, exports the standard ELF
-// `_init` and `_fini` symbols (defined by crti.o/crtn.o). To produce the
-// same exported symbol set from Rust's cdylib, we provide our own no-op
-// stubs and pass `-nostartfiles` via build.rs so that crti.o is not pulled
-// in (which would conflict with these definitions). The stubs are skipped
-// in test builds because the test executable still needs the CRT-provided
-// `_init` / `_fini`.
-#[cfg(not(test))]
-#[unsafe(no_mangle)]
-pub extern "C" fn _init() {}
-
-#[cfg(not(test))]
-#[unsafe(no_mangle)]
-pub extern "C" fn _fini() {}
-
+pub use driver::{bad, driver, good, printLine};

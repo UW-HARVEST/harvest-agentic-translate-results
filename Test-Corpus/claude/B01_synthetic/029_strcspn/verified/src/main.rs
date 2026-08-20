@@ -1,66 +1,51 @@
-use std::io::{self, Read, Write};
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Executable entry point: mirrors C `int main(void)` from c_src/src/main.c.
 
-/// Mimic C's fgets: reads up to capacity-1 bytes, stops on newline (kept in buffer),
-/// or EOF. Returns the number of bytes read (excluding the C-style NUL terminator).
-/// If nothing was read (EOF immediately), returns 0 and the buffer is left as-is.
-fn fgets(stdin: &mut impl Read, buf: &mut Vec<u8>, capacity: usize) -> usize {
-    let max = capacity.saturating_sub(1);
-    let mut byte = [0u8; 1];
-    let mut count = 0usize;
-    while count < max {
-        match stdin.read(&mut byte) {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                buf.push(byte[0]);
-                count += 1;
-                if byte[0] == b'\n' {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    count
+#[path = "core.rs"]
+mod core_impl;
+
+const SIGPIPE: i32 = 13;
+const SIG_DFL: usize = 0;
+
+extern "C" {
+    fn signal(signum: i32, handler: usize) -> usize;
 }
 
-fn strcspn(s1: &[u8], s2: &[u8]) -> usize {
-    // Length of the initial segment of s1 consisting of bytes not in s2.
-    for (i, &c) in s1.iter().enumerate() {
-        if s2.contains(&c) {
-            return i;
-        }
+/// Rust's runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, while a C
+/// program keeps the default disposition. Without restoring the default, the C
+/// binary would be killed by `SIGPIPE` (exit status 141) when its stdout pipe
+/// has no reader while this binary would silently exit 0 — an observable
+/// difference. Restore the C behaviour before any I/O happens.
+fn restore_c_signal_defaults() {
+    // SAFETY: plain libc call, executed before any thread is spawned.
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
     }
-    s1.len()
-}
-
-fn driver(s1: &[u8], s2: &[u8]) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    // Match printf("%zu\n", ...)
-    let _ = write!(out, "{}\n", strcspn(s1, s2));
 }
 
 fn main() {
-    // C: char s1[100] = "", s2[100] = "";
-    // We track the contents up to the (eventual) NUL terminator as a Vec<u8>.
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-
-    let mut s1: Vec<u8> = Vec::new();
-    let mut s2: Vec<u8> = Vec::new();
-
-    // fgets(s1, 100, stdin); fgets(s2, 100, stdin);
-    fgets(&mut handle, &mut s1, 100);
-    fgets(&mut handle, &mut s2, 100);
-
-    // s1[strlen(s1)-1] = '\0';  -> drop the last byte (typically the newline).
-    // If the buffer is empty, the C code is undefined behavior; we leave it empty.
-    if !s1.is_empty() {
-        s1.pop();
-    }
-    if !s2.is_empty() {
-        s2.pop();
-    }
-
-    driver(&s1, &s2);
+    restore_c_signal_defaults();
+    std::process::exit(core_impl::run());
 }

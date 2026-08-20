@@ -1,64 +1,115 @@
 // Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// Rust translation of c_src/src/driver.c
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
 //
-// To produce byte-identical output to the original C program (which uses
-// glibc's `printf`, `setlocale`, and ctype functions whose nonzero return
-// values encode implementation-specific bitmasks), this translation calls
-// directly into libc.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_char;
-use std::ffi::c_int;
+//! Rust translation of `c_src/` — the `driver` shared library.
+//!
+//! The C build globs the whole of `c_src/` into one shared object.  That is a
+//! single translation unit, `src/driver.c`, whose only public header is
+//! `include/driver.h`, declaring one function:
+//!
+//! ```c
+//! void driver(char c);
+//! ```
+//!
+//! `nm -D` on the reference `libdriver.so` confirms `driver` is the complete
+//! exported public ABI.  There are no namespace/renaming macros in the public
+//! header, so the linker symbol is plainly `driver`.
 
-// LC_ALL is defined in glibc's <locale.h>. On Linux/glibc its value is 6.
-const LC_ALL: c_int = 6;
+mod ctype;
+mod ffi;
 
-unsafe extern "C" {
-    fn setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
+use core::ffi::{c_char, c_int};
 
-    fn isalnum(c: c_int) -> c_int;
-    fn isalpha(c: c_int) -> c_int;
-    fn islower(c: c_int) -> c_int;
-    fn isupper(c: c_int) -> c_int;
-    fn isdigit(c: c_int) -> c_int;
-    fn isxdigit(c: c_int) -> c_int;
-    fn iscntrl(c: c_int) -> c_int;
-    fn isgraph(c: c_int) -> c_int;
-    fn isspace(c: c_int) -> c_int;
-    fn isblank(c: c_int) -> c_int;
-    fn isprint(c: c_int) -> c_int;
-    fn ispunct(c: c_int) -> c_int;
-    fn tolower(c: c_int) -> c_int;
-    fn toupper(c: c_int) -> c_int;
-
-    fn printf(fmt: *const c_char, ...) -> c_int;
+/// Format strings, byte for byte as they appear in `driver.c`, each with the
+/// implicit C string terminator appended.
+mod fmt {
+    pub const ALPHANUMERIC: &[u8] = b"alphanumeric: %d\n\0";
+    pub const ALPHABETIC: &[u8] = b"alphabetic: %d\n\0";
+    pub const LOWERCASE: &[u8] = b"lowercase: %d\n\0";
+    pub const UPPERCASE: &[u8] = b"uppercase: %d\n\0";
+    pub const DIGIT: &[u8] = b"digit: %d\n\0";
+    pub const HEXADECIMAL: &[u8] = b"hexadecimal: %d\n\0";
+    pub const CONTROL: &[u8] = b"control: %d\n\0";
+    pub const GRAPHICAL: &[u8] = b"graphical: %d\n\0";
+    pub const SPACE: &[u8] = b"space: %d\n\0";
+    pub const BLANK: &[u8] = b"blank: %d\n\0";
+    pub const PRINTING: &[u8] = b"printing: %d\n\0";
+    pub const PUNCTUATION: &[u8] = b"punctuation: %d\n\0";
+    pub const TO_LOWER: &[u8] = b"to lower: %c\n\0";
+    pub const TO_UPPER: &[u8] = b"to upper: %c\n\0";
 }
 
+/// The `"C"` locale name passed to `setlocale`.
+const LOCALE_C: &[u8] = b"C\0";
+
+/// Emits one `printf("<label>: %d\n", value)` line.
+fn print_int(format: &[u8], value: c_int) {
+    // SAFETY: `format` is a `'static` NUL-terminated byte literal from `fmt`
+    // containing exactly one `%d`, matched here by a single `c_int` argument.
+    unsafe {
+        ffi::printf(format.as_ptr() as *const c_char, value);
+    }
+}
+
+/// Emits one `printf("<label>: %c\n", value)` line.
+///
+/// `%c` makes `printf` convert the `int` argument to `unsigned char`, so a
+/// negative conversion-table result is printed as its low byte — matching the C
+/// library for `char` values that sign-extend to a negative index.
+fn print_char(format: &[u8], value: c_int) {
+    // SAFETY: `format` is a `'static` NUL-terminated byte literal from `fmt`
+    // containing exactly one `%c`, matched here by a single `c_int` argument,
+    // which is the type `%c` consumes after default argument promotion.
+    unsafe {
+        ffi::printf(format.as_ptr() as *const c_char, value);
+    }
+}
+
+/// Translation of `void driver(char c)` from `c_src/src/driver.c`.
+///
+/// The statement order, the format strings and the `<ctype.h>` interface used
+/// on each line are preserved exactly as written in the C source.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(c: c_char) {
-    // The C code passes `c` (a char) as an `int` argument to the ctype
-    // functions. In C, the char-to-int promotion sign-extends or zero-extends
-    // depending on whether `char` is signed; on the typical x86_64 Linux
-    // target where this library is built, `char` is signed. We mirror that
-    // by going through `c_char` -> `c_int` which is a sign-extending cast.
-    let ci: c_int = c as c_int;
-
+    // SAFETY: `LOCALE_C` is a `'static` NUL-terminated byte literal, and
+    // `setlocale` only reads it.  The returned string is discarded, exactly as
+    // the C code discards it.
     unsafe {
-        setlocale(LC_ALL, b"C\0".as_ptr() as *const c_char);
-
-        printf(b"alphanumeric: %d\n\0".as_ptr() as *const c_char, isalnum(ci));
-        printf(b"alphabetic: %d\n\0".as_ptr() as *const c_char, isalpha(ci));
-        printf(b"lowercase: %d\n\0".as_ptr() as *const c_char, islower(ci));
-        printf(b"uppercase: %d\n\0".as_ptr() as *const c_char, isupper(ci));
-        printf(b"digit: %d\n\0".as_ptr() as *const c_char, isdigit(ci));
-        printf(b"hexadecimal: %d\n\0".as_ptr() as *const c_char, isxdigit(ci));
-        printf(b"control: %d\n\0".as_ptr() as *const c_char, iscntrl(ci));
-        printf(b"graphical: %d\n\0".as_ptr() as *const c_char, isgraph(ci));
-        printf(b"space: %d\n\0".as_ptr() as *const c_char, isspace(ci));
-        printf(b"blank: %d\n\0".as_ptr() as *const c_char, isblank(ci));
-        printf(b"printing: %d\n\0".as_ptr() as *const c_char, isprint(ci));
-        printf(b"punctuation: %d\n\0".as_ptr() as *const c_char, ispunct(ci));
-        printf(b"to lower: %c\n\0".as_ptr() as *const c_char, tolower(ci));
-        printf(b"to upper: %c\n\0".as_ptr() as *const c_char, toupper(ci));
+        ffi::setlocale(ffi::LC_ALL, LOCALE_C.as_ptr() as *const c_char);
     }
+
+    print_int(fmt::ALPHANUMERIC, ctype::isalnum(c));
+    print_int(fmt::ALPHABETIC, ctype::isalpha(c));
+    print_int(fmt::LOWERCASE, ctype::islower(c));
+    print_int(fmt::UPPERCASE, ctype::isupper(c));
+    print_int(fmt::DIGIT, ctype::isdigit(c));
+    print_int(fmt::HEXADECIMAL, ctype::isxdigit(c));
+    print_int(fmt::CONTROL, ctype::iscntrl(c));
+    print_int(fmt::GRAPHICAL, ctype::isgraph(c));
+    print_int(fmt::SPACE, ctype::isspace(c));
+    print_int(fmt::BLANK, ctype::isblank(c));
+    print_int(fmt::PRINTING, ctype::isprint(c));
+    print_int(fmt::PUNCTUATION, ctype::ispunct(c));
+    print_char(fmt::TO_LOWER, ctype::tolower(c));
+    print_char(fmt::TO_UPPER, ctype::toupper(c));
 }

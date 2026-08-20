@@ -4,14 +4,28 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["cdylib"]
-path = "src/lib.rs"
 name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
 
-[dependencies]
-libc = "0.2"
+[features]
+default = []
 
 [dev-dependencies]
 libloading = "0.8"
+
+# `harness = false`: the differential tests redirect the process-wide stdout file
+# descriptor to capture what the loaded `.so`s print. That is inherently a
+# process-global operation, so the rows must run sequentially and nothing else
+# may write to fd 1 meanwhile. libtest's parallel runner prints progress from its
+# own thread, which would land inside a capture; a custom `main` avoids that
+# entirely and keeps the run deterministic.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
 
 [workspace]

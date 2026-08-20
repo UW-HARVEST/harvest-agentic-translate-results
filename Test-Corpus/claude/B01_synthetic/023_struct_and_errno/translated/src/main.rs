@@ -1,5 +1,11 @@
+// Rust translation of c_src/src/main.c
+//
+// Behaviour is preserved byte-for-byte, including the C library semantics of
+// fgets() and strtol() that the original program relies on.
+
 use std::io::{self, Read, Write};
 
+#[derive(Clone, Copy)]
 struct House {
     floors: i32,
     bedrooms: i32,
@@ -7,151 +13,171 @@ struct House {
 }
 
 fn add_floor(house: &mut House) {
-    house.floors += 1;
+    // house->floors++
+    house.floors = house.floors.wrapping_add(1);
 }
 
 fn add_bedrooms(house: &mut House, extra_bedrooms: i32) {
-    house.bedrooms += extra_bedrooms;
+    // house->bedrooms += extra_bedrooms
+    house.bedrooms = house.bedrooms.wrapping_add(extra_bedrooms);
 }
 
-fn print_house(house: &House) {
-    // %.1f mimics C's printf with one digit after the decimal point.
-    print!(
-        "The house has {} floors, {} bedrooms, and {:.1} bathrooms\n",
-        house.floors, house.bedrooms, house.bathrooms
+fn print_house<W: Write>(out: &mut W, house: &House) {
+    // printf("The house has %d floors, %d bedrooms, and %.1f bathrooms\n", ...)
+    let _ = write!(
+        out,
+        "The house has {} floors, {} bedrooms, and {} bathrooms\n",
+        house.floors,
+        house.bedrooms,
+        format_f64_1(house.bathrooms)
     );
 }
 
-fn run(the_house: &mut House, extra_bedrooms: i32) {
-    print_house(the_house);
+fn run<W: Write>(out: &mut W, the_house: &mut House, extra_bedrooms: i32) {
+    print_house(out, the_house);
     add_floor(the_house);
-    print_house(the_house);
+    print_house(out, the_house);
     the_house.bathrooms += 1.0;
-    print_house(the_house);
+    print_house(out, the_house);
     add_bedrooms(the_house, extra_bedrooms);
-    print_house(the_house);
+    print_house(out, the_house);
 }
 
-/// Mimics the C strtol-based parse_val: parses a leading optional sign and
-/// decimal digits from `s`, returning the parsed value and whether parsing
-/// consumed at least one character (and stayed within i32 range).
-fn parse_val(s: &str) -> Option<i32> {
-    let bytes = s.as_bytes();
-    let mut i = 0usize;
+/// Formats a finite double the way C's `printf("%.1f", v)` would.
+fn format_f64_1(v: f64) -> String {
+    if v.is_nan() {
+        // glibc prints "nan" / "-nan"
+        return if v.is_sign_negative() {
+            "-nan".to_string()
+        } else {
+            "nan".to_string()
+        };
+    }
+    if v.is_infinite() {
+        return if v < 0.0 {
+            "-inf".to_string()
+        } else {
+            "inf".to_string()
+        };
+    }
+    // Rust's {:.1} rounds half away from zero on the exact decimal value of the
+    // double, which matches glibc's correctly-rounded output except for exact
+    // ties; handle the tie case with round-half-to-even like glibc.
+    let scaled = v * 10.0;
+    if scaled == scaled.trunc() && scaled.abs() < 9.007_199_254_740_992e15 {
+        // Exact one-decimal value: no rounding needed at all.
+        let neg = scaled < 0.0 || (scaled == 0.0 && v.is_sign_negative());
+        let units = scaled.abs() as u64;
+        let s = format!("{}.{}", units / 10, units % 10);
+        return if neg { format!("-{}", s) } else { s };
+    }
+    format!("{:.1}", v)
+}
 
-    // Skip leading whitespace, matching strtol's behavior.
-    while i < bytes.len()
-        && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+/// Emulates `strtol(str, &endp, 10)` for the subset needed here.
+/// Returns (value, number_of_bytes_consumed, erange).
+fn strtol10(s: &[u8]) -> (i64, usize, bool) {
+    let mut i = 0usize;
+    // Skip leading whitespace (isspace in the "C" locale).
+    while i < s.len()
+        && matches!(s[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
     {
         i += 1;
     }
-
-    let start_after_ws = i;
-
-    // Optional sign.
     let mut negative = false;
-    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
-        if bytes[i] == b'-' {
-            negative = true;
-        }
+    if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+        negative = s[i] == b'-';
         i += 1;
     }
-
-    // Digits.
     let digits_start = i;
-    let mut value: i64 = 0;
+    let mut acc: i128 = 0;
     let mut overflow = false;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        let d = (bytes[i] - b'0') as i64;
+    while i < s.len() && s[i].is_ascii_digit() {
+        let d = (s[i] - b'0') as i128;
         if !overflow {
-            // Check against i64 range while accumulating. For matching C
-            // strtol semantics on a long that's at least 64-bit, we set the
-            // overflow flag if we exceed the i64 range; the calling code in C
-            // additionally checks INT_MIN/INT_MAX bounds, which we replicate
-            // below.
-            let next = value
-                .checked_mul(10)
-                .and_then(|v| v.checked_add(d));
-            match next {
-                Some(v) => value = v,
-                None => {
-                    overflow = true;
-                }
+            acc = acc * 10 + d;
+            if acc > (i64::MAX as i128) + 1 {
+                overflow = true;
             }
         }
         i += 1;
     }
-
-    // strtol requires at least one digit to count as a successful parse.
-    // The C code uses `endp != str` as the success indicator. With strtol,
-    // when no conversion is performed, endp is set back to the original
-    // string. If we consumed only whitespace and/or sign with no digits,
-    // strtol leaves endp == str. Mirror that:
-    if digits_start == i {
-        // No digits consumed.
-        // Whether or not we skipped whitespace/sign, strtol's contract here
-        // is that endp == str and no value is produced.
-        // Note: technically if we consumed whitespace then a sign with no
-        // digits, strtol on most platforms still leaves endp at str. We
-        // treat it as failure.
-        let _ = start_after_ws; // silence unused warning if any
-        return None;
+    if i == digits_start {
+        // No conversion performed: endptr is set to the original string.
+        return (0, 0, false);
     }
-
-    let signed: i64 = if negative { -value } else { value };
-
-    if overflow {
-        return None;
+    let signed: i128 = if negative { -acc } else { acc };
+    if overflow || signed > i64::MAX as i128 || signed < i64::MIN as i128 {
+        let clamped = if negative { i64::MIN } else { i64::MAX };
+        return (clamped, i, true);
     }
-
-    if signed < i32::MIN as i64 || signed > i32::MAX as i64 {
-        return None;
-    }
-
-    Some(signed as i32)
+    (signed as i64, i, false)
 }
 
-/// Reads a single line in the manner of C's `fgets(buf, 100, stdin)`:
-/// up to 99 bytes, stopping at and including a '\n'. Returns the bytes
-/// read as a String (lossy on invalid UTF-8 to keep printing safe; only
-/// ASCII prefix is used by parse_val anyway).
-fn fgets_like(max_bytes: usize) -> String {
-    let mut stdin = io::stdin();
-    let mut buf: Vec<u8> = Vec::new();
+fn parse_val(str_bytes: &[u8], val: &mut i32) -> bool {
+    // errno = 0; strtol(str, &endp, 10);
+    let (tmp, consumed, erange) = strtol10(str_bytes);
+    let endp_moved = consumed != 0; // endp != str
+    if endp_moved && !erange && tmp >= i32::MIN as i64 && tmp <= i32::MAX as i64 {
+        *val = tmp as i32;
+        true
+    } else {
+        false
+    }
+}
+
+/// Emulates `fgets(in, sizeof(in), stdin)` with a 100-byte buffer that was
+/// initialised to all zero bytes.  Returns the buffer contents.
+fn fgets(buf: &mut [u8]) {
+    let cap = buf.len();
+    if cap == 0 {
+        return;
+    }
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
     let mut byte = [0u8; 1];
-    // fgets reads at most max_bytes - 1 characters.
-    let cap = max_bytes.saturating_sub(1);
-    while buf.len() < cap {
-        match stdin.read(&mut byte) {
-            Ok(0) => break, // EOF
+    let mut n = 0usize;
+    while n + 1 < cap {
+        match handle.read(&mut byte) {
+            Ok(0) => break,
             Ok(_) => {
-                buf.push(byte[0]);
+                buf[n] = byte[0];
+                n += 1;
                 if byte[0] == b'\n' {
                     break;
                 }
             }
+            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         }
     }
-    String::from_utf8_lossy(&buf).into_owned()
+    if n > 0 {
+        buf[n] = 0;
+    }
 }
 
 fn main() {
-    // Mirror: char in[100] = ""; fgets(in, sizeof(in), stdin);
-    let input = fgets_like(100);
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
 
-    if let Some(x) = parse_val(&input) {
+    let mut in_buf = [0u8; 100];
+    fgets(&mut in_buf[..]);
+
+    // The buffer is used as a NUL-terminated C string.
+    let end = in_buf.iter().position(|&b| b == 0).unwrap_or(in_buf.len());
+    let c_str = &in_buf[..end];
+
+    let mut x: i32 = 0;
+    if parse_val(c_str, &mut x) {
         let mut the_house = House {
             floors: 2,
             bedrooms: 5,
             bathrooms: 2.5,
         };
-        run(&mut the_house, x);
-        run(&mut the_house, x);
+        run(&mut out, &mut the_house, x);
+        run(&mut out, &mut the_house, x);
     } else {
-        print!("An error occurred\n");
+        let _ = write!(out, "An error occurred\n");
     }
-
-    // Ensure output is flushed before exit, matching C stdio's atexit flush.
-    let _ = io::stdout().flush();
+    let _ = out.flush();
 }

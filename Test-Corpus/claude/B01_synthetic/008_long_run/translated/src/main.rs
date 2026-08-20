@@ -1,86 +1,83 @@
-// Translated from C to Rust. Reproduces the original program's behavior exactly,
-// including its dependence on libc's rand()/srand() for byte-identical output.
+// Rust translation of c_src/src/main.c
+//
+// Behaviour-preserving port: the same argument validation order, the same
+// glibc pseudo-random number stream, the same (wrapping) signed integer
+// arithmetic, and the same stdout/stderr text.
 
-use std::ffi::CString;
-use std::os::raw::{c_char, c_int, c_ulong};
+mod rng;
+mod strtoul;
 
-const ARRAY_SIZE: usize = 256 * 1024;
-const ITERATIONS: i32 = 2000;
-const UINT_MAX: c_ulong = u32::MAX as c_ulong;
+use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 
-extern "C" {
-    fn srand(seed: u32);
-    fn rand() -> c_int;
-    fn strtoul(nptr: *const c_char, endptr: *mut *mut c_char, base: c_int) -> c_ulong;
-    fn __errno_location() -> *mut c_int;
+const ARRAY_SIZE: usize = 256 * 1024; // 1MB assuming sizeof(int) = 4
+const ITERATIONS: usize = 2000;
+
+const UINT_MAX: u64 = u32::MAX as u64;
+
+/// One iteration of the inner (`j`) loop body of `perform_expensive_operations`.
+///
+/// The C code relies on wrap-around signed arithmetic (`x * 3 + 7`,
+/// `x - (x << 1)`), an arithmetic right shift for `x >> 3`, and C's
+/// truncate-toward-zero division/remainder; all of that is reproduced here.
+#[inline(always)]
+fn expensive_step(mut x: i32) -> i32 {
+    x = x.wrapping_mul(3).wrapping_add(7);
+    x ^= x >> 3;
+    x = x.wrapping_sub(x.wrapping_shl(1));
+    x = x / 2 + x % 7;
+    x
 }
 
-fn errno() -> c_int {
-    unsafe { *__errno_location() }
-}
-
-fn set_errno(v: c_int) {
-    unsafe {
-        *__errno_location() = v;
-    }
-}
-
+/// Perform expensive arithmetic on each element.
 fn perform_expensive_operations(array: &mut [i32]) {
     for slot in array.iter_mut() {
-        let mut x: i32 = *slot;
+        let mut x = *slot;
         for _ in 0..100 {
-            // x = x * 3 + 7
-            x = x.wrapping_mul(3).wrapping_add(7);
-            // x = x ^ (x >> 3)  -- C uses arithmetic shift for signed
-            x ^= x >> 3;
-            // x = x - (x << 1)
-            x = x.wrapping_sub(x.wrapping_shl(1));
-            // x = x / 2 + x % 7   -- C truncates toward zero (matches Rust's / and %)
-            x = (x / 2).wrapping_add(x % 7);
+            x = expensive_step(x);
         }
         *slot = x;
     }
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let argc = args.len();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
 
-    if argc != 2 {
-        let prog = args.get(0).map(|s| s.as_str()).unwrap_or("");
-        eprintln!("Usage: {} <seed>", prog);
+    // if (argc != 2) { fprintf(stderr, "Usage: %s <seed>\n", argv[0]); return 1; }
+    if args.len() != 2 {
+        let argv0: &[u8] = match args.first() {
+            Some(a) => a.as_bytes(),
+            // argc == 0: glibc's printf renders a NULL "%s" as "(null)".
+            None => b"(null)",
+        };
+        let mut stderr = std::io::stderr();
+        let _ = stderr.write_all(b"Usage: ");
+        let _ = stderr.write_all(argv0);
+        let _ = stderr.write_all(b" <seed>\n");
         std::process::exit(1);
     }
 
-    // Mirror: errno = 0; strtoul(argv[1], &endptr, 10);
-    set_errno(0);
+    let arg1 = args[1].as_bytes();
 
-    let arg1 = &args[1];
-    let c_arg1 = match CString::new(arg1.as_str()) {
-        Ok(s) => s,
-        Err(_) => {
-            // The original C wouldn't have embedded NULs in argv either.
-            eprintln!("Invalid seed: '{}'", arg1);
-            std::process::exit(1);
-        }
-    };
+    // errno = 0; strtoul(argv[1], &endptr, 10);
+    let parsed = strtoul::strtoul_base10(arg1);
 
-    let mut endptr: *mut c_char = std::ptr::null_mut();
-    let temp_seed: c_ulong = unsafe { strtoul(c_arg1.as_ptr(), &mut endptr, 10) };
-    let err = errno();
-
-    let bad_endptr = unsafe { *endptr != 0 };
-    if bad_endptr || err != 0 || temp_seed > UINT_MAX {
-        eprintln!("Invalid seed: '{}'", arg1);
+    // if (*endptr != '\0' || errno != 0 || temp_seed > UINT_MAX)
+    let endptr_not_nul = parsed.consumed != arg1.len();
+    if endptr_not_nul || parsed.erange || parsed.value > UINT_MAX {
+        let mut stderr = std::io::stderr();
+        let _ = stderr.write_all(b"Invalid seed: '");
+        let _ = stderr.write_all(arg1);
+        let _ = stderr.write_all(b"'\n");
         std::process::exit(1);
     }
 
-    let seed: u32 = temp_seed as u32;
-    unsafe { srand(seed) };
+    let seed = parsed.value as u32;
+    let mut generator = rng::GlibcRand::new(seed);
 
-    let mut array: Vec<i32> = vec![0; ARRAY_SIZE];
+    let mut array = vec![0i32; ARRAY_SIZE];
     for slot in array.iter_mut() {
-        *slot = unsafe { rand() } as i32;
+        *slot = generator.next_i32();
     }
 
     for _ in 0..ITERATIONS {
@@ -88,9 +85,11 @@ fn main() {
     }
 
     let mut xor_result: i32 = 0;
-    for &v in array.iter() {
-        xor_result ^= v;
+    for &value in array.iter() {
+        xor_result ^= value;
     }
 
-    println!("{}", xor_result);
+    let mut stdout = std::io::stdout();
+    let _ = writeln!(stdout, "{}", xor_result);
+    let _ = stdout.flush();
 }

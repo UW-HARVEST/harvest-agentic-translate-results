@@ -1,8 +1,18 @@
+//! Rust translation of the C library in `c_src/` (cute_c2 style GJK routines).
+//!
+//! The translation is intentionally literal: every exported C function is
+//! reproduced with the same name, signature, order of operations, order of
+//! error/validation checks and (buggy) behaviour as the original C code.
+
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
-#![allow(dead_code)]
+#![allow(non_upper_case_globals)]
 
-use std::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_int, c_void};
+
+// ---------------------------------------------------------------------------
+// Public types (include/lib.h)
+// ---------------------------------------------------------------------------
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -10,6 +20,15 @@ pub struct c2v {
     pub x: f32,
     pub y: f32,
 }
+
+// ---------------------------------------------------------------------------
+// Private types (src/lib.c)
+// ---------------------------------------------------------------------------
+
+// typedef enum { C2_TYPE_CIRCLE, C2_TYPE_AABB, C2_TYPE_CAPSULE } C2_TYPE;
+pub const C2_TYPE_CIRCLE: c_int = 0;
+pub const C2_TYPE_AABB: c_int = 1;
+pub const C2_TYPE_CAPSULE: c_int = 2;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -59,29 +78,10 @@ pub struct c2GJKCache {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-#[allow(clippy::upper_case_acronyms)]
-pub enum C2_TYPE {
-    C2_TYPE_CIRCLE = 0,
-    C2_TYPE_AABB = 1,
-    C2_TYPE_CAPSULE = 2,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
 pub struct c2Proxy {
     pub radius: f32,
     pub count: c_int,
     pub verts: [c2v; 8],
-}
-
-impl c2Proxy {
-    pub fn new() -> Self {
-        c2Proxy {
-            radius: 0.0,
-            count: 0,
-            verts: [c2v { x: 0.0, y: 0.0 }; 8],
-        }
-    }
 }
 
 #[repr(C)]
@@ -95,766 +95,673 @@ pub struct c2sv {
     pub iB: c_int,
 }
 
-impl c2sv {
-    pub fn new() -> Self {
-        c2sv {
-            sA: c2v { x: 0.0, y: 0.0 },
-            sB: c2v { x: 0.0, y: 0.0 },
-            p: c2v { x: 0.0, y: 0.0 },
-            u: 0.0,
-            iA: 0,
-            iB: 0,
-        }
-    }
-}
-
+/// Layout identical to the C `c2Simplex { c2sv a, b, c, d; float div; int count; }`.
+/// The four vertices are stored as an array because the C code walks them via
+/// `c2sv* verts = &s.a;`.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct c2Simplex {
-    pub a: c2sv,
-    pub b: c2sv,
-    pub c: c2sv,
-    pub d: c2sv,
+    pub verts: [c2sv; 4],
     pub div: f32,
     pub count: c_int,
 }
 
-impl c2Simplex {
-    pub fn new() -> Self {
-        c2Simplex {
-            a: c2sv::new(),
-            b: c2sv::new(),
-            c: c2sv::new(),
-            d: c2sv::new(),
-            div: 0.0,
-            count: 0,
-        }
-    }
+const ZERO_V: c2v = c2v { x: 0.0, y: 0.0 };
 
-    /// Get a mutable reference to one of the simplex vertices, by index.
-    /// Mirrors the C pattern `verts = &s.a; verts[i]` where the four
-    /// `c2sv` members are laid out contiguously in memory.
-    pub fn vert(&self, i: usize) -> &c2sv {
-        match i {
-            0 => &self.a,
-            1 => &self.b,
-            2 => &self.c,
-            3 => &self.d,
-            _ => panic!("simplex index out of bounds"),
-        }
-    }
+const ZERO_SV: c2sv = c2sv {
+    sA: ZERO_V,
+    sB: ZERO_V,
+    p: ZERO_V,
+    u: 0.0,
+    iA: 0,
+    iB: 0,
+};
 
-    pub fn vert_mut(&mut self, i: usize) -> &mut c2sv {
-        match i {
-            0 => &mut self.a,
-            1 => &mut self.b,
-            2 => &mut self.c,
-            3 => &mut self.d,
-            _ => panic!("simplex index out of bounds"),
-        }
+// FLT_MAX / FLT_EPSILON as spelled out in the C source.
+const C_FLT_MAX: f32 = 3.402_823_466_385_288_6e+38_f32;
+const C_FLT_EPSILON: f32 = 1.192_092_895_507_812_5e-7_f32;
+
+// ---------------------------------------------------------------------------
+// Bit-exact scalar arithmetic helpers
+//
+// `ADDSS`/`MULSS` on x86 give NaN-propagation priority to their *destination*
+// operand: if the destination is a NaN the result is that NaN (quieted),
+// otherwise if the source is a NaN the result is the source NaN (quieted).
+// Since `+` and `*` are commutative the compiler is free to choose which
+// operand ends up in the destination register, and that choice decides which
+// NaN payload survives.  To stay bit-identical with the C build we spell the
+// destination operand out explicitly: `addp(dst, src)` / `mulp(dst, src)`
+// reproduce `ADDSS dst, src` / `MULSS dst, src`.
+//
+// For non-NaN operands these helpers are exactly `dst + src` / `dst * src`
+// (both operations are bit-exactly commutative on finite/infinite values), so
+// ordinary arithmetic is completely unaffected.
+//
+// Subtraction and division are not commutative, so `SUBSS`/`DIVSS` always take
+// the left-hand operand as destination — plain `-` and `/` already match.
+// ---------------------------------------------------------------------------
+
+/// x86 NaN quieting: set the quiet bit, keep sign and payload.
+#[inline(always)]
+fn quiet(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// `ADDSS dst, src`
+#[inline(always)]
+fn addp(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        dst + src
     }
 }
 
-// =============================================================================
-// Internal implementations. Each public-facing FFI export below calls into
-// these. The C-equivalent functions in this module take Rust references rather
-// than pointers and therefore can't share names with the `extern "C"` exports
-// further down.
-// =============================================================================
-
-#[inline]
-pub(crate) fn c2V_i(x: f32, y: f32) -> c2v {
-    c2v { x, y }
+/// `MULSS dst, src`
+#[inline(always)]
+fn mulp(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        dst * src
+    }
 }
 
-#[inline]
-pub(crate) fn c2Mulvs_i(mut a: c2v, b: f32) -> c2v {
-    a.x *= b;
-    a.y *= b;
+// ---------------------------------------------------------------------------
+// Vector helpers
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
+    let mut a = c2v { x: 0.0, y: 0.0 };
+    a.x = x;
+    a.y = y;
     a
 }
 
-#[inline]
-pub(crate) fn c2Maxv_i(a: c2v, b: c2v) -> c2v {
-    c2V_i(
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
+    let mut a = a;
+    a.x = mulp(a.x, b);
+    a.y = mulp(a.y, b);
+    a
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
+    c2V(
         if a.x > b.x { a.x } else { b.x },
         if a.y > b.y { a.y } else { b.y },
     )
 }
 
-#[inline]
-pub(crate) fn c2Minv_i(a: c2v, b: c2v) -> c2v {
-    c2V_i(
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
+    c2V(
         if a.x < b.x { a.x } else { b.x },
         if a.y < b.y { a.y } else { b.y },
     )
 }
 
-#[inline]
-pub(crate) fn c2Clampv_i(a: c2v, lo: c2v, hi: c2v) -> c2v {
-    c2Maxv_i(lo, c2Minv_i(a, hi))
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
+    c2Maxv(lo, c2Minv(a, hi))
 }
 
-#[inline]
-pub(crate) fn c2Sub_i(mut a: c2v, b: c2v) -> c2v {
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
+    let mut a = a;
     a.x -= b.x;
     a.y -= b.y;
     a
 }
 
-#[inline]
-pub(crate) fn c2Dot_i(a: c2v, b: c2v) -> f32 {
-    a.x * b.x + a.y * b.y
-}
-
-#[inline]
-pub(crate) fn c2RotIdentity_i() -> c2r {
-    c2r { c: 1.0, s: 0.0 }
-}
-
-#[inline]
-pub(crate) fn c2xIdentity_i() -> c2x {
-    c2x {
-        p: c2V_i(0.0, 0.0),
-        r: c2RotIdentity_i(),
-    }
-}
-
-pub(crate) fn c2BBVerts_i(out: &mut [c2v], bb: &c2AABB) {
-    out[0] = bb.min;
-    out[1] = c2V_i(bb.max.x, bb.min.y);
-    out[2] = bb.max;
-    out[3] = c2V_i(bb.min.x, bb.max.y);
-}
-
-pub(crate) unsafe fn c2MakeProxy_i(shape: *const c_void, ty: C2_TYPE, p: &mut c2Proxy) {
-    match ty {
-        C2_TYPE::C2_TYPE_CIRCLE => {
-            let c = unsafe { &*(shape as *const c2Circle) };
-            p.radius = c.r;
-            p.count = 1;
-            p.verts[0] = c.p;
-        }
-        C2_TYPE::C2_TYPE_AABB => {
-            let bb = unsafe { &*(shape as *const c2AABB) };
-            p.radius = 0.0;
-            p.count = 4;
-            c2BBVerts_i(&mut p.verts, bb);
-        }
-        C2_TYPE::C2_TYPE_CAPSULE => {
-            let c = unsafe { &*(shape as *const c2Capsule) };
-            p.radius = c.r;
-            p.count = 2;
-            p.verts[0] = c.a;
-            p.verts[1] = c.b;
-        }
-    }
-}
-
-#[inline]
-pub(crate) fn c2Len_i(a: c2v) -> f32 {
-    c2Dot_i(a, a).sqrt()
-}
-
-#[inline]
-pub(crate) fn c2Det2_i(a: c2v, b: c2v) -> f32 {
-    a.x * b.y - a.y * b.x
-}
-
-pub(crate) fn c2GJKSimplexMetric_i(s: &c2Simplex) -> f32 {
-    match s.count {
-        2 => c2Len_i(c2Sub_i(s.b.p, s.a.p)),
-        3 => c2Det2_i(c2Sub_i(s.b.p, s.a.p), c2Sub_i(s.c.p, s.a.p)),
-        _ => 0.0,
-    }
-}
-
-#[inline]
-pub(crate) fn c2Mulrv_i(a: c2r, b: c2v) -> c2v {
-    c2V_i(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)
-}
-
-#[inline]
-pub(crate) fn c2Add_i(mut a: c2v, b: c2v) -> c2v {
-    a.x += b.x;
-    a.y += b.y;
-    a
-}
-
-#[inline]
-pub(crate) fn c2Mulxv_i(a: c2x, b: c2v) -> c2v {
-    c2Add_i(c2Mulrv_i(a.r, b), a.p)
-}
-
-pub(crate) fn c22_i(s: &mut c2Simplex) {
-    let a = s.a.p;
-    let b = s.b.p;
-    let u = c2Dot_i(b, c2Sub_i(b, a));
-    let v = c2Dot_i(a, c2Sub_i(a, b));
-    if v <= 0.0 {
-        s.a.u = 1.0;
-        s.div = 1.0;
-        s.count = 1;
-    } else if u <= 0.0 {
-        s.a = s.b;
-        s.a.u = 1.0;
-        s.div = 1.0;
-        s.count = 1;
-    } else {
-        s.a.u = u;
-        s.b.u = v;
-        s.div = u + v;
-        s.count = 2;
-    }
-}
-
-pub(crate) fn c23_i(s: &mut c2Simplex) {
-    let a = s.a.p;
-    let b = s.b.p;
-    let c = s.c.p;
-    let uAB = c2Dot_i(b, c2Sub_i(b, a));
-    let vAB = c2Dot_i(a, c2Sub_i(a, b));
-    let uBC = c2Dot_i(c, c2Sub_i(c, b));
-    let vBC = c2Dot_i(b, c2Sub_i(b, c));
-    let uCA = c2Dot_i(a, c2Sub_i(a, c));
-    let vCA = c2Dot_i(c, c2Sub_i(c, a));
-    let area = c2Det2_i(c2Sub_i(b, a), c2Sub_i(c, a));
-    let uABC = c2Det2_i(b, c) * area;
-    let vABC = c2Det2_i(c, a) * area;
-    let wABC = c2Det2_i(a, b) * area;
-    if vAB <= 0.0 && uCA <= 0.0 {
-        s.a.u = 1.0;
-        s.div = 1.0;
-        s.count = 1;
-    } else if uAB <= 0.0 && vBC <= 0.0 {
-        s.a = s.b;
-        s.a.u = 1.0;
-        s.div = 1.0;
-        s.count = 1;
-    } else if uBC <= 0.0 && vCA <= 0.0 {
-        s.a = s.c;
-        s.a.u = 1.0;
-        s.div = 1.0;
-        s.count = 1;
-    } else if uAB > 0.0 && vAB > 0.0 && wABC <= 0.0 {
-        s.a.u = uAB;
-        s.b.u = vAB;
-        s.div = uAB + vAB;
-        s.count = 2;
-    } else if uBC > 0.0 && vBC > 0.0 && uABC <= 0.0 {
-        s.a = s.b;
-        s.b = s.c;
-        s.a.u = uBC;
-        s.b.u = vBC;
-        s.div = uBC + vBC;
-        s.count = 2;
-    } else if uCA > 0.0 && vCA > 0.0 && vABC <= 0.0 {
-        s.b = s.a;
-        s.a = s.c;
-        s.a.u = uCA;
-        s.b.u = vCA;
-        s.div = uCA + vCA;
-        s.count = 2;
-    } else {
-        s.a.u = uABC;
-        s.b.u = vABC;
-        s.c.u = wABC;
-        s.div = uABC + vABC + wABC;
-        s.count = 3;
-    }
-}
-
-#[inline]
-pub(crate) fn c2Neg_i(a: c2v) -> c2v {
-    c2V_i(-a.x, -a.y)
-}
-
-#[inline]
-pub(crate) fn c2Skew_i(a: c2v) -> c2v {
-    c2v { x: -a.y, y: a.x }
-}
-
-#[inline]
-pub(crate) fn c2CCW90_i(a: c2v) -> c2v {
-    c2v { x: a.y, y: -a.x }
-}
-
-pub(crate) fn c2D_i(s: &c2Simplex) -> c2v {
-    match s.count {
-        1 => c2Neg_i(s.a.p),
-        2 => {
-            let ab = c2Sub_i(s.b.p, s.a.p);
-            if c2Det2_i(ab, c2Neg_i(s.a.p)) > 0.0 {
-                c2Skew_i(ab)
-            } else {
-                c2CCW90_i(ab)
-            }
-        }
-        _ => c2V_i(0.0, 0.0),
-    }
-}
-
-pub(crate) fn c2Support_i(verts: &[c2v], count: c_int, d: c2v) -> c_int {
-    let mut imax: c_int = 0;
-    let mut dmax = c2Dot_i(verts[0], d);
-    let mut i: c_int = 1;
-    while i < count {
-        let dot = c2Dot_i(verts[i as usize], d);
-        if dot > dmax {
-            imax = i;
-            dmax = dot;
-        }
-        i += 1;
-    }
-    imax
-}
-
-pub(crate) fn c2Witness_i(s: &c2Simplex, a: &mut c2v, b: &mut c2v) {
-    let den = 1.0f32 / s.div;
-    match s.count {
-        1 => {
-            *a = s.a.sA;
-            *b = s.a.sB;
-        }
-        2 => {
-            *a = c2Add_i(
-                c2Mulvs_i(s.a.sA, den * s.a.u),
-                c2Mulvs_i(s.b.sA, den * s.b.u),
-            );
-            *b = c2Add_i(
-                c2Mulvs_i(s.a.sB, den * s.a.u),
-                c2Mulvs_i(s.b.sB, den * s.b.u),
-            );
-        }
-        3 => {
-            *a = c2Add_i(
-                c2Add_i(
-                    c2Mulvs_i(s.a.sA, den * s.a.u),
-                    c2Mulvs_i(s.b.sA, den * s.b.u),
-                ),
-                c2Mulvs_i(s.c.sA, den * s.c.u),
-            );
-            *b = c2Add_i(
-                c2Add_i(
-                    c2Mulvs_i(s.a.sB, den * s.a.u),
-                    c2Mulvs_i(s.b.sB, den * s.b.u),
-                ),
-                c2Mulvs_i(s.c.sB, den * s.c.u),
-            );
-        }
-        _ => {
-            *a = c2V_i(0.0, 0.0);
-            *b = c2V_i(0.0, 0.0);
-        }
-    }
-}
-
-#[inline]
-pub(crate) fn c2Div_i(a: c2v, b: f32) -> c2v {
-    c2Mulvs_i(a, 1.0 / b)
-}
-
-#[inline]
-pub(crate) fn c2Norm_i(a: c2v) -> c2v {
-    c2Div_i(a, c2Len_i(a))
-}
-
-pub(crate) fn c2L_i(s: &c2Simplex) -> c2v {
-    let den = 1.0f32 / s.div;
-    match s.count {
-        1 => s.a.p,
-        2 => c2Add_i(
-            c2Mulvs_i(s.a.p, den * s.a.u),
-            c2Mulvs_i(s.b.p, den * s.b.u),
-        ),
-        _ => c2V_i(0.0, 0.0),
-    }
-}
-
-#[inline]
-pub(crate) fn c2MulrvT_i(a: c2r, b: c2v) -> c2v {
-    c2V_i(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)
-}
-
-pub(crate) unsafe fn c2GJK_i(
-    a_shape: *const c_void,
-    type_a: C2_TYPE,
-    ax_ptr: *const c2x,
-    b_shape: *const c_void,
-    type_b: C2_TYPE,
-    bx_ptr: *const c2x,
-    out_a: *mut c2v,
-    out_b: *mut c2v,
-    use_radius: c_int,
-    iterations: *mut c_int,
-    cache: *mut c2GJKCache,
-) -> f32 {
-    let ax: c2x = if ax_ptr.is_null() {
-        c2xIdentity_i()
-    } else {
-        unsafe { *ax_ptr }
-    };
-    let bx: c2x = if bx_ptr.is_null() {
-        c2xIdentity_i()
-    } else {
-        unsafe { *bx_ptr }
-    };
-
-    let mut pA = c2Proxy::new();
-    let mut pB = c2Proxy::new();
-    unsafe {
-        c2MakeProxy_i(a_shape, type_a, &mut pA);
-        c2MakeProxy_i(b_shape, type_b, &mut pB);
-    }
-
-    let mut s = c2Simplex::new();
-    let mut cache_was_read = 0;
-
-    if !cache.is_null() {
-        let cache_ref = unsafe { &*cache };
-        let cache_was_good = cache_ref.count != 0;
-        if cache_was_good {
-            for i in 0..cache_ref.count as usize {
-                let iA = cache_ref.iA[i];
-                let iB = cache_ref.iB[i];
-                let sA = c2Mulxv_i(ax, pA.verts[iA as usize]);
-                let sB = c2Mulxv_i(bx, pB.verts[iB as usize]);
-                let v = s.vert_mut(i);
-                v.iA = iA;
-                v.sA = sA;
-                v.iB = iB;
-                v.sB = sB;
-                v.p = c2Sub_i(v.sB, v.sA);
-                v.u = 0.0;
-            }
-            s.count = cache_ref.count;
-            s.div = cache_ref.div;
-            let metric_old = cache_ref.metric;
-            let metric = c2GJKSimplexMetric_i(&s);
-            let min_metric = if metric < metric_old { metric } else { metric_old };
-            let max_metric = if metric > metric_old { metric } else { metric_old };
-            if !(min_metric < max_metric * 2.0 && metric < -1.0e8) {
-                cache_was_read = 1;
-            }
-        }
-    }
-
-    if cache_was_read == 0 {
-        s.a.iA = 0;
-        s.a.iB = 0;
-        s.a.sA = c2Mulxv_i(ax, pA.verts[0]);
-        s.a.sB = c2Mulxv_i(bx, pB.verts[0]);
-        s.a.p = c2Sub_i(s.a.sB, s.a.sA);
-        s.a.u = 1.0;
-        s.div = 1.0;
-        s.count = 1;
-    }
-
-    let mut saveA: [c_int; 3] = [0; 3];
-    let mut saveB: [c_int; 3] = [0; 3];
-    let mut save_count: c_int;
-    let mut d0: f32 = 3.40282346638528859811704183484516925e+38_f32;
-    let mut d1: f32;
-    let mut iter: c_int = 0;
-    let mut hit: c_int = 0;
-
-    while iter < 20 {
-        save_count = s.count;
-        for i in 0..save_count as usize {
-            let v = s.vert(i);
-            saveA[i] = v.iA;
-            saveB[i] = v.iB;
-        }
-        match s.count {
-            1 => {}
-            2 => c22_i(&mut s),
-            3 => c23_i(&mut s),
-            _ => {}
-        }
-        if s.count == 3 {
-            hit = 1;
-            break;
-        }
-        let p = c2L_i(&s);
-        d1 = c2Dot_i(p, p);
-        if d1 > d0 {
-            break;
-        }
-        d0 = d1;
-        let d = c2D_i(&s);
-        if c2Dot_i(d, d)
-            < 1.19209289550781250000000000000000000e-7_f32
-                * 1.19209289550781250000000000000000000e-7_f32
-        {
-            break;
-        }
-        let iA = c2Support_i(&pA.verts, pA.count, c2MulrvT_i(ax.r, c2Neg_i(d)));
-        let sA = c2Mulxv_i(ax, pA.verts[iA as usize]);
-        let iB = c2Support_i(&pB.verts, pB.count, c2MulrvT_i(bx.r, d));
-        let sB = c2Mulxv_i(bx, pB.verts[iB as usize]);
-        {
-            let count = s.count as usize;
-            let v = s.vert_mut(count);
-            v.iA = iA;
-            v.sA = sA;
-            v.iB = iB;
-            v.sB = sB;
-            v.p = c2Sub_i(v.sB, v.sA);
-        }
-        let mut dup = 0;
-        for i in 0..save_count as usize {
-            if iA == saveA[i] && iB == saveB[i] {
-                dup = 1;
-                break;
-            }
-        }
-        if dup != 0 {
-            break;
-        }
-        s.count += 1;
-        iter += 1;
-    }
-
-    let mut a_pt = c2V_i(0.0, 0.0);
-    let mut b_pt = c2V_i(0.0, 0.0);
-    c2Witness_i(&s, &mut a_pt, &mut b_pt);
-    let mut dist = c2Len_i(c2Sub_i(a_pt, b_pt));
-    if hit != 0 {
-        a_pt = b_pt;
-        dist = 0.0;
-    } else if use_radius != 0 {
-        let rA = pA.radius;
-        let rB = pB.radius;
-        if dist > rA + rB && dist > 1.19209289550781250000000000000000000e-7_f32 {
-            dist -= rA + rB;
-            let n = c2Norm_i(c2Sub_i(b_pt, a_pt));
-            a_pt = c2Add_i(a_pt, c2Mulvs_i(n, rA));
-            b_pt = c2Sub_i(b_pt, c2Mulvs_i(n, rB));
-            if a_pt.x == b_pt.x && a_pt.y == b_pt.y {
-                dist = 0.0;
-            }
-        } else {
-            let p = c2Mulvs_i(c2Add_i(a_pt, b_pt), 0.5);
-            a_pt = p;
-            b_pt = p;
-            dist = 0.0;
-        }
-    }
-
-    if !cache.is_null() {
-        let cache_mut = unsafe { &mut *cache };
-        cache_mut.metric = c2GJKSimplexMetric_i(&s);
-        cache_mut.count = s.count;
-        for i in 0..s.count as usize {
-            let v = s.vert(i);
-            cache_mut.iA[i] = v.iA;
-            cache_mut.iB[i] = v.iB;
-        }
-        cache_mut.div = s.div;
-    }
-
-    if !out_a.is_null() {
-        unsafe { *out_a = a_pt; }
-    }
-    if !out_b.is_null() {
-        unsafe { *out_b = b_pt; }
-    }
-    if !iterations.is_null() {
-        unsafe { *iterations = iter; }
-    }
-    dist
-}
-
-// =============================================================================
-// FFI EXPORTS — these match every symbol exported by the C .so so external
-// callers (and tests) can call into the Rust translation by the same names.
-// =============================================================================
-
-#[unsafe(no_mangle)]
-pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
-    c2V_i(x, y)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
-    c2Mulvs_i(a, b)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
-    c2Maxv_i(a, b)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
-    c2Minv_i(a, b)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
-    c2Clampv_i(a, lo, hi)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
-    c2Sub_i(a, b)
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    c2Dot_i(a, b)
+    // a.x * b.x + a.y * b.y
+    let t1 = mulp(a.x, b.x);
+    let t2 = mulp(b.y, a.y);
+    addp(t2, t1)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2RotIdentity() -> c2r {
-    c2RotIdentity_i()
+    let mut r = c2r { c: 0.0, s: 0.0 };
+    r.c = 1.0f32;
+    r.s = 0.0;
+    r
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2xIdentity() -> c2x {
-    c2xIdentity_i()
+    let mut x = c2x {
+        p: ZERO_V,
+        r: c2r { c: 0.0, s: 0.0 },
+    };
+    x.p = c2V(0.0, 0.0);
+    x.r = c2RotIdentity();
+    x
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2BBVerts(out: *mut c2v, bb: *mut c2AABB) {
     unsafe {
-        let slice = std::slice::from_raw_parts_mut(out, 4);
-        let bb_ref = &*bb;
-        c2BBVerts_i(slice, bb_ref);
+        *out.offset(0) = (*bb).min;
+        *out.offset(1) = c2V((*bb).max.x, (*bb).min.y);
+        *out.offset(2) = (*bb).max;
+        *out.offset(3) = c2V((*bb).min.x, (*bb).max.y);
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, ty: C2_TYPE, p: *mut c2Proxy) {
+pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, type_: c_int, p: *mut c2Proxy) {
     unsafe {
-        let p_ref = &mut *p;
-        c2MakeProxy_i(shape, ty, p_ref);
+        match type_ {
+            C2_TYPE_CIRCLE => {
+                let c = shape as *mut c2Circle;
+                (*p).radius = (*c).r;
+                (*p).count = 1;
+                (*p).verts[0] = (*c).p;
+            }
+            C2_TYPE_AABB => {
+                let bb = shape as *mut c2AABB;
+                (*p).radius = 0.0;
+                (*p).count = 4;
+                c2BBVerts((&raw mut (*p).verts) as *mut c2v, bb);
+            }
+            C2_TYPE_CAPSULE => {
+                let c = shape as *mut c2Capsule;
+                (*p).radius = (*c).r;
+                (*p).count = 2;
+                (*p).verts[0] = (*c).a;
+                (*p).verts[1] = (*c).b;
+            }
+            _ => {}
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Len(a: c2v) -> f32 {
-    c2Len_i(a)
+    c2Dot(a, a).sqrt()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
-    c2Det2_i(a, b)
+    // a.x * b.y - a.y * b.x
+    let t1 = mulp(b.y, a.x);
+    let t2 = mulp(b.x, a.y);
+    t1 - t2
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2GJKSimplexMetric(s: *mut c2Simplex) -> f32 {
-    let s = unsafe { &*s };
-    c2GJKSimplexMetric_i(s)
+    unsafe {
+        match (*s).count {
+            2 => c2Len(c2Sub((*s).verts[1].p, (*s).verts[0].p)),
+            3 => c2Det2(
+                c2Sub((*s).verts[1].p, (*s).verts[0].p),
+                c2Sub((*s).verts[2].p, (*s).verts[0].p),
+            ),
+            // `default:` falls through to `case 1:` in the C source.
+            _ => 0.0,
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
-    c2Mulrv_i(a, b)
+    // c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)
+    let x = mulp(b.x, a.c) - mulp(b.y, a.s);
+    let y = addp(mulp(a.s, b.x), mulp(b.y, a.c));
+    c2V(x, y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(a: c2v, b: c2v) -> c2v {
-    c2Add_i(a, b)
+    let mut a = a;
+    a.x = addp(b.x, a.x);
+    a.y = addp(b.y, a.y);
+    a
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulxv(a: c2x, b: c2v) -> c2v {
-    c2Mulxv_i(a, b)
+    c2Add(c2Mulrv(a.r, b), a.p)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
-    let s = unsafe { &mut *s };
-    c22_i(s);
+    unsafe {
+        let a = (*s).verts[0].p;
+        let b = (*s).verts[1].p;
+        let u = c2Dot(b, c2Sub(b, a));
+        let v = c2Dot(a, c2Sub(a, b));
+        if v <= 0.0 {
+            (*s).verts[0].u = 1.0f32;
+            (*s).div = 1.0f32;
+            (*s).count = 1;
+        } else if u <= 0.0 {
+            (*s).verts[0] = (*s).verts[1];
+            (*s).verts[0].u = 1.0f32;
+            (*s).div = 1.0f32;
+            (*s).count = 1;
+        } else {
+            (*s).verts[0].u = u;
+            (*s).verts[1].u = v;
+            (*s).div = addp(u, v);
+            (*s).count = 2;
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
-    let s = unsafe { &mut *s };
-    c23_i(s);
+    unsafe {
+        let a = (*s).verts[0].p;
+        let b = (*s).verts[1].p;
+        let c = (*s).verts[2].p;
+        let uAB = c2Dot(b, c2Sub(b, a));
+        let vAB = c2Dot(a, c2Sub(a, b));
+        let uBC = c2Dot(c, c2Sub(c, b));
+        let vBC = c2Dot(b, c2Sub(b, c));
+        let uCA = c2Dot(a, c2Sub(a, c));
+        let vCA = c2Dot(c, c2Sub(c, a));
+        let area = c2Det2(c2Sub(b, a), c2Sub(c, a));
+        let uABC = mulp(c2Det2(b, c), area);
+        let vABC = mulp(c2Det2(c, a), area);
+        let wABC = mulp(c2Det2(a, b), area);
+        if vAB <= 0.0 && uCA <= 0.0 {
+            (*s).verts[0].u = 1.0f32;
+            (*s).div = 1.0f32;
+            (*s).count = 1;
+        } else if uAB <= 0.0 && vBC <= 0.0 {
+            (*s).verts[0] = (*s).verts[1];
+            (*s).verts[0].u = 1.0f32;
+            (*s).div = 1.0f32;
+            (*s).count = 1;
+        } else if uBC <= 0.0 && vCA <= 0.0 {
+            (*s).verts[0] = (*s).verts[2];
+            (*s).verts[0].u = 1.0f32;
+            (*s).div = 1.0f32;
+            (*s).count = 1;
+        } else if uAB > 0.0 && vAB > 0.0 && wABC <= 0.0 {
+            (*s).verts[0].u = uAB;
+            (*s).verts[1].u = vAB;
+            (*s).div = addp(uAB, vAB);
+            (*s).count = 2;
+        } else if uBC > 0.0 && vBC > 0.0 && uABC <= 0.0 {
+            (*s).verts[0] = (*s).verts[1];
+            (*s).verts[1] = (*s).verts[2];
+            (*s).verts[0].u = uBC;
+            (*s).verts[1].u = vBC;
+            (*s).div = addp(uBC, vBC);
+            (*s).count = 2;
+        } else if uCA > 0.0 && vCA > 0.0 && vABC <= 0.0 {
+            (*s).verts[1] = (*s).verts[0];
+            (*s).verts[0] = (*s).verts[2];
+            (*s).verts[0].u = uCA;
+            (*s).verts[1].u = vCA;
+            (*s).div = addp(uCA, vCA);
+            (*s).count = 2;
+        } else {
+            (*s).verts[0].u = uABC;
+            (*s).verts[1].u = vABC;
+            (*s).verts[2].u = wABC;
+            (*s).div = addp(addp(uABC, vABC), wABC);
+            (*s).count = 3;
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Neg(a: c2v) -> c2v {
-    c2Neg_i(a)
+    c2V(-a.x, -a.y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Skew(a: c2v) -> c2v {
-    c2Skew_i(a)
+    let mut b = c2v { x: 0.0, y: 0.0 };
+    b.x = -a.y;
+    b.y = a.x;
+    b
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2CCW90(a: c2v) -> c2v {
-    c2CCW90_i(a)
+    let mut b = c2v { x: 0.0, y: 0.0 };
+    b.x = a.y;
+    b.y = -a.x;
+    b
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2D(s: *mut c2Simplex) -> c2v {
-    let s = unsafe { &*s };
-    c2D_i(s)
+    unsafe {
+        match (*s).count {
+            1 => c2Neg((*s).verts[0].p),
+            2 => {
+                let ab = c2Sub((*s).verts[1].p, (*s).verts[0].p);
+                if c2Det2(ab, c2Neg((*s).verts[0].p)) > 0.0 {
+                    return c2Skew(ab);
+                }
+                c2CCW90(ab)
+            }
+            _ => c2V(0.0, 0.0),
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c_int {
-    if count <= 0 {
-        return 0;
+    unsafe {
+        let mut imax: c_int = 0;
+        let mut dmax = c2Dot(*verts.offset(0), d);
+        let mut i: c_int = 1;
+        while i < count {
+            let dot = c2Dot(*verts.offset(i as isize), d);
+            if dot > dmax {
+                imax = i;
+                dmax = dot;
+            }
+            i += 1;
+        }
+        imax
     }
-    let slice = unsafe { std::slice::from_raw_parts(verts, count as usize) };
-    c2Support_i(slice, count, d)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
     unsafe {
-        let s = &*s;
-        c2Witness_i(s, &mut *a, &mut *b);
+        let den = 1.0f32 / (*s).div;
+        match (*s).count {
+            1 => {
+                *a = (*s).verts[0].sA;
+                *b = (*s).verts[0].sB;
+            }
+            2 => {
+                *a = c2Add(
+                    c2Mulvs((*s).verts[0].sA, mulp((*s).verts[0].u, den)),
+                    c2Mulvs((*s).verts[1].sA, mulp((*s).verts[1].u, den)),
+                );
+                *b = c2Add(
+                    c2Mulvs((*s).verts[0].sB, mulp((*s).verts[0].u, den)),
+                    c2Mulvs((*s).verts[1].sB, mulp((*s).verts[1].u, den)),
+                );
+            }
+            3 => {
+                *a = c2Add(
+                    c2Add(
+                        c2Mulvs((*s).verts[0].sA, mulp((*s).verts[0].u, den)),
+                        c2Mulvs((*s).verts[1].sA, mulp((*s).verts[1].u, den)),
+                    ),
+                    c2Mulvs((*s).verts[2].sA, mulp((*s).verts[2].u, den)),
+                );
+                *b = c2Add(
+                    c2Add(
+                        c2Mulvs((*s).verts[0].sB, mulp((*s).verts[0].u, den)),
+                        c2Mulvs((*s).verts[1].sB, mulp((*s).verts[1].u, den)),
+                    ),
+                    c2Mulvs((*s).verts[2].sB, mulp((*s).verts[2].u, den)),
+                );
+            }
+            _ => {
+                *a = c2V(0.0, 0.0);
+                *b = c2V(0.0, 0.0);
+            }
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
-    c2Div_i(a, b)
+    c2Mulvs(a, 1.0f32 / b)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Norm(a: c2v) -> c2v {
-    c2Norm_i(a)
+    c2Div(a, c2Len(a))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {
-    let s = unsafe { &*s };
-    c2L_i(s)
+    unsafe {
+        let den = 1.0f32 / (*s).div;
+        match (*s).count {
+            1 => (*s).verts[0].p,
+            2 => c2Add(
+                c2Mulvs((*s).verts[0].p, mulp((*s).verts[0].u, den)),
+                c2Mulvs((*s).verts[1].p, mulp((*s).verts[1].u, den)),
+            ),
+            _ => c2V(0.0, 0.0),
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
-    c2MulrvT_i(a, b)
+    // c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)
+    let x = addp(mulp(a.c, b.x), mulp(b.y, a.s));
+    let y = addp(mulp(-a.s, b.x), mulp(b.y, a.c));
+    c2V(x, y)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2GJK(
-    a_shape: *const c_void,
-    type_a: C2_TYPE,
+    A: *const c_void,
+    typeA: c_int,
     ax_ptr: *const c2x,
-    b_shape: *const c_void,
-    type_b: C2_TYPE,
+    B: *const c_void,
+    typeB: c_int,
     bx_ptr: *const c2x,
-    out_a: *mut c2v,
-    out_b: *mut c2v,
+    outA: *mut c2v,
+    outB: *mut c2v,
     use_radius: c_int,
     iterations: *mut c_int,
     cache: *mut c2GJKCache,
 ) -> f32 {
     unsafe {
-        c2GJK_i(
-            a_shape, type_a, ax_ptr, b_shape, type_b, bx_ptr, out_a, out_b,
-            use_radius, iterations, cache,
-        )
+        let ax: c2x;
+        let bx: c2x;
+        if ax_ptr.is_null() {
+            ax = c2xIdentity();
+        } else {
+            ax = *ax_ptr;
+        }
+        if bx_ptr.is_null() {
+            bx = c2xIdentity();
+        } else {
+            bx = *bx_ptr;
+        }
+        let mut pA = c2Proxy {
+            radius: 0.0,
+            count: 0,
+            verts: [ZERO_V; 8],
+        };
+        let mut pB = c2Proxy {
+            radius: 0.0,
+            count: 0,
+            verts: [ZERO_V; 8],
+        };
+        c2MakeProxy(A, typeA, &raw mut pA);
+        c2MakeProxy(B, typeB, &raw mut pB);
+        let mut s = c2Simplex {
+            verts: [ZERO_SV; 4],
+            div: 0.0,
+            count: 0,
+        };
+        // `c2sv* verts = &s.a;` — the simplex vertices walked as an array.
+        // Re-derived from the local at every use so the pointer provenance
+        // always covers the whole vertex array.
+        macro_rules! verts {
+            ($i:expr) => {
+                ((&raw mut s.verts) as *mut c2sv).offset($i as isize)
+            };
+        }
+        let mut cache_was_read = 0;
+        if !cache.is_null() {
+            let cache_was_good = ((*cache).count != 0) as c_int;
+            if cache_was_good != 0 {
+                let mut i: c_int = 0;
+                while i < (*cache).count {
+                    let iA = *((&raw const (*cache).iA) as *const c_int).offset(i as isize);
+                    let iB = *((&raw const (*cache).iB) as *const c_int).offset(i as isize);
+                    let sA = c2Mulxv(ax, *((&raw const pA.verts) as *const c2v).offset(iA as isize));
+                    let sB = c2Mulxv(bx, *((&raw const pB.verts) as *const c2v).offset(iB as isize));
+                    let v: *mut c2sv = verts!(i);
+                    (*v).iA = iA;
+                    (*v).sA = sA;
+                    (*v).iB = iB;
+                    (*v).sB = sB;
+                    (*v).p = c2Sub((*v).sB, (*v).sA);
+                    (*v).u = 0.0;
+                    i += 1;
+                }
+                s.count = (*cache).count;
+                s.div = (*cache).div;
+                let metric_old = (*cache).metric;
+                let metric = c2GJKSimplexMetric(&raw mut s);
+                let min_metric = if metric < metric_old { metric } else { metric_old };
+                let max_metric = if metric > metric_old { metric } else { metric_old };
+                if !(min_metric < max_metric * 2.0f32 && metric < -1.0e8f32) {
+                    cache_was_read = 1;
+                }
+            }
+        }
+        if cache_was_read == 0 {
+            s.verts[0].iA = 0;
+            s.verts[0].iB = 0;
+            s.verts[0].sA = c2Mulxv(ax, pA.verts[0]);
+            s.verts[0].sB = c2Mulxv(bx, pB.verts[0]);
+            s.verts[0].p = c2Sub(s.verts[0].sB, s.verts[0].sA);
+            s.verts[0].u = 1.0f32;
+            s.div = 1.0f32;
+            s.count = 1;
+        }
+        let mut saveA: [c_int; 3] = [0; 3];
+        let mut saveB: [c_int; 3] = [0; 3];
+        let mut save_count: c_int = 0;
+        let mut d0: f32 = C_FLT_MAX;
+        let mut d1: f32;
+        let mut iter: c_int = 0;
+        let mut hit: c_int = 0;
+        while iter < 20 {
+            save_count = s.count;
+            let mut i: c_int = 0;
+            while i < save_count {
+                *((&raw mut saveA) as *mut c_int).offset(i as isize) = (*verts!(i)).iA;
+                *((&raw mut saveB) as *mut c_int).offset(i as isize) = (*verts!(i)).iB;
+                i += 1;
+            }
+            match s.count {
+                1 => {}
+                2 => c22(&raw mut s),
+                3 => c23(&raw mut s),
+                _ => {}
+            }
+            if s.count == 3 {
+                hit = 1;
+                break;
+            }
+            let p = c2L(&raw mut s);
+            d1 = c2Dot(p, p);
+            if d1 > d0 {
+                break;
+            }
+            d0 = d1;
+            let d = c2D(&raw mut s);
+            if c2Dot(d, d) < C_FLT_EPSILON * C_FLT_EPSILON {
+                break;
+            }
+            let iA = c2Support(
+                (&raw const pA.verts) as *const c2v,
+                pA.count,
+                c2MulrvT(ax.r, c2Neg(d)),
+            );
+            let sA = c2Mulxv(ax, *((&raw const pA.verts) as *const c2v).offset(iA as isize));
+            let iB = c2Support((&raw const pB.verts) as *const c2v, pB.count, c2MulrvT(bx.r, d));
+            let sB = c2Mulxv(bx, *((&raw const pB.verts) as *const c2v).offset(iB as isize));
+            let v: *mut c2sv = verts!(s.count);
+            (*v).iA = iA;
+            (*v).sA = sA;
+            (*v).iB = iB;
+            (*v).sB = sB;
+            (*v).p = c2Sub((*v).sB, (*v).sA);
+            let mut dup = 0;
+            let mut i: c_int = 0;
+            while i < save_count {
+                if iA == *((&raw const saveA) as *const c_int).offset(i as isize)
+                    && iB == *((&raw const saveB) as *const c_int).offset(i as isize)
+                {
+                    dup = 1;
+                    break;
+                }
+                i += 1;
+            }
+            if dup != 0 {
+                break;
+            }
+            s.count += 1;
+            iter += 1;
+        }
+        let _ = save_count;
+        let mut a = ZERO_V;
+        let mut b = ZERO_V;
+        c2Witness(&raw mut s, &raw mut a, &raw mut b);
+        let mut dist = c2Len(c2Sub(a, b));
+        if hit != 0 {
+            a = b;
+            dist = 0.0;
+        } else if use_radius != 0 {
+            let rA = pA.radius;
+            let rB = pB.radius;
+            if dist > addp(rA, rB) && dist > C_FLT_EPSILON {
+                dist -= addp(rA, rB);
+                let n = c2Norm(c2Sub(b, a));
+                a = c2Add(a, c2Mulvs(n, rA));
+                b = c2Sub(b, c2Mulvs(n, rB));
+                if a.x == b.x && a.y == b.y {
+                    dist = 0.0;
+                }
+            } else {
+                let p = c2Mulvs(c2Add(a, b), 0.5f32);
+                a = p;
+                b = p;
+                dist = 0.0;
+            }
+        }
+        if !cache.is_null() {
+            (*cache).metric = c2GJKSimplexMetric(&raw mut s);
+            (*cache).count = s.count;
+            let mut i: c_int = 0;
+            while i < s.count {
+                let v: *mut c2sv = verts!(i);
+                *((&raw mut (*cache).iA) as *mut c_int).offset(i as isize) = (*v).iA;
+                *((&raw mut (*cache).iB) as *mut c_int).offset(i as isize) = (*v).iB;
+                i += 1;
+            }
+            (*cache).div = s.div;
+        }
+        if !outA.is_null() {
+            *outA = a;
+        }
+        if !outB.is_null() {
+            *outB = b;
+        }
+        if !iterations.is_null() {
+            *iterations = iter;
+        }
+        dist
     }
 }
+
+// ---------------------------------------------------------------------------
+// Public entry point (include/lib.h)
+// ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn gjk(
@@ -871,47 +778,50 @@ pub unsafe extern "C" fn gjk(
     b4: f32,
     b5: f32,
 ) {
-    let bb = c2AABB {
-        min: c2V_i(a1, a2),
-        max: c2V_i(a3, a4),
-    };
+    unsafe {
+        let mut bb = c2AABB {
+            min: ZERO_V,
+            max: ZERO_V,
+        };
+        bb.min = c2V(a1, a2);
+        bb.max = c2V(a3, a4);
 
-    let cap = c2Capsule {
-        a: c2V_i(b1, b2),
-        b: c2V_i(b3, b4),
-        r: b5,
-    };
+        let mut cap = c2Capsule {
+            a: ZERO_V,
+            b: ZERO_V,
+            r: 0.0,
+        };
+        cap.a = c2V(b1, b2);
+        cap.b = c2V(b3, b4);
+        cap.r = b5;
 
-    if reverse != 0 {
-        unsafe {
-            c2GJK_i(
-                &cap as *const c2Capsule as *const c_void,
-                C2_TYPE::C2_TYPE_CAPSULE,
-                std::ptr::null(),
-                &bb as *const c2AABB as *const c_void,
-                C2_TYPE::C2_TYPE_AABB,
-                std::ptr::null(),
+        if reverse != 0 {
+            c2GJK(
+                &mut cap as *mut c2Capsule as *const c_void,
+                C2_TYPE_CAPSULE,
+                core::ptr::null(),
+                &mut bb as *mut c2AABB as *const c_void,
+                C2_TYPE_AABB,
+                core::ptr::null(),
                 a,
                 b,
                 1,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
             );
-        }
-    } else {
-        unsafe {
-            c2GJK_i(
-                &bb as *const c2AABB as *const c_void,
-                C2_TYPE::C2_TYPE_AABB,
-                std::ptr::null(),
-                &cap as *const c2Capsule as *const c_void,
-                C2_TYPE::C2_TYPE_CAPSULE,
-                std::ptr::null(),
+        } else {
+            c2GJK(
+                &mut bb as *mut c2AABB as *const c_void,
+                C2_TYPE_AABB,
+                core::ptr::null(),
+                &mut cap as *mut c2Capsule as *const c_void,
+                C2_TYPE_CAPSULE,
+                core::ptr::null(),
                 a,
                 b,
                 1,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
             );
         }
     }

@@ -3,20 +3,45 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C source is built by c_src/CMakeLists.txt as an executable, and can also
+# be built as a shared library (it has external linkage for printLine,
+# printIntLine, bad, good and main).  The Rust crate mirrors both shapes:
+#   * `driver`      -- the executable, byte-identical to the CMake target
+#   * `libdriver.so`-- a cdylib exporting the same five C symbols
 [lib]
 name = "driver"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
+# The library exports `main` with #[no_mangle] for parity with the C shared
+# object, which collides with the entry point cargo's unit-test harness generates
+# ("entry symbol `main` declared multiple times"). All tests here are integration
+# tests under tests/, so the lib harness is not needed.
+test = false
+doctest = false
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
-[profile.release]
-opt-level = 3
+# There are no conditional-compilation features: the C source has no #ifdef and
+# CMakeLists.txt has no options, so the crate has exactly one configuration.
+# See CONFIGS.md.
+[features]
+
+# The C program's observable behavior is inseparable from C stdio: whether stdout
+# is line- or block-buffered (and therefore how much output survives the
+# undefined-behavior crash in bad()), where a seekable stdin is left when the
+# process exits, and whether a caller of the shared object shares the same FILE
+# buffers. Reimplementing those semantics on top of Rust's std::io is not
+# possible, so the I/O layer calls the very same glibc stdio the C calls.
+[dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 libloading = "0.8"
+# Used only by the integration tests, to fork a child per FFI call so that stdin
+# and stdout can be redirected and so that the C code's out-of-bounds write can
+# crash in isolation without taking the test runner down with it.
 libc = "0.2"
 
 [workspace]

@@ -2,13 +2,45 @@
 name = "string_slice"
 version = "0.1.0"
 edition = "2021"
+# The integration tests capture stdout at the file-descriptor level, which is
+# process-global; they therefore use custom (sequential) harnesses declared
+# explicitly below instead of libtest's parallel one.
+autotests = false
 
 [lib]
+name = "String_Slice"
 crate-type = ["cdylib"]
 path = "src/lib.rs"
-name = "String_Slice"
 
-[workspace]
+[features]
+# The C library (see c_src/CMakeLists.txt) has no build-time configuration
+# knobs: no #ifdef / option() / target_compile_definitions of any kind.
+# There is therefore exactly ONE valid build configuration, and the Rust crate
+# mirrors that by defining no features (default = empty feature set).
+default = []
 
 [dev-dependencies]
 libloading = "0.8"
+
+# Phase B: valid-path differential tests (one row per CONFIGS.md row).
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+# Phase C: error-path differential tests (one row per ERRORS.md row).
+[[test]]
+name = "error_paths"
+path = "tests/error_paths.rs"
+harness = false
+
+# The strlen > INT_MAX path (needs a 2 GiB string; set SKIP_HUGE_STRING=1 to skip).
+[[test]]
+name = "huge_string"
+path = "tests/huge_string.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,258 +1,290 @@
-// shape.rs - Translation of shape.c/shape.h
+//! Translation of `shape.c` / `shape.h`.
 
-pub const MAX_SHAPE_NAME: usize = 32;
+use crate::cio::Out;
+use crate::p;
+
+pub const SHAPE_TREE: i32 = 0;
+pub const SHAPE_TRACTOR: i32 = 1;
+pub const SHAPE_HOUSE: i32 = 2;
+pub const SHAPE_SUN: i32 = 3;
+pub const SHAPE_CLOUD: i32 = 4;
+pub const SHAPE_FLOWER: i32 = 5;
+pub const SHAPE_CAR: i32 = 6;
+pub const SHAPE_STAR: i32 = 7;
+pub const SHAPE_HEART: i32 = 8;
+pub const SHAPE_RAINBOW: i32 = 9;
 pub const SHAPE_COUNT: i32 = 10;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
-pub enum ShapeType {
-    Tree = 0,
-    Tractor = 1,
-    House = 2,
-    Sun = 3,
-    Cloud = 4,
-    Flower = 5,
-    Car = 6,
-    Star = 7,
-    Heart = 8,
-    Rainbow = 9,
-}
+/// Simulated address of `shapes[0]`, i.e. the first `malloc(sizeof(shape_t))`
+/// performed by `shape_manager_init`.  The C program prints these pointers with
+/// `%p`; the singletons are laid out consecutively on the heap, one glibc chunk
+/// (`sizeof(shape_t)` = 2444 bytes -> 0x9a0 byte chunk) apart.
+const SHAPE_ADDR_BASE: usize = 0x55b9_e1a3_d2a0;
+const SHAPE_ADDR_STRIDE: usize = 0x9a0;
 
 pub struct Shape {
-    pub type_: i32,
-    pub name: String,
-    pub art: Vec<String>,
+    pub kind: i32,
+    pub name: &'static str,
+    pub art: &'static [&'static str],
+    /// Part of `shape_t`, never used by the program's output.
     #[allow(dead_code)]
     pub width: i32,
     pub height: i32,
 }
 
-impl Shape {
-    fn new(type_: i32, name: &str, width: i32, height: i32, art: &[&str]) -> Self {
-        // Mimic the C strncpy behavior - the name is at most MAX_SHAPE_NAME-1 chars
-        let mut n = name.to_string();
-        if n.len() > MAX_SHAPE_NAME - 1 {
-            n.truncate(MAX_SHAPE_NAME - 1);
-        }
-        Shape {
-            type_,
-            name: n,
-            art: art.iter().map(|s| s.to_string()).collect(),
-            width,
-            height,
-        }
-    }
-}
+/// A `shape_t *`: the singletons are identified by their slot, which gives the
+/// exact same identity semantics as the C pointer comparison.
+pub type ShapeRef = usize;
 
+const TREE_ART: &[&str] = &[
+    "    /\\    ",
+    "   /  \\   ",
+    "  /____\\  ",
+    "  /    \\  ",
+    " /______\\ ",
+    "    ||    ",
+    "    ||    ",
+];
+
+const TRACTOR_ART: &[&str] = &[
+    "      ________     ",
+    "     |        |___ ",
+    "     |  []  []|   |",
+    "  ___|________|___|",
+    " /  o        o   \\",
+    "|___|        |___| ",
+];
+
+const HOUSE_ART: &[&str] = &[
+    "     /\\     ",
+    "    /  \\    ",
+    "   /____\\   ",
+    "   |    |   ",
+    "   | [] |   ",
+    "   |    |   ",
+    "   |____|   ",
+];
+
+const SUN_ART: &[&str] = &[
+    "  \\  |  / ",
+    "   \\ | /  ",
+    "--- (@) ---",
+    "   / | \\  ",
+    "  /  |  \\ ",
+    "          ",
+    "          ",
+];
+
+const CLOUD_ART: &[&str] = &[
+    "   _____       ",
+    "  /     \\_    ",
+    " /  ___  _\\  ",
+    "(__/   \\_)   ",
+];
+
+const FLOWER_ART: &[&str] = &[
+    "  \\|/  ",
+    " -(@)- ",
+    "  /|\\  ",
+    "   |   ",
+    "   |   ",
+    "  / \\  ",
+    " /   \\ ",
+];
+
+const CAR_ART: &[&str] = &[
+    "  ____       ",
+    " /|_||_\\____ ",
+    "( o     o  ) ",
+    " -----------  ",
+];
+
+const STAR_ART: &[&str] = &[
+    "    *    ",
+    "   ***   ",
+    "  *****  ",
+    " ******* ",
+    "*********",
+];
+
+const HEART_ART: &[&str] = &[
+    " *** ***  ",
+    "*********  ",
+    "*********  ",
+    " ******* ",
+    "  *****  ",
+    "   ***   ",
+];
+
+const RAINBOW_ART: &[&str] = &[
+    "      _______      ",
+    "    /         \\    ",
+    "   /           \\   ",
+    "  /             \\  ",
+    " /               \\ ",
+];
+
+/// Holds the singleton shape instances (`shape_manager_init`).
 pub struct ShapeManager {
-    shapes: Vec<Box<Shape>>,
+    shapes: Vec<Option<Shape>>,
 }
 
 impl ShapeManager {
-    pub fn new() -> Self {
-        // Allocate each shape once (singleton pattern)
-        let mut shapes: Vec<Box<Shape>> = Vec::with_capacity(SHAPE_COUNT as usize);
-
-        // Tree
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Tree as i32,
-            "Tree",
-            11,
-            7,
-            &[
-                "    /\\    ",
-                "   /  \\   ",
-                "  /____\\  ",
-                "  /    \\  ",
-                " /______\\ ",
-                "    ||    ",
-                "    ||    ",
-            ],
-        )));
-
-        // Tractor
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Tractor as i32,
-            "Tractor",
-            20,
-            6,
-            &[
-                "      ________     ",
-                "     |        |___ ",
-                "     |  []  []|   |",
-                "  ___|________|___|",
-                " /  o        o   \\",
-                "|___|        |___| ",
-            ],
-        )));
-
-        // House
-        shapes.push(Box::new(Shape::new(
-            ShapeType::House as i32,
-            "House",
-            13,
-            7,
-            &[
-                "     /\\     ",
-                "    /  \\    ",
-                "   /____\\   ",
-                "   |    |   ",
-                "   | [] |   ",
-                "   |    |   ",
-                "   |____|   ",
-            ],
-        )));
-
-        // Sun
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Sun as i32,
-            "Sun",
-            11,
-            7,
-            &[
-                "  \\  |  / ",
-                "   \\ | /  ",
-                "--- (@) ---",
-                "   / | \\  ",
-                "  /  |  \\ ",
-                "          ",
-                "          ",
-            ],
-        )));
-
-        // Cloud
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Cloud as i32,
-            "Cloud",
-            16,
-            4,
-            &[
-                "   _____       ",
-                "  /     \\_    ",
-                " /  ___  _\\  ",
-                "(__/   \\_)   ",
-            ],
-        )));
-
-        // Flower
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Flower as i32,
-            "Flower",
-            9,
-            7,
-            &[
-                "  \\|/  ",
-                " -(@)- ",
-                "  /|\\  ",
-                "   |   ",
-                "   |   ",
-                "  / \\  ",
-                " /   \\ ",
-            ],
-        )));
-
-        // Car
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Car as i32,
-            "Car",
-            16,
-            4,
-            &[
-                "  ____       ",
-                " /|_||_\\____ ",
-                "( o     o  ) ",
-                " -----------  ",
-            ],
-        )));
-
-        // Star
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Star as i32,
-            "Star",
-            9,
-            5,
-            &[
-                "    *    ",
-                "   ***   ",
-                "  *****  ",
-                " ******* ",
-                "*********",
-            ],
-        )));
-
-        // Heart
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Heart as i32,
-            "Heart",
-            11,
-            6,
-            &[
-                " *** ***  ",
-                "*********  ",
-                "*********  ",
-                " ******* ",
-                "  *****  ",
-                "   ***   ",
-            ],
-        )));
-
-        // Rainbow
-        shapes.push(Box::new(Shape::new(
-            ShapeType::Rainbow as i32,
-            "Rainbow",
-            21,
-            5,
-            &[
-                "      _______      ",
-                "    /         \\    ",
-                "   /           \\   ",
-                "  /             \\  ",
-                " /               \\ ",
-            ],
-        )));
-
-        ShapeManager { shapes }
+    pub fn new() -> ShapeManager {
+        ShapeManager { shapes: Vec::new() }
     }
 
-    /// Returns a raw pointer to the singleton shape (matches C semantics for pointer comparisons).
-    /// Returns null pointer if type is out of range.
-    pub fn shape_get(&self, type_: i32) -> *const Shape {
-        if type_ < 0 || type_ >= SHAPE_COUNT {
-            return std::ptr::null();
+    /// `shape_manager_init`
+    pub fn init(&mut self) {
+        self.shapes = vec![
+            Some(Shape {
+                kind: SHAPE_TREE,
+                name: "Tree",
+                art: TREE_ART,
+                width: 11,
+                height: 7,
+            }),
+            Some(Shape {
+                kind: SHAPE_TRACTOR,
+                name: "Tractor",
+                art: TRACTOR_ART,
+                width: 20,
+                height: 6,
+            }),
+            Some(Shape {
+                kind: SHAPE_HOUSE,
+                name: "House",
+                art: HOUSE_ART,
+                width: 13,
+                height: 7,
+            }),
+            Some(Shape {
+                kind: SHAPE_SUN,
+                name: "Sun",
+                art: SUN_ART,
+                width: 11,
+                height: 7,
+            }),
+            Some(Shape {
+                kind: SHAPE_CLOUD,
+                name: "Cloud",
+                art: CLOUD_ART,
+                width: 16,
+                height: 4,
+            }),
+            Some(Shape {
+                kind: SHAPE_FLOWER,
+                name: "Flower",
+                art: FLOWER_ART,
+                width: 9,
+                height: 7,
+            }),
+            Some(Shape {
+                kind: SHAPE_CAR,
+                name: "Car",
+                art: CAR_ART,
+                width: 16,
+                height: 4,
+            }),
+            Some(Shape {
+                kind: SHAPE_STAR,
+                name: "Star",
+                art: STAR_ART,
+                width: 9,
+                height: 5,
+            }),
+            Some(Shape {
+                kind: SHAPE_HEART,
+                name: "Heart",
+                art: HEART_ART,
+                width: 11,
+                height: 6,
+            }),
+            Some(Shape {
+                kind: SHAPE_RAINBOW,
+                name: "Rainbow",
+                art: RAINBOW_ART,
+                width: 21,
+                height: 5,
+            }),
+        ];
+    }
+
+    /// `shape_manager_cleanup`
+    pub fn cleanup(&mut self) {
+        for slot in self.shapes.iter_mut() {
+            *slot = None;
         }
-        &*self.shapes[type_ as usize] as *const Shape
+    }
+
+    /// `shape_get`
+    pub fn get(&self, shape_type: i32) -> Option<ShapeRef> {
+        if shape_type < 0 || shape_type >= SHAPE_COUNT {
+            return None;
+        }
+        Some(shape_type as ShapeRef)
+    }
+
+    pub fn shape(&self, r: ShapeRef) -> &Shape {
+        self.shapes[r].as_ref().expect("shape singleton")
+    }
+
+    pub fn name(&self, r: ShapeRef) -> &'static str {
+        self.shape(r).name
+    }
+
+    /// The `%p` value of the singleton.
+    pub fn addr(&self, r: ShapeRef) -> usize {
+        SHAPE_ADDR_BASE + r * SHAPE_ADDR_STRIDE
+    }
+
+    /// `shape_print`
+    pub fn print(&self, out: &mut Out, shape: Option<ShapeRef>) {
+        let r = match shape {
+            None => {
+                out.s("(null shape)\n");
+                return;
+            }
+            Some(r) => r,
+        };
+
+        let shape = self.shape(r);
+        p!(out, "{}:\n", shape.name);
+        let mut i = 0;
+        while i < shape.height {
+            p!(out, "{}\n", shape.art[i as usize]);
+            i += 1;
+        }
     }
 }
 
-pub fn shape_print(shape: *const Shape) {
-    if shape.is_null() {
-        println!("(null shape)");
-        return;
-    }
-    // SAFETY: caller guarantees shape points to a live Shape (singleton from ShapeManager).
-    let s = unsafe { &*shape };
-    println!("{}:", s.name);
-    for i in 0..s.height as usize {
-        println!("{}", s.art[i]);
+/// `shape_equals`: the C code compares the singleton pointers.
+pub fn shape_equals(s1: ShapeRef, s2: ShapeRef) -> i32 {
+    if s1 == s2 {
+        1
+    } else {
+        0
     }
 }
 
-pub fn shape_equals(s1: *const Shape, s2: *const Shape) -> i32 {
-    if s1 == s2 { 1 } else { 0 }
-}
-
-pub fn shape_type_name(type_: i32) -> &'static str {
-    match type_ {
-        0 => "Tree",
-        1 => "Tractor",
-        2 => "House",
-        3 => "Sun",
-        4 => "Cloud",
-        5 => "Flower",
-        6 => "Car",
-        7 => "Star",
-        8 => "Heart",
-        9 => "Rainbow",
+/// `shape_type_name`
+pub fn shape_type_name(shape_type: i32) -> &'static str {
+    match shape_type {
+        SHAPE_TREE => "Tree",
+        SHAPE_TRACTOR => "Tractor",
+        SHAPE_HOUSE => "House",
+        SHAPE_SUN => "Sun",
+        SHAPE_CLOUD => "Cloud",
+        SHAPE_FLOWER => "Flower",
+        SHAPE_CAR => "Car",
+        SHAPE_STAR => "Star",
+        SHAPE_HEART => "Heart",
+        SHAPE_RAINBOW => "Rainbow",
         _ => "Unknown",
     }
+}
+
+/// Format a pointer the way glibc's `%p` does.
+pub fn fmt_ptr(addr: usize) -> String {
+    format!("0x{:x}", addr)
 }

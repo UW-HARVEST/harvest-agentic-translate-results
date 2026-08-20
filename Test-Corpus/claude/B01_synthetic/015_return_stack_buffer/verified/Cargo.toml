@@ -3,14 +3,63 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C sources compile to a shared object exporting `printLine`, `bad`,
+# `good` and `main`; the cdylib below mirrors that surface exactly so the
+# differential tests can `dlopen()` either one.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+# The library exports `#[no_mangle] extern "C" fn main`, which collides with
+# the entry point the libtest harness generates; behavior is covered by the
+# differential integration tests in `tests/` instead.
+test = false
+doctest = false
+
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
-[profile.release]
-opt-level = 3
+[dependencies]
+# Needed by `src/bin/so_main_runner.rs`, the fresh-process dlopen harness the
+# integration tests spawn.
+libloading = "0.8"
 
 [dev-dependencies]
 libloading = "0.8"
+
+# `ffi_diff` captures file descriptor 1 to observe what the two shared objects
+# write.  libtest runs tests on several threads and writes its own progress
+# lines to fd 1, which would contaminate those captures, so this target uses a
+# small strictly-sequential harness of its own (see `common::run_cases`).
+[[test]]
+name = "ffi_diff"
+path = "tests/ffi_diff.rs"
+harness = false
+
+[[test]]
+name = "main_diff"
+path = "tests/main_diff.rs"
+
+[[test]]
+name = "symbol_parity"
+path = "tests/symbol_parity.rs"
+
+[[test]]
+name = "sweep"
+path = "tests/sweep.rs"
+
+[[test]]
+name = "c_opt_levels"
+path = "tests/c_opt_levels.rs"
+
+[features]
+# This crate has no conditional compilation: the C build (see
+# c_src/CMakeLists.txt) defines no macros and offers no options, so the only
+# valid configuration is the empty/default feature set.
+default = []
+
+[profile.release]
+panic = "abort"
 
 [workspace]

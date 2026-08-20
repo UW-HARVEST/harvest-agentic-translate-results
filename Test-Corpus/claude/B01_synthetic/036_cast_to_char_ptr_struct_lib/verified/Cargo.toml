@@ -4,14 +4,23 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
+name = "driver"
 crate-type = ["cdylib"]
 path = "src/lib.rs"
-name = "driver"
-
-[profile.release]
-opt-level = 3
 
 [dev-dependencies]
 libloading = "0.8"
+
+# The differential tests capture file descriptor 1 process-globally (that is the
+# library's entire observable behaviour), which is only sound if exactly one
+# test runs at a time. `harness = false` gives the test binary its own strictly
+# sequential runner, so no `--test-threads` setting can invalidate the results.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
 
 [workspace]

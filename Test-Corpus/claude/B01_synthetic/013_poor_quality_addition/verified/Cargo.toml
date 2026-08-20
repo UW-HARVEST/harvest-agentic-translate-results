@@ -3,8 +3,52 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C sources build an executable (`add_executable(driver src/main.c)`), but
+# every function in main.c has external linkage, so the same translation unit
+# can also be compiled as a shared library (see c_src/CMakeLists.txt notes in
+# CONFIGS.md).  We therefore expose BOTH targets on the Rust side:
+#   * `driver` (bin)      -> byte-identical replacement for the C executable
+#   * `libdriver.so`      -> cdylib exporting printLine/printIntLine/bad/good/main
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+# The cdylib exports a `main` symbol (a `-shared` build of main.c exports one
+# too), which would clash with the Rust-generated entry point of a libtest
+# harness, so the lib has no test target of its own; all testing happens in
+# tests/ through the `.so` exports.
+test = false
+doctest = false
+
 [[bin]]
 name = "driver"
 path = "src/main.rs"
+
+# The C code has no build-time configuration (no #ifdef / no CMake options), so
+# there is exactly one valid feature combination: the empty set.
+[features]
+default = []
+
+# Both differential suites use `harness = false`: the tests redirect fd 1 to
+# capture exactly what each `.so` writes to stdout, and libtest's own
+# progress output (emitted from other threads, straight to fd 1) would
+# otherwise be interleaved into the captured bytes.  A custom `main` keeps the
+# suites strictly single-threaded and in full control of stdout.
+[[test]]
+name = "phase_b_valid"
+path = "tests/phase_b_valid.rs"
+harness = false
+
+[[test]]
+name = "phase_c_errors"
+path = "tests/phase_c_errors.rs"
+harness = false
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
 
 [workspace]

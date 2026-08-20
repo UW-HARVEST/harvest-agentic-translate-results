@@ -1,44 +1,37 @@
-use std::io::{self, Read, Write};
+// Translation of c_src/src/main.c to Rust — executable entry point.
+//
+// The implementation is shared with the cdylib (src/lib.rs) through
+// core_impl.rs so that both artifacts behave identically.
+//
+// Original copyright notice from the C source:
+//
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-fn foo(input: &[u8], c: u8) -> i32 {
-    // Count occurrences of `c` up to the first null byte (mimics strchr behavior
-    // on a null-terminated C string).
-    let mut res: i32 = 0;
-    for &b in input.iter() {
-        if b == 0 {
-            break;
-        }
-        if b == c {
-            res += 1;
-        }
-    }
-    res
-}
-
-fn driver(input: &[u8]) {
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-    // Match C's printf("A: %d\n", ...) and printf("x: %d\n", ...).
-    write!(handle, "A: {}\n", foo(input, b'A')).unwrap();
-    write!(handle, "x: {}\n", foo(input, b'x')).unwrap();
-}
+#[path = "core_impl.rs"]
+mod core_impl;
 
 fn main() {
-    // char in[1000] = ""; -> 1000-byte buffer initialized to zeros.
-    let mut buf = [0u8; 1000];
-
-    // fread(in, 1, sizeof(in), stdin); -> read up to 1000 bytes from stdin.
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let mut total = 0usize;
-    while total < buf.len() {
-        match handle.read(&mut buf[total..]) {
-            Ok(0) => break,
-            Ok(n) => total += n,
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
-        }
-    }
-
-    driver(&buf);
+    // C: `int main() { ...; return 0; }` — the exit status is always 0.
+    let _status = core_impl::main_impl();
 }

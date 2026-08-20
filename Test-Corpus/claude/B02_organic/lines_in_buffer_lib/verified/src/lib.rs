@@ -1,26 +1,39 @@
-use std::ffi::c_char;
-use std::os::raw::c_void;
+//! Rust translation of the C library in `c_src/`.
+//!
+//! Public ABI:
+//!   const char** UTIL_createLinePointers(char* buffer, size_t numLines, size_t bufferSize);
+//!
+//! The behavior of the original C code is reproduced exactly, including the use
+//! of the C allocator (so that callers may `free()` the returned block), the
+//! wrapping multiplication performed by `numLines * sizeof(const char**)`, and
+//! the `malloc(0)` / partial-scan edge cases.
+
+use core::ffi::{c_char, c_void};
 
 extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
 }
 
-/// Create an array of pointers to the lines in a buffer
+/// Create an array of pointers to the lines in a buffer.
+///
+/// Returns a `malloc`'d array of `numLines` pointers into `buffer`, or NULL if
+/// the allocation failed or fewer than `numLines` lines could be located.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn UTIL_createLinePointers(
     buffer: *mut c_char,
     num_lines: usize,
     buffer_size: usize,
-) -> *mut *const c_char {
+) -> *const *const c_char {
     let mut line_index: usize = 0;
     let mut pos: usize = 0;
 
-    let elem_size = std::mem::size_of::<*const *const c_char>();
-    let buffer_ptrs: *mut c_void = malloc(num_lines * elem_size);
+    /* malloc(numLines * sizeof(const char**)) -- unsigned wrap-around, as in C */
+    let alloc_size = num_lines.wrapping_mul(core::mem::size_of::<*const *const c_char>());
+    let buffer_ptrs: *mut c_void = malloc(alloc_size);
     let line_pointers: *mut *const c_char = buffer_ptrs as *mut *const c_char;
     if buffer_ptrs.is_null() {
-        return std::ptr::null_mut();
+        return core::ptr::null();
     }
 
     while line_index < num_lines && pos < buffer_size {
@@ -29,7 +42,7 @@ pub unsafe extern "C" fn UTIL_createLinePointers(
         line_index += 1;
 
         /* Find the next null terminator, being careful not to go past the buffer */
-        while (pos + len) < buffer_size && *buffer.add(pos + len) != 0 {
+        while (pos + len < buffer_size) && *buffer.add(pos + len) != 0 {
             len += 1;
         }
 
@@ -44,8 +57,8 @@ pub unsafe extern "C" fn UTIL_createLinePointers(
     if line_index != num_lines {
         /* Something went wrong - we didn't find as many lines as expected */
         free(buffer_ptrs);
-        return std::ptr::null_mut();
+        return core::ptr::null();
     }
 
-    line_pointers
+    line_pointers as *const *const c_char
 }

@@ -1,3 +1,5 @@
+// Translated from c_src/src/main.c
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -21,35 +23,12 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::Read;
-
-fn print_hex_char_line(char_hex: i8) {
-    // C: printf("%02x\n", charHex);
-    // The signed char is promoted to int via sign-extension by default
-    // argument promotion, then printf("%x") reinterprets that int as
-    // unsigned int. Reproduce that behavior here.
-    let promoted: i32 = char_hex as i32;
-    let as_unsigned: u32 = promoted as u32;
-    println!("{:02x}", as_unsigned);
-}
+mod driver_core;
 
 fn main() {
-    // C: char data; data = ' ';
-    // On Linux x86_64 with GCC's default, `char` is signed.
-    let mut data: i8 = b' ' as i8;
-
-    // C: fscanf(stdin, "%c", &data);
-    // %c reads exactly one byte (no whitespace skipping). If the read
-    // fails (e.g. EOF on empty stdin), `data` is left untouched.
-    let mut buf = [0u8; 1];
-    let read_count = std::io::stdin().read(&mut buf).unwrap_or(0);
-    if read_count == 1 {
-        data = buf[0] as i8;
+    // C's `main` always returns 0; the process exit status is therefore 0.
+    let status = driver_core::c_main();
+    if status != 0 {
+        std::process::exit(status);
     }
-
-    // C: char result = data + 1;
-    // In C this performs an int-promoted addition and then assigns back
-    // to a (signed) char. For values 0x7F..0xFF this wraps around.
-    let result: i8 = data.wrapping_add(1);
-    print_hex_char_line(result);
 }

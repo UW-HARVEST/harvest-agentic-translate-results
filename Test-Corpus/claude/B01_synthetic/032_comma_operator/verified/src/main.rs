@@ -1,68 +1,41 @@
-use std::io::{self, Read, Write, BufWriter};
+// Rust translation of c_src/src/main.c (executable entry point).
+//
+// The C project builds `src/main.c` into the `driver` executable; this binary is
+// the behavioural equivalent.  The actual translation lives in `src/imp.rs`,
+// which is shared verbatim with the cdylib (`src/lib.rs`) that exposes the
+// `driver` / `main` C symbols for differential testing.
 
-fn driver<W: Write>(out: &mut W, x: i32) {
-    let mut j: i32 = 0;
-    let mut i: i32 = 0;
-    while i < x {
-        // Use wrapping arithmetic to mirror C's int overflow behavior
-        writeln!(out, "{} {}", i, j).unwrap();
-        i = i.wrapping_add(1);
-        j = j.wrapping_add(2);
+#[path = "imp.rs"]
+mod imp;
+
+/// Rust's runtime sets `SIGPIPE` to `SIG_IGN` before entering `main`, which a C
+/// program compiled from `c_src/src/main.c` does not do: there, writing to a
+/// pipe whose reader has gone away kills the process with signal 13.  Restore
+/// the default disposition so the executable's observable behaviour (its wait
+/// status) is identical to the C one.
+///
+/// This deliberately lives only in the binary entry point: the `main` symbol
+/// exported from the cdylib must *not* touch the signal disposition, because
+/// the C shared library does not either — it simply inherits whatever the host
+/// process installed.
+#[cfg(unix)]
+fn restore_default_sigpipe() {
+    // `SIGPIPE` is 13 and `SIG_DFL` is 0 on every Unix target.
+    const SIGPIPE: i32 = 13;
+    const SIG_DFL: usize = 0;
+    extern "C" {
+        fn signal(signum: i32, handler: usize) -> usize;
+    }
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
     }
 }
 
-/// Mimic C's `scanf("%d", &x)` for a single integer.
-/// Returns Some(value) if a value was parsed, None otherwise.
-fn scanf_int(input: &[u8], pos: &mut usize) -> Option<i32> {
-    // Skip leading whitespace (matches scanf %d behavior)
-    while *pos < input.len() {
-        let c = input[*pos];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r'
-            || c == 0x0b || c == 0x0c
-        {
-            *pos += 1;
-        } else {
-            break;
-        }
-    }
-
-    if *pos >= input.len() {
-        return None;
-    }
-
-    let start = *pos;
-    // Optional sign
-    if input[*pos] == b'+' || input[*pos] == b'-' {
-        *pos += 1;
-    }
-
-    let digit_start = *pos;
-    while *pos < input.len() && input[*pos].is_ascii_digit() {
-        *pos += 1;
-    }
-
-    if *pos == digit_start {
-        // No digits found
-        *pos = start;
-        return None;
-    }
-
-    let s = std::str::from_utf8(&input[start..*pos]).ok()?;
-    // Mirror scanf's behavior: on overflow, behavior is undefined; use wrapping parse via i64 then cast
-    match s.parse::<i64>() {
-        Ok(v) => Some(v as i32),
-        Err(_) => None,
-    }
-}
+#[cfg(not(unix))]
+fn restore_default_sigpipe() {}
 
 fn main() {
-    let mut input = Vec::new();
-    io::stdin().read_to_end(&mut input).unwrap();
-
-    let stdout = io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-
-    let mut pos = 0usize;
-    let x = scanf_int(&input, &mut pos).unwrap_or(0);
-    driver(&mut out, x);
+    restore_default_sigpipe();
+    let code = imp::c_main();
+    std::process::exit(code);
 }

@@ -1,19 +1,25 @@
 [package]
 name = "driver"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 name = "driver"
+path = "src/lib.rs"
 crate-type = ["cdylib"]
-
-[dependencies]
-libc = "0.2"
 
 [dev-dependencies]
 libloading = "0.8"
 
+# `harness = false`: the differential rows capture the process-wide stdout file
+# descriptor, so they must run strictly sequentially (libtest would run them on
+# parallel threads and its own progress output would leak into a capture).
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

@@ -1,51 +1,84 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Translated from C to Rust.
+// Rust translation of c_src/src/lib.c
 //
-// This crate replicates the behavior of the original C library byte-for-byte
-// (modulo non-deterministic behavior such as heap allocation addresses, which
-// the original C code itself depends on).
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int, c_uchar, c_void};
+#![allow(clippy::missing_safety_doc)]
 
-extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
-    fn strlen(s: *const c_char) -> usize;
-    fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-}
+use std::ffi::{c_char, c_int, c_void};
 
+/// typedef struct { int values[4]; int count; char *label; } DataBlock;
 #[repr(C)]
 struct DataBlock {
     values: [c_int; 4],
     count: c_int,
+    #[allow(dead_code)]
     label: *mut c_char,
 }
 
-#[no_mangle]
+// The C code uses the platform allocator directly. `compare_allocations()`
+// observes the *relative addresses* returned by two consecutive `malloc()`
+// calls, so the real libc allocator must be used in order to reproduce the
+// original results bit-for-bit.
+extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+}
+
+const SIZEOF_INT: usize = std::mem::size_of::<c_int>();
+
+/// void shift_array(int *arr, int size, int positions)
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn shift_array(arr: *mut c_int, size: c_int, positions: c_int) {
     if positions > 0 && positions < size {
-        memmove(
-            arr.offset(positions as isize) as *mut c_void,
-            arr as *const c_void,
-            (size - positions) as usize * std::mem::size_of::<c_int>(),
-        );
-        let mut i = 0;
+        // memmove(arr + positions, arr, (size - positions) * sizeof(int));
+        let count = (size - positions) as usize;
+        std::ptr::copy(arr, arr.add(positions as usize), count);
+        let mut i: c_int = 0;
         while i < positions {
-            *arr.offset(i as isize) = 0;
+            *arr.add(i as usize) = 0;
             i += 1;
         }
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn process_string(s: *const c_char) -> c_int {
-    if *s != 0 {
-        return strlen(s) as c_int;
+/// int process_string(const char *str)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn process_string(str: *const c_char) -> c_int {
+    // Note: the C code dereferences `str` unconditionally (no NULL check).
+    if *str != 0 {
+        // (int)strlen(str)
+        let mut len: usize = 0;
+        while *str.add(len) != 0 {
+            len += 1;
+        }
+        return len as c_int;
     }
     0
 }
 
-#[no_mangle]
+/// int apply_bitmask(int value, int operation)
+#[unsafe(no_mangle)]
 pub extern "C" fn apply_bitmask(value: c_int, operation: c_int) -> c_int {
     let mask1: c_int = 0b1111_0000;
     let mask2: c_int = 0b0000_1111;
@@ -61,25 +94,23 @@ pub extern "C" fn apply_bitmask(value: c_int, operation: c_int) -> c_int {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn init_matrix(matrix: *mut [c_int; 4]) {
-    let temp: [[c_int; 4]; 3] = [
-        [1, 2, 3, 4],
-        [5, 6, 7, 8],
-        [9, 10, 11, 12],
-    ];
+/// void init_matrix(int matrix[3][4])
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn init_matrix(matrix: *mut c_int) {
+    let temp: [[c_int; 4]; 3] = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]];
 
-    for i in 0..3 {
-        for j in 0..4 {
-            (*matrix.offset(i as isize))[j] = temp[i][j];
+    for i in 0..3usize {
+        for j in 0..4usize {
+            *matrix.add(i * 4 + j) = temp[i][j];
         }
     }
 }
 
-#[no_mangle]
+/// int compare_allocations(int val1, int val2)
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn compare_allocations(val1: c_int, val2: c_int) -> c_int {
-    let ptr1 = malloc(std::mem::size_of::<c_int>()) as *mut c_int;
-    let ptr2 = malloc(std::mem::size_of::<c_int>()) as *mut c_int;
+    let ptr1 = malloc(SIZEOF_INT) as *mut c_int;
+    let ptr2 = malloc(SIZEOF_INT) as *mut c_int;
 
     let uninit_ptr: *mut c_int;
 
@@ -103,7 +134,7 @@ pub unsafe extern "C" fn compare_allocations(val1: c_int, val2: c_int) -> c_int 
     }
 
     uninit_ptr = ptr1;
-    result += if *uninit_ptr > 0 { 10 } else { 0 };
+    result = result.wrapping_add(if *uninit_ptr > 0 { 10 } else { 0 });
 
     free(ptr1 as *mut c_void);
     free(ptr2 as *mut c_void);
@@ -111,8 +142,14 @@ pub unsafe extern "C" fn compare_allocations(val1: c_int, val2: c_int) -> c_int 
     result
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn arity4(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {
+/// int arity4(int param1, int param2, int param3, int param4)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arity4(
+    param1: c_int,
+    param2: c_int,
+    param3: c_int,
+    param4: c_int,
+) -> c_int {
     let mut result: c_int = 0;
 
     let mut block = DataBlock {
@@ -121,76 +158,85 @@ pub unsafe extern "C" fn arity4(param1: c_int, param2: c_int, param3: c_int, par
         label: std::ptr::null_mut(),
     };
 
-    // char test_str[] = "Hello"; -- includes NUL terminator
     let test_str: [c_char; 6] = [
-        b'H' as c_char,
-        b'e' as c_char,
-        b'l' as c_char,
-        b'l' as c_char,
-        b'o' as c_char,
+        'H' as c_char,
+        'e' as c_char,
+        'l' as c_char,
+        'l' as c_char,
+        'o' as c_char,
         0,
     ];
-    // char empty_str[] = "";
     let empty_str: [c_char; 1] = [0];
 
     let len1 = process_string(test_str.as_ptr());
     let len2 = process_string(empty_str.as_ptr());
 
-    result += len1 + len2;
+    result = result.wrapping_add(len1.wrapping_add(len2));
 
     shift_array(block.values.as_mut_ptr(), 4, 1);
 
-    let mut i = 0;
+    let mut i: c_int = 0;
     while i < block.count {
-        result += block.values[i as usize];
+        result = result.wrapping_add(block.values[i as usize]);
         i += 1;
     }
 
-    result = apply_bitmask(result, param1 % 4);
+    result = apply_bitmask(result, param1.wrapping_rem(4));
 
-    let mut matrix: [[c_int; 4]; 3] = [[0; 4]; 3];
+    let mut matrix = [0 as c_int; 12];
     init_matrix(matrix.as_mut_ptr());
 
-    result += matrix[0][0] + matrix[2][3];
+    result = result.wrapping_add(matrix[0].wrapping_add(matrix[2 * 4 + 3]));
 
     let alloc_result = compare_allocations(param1, param2);
-    result += alloc_result;
+    result = result.wrapping_add(alloc_result);
 
     if param3 != 0 {
-        result = (result * param3) / 100;
+        result = result.wrapping_mul(param3).wrapping_div(100);
     }
 
     if param4 != 0 {
-        result += param4;
+        result = result.wrapping_add(param4);
     }
 
     result
 }
 
-#[no_mangle]
+/// int arity2(int p1, int p2)
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arity2(p1: c_int, p2: c_int) -> c_int {
     arity4(p1, p2, 0, 0)
 }
 
-#[no_mangle]
+/// int arity3(int p1, int p2, int p3)
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arity3(p1: c_int, p2: c_int, p3: c_int) -> c_int {
     arity4(p1, p2, p3, 0)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn arity(len: c_uchar, params: *mut c_int) -> c_int {
+/// int arity(unsigned char len, int *params)
+///
+/// NOTE: the public header (`include/lib.h`) declares this as
+/// `int arity(int len, int *params)`, but the definition in `src/lib.c` takes
+/// an `unsigned char`. The compiled callee therefore only ever looks at the
+/// low 8 bits of the incoming argument. That truncation is reproduced here so
+/// that callers using either prototype observe identical behaviour.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arity(len: c_int, params: *mut c_int) -> c_int {
+    let len: u8 = (len as u32 & 0xFF) as u8;
+
     if len < 2 {
-        return -1;
+        -1
     } else if len == 2 {
-        return arity2(*params.offset(0), *params.offset(1));
+        arity2(*params.add(0), *params.add(1))
     } else if len == 3 {
-        return arity3(*params.offset(0), *params.offset(1), *params.offset(2));
+        arity3(*params.add(0), *params.add(1), *params.add(2))
     } else {
-        return arity4(
-            *params.offset(0),
-            *params.offset(1),
-            *params.offset(2),
-            *params.offset(3),
-        );
+        arity4(
+            *params.add(0),
+            *params.add(1),
+            *params.add(2),
+            *params.add(3),
+        )
     }
 }

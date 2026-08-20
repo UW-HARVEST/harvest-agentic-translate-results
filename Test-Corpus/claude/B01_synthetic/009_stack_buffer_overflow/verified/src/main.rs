@@ -1,146 +1,32 @@
-use std::io::{self, Read, Write};
+// Executable form of the translation of c_src/src/main.c -- the counterpart of
+// the CMake `driver` target.
+//
+// The implementation lives in `imp.rs`, which is shared verbatim with the cdylib
+// (`lib.rs`). It is pulled in with `#[path]` rather than by depending on the
+// library crate so that the library's `#[no_mangle] extern "C" fn main` export
+// cannot collide with this binary's `main` symbol.
 
-fn print_line(line: &str) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let _ = writeln!(out, "{}", line);
-}
+// `print_cstr` is only reachable through the cdylib's `printLine` export.
+#[allow(dead_code)]
+#[path = "imp.rs"]
+mod imp;
 
-fn print_int_line(int_number: i32) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let _ = writeln!(out, "{}", int_number);
-}
-
-/// Mimic C's fgets(buf, n, stdin):
-/// - reads at most n-1 bytes from stdin
-/// - stops after a newline (which is included in the result)
-/// - returns None if no characters are read before EOF
-fn fgets(n: usize) -> Option<Vec<u8>> {
-    if n == 0 {
-        return None;
-    }
-    let max_chars = n - 1;
-    let mut buf: Vec<u8> = Vec::with_capacity(max_chars);
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let mut byte = [0u8; 1];
-    let mut read_any = false;
-    while buf.len() < max_chars {
-        match handle.read(&mut byte) {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                read_any = true;
-                buf.push(byte[0]);
-                if byte[0] == b'\n' {
-                    break;
-                }
-            }
-            Err(_) => return None,
-        }
-    }
-    if !read_any {
-        return None;
-    }
-    Some(buf)
-}
-
-/// Mimic C's atoi: skip leading whitespace, optional sign, parse digits,
-/// stop at first non-digit. Returns 0 if no digits are found.
-fn atoi(bytes: &[u8]) -> i32 {
-    let mut i = 0usize;
-    // Skip leading whitespace (matches isspace in C locale)
-    while i < bytes.len()
-        && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
-    {
-        i += 1;
-    }
-    let mut sign: i32 = 1;
-    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
-        if bytes[i] == b'-' {
-            sign = -1;
-        }
-        i += 1;
-    }
-    let mut result: i32 = 0;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        let digit = (bytes[i] - b'0') as i32;
-        // Use wrapping arithmetic to mirror C's behavior on overflow.
-        result = result.wrapping_mul(10).wrapping_add(digit);
-        i += 1;
-    }
-    result.wrapping_mul(sign)
-}
-
-fn bad() {
-    let mut data: i32 = -1;
-    // char inputBuffer[14] = "";  fgets(inputBuffer, 14, stdin)
-    match fgets(14) {
-        Some(input) => {
-            data = atoi(&input);
-        }
-        None => {
-            print_line("fgets() failed.");
-        }
-    }
-    let mut buffer: [i32; 10] = [0; 10];
-    if data >= 0 {
-        buffer[data as usize] = 1;
-        for i in 0..10 {
-            print_int_line(buffer[i]);
-        }
-    } else {
-        print_line("ERROR: Array index is negative.");
-    }
-}
-
-/* goodG2B uses the GoodSource with the BadSink */
-fn good_g2b() {
-    let mut data: i32 = -1;
-    data = 7;
-    let mut buffer: [i32; 10] = [0; 10];
-    if data >= 0 {
-        buffer[data as usize] = 1;
-        for i in 0..10 {
-            print_int_line(buffer[i]);
-        }
-    } else {
-        print_line("ERROR: Array index is negative.");
-    }
-}
-
-/* goodB2G uses the BadSource with the GoodSink */
-fn good_b2g() {
-    let mut data: i32 = -1;
-    match fgets(14) {
-        Some(input) => {
-            data = atoi(&input);
-        }
-        None => {
-            print_line("fgets() failed.");
-        }
-    }
-    let mut buffer: [i32; 10] = [0; 10];
-    if data >= 0 && data < 10 {
-        buffer[data as usize] = 1;
-        for i in 0..10 {
-            print_int_line(buffer[i]);
-        }
-    } else {
-        print_line("ERROR: Array index is out-of-bounds");
-    }
-}
-
-fn good() {
-    good_g2b();
-    good_b2g();
-}
+use imp::Caller;
 
 fn main() {
-    print_line("Calling good()...");
-    good();
-    print_line("Finished good()");
-    print_line("Calling bad()...");
-    bad();
-    print_line("Finished bad()");
+    // A C program starts with SIGPIPE at its default disposition, so writing to a
+    // closed stdout kills it (status 141). Rust's runtime sets SIGPIPE to SIG_IGN
+    // before main, which would instead make every write fail silently and let the
+    // program exit 0. Restore the C behavior.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
+    let mut io = imp::Io::new();
+    let rc = imp::run_main(&mut io, Caller::CMain);
+
+    // C's `return 0` from main; exiting through libc flushes stdout and, for a
+    // seekable stdin, repositions the file descriptor to the logical read offset,
+    // both of which are observable.
+    std::process::exit(rc);
 }

@@ -1,52 +1,28 @@
-//! Library exposing the C-compatible `driver` symbol.
-//!
-//! The C implementation writes bytes of `x` (host endian) as lowercase hex,
-//! followed by a newline, to stdout via `printf`. We replicate this exactly,
-//! including writing through libc's `printf` so buffering and stdout handling
-//! match the C version byte-for-byte.
+// cdylib façade: exports exactly the symbols that `c_src/src/main.c` exports
+// when it is compiled into a shared library:
+//
+//   $ nm -D --defined-only libcdriver.so
+//   0000000000001193 T driver
+//   00000000000011b8 T main
+//
+// (`print_hex` is `static` in the C source and therefore not exported.)
 
-use std::os::raw::{c_char, c_int, c_uchar};
+#[path = "logic.rs"]
+mod logic;
 
-extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
-}
+use std::os::raw::c_int;
 
-unsafe fn print_hex(p: *const c_uchar, len: c_int) {
-    let fmt_byte = b"%02x\0".as_ptr() as *const c_char;
-    let fmt_nl = b"\n\0".as_ptr() as *const c_char;
-    for i in 0..len {
-        let b = *p.offset(i as isize) as c_int;
-        printf(fmt_byte, b);
-    }
-    printf(fmt_nl);
-}
-
-/// C-compatible export: replicates `void driver(int x)` from main.c exactly.
+/// `void driver(int x)`
 #[no_mangle]
-pub unsafe extern "C" fn driver(x: c_int) {
-    // C does: char raw[sizeof(x)]; memcpy(raw, &x, sizeof(x));
-    //         print_hex((unsigned char*)raw, sizeof(raw));
-    let raw = (x as i32).to_ne_bytes();
-    print_hex(raw.as_ptr(), raw.len() as c_int);
+pub extern "C" fn driver(x: c_int) {
+    logic::driver(x as i32);
 }
 
-extern "C" {
-    fn scanf(fmt: *const c_char, ...) -> c_int;
-}
-
-/// C-compatible export: replicates `int main()` from main.c exactly.
+/// `int main()`
 ///
-/// Reads an integer from stdin via scanf("%d", &x), defaulting to 0 if no
-/// conversion happens, and calls driver(x).
-///
-/// Only emitted when building the cdylib, not when running unit tests
-/// (where the test harness needs to provide its own `main`).
-#[cfg(not(test))]
+/// Returning from a `dlsym`'d `main` does not run libc's exit-time cleanup, so
+/// (like the C `.so`) stdin is left wherever the buffered reads stopped.
 #[no_mangle]
-pub unsafe extern "C" fn main() -> c_int {
-    let mut x: c_int = 0;
-    let fmt = b"%d\0".as_ptr() as *const c_char;
-    scanf(fmt, &mut x as *mut c_int);
-    driver(x);
-    0
+pub extern "C" fn main() -> c_int {
+    logic::program_main(false) as c_int
 }

@@ -3,15 +3,22 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C translation unit (`c_src/src/main.c`) is compiled both as an executable
+# (see c_src/CMakeLists.txt) and, for differential testing, as a shared object.
+# The Rust side mirrors both: a `cdylib` exporting the same C-ABI symbols and a
+# binary with the same observable behaviour.
 [lib]
 name = "driver"
-crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
+# The C source has no `#ifdef`/CMake options, so the translation has no
+# conditional compilation: the only valid build configuration is the default
+# (empty) feature set.
 [features]
 default = []
 
@@ -20,6 +27,6 @@ libloading = "0.8"
 libc = "0.2"
 
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

@@ -1,39 +1,74 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Translated from C to Rust.
+// Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
+//
+// Public ABI of the C shared library (from `nm -D libdriver.so`):
+//     driver
+//
+// The translation deliberately reproduces the original behaviour byte for
+// byte, including dumping the raw in-memory representation of the `house_t`
+// struct (which is platform/ABI dependent) and writing through C `stdio` so
+// that buffering and interleaving with any C code in the same process is
+// preserved exactly.
 
-use std::ffi::c_int;
-use std::io::{self, Write};
-use std::mem::MaybeUninit;
+use std::os::raw::{c_char, c_int, c_uchar};
 
+extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
+
+/// typedef struct {
+///     int floors;
+///     int bedrooms;
+///     double bathrooms;
+/// } house_t;
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct HouseT {
     floors: c_int,
     bedrooms: c_int,
     bathrooms: f64,
 }
 
-fn print_hex(p: &[u8]) {
-    let mut stdout = io::stdout();
-    let mut buf = String::with_capacity(p.len() * 2 + 1);
-    for byte in p {
-        buf.push_str(&format!("{:02x}", byte));
+/// static void print_hex(unsigned char *p, int len)
+fn print_hex(p: *const c_uchar, len: c_int) {
+    let mut i: c_int = 0;
+    while i < len {
+        // printf("%02x", p[i]);
+        unsafe {
+            printf(
+                b"%02x\0".as_ptr() as *const c_char,
+                *p.offset(i as isize) as c_int,
+            );
+        }
+        i += 1;
     }
-    buf.push('\n');
-    let _ = stdout.write_all(buf.as_bytes());
-    let _ = stdout.flush();
+    // printf("\n");
+    unsafe {
+        printf(b"\n\0".as_ptr() as *const c_char);
+    }
 }
 
+/// void driver(int floors)
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(floors: c_int) {
-    // Mirror C: house_t house = {0}; — zeroes the entire struct including
-    // any padding bytes, then individual fields are assigned.
-    let mut house: HouseT = unsafe { MaybeUninit::<HouseT>::zeroed().assume_init() };
+    // house_t house = {0};
+    let mut house: HouseT = HouseT {
+        floors: 0,
+        bedrooms: 0,
+        bathrooms: 0.0,
+    };
+    // Ensure any ABI padding bytes are zeroed, matching `= {0}` as emitted by
+    // the C compiler for this aggregate initialization.
+    unsafe {
+        std::ptr::write_bytes(&mut house as *mut HouseT as *mut u8, 0, size_of::<HouseT>());
+    }
+
     house.floors = floors;
     house.bedrooms = 3;
-    house.bathrooms = 2.0;
+    house.bathrooms = 2.;
 
-    let len = std::mem::size_of::<HouseT>();
-    let p = &house as *const HouseT as *const u8;
-    let slice = unsafe { std::slice::from_raw_parts(p, len) };
-    print_hex(slice);
+    // print_hex((unsigned char *)&house, sizeof(house));
+    print_hex(
+        &house as *const HouseT as *const c_uchar,
+        size_of::<HouseT>() as c_int,
+    );
 }

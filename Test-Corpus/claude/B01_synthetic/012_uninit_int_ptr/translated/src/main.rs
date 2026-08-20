@@ -1,91 +1,169 @@
-// Translation of c_src/src/main.c into Rust.
-// The original C code intentionally exhibits CWE-457 (Use of Uninitialized Variable)
-// in `bad()` by dereferencing an uninitialized pointer. We reproduce the same
-// runtime behavior here: typically a crash (SIGSEGV) with no stdout output.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+// Translation of c_src/src/main.c (CWE-457 / uninitialized pointer test driver).
+//
+// The `bad()` path in the original C dereferences an uninitialized `int *`,
+// which is undefined behavior. The reference build (CMake with no
+// CMAKE_BUILD_TYPE, i.e. no optimization) observably reads a zeroed stack
+// slot and prints "0\n". That observed behavior is reproduced here verbatim
+// rather than "fixed".
 
+use std::io::{Read, Write};
+
+/// `printf("%d\n", *intNumber);`
 fn print_int_ptr_line(int_number: &i32) {
-    // Match printf("%d\n", *intNumber);
-    let stdout = io::stdout();
+    let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    let _ = write!(out, "{}\n", *int_number);
+    let _ = writeln!(out, "{}", *int_number);
     let _ = out.flush();
 }
 
+/// Original C:
+///     int *data;                 /* uninitialized */
+///     printIntPtrLine(data);     /* undefined behavior */
+///
+/// The reference (-O0) build reads through the stale stack slot and prints 0,
+/// so the same output is produced here.
 fn bad() {
-    // The original C code has CWE-457: reads an uninitialized pointer and
-    // dereferences it. With the default (unoptimized) build configuration
-    // produced by the CMakeLists.txt in c_src/, the uninitialized stack
-    // slot for `data` happens to contain a pointer that resolves to a
-    // memory location holding 0, so the program prints "0\n" and exits
-    // normally instead of crashing. We reproduce that observable output
-    // here without invoking actual undefined behavior in Rust.
-    let data: i32 = 0;
-    print_int_ptr_line(&data);
+    // Value observed through the uninitialized pointer in the reference build.
+    let uninitialized_read: i32 = 0;
+    print_int_ptr_line(&uninitialized_read);
 }
 
+/// Original C:
+///     int data = 5; int *data_addr = &data; printIntPtrLine(data_addr);
 fn good() {
     let data: i32 = 5;
     let data_addr: &i32 = &data;
     print_int_ptr_line(data_addr);
 }
 
-/// Read an integer from stdin in a manner that matches C's `scanf("%d", &x)`.
-///
-/// Behavior:
-/// - Skips leading whitespace (including newlines), matching C scanf.
-/// - Reads optional sign and decimal digits.
-/// - If no integer is found, leaves `x` unchanged (matches C scanf which
-///   leaves the variable untouched on conversion failure when the variable
-///   is initialized prior to the call).
-fn read_int_scanf(default: i32) -> i32 {
-    let mut buf = Vec::new();
-    if io::stdin().read_to_end(&mut buf).is_err() {
-        return default;
-    }
+/// A single-byte-pushback reader over stdin, mirroring how `scanf` consumes
+/// characters (it reads only as far as it needs and ungets the terminator).
+struct Scanner {
+    input: std::io::Stdin,
+    pushed_back: Option<u8>,
+}
 
-    let mut i = 0usize;
-    // Skip whitespace (matches C isspace(): space, tab, newline, vtab, ff, cr).
-    while i < buf.len() {
-        let c = buf[i];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' || c == 0x0b || c == 0x0c {
-            i += 1;
-        } else {
-            break;
+impl Scanner {
+    fn new() -> Self {
+        Scanner {
+            input: std::io::stdin(),
+            pushed_back: None,
         }
     }
 
-    if i >= buf.len() {
-        return default;
+    fn next_byte(&mut self) -> Option<u8> {
+        if let Some(b) = self.pushed_back.take() {
+            return Some(b);
+        }
+        let mut buf = [0u8; 1];
+        loop {
+            match self.input.read(&mut buf) {
+                Ok(0) => return None,
+                Ok(_) => return Some(buf[0]),
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => return None,
+            }
+        }
     }
 
-    let mut sign: i64 = 1;
-    if buf[i] == b'+' {
-        i += 1;
-    } else if buf[i] == b'-' {
-        sign = -1;
-        i += 1;
+    fn unget(&mut self, b: u8) {
+        self.pushed_back = Some(b);
     }
 
-    let start = i;
-    let mut value: i64 = 0;
-    while i < buf.len() && buf[i].is_ascii_digit() {
-        value = value.wrapping_mul(10).wrapping_add((buf[i] - b'0') as i64);
-        i += 1;
-    }
+    /// Emulates `scanf("%d", &x)`: returns `Some(value)` when a conversion is
+    /// performed, `None` on matching failure or input failure (in which case
+    /// the C code leaves `x` untouched).
+    ///
+    /// Overflow follows glibc's `strtol` behavior: the value saturates at
+    /// LONG_MAX / LONG_MIN and is then truncated to `int`.
+    fn scan_int(&mut self) -> Option<i32> {
+        // Skip leading whitespace, exactly as isspace() classifies it.
+        let mut c = loop {
+            let b = self.next_byte()?; // EOF before any conversion
+            if !matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+                break b;
+            }
+        };
 
-    if i == start {
-        // No digits parsed: scanf leaves the value unchanged.
-        return default;
-    }
+        // Optional sign.
+        let mut negative = false;
+        if c == b'+' || c == b'-' {
+            negative = c == b'-';
+            // A sign with no following digits is a matching failure.
+            c = self.next_byte()?;
+        }
 
-    let result = value.wrapping_mul(sign);
-    result as i32
+        if !c.is_ascii_digit() {
+            self.unget(c);
+            return None; // matching failure
+        }
+
+        let mut magnitude: u128 = 0;
+        let mut saturated = false;
+        loop {
+            if !c.is_ascii_digit() {
+                self.unget(c);
+                break;
+            }
+            if !saturated {
+                magnitude = magnitude * 10 + u128::from(c - b'0');
+                // Once past the 64-bit range there is nothing left to track.
+                if magnitude > u128::from(u64::MAX) {
+                    saturated = true;
+                }
+            }
+            match self.next_byte() {
+                Some(b) => c = b,
+                None => break,
+            }
+        }
+
+        let as_long: i64 = if negative {
+            if saturated || magnitude >= (i64::MAX as u128) + 1 {
+                i64::MIN
+            } else {
+                -(magnitude as i64)
+            }
+        } else if saturated || magnitude > i64::MAX as u128 {
+            i64::MAX
+        } else {
+            magnitude as i64
+        };
+
+        // Assignment to an `int` object truncates the low 32 bits.
+        Some(as_long as i32)
+    }
 }
 
 fn main() {
-    let x: i32 = read_int_scanf(0);
+    let mut x: i32 = 0;
+    let mut scanner = Scanner::new();
+    if let Some(v) = scanner.scan_int() {
+        x = v;
+    }
 
     if x != 0 {
         good();

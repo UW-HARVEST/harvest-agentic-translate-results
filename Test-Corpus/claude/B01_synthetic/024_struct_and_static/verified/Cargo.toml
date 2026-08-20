@@ -1,5 +1,5 @@
 [package]
-name = "translated_rust"
+name = "driver"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,26 @@ edition = "2021"
 name = "driver"
 path = "src/main.rs"
 
+# Same translation unit exposed through the C ABI (`run`, `main`) so the
+# differential tests can dlopen it next to the C shared library.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+# The exported `main` clashes with libtest's own entry point, and all tests live
+# in tests/ (they must go through the .so, not through Rust linkage).
+test = false
+doctest = false
+
+[features]
+# The C source has no `#ifdef`s and CMakeLists.txt exposes no options, so the
+# translation has exactly one build configuration: no features at all.
+default = []
+
+[dev-dependencies]
+libloading = "0.8"
+
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

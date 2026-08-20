@@ -1,100 +1,51 @@
-// Library crate exposing the same FFI surface as the C shared library.
+// Translated from c_src/src/main.c
 //
-// The C source defines two externally-visible symbols:
-//   - `driver(int x)`: prints `2*x + 300` followed by a newline.
-//   - `main()`: reads an int via scanf and calls driver.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// To remain symbol-compatible with the C .so, we re-export both with
-// `#[no_mangle]`.
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+//! C-ABI surface of the translation. Mirrors the exported symbols of the
+//! shared library built from `c_src/src/main.c` (`driver` and `main`).
 
-/// Replicates `void driver(int x)` from the C source:
-///     int y = 2 * x;
-///     y += 300;
-///     printf("%d\n", y);
+// When this crate is compiled as a test harness the exported `main` below is
+// cfg-ed out, which leaves parts of the translation unreferenced.
+#[cfg_attr(test, allow(dead_code))]
+mod driver_impl;
+
+use std::os::raw::c_int;
+
+/// `void driver(int x)`
 #[no_mangle]
-pub extern "C" fn driver(x: i32) {
-    // Use wrapping arithmetic to match C's int overflow behavior.
-    let mut y: i32 = x.wrapping_mul(2);
-    y = y.wrapping_add(300);
-    // Use libc-style printf via Rust's stdout to keep the output byte-identical
-    // (`%d\n` -> "<value>\n").
-    let s = format!("{}\n", y);
-    let _ = io::stdout().write_all(s.as_bytes());
-    let _ = io::stdout().flush();
+pub extern "C" fn driver(x: c_int) {
+    driver_impl::driver(x as i32);
 }
 
-/// Mimic scanf("%d", &x):
-/// - Skip leading whitespace (including newlines).
-/// - Optionally read a leading '+' or '-'.
-/// - Read decimal digits until a non-digit byte or EOF.
-/// - On match failure (no digits), the variable is unchanged.
-/// Returns Some(value) on success, None on match failure.
-#[cfg(not(test))]
-fn scanf_int(stdin_bytes: &[u8], pos: &mut usize) -> Option<i32> {
-    // Skip whitespace
-    while *pos < stdin_bytes.len() {
-        let c = stdin_bytes[*pos];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' || c == 0x0B || c == 0x0C {
-            *pos += 1;
-        } else {
-            break;
-        }
-    }
-
-    if *pos >= stdin_bytes.len() {
-        return None;
-    }
-
-    let start = *pos;
-    let mut sign: i64 = 1;
-    if stdin_bytes[*pos] == b'+' {
-        *pos += 1;
-    } else if stdin_bytes[*pos] == b'-' {
-        sign = -1;
-        *pos += 1;
-    }
-
-    let digit_start = *pos;
-    let mut value: i64 = 0;
-    while *pos < stdin_bytes.len() {
-        let c = stdin_bytes[*pos];
-        if c.is_ascii_digit() {
-            value = value.wrapping_mul(10).wrapping_add((c - b'0') as i64);
-            *pos += 1;
-        } else {
-            break;
-        }
-    }
-
-    if *pos == digit_start {
-        // No digits matched; rewind to the start so caller knows nothing was consumed.
-        *pos = start;
-        return None;
-    }
-
-    let signed = sign.wrapping_mul(value);
-    Some(signed as i32)
-}
-
-/// Replicates the C `main()`: reads an int from stdin and calls `driver`.
-/// Exported with the C `main` symbol name to mirror the C shared library.
+/// `int main(void)`
 ///
-/// Hidden from `cfg(test)` builds because the integration test harness
-/// generates its own `main` and the linker rejects two entry symbols.
+/// Only present in the real shared library / binary artifacts; when this crate
+/// is compiled as a test harness the symbol would collide with the harness's
+/// own `main`.
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn main() -> i32 {
-    let mut input = Vec::new();
-    if io::stdin().read_to_end(&mut input).is_err() {
-        // If reading fails, fall back to default behavior
-    }
-
-    let mut pos: usize = 0;
-    let x: i32 = scanf_int(&input, &mut pos).unwrap_or(0);
-    driver(x);
-
-    let _ = io::stdout().flush();
-    0
+pub extern "C" fn main() -> c_int {
+    driver_impl::run() as c_int
 }

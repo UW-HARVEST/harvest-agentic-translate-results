@@ -1,73 +1,42 @@
-// Translated from c_src/src/long.c
-// Library reproducing byte-identical output of long_exec.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_int;
-use std::os::raw::c_uint;
-use std::sync::Mutex;
+//! Rust translation of the C library found in `c_src/`.
+//!
+//! The C library is built by globbing every translation unit in `c_src/src`
+//! into a single shared object.  It currently consists of `src/long.c`, whose
+//! public ABI surface is:
+//!
+//! | symbol                        | kind      |
+//! |-------------------------------|-----------|
+//! | `array`                       | data (B)  |
+//! | `long_exec`                   | text (T)  |
+//! | `perform_expensive_operations` | text (T) |
+//!
+//! Every one of those symbols is re-created here with the exact same linker
+//! name, C ABI and observable behaviour (including the use of the platform
+//! `srand`/`rand` PRNG and `printf` so that output is byte-identical).
 
-const ARRAY_SIZE: usize = 256 * 1024; // 1MB assuming sizeof(int) = 4
-const ITERATIONS: c_int = 2000;
+#![allow(non_upper_case_globals)]
 
-// Global array, equivalent to the C `int array[ARRAY_SIZE];` symbol.
-// We use a Mutex<Vec<i32>> to provide interior mutability for the static.
-static ARRAY: Mutex<Vec<i32>> = Mutex::new(Vec::new());
-
-unsafe extern "C" {
-    fn srand(seed: c_uint);
-    fn rand() -> c_int;
-    fn printf(fmt: *const u8, ...) -> c_int;
-}
-
-// Perform expensive arithmetic on each element.
-// Mirrors `perform_expensive_operations` from the C source.
-fn perform_expensive_operations(array: &mut [i32]) {
-    for i in 0..ARRAY_SIZE {
-        let mut x: i32 = array[i];
-        for _ in 0..100 {
-            // x = x * 3 + 7;
-            x = x.wrapping_mul(3).wrapping_add(7);
-            // x = x ^ (x >> 3);
-            x ^= x >> 3;
-            // x = x - (x << 1);
-            x = x.wrapping_sub(x.wrapping_shl(1));
-            // x = x / 2 + x % 7;
-            x = (x / 2).wrapping_add(x % 7);
-        }
-        array[i] = x;
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn long_exec(seed: c_uint) {
-    // srand(seed)
-    unsafe {
-        srand(seed);
-    }
-
-    let mut guard = ARRAY.lock().unwrap();
-    if guard.len() != ARRAY_SIZE {
-        guard.resize(ARRAY_SIZE, 0);
-    }
-    let array: &mut [i32] = guard.as_mut_slice();
-
-    // Initialize array with rand() values.
-    for i in 0..ARRAY_SIZE {
-        array[i] = unsafe { rand() } as i32;
-    }
-
-    // Perform expensive operations ITERATIONS times.
-    for _ in 0..ITERATIONS {
-        perform_expensive_operations(array);
-    }
-
-    // XOR-reduce.
-    let mut xor_result: i32 = 0;
-    for i in 0..ARRAY_SIZE {
-        xor_result ^= array[i];
-    }
-
-    // printf("%d\n", xor_result);
-    unsafe {
-        printf(b"%d\n\0".as_ptr(), xor_result as c_int);
-    }
-}
+pub mod clong;

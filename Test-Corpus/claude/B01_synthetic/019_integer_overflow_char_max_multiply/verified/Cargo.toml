@@ -1,21 +1,33 @@
 [package]
-name = "translated_rust"
+name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C source builds to an executable (c_src/CMakeLists.txt) and can equally be
+# built as a shared object. Mirror both: a `driver` binary and a `cdylib` that
+# exports the same C symbols, so the two can be diffed through the FFI boundary.
 [lib]
-name = "translated_rust"
+name = "driver"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
+# The library exports a `#[no_mangle] main` (the C `.so` exports `main`, so parity
+# requires it). A unit-test harness for this target would declare a second entry
+# symbol, so it is disabled: the library is verified through its `.so` exports by
+# the integration tests in `tests/`, never by calling into it directly.
+test = false
+doctest = false
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
 [profile.release]
-opt-level = 3
+panic = "abort"
+
+# No [features] are defined: this crate has exactly one build configuration.
 
 [dev-dependencies]
 libloading = "0.8"
+libc = "0.2"
 
 [workspace]

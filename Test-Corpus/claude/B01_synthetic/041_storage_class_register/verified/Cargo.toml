@@ -3,14 +3,43 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C translation unit (`c_src/src/main.c`) exports exactly two symbols when
+# it is compiled as a shared object: `driver` and `main`.  The `cdylib` target
+# below mirrors that ABI surface so the Rust side can be loaded with `dlopen`
+# and compared against the C `.so` symbol-for-symbol.  The logic itself lives in
+# `src/main.rs`; `src/ffi.rs` only adds the `#[no_mangle]` export wrappers.
+[lib]
+name = "driver"
+path = "src/ffi.rs"
+crate-type = ["cdylib"]
+
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
-[profile.release]
-opt-level = 3
+# This crate has no Cargo features: the C build (`c_src/CMakeLists.txt`) has no
+# options, and `c_src/src/main.c` contains no `#ifdef` configuration either, so
+# there is exactly one build configuration to verify.
+[features]
 
 [dev-dependencies]
 libloading = "0.8"
+libc = "0.2"
+
+# The in-process `libloading` comparisons redirect fd 1 to capture what the
+# loaded `.so`s print. libtest's own progress output ("test foo ... ok") also
+# goes to fd 1 from other threads, which would land inside the capture window,
+# so these tests run without the default harness and print nothing while a
+# capture is active.
+[[test]]
+name = "phase_b_ffi"
+harness = false
+
+[[test]]
+name = "phase_c_ffi"
+harness = false
+
+[profile.release]
+panic = "abort"
 
 [workspace]

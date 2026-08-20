@@ -1,56 +1,89 @@
-//! Translation of c_src/src/lib.c to Rust.
+//! Rust translation of the C library in `c_src/`.
 //!
-//! This crate exposes `parse_uname_string` as a C ABI symbol matching the C
-//! implementation. All allocations made for OUT pointers use libc::malloc /
-//! strdup-equivalents so that the caller can free them with libc::free, exactly
-//! like the original C code.
+//! The library exposes three public symbols (as verified with `nm -D` on the C
+//! shared object):
+//!
+//! ```text
+//! T get_os_arch
+//! T w_regexec
+//! T parse_uname_string
+//! ```
+//!
+//! The translation is byte-for-byte behaviour preserving: it performs the very
+//! same in-place mutations on the caller supplied buffers, allocates its result
+//! strings with the platform `malloc`/`strdup` (so the caller can `free()`
+//! them), and uses the very same POSIX regular expression engine (glibc
+//! `regcomp`/`regexec`) as the original code. Buggy behaviour of the original
+//! implementation (such as writing a NUL byte one octet *before* the start of
+//! an empty string) is faithfully reproduced instead of being fixed.
 
-use libc::{c_char, c_int, c_void, size_t};
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
 
-// We don't use the regex_t / regmatch_t / regcomp / regexec / regfree symbols
-// from libc directly because those are not exposed on every platform. We
-// declare what we need with extern "C" blocks. The original C uses POSIX
-// regex with REG_EXTENDED.
-//
-// On glibc, REG_EXTENDED == 1.
-const REG_EXTENDED: c_int = 1;
+use core::ffi::{c_char, c_int, c_void, CStr};
+use core::mem::MaybeUninit;
 
-// Opaque-enough representation of regex_t. The actual size differs across
-// libc implementations; we use a buffer that is large enough for glibc /
-// musl / BSD. glibc's regex_t is 64 bytes on 64-bit; we use 256 to be very
-// safe across libc implementations.
+// ---------------------------------------------------------------------------
+// libc / POSIX declarations
+// ---------------------------------------------------------------------------
+
+/// Opaque stand-in for `FILE`.
+pub type FILE = c_void;
+
+/// POSIX `regoff_t` (a plain `int` in glibc).
+pub type regoff_t = c_int;
+
+/// POSIX `regmatch_t`, layout compatible with `<regex.h>`.
 #[repr(C)]
-struct RegexT {
+#[derive(Clone, Copy)]
+pub struct regmatch_t {
+    pub rm_so: regoff_t,
+    pub rm_eo: regoff_t,
+}
+
+/// Opaque, over-sized stand-in for `regex_t`.
+///
+/// glibc's `regex_t` is 64 bytes with an alignment of 8; the buffer below is
+/// deliberately larger so that the storage is always sufficient, regardless of
+/// the C library in use. `regcomp()` only ever touches `sizeof(regex_t)` bytes.
+#[repr(C, align(16))]
+struct regex_t {
     _opaque: [u8; 256],
 }
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct RegmatchT {
-    pub rm_so: libc::regoff_t,
-    pub rm_eo: libc::regoff_t,
-}
+/// `REG_EXTENDED` from `<regex.h>`.
+const REG_EXTENDED: c_int = 1;
 
 extern "C" {
-    fn regcomp(preg: *mut RegexT, pattern: *const c_char, cflags: c_int) -> c_int;
+    static mut stderr: *mut FILE;
+
+    fn fprintf(stream: *mut FILE, format: *const c_char, ...) -> c_int;
+    fn snprintf(s: *mut c_char, n: usize, format: *const c_char, ...) -> c_int;
+
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+    fn strdup(s: *const c_char) -> *mut c_char;
+    fn strlen(s: *const c_char) -> usize;
+    fn strstr(haystack: *const c_char, needle: *const c_char) -> *mut c_char;
+
+    fn regcomp(preg: *mut regex_t, pattern: *const c_char, cflags: c_int) -> c_int;
     fn regexec(
-        preg: *const RegexT,
+        preg: *const regex_t,
         string: *const c_char,
-        nmatch: size_t,
-        pmatch: *mut RegmatchT,
+        nmatch: usize,
+        pmatch: *mut regmatch_t,
         eflags: c_int,
     ) -> c_int;
-    fn regfree(preg: *mut RegexT);
-
-    // FILE-handle-bearing stderr stream and fprintf. We mirror the original
-    // C code which uses fprintf(stderr, ...).
-    static stderr: *mut libc::FILE;
-    fn fprintf(stream: *mut libc::FILE, format: *const c_char, ...) -> c_int;
+    fn regfree(preg: *mut regex_t);
 }
 
-/// Mirrors the C `os_data` struct exactly.
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/// Mirrors `os_data` from `include/lib.h`.
 #[repr(C)]
-pub struct OsData {
+pub struct os_data {
     pub os_name: *mut c_char,
     pub os_version: *mut c_char,
     pub os_major: *mut c_char,
@@ -63,105 +96,66 @@ pub struct OsData {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers — reproduce libc behaviors used by the C source.
+// Helpers that mirror the C pointer idioms
 // ---------------------------------------------------------------------------
 
-/// Equivalent to `strlen`.
-unsafe fn c_strlen(s: *const c_char) -> usize {
-    let mut n = 0usize;
-    while *s.add(n) != 0 {
-        n += 1;
-    }
-    n
-}
-
-/// Equivalent to `strdup` — allocates with libc::malloc so caller can free().
-unsafe fn c_strdup(s: *const c_char) -> *mut c_char {
-    let len = c_strlen(s);
-    let p = libc::malloc(len + 1) as *mut c_char;
-    if p.is_null() {
-        return p;
-    }
-    libc::memcpy(p as *mut c_void, s as *const c_void, len + 1);
-    p
-}
-
-/// Equivalent to `strstr`.
-unsafe fn c_strstr(haystack: *const c_char, needle: *const c_char) -> *mut c_char {
-    let nlen = c_strlen(needle);
-    if nlen == 0 {
-        return haystack as *mut c_char;
-    }
-    let hlen = c_strlen(haystack);
-    if nlen > hlen {
-        return std::ptr::null_mut();
-    }
-    for i in 0..=(hlen - nlen) {
-        if libc::memcmp(
-            haystack.add(i) as *const c_void,
-            needle as *const c_void,
-            nlen,
-        ) == 0
-        {
-            return haystack.add(i) as *mut c_char;
-        }
-    }
-    std::ptr::null_mut()
-}
-
-/// Implements the same `snprintf(dst, size+1, "%.*s", size, src)` pattern used
-/// in the C source. Copies exactly `size` bytes (or until NUL inside src) and
-/// always NUL-terminates within `size + 1` capacity.
-unsafe fn copy_field(dst: *mut c_char, src: *const c_char, size: usize) {
-    // %.*s prints up to `size` bytes from `src`, stopping at the first NUL.
-    // snprintf with buffer of size+1 will write at most `size` chars, then NUL.
-    let mut written = 0usize;
-    while written < size {
-        let b = *src.add(written);
-        if b == 0 {
-            break;
-        }
-        *dst.add(written) = b;
-        written += 1;
-    }
-    *dst.add(written) = 0;
-}
-
-// ---------------------------------------------------------------------------
-// Translated functions.
-// ---------------------------------------------------------------------------
-
-/// Looks for the OS architecture in a string. Possible architectures are
-/// x86_64, i386, i686, sparc, amd64, ia64, AIX, armv6, armv7. The function
-/// returns a pointer to allocated memory that must be freed by the caller.
+/// `*(s + strlen(s) - 1) = '\0';`
 ///
-/// Returns NULL if not found.
+/// Note that the original C code performs this unconditionally, so for an empty
+/// string the NUL byte is written *one byte before* the buffer. That exact
+/// (out-of-bounds) behaviour is reproduced here on purpose.
+#[inline]
+unsafe fn strip_last_char(s: *mut c_char) {
+    let len = strlen(s);
+    *s.wrapping_offset(len as isize).wrapping_offset(-1) = 0;
+}
+
+/// `dst = malloc(n + 1); snprintf(dst, n + 1, "%.*s", n, src);`
+#[inline]
+unsafe fn dup_match(match_size: c_int, src: *const c_char) -> *mut c_char {
+    let buf = malloc((match_size + 1) as usize) as *mut c_char;
+    snprintf(
+        buf,
+        (match_size + 1) as usize,
+        c"%.*s".as_ptr(),
+        match_size,
+        src,
+    );
+    buf
+}
+
+// ---------------------------------------------------------------------------
+// get_os_arch
+// ---------------------------------------------------------------------------
+
+/// Architectures recognised by [`get_os_arch`], in the exact order of the C
+/// `ARCHS` table (the trailing `NULL` sentinel is implicit here).
+const ARCHS: [&CStr; 12] = [
+    c"x86_64",
+    c"i386",
+    c"i686",
+    c"sparc",
+    c"amd64",
+    c"i86pc",
+    c"ia64",
+    c"AIX",
+    c"armv6",
+    c"armv7",
+    c"aarch64",
+    c"arm64",
+];
+
+/// Looks for the OS architecture in a string.
+///
+/// Returns a `strdup`'d copy of the first architecture found (searched in table
+/// order) or `NULL` when none matches. The caller owns the returned memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_os_arch(os_header: *mut c_char) -> *mut c_char {
-    // NUL-terminated C strings, in the same order as the C source. Note that
-    // the C array contains literal pointers so we mirror by referencing static
-    // C strings.
-    static ARCHS: &[&[u8]] = &[
-        b"x86_64\0",
-        b"i386\0",
-        b"i686\0",
-        b"sparc\0",
-        b"amd64\0",
-        b"i86pc\0",
-        b"ia64\0",
-        b"AIX\0",
-        b"armv6\0",
-        b"armv7\0",
-        b"aarch64\0",
-        b"arm64\0",
-    ];
-
-    let mut os_arch: *mut c_char = std::ptr::null_mut();
+    let mut os_arch: *mut c_char = core::ptr::null_mut();
 
     for arch in ARCHS.iter() {
-        let arch_ptr = arch.as_ptr() as *const c_char;
-        if !c_strstr(os_header, arch_ptr).is_null() {
-            os_arch = c_strdup(arch_ptr);
+        if !strstr(os_header, arch.as_ptr()).is_null() {
+            os_arch = strdup(arch.as_ptr());
             break;
         }
     }
@@ -169,30 +163,42 @@ pub unsafe extern "C" fn get_os_arch(os_header: *mut c_char) -> *mut c_char {
     os_arch
 }
 
-/// Compile and run a POSIX extended regex; returns 1 on match, 0 otherwise.
-/// Matches the C implementation including the stderr message on compile error.
+// ---------------------------------------------------------------------------
+// w_regexec
+// ---------------------------------------------------------------------------
+
+/// Compiles `pattern` as a POSIX extended regular expression and matches it
+/// against `string`.
+///
+/// Returns non-zero (`1`) on a successful match, `0` otherwise (including when
+/// either argument is `NULL` or the pattern fails to compile).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn w_regexec(
     pattern: *const c_char,
     string: *const c_char,
-    nmatch: size_t,
-    pmatch: *mut RegmatchT,
+    nmatch: usize,
+    pmatch: *mut regmatch_t,
 ) -> c_int {
-    if pattern.is_null() || string.is_null() {
+    let mut regex: MaybeUninit<regex_t> = MaybeUninit::uninit();
+    let result: c_int;
+
+    if !(!pattern.is_null() && !string.is_null()) {
         return 0;
     }
 
-    let mut regex: RegexT = RegexT { _opaque: [0u8; 256] };
-
-    if regcomp(&mut regex as *mut RegexT, pattern, REG_EXTENDED) != 0 {
-        let fmt = b"Couldn't compile regular expression '%s'\n\0".as_ptr() as *const c_char;
-        fprintf(stderr, fmt, pattern);
+    if regcomp(regex.as_mut_ptr(), pattern, REG_EXTENDED) != 0 {
+        fprintf(
+            stderr,
+            c"Couldn't compile regular expression '%s'\n".as_ptr(),
+            pattern,
+        );
         return 0;
     }
 
-    let result = regexec(&regex as *const RegexT, string, nmatch, pmatch, 0);
-    regfree(&mut regex as *mut RegexT);
+    result = regexec(regex.as_ptr(), string, nmatch, pmatch, 0);
+    regfree(regex.as_mut_ptr());
 
+    // C: `return !result;`
     if result == 0 {
         1
     } else {
@@ -200,138 +206,135 @@ pub unsafe extern "C" fn w_regexec(
     }
 }
 
-/// Parses an OS uname string. All the OUT parameters are pointers to allocated
-/// memory that must be de-allocated by the caller.
+// ---------------------------------------------------------------------------
+// parse_uname_string
+// ---------------------------------------------------------------------------
+
+/// Parses an OS uname string, filling `osd`.
+///
+/// All produced members of `osd` point to heap memory owned by the caller. The
+/// `uname` buffer is modified in place, exactly as in the C original.
+#[allow(unused_assignments)]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn parse_uname_string(uname: *mut c_char, osd: *mut OsData) {
+pub unsafe extern "C" fn parse_uname_string(uname: *mut c_char, osd: *mut os_data) {
     let mut str_tmp: *mut c_char;
-    let mut match_arr: [RegmatchT; 2] = [RegmatchT { rm_so: 0, rm_eo: 0 }; 2];
-    let mut match_size: c_int;
+    // C: `regmatch_t match[2] = {{.rm_so = 0}};` -> fully zero initialised.
+    let mut m: [regmatch_t; 2] = [regmatch_t { rm_so: 0, rm_eo: 0 }; 2];
+    let mut match_size: c_int = 0;
 
     if osd.is_null() {
         return;
     }
 
     // [Ver: os_major.os_minor.os_build]
-    let ver_marker = b" [Ver: \0".as_ptr() as *const c_char;
-    str_tmp = c_strstr(uname, ver_marker);
+    str_tmp = strstr(uname, c" [Ver: ".as_ptr());
     if !str_tmp.is_null() {
         *str_tmp = 0;
-        str_tmp = str_tmp.add(7);
-        (*osd).os_name = c_strdup(uname);
-        // *(str_tmp + strlen(str_tmp) - 1) = '\0';
-        let len = c_strlen(str_tmp);
-        *str_tmp.add(len - 1) = 0;
+        str_tmp = str_tmp.wrapping_add(7);
+        (*osd).os_name = strdup(uname);
+        strip_last_char(str_tmp);
 
         // Get os_major
-        let pat_major = b"^([0-9]+)\\.*\0".as_ptr() as *const c_char;
-        if w_regexec(pat_major, str_tmp, 2, match_arr.as_mut_ptr()) != 0 {
-            match_size = (match_arr[1].rm_eo - match_arr[1].rm_so) as c_int;
-            (*osd).os_major = libc::malloc((match_size as usize) + 1) as *mut c_char;
-            copy_field(
-                (*osd).os_major,
-                str_tmp.offset(match_arr[1].rm_so as isize),
-                match_size as usize,
-            );
+        if w_regexec(c"^([0-9]+)\\.*".as_ptr(), str_tmp, 2, m.as_mut_ptr()) != 0 {
+            match_size = m[1].rm_eo - m[1].rm_so;
+            (*osd).os_major = dup_match(match_size, str_tmp.wrapping_offset(m[1].rm_so as isize));
         }
 
         // Get os_minor
-        let pat_minor = b"^[0-9]+\\.([0-9]+)\\.*\0".as_ptr() as *const c_char;
-        if w_regexec(pat_minor, str_tmp, 2, match_arr.as_mut_ptr()) != 0 {
-            match_size = (match_arr[1].rm_eo - match_arr[1].rm_so) as c_int;
-            (*osd).os_minor = libc::malloc((match_size as usize) + 1) as *mut c_char;
-            copy_field(
-                (*osd).os_minor,
-                str_tmp.offset(match_arr[1].rm_so as isize),
-                match_size as usize,
-            );
+        if w_regexec(
+            c"^[0-9]+\\.([0-9]+)\\.*".as_ptr(),
+            str_tmp,
+            2,
+            m.as_mut_ptr(),
+        ) != 0
+        {
+            match_size = m[1].rm_eo - m[1].rm_so;
+            (*osd).os_minor = dup_match(match_size, str_tmp.wrapping_offset(m[1].rm_so as isize));
         }
 
         // Get os_build
-        let pat_build = b"^[0-9]+\\.[0-9]+\\.([0-9]+(\\.[0-9]+)*)\\.*\0".as_ptr() as *const c_char;
-        if w_regexec(pat_build, str_tmp, 2, match_arr.as_mut_ptr()) != 0 {
-            match_size = (match_arr[1].rm_eo - match_arr[1].rm_so) as c_int;
-            (*osd).os_build = libc::malloc((match_size as usize) + 1) as *mut c_char;
-            copy_field(
-                (*osd).os_build,
-                str_tmp.offset(match_arr[1].rm_so as isize),
-                match_size as usize,
-            );
+        if w_regexec(
+            c"^[0-9]+\\.[0-9]+\\.([0-9]+(\\.[0-9]+)*)\\.*".as_ptr(),
+            str_tmp,
+            2,
+            m.as_mut_ptr(),
+        ) != 0
+        {
+            match_size = m[1].rm_eo - m[1].rm_so;
+            (*osd).os_build = dup_match(match_size, str_tmp.wrapping_offset(m[1].rm_so as isize));
         }
 
-        (*osd).os_version = c_strdup(str_tmp);
-        let win_lit = b"windows\0".as_ptr() as *const c_char;
-        (*osd).os_platform = c_strdup(win_lit);
+        (*osd).os_version = strdup(str_tmp);
+        (*osd).os_platform = strdup(c"windows".as_ptr());
     } else {
-        let bracket_marker = b" [\0".as_ptr() as *const c_char;
-        str_tmp = c_strstr(uname, bracket_marker);
+        str_tmp = strstr(uname, c" [".as_ptr());
         if !str_tmp.is_null() {
             *str_tmp = 0;
-            str_tmp = str_tmp.add(2);
-            (*osd).os_name = c_strdup(str_tmp);
+            str_tmp = str_tmp.wrapping_add(2);
+            (*osd).os_name = strdup(str_tmp);
 
-            let colon_marker = b": \0".as_ptr() as *const c_char;
-            str_tmp = c_strstr((*osd).os_name, colon_marker);
+            str_tmp = strstr((*osd).os_name, c": ".as_ptr());
             if !str_tmp.is_null() {
                 *str_tmp = 0;
-                str_tmp = str_tmp.add(2);
-                (*osd).os_version = c_strdup(str_tmp);
-                let vlen = c_strlen((*osd).os_version);
-                *(*osd).os_version.add(vlen - 1) = 0;
+                str_tmp = str_tmp.wrapping_add(2);
+                (*osd).os_version = strdup(str_tmp);
+                strip_last_char((*osd).os_version);
 
                 // os_major.os_minor (os_codename)
-                let paren_marker = b" (\0".as_ptr() as *const c_char;
-                str_tmp = c_strstr((*osd).os_version, paren_marker);
+                str_tmp = strstr((*osd).os_version, c" (".as_ptr());
                 if !str_tmp.is_null() {
                     *str_tmp = 0;
-                    str_tmp = str_tmp.add(2);
-                    (*osd).os_codename = c_strdup(str_tmp);
-                    let clen = c_strlen((*osd).os_codename);
-                    *(*osd).os_codename.add(clen - 1) = 0;
+                    str_tmp = str_tmp.wrapping_add(2);
+                    (*osd).os_codename = strdup(str_tmp);
+                    strip_last_char((*osd).os_codename);
                 }
 
                 // Get os_major
-                let pat_major2 = b"^([0-9]+)\\.*\0".as_ptr() as *const c_char;
-                if w_regexec(pat_major2, (*osd).os_version, 2, match_arr.as_mut_ptr()) != 0 {
-                    match_size = (match_arr[1].rm_eo - match_arr[1].rm_so) as c_int;
-                    (*osd).os_major = libc::malloc((match_size as usize) + 1) as *mut c_char;
-                    copy_field(
-                        (*osd).os_major,
-                        (*osd).os_version.offset(match_arr[1].rm_so as isize),
-                        match_size as usize,
+                if w_regexec(
+                    c"^([0-9]+)\\.*".as_ptr(),
+                    (*osd).os_version,
+                    2,
+                    m.as_mut_ptr(),
+                ) != 0
+                {
+                    match_size = m[1].rm_eo - m[1].rm_so;
+                    (*osd).os_major = dup_match(
+                        match_size,
+                        (*osd).os_version.wrapping_offset(m[1].rm_so as isize),
                     );
                 }
 
                 // Get os_minor
-                let pat_minor2 = b"^[0-9]+\\.([0-9]+)\\.*\0".as_ptr() as *const c_char;
-                if w_regexec(pat_minor2, (*osd).os_version, 2, match_arr.as_mut_ptr()) != 0 {
-                    match_size = (match_arr[1].rm_eo - match_arr[1].rm_so) as c_int;
-                    (*osd).os_minor = libc::malloc((match_size as usize) + 1) as *mut c_char;
-                    copy_field(
-                        (*osd).os_minor,
-                        (*osd).os_version.offset(match_arr[1].rm_so as isize),
-                        match_size as usize,
+                if w_regexec(
+                    c"^[0-9]+\\.([0-9]+)\\.*".as_ptr(),
+                    (*osd).os_version,
+                    2,
+                    m.as_mut_ptr(),
+                ) != 0
+                {
+                    match_size = m[1].rm_eo - m[1].rm_so;
+                    (*osd).os_minor = dup_match(
+                        match_size,
+                        (*osd).os_version.wrapping_offset(m[1].rm_so as isize),
                     );
                 }
             } else {
-                let nlen = c_strlen((*osd).os_name);
-                *(*osd).os_name.add(nlen - 1) = 0;
+                strip_last_char((*osd).os_name);
             }
 
             // os_name|os_platform
-            let pipe_marker = b"|\0".as_ptr() as *const c_char;
-            str_tmp = c_strstr((*osd).os_name, pipe_marker);
+            str_tmp = strstr((*osd).os_name, c"|".as_ptr());
             if !str_tmp.is_null() {
                 *str_tmp = 0;
-                str_tmp = str_tmp.add(1);
-                (*osd).os_platform = c_strdup(str_tmp);
+                str_tmp = str_tmp.wrapping_add(1);
+                (*osd).os_platform = strdup(str_tmp);
             }
         }
 
         str_tmp = get_os_arch(uname);
         if !str_tmp.is_null() {
-            (*osd).os_arch = c_strdup(str_tmp);
-            libc::free(str_tmp as *mut c_void);
+            (*osd).os_arch = strdup(str_tmp);
+            free(str_tmp as *mut c_void);
         }
     }
 }

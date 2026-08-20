@@ -1,13 +1,41 @@
 [package]
-name = "static_alias"
+name = "driver"
 version = "0.1.0"
 edition = "2021"
+
+# The translated logic lives in the library so that it can be exercised both by
+# the `driver` executable (the C program's counterpart) and through a C ABI
+# shared object (`examples/capi.rs`), exactly like the C code which is both a
+# program (`main`) and a set of C-callable functions (`static_alias`).
+[lib]
+name = "driver"
+path = "src/lib.rs"
+# rlib only: the C ABI shared object is the `capi` target below (a lib cdylib
+# would additionally collide with itself under `panic = "abort"`).
+crate-type = ["rlib"]
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
+# C ABI shared object with the very same exported symbol surface as the C
+# translation unit (`main` + `static_alias`).  Built as an example so that the
+# `#[no_mangle] main` export cannot collide with the `driver` binary's entry
+# point.  Produces target/<profile>/examples/libcapi.so.
+[[example]]
+name = "capi"
+path = "examples/capi.rs"
+crate-type = ["cdylib"]
+# Never build this target as a test/bench harness: it exports `main` itself, so a
+# generated libtest entry point would collide with it.
+test = false
+bench = false
+doctest = false
+
+[dev-dependencies]
+libloading = "0.8"
+
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

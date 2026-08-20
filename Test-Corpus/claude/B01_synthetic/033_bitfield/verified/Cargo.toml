@@ -3,11 +3,37 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
+# The C-ABI shared object that the differential tests load with `libloading`.
+# It exports the same three symbols as the C translation unit: `driver` and
+# `print_foo` come from the library, `main` from examples/cdylib.rs.
+[[example]]
+name = "cdylib"
+path = "examples/cdylib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# In-process FFI checks redirect fd 1 to capture what the loaded shared objects
+# write, so they must not run concurrently with libtest's progress output.
+[[test]]
+name = "ffi_inproc"
+path = "tests/ffi_inproc.rs"
+harness = false
+
+[features]
+default = []
+
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

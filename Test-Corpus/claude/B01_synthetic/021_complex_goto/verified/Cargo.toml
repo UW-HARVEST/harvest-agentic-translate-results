@@ -1,5 +1,5 @@
 [package]
-name = "driver"
+name = "goto_loop"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,16 @@ edition = "2021"
 name = "driver"
 path = "src/main.rs"
 
+# The C target (c_src/CMakeLists.txt) is `add_executable(driver src/main.c)`, i.e.
+# a program, not a shared library: it exports zero dynamic symbols and its only
+# non-`main` function (`foo`) is `static`.  Differential testing therefore runs
+# both programs as processes and compares stdout/stderr/exit-status byte for
+# byte.  `libloading` is kept available for symbol-level probing of the two
+# binaries even though there is no `.so` surface to dlopen.
+[dev-dependencies]
+libloading = "0.8"
+
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

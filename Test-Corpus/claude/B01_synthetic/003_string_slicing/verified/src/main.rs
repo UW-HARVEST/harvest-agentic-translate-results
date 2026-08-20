@@ -1,181 +1,112 @@
-// Translation of c_src/src/main.c to Rust.
-// Goal: byte-identical output for the same inputs, including reproducing
-// any bugs in the original C code.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::Write;
-use std::os::unix::ffi::OsStrExt;
-use std::process::ExitCode;
+//! Executable view of the translated program: the exact equivalent of running
+//! the C `driver` binary.
 
-/// Mimic C's `strtol(s, &end, 10)` semantics enough for this program.
+mod imp;
+
+use core::ffi::{c_char, c_int};
+
+/// The `(argc, argv)` pair the process was started with.
 ///
-/// Returns `(value, consumed_bytes)`.  If `consumed_bytes == 0`, no
-/// conversion was performed (matching the C check `end == arg`).
-///
-/// Behaviour matched:
-///   - Skip leading ASCII whitespace.
-///   - Optional leading '+' or '-'.
-///   - Decimal digits only (base 10).
-///   - On overflow, saturates to LONG_MAX/LONG_MIN (good enough for our use).
-fn strtol_base10(bytes: &[u8]) -> (i64, usize) {
-    let mut idx = 0usize;
+/// The C `main` receives the raw vector the kernel placed on the stack, and it
+/// happily indexes `argv[1]` even when `argc == 0`. To be able to reproduce
+/// that byte for byte, grab the real vector instead of rebuilding one from
+/// `std::env::args_os()`: on glibc every `.init_array` entry is called with
+/// `(argc, argv, envp)`.
+static mut REAL_ARGC: c_int = 0;
+static mut REAL_ARGV: *mut *mut c_char = core::ptr::null_mut();
 
-    // Skip leading whitespace (matches isspace for ASCII).
-    while idx < bytes.len() {
-        let c = bytes[idx];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r'
-            || c == 0x0b /* vt */ || c == 0x0c /* ff */
-        {
-            idx += 1;
-        } else {
-            break;
-        }
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[used]
+#[link_section = ".init_array"]
+static CAPTURE_ARGV: extern "C" fn(c_int, *mut *mut c_char, *mut *mut c_char) = capture_argv;
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+extern "C" fn capture_argv(argc: c_int, argv: *mut *mut c_char, _envp: *mut *mut c_char) {
+    unsafe {
+        REAL_ARGC = argc;
+        REAL_ARGV = argv;
     }
-
-    // Optional sign.
-    let mut negative = false;
-    if idx < bytes.len() && (bytes[idx] == b'+' || bytes[idx] == b'-') {
-        negative = bytes[idx] == b'-';
-        idx += 1;
-    }
-
-    // Must have at least one digit for a successful conversion.
-    let digits_start = idx;
-    let mut value: i64 = 0;
-    let mut overflow = false;
-    while idx < bytes.len() && bytes[idx].is_ascii_digit() {
-        let d = (bytes[idx] - b'0') as i64;
-        if !overflow {
-            match value
-                .checked_mul(10)
-                .and_then(|v| if negative { v.checked_sub(d) } else { v.checked_add(d) })
-            {
-                Some(v) => value = v,
-                None => {
-                    overflow = true;
-                    value = if negative { i64::MIN } else { i64::MAX };
-                }
-            }
-        }
-        idx += 1;
-    }
-
-    if idx == digits_start {
-        // No digits consumed: report "no conversion" by returning consumed=0,
-        // matching C's `end == nptr` semantics.
-        return (0, 0);
-    }
-
-    (value, idx)
 }
 
-fn main() -> ExitCode {
-    // Collect raw argv as byte slices (matches C's char** view).
-    let args_os: Vec<std::ffi::OsString> = std::env::args_os().collect();
-    let argc = args_os.len();
-    let argv: Vec<&[u8]> = args_os.iter().map(|s| s.as_bytes()).collect();
+/// Fallback for platforms where the real vector cannot be captured: rebuild a
+/// C-style `argv` from the arguments the runtime reports.
+fn run_from_env() -> c_int {
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStrExt;
 
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-
-    if argc > 4 || argc == 1 {
-        let _ = out.write_all(b"Error: there should be one to three arguments passed:\n");
-        let _ = out.write_all(b"<string> [start] [stop]\n");
-        return ExitCode::from(1);
+    let mut owned: Vec<Vec<u8>> = Vec::new();
+    for arg in std::env::args_os() {
+        #[cfg(unix)]
+        let mut bytes = arg.as_bytes().to_vec();
+        #[cfg(not(unix))]
+        let mut bytes = arg.to_string_lossy().into_owned().into_bytes();
+        bytes.push(0);
+        owned.push(bytes);
     }
 
-    let len = argv[1].len(); // size_t in C (strlen of argv[1] as bytes)
+    let mut argv: Vec<*mut c_char> = owned
+        .iter_mut()
+        .map(|b| b.as_mut_ptr() as *mut c_char)
+        .collect();
+    argv.push(core::ptr::null_mut());
 
-    let start: i32;
-    let stop: i32;
-
-    // Track whether the argv[2] strtol "succeeded" (i.e., end != argv[2]).
-    // The C code reuses `end` for the argv[3] check (a bug we preserve below):
-    // since the argv[3] strtol passes NULL for end, `end` still points into
-    // argv[2], and the check `end == argv[3]` is therefore always false.
-    // We model this by computing the same boolean: argv2_end_ptr_equals_argv3,
-    // which is always false because they are different argv slots.
-    let mut argv2_consumed_eq_zero = false;
-
-    if argc >= 3 {
-        let (v, consumed) = strtol_base10(argv[2]);
-        argv2_consumed_eq_zero = consumed == 0;
-        if argv2_consumed_eq_zero {
-            let _ = out.write_all(b"Second argument must be an integer!");
-            return ExitCode::from(1);
-        }
-        // C truncates `long` to `int` when assigning to `start`.
-        start = v as i32;
-
-        // C compares `int start > size_t len` -> int is converted to size_t.
-        // A negative `start` becomes a huge unsigned value and triggers this.
-        let start_as_usize_like_c = start as i64 as usize_like;
-        if start_as_usize_like_c > len {
-            let _ = out.write_all(b"Error: start is off the end of the string!\n");
-            return ExitCode::from(1);
-        }
-    } else {
-        start = 0;
-    }
-
-    if argc == 4 {
-        // C: strtol(argv[3], NULL, 10) — note: passes NULL, so `end` is NOT
-        // updated.  Then the C code checks `if (end == argv[3])`, which uses
-        // the stale `end` from the argv[2] call — a bug we faithfully
-        // reproduce here: the comparison is between two different argv
-        // pointers, so it is always false.
-        let (v, _consumed) = strtol_base10(argv[3]);
-        let stale_end_equals_argv3 = false; // always false in C (different argv slots)
-        let _ = argv2_consumed_eq_zero; // silence unused warning if any
-        if stale_end_equals_argv3 {
-            let _ = out.write_all(b"Third argument must be an integer!");
-            return ExitCode::from(1);
-        }
-
-        stop = v as i32;
-
-        // Same signed-int vs size_t promotion as above.
-        let stop_as_usize_like_c = stop as i64 as usize_like;
-        if stop_as_usize_like_c > len {
-            let _ = out.write_all(b"Error: stop is off the end of the string!\n");
-            return ExitCode::from(1);
-        }
-
-        if stop <= start {
-            let _ = out.write_all(b"Error: stop must come after start!\n");
-            return ExitCode::from(1);
-        }
-    } else {
-        stop = len as i32; // C: stop = len; len is size_t, narrowed to int.
-    }
-
-    // C: printf("%.*s\n", stop - start, argv[1] + start);
-    // Width is `int`; it can be negative, in which case printf treats it as
-    // "no precision" (i.e., prints up to the null terminator).  In our valid
-    // path, `start <= len` and `stop > start` (or `stop == len` from the else
-    // branch), so the slice is well-defined.
-    let width = (stop as i64) - (start as i64);
-    if width < 0 {
-        // Match C printf("%.*s", negative, ...) which treats negative
-        // precision as "precision omitted" — for %s that means print up to
-        // the NUL.  argv[1] in C is NUL-terminated, so this prints the
-        // suffix starting at `start`.
-        let s_off = start as usize;
-        if s_off <= argv[1].len() {
-            let _ = out.write_all(&argv[1][s_off..]);
-        }
-    } else {
-        let s_off = start as usize;
-        let s_end = s_off.saturating_add(width as usize).min(argv[1].len());
-        if s_off <= argv[1].len() {
-            let _ = out.write_all(&argv[1][s_off..s_end]);
-        }
-    }
-    let _ = out.write_all(b"\n");
-
-    ExitCode::from(0)
+    let argc = owned.len() as c_int;
+    unsafe { imp::c_main(argc, argv.as_mut_ptr()) }
 }
 
-// Helper: emulate C's size_t for the sole purpose of unsigned promotion in
-// comparisons.  On all modern Unix targets size_t == usize.
-#[allow(non_camel_case_types)]
-type usize_like = usize;
+extern "C" {
+    /// `signal(2)`; the handler is passed as a plain address so no function
+    /// pointer type gymnastics are needed for `SIG_DFL`.
+    fn signal(signum: c_int, handler: usize) -> usize;
+}
+
+const SIGPIPE: c_int = 13;
+const SIG_DFL: usize = 0;
+
+/// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, so a failed
+/// write would merely return `EPIPE` and the program would exit 0. A C program
+/// keeps the default disposition and is killed by `SIGPIPE` instead (e.g.
+/// `driver <long string> | head -c 5`). Restore the C behavior.
+fn restore_default_sigpipe() {
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
+    }
+}
+
+fn main() {
+    restore_default_sigpipe();
+
+    let (argc, argv) = unsafe { (REAL_ARGC, REAL_ARGV) };
+
+    let status = if argv.is_null() {
+        run_from_env()
+    } else {
+        unsafe { imp::c_main(argc, argv) }
+    };
+
+    // `return status;` from C's main.
+    std::process::exit(status);
+}

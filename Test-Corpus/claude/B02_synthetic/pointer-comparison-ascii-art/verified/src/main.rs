@@ -1,660 +1,529 @@
-// main.rs - Translation of main.c
+//! Translation of `main.c` — ASCII art drawing application.
+//!
+//! Behaviour (including quirks and bugs) is preserved exactly; output is byte
+//! identical to the original C program.
 
-use driver::scene::{
-    format_ptr, scene_add_shape, scene_create, scene_equals, scene_list_shapes, scene_load,
-    scene_print, scene_remove_shape, scene_save, Scene, MAX_SCENE_NAME,
+mod cio;
+mod scene;
+mod shape;
+
+use cio::{discard_line, In, Out};
+use scene::{
+    scene_add_shape, scene_create, scene_equals, scene_list_shapes, scene_load, scene_print,
+    scene_remove_shape, scene_save, Scene, MAX_SCENE_NAME,
 };
-use driver::shape::{shape_equals, shape_print, shape_type_name, Shape, ShapeManager, SHAPE_COUNT};
-
-use std::io::{self, Read, Write};
+use shape::{fmt_ptr, shape_equals, shape_type_name, ShapeManager, SHAPE_COUNT};
 
 const MAX_SCENES: usize = 10;
 
-/// Holds stdin reading state. C uses raw FILE* stdin which is byte-by-byte;
-/// scanf reads across newlines while fgets does not.
-/// We replicate this by reading raw bytes from a buffered stdin and managing
-/// a peek-byte for `getchar` semantics.
-struct StdinReader {
-    inner: io::Stdin,
-    peeked: Option<Option<u8>>, // None = no peek; Some(None) = EOF; Some(Some(b)) = b
+/// The globals of `main.c`: `scenes` / `scene_count` plus the shape singletons.
+struct App {
+    scenes: Vec<Scene>,
+    mgr: ShapeManager,
+    out: Out,
+    input: In,
 }
 
-impl StdinReader {
-    fn new() -> Self {
-        StdinReader {
-            inner: io::stdin(),
-            peeked: None,
-        }
-    }
-
-    /// Read one byte (like C's getchar). Returns None at EOF.
-    fn getchar(&mut self) -> Option<u8> {
-        if let Some(p) = self.peeked.take() {
-            return p;
-        }
-        let mut buf = [0u8; 1];
-        let mut handle = self.inner.lock();
-        match handle.read(&mut buf) {
-            Ok(0) => None,
-            Ok(_) => Some(buf[0]),
-            Err(_) => None,
-        }
-    }
-
-    /// fgets: read up to (n-1) bytes or until newline (newline included), null-terminate.
-    /// Returns None on EOF before reading anything (matching C fgets behavior).
-    /// Buffer size n is the max bytes including the null terminator.
-    fn fgets(&mut self, n: usize) -> Option<String> {
-        if n == 0 {
-            return None;
-        }
-        let mut s = Vec::with_capacity(n);
-        // We can read at most n-1 bytes
-        let max = n - 1;
-        let mut got_any = false;
-        while s.len() < max {
-            match self.getchar() {
-                None => {
-                    if !got_any {
-                        return None;
-                    }
-                    break;
-                }
-                Some(b) => {
-                    got_any = true;
-                    s.push(b);
-                    if b == b'\n' {
-                        break;
-                    }
-                }
-            }
-        }
-        // Convert to String preserving exact bytes (use lossy if needed; in practice ASCII)
-        Some(String::from_utf8_lossy(&s).into_owned())
-    }
-
-    /// scanf("%d", &x) — skip leading whitespace (incl. newlines), read optional sign,
-    /// then digits, leaving the next byte (the first non-digit, or EOF) unread.
-    /// Returns Some(n) on success, None on failure (matches scanf return code).
-    fn scanf_int(&mut self) -> Option<i32> {
-        // Skip whitespace
-        loop {
-            let c = self.getchar()?;
-            if !is_ws(c) {
-                // push back
-                self.peeked = Some(Some(c));
-                break;
-            }
-        }
-
-        let mut sign: i64 = 1;
-        let mut started = false;
-        // Check for sign
-        let first = self.getchar()?;
-        if first == b'+' {
-            // ok
-            started = false;
-        } else if first == b'-' {
-            sign = -1;
-            started = false;
-        } else if first.is_ascii_digit() {
-            self.peeked = Some(Some(first));
-        } else {
-            // no number
-            self.peeked = Some(Some(first));
-            return None;
-        }
-
-        let mut value: i64 = 0;
-        let mut have_digit = false;
-        loop {
-            match self.getchar() {
-                None => break,
-                Some(c) if c.is_ascii_digit() => {
-                    have_digit = true;
-                    value = value.wrapping_mul(10).wrapping_add((c - b'0') as i64);
-                }
-                Some(c) => {
-                    self.peeked = Some(Some(c));
-                    break;
-                }
-            }
-        }
-
-        if !have_digit {
-            // If we consumed sign but no digit, scanf returns 0 (failure)
-            // In C, the sign char is "consumed" — but since our peeked slot is taken by next char,
-            // it's still effectively the same observable behavior.
-            let _ = started; // suppress unused warning
-            return None;
-        }
-
-        Some((sign * value) as i32)
+impl App {
+    fn scene_count(&self) -> i32 {
+        self.scenes.len() as i32
     }
 }
 
-fn is_ws(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+/// `print_menu`
+fn print_menu(out: &mut Out) {
+    out.s("\n");
+    out.s("=========================================\n");
+    out.s("  ASCII ART DRAWING APPLICATION\n");
+    out.s("=========================================\n");
+    out.s("1. View all available shapes\n");
+    out.s("2. Create new scene\n");
+    out.s("3. Add shape to scene\n");
+    out.s("4. Remove shape from scene\n");
+    out.s("5. View scene\n");
+    out.s("6. List all scenes\n");
+    out.s("7. Save scene\n");
+    out.s("8. Load scene\n");
+    out.s("9. Compare two shapes\n");
+    out.s("10. Compare two scenes\n");
+    out.s("11. Delete scene\n");
+    out.s("12. Exit\n");
+    out.s("=========================================\n");
+    out.s("Choice: ");
 }
 
-/// Print without newline, then flush so the prompt appears before stdin reads.
-fn print_flush(s: &str) {
-    print!("{}", s);
-    let _ = io::stdout().flush();
-}
-
-/// Equivalent of `while (getchar() != '\n');` — discard until newline (or EOF).
-fn discard_to_newline(stdin: &mut StdinReader) {
-    loop {
-        match stdin.getchar() {
-            None => break,
-            Some(b'\n') => break,
-            _ => {}
-        }
-    }
-}
-
-/// Strip trailing newline (C: name[strcspn(name, "\n")] = 0;)
-fn strip_newline(s: &str) -> String {
-    match s.find('\n') {
-        Some(i) => s[..i].to_string(),
-        None => s.to_string(),
-    }
-}
-
-fn print_menu() {
-    println!();
-    println!("=========================================");
-    println!("  ASCII ART DRAWING APPLICATION");
-    println!("=========================================");
-    println!("1. View all available shapes");
-    println!("2. Create new scene");
-    println!("3. Add shape to scene");
-    println!("4. Remove shape from scene");
-    println!("5. View scene");
-    println!("6. List all scenes");
-    println!("7. Save scene");
-    println!("8. Load scene");
-    println!("9. Compare two shapes");
-    println!("10. Compare two scenes");
-    println!("11. Delete scene");
-    println!("12. Exit");
-    println!("=========================================");
-    print_flush("Choice: ");
-}
-
-fn view_all_shapes(mgr: &ShapeManager) {
-    println!("\n=== Available Shapes ===");
+/// `view_all_shapes`
+fn view_all_shapes(app: &mut App) {
+    app.out.s("\n=== Available Shapes ===\n");
     for i in 0..SHAPE_COUNT {
-        print!("\n{}. ", i + 1);
-        let _ = io::stdout().flush();
-        shape_print(mgr.shape_get(i));
+        p!(app.out, "\n{}. ", i + 1);
+        let shape = app.mgr.get(i);
+        app.mgr.print(&mut app.out, shape);
     }
 }
 
-fn create_new_scene(scenes: &mut Vec<Box<Scene>>, scene_count: &mut usize, stdin: &mut StdinReader) {
-    if *scene_count >= MAX_SCENES {
-        println!("Error: Maximum scenes reached");
+/// `create_new_scene`
+fn create_new_scene(app: &mut App) {
+    if app.scenes.len() >= MAX_SCENES {
+        app.out.s("Error: Maximum scenes reached\n");
         return;
     }
 
-    print_flush("Enter scene name: ");
-    let line = match stdin.fgets(MAX_SCENE_NAME) {
-        Some(l) => l,
+    app.out.s("Enter scene name: ");
+    let name = match app.input.fgets(MAX_SCENE_NAME) {
+        Some(line) => line,
         None => return,
     };
-    let name = strip_newline(&line);
+    let name = cio::strip_newline(&name);
 
-    let scene = scene_create(Some(&name));
-    println!("Scene '{}' created (index {})", name, *scene_count);
-    scenes.push(scene);
-    *scene_count += 1;
+    let index = app.scene_count();
+    match scene_create(Some(&name)) {
+        Some(scene) => {
+            app.scenes.push(scene);
+            app.out.s("Scene '");
+            app.out.b(&name);
+            p!(app.out, "' created (index {})\n", index);
+        }
+        None => {
+            app.out.s("Error creating scene\n");
+        }
+    }
 }
 
-fn add_shape_to_scene(
-    scenes: &mut [Box<Scene>],
-    scene_count: usize,
-    mgr: &ShapeManager,
-    stdin: &mut StdinReader,
-) {
-    if scene_count == 0 {
-        println!("No scenes available. Create a scene first.");
+/// `add_shape_to_scene`
+fn add_shape_to_scene(app: &mut App) {
+    if app.scenes.is_empty() {
+        app.out
+            .s("No scenes available. Create a scene first.\n");
         return;
     }
 
-    print_flush(&format!("Select scene (0-{}): ", scene_count - 1));
-    let scene_idx = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "Select scene (0-{}): ", app.scene_count() - 1);
+    let scene_idx = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if scene_idx < 0 || scene_idx as usize >= scene_count {
-        println!("Invalid scene index");
+    if scene_idx < 0 || scene_idx >= app.scene_count() {
+        app.out.s("Invalid scene index\n");
         return;
     }
 
-    println!("\nSelect shape to add:");
+    app.out.s("\nSelect shape to add:\n");
     for i in 0..SHAPE_COUNT {
-        println!("{}. {}", i, shape_type_name(i));
+        p!(app.out, "{}. {}\n", i, shape_type_name(i));
     }
-    print_flush("Choice: ");
+    app.out.s("Choice: ");
 
-    let shape_type = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    let shape_type = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
     if shape_type < 0 || shape_type >= SHAPE_COUNT {
-        println!("Invalid shape type");
+        app.out.s("Invalid shape type\n");
         return;
     }
 
-    let shape = mgr.shape_get(shape_type);
-    if scene_add_shape(&mut scenes[scene_idx as usize], shape) == 0 {
-        // SAFETY: shape is a valid singleton pointer.
-        let s: &Shape = unsafe { &*shape };
-        println!(
-            "Shape '{}' added to scene (reusing singleton at {})",
-            s.name,
-            format_ptr(shape as *const ())
+    let shape = app.mgr.get(shape_type);
+    let scene = &mut app.scenes[scene_idx as usize];
+    if scene_add_shape(scene, shape) == 0 {
+        let r = shape.expect("validated shape");
+        p!(
+            app.out,
+            "Shape '{}' added to scene (reusing singleton at {})\n",
+            app.mgr.name(r),
+            fmt_ptr(app.mgr.addr(r))
         );
     } else {
-        println!("Error adding shape");
+        app.out.s("Error adding shape\n");
     }
 }
 
-fn remove_shape_from_scene(
-    scenes: &mut [Box<Scene>],
-    scene_count: usize,
-    stdin: &mut StdinReader,
-) {
-    if scene_count == 0 {
-        println!("No scenes available");
+/// `remove_shape_from_scene`
+fn remove_shape_from_scene(app: &mut App) {
+    if app.scenes.is_empty() {
+        app.out.s("No scenes available\n");
         return;
     }
 
-    print_flush(&format!("Select scene (0-{}): ", scene_count - 1));
-    let scene_idx = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "Select scene (0-{}): ", app.scene_count() - 1);
+    let scene_idx = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if scene_idx < 0 || scene_idx as usize >= scene_count {
-        println!("Invalid scene index");
+    if scene_idx < 0 || scene_idx >= app.scene_count() {
+        app.out.s("Invalid scene index\n");
         return;
     }
 
-    scene_list_shapes(&scenes[scene_idx as usize]);
+    scene_list_shapes(&mut app.out, &app.mgr, &app.scenes[scene_idx as usize]);
 
-    if scenes[scene_idx as usize].shape_count == 0 {
-        println!("Scene is empty");
+    if app.scenes[scene_idx as usize].shape_count() == 0 {
+        app.out.s("Scene is empty\n");
         return;
     }
 
-    print_flush(&format!(
+    p!(
+        app.out,
         "Select shape to remove (1-{}): ",
-        scenes[scene_idx as usize].shape_count
-    ));
-    let shape_idx = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+        app.scenes[scene_idx as usize].shape_count()
+    );
+    let shape_idx = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if scene_remove_shape(&mut scenes[scene_idx as usize], shape_idx - 1) == 0 {
-        println!("Shape removed");
+    if scene_remove_shape(
+        &mut app.scenes[scene_idx as usize],
+        shape_idx.wrapping_sub(1),
+    ) == 0
+    {
+        app.out.s("Shape removed\n");
     } else {
-        println!("Error removing shape");
+        app.out.s("Error removing shape\n");
     }
 }
 
-fn view_scene(scenes: &[Box<Scene>], scene_count: usize, stdin: &mut StdinReader) {
-    if scene_count == 0 {
-        println!("No scenes available");
+/// `view_scene`
+fn view_scene(app: &mut App) {
+    if app.scenes.is_empty() {
+        app.out.s("No scenes available\n");
         return;
     }
 
-    print_flush(&format!("Select scene (0-{}): ", scene_count - 1));
-    let scene_idx = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "Select scene (0-{}): ", app.scene_count() - 1);
+    let scene_idx = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if scene_idx < 0 || scene_idx as usize >= scene_count {
-        println!("Invalid scene index");
+    if scene_idx < 0 || scene_idx >= app.scene_count() {
+        app.out.s("Invalid scene index\n");
         return;
     }
 
-    scene_print(&scenes[scene_idx as usize]);
+    scene_print(&mut app.out, &app.mgr, &app.scenes[scene_idx as usize]);
 }
 
-fn list_all_scenes(scenes: &[Box<Scene>], scene_count: usize) {
-    println!("\n=== All Scenes ===");
-    if scene_count == 0 {
-        println!("No scenes created yet");
+/// `list_all_scenes`
+fn list_all_scenes(app: &mut App) {
+    app.out.s("\n=== All Scenes ===\n");
+    if app.scenes.is_empty() {
+        app.out.s("No scenes created yet\n");
         return;
     }
-    for i in 0..scene_count {
-        println!("{}. {} ({} shapes)", i, scenes[i].name, scenes[i].shape_count);
+
+    for i in 0..app.scenes.len() {
+        p!(app.out, "{}. ", i);
+        let name = app.scenes[i].name.clone();
+        app.out.b(&name);
+        p!(app.out, " ({} shapes)\n", app.scenes[i].shape_count());
     }
 }
 
-fn save_scene_to_file(scenes: &[Box<Scene>], scene_count: usize, stdin: &mut StdinReader) {
-    if scene_count == 0 {
-        println!("No scenes available");
+/// `save_scene_to_file`
+fn save_scene_to_file(app: &mut App) {
+    if app.scenes.is_empty() {
+        app.out.s("No scenes available\n");
         return;
     }
 
-    print_flush(&format!("Select scene (0-{}): ", scene_count - 1));
-    let scene_idx = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "Select scene (0-{}): ", app.scene_count() - 1);
+    let scene_idx = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if scene_idx < 0 || scene_idx as usize >= scene_count {
-        println!("Invalid scene index");
+    if scene_idx < 0 || scene_idx >= app.scene_count() {
+        app.out.s("Invalid scene index\n");
         return;
     }
 
-    print_flush("Enter filename: ");
-    let line = match stdin.fgets(256) {
-        Some(l) => l,
+    app.out.s("Enter filename: ");
+    let filename = match app.input.fgets(256) {
+        Some(line) => line,
         None => return,
     };
-    let filename = strip_newline(&line);
+    let filename = cio::strip_newline(&filename);
 
-    scene_save(&scenes[scene_idx as usize], &filename);
+    scene_save(
+        &mut app.out,
+        &app.mgr,
+        &app.scenes[scene_idx as usize],
+        &filename,
+    );
 }
 
-fn load_scene_from_file(
-    scenes: &mut Vec<Box<Scene>>,
-    scene_count: &mut usize,
-    mgr: &ShapeManager,
-    stdin: &mut StdinReader,
-) {
-    if *scene_count >= MAX_SCENES {
-        println!("Error: Maximum scenes reached");
+/// `load_scene_from_file`
+fn load_scene_from_file(app: &mut App) {
+    if app.scenes.len() >= MAX_SCENES {
+        app.out.s("Error: Maximum scenes reached\n");
         return;
     }
 
-    print_flush("Enter filename: ");
-    let line = match stdin.fgets(256) {
-        Some(l) => l,
+    app.out.s("Enter filename: ");
+    let filename = match app.input.fgets(256) {
+        Some(line) => line,
         None => return,
     };
-    let filename = strip_newline(&line);
+    let filename = cio::strip_newline(&filename);
 
-    if let Some(scene) = scene_load(&filename, mgr) {
-        scenes.push(scene);
-        *scene_count += 1;
-        println!("Scene loaded (index {})", *scene_count - 1);
+    if let Some(scene) = scene_load(&mut app.out, &app.mgr, &filename) {
+        app.scenes.push(scene);
+        p!(app.out, "Scene loaded (index {})\n", app.scene_count() - 1);
     }
 }
 
-fn compare_shapes(mgr: &ShapeManager, stdin: &mut StdinReader) {
-    println!("\nSelect first shape (0-{}):", SHAPE_COUNT - 1);
+/// `compare_shapes`
+fn compare_shapes(app: &mut App) {
+    p!(app.out, "\nSelect first shape (0-{}):\n", SHAPE_COUNT - 1);
     for i in 0..SHAPE_COUNT {
-        println!("{}. {}", i, shape_type_name(i));
+        p!(app.out, "{}. {}\n", i, shape_type_name(i));
     }
-    print_flush("Choice: ");
+    app.out.s("Choice: ");
 
-    let type1 = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    let type1 = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    print_flush(&format!("\nSelect second shape (0-{}): ", SHAPE_COUNT - 1));
-    let type2 = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "\nSelect second shape (0-{}): ", SHAPE_COUNT - 1);
+    let type2 = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
     if type1 < 0 || type1 >= SHAPE_COUNT || type2 < 0 || type2 >= SHAPE_COUNT {
-        println!("Invalid shape type");
+        app.out.s("Invalid shape type\n");
         return;
     }
 
-    let s1 = mgr.shape_get(type1);
-    let s2 = mgr.shape_get(type2);
+    let s1 = app.mgr.get(type1).expect("validated shape");
+    let s2 = app.mgr.get(type2).expect("validated shape");
 
-    // SAFETY: s1 and s2 are valid singleton pointers (validated above).
-    let s1_ref: &Shape = unsafe { &*s1 };
-    let s2_ref: &Shape = unsafe { &*s2 };
-
-    println!("\nShape 1: {} (ptr: {})", s1_ref.name, format_ptr(s1 as *const ()));
-    println!("Shape 2: {} (ptr: {})", s2_ref.name, format_ptr(s2 as *const ()));
-    println!("Comparison of pointers: {}", if s1 == s2 { 1 } else { 0 });
+    p!(
+        app.out,
+        "\nShape 1: {} (ptr: {})\n",
+        app.mgr.name(s1),
+        fmt_ptr(app.mgr.addr(s1))
+    );
+    p!(
+        app.out,
+        "Shape 2: {} (ptr: {})\n",
+        app.mgr.name(s2),
+        fmt_ptr(app.mgr.addr(s2))
+    );
+    p!(
+        app.out,
+        "Comparison of pointers: {}\n",
+        if s1 == s2 { 1 } else { 0 }
+    );
 
     if shape_equals(s1, s2) != 0 {
-        println!("Result: Shapes are EQUAL (same instance)");
+        app.out.s("Result: Shapes are EQUAL (same instance)\n");
     } else {
-        println!("Result: Shapes are NOT EQUAL (different instances)");
+        app.out
+            .s("Result: Shapes are NOT EQUAL (different instances)\n");
     }
 }
 
-fn compare_scenes(scenes: &[Box<Scene>], scene_count: usize, stdin: &mut StdinReader) {
-    if scene_count < 2 {
-        println!("Need at least 2 scenes to compare");
+/// `compare_scenes`
+fn compare_scenes(app: &mut App) {
+    if app.scene_count() < 2 {
+        app.out.s("Need at least 2 scenes to compare\n");
         return;
     }
 
-    print_flush(&format!("Select first scene (0-{}): ", scene_count - 1));
-    let idx1 = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "Select first scene (0-{}): ", app.scene_count() - 1);
+    let idx1 = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    print_flush(&format!("Select second scene (0-{}): ", scene_count - 1));
-    let idx2 = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(app.out, "Select second scene (0-{}): ", app.scene_count() - 1);
+    let idx2 = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if idx1 < 0
-        || idx1 as usize >= scene_count
-        || idx2 < 0
-        || idx2 as usize >= scene_count
-    {
-        println!("Invalid scene index");
+    if idx1 < 0 || idx1 >= app.scene_count() || idx2 < 0 || idx2 >= app.scene_count() {
+        app.out.s("Invalid scene index\n");
         return;
     }
 
-    let sc1 = &scenes[idx1 as usize];
-    let sc2 = &scenes[idx2 as usize];
+    let sc1 = idx1 as usize;
+    let sc2 = idx2 as usize;
 
-    println!("\nScene 1: {} ({} shapes)", sc1.name, sc1.shape_count);
-    scene_list_shapes(sc1);
+    app.out.s("\nScene 1: ");
+    let name1 = app.scenes[sc1].name.clone();
+    app.out.b(&name1);
+    p!(app.out, " ({} shapes)\n", app.scenes[sc1].shape_count());
+    scene_list_shapes(&mut app.out, &app.mgr, &app.scenes[sc1]);
 
-    println!("\nScene 2: {} ({} shapes)", sc2.name, sc2.shape_count);
-    scene_list_shapes(sc2);
+    app.out.s("\nScene 2: ");
+    let name2 = app.scenes[sc2].name.clone();
+    app.out.b(&name2);
+    p!(app.out, " ({} shapes)\n", app.scenes[sc2].shape_count());
+    scene_list_shapes(&mut app.out, &app.mgr, &app.scenes[sc2]);
 
-    if scene_equals(sc1, sc2) != 0 {
-        println!("\nResult: Scenes are EQUAL (1:1 correspondence)");
+    if scene_equals(&app.scenes[sc1], &app.scenes[sc2]) != 0 {
+        app.out
+            .s("\nResult: Scenes are EQUAL (1:1 correspondence)\n");
     } else {
-        println!("\nResult: Scenes are NOT EQUAL");
+        app.out.s("\nResult: Scenes are NOT EQUAL\n");
     }
 }
 
-fn delete_scene(
-    scenes: &mut Vec<Box<Scene>>,
-    scene_count: &mut usize,
-    stdin: &mut StdinReader,
-) {
-    if *scene_count == 0 {
-        println!("No scenes available");
+/// `delete_scene`
+fn delete_scene(app: &mut App) {
+    if app.scenes.is_empty() {
+        app.out.s("No scenes available\n");
         return;
     }
 
-    print_flush(&format!("Select scene to delete (0-{}): ", *scene_count - 1));
-    let scene_idx = match stdin.scanf_int() {
-        Some(n) => {
-            discard_to_newline(stdin);
-            n
-        }
+    p!(
+        app.out,
+        "Select scene to delete (0-{}): ",
+        app.scene_count() - 1
+    );
+    let scene_idx = match app.input.scan_int() {
+        Some(v) => v,
         None => {
-            println!("Invalid input");
-            discard_to_newline(stdin);
+            app.out.s("Invalid input\n");
+            discard_line(&mut app.input);
             return;
         }
     };
+    discard_line(&mut app.input);
 
-    if scene_idx < 0 || scene_idx as usize >= *scene_count {
-        println!("Invalid scene index");
+    if scene_idx < 0 || scene_idx >= app.scene_count() {
+        app.out.s("Invalid scene index\n");
         return;
     }
 
-    scenes.remove(scene_idx as usize);
-    *scene_count -= 1;
-    println!("Scene deleted");
+    // scene_destroy + shift the remaining scenes
+    app.scenes.remove(scene_idx as usize);
+
+    app.out.s("Scene deleted\n");
 }
 
 fn main() {
-    println!("╔════════════════════════════════════════╗");
-    println!("║  ASCII ART DRAWING APPLICATION        ║");
-    println!("║  Child-Friendly Shape Editor           ║");
-    println!("╚════════════════════════════════════════╝");
+    let mut app = App {
+        scenes: Vec::new(),
+        mgr: ShapeManager::new(),
+        out: Out::new(),
+        input: cio::stdin_reader(),
+    };
 
-    let mgr = ShapeManager::new();
+    app.out
+        .s("\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}\n");
+    app.out
+        .s("\u{2551}  ASCII ART DRAWING APPLICATION        \u{2551}\n");
+    app.out
+        .s("\u{2551}  Child-Friendly Shape Editor           \u{2551}\n");
+    app.out
+        .s("\u{255A}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255D}\n");
 
-    let mut scenes: Vec<Box<Scene>> = Vec::new();
-    let mut scene_count: usize = 0;
-    let mut stdin = StdinReader::new();
+    // Initialize shape manager (allocate all shapes once)
+    app.mgr.init();
 
     loop {
-        print_menu();
+        print_menu(&mut app.out);
 
-        // fgets reads up to 255 bytes from stdin (buffer size 256)
-        let input = match stdin.fgets(256) {
-            Some(l) => l,
+        let input = match app.input.fgets(256) {
+            Some(line) => line,
             None => break,
         };
 
-        // sscanf("%d", &choice) - parse leading int from line
-        let choice = match parse_leading_int(&input) {
-            Some(n) => n,
+        let choice = match cio::sscanf_int(&input) {
+            Some(v) => v,
             None => {
-                println!("Invalid input");
+                app.out.s("Invalid input\n");
                 continue;
             }
         };
 
         match choice {
-            1 => view_all_shapes(&mgr),
-            2 => create_new_scene(&mut scenes, &mut scene_count, &mut stdin),
-            3 => add_shape_to_scene(&mut scenes, scene_count, &mgr, &mut stdin),
-            4 => remove_shape_from_scene(&mut scenes, scene_count, &mut stdin),
-            5 => view_scene(&scenes, scene_count, &mut stdin),
-            6 => list_all_scenes(&scenes, scene_count),
-            7 => save_scene_to_file(&scenes, scene_count, &mut stdin),
-            8 => load_scene_from_file(&mut scenes, &mut scene_count, &mgr, &mut stdin),
-            9 => compare_shapes(&mgr, &mut stdin),
-            10 => compare_scenes(&scenes, scene_count, &mut stdin),
-            11 => delete_scene(&mut scenes, &mut scene_count, &mut stdin),
+            1 => view_all_shapes(&mut app),
+            2 => create_new_scene(&mut app),
+            3 => add_shape_to_scene(&mut app),
+            4 => remove_shape_from_scene(&mut app),
+            5 => view_scene(&mut app),
+            6 => list_all_scenes(&mut app),
+            7 => save_scene_to_file(&mut app),
+            8 => load_scene_from_file(&mut app),
+            9 => compare_shapes(&mut app),
+            10 => compare_scenes(&mut app),
+            11 => delete_scene(&mut app),
             12 => {
-                println!("\nCleaning up and exiting...");
-                // Drop all scenes (matches scene_destroy loop in C).
-                drop(scenes);
-                drop(mgr);
-                println!("Goodbye!");
+                app.out.s("\nCleaning up and exiting...\n");
+                app.scenes.clear();
+                app.mgr.cleanup();
+                app.out.s("Goodbye!\n");
+                app.out.flush();
                 return;
             }
-            _ => println!("Invalid choice"),
+            _ => {
+                app.out.s("Invalid choice\n");
+            }
         }
     }
-}
 
-/// Parse a leading signed integer from a string, mimicking sscanf("%d", ...).
-/// Returns None if no valid integer at the start (after optional whitespace).
-fn parse_leading_int(s: &str) -> Option<i32> {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() && is_ws(bytes[i]) {
-        i += 1;
-    }
-    let mut sign: i64 = 1;
-    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
-        if bytes[i] == b'-' {
-            sign = -1;
-        }
-        i += 1;
-    }
-    let start = i;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        i += 1;
-    }
-    if start == i {
-        return None;
-    }
-    let digits = std::str::from_utf8(&bytes[start..i]).ok()?;
-    let n: i64 = digits.parse().ok()?;
-    Some((sign * n) as i32)
+    // Cleanup
+    app.scenes.clear();
+    app.mgr.cleanup();
+
+    app.out.flush();
 }

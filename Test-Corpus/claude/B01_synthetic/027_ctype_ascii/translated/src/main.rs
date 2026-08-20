@@ -1,118 +1,103 @@
-// Translation of c_src/src/main.c to Rust.
+// Rust translation of c_src/src/main.c
 //
-// The original C code includes <ctype.h>, where each is*() name expands to a
-// macro that indexes the per-thread classification table returned by
-// __ctype_b_loc() and masks against the appropriate _IS* bit. The macro
-// expansion returns the masked bitmask value (e.g. isdigit('5') == 2048),
-// not 0/1. We replicate that exact behavior here using direct FFI to glibc
-// internals so the output is byte-identical to the C build.
+// The C program reads a single character with getchar() and stores it in a
+// `char` (signed on the reference platform), then reports the result of every
+// <ctype.h> classification function for that value, followed by tolower() and
+// toupper().
+//
+// On the reference platform (glibc), the classification macros expand to a
+// lookup in the locale's ctype table combined with a bit mask, so they return
+// the mask bit value itself (e.g. isalpha('a') == 1024) rather than 1. The
+// tables below are exact copies of glibc's "C" locale tables for the index
+// range that a `char` can produce (-128..=127), which is why the entries for
+// bytes 0x80..=0xFF (negative `char` values) are all zero.
+//
+// getchar() returning EOF (-1) yields the same `char` value as the input byte
+// 0xFF, so both cases are handled identically -- matching the C code, which
+// performs no EOF check.
 
-use std::ffi::CString;
-use std::io::{self, Read, Write};
+mod tables;
 
-#[link(name = "c")]
-extern "C" {
-    fn setlocale(category: i32, locale: *const i8) -> *mut i8;
+use std::io::{Read, Write};
 
-    // Pointers to per-thread (or shared) classification / case-mapping tables.
-    fn __ctype_b_loc() -> *mut *const u16;
-    fn __ctype_tolower_loc() -> *mut *const i32;
-    fn __ctype_toupper_loc() -> *mut *const i32;
+use tables::{CTYPE_CLASS, CTYPE_TOLOWER, CTYPE_TOUPPER};
+
+// glibc <ctype.h> bit masks (_ISbit values).
+const IS_UPPER: u16 = 1 << 8; // 256
+const IS_LOWER: u16 = 2 << 8; // 512
+const IS_ALPHA: u16 = 4 << 8; // 1024
+const IS_DIGIT: u16 = 8 << 8; // 2048
+const IS_XDIGIT: u16 = 16 << 8; // 4096
+const IS_SPACE: u16 = 32 << 8; // 8192
+const IS_PRINT: u16 = 64 << 8; // 16384
+const IS_GRAPH: u16 = 128 << 8; // 32768
+const IS_BLANK: u16 = 1; // (1 << 8) >> 8
+const IS_CNTRL: u16 = 2; // (1 << 9) >> 8
+const IS_PUNCT: u16 = 4; // (1 << 10) >> 8
+const IS_ALNUM: u16 = 8; // (1 << 11) >> 8
+
+/// Emulates glibc's `__isctype(c, mask)`: the table entry masked with `mask`,
+/// promoted to `int` (always non-negative here).
+fn isctype(index: u8, mask: u16) -> i32 {
+    i32::from(CTYPE_CLASS[index as usize] & mask)
 }
 
-const LC_ALL: i32 = 6;
-
-// Masks corresponding to the _IS* enum in glibc bits/types.h.
-// _ISbit(b) = (b < 8) ? (1 << b) << 8 : (1 << b) >> 8
-const IS_UPPER: u16 = 0x0100; // bit 0
-const IS_LOWER: u16 = 0x0200; // bit 1
-const IS_ALPHA: u16 = 0x0400; // bit 2
-const IS_DIGIT: u16 = 0x0800; // bit 3
-const IS_XDIGIT: u16 = 0x1000; // bit 4
-const IS_SPACE: u16 = 0x2000; // bit 5
-const IS_PRINT: u16 = 0x4000; // bit 6
-const IS_GRAPH: u16 = 0x8000; // bit 7
-const IS_BLANK: u16 = 0x0001; // bit 8
-const IS_CNTRL: u16 = 0x0002; // bit 9
-const IS_PUNCT: u16 = 0x0004; // bit 10
-const IS_ALNUM: u16 = 0x0008; // bit 11
-
-/// Return the classification flags for `c` from the glibc table. The table is
-/// indexable from -1..=255; for the typical signed-char case we replicate the
-/// macro expansion exactly.
-unsafe fn ctype_lookup(c: i32) -> u16 {
-    let tbl_ptr = *__ctype_b_loc();
-    // tbl_ptr points at index 0; the table is valid for indices -1..=255.
-    *tbl_ptr.offset(c as isize)
+fn driver(index: u8, out: &mut Vec<u8>) {
+    // setlocale(LC_ALL, "C") -- the tables already encode the "C" locale.
+    write_line(out, "alphanumeric", isctype(index, IS_ALNUM));
+    write_line(out, "alphabetic", isctype(index, IS_ALPHA));
+    write_line(out, "lowercase", isctype(index, IS_LOWER));
+    write_line(out, "uppercase", isctype(index, IS_UPPER));
+    write_line(out, "digit", isctype(index, IS_DIGIT));
+    write_line(out, "hexadecimal", isctype(index, IS_XDIGIT));
+    write_line(out, "control", isctype(index, IS_CNTRL));
+    write_line(out, "graphical", isctype(index, IS_GRAPH));
+    write_line(out, "space", isctype(index, IS_SPACE));
+    write_line(out, "blank", isctype(index, IS_BLANK));
+    write_line(out, "printing", isctype(index, IS_PRINT));
+    write_line(out, "punctuation", isctype(index, IS_PUNCT));
+    write_char_line(out, "to lower", CTYPE_TOLOWER[index as usize]);
+    write_char_line(out, "to upper", CTYPE_TOUPPER[index as usize]);
 }
 
-unsafe fn ctype_tolower(c: i32) -> i32 {
-    let tbl_ptr = *__ctype_tolower_loc();
-    *tbl_ptr.offset(c as isize)
+/// printf("<label>: %d\n", value)
+fn write_line(out: &mut Vec<u8>, label: &str, value: i32) {
+    out.extend_from_slice(label.as_bytes());
+    out.extend_from_slice(b": ");
+    out.extend_from_slice(value.to_string().as_bytes());
+    out.push(b'\n');
 }
 
-unsafe fn ctype_toupper(c: i32) -> i32 {
-    let tbl_ptr = *__ctype_toupper_loc();
-    *tbl_ptr.offset(c as isize)
+/// printf("<label>: %c\n", value) -- %c writes the low byte of the int.
+fn write_char_line(out: &mut Vec<u8>, label: &str, byte: u8) {
+    out.extend_from_slice(label.as_bytes());
+    out.extend_from_slice(b": ");
+    out.push(byte);
+    out.push(b'\n');
 }
 
-fn driver(c: i8) {
-    // setlocale(LC_ALL, "C");
-    let lc = CString::new("C").unwrap();
-    unsafe {
-        setlocale(LC_ALL, lc.as_ptr());
-    }
-
-    // In C, the `char c` parameter is promoted to int when passed to is*()
-    // macros. On platforms where char is signed (the typical case for the
-    // original C code), values like 0xFF become -1 after promotion.
-    let ci: i32 = c as i32;
-
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-
-    unsafe {
-        let flags = ctype_lookup(ci);
-        let _ = writeln!(out, "alphanumeric: {}", flags & IS_ALNUM);
-        let _ = writeln!(out, "alphabetic: {}", flags & IS_ALPHA);
-        let _ = writeln!(out, "lowercase: {}", flags & IS_LOWER);
-        let _ = writeln!(out, "uppercase: {}", flags & IS_UPPER);
-        let _ = writeln!(out, "digit: {}", flags & IS_DIGIT);
-        let _ = writeln!(out, "hexadecimal: {}", flags & IS_XDIGIT);
-        let _ = writeln!(out, "control: {}", flags & IS_CNTRL);
-        let _ = writeln!(out, "graphical: {}", flags & IS_GRAPH);
-        let _ = writeln!(out, "space: {}", flags & IS_SPACE);
-        let _ = writeln!(out, "blank: {}", flags & IS_BLANK);
-        let _ = writeln!(out, "printing: {}", flags & IS_PRINT);
-        let _ = writeln!(out, "punctuation: {}", flags & IS_PUNCT);
-
-        // tolower/toupper return int; %c prints the low byte as a single byte.
-        let lower = ctype_tolower(ci);
-        let upper = ctype_toupper(ci);
-        let lower_byte = (lower & 0xff) as u8;
-        let upper_byte = (upper & 0xff) as u8;
-        let _ = out.write_all(b"to lower: ");
-        let _ = out.write_all(&[lower_byte]);
-        let _ = out.write_all(b"\n");
-        let _ = out.write_all(b"to upper: ");
-        let _ = out.write_all(&[upper_byte]);
-        let _ = out.write_all(b"\n");
+/// getchar(): the next byte of stdin, or EOF (-1) at end of input / on error.
+fn getchar() -> i32 {
+    let mut buf = [0u8; 1];
+    match std::io::stdin().read(&mut buf) {
+        Ok(1) => i32::from(buf[0]),
+        _ => -1,
     }
 }
 
 fn main() {
-    // Replicate `char c = getchar();` — getchar() returns int. On EOF, it
-    // returns -1, and assigning to `char` in C truncates to the low byte
-    // (0xFF), which on signed-char platforms is -1.
-    let mut buf = [0u8; 1];
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let n = handle.read(&mut buf).unwrap_or(0);
-    let c: i8 = if n == 0 {
-        // EOF: getchar() returned -1, truncated to char.
-        -1i8
-    } else {
-        buf[0] as i8
-    };
-    driver(c);
+    // char c = getchar();  -- narrowing conversion to a signed char.
+    let c = getchar() as i8;
+
+    // The ctype tables are indexed by the (possibly negative) char value; using
+    // the equivalent unsigned byte keeps the indexing in bounds.
+    let index = c as u8;
+
+    let mut out = Vec::with_capacity(256);
+    driver(index, &mut out);
+
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    let _ = handle.write_all(&out);
+    let _ = handle.flush();
 }

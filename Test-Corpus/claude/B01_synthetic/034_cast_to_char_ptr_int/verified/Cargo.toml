@@ -3,16 +3,26 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# Shared object exporting the same C ABI symbols as the C build
+# (`gcc -shared -fPIC c_src/src/main.c`): `driver` and `main`.
 [lib]
 name = "driver"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
+# The cdylib exports `main` via #[no_mangle]; a unit-test harness for this crate
+# would clash with the Rust-generated entry point, and all testing is done
+# through the integration tests in tests/ anyway.
+test = false
+doctest = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
 
 [dev-dependencies]
 libloading = "0.8"
-libc = "0.2"
 
 [profile.release]
-opt-level = 3
+panic = "abort"
 
 [workspace]

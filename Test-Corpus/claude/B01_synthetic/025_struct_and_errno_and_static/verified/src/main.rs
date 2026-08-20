@@ -1,163 +1,45 @@
 // Copyright 2025 MIT Lincoln Laboratory
-// Translated to Rust - byte-identical output to original C.
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::cell::RefCell;
-use std::io::{self, Read, Write};
+//! `driver` executable — the translation of `c_src/src/main.c`'s `main()`.
+//!
+//! `c_src/CMakeLists.txt` declares `add_executable(driver src/main.c)`, so this
+//! binary is the artifact that has to be byte-for-byte compatible with the C
+//! build.  The C translation unit gives `run()` external linkage, so this target
+//! re-exports it under the C ABI as well, keeping the executables' global symbol
+//! tables in step (`nm` shows `T main` and `T run` for both).
 
-struct House {
-    floors: i32,
-    bedrooms: i32,
-    bathrooms: f64,
-}
+use std::os::raw::c_int;
 
-thread_local! {
-    static THE_HOUSE: RefCell<House> = RefCell::new(House {
-        floors: 2,
-        bedrooms: 5,
-        bathrooms: 2.5,
-    });
-}
-
-fn add_floor(house: &mut House) {
-    house.floors += 1;
-}
-
-fn add_bedrooms(house: &mut House, extra_bedrooms: i32) {
-    house.bedrooms += extra_bedrooms;
-}
-
-fn add_floor_to_the_house() {
-    THE_HOUSE.with(|h| add_floor(&mut h.borrow_mut()));
-}
-
-fn print_the_house() {
-    THE_HOUSE.with(|h| {
-        let h = h.borrow();
-        // Match C printf "%.1f" formatting which always uses the C locale.
-        print!(
-            "The house has {} floors, {} bedrooms, and {:.1} bathrooms\n",
-            h.floors, h.bedrooms, h.bathrooms
-        );
-    });
-}
-
-fn run(extra_bedrooms: i32) {
-    print_the_house();
-    add_floor_to_the_house();
-    print_the_house();
-    THE_HOUSE.with(|h| h.borrow_mut().bathrooms += 1.0);
-    print_the_house();
-    THE_HOUSE.with(|h| add_bedrooms(&mut h.borrow_mut(), extra_bedrooms));
-    print_the_house();
-}
-
-/// Mimic C's strtol+range check behavior for parsing into an int.
-/// Returns Some(val) if at least one numeric character was consumed,
-/// no overflow occurred, and the result fits in i32.
-fn parse_val(bytes: &[u8]) -> Option<i32> {
-    let mut i = 0;
-
-    // Skip leading whitespace as per C isspace().
-    while i < bytes.len()
-        && matches!(
-            bytes[i],
-            b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'
-        )
-    {
-        i += 1;
-    }
-
-    // Optional sign.
-    let negative;
-    if i < bytes.len() && bytes[i] == b'-' {
-        negative = true;
-        i += 1;
-    } else if i < bytes.len() && bytes[i] == b'+' {
-        negative = false;
-        i += 1;
-    } else {
-        negative = false;
-    }
-
-    let digits_start = i;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        i += 1;
-    }
-
-    if digits_start == i {
-        // No digits consumed: endp == str in C, so parse_val returns false.
-        return None;
-    }
-
-    // Accumulate digits, detecting overflow (mirrors errno=ERANGE in strtol).
-    let mut result: i64 = 0;
-    for j in digits_start..i {
-        let d = (bytes[j] - b'0') as i64;
-        result = match result.checked_mul(10).and_then(|r| r.checked_add(d)) {
-            Some(r) => r,
-            None => return None,
-        };
-    }
-
-    let signed = if negative {
-        match result.checked_neg() {
-            Some(s) => s,
-            None => return None,
-        }
-    } else {
-        result
-    };
-
-    if signed >= i32::MIN as i64 && signed <= i32::MAX as i64 {
-        Some(signed as i32)
-    } else {
-        None
-    }
-}
-
-/// Mimic fgets(in, 100, stdin):
-/// reads up to 99 bytes, stops after a newline (which is included), or EOF.
-fn fgets_like(max_chars: usize) -> Vec<u8> {
-    let mut buf: Vec<u8> = Vec::new();
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    let mut byte = [0u8; 1];
-    while buf.len() < max_chars {
-        match handle.read(&mut byte) {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                buf.push(byte[0]);
-                if byte[0] == b'\n' {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    buf
+/// `void run(int extra_bedrooms)` — the only non-`static` function of the C
+/// translation unit besides `main`, exported here with the same name and ABI.
+#[no_mangle]
+pub extern "C" fn run(extra_bedrooms: c_int) {
+    driver::run_global(extra_bedrooms);
 }
 
 fn main() {
-    // C: char in[100] = ""; fgets(in, sizeof(in), stdin);
-    // fgets reads at most sizeof-1 = 99 chars, then null-terminates.
-    let input = fgets_like(99);
-
-    let mut x: i32 = 0;
-    let parsed = match parse_val(&input) {
-        Some(v) => {
-            x = v;
-            true
-        }
-        None => false,
-    };
-
-    if parsed {
-        run(x);
-        run(x);
-    } else {
-        print!("An error occurred\n");
-    }
-
-    // Ensure all output is flushed before exit.
-    let _ = io::stdout().flush();
+    // `int main()` always `return 0;`, which is what an empty Rust `main` does.
+    let status = driver::c_main_with(run);
+    debug_assert_eq!(status, 0);
 }

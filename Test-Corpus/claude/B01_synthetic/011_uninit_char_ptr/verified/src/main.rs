@@ -1,76 +1,77 @@
-// Translation of c_src/src/main.c to Rust.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// The original C program contains an intentional CWE-457 vulnerability:
-// `bad()` reads an uninitialized `char *data` pointer and passes it to
-// `printLine`. In practice, on the platforms this program is exercised on,
-// the stack slot for `data` happens to read as NULL, so `printLine` skips
-// the print. We reproduce that observed behavior here using safe Rust:
-// `bad()`'s `data` is modeled as `None`.
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
 //
-// `good()` always assigns `data = "string"` and prints it.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+//! `driver` executable - the artifact `c_src/CMakeLists.txt` builds.
 
-fn print_line(line: Option<&str>) {
-    if let Some(s) = line {
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
-        let _ = out.write_all(s.as_bytes());
-        let _ = out.write_all(b"\n");
-    }
+use std::ffi::c_int;
+use std::io::Write;
+
+#[path = "prog.rs"]
+mod prog;
+
+extern "C" {
+    fn signal(sig: c_int, handler: usize) -> usize;
 }
 
-fn bad() {
-    let data: Option<&str> = None;
-    print_line(data);
-}
+const SIGPIPE: c_int = 13;
+const SIG_DFL: usize = 0;
 
-fn good() {
-    let data: Option<&str> = Some("string");
-    print_line(data);
-}
-
-fn scanf_int(input: &[u8]) -> i32 {
-    let mut i = 0usize;
-    while i < input.len() && (input[i] as char).is_ascii_whitespace() {
-        i += 1;
+/// Undo the one thing Rust's runtime does that a C `main` never sees.
+///
+/// `std`'s startup code sets `SIGPIPE` to `SIG_IGN` before calling `main`, so a
+/// Rust program whose stdout is a pipe with no reader survives the write (it
+/// fails with `EPIPE`, which this program discards, and the process exits `0`).
+/// The C program keeps the default disposition and is *killed by signal 13*
+/// instead - `rc=0 signal=13` vs `rc=0 signal=0` when measured with `waitpid`.
+/// Restoring `SIG_DFL` here makes the Rust executable die exactly like the C one.
+///
+/// Note this belongs to the *executable* only: a shared-library build of
+/// `main.c` does not touch the disposition either, so `src/lib.rs`'s exported
+/// `main` deliberately leaves whatever the host process installed alone.
+fn restore_c_signal_dispositions() {
+    // SAFETY: plain libc call with a valid signal number and SIG_DFL.
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
     }
-    if i >= input.len() {
-        return 0;
-    }
-    let mut negative = false;
-    if input[i] == b'-' {
-        negative = true;
-        i += 1;
-    } else if input[i] == b'+' {
-        i += 1;
-    }
-    let start = i;
-    let mut value: i64 = 0;
-    while i < input.len() && (input[i] as char).is_ascii_digit() {
-        value = value
-            .wrapping_mul(10)
-            .wrapping_add((input[i] - b'0') as i64);
-        i += 1;
-    }
-    if i == start {
-        return 0;
-    }
-    let result = if negative { -value } else { value };
-    result as i32
 }
 
 fn main() {
-    let mut x: i32 = 0;
+    restore_c_signal_dispositions();
 
-    let mut buf = Vec::new();
-    if io::stdin().read_to_end(&mut buf).is_ok() {
-        x = scanf_int(&buf);
-    }
+    // `CStdin` rather than `std::io::stdin()`: it reproduces glibc's refill
+    // granularity and its one character of push-back, both of which a process
+    // sharing fd 0 can observe. See `prog::CStdin`.
+    let mut input = prog::CStdin::new();
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
 
-    if x != 0 {
-        good();
-    } else {
-        bad();
-    }
+    // C's `main` returns 0 unconditionally, which is also what falling off the
+    // end of Rust's `fn main()` produces.
+    let _ = prog::run(&mut input, &mut out);
+
+    let _ = out.flush();
+
+    // libc's exit-time cleanup rewinds a seekable stdin to the logical stream
+    // position; do the same before this process goes away.
+    input.reposition_if_seekable();
 }

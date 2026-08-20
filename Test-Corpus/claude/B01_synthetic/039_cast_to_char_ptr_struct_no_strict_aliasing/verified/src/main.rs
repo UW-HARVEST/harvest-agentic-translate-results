@@ -1,137 +1,36 @@
-use std::io::{self, Read, Write};
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#[repr(C)]
-#[derive(Default)]
-struct House {
-    floors: i32,
-    bedrooms: i32,
-    bathrooms: f64,
-}
+//! Executable target.
+//!
+//! `#![no_main]` is used so that the `#[no_mangle] extern "C" fn main()` defined
+//! in [`imp`] is the real ELF entry point that the C runtime calls — exactly
+//! like the `int main()` of `c_src/src/main.c`. This keeps a single copy of the
+//! translation shared with the `cdylib` target (`src/lib.rs`), and keeps the
+//! `main` symbol byte-compatible with the C build.
+//! (`cfg(test)` builds — `cargo build --all-targets` — get libtest's own entry
+//! point instead, so `no_main` is applied only outside of them.)
+#![cfg_attr(not(test), no_main)]
 
-fn print_hex(p: &[u8]) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let mut s = String::with_capacity(p.len() * 2 + 1);
-    for b in p {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s.push('\n');
-    out.write_all(s.as_bytes()).unwrap();
-}
-
-fn driver(floors: i32) {
-    // {0} initialization zeroes the entire struct including padding.
-    let size = std::mem::size_of::<House>();
-    let mut raw_struct = vec![0u8; size];
-
-    // Build the house with zero-initialized memory, then assign fields.
-    // We do this by directly writing field bytes to a zeroed buffer to match
-    // the C struct's `{0}` zero-initialization semantics (including padding).
-    let house = House {
-        floors,
-        bedrooms: 3,
-        bathrooms: 2.0,
-    };
-
-    // Use unsafe transmute via copy into a zeroed buffer to ensure padding bytes
-    // are exactly the zero bytes from the original `{0}` initialization.
-    // First, zero the buffer (already zeroed). Then write each field into its offset.
-    let floors_bytes = house.floors.to_ne_bytes();
-    let bedrooms_bytes = house.bedrooms.to_ne_bytes();
-    let bathrooms_bytes = house.bathrooms.to_ne_bytes();
-
-    // Compute offsets matching the C ABI: floors at 0, bedrooms at 4, bathrooms at 8.
-    raw_struct[0..4].copy_from_slice(&floors_bytes);
-    raw_struct[4..8].copy_from_slice(&bedrooms_bytes);
-    raw_struct[8..16].copy_from_slice(&bathrooms_bytes);
-
-    // Copy to "raw" buffer like memcpy in C.
-    let mut raw = vec![0u8; size];
-    raw.copy_from_slice(&raw_struct);
-
-    print_hex(&raw);
-}
-
-fn read_scanf_int() -> i32 {
-    // Mimic C's scanf("%d", &x): skip leading whitespace (including newlines),
-    // then read an optional sign and digits.
-    let mut buf = [0u8; 1];
-    let mut stdin = io::stdin();
-
-    let mut c: Option<u8>;
-
-    // Skip whitespace
-    loop {
-        match stdin.read(&mut buf) {
-            Ok(0) => {
-                c = None;
-                break;
-            }
-            Ok(_) => {
-                let ch = buf[0];
-                if (ch as char).is_ascii_whitespace() {
-                    continue;
-                } else {
-                    c = Some(ch);
-                    break;
-                }
-            }
-            Err(_) => {
-                c = None;
-                break;
-            }
-        }
-    }
-
-    if c.is_none() {
-        // scanf returns EOF, x stays 0
-        return 0;
-    }
-
-    let mut digits = Vec::new();
-    let mut ch = c.unwrap();
-
-    // Optional sign
-    if ch == b'+' || ch == b'-' {
-        digits.push(ch);
-        match stdin.read(&mut buf) {
-            Ok(0) => {
-                // No digits after sign — scanf would not match. x stays 0.
-                return 0;
-            }
-            Ok(_) => {
-                ch = buf[0];
-            }
-            Err(_) => return 0,
-        }
-    }
-
-    if !ch.is_ascii_digit() {
-        return 0;
-    }
-
-    digits.push(ch);
-
-    loop {
-        match stdin.read(&mut buf) {
-            Ok(0) => break,
-            Ok(_) => {
-                let ch = buf[0];
-                if ch.is_ascii_digit() {
-                    digits.push(ch);
-                } else {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-
-    let s = std::str::from_utf8(&digits).unwrap_or("0");
-    s.parse::<i32>().unwrap_or(0)
-}
-
-fn main() {
-    let x = read_scanf_int();
-    driver(x);
-}
+#[path = "imp.rs"]
+mod imp;

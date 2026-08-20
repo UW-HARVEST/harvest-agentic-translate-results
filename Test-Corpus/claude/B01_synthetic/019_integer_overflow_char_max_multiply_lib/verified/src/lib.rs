@@ -1,87 +1,128 @@
-// Translation of c_src/src/driver.c to Rust.
-// Produces byte-identical stdout for the same inputs.
+// Rust translation of c_src/src/driver.c (CWE-190 style integer overflow demo).
+//
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int, CStr};
+// Names and control flow deliberately mirror the original C source.
+#![allow(non_snake_case, unused_assignments)]
 
-// On the platforms this is targeting (x86_64 Linux/macOS), `char` is signed and
-// CHAR_MAX is 127. Model that exactly.
-const CHAR_MAX: i8 = i8::MAX;
+use std::ffi::{c_char, c_int};
 
+extern "C" {
+    // Variadic C printf: used so that output goes through the very same libc
+    // stdout FILE stream (and buffering) as the original C library did.
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
+
+/// `<limits.h>`'s `CHAR_MAX`. `c_char` is signed on some targets (e.g. x86_64)
+/// and unsigned on others (e.g. aarch64), exactly like the C `char` type, so
+/// deriving the constant from `c_char` reproduces the platform behaviour.
+const CHAR_MAX: c_char = c_char::MAX;
+
+/// `void printLine(const char * line)`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
-        // Match C's printf("%s\n", line). The C string is read until NUL.
-        let cstr = unsafe { CStr::from_ptr(line) };
-        // Use stdout write of bytes + newline to mirror printf exactly.
-        use std::io::Write;
-        let stdout = std::io::stdout();
-        let mut handle = stdout.lock();
-        let _ = handle.write_all(cstr.to_bytes());
-        let _ = handle.write_all(b"\n");
+        printf(b"%s\n\0".as_ptr() as *const c_char, line);
     }
 }
 
+/// `void printHexCharLine(char charHex)`
+///
+/// The `char` argument undergoes the default integer promotion to `int` before
+/// being consumed by `%02x`, so negative values (on targets with a signed
+/// `char`) are sign-extended and print as eight hex digits.
+///
+/// The parameter is declared `c_int` rather than `c_char` on purpose. Under the
+/// SysV AMD64 psABI the upper 24 bits of a `char` argument register are
+/// unspecified, and gcc compiles this C function to narrow defensively --
+/// `movsbl %dil,%esi` -- at *every* optimisation level. Declaring the Rust
+/// parameter as `c_char` instead makes rustc attach LLVM's `signext` attribute,
+/// and an optimised build then trusts the caller and forwards the full 32-bit
+/// register (`mov %edi,%esi`), which diverges from the C for any caller that
+/// leaves stale bits in the upper 24. Taking a `c_int` and narrowing here
+/// reproduces the C's own instruction sequence, and is byte-for-byte identical
+/// for every ABI-conforming caller.
 #[unsafe(no_mangle)]
-pub extern "C" fn printHexCharLine(char_hex: c_char) {
-    // C semantics: printf("%02x\n", charHex)
-    // - `charHex` is `char` (signed on x86_64). It undergoes default argument
-    //   promotion to `int` (sign-extending).
-    // - `%x` reinterprets the int's bits as `unsigned int` for formatting.
-    // So for char_hex = -2, the printed value is 0xFFFFFFFE -> "fffffffe".
-    let signed: i8 = char_hex as i8;
-    let as_int: c_int = signed as c_int;
-    let as_uint: u32 = as_int as u32;
-    use std::io::Write;
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-    let _ = write!(handle, "{:02x}\n", as_uint);
+pub unsafe extern "C" fn printHexCharLine(charHex: c_int) {
+    // Keep only the low byte, then re-apply the platform `char`'s signedness,
+    // exactly as the C `char` parameter plus its integer promotion do.
+    let charHex = charHex as u8 as c_char;
+    printf(b"%02x\n\0".as_ptr() as *const c_char, charHex as c_int);
 }
 
+/// `void bad()`
 #[unsafe(no_mangle)]
-pub extern "C" fn bad() {
-    let data: i8 = CHAR_MAX;
+pub unsafe extern "C" fn bad() {
+    let data: c_char;
+    data = CHAR_MAX;
     if data > 0 {
-        // C: char result = data * 2;
-        // Integer promotion to int -> multiply -> assign back to char.
-        // For data = 127, result is 254 in int, which wraps to -2 in i8.
-        let result: i8 = ((data as c_int) * 2) as i8;
-        printHexCharLine(result as c_char);
+        // char result = data * 2;  -- promotion to int, then truncation back
+        // to char, which overflows for CHAR_MAX.
+        let result: c_char = ((data as c_int) * 2) as c_char;
+        printHexCharLine(result as c_int);
     }
 }
 
-fn good_g2b() {
-    let data: i8 = 2;
+/// `static void goodG2B()`
+unsafe fn goodG2B() {
+    let data: c_char;
+    data = 2;
     if data > 0 {
-        let result: i8 = ((data as c_int) * 2) as i8;
-        printHexCharLine(result as c_char);
+        let result: c_char = ((data as c_int) * 2) as c_char;
+        printHexCharLine(result as c_int);
     }
 }
 
-fn good_b2g() {
-    let mut data: i8;
-    data = b' ' as i8;
-    let _ = data; // silence unused warnings; matches C dead-store pattern
+/// `static void goodB2G()`
+unsafe fn goodB2G() {
+    let mut data: c_char;
+    data = b' ' as c_char;
     data = CHAR_MAX;
     if data > 0 {
         if data < (CHAR_MAX / 2) {
-            let result: i8 = ((data as c_int) * 2) as i8;
-            printHexCharLine(result as c_char);
+            let result: c_char = ((data as c_int) * 2) as c_char;
+            printHexCharLine(result as c_int);
         } else {
-            let msg = b"data value is too large to perform arithmetic safely.\0";
-            unsafe { printLine(msg.as_ptr() as *const c_char) };
+            printLine(
+                b"data value is too large to perform arithmetic safely.\0".as_ptr()
+                    as *const c_char,
+            );
         }
     }
 }
 
+/// `void good()`
 #[unsafe(no_mangle)]
-pub extern "C" fn good() {
-    good_g2b();
-    good_b2g();
+pub unsafe extern "C" fn good() {
+    goodG2B();
+    goodB2G();
 }
 
+/// `void driver(int useGood)`
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(use_good: c_int) {
-    if use_good != 0 {
+pub unsafe extern "C" fn driver(useGood: c_int) {
+    if useGood != 0 {
         good();
     } else {
         bad();

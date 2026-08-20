@@ -1,93 +1,182 @@
+// Translation of c_src/src/main.c to Rust.
+//
+// Original copyright notice from the C source:
+//
 // Copyright 2025 MIT Lincoln Laboratory
-// Translated from C to Rust.
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 
-#[repr(C)]
+/// Mirrors the C struct:
+///
+/// ```c
+/// typedef struct {
+///     int floors;
+///     int bedrooms;
+///     double bathrooms;
+/// } house_t;
+/// ```
+///
+/// On the x86-64 SysV ABI this occupies 16 bytes with no padding:
+/// `floors` at offset 0, `bedrooms` at offset 4, `bathrooms` at offset 8.
 struct House {
     floors: i32,
     bedrooms: i32,
     bathrooms: f64,
 }
 
-fn print_hex(bytes: &[u8]) {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    for b in bytes {
-        write!(out, "{:02x}", b).unwrap();
+impl House {
+    /// Zero-initialized, equivalent to `house_t house = {0};`
+    /// (GCC zeroes the full object, including any padding).
+    fn zeroed() -> House {
+        House {
+            floors: 0,
+            bedrooms: 0,
+            bathrooms: 0.0,
+        }
     }
-    writeln!(out).unwrap();
+
+    /// The raw object representation of the struct, exactly as
+    /// `(unsigned char *)&house` would observe it on a little-endian
+    /// x86-64 target.
+    fn as_bytes(&self) -> [u8; 16] {
+        let mut buf = [0u8; 16];
+        buf[0..4].copy_from_slice(&self.floors.to_le_bytes());
+        buf[4..8].copy_from_slice(&self.bedrooms.to_le_bytes());
+        buf[8..16].copy_from_slice(&self.bathrooms.to_bits().to_le_bytes());
+        buf
+    }
 }
 
+/// `static void print_hex(unsigned char *p, int len)`
+fn print_hex(p: &[u8], len: usize) {
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let mut s = String::with_capacity(len * 2 + 1);
+    for i in 0..len {
+        s.push_str(&format!("{:02x}", p[i]));
+    }
+    s.push('\n');
+    let _ = out.write_all(s.as_bytes());
+    let _ = out.flush();
+}
+
+/// `void driver(int floors)`
 fn driver(floors: i32) {
-    // Mirror `house_t house = {0};` then field assignments.
-    let house = House {
-        floors,
-        bedrooms: 3,
-        bathrooms: 2.0,
+    let mut house = House::zeroed();
+    house.floors = floors;
+    house.bedrooms = 3;
+    house.bathrooms = 2.0;
+    let bytes = house.as_bytes();
+    print_hex(&bytes, bytes.len());
+}
+
+/// Matches the C locale's `isspace()` for the characters `scanf` skips.
+fn is_c_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// Reads one byte from stdin, returning `None` on EOF or error.
+fn next_byte<R: Read>(r: &mut R) -> Option<u8> {
+    let mut b = [0u8; 1];
+    loop {
+        match r.read(&mut b) {
+            Ok(0) => return None,
+            Ok(_) => return Some(b[0]),
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Emulates `scanf("%d", &x)` from glibc.
+///
+/// Skips leading whitespace, accepts an optional sign followed by decimal
+/// digits, and converts via a `long` accumulator that saturates at
+/// `LONG_MAX`/`LONG_MIN` (as glibc's internal `strtol` does) before being
+/// truncated to `int`. On a matching failure the destination is left
+/// untouched, exactly like `scanf`.
+fn scanf_d<R: Read>(r: &mut R, dst: &mut i32) -> i32 {
+    // Skip leading whitespace.
+    let mut c = loop {
+        match next_byte(r) {
+            None => return -1, // EOF before any conversion => returns EOF
+            Some(b) if is_c_space(b) => continue,
+            Some(b) => break b,
+        }
     };
 
-    // Build the byte representation matching the C struct layout on x86_64.
-    // Layout: [floors:i32][bedrooms:i32][bathrooms:f64], no padding (4+4+8 = 16 bytes).
-    let mut bytes = [0u8; std::mem::size_of::<House>()];
-    let f = house.floors.to_le_bytes();
-    let b = house.bedrooms.to_le_bytes();
-    let ba = house.bathrooms.to_le_bytes();
-    bytes[0..4].copy_from_slice(&f);
-    bytes[4..8].copy_from_slice(&b);
-    bytes[8..16].copy_from_slice(&ba);
-    print_hex(&bytes);
-}
+    let mut negative = false;
+    if c == b'+' || c == b'-' {
+        negative = c == b'-';
+        match next_byte(r) {
+            None => return -1, // input failure / EOF after the sign
+            Some(b) => c = b,
+        }
+    }
 
-/// Mimic C's `scanf("%d", &x)` for a single decimal integer:
-/// - Skip leading whitespace (including newlines).
-/// - Optional sign.
-/// - Read digits until a non-digit or EOF.
-/// - If no digits are read, behave like scanf returning 0 matches; the C code
-///   leaves `x` at its initialized value of 0 in that case.
-fn scanf_int(input: &[u8]) -> i32 {
-    let mut i = 0usize;
-    // Skip whitespace
-    while i < input.len() {
-        let c = input[i];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' || c == 0x0b || c == 0x0c {
-            i += 1;
-        } else {
-            break;
-        }
-    }
-    if i >= input.len() {
+    if !c.is_ascii_digit() {
+        // Matching failure: nothing is stored.
         return 0;
     }
-    let mut neg = false;
-    if input[i] == b'-' {
-        neg = true;
-        i += 1;
-    } else if input[i] == b'+' {
-        i += 1;
-    }
-    let mut any = false;
-    let mut val: i64 = 0;
-    while i < input.len() {
-        let c = input[i];
-        if c.is_ascii_digit() {
-            val = val.wrapping_mul(10).wrapping_add((c - b'0') as i64);
-            any = true;
-            i += 1;
-        } else {
-            break;
+
+    // Accumulate as `long`, saturating like glibc's strtol does on overflow.
+    let mut acc: i64 = 0;
+    let mut overflow = false;
+    loop {
+        let digit = (c - b'0') as i64;
+        if !overflow {
+            match acc.checked_mul(10).and_then(|v| {
+                if negative {
+                    v.checked_sub(digit)
+                } else {
+                    v.checked_add(digit)
+                }
+            }) {
+                Some(v) => acc = v,
+                None => overflow = true,
+            }
+        }
+        match next_byte(r) {
+            None => break,
+            Some(b) if b.is_ascii_digit() => c = b,
+            Some(_) => break, // non-digit terminates the conversion (pushed back)
         }
     }
-    if !any {
-        return 0;
+
+    if overflow {
+        acc = if negative { i64::MIN } else { i64::MAX };
     }
-    let result = if neg { val.wrapping_neg() } else { val };
-    result as i32
+
+    // Stored as `int`: implementation-defined truncation of the `long` value.
+    *dst = acc as i32;
+    1
 }
 
 fn main() {
-    let mut buf = Vec::new();
-    io::stdin().read_to_end(&mut buf).unwrap();
-    let x = scanf_int(&buf);
+    let mut x: i32 = 0;
+    let stdin = std::io::stdin();
+    let mut input = stdin.lock();
+    let _ = scanf_d(&mut input, &mut x);
     driver(x);
 }

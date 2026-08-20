@@ -3,27 +3,27 @@ name = "driver"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-name = "driver"
-path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
-
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
-[profile.release]
-opt-level = 3
-
-[features]
-default = []
-# When enabled, exports a C-callable `main` symbol from the cdylib so it
-# matches the C build's exported symbol set. This is OFF by default so
-# the rlib (used by integration tests) does not clash with the test
-# harness's own `main`.
-export_main = []
+# C-ABI shared library used only for differential testing against the C build.
+# It exports the same symbols as `gcc -shared c_src/src/main.c`.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+# The library exports a C-ABI `main`, which cannot coexist with the entry point
+# that libtest generates, so the lib target has no unit-test harness of its own
+# (all tests are the integration tests in `tests/`).
+test = false
+doctest = false
 
 [dev-dependencies]
 libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
 
 [workspace]

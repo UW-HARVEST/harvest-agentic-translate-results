@@ -1,74 +1,48 @@
-use std::io::{self, Read, Write};
+// Translated from c_src/src/main.c
+//
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-fn driver(x: i32) {
-    // Use wrapping arithmetic to match C's int overflow behavior.
-    let mut y: i32 = x.wrapping_mul(2);
-    y = y.wrapping_add(300);
-    println!("{}", y);
+mod driver_impl;
+
+use std::process::ExitCode;
+
+extern "C" {
+    /// `sighandler_t signal(int signum, sighandler_t handler)`
+    fn signal(signum: i32, handler: usize) -> usize;
 }
 
-/// Mimic scanf("%d", &x):
-/// - Skip leading whitespace (including newlines).
-/// - Optionally read a leading '+' or '-'.
-/// - Read decimal digits until a non-digit byte or EOF.
-/// - On match failure (no digits), the variable is unchanged.
-/// Returns Some(value) on success, None on match failure.
-fn scanf_int(stdin_bytes: &[u8], pos: &mut usize) -> Option<i32> {
-    // Skip whitespace
-    while *pos < stdin_bytes.len() {
-        let c = stdin_bytes[*pos];
-        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' || c == 0x0B || c == 0x0C {
-            *pos += 1;
-        } else {
-            break;
-        }
+const SIGPIPE: i32 = 13;
+const SIG_DFL: usize = 0;
+
+fn main() -> ExitCode {
+    // A C program starts with SIGPIPE at its default disposition (terminate),
+    // whereas the Rust runtime installs SIG_IGN before `main`. Restore the C
+    // behaviour so that writing to a closed pipe kills the process with
+    // SIGPIPE exactly as the C build does.
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
     }
-
-    if *pos >= stdin_bytes.len() {
-        return None;
-    }
-
-    let start = *pos;
-    let mut sign: i64 = 1;
-    if stdin_bytes[*pos] == b'+' {
-        *pos += 1;
-    } else if stdin_bytes[*pos] == b'-' {
-        sign = -1;
-        *pos += 1;
-    }
-
-    let digit_start = *pos;
-    let mut value: i64 = 0;
-    while *pos < stdin_bytes.len() {
-        let c = stdin_bytes[*pos];
-        if c.is_ascii_digit() {
-            value = value.wrapping_mul(10).wrapping_add((c - b'0') as i64);
-            *pos += 1;
-        } else {
-            break;
-        }
-    }
-
-    if *pos == digit_start {
-        // No digits matched; rewind to the start so caller knows nothing was consumed.
-        *pos = start;
-        return None;
-    }
-
-    let signed = sign.wrapping_mul(value);
-    Some(signed as i32)
-}
-
-fn main() {
-    let mut input = Vec::new();
-    if io::stdin().read_to_end(&mut input).is_err() {
-        // If reading fails, fall back to default behavior
-    }
-
-    let mut pos: usize = 0;
-    let x: i32 = scanf_int(&input, &mut pos).unwrap_or(0);
-    driver(x);
-
-    // Ensure output is flushed
-    let _ = io::stdout().flush();
+    let status = driver_impl::run();
+    ExitCode::from(status as u8)
 }

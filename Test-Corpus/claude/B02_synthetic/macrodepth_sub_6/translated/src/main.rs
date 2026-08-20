@@ -1,62 +1,132 @@
-// Translated from c_src/src/mdmain.c
-// Reproduces the C binary's stdout byte-for-byte.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_int;
+//! Rust translation of `src/mdmain.c` (the `driver` executable).
+//!
+//! The library crate is a `cdylib`, so the binary compiles the same modules
+//! directly instead of linking against it.
+
+mod mdcore;
+mod mdmacros;
+
+use std::ffi::{c_int, OsString};
 use std::process::ExitCode;
 
-use driver::{driver_init_for, driver_op, driver_op_name, driver_run_loop, helper_call, helper_ptr, use_generated, REPEAT};
+use mdcore::{helper_call, helper_ptr, use_generated, OP_FN, G_OP, G_OP_NAME};
+use mdmacros::{init_for_op, run_loop, OP_NAME, REPEAT};
 
-// Mirror C atoi semantics for the inputs we expect (int parsing, leading
-// whitespace + optional sign + digits; non-numeric tail is ignored). For our
-// driver we accept simple decimal integers, falling back to 0 on parse error
-// to match atoi's behavior on bad input.
-fn c_atoi(s: &str) -> c_int {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t' || bytes[i] == b'\n' || bytes[i] == b'\r' || bytes[i] == 0x0B || bytes[i] == 0x0C) {
+/// Byte view of a command line argument, matching what C's `argv` holds.
+#[cfg(unix)]
+fn arg_bytes(arg: &OsString) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+    arg.as_os_str().as_bytes().to_vec()
+}
+
+#[cfg(not(unix))]
+fn arg_bytes(arg: &OsString) -> Vec<u8> {
+    arg.to_string_lossy().into_owned().into_bytes()
+}
+
+/// Emulates glibc's `atoi`, which is `(int)strtol(nptr, NULL, 10)`:
+/// leading whitespace is skipped, an optional sign is honoured, digits are
+/// consumed until a non-digit, out-of-range values saturate at `LONG_MIN` /
+/// `LONG_MAX` and the result is then truncated to `int`.
+fn c_atoi(s: &[u8]) -> c_int {
+    let mut i = 0usize;
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
         i += 1;
     }
-    let mut sign: c_int = 1;
-    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
-        if bytes[i] == b'-' {
-            sign = -1;
+
+    let mut negative = false;
+    if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+        negative = s[i] == b'-';
+        i += 1;
+    }
+
+    let mut acc: i64 = 0;
+    let mut overflowed = false;
+    while i < s.len() && s[i].is_ascii_digit() {
+        let digit = i64::from(s[i] - b'0');
+        if !overflowed {
+            match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+                Some(v) => acc = v,
+                None => overflowed = true,
+            }
         }
         i += 1;
     }
-    let mut val: c_int = 0;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        val = val.wrapping_mul(10).wrapping_add((bytes[i] - b'0') as c_int);
-        i += 1;
-    }
-    val.wrapping_mul(sign)
+
+    let value: i64 = if overflowed {
+        if negative {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
+    } else if negative {
+        -acc
+    } else {
+        acc
+    };
+
+    value as c_int
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 3 {
-        let prog = args.first().map(String::as_str).unwrap_or("driver");
-        eprintln!("usage: {} A B", prog);
+    let args: Vec<OsString> = std::env::args_os().collect();
+    let argc = args.len();
+
+    if argc < 3 {
+        let prog = args
+            .first()
+            .map(|a| a.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        eprint!("usage: {} A B\n", prog);
         return ExitCode::from(2);
     }
-    let a = c_atoi(&args[1]);
-    let b = c_atoi(&args[2]);
 
-    let r_call = driver_op(a, b);
-    let mut acc = driver_init_for();
-    driver_run_loop(&mut acc);
+    let a = c_atoi(&arg_bytes(&args[1]));
+    let b = c_atoi(&arg_bytes(&args[2]));
+
+    let r_call = (OP_FN)(a, b);
+    let acc = run_loop(init_for_op());
 
     let x1 = helper_call(a, b);
     let x2 = helper_ptr(a, b);
     let x3 = use_generated(REPEAT);
-    let g = driver_op(a, b);
+    let g = (G_OP)(a, b);
 
-    println!("op={} call={} acc={} g.call={}", driver_op_name(), r_call, acc, g);
+    // `G_OP_NAME` is the stringized OP macro; printing OP_NAME is equivalent.
+    let _ = &G_OP_NAME;
+    print!(
+        "op={} call={} acc={} g.call={}\n",
+        OP_NAME, r_call, acc, g
+    );
     let summary = r_call
         .wrapping_add(acc)
         .wrapping_add(x1)
         .wrapping_add(x2)
         .wrapping_add(x3)
         .wrapping_add(g);
-    println!("summary={}", summary);
-    ExitCode::from(0)
+    print!("summary={}\n", summary);
+    ExitCode::SUCCESS
 }

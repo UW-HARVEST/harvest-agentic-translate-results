@@ -1,72 +1,82 @@
-// Rust translation of the C reference. Functions mirror the C semantics
-// exactly and are exported with the same external symbol names so the
-// resulting cdylib can stand in for the C shared library.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+//! C-ABI surface of the translation of `c_src/src/main.c`.
+//!
+//! Every symbol that the C translation unit exports when it is compiled as a
+//! shared object (`printLine`, `bad`, `good`, `main`) is re-exported here with
+//! the exact same name and signature. The `static` C helpers (`helperBad`,
+//! `helperGood`) are intentionally *not* exported, matching the C `.so`.
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-#[cfg(not(test))]
-use std::os::raw::c_int;
 
-/// Mirror of C's `printLine`. Prints the C string followed by a newline if
-/// the pointer is non-null. No-op when `line` is null.
+mod imp;
+
+/// `void printLine(const char *line)`
+///
+/// A NULL pointer prints nothing (the C `if (line != NULL)` guard); otherwise
+/// the NUL-terminated bytes are printed verbatim followed by `\n`.
+///
+/// # Safety
+/// `line` must be NULL or a pointer to a NUL-terminated byte string.
+#[allow(non_snake_case)]
 #[no_mangle]
-pub extern "C" fn printLine(line: *const c_char) {
-    if !line.is_null() {
-        // SAFETY: caller guarantees `line` is a valid NUL-terminated string.
-        let s = unsafe { CStr::from_ptr(line) };
-        // The C version uses `printf("%s\n", line)` which writes the bytes
-        // verbatim; mirror that by writing bytes to stdout directly so we do
-        // not require the input to be valid UTF-8.
-        use std::io::Write;
-        let stdout = std::io::stdout();
-        let mut out = stdout.lock();
-        let _ = out.write_all(s.to_bytes());
-        let _ = out.write_all(b"\n");
+pub unsafe extern "C" fn printLine(line: *const c_char) {
+    if line.is_null() {
+        imp::print_line(None);
+        return;
     }
+    imp::print_line(Some(CStr::from_ptr(line).to_bytes()));
 }
 
-#[allow(dead_code)]
-fn helper_bad() {
-    let msg = b"helperBad()\0";
-    printLine(msg.as_ptr() as *const c_char);
-}
-
+/// `void bad(void)`
 #[no_mangle]
 pub extern "C" fn bad() {
-    let msg = b"bad()\0";
-    printLine(msg.as_ptr() as *const c_char);
+    imp::bad();
 }
 
-fn helper_good() {
-    let msg = b"helperGood()\0";
-    printLine(msg.as_ptr() as *const c_char);
-}
-
+/// `void good(void)`
 #[no_mangle]
 pub extern "C" fn good() {
-    let msg = b"good()\0";
-    printLine(msg.as_ptr() as *const c_char);
-    helper_good();
+    imp::good();
 }
 
-/// Mirror of C `main(argc, argv)`. Exposed so the cdylib exports the same
-/// symbol set as the C shared library.
+/// `int main(int argc, char *argv[])`
 ///
-/// Hidden from `cargo test` builds, where the test harness provides its own
-/// `main`. The cdylib build (which is what the integration tests load) is
-/// not affected.
+/// Exported for symbol parity with the C shared object, which also exports
+/// `main`. `argc`/`argv` are ignored, exactly as in the C source, and the
+/// function returns 0 without terminating the process.
+///
+/// `cfg(not(test))` only excludes it from the crate's own unit-test binary,
+/// whose Rust-generated entry point would otherwise clash with this symbol;
+/// the `cdylib` (and therefore every differential test, which loads the `.so`
+/// through `dlopen`) always contains it.
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn main(_argc: c_int, _argv: *const *const c_char) -> c_int {
-    let calling_good = b"Calling good()...\0";
-    let finished_good = b"Finished good()\0";
-    let calling_bad = b"Calling bad()...\0";
-    let finished_bad = b"Finished bad()\0";
-    printLine(calling_good.as_ptr() as *const c_char);
-    good();
-    printLine(finished_good.as_ptr() as *const c_char);
-    printLine(calling_bad.as_ptr() as *const c_char);
-    bad();
-    printLine(finished_bad.as_ptr() as *const c_char);
-    0
+pub extern "C" fn main(
+    _argc: std::os::raw::c_int,
+    _argv: *mut *mut c_char,
+) -> std::os::raw::c_int {
+    imp::c_main() as std::os::raw::c_int
 }

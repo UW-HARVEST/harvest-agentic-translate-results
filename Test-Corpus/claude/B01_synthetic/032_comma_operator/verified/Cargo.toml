@@ -1,21 +1,49 @@
 [package]
-name = "translated_rust"
+name = "driver"
 version = "0.1.0"
 edition = "2021"
 
+# The C project (c_src/CMakeLists.txt) builds `src/main.c` as an executable.
+# We keep an equivalent Rust executable, and additionally expose the exact same
+# public C symbols (`driver`, `main`) from a cdylib so that the translation can
+# be differentially tested through the FFI boundary with `libloading`, exactly
+# the way an external C caller would use it.
 [lib]
-name = "translated_rust"
-crate-type = ["cdylib", "rlib"]
+name = "driver"
 path = "src/lib.rs"
+crate-type = ["cdylib"]
+# The library exports a `#[no_mangle] main`, exactly like the C shared object
+# does, so it cannot host libtest's generated entry point. All testing happens
+# through the integration tests in `tests/`, which load the shared objects.
+test = false
+doctest = false
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
-[profile.release]
-opt-level = 3
+[features]
+default = []
+
+# Both differential suites redirect file descriptor 1 to capture what the two
+# shared objects write; that is process-global state, so the cases must run
+# sequentially and nothing else may write to fd 1 meanwhile.  libtest's
+# multi-threaded progress output would corrupt the captures, hence our own
+# sequential harness (see `common::run_cases`).
+[[test]]
+name = "phase_b_configs"
+path = "tests/phase_b_configs.rs"
+harness = false
+
+[[test]]
+name = "phase_c_errors"
+path = "tests/phase_c_errors.rs"
+harness = false
 
 [dev-dependencies]
 libloading = "0.8"
+
+[profile.release]
+panic = "abort"
 
 [workspace]
