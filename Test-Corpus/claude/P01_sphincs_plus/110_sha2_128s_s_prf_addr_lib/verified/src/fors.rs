@@ -1,17 +1,34 @@
-use crate::address::*;
-use crate::context::SpxCtx;
-use crate::hash::prf_addr;
-use crate::params::*;
-use crate::thash::thash;
-use crate::utils::compute_root_rs;
-use crate::utilsx1::{fors_treehashx1_rs, ForsGenLeafInfo};
+//! Translation of `app/src/fors.c` and the `fors_gen_leaf_info` struct
+//! (`app/include/fors.h`) / `fors_gen_leafx1` (`app/include/forsx1.h`).
 
-fn fors_gen_sk(sk: &mut [u8], ctx: &SpxCtx, fors_leaf_addr: &[u32; 8]) {
-    prf_addr(sk, ctx, fors_leaf_addr);
+use crate::address::{
+    SPX_copy_keypair_addr, SPX_set_tree_height, SPX_set_tree_index, SPX_set_type,
+};
+use crate::backend::{SPX_prf_addr, SPX_thash};
+use crate::context::SpxCtx;
+use crate::params::*;
+use crate::utils::SPX_compute_root;
+use crate::utilsx1::SPX_fors_treehashx1;
+
+#[repr(C)]
+pub struct fors_gen_leaf_info {
+    pub leaf_addrx: [u32; 8],
 }
 
-fn fors_sk_to_leaf(leaf: &mut [u8], sk: &[u8], ctx: &SpxCtx, fors_leaf_addr: &mut [u32; 8]) {
-    thash(leaf, sk, 1, ctx, fors_leaf_addr);
+impl fors_gen_leaf_info {
+    pub fn zeroed() -> Self {
+        fors_gen_leaf_info {
+            leaf_addrx: [0u32; 8],
+        }
+    }
+}
+
+unsafe fn fors_gen_sk(sk: *mut u8, ctx: *const SpxCtx, fors_leaf_addr: *mut u32) {
+    SPX_prf_addr(sk, ctx, fors_leaf_addr);
+}
+
+unsafe fn fors_sk_to_leaf(leaf: *mut u8, sk: *const u8, ctx: *const SpxCtx, fors_leaf_addr: *mut u32) {
+    SPX_thash(leaf, sk, 1, ctx, fors_leaf_addr);
 }
 
 #[unsafe(no_mangle)]
@@ -19,147 +36,133 @@ pub unsafe extern "C" fn SPX_fors_gen_leafx1(
     leaf: *mut u8,
     ctx: *const SpxCtx,
     addr_idx: u32,
-    info: *mut ForsGenLeafInfo,
+    info: *mut fors_gen_leaf_info,
 ) {
-    let leaf_slice = unsafe { core::slice::from_raw_parts_mut(leaf, SPX_N) };
-    let ctx_ref = unsafe { &*ctx };
-    let info_ref = unsafe { &mut *info };
+    let fors_leaf_addr = (*info).leaf_addrx.as_mut_ptr();
 
-    set_tree_index(&mut info_ref.leaf_addrx, addr_idx);
-    set_type(&mut info_ref.leaf_addrx, SPX_ADDR_TYPE_FORSPRF);
-    fors_gen_sk(leaf_slice, ctx_ref, &info_ref.leaf_addrx);
+    // Only set the parts that the caller doesn't set.
+    SPX_set_tree_index(fors_leaf_addr, addr_idx);
+    SPX_set_type(fors_leaf_addr, SPX_ADDR_TYPE_FORSPRF);
+    fors_gen_sk(leaf, ctx, fors_leaf_addr);
 
-    set_type(&mut info_ref.leaf_addrx, SPX_ADDR_TYPE_FORSTREE);
-    let mut tmp = vec![0u8; SPX_N];
-    tmp.copy_from_slice(leaf_slice);
-    fors_sk_to_leaf(leaf_slice, &tmp, ctx_ref, &mut info_ref.leaf_addrx);
+    SPX_set_type(fors_leaf_addr, SPX_ADDR_TYPE_FORSTREE);
+    fors_sk_to_leaf(leaf, leaf, ctx, fors_leaf_addr);
 }
 
-fn message_to_indices(indices: &mut [u32], m: &[u8]) {
+/// Interprets `m` as SPX_FORS_HEIGHT-bit unsigned integers.
+unsafe fn message_to_indices(indices: *mut u32, m: *const u8) {
     let mut offset: usize = 0;
     for i in 0..SPX_FORS_TREES {
-        indices[i] = 0;
+        *indices.add(i) = 0;
         for j in 0..SPX_FORS_HEIGHT {
-            indices[i] ^= (((m[offset >> 3] >> (offset & 0x7)) & 1u8) as u32) << j;
+            *indices.add(i) ^=
+                (((*m.add(offset >> 3) >> (offset & 0x7)) & 1u8) as u32) << j;
             offset += 1;
         }
     }
 }
 
+/// Signs a message m, deriving the secret key from sk_seed and the FTS address.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SPX_fors_sign(
-    sig: *mut u8,
+    mut sig: *mut u8,
     pk: *mut u8,
     m: *const u8,
     ctx: *const SpxCtx,
-    fors_addr: *const [u32; 8],
+    fors_addr: *const u32,
 ) {
-    let m_slice = unsafe { core::slice::from_raw_parts(m, SPX_FORS_MSG_BYTES) };
-    let ctx_ref = unsafe { &*ctx };
-    let fors_addr_ref = unsafe { &*fors_addr };
-    let pk_slice = unsafe { core::slice::from_raw_parts_mut(pk, SPX_N) };
-
-    let mut indices = vec![0u32; SPX_FORS_TREES];
-    let mut roots = vec![0u8; SPX_FORS_TREES * SPX_N];
+    let mut indices = [0u32; SPX_FORS_TREES];
+    let mut roots = [0u8; SPX_FORS_TREES * SPX_N];
     let mut fors_tree_addr = [0u32; 8];
-    let mut fors_info = ForsGenLeafInfo {
-        leaf_addrx: [0u32; 8],
-    };
+    let mut fors_info = fors_gen_leaf_info::zeroed();
     let mut fors_pk_addr = [0u32; 8];
 
-    copy_keypair_addr(&mut fors_tree_addr, fors_addr_ref);
-    copy_keypair_addr(&mut fors_info.leaf_addrx, fors_addr_ref);
-    copy_keypair_addr(&mut fors_pk_addr, fors_addr_ref);
-    set_type(&mut fors_pk_addr, SPX_ADDR_TYPE_FORSPK);
+    SPX_copy_keypair_addr(fors_tree_addr.as_mut_ptr(), fors_addr);
+    SPX_copy_keypair_addr(fors_info.leaf_addrx.as_mut_ptr(), fors_addr);
 
-    message_to_indices(&mut indices, m_slice);
+    SPX_copy_keypair_addr(fors_pk_addr.as_mut_ptr(), fors_addr);
+    SPX_set_type(fors_pk_addr.as_mut_ptr(), SPX_ADDR_TYPE_FORSPK);
 
-    let mut sig_offset: usize = 0;
+    message_to_indices(indices.as_mut_ptr(), m);
+
     for i in 0..SPX_FORS_TREES {
-        let idx_offset = (i * (1usize << SPX_FORS_HEIGHT)) as u32;
+        let idx_offset = (i as u32) * (1u32 << SPX_FORS_HEIGHT);
 
-        set_tree_height(&mut fors_tree_addr, 0);
-        set_tree_index(&mut fors_tree_addr, indices[i] + idx_offset);
-        set_type(&mut fors_tree_addr, SPX_ADDR_TYPE_FORSPRF);
+        SPX_set_tree_height(fors_tree_addr.as_mut_ptr(), 0);
+        SPX_set_tree_index(fors_tree_addr.as_mut_ptr(), indices[i] + idx_offset);
+        SPX_set_type(fors_tree_addr.as_mut_ptr(), SPX_ADDR_TYPE_FORSPRF);
 
-        // Write sk part to sig
-        let sig_sk = unsafe { core::slice::from_raw_parts_mut(sig.add(sig_offset), SPX_N) };
-        fors_gen_sk(sig_sk, ctx_ref, &fors_tree_addr);
-        set_type(&mut fors_tree_addr, SPX_ADDR_TYPE_FORSTREE);
-        sig_offset += SPX_N;
+        // Include the secret key part that produces the selected leaf node.
+        fors_gen_sk(sig, ctx, fors_tree_addr.as_mut_ptr());
+        SPX_set_type(fors_tree_addr.as_mut_ptr(), SPX_ADDR_TYPE_FORSTREE);
+        sig = sig.add(SPX_N);
 
-        let auth_path = unsafe {
-            core::slice::from_raw_parts_mut(sig.add(sig_offset), SPX_N * SPX_FORS_HEIGHT)
-        };
-        fors_treehashx1_rs(
-            &mut roots[i * SPX_N..(i + 1) * SPX_N],
-            auth_path,
-            ctx_ref,
+        // Compute the authentication path for this leaf node.
+        SPX_fors_treehashx1(
+            roots.as_mut_ptr().add(i * SPX_N),
+            sig,
+            ctx,
             indices[i],
             idx_offset,
             SPX_FORS_HEIGHT as u32,
-            &mut fors_tree_addr,
+            fors_tree_addr.as_mut_ptr(),
             &mut fors_info,
         );
 
-        sig_offset += SPX_N * SPX_FORS_HEIGHT;
+        sig = sig.add(SPX_N * SPX_FORS_HEIGHT);
     }
 
-    thash(pk_slice, &roots, SPX_FORS_TREES as u32, ctx_ref, &mut fors_pk_addr);
+    // Hash horizontally across all tree roots to derive the public key.
+    SPX_thash(pk, roots.as_ptr(), SPX_FORS_TREES as u32, ctx, fors_pk_addr.as_mut_ptr());
 }
 
+/// Derives the FORS public key from a signature.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SPX_fors_pk_from_sig(
     pk: *mut u8,
-    sig: *const u8,
+    mut sig: *const u8,
     m: *const u8,
     ctx: *const SpxCtx,
-    fors_addr: *const [u32; 8],
+    fors_addr: *const u32,
 ) {
-    let m_slice = unsafe { core::slice::from_raw_parts(m, SPX_FORS_MSG_BYTES) };
-    let ctx_ref = unsafe { &*ctx };
-    let fors_addr_ref = unsafe { &*fors_addr };
-    let pk_slice = unsafe { core::slice::from_raw_parts_mut(pk, SPX_N) };
-
-    let mut indices = vec![0u32; SPX_FORS_TREES];
-    let mut roots = vec![0u8; SPX_FORS_TREES * SPX_N];
-    let mut leaf = vec![0u8; SPX_N];
+    let mut indices = [0u32; SPX_FORS_TREES];
+    let mut roots = [0u8; SPX_FORS_TREES * SPX_N];
+    let mut leaf = [0u8; SPX_N];
     let mut fors_tree_addr = [0u32; 8];
     let mut fors_pk_addr = [0u32; 8];
 
-    copy_keypair_addr(&mut fors_tree_addr, fors_addr_ref);
-    copy_keypair_addr(&mut fors_pk_addr, fors_addr_ref);
-    set_type(&mut fors_tree_addr, SPX_ADDR_TYPE_FORSTREE);
-    set_type(&mut fors_pk_addr, SPX_ADDR_TYPE_FORSPK);
+    SPX_copy_keypair_addr(fors_tree_addr.as_mut_ptr(), fors_addr);
+    SPX_copy_keypair_addr(fors_pk_addr.as_mut_ptr(), fors_addr);
 
-    message_to_indices(&mut indices, m_slice);
+    SPX_set_type(fors_tree_addr.as_mut_ptr(), SPX_ADDR_TYPE_FORSTREE);
+    SPX_set_type(fors_pk_addr.as_mut_ptr(), SPX_ADDR_TYPE_FORSPK);
 
-    let mut sig_offset: usize = 0;
+    message_to_indices(indices.as_mut_ptr(), m);
+
     for i in 0..SPX_FORS_TREES {
-        let idx_offset = (i * (1usize << SPX_FORS_HEIGHT)) as u32;
+        let idx_offset = (i as u32) * (1u32 << SPX_FORS_HEIGHT);
 
-        set_tree_height(&mut fors_tree_addr, 0);
-        set_tree_index(&mut fors_tree_addr, indices[i] + idx_offset);
+        SPX_set_tree_height(fors_tree_addr.as_mut_ptr(), 0);
+        SPX_set_tree_index(fors_tree_addr.as_mut_ptr(), indices[i] + idx_offset);
 
-        let sk = unsafe { core::slice::from_raw_parts(sig.add(sig_offset), SPX_N) };
-        fors_sk_to_leaf(&mut leaf, sk, ctx_ref, &mut fors_tree_addr);
-        sig_offset += SPX_N;
+        // Derive the leaf from the included secret key part.
+        fors_sk_to_leaf(leaf.as_mut_ptr(), sig, ctx, fors_tree_addr.as_mut_ptr());
+        sig = sig.add(SPX_N);
 
-        let auth_path = unsafe {
-            core::slice::from_raw_parts(sig.add(sig_offset), SPX_N * SPX_FORS_HEIGHT)
-        };
-        compute_root_rs(
-            &mut roots[i * SPX_N..(i + 1) * SPX_N],
-            &leaf,
+        // Derive the corresponding root node of this tree.
+        SPX_compute_root(
+            roots.as_mut_ptr().add(i * SPX_N),
+            leaf.as_ptr(),
             indices[i],
             idx_offset,
-            auth_path,
+            sig,
             SPX_FORS_HEIGHT as u32,
-            ctx_ref,
-            &mut fors_tree_addr,
+            ctx,
+            fors_tree_addr.as_mut_ptr(),
         );
-        sig_offset += SPX_N * SPX_FORS_HEIGHT;
+        sig = sig.add(SPX_N * SPX_FORS_HEIGHT);
     }
 
-    thash(pk_slice, &roots, SPX_FORS_TREES as u32, ctx_ref, &mut fors_pk_addr);
+    // Hash horizontally across all tree roots to derive the public key.
+    SPX_thash(pk, roots.as_ptr(), SPX_FORS_TREES as u32, ctx, fors_pk_addr.as_mut_ptr());
 }

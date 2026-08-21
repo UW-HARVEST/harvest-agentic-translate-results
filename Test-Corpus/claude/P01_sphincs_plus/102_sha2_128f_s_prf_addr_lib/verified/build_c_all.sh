@@ -1,20 +1,22 @@
-#!/usr/bin/env bash
-# Build the C library for every (HASH_BACKEND, THASH, SECPAR) combination.
-set -e
-cd "$(dirname "$0")/c_src"
-
-for h in haraka sha2 shake blake; do
-    for t in robust simple; do
-        for s in 128s 128f 192s 192f 256s 256f; do
-            build="build_${h}_${t}_${s}"
-            mkdir -p "$build"
-            (cd "$build" && cmake .. \
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-                -DHASH_BACKEND=$h \
-                -DTHASH=$t \
-                -DSECPAR=$s > /dev/null 2>&1 \
-             && cmake --build . > /dev/null 2>&1)
-            echo "[$h/$t/$s] built"
-        done
+#!/bin/bash
+# Build the C reference shared libraries for every (backend, thash, secpar) combo.
+set -u
+R="$(cd "$(dirname "$0")" && pwd)"
+OUT="$R/cbuild"
+mkdir -p "$OUT"
+LOG="${TMPDIR:-/var/tmp}/build_c_all.log"
+: > "$LOG"
+fail=0
+for bk in haraka sha2 shake blake; do
+  for th in robust simple; do
+    for sp in 128s 128f 192s 192f 256s 256f; do
+      d="$OUT/$bk-$th-$sp"
+      if [ -f "$d/app/libsphincs_core_det.so" ]; then continue; fi
+      mkdir -p "$d"
+      ( cd "$d" && cmake "$R/c_src" -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+          -DHASH_BACKEND=$bk -DTHASH=$th -DSECPAR=$sp >>"$LOG" 2>&1 \
+        && cmake --build . -j 4 >>"$LOG" 2>&1 ) || { echo "FAIL $bk $th $sp"; fail=1; }
     done
+  done
 done
+echo "build_c_all done fail=$fail"

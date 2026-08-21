@@ -1,84 +1,104 @@
-use crate::address::{set_tree_height, set_tree_index};
-use crate::context::SpxCtx;
-use crate::forsx1::{fors_gen_leafx1, ForsGenLeafInfo};
-use crate::params::SPX_N;
-use crate::thash::thash;
-use crate::wotsx1::{wots_gen_leafx1, LeafInfoX1};
+//! Translation of `app/src/utilsx1.c`.
 
-pub fn wots_treehashx1(
-    root: &mut [u8],
-    auth_path: &mut [u8],
-    ctx: &SpxCtx,
+use crate::address::{SPX_set_tree_height, SPX_set_tree_index};
+use crate::backend::SPX_thash;
+use crate::context::SpxCtx;
+use crate::fors::{fors_gen_leaf_info, SPX_fors_gen_leafx1};
+use crate::params::SPX_N;
+use crate::wotsx1::{leaf_info_x1, SPX_wots_gen_leafx1};
+
+/// Generate the entire Merkle tree, computing the authentication path for
+/// `leaf_idx`, and the resulting root node using Merkle's TreeHash algorithm.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn SPX_wots_treehashx1(
+    root: *mut u8,
+    auth_path: *mut u8,
+    ctx: *const SpxCtx,
     leaf_idx: u32,
     idx_offset: u32,
     tree_height: u32,
-    tree_addr: &mut [u32; 8],
-    info: &mut LeafInfoX1,
+    tree_addr: *mut u32,
+    info: *mut leaf_info_x1,
 ) {
-    let n = SPX_N;
-    let mut stack = vec![0u8; tree_height as usize * n];
-    let max_idx = (1u32 << tree_height) - 1;
-    let mut current = vec![0u8; 2 * n];
+    // This is where we keep the intermediate nodes.
+    let mut stack = vec![0u8; tree_height as usize * SPX_N];
 
+    let max_idx: u32 = (1u32 << tree_height) - 1;
     let mut idx: u32 = 0;
     loop {
-        wots_gen_leafx1(&mut current[n..2 * n], ctx, idx + idx_offset, info);
+        // Current logical node is at index[SPX_N].
+        let mut current = [0u8; 2 * SPX_N];
+        let cur = current.as_mut_ptr();
+        SPX_wots_gen_leafx1(cur.add(SPX_N), ctx, idx + idx_offset, info);
 
         let mut internal_idx_offset = idx_offset;
         let mut internal_idx = idx;
         let mut internal_leaf = leaf_idx;
         let mut h: u32 = 0;
         loop {
+            // Check if we hit the top of the tree.
             if h == tree_height {
-                root[..n].copy_from_slice(&current[n..2 * n]);
+                core::ptr::copy_nonoverlapping(cur.add(SPX_N), root, SPX_N);
                 return;
             }
 
+            // Check if the node we have is a part of the authentication path.
             if (internal_idx ^ internal_leaf) == 0x01 {
-                auth_path[h as usize * n..(h as usize + 1) * n]
-                    .copy_from_slice(&current[n..2 * n]);
+                core::ptr::copy_nonoverlapping(
+                    cur.add(SPX_N),
+                    auth_path.add(h as usize * SPX_N),
+                    SPX_N,
+                );
             }
 
+            // Check if we're at a left child; if so, stop going up the stack.
             if (internal_idx & 1) == 0 && idx < max_idx {
                 break;
             }
 
+            // Combine the left and right logical nodes together.
             internal_idx_offset >>= 1;
-            set_tree_height(tree_addr, h + 1);
-            set_tree_index(tree_addr, internal_idx / 2 + internal_idx_offset);
+            SPX_set_tree_height(tree_addr, h + 1);
+            SPX_set_tree_index(tree_addr, internal_idx / 2 + internal_idx_offset);
 
-            current[..n].copy_from_slice(&stack[h as usize * n..(h as usize + 1) * n]);
-            let in_copy = current.clone();
-            thash(&mut current[n..2 * n], &in_copy, 2, ctx, tree_addr);
+            core::ptr::copy_nonoverlapping(
+                stack.as_ptr().add(h as usize * SPX_N),
+                cur,
+                SPX_N,
+            );
+            SPX_thash(cur.add(SPX_N), cur, 2, ctx, tree_addr);
 
             h += 1;
             internal_idx >>= 1;
             internal_leaf >>= 1;
         }
 
-        stack[h as usize * n..(h as usize + 1) * n].copy_from_slice(&current[n..2 * n]);
+        // We've hit a left child; save the current for the right sibling.
+        core::ptr::copy_nonoverlapping(cur.add(SPX_N), stack.as_mut_ptr().add(h as usize * SPX_N), SPX_N);
         idx += 1;
     }
 }
 
-pub fn fors_treehashx1(
-    root: &mut [u8],
-    auth_path: &mut [u8],
-    ctx: &SpxCtx,
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn SPX_fors_treehashx1(
+    root: *mut u8,
+    auth_path: *mut u8,
+    ctx: *const SpxCtx,
     leaf_idx: u32,
     idx_offset: u32,
     tree_height: u32,
-    tree_addr: &mut [u32; 8],
-    info: &mut ForsGenLeafInfo,
+    tree_addr: *mut u32,
+    info: *mut fors_gen_leaf_info,
 ) {
-    let n = SPX_N;
-    let mut stack = vec![0u8; tree_height as usize * n];
-    let max_idx = (1u32 << tree_height) - 1;
-    let mut current = vec![0u8; 2 * n];
+    // This is where we keep the intermediate nodes.
+    let mut stack = vec![0u8; tree_height as usize * SPX_N];
 
+    let max_idx: u32 = (1u32 << tree_height) - 1;
     let mut idx: u32 = 0;
     loop {
-        fors_gen_leafx1(&mut current[n..2 * n], ctx, idx + idx_offset, info);
+        let mut current = [0u8; 2 * SPX_N];
+        let cur = current.as_mut_ptr();
+        SPX_fors_gen_leafx1(cur.add(SPX_N), ctx, idx + idx_offset, info);
 
         let mut internal_idx_offset = idx_offset;
         let mut internal_idx = idx;
@@ -86,13 +106,16 @@ pub fn fors_treehashx1(
         let mut h: u32 = 0;
         loop {
             if h == tree_height {
-                root[..n].copy_from_slice(&current[n..2 * n]);
+                core::ptr::copy_nonoverlapping(cur.add(SPX_N), root, SPX_N);
                 return;
             }
 
             if (internal_idx ^ internal_leaf) == 0x01 {
-                auth_path[h as usize * n..(h as usize + 1) * n]
-                    .copy_from_slice(&current[n..2 * n]);
+                core::ptr::copy_nonoverlapping(
+                    cur.add(SPX_N),
+                    auth_path.add(h as usize * SPX_N),
+                    SPX_N,
+                );
             }
 
             if (internal_idx & 1) == 0 && idx < max_idx {
@@ -100,19 +123,22 @@ pub fn fors_treehashx1(
             }
 
             internal_idx_offset >>= 1;
-            set_tree_height(tree_addr, h + 1);
-            set_tree_index(tree_addr, internal_idx / 2 + internal_idx_offset);
+            SPX_set_tree_height(tree_addr, h + 1);
+            SPX_set_tree_index(tree_addr, internal_idx / 2 + internal_idx_offset);
 
-            current[..n].copy_from_slice(&stack[h as usize * n..(h as usize + 1) * n]);
-            let in_copy = current.clone();
-            thash(&mut current[n..2 * n], &in_copy, 2, ctx, tree_addr);
+            core::ptr::copy_nonoverlapping(
+                stack.as_ptr().add(h as usize * SPX_N),
+                cur,
+                SPX_N,
+            );
+            SPX_thash(cur.add(SPX_N), cur, 2, ctx, tree_addr);
 
             h += 1;
             internal_idx >>= 1;
             internal_leaf >>= 1;
         }
 
-        stack[h as usize * n..(h as usize + 1) * n].copy_from_slice(&current[n..2 * n]);
+        core::ptr::copy_nonoverlapping(cur.add(SPX_N), stack.as_mut_ptr().add(h as usize * SPX_N), SPX_N);
         idx += 1;
     }
 }

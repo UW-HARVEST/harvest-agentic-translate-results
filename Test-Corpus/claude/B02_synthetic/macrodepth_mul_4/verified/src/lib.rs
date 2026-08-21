@@ -21,15 +21,22 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Shared-library crate root: the Rust translation of the `driver` project.
+//! Shared-library entry point of the translated `driver` project.
 //!
-//! Build-time configurability mirrors `c_src/CMakeLists.txt`:
-//! `-DOP=<add|sub|mul>` becomes the Cargo features `add` / `sub` / `mul`, and
-//! `-DREPEAT=<n>` becomes the Cargo features `0` .. `7` (aliases
-//! `repeat_0` .. `repeat_7`). Defaults: `add` and `5`.
+//! The build-time configurability of `c_src/CMakeLists.txt` is preserved with
+//! Cargo features named after the CMake cache variable values (lowercase):
+//!
+//! | CMake                | Cargo features                        |
+//! |----------------------|---------------------------------------|
+//! | `-DOP=add\|sub\|mul` | `add`, `sub`, `mul`                   |
+//! | `-DREPEAT=0..7`      | `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`|
+//!
+//! Selecting nothing reproduces the header defaults (`OP=add`, `REPEAT=5`).
 
 pub mod mdcore;
 pub mod mdmacros;
 
-pub use mdcore::{helper_call, helper_ptr, op_add, op_mul, op_sub, use_generated, G_OP, G_OP_NAME};
-pub use mdmacros::{OP, OP_NAME, REPEAT};
+pub use mdcore::{
+    helper_call, helper_ptr, op_add, op_mul, op_sub, use_generated, G_OP, G_OP_NAME,
+};
+pub use mdmacros::{INIT, OP_NAME, REPEAT};

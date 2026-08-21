@@ -1,92 +1,76 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
 
-Mechanically derived from `nm -D` on the C shared library and the Rust `cdylib`.
+## How this was produced
 
-## How the two `.so` files are produced
+The C project's `CMakeLists.txt` declares only `add_executable(driver ...)`, so it
+has no `.so` rule of its own. The library surface of the project is exactly the
+translation unit `src/mdcore.c` (the set of entities declared `extern` in the
+public header `src/mdmacros.h`); `src/mdmain.c` contains only `main`. Two C
+artifacts are therefore built, with the same `-DOP=/-DREPEAT=` flags CMake uses
+(`CMAKE_C_FLAGS "-DOP=${OP} -DREPEAT=${REPEAT}"`, no optimisation flags):
 
-`c_src/CMakeLists.txt` builds an **executable** (`driver`) out of two translation
-units:
-
-| C file | contents | Rust counterpart |
-|--------|----------|------------------|
-| `c_src/src/mdcore.c`  | the whole library surface (`op_*`, `helper_*`, `use_generated`, `G_OP`, `G_OP_NAME`, `static accum_<OP>`) | `src/mdcore.rs` (compiled into the `cdylib` `libdriver.so`) |
-| `c_src/src/mdmain.c`  | `main` only | `src/main.rs` (the `driver` binary) |
-| `c_src/src/mdmacros.h`| preprocessor-only: `OP` / `REPEAT` selection, `STEP_*`, `INIT_*`, `REP0..REP7`, `DISPATCH_REP`, `DEFINE_ACCUM` | `src/mdmacros.rs` |
-
-So the *library* half is exactly `mdcore.c`, and the comparable shared objects are
-
-* C:    `gcc -fPIC -shared -DOP=<op> -DREPEAT=<n> -o libcdriver.so c_src/src/mdcore.c`
-* Rust: `cargo build --no-default-features --features <op>,<n>` → `libdriver.so`
-
-Both are produced for all 24 configurations by `scripts/build_artifacts.sh` into
-`artifacts/<op>_<repeat>/`. `scripts/symdiff.sh` performs the `nm -D` diff.
-The CMake-built executable is also kept (`artifacts/<cfg>/cbin/driver`) and is
-diffed against the Rust executable (`artifacts/<cfg>/rbin/driver`).
-
-No C source file was left untranslated: `mdcore.c` → `mdcore.rs`,
-`mdmain.c` → `main.rs`, `mdmacros.h` → `mdmacros.rs`. There are 3 C files and 3
-matching Rust modules (plus `lib.rs`, the crate root that has no C counterpart).
-
-## Defined dynamic symbols (`nm -D --defined-only`)
-
-Identical in all 24 `(OP, REPEAT)` configurations — neither `OP` nor `REPEAT`
-adds or removes an exported symbol.
-
-| # | symbol | C type/section | Rust type/section | present in Rust `.so` |
-|---|--------|----------------|-------------------|-----------------------|
-| 1 | `op_add`        | `T` (`.text`) `int(int,int)` | `T` `#[no_mangle] extern "C" fn` | yes |
-| 2 | `op_sub`        | `T` (`.text`) `int(int,int)` | `T` `#[no_mangle] extern "C" fn` | yes |
-| 3 | `op_mul`        | `T` (`.text`) `int(int,int)` | `T` `#[no_mangle] extern "C" fn` | yes |
-| 4 | `helper_call`   | `T` (`.text`) `int(int,int)` | `T` `#[no_mangle] extern "C" fn` | yes |
-| 5 | `helper_ptr`    | `T` (`.text`) `int(int,int)` | `T` `#[no_mangle] extern "C" fn` | yes |
-| 6 | `use_generated` | `T` (`.text`) `int(int)`     | `T` `#[no_mangle] extern "C" fn` | yes |
-| 7 | `G_OP`          | `D` `.data`, `OBJECT`, size 8 | `D` `.data`, `OBJECT`, size 8 (`#[link_section = ".data"]`) | yes |
-| 8 | `G_OP_NAME`     | `D` `.data`, `OBJECT`, size 8 | `D` `.data`, `OBJECT`, size 8 (`#[link_section = ".data"]`) | yes |
-
-`readelf -sW` agrees on name, `OBJECT`/`FUNC`-vs-`T`/`D` class, `GLOBAL` binding
-and, for the two data objects, on size (8) — see `scripts/symdiff.sh`, which
-compares the `nm -D` *type letter* as well as the name.
-
-### Deliberately **not** exported (matches C)
-
-| C entity | why it is not a dynamic symbol |
-|----------|-------------------------------|
-| `accum_<OP>` (from `DEFINE_ACCUM(OP)`) | declared `static` in `mdcore.c` → local symbol. Rust: private `fn accum_op` in `mdcore.rs`. |
-| `STEP_*`, `INIT_*`, `REP0..REP7`, `DISPATCH_REP`, `FOR_EACH`, `DO_LOOP`, `RUN_LOOP`, `CHOOSE_REP`, `OP_FN`, `ACCUM_FN`, `STR`, `CAT` | preprocessor macros — they have no symbol at all. Rust: `pub(crate)`-level `const fn`s in `mdmacros.rs`, inlined, no `#[no_mangle]`. |
-| `main` | lives in `mdmain.c`, which is part of the *executable*, not the library half. The Rust `cdylib` likewise contains no `main`. |
-
-### Section-placement fidelity note
-
-`int (*G_OP)(int,int)` and `const char *G_OP_NAME` are **non-const** C globals, so
-gcc emits them into the writable `.data` section. A plain Rust `static` would be
-emitted into `.data.rel.ro`, which RELRO turns read-only after relocation — a
-consumer that assigns to `G_OP` (legal in C) would then trap. `mdcore.rs`
-therefore pins both objects with `#[unsafe(link_section = ".data")]`, and
-`tests/differential.rs::b14_g_op_writable_then_call_through` writes through both
-libraries' `G_OP` to prove the parity.
-
-## Undefined symbols in the Rust `.so`
-
-`nm -D --undefined-only libdriver.so`, after filtering `@GLIBC*`/`@GCC*` imports
-and the standard weak ELF hooks (`_ITM_registerTMCloneTable`,
-`_ITM_deregisterTMCloneTable`, `__gmon_start__`, `__cxa_finalize`), is **empty**
-for every one of the 24 configurations.
-
-For reference, the C `.so` imports `printf@GLIBC_2.2.5` plus the same weak hooks.
-
-## Result
-
-```
-$ bash scripts/symdiff.sh
-OK   add_0  (8 symbols, exact name+type match, 0 undefined non-libc)
-...
-OK   sub_7  (8 symbols, exact name+type match, 0 undefined non-libc)
----
-SYMBOL PARITY OK FOR ALL CONFIGS
+```sh
+# library surface, compared symbol-for-symbol against the Rust cdylib
+gcc -shared -fPIC -DOP=<op> -DREPEAT=<n> -o libcdriver_<op>_<n>.so c_src/src/mdcore.c
+# executable, compared stdout/stderr/exit-status against the Rust `driver` bin
+gcc         -fPIC -DOP=<op> -DREPEAT=<n> -o cdriver_<op>_<n>     c_src/src/mdcore.c c_src/src/mdmain.c
 ```
 
-- [x] Every symbol the C `.so` exports is exported by the Rust `.so` with the
-      exact same name, `nm` type letter and (for data) size.
-- [x] 0 missing symbols, 0 undefined non-libc symbols, in all 24 configurations.
-- [x] No stubs / `unimplemented!()`: all 8 symbols are real translations of
-      `mdcore.c`.
+`tests/common/mod.rs::c_lib_path()` / `c_exe_path()` generate these on demand,
+and `tests/symbols.rs` asserts the `nm -D` parity automatically for the
+configuration under test. The CMake build itself is also exercised for the
+default configuration and asserted to be byte-identical to the plain-`gcc`
+executable, confirming the flags above faithfully reproduce the CMake build.
+
+## Symbol table
+
+`nm -D --defined-only` on the C library `.so` yields 8 dynamic symbols. All 8 are
+exported by the Rust `cdylib` with the exact same name **and** the same `nm` type
+letter (`T` = text/function, `D` = initialised writable data).
+
+| # | symbol | `nm` type (C) | `nm` type (Rust) | kind | in Rust `.so`? |
+|---|--------|---------------|------------------|------|----------------|
+| 1 | `op_add`       | `T` | `T` | `int op_add(int,int)`      | yes |
+| 2 | `op_sub`       | `T` | `T` | `int op_sub(int,int)`      | yes |
+| 3 | `op_mul`       | `T` | `T` | `int op_mul(int,int)`      | yes |
+| 4 | `helper_call`  | `T` | `T` | `int helper_call(int,int)` | yes |
+| 5 | `helper_ptr`   | `T` | `T` | `int helper_ptr(int,int)`  | yes |
+| 6 | `use_generated`| `T` | `T` | `int use_generated(int)`   | yes |
+| 7 | `G_OP`         | `D` | `D` | `int (*G_OP)(int,int)`     | yes |
+| 8 | `G_OP_NAME`    | `D` | `D` | `const char *G_OP_NAME`    | yes |
+
+**Symbol diff: EMPTY.** No symbol exported by the C `.so` is missing from the
+Rust `.so`, under every one of the 24 `OP` × `REPEAT` configurations
+(`tests/symbols.rs` re-checks this per configuration; `check_all.sh` loops over
+all of them).
+
+### Deliberately-not-exported symbols
+
+* `accum_add` / `accum_sub` / `accum_mul` — `DEFINE_ACCUM(op)` expands to
+  `static int accum_<op>(int n)`. Being `static` it has internal linkage and does
+  **not** appear in `nm -D` for the C `.so`; the Rust counterpart
+  (`mdcore::accum_op`) is likewise a private `fn`. Verified absent from both.
+* `main` — lives in `mdmain.c`, which is linked into the *executable*, not the
+  library. It is absent from the C library `.so` and correspondingly absent from
+  the Rust `cdylib` (Rust's `main` is in the `driver` binary). Behavioural parity
+  for `main` is covered by `tests/driver_bin.rs`, which diffs the two
+  executables' stdout, stderr and exit status.
+* Rust-internal symbols (`_ZN*`, `__rust_*`, `rust_*`, `DW.ref.*`,
+  `_ZNSt*`, allocator shims, and the standard-library personality/panic
+  machinery). These are additions required by the Rust runtime, not omissions;
+  the parity requirement is one-directional (every C symbol must exist in Rust).
+
+## Storage-class fidelity (fixed defect)
+
+`G_OP` and `G_OP_NAME` are **non-`const` globals** in C — `mdmacros.h` declares
+them `extern int (*G_OP)(int,int);` and `extern const char *G_OP_NAME;` (the
+`const` qualifies the *characters*, not the pointer). Both therefore live in a
+writable `.data` section and a consumer of the shared library may reassign them.
+
+The initial translation used immutable Rust `static`s, which rustc placed in
+`.data.rel.ro`; RELRO maps that segment read-only after relocation, so a store
+through either symbol **segfaulted** against the Rust `.so` while succeeding
+against the C `.so`. They are now `static mut`, which restores `.data`
+placement. `tests/globals.rs::g_op_is_writable_like_c` pins this behaviour, and
+`tests/symbols.rs` additionally asserts the ELF section of both symbols is
+writable in each library.

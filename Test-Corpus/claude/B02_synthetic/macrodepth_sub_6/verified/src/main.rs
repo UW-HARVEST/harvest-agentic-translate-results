@@ -22,136 +22,128 @@
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! Rust translation of `src/mdmain.c` (the `driver` executable).
-//!
-//! The library crate is a `cdylib`, so the binary compiles the same modules
-//! directly instead of linking against it.
 
 mod mdcore;
 mod mdmacros;
 
-use std::ffi::{c_int, OsString};
-use std::process::ExitCode;
+use std::ffi::c_int;
+use std::io::Write;
 
-use mdcore::{helper_call, helper_ptr, use_generated, OP_FN, G_OP, G_OP_NAME};
-use mdmacros::{init_for_op, run_loop, OP_NAME, REPEAT};
+use mdcore::{helper_call, helper_ptr, use_generated, G_OP, G_OP_NAME};
+use mdmacros::{cstdio::printf, op_apply, run_loop_from_init, REPEAT};
 
-/// Byte view of a command line argument, matching what C's `argv` holds.
-#[cfg(unix)]
-fn arg_bytes(arg: &OsString) -> Vec<u8> {
-    use std::os::unix::ffi::OsStrExt;
-    arg.as_os_str().as_bytes().to_vec()
-}
+/// Re-implementation of C `atoi(3)`, which glibc defines as
+/// `(int) strtol(nptr, NULL, 10)`: leading white space is skipped, an optional
+/// sign is consumed, decimal digits are accumulated (saturating at `LONG_MIN` /
+/// `LONG_MAX`) and the resulting `long` is truncated to `int`.  Anything that
+/// does not parse yields `0`.
+fn atoi(s: &[u8]) -> c_int {
+    let mut idx = 0usize;
 
-#[cfg(not(unix))]
-fn arg_bytes(arg: &OsString) -> Vec<u8> {
-    arg.to_string_lossy().into_owned().into_bytes()
-}
-
-/// Emulates glibc's `atoi`, which is `(int)strtol(nptr, NULL, 10)`:
-/// leading whitespace is skipped, an optional sign is honoured, digits are
-/// consumed until a non-digit, out-of-range values saturate at `LONG_MIN` /
-/// `LONG_MAX` and the result is then truncated to `int`.
-fn c_atoi(s: &[u8]) -> c_int {
-    let mut i = 0usize;
-    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
-        i += 1;
+    // isspace(): ' ', '\t', '\n', '\v', '\f', '\r'
+    while idx < s.len() && (s[idx] == b' ' || (s[idx] >= 0x09 && s[idx] <= 0x0d)) {
+        idx += 1;
     }
 
     let mut negative = false;
-    if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
-        negative = s[i] == b'-';
-        i += 1;
+    if idx < s.len() && (s[idx] == b'+' || s[idx] == b'-') {
+        negative = s[idx] == b'-';
+        idx += 1;
     }
 
     let mut acc: i64 = 0;
-    let mut overflowed = false;
-    while i < s.len() && s[i].is_ascii_digit() {
-        let digit = i64::from(s[i] - b'0');
-        if !overflowed {
+    let mut overflow = false;
+    while idx < s.len() && s[idx].is_ascii_digit() {
+        let digit = i64::from(s[idx] - b'0');
+        if !overflow {
             match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
                 Some(v) => acc = v,
-                None => overflowed = true,
+                None => overflow = true,
             }
         }
-        i += 1;
+        idx += 1;
     }
 
-    let value: i64 = if overflowed {
-        if negative {
-            i64::MIN
+    if overflow {
+        // strtol() clamps to LONG_MIN / LONG_MAX, atoi() then truncates.
+        return if negative {
+            i64::MIN as c_int
         } else {
-            i64::MAX
-        }
-    } else if negative {
-        -acc
-    } else {
-        acc
-    };
+            i64::MAX as c_int
+        };
+    }
 
+    let value = if negative { -acc } else { acc };
     value as c_int
 }
 
-/// Stand-in for C's `printf` to `stdout`: `mdmain.c` discards the return value,
-/// so a failing write must be ignored rather than panicking (`print!` would
-/// abort the process and change the exit status, e.g. on `/dev/full`).
-#[inline]
-fn c_printf(args: std::fmt::Arguments<'_>) {
-    use std::io::Write;
-    let _ = std::io::stdout().lock().write_fmt(args);
-}
-
-/// C: `fprintf(stderr, "usage: %s A B\n", argv[0]);`
-///
-/// `argv[0]` is emitted as raw bytes -- a program path need not be valid UTF-8
-/// and C copies it verbatim, so lossy conversion would change the output.
-fn usage(prog: &[u8]) {
-    use std::io::Write;
-    let mut msg = Vec::with_capacity(prog.len() + 16);
-    msg.extend_from_slice(b"usage: ");
-    msg.extend_from_slice(prog);
-    msg.extend_from_slice(b" A B\n");
-    let _ = std::io::stderr().lock().write_all(&msg);
-}
-
-fn main() -> ExitCode {
-    let args: Vec<OsString> = std::env::args_os().collect();
-    let argc = args.len();
+fn main() {
+    let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let argc = argv.len();
 
     if argc < 3 {
-        // With `argc == 0` there is no `argv[0]` at all; glibc's `%s` then
-        // contributes no bytes, which an empty slice reproduces.
-        let prog = args.first().map(arg_bytes).unwrap_or_default();
-        usage(&prog);
-        return ExitCode::from(2);
+        // fprintf(stderr, "usage: %s A B\n", argv[0]);
+        let prog: &[u8] = if argc > 0 {
+            os_bytes(&argv[0])
+        } else {
+            b"" as &[u8]
+        };
+        let stderr = std::io::stderr();
+        let mut stderr = stderr.lock();
+        let _ = stderr.write_all(b"usage: ");
+        let _ = stderr.write_all(prog);
+        let _ = stderr.write_all(b" A B\n");
+        let _ = stderr.flush();
+        std::process::exit(2);
     }
 
-    let a = c_atoi(&arg_bytes(&args[1]));
-    let b = c_atoi(&arg_bytes(&args[2]));
+    let a = atoi(os_bytes(&argv[1]));
+    let b = atoi(os_bytes(&argv[2]));
 
-    let r_call = (OP_FN)(a, b);
-    let acc = run_loop(init_for_op());
+    let r_call: c_int = op_apply(a, b);
+    // int acc = INIT_FOR(OP); RUN_LOOP(OP, acc, REPEAT);
+    let acc: c_int = run_loop_from_init();
 
     let x1 = helper_call(a, b);
     let x2 = helper_ptr(a, b);
     let x3 = use_generated(REPEAT);
-    let g = (G_OP)(a, b);
+    // int g = G_OP(a, b);  -- read through the mutable global, exactly like C.
+    let g = unsafe { G_OP }(a, b);
 
-    // C: `printf("op=%s ...", G_OP_NAME, ...)`. `G_OP_NAME` is initialised to
-    // `STR(OP)` at file scope and never reassigned, so it always holds exactly
-    // `OP_NAME`; printing `OP_NAME` is byte-identical and needs no raw pointer
-    // dereference. (The two are checked to agree by
-    // `tests/differential.rs::b15_g_op_name_bytes`.)
-    let _ = &G_OP_NAME;
-    c_printf(format_args!(
-        "op={} call={} acc={} g.call={}\n",
-        OP_NAME, r_call, acc, g
-    ));
+    // printf("op=%s call=%d acc=%d g.call=%d\n", G_OP_NAME, r_call, acc, g);
+    unsafe {
+        printf(
+            c"op=%s call=%d acc=%d g.call=%d\n".as_ptr(),
+            G_OP_NAME,
+            r_call,
+            acc,
+            g,
+        );
+    }
     let summary = r_call
         .wrapping_add(acc)
         .wrapping_add(x1)
         .wrapping_add(x2)
         .wrapping_add(x3)
         .wrapping_add(g);
-    c_printf(format_args!("summary={}\n", summary));
-    ExitCode::SUCCESS
+    // printf("summary=%d\n", r_call + acc + x1 + x2 + x3 + g);
+    unsafe {
+        printf(c"summary=%d\n".as_ptr(), summary);
+    }
+
+    // return 0;
+}
+
+/// Raw bytes of a command line argument (no UTF-8 validation, matching C).
+fn os_bytes(s: &std::ffi::OsString) -> &[u8] {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        s.as_os_str().as_bytes()
+    }
+    #[cfg(not(unix))]
+    {
+        // Fall back to the lossy UTF-8 view on non-unix targets.
+        s.as_os_str().to_str().unwrap_or("").as_bytes()
+    }
 }

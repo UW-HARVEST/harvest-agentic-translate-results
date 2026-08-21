@@ -1,311 +1,316 @@
-use crate::address::*;
+//! Translation of `app/src/sign.c` (the public SPHINCS+ API).
+//!
+//! The internal `randombytes` used here is the deterministic NIST DRBG from
+//! `rng.rs` (matching the `sphincs_core_det` library the driver links against).
+
+use crate::address::{
+    SPX_copy_keypair_addr, SPX_copy_subtree_addr, SPX_set_keypair_addr, SPX_set_layer_addr,
+    SPX_set_tree_addr, SPX_set_type,
+};
+use crate::backend::{
+    SPX_gen_message_random, SPX_hash_message, SPX_initialize_hash_function, SPX_thash,
+};
 use crate::context::SpxCtx;
 use crate::fors::{SPX_fors_pk_from_sig, SPX_fors_sign};
-use crate::hash::{gen_message_random, hash_message, initialize_hash_function};
 use crate::merkle::{SPX_merkle_gen_root, SPX_merkle_sign};
 use crate::params::*;
-use crate::randombytes::randombytes_rs;
-use crate::thash::thash;
-use crate::utils::compute_root_rs;
+use crate::rng::randombytes;
+use crate::utils::SPX_compute_root;
 use crate::wots::SPX_wots_pk_from_sig;
+use core::ffi::c_int;
 
+/// Returns the length of a secret key, in bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_secretkeybytes() -> u64 {
+pub extern "C" fn crypto_sign_secretkeybytes() -> u64 {
     CRYPTO_SECRETKEYBYTES as u64
 }
 
+/// Returns the length of a public key, in bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_publickeybytes() -> u64 {
+pub extern "C" fn crypto_sign_publickeybytes() -> u64 {
     CRYPTO_PUBLICKEYBYTES as u64
 }
 
+/// Returns the length of a signature, in bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_bytes() -> u64 {
+pub extern "C" fn crypto_sign_bytes() -> u64 {
     CRYPTO_BYTES as u64
 }
 
+/// Returns the length of the seed required to generate a key pair, in bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_seedbytes() -> u64 {
+pub extern "C" fn crypto_sign_seedbytes() -> u64 {
     CRYPTO_SEEDBYTES as u64
 }
 
+/// Generates an SPX key pair given a seed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_seed_keypair(
+pub unsafe extern "C" fn crypto_sign_seed_keypair(
     pk: *mut u8,
     sk: *mut u8,
     seed: *const u8,
-) -> i32 {
+) -> c_int {
     let mut ctx = SpxCtx::new();
-    let pk_slice = unsafe { core::slice::from_raw_parts_mut(pk, SPX_PK_BYTES) };
-    let sk_slice = unsafe { core::slice::from_raw_parts_mut(sk, SPX_SK_BYTES) };
-    let seed_slice = unsafe { core::slice::from_raw_parts(seed, CRYPTO_SEEDBYTES) };
 
-    sk_slice[..CRYPTO_SEEDBYTES].copy_from_slice(seed_slice);
-    pk_slice[..SPX_N].copy_from_slice(&sk_slice[2 * SPX_N..3 * SPX_N]);
+    // Initialize SK_SEED, SK_PRF and PUB_SEED from seed.
+    core::ptr::copy_nonoverlapping(seed, sk, CRYPTO_SEEDBYTES);
 
-    ctx.pub_seed.copy_from_slice(&pk_slice[..SPX_N]);
-    ctx.sk_seed.copy_from_slice(&sk_slice[..SPX_N]);
+    core::ptr::copy_nonoverlapping(sk.add(2 * SPX_N), pk, SPX_N);
 
-    initialize_hash_function(&mut ctx);
+    core::ptr::copy_nonoverlapping(pk, ctx.pub_seed.as_mut_ptr(), SPX_N);
+    core::ptr::copy_nonoverlapping(sk, ctx.sk_seed.as_mut_ptr(), SPX_N);
 
-    // merkle_gen_root(sk + 3*SPX_N, &ctx)
-    SPX_merkle_gen_root(unsafe { sk.add(3 * SPX_N) }, &ctx as *const _);
+    // Hook for the hash function to precompute based on the public seed.
+    SPX_initialize_hash_function(&mut ctx);
 
-    pk_slice[SPX_N..2 * SPX_N].copy_from_slice(&sk_slice[3 * SPX_N..4 * SPX_N]);
+    // Compute root node of the top-most subtree.
+    SPX_merkle_gen_root(sk.add(3 * SPX_N), &ctx);
+
+    core::ptr::copy_nonoverlapping(sk.add(3 * SPX_N), pk.add(SPX_N), SPX_N);
 
     0
 }
 
+/// Generates an SPX key pair.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_keypair(pk: *mut u8, sk: *mut u8) -> i32 {
-    let mut seed = vec![0u8; CRYPTO_SEEDBYTES];
-    randombytes_rs(&mut seed);
-    SPX_crypto_sign_seed_keypair(pk, sk, seed.as_ptr())
+pub unsafe extern "C" fn crypto_sign_keypair(pk: *mut u8, sk: *mut u8) -> c_int {
+    let mut seed = [0u8; CRYPTO_SEEDBYTES];
+    randombytes(seed.as_mut_ptr(), CRYPTO_SEEDBYTES as u64);
+    crypto_sign_seed_keypair(pk, sk, seed.as_ptr());
+    0
 }
 
+/// Returns an array containing a detached signature.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_signature(
-    sig: *mut u8,
+pub unsafe extern "C" fn crypto_sign_signature(
+    mut sig: *mut u8,
     siglen: *mut usize,
     m: *const u8,
     mlen: usize,
     sk: *const u8,
-) -> i32 {
+) -> c_int {
     let mut ctx = SpxCtx::new();
-    let sk_slice = unsafe { core::slice::from_raw_parts(sk, SPX_SK_BYTES) };
-    let m_slice = unsafe { core::slice::from_raw_parts(m, mlen) };
 
-    let sk_seed = &sk_slice[0..SPX_N];
-    let sk_prf = &sk_slice[SPX_N..2 * SPX_N];
-    let pk = &sk_slice[2 * SPX_N..2 * SPX_N + SPX_PK_BYTES];
+    let sk_prf = sk.add(SPX_N);
+    let pk = sk.add(2 * SPX_N);
 
-    ctx.sk_seed.copy_from_slice(sk_seed);
-    ctx.pub_seed.copy_from_slice(&pk[..SPX_N]);
-
-    initialize_hash_function(&mut ctx);
-
+    let mut optrand = [0u8; SPX_N];
+    let mut mhash = [0u8; SPX_FORS_MSG_BYTES];
+    let mut root = [0u8; SPX_N];
+    let mut tree: u64 = 0;
+    let mut idx_leaf: u32 = 0;
     let mut wots_addr = [0u32; 8];
     let mut tree_addr = [0u32; 8];
 
-    set_type(&mut wots_addr, SPX_ADDR_TYPE_WOTS);
-    set_type(&mut tree_addr, SPX_ADDR_TYPE_HASHTREE);
+    core::ptr::copy_nonoverlapping(sk, ctx.sk_seed.as_mut_ptr(), SPX_N);
+    core::ptr::copy_nonoverlapping(pk, ctx.pub_seed.as_mut_ptr(), SPX_N);
 
-    let mut optrand = vec![0u8; SPX_N];
-    randombytes_rs(&mut optrand);
+    SPX_initialize_hash_function(&mut ctx);
 
-    // Layout sig: [R || FORS sig || hypertree sigs]
-    // Compute R into sig[0..SPX_N]
-    let r_slice = unsafe { core::slice::from_raw_parts_mut(sig, SPX_N) };
-    gen_message_random(r_slice, sk_prf, &optrand, m_slice, &ctx);
+    SPX_set_type(wots_addr.as_mut_ptr(), SPX_ADDR_TYPE_WOTS);
+    SPX_set_type(tree_addr.as_mut_ptr(), SPX_ADDR_TYPE_HASHTREE);
 
-    let mut mhash = vec![0u8; SPX_FORS_MSG_BYTES];
-    let r_const = unsafe { core::slice::from_raw_parts(sig, SPX_N) };
-    let (mut tree, mut idx_leaf) = hash_message(&mut mhash, r_const, pk, m_slice, &ctx);
+    // Optionally, signing can be made non-deterministic using optrand.
+    randombytes(optrand.as_mut_ptr(), SPX_N as u64);
+    // Compute the digest randomization value.
+    SPX_gen_message_random(sig, sk_prf, optrand.as_ptr(), m, mlen as u64, &ctx);
 
-    let mut sig_offset = SPX_N;
-
-    set_tree_addr(&mut wots_addr, tree);
-    set_keypair_addr(&mut wots_addr, idx_leaf);
-
-    // FORS sign
-    let mut root = vec![0u8; SPX_N];
-    SPX_fors_sign(
-        unsafe { sig.add(sig_offset) },
-        root.as_mut_ptr(),
-        mhash.as_ptr(),
+    // Derive the message digest and leaf index from R, PK and M.
+    SPX_hash_message(
+        mhash.as_mut_ptr(),
+        &mut tree,
+        &mut idx_leaf,
+        sig,
+        pk,
+        m,
+        mlen as u64,
         &ctx,
-        &wots_addr as *const _,
     );
-    sig_offset += SPX_FORS_BYTES;
+    sig = sig.add(SPX_N);
 
-    for i in 0..SPX_D as u32 {
-        set_layer_addr(&mut tree_addr, i);
-        set_tree_addr(&mut tree_addr, tree);
+    SPX_set_tree_addr(wots_addr.as_mut_ptr(), tree);
+    SPX_set_keypair_addr(wots_addr.as_mut_ptr(), idx_leaf);
 
-        copy_subtree_addr(&mut wots_addr, &tree_addr);
-        set_keypair_addr(&mut wots_addr, idx_leaf);
+    // Sign the message hash using FORS.
+    SPX_fors_sign(sig, root.as_mut_ptr(), mhash.as_ptr(), &ctx, wots_addr.as_ptr());
+    sig = sig.add(SPX_FORS_BYTES);
+
+    for i in 0..SPX_D {
+        SPX_set_layer_addr(tree_addr.as_mut_ptr(), i as u32);
+        SPX_set_tree_addr(tree_addr.as_mut_ptr(), tree);
+
+        SPX_copy_subtree_addr(wots_addr.as_mut_ptr(), tree_addr.as_ptr());
+        SPX_set_keypair_addr(wots_addr.as_mut_ptr(), idx_leaf);
 
         SPX_merkle_sign(
-            unsafe { sig.add(sig_offset) },
+            sig,
             root.as_mut_ptr(),
             &ctx,
-            &mut wots_addr as *mut _,
-            &mut tree_addr as *mut _,
+            wots_addr.as_mut_ptr(),
+            tree_addr.as_mut_ptr(),
             idx_leaf,
         );
-        sig_offset += SPX_WOTS_BYTES + SPX_TREE_HEIGHT * SPX_N;
+        sig = sig.add(SPX_WOTS_BYTES + SPX_TREE_HEIGHT * SPX_N);
 
-        idx_leaf = (tree as u32) & ((1u32 << SPX_TREE_HEIGHT) - 1);
+        // Update the indices for the next layer.
+        idx_leaf = (tree & ((1u64 << SPX_TREE_HEIGHT) - 1)) as u32;
         tree >>= SPX_TREE_HEIGHT;
     }
 
-    unsafe {
-        *siglen = SPX_BYTES;
-    }
+    *siglen = SPX_BYTES;
 
     0
 }
 
+/// Verifies a detached signature and message under a given public key.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_verify(
-    sig: *const u8,
+pub unsafe extern "C" fn crypto_sign_verify(
+    mut sig: *const u8,
     siglen: usize,
     m: *const u8,
     mlen: usize,
     pk: *const u8,
-) -> i32 {
+) -> c_int {
     let mut ctx = SpxCtx::new();
-    let pk_slice = unsafe { core::slice::from_raw_parts(pk, SPX_PK_BYTES) };
-    let m_slice = unsafe { core::slice::from_raw_parts(m, mlen) };
+    let pub_root = pk.add(SPX_N);
+    let mut mhash = [0u8; SPX_FORS_MSG_BYTES];
+    let mut wots_pk = [0u8; SPX_WOTS_BYTES];
+    let mut root = [0u8; SPX_N];
+    let mut leaf = [0u8; SPX_N];
+    let mut tree: u64 = 0;
+    let mut idx_leaf: u32 = 0;
+    let mut wots_addr = [0u32; 8];
+    let mut tree_addr = [0u32; 8];
+    let mut wots_pk_addr = [0u32; 8];
 
     if siglen != SPX_BYTES {
         return -1;
     }
 
-    let pub_root = &pk_slice[SPX_N..2 * SPX_N];
-    ctx.pub_seed.copy_from_slice(&pk_slice[..SPX_N]);
+    core::ptr::copy_nonoverlapping(pk, ctx.pub_seed.as_mut_ptr(), SPX_N);
 
-    initialize_hash_function(&mut ctx);
+    SPX_initialize_hash_function(&mut ctx);
 
-    let mut wots_addr = [0u32; 8];
-    let mut tree_addr = [0u32; 8];
-    let mut wots_pk_addr = [0u32; 8];
+    SPX_set_type(wots_addr.as_mut_ptr(), SPX_ADDR_TYPE_WOTS);
+    SPX_set_type(tree_addr.as_mut_ptr(), SPX_ADDR_TYPE_HASHTREE);
+    SPX_set_type(wots_pk_addr.as_mut_ptr(), SPX_ADDR_TYPE_WOTSPK);
 
-    set_type(&mut wots_addr, SPX_ADDR_TYPE_WOTS);
-    set_type(&mut tree_addr, SPX_ADDR_TYPE_HASHTREE);
-    set_type(&mut wots_pk_addr, SPX_ADDR_TYPE_WOTSPK);
-
-    let mut mhash = vec![0u8; SPX_FORS_MSG_BYTES];
-    let r_const = unsafe { core::slice::from_raw_parts(sig, SPX_N) };
-    let (mut tree, mut idx_leaf) = hash_message(&mut mhash, r_const, pk_slice, m_slice, &ctx);
-
-    let mut sig_offset = SPX_N;
-
-    set_tree_addr(&mut wots_addr, tree);
-    set_keypair_addr(&mut wots_addr, idx_leaf);
-
-    let mut root = vec![0u8; SPX_N];
-    SPX_fors_pk_from_sig(
-        root.as_mut_ptr(),
-        unsafe { sig.add(sig_offset) },
-        mhash.as_ptr(),
+    // Derive the message digest and leaf index from R || PK || M.
+    SPX_hash_message(
+        mhash.as_mut_ptr(),
+        &mut tree,
+        &mut idx_leaf,
+        sig,
+        pk,
+        m,
+        mlen as u64,
         &ctx,
-        &wots_addr as *const _,
     );
-    sig_offset += SPX_FORS_BYTES;
+    sig = sig.add(SPX_N);
 
-    let mut wots_pk = vec![0u8; SPX_WOTS_BYTES];
-    for i in 0..SPX_D as u32 {
-        set_layer_addr(&mut tree_addr, i);
-        set_tree_addr(&mut tree_addr, tree);
+    // Layer correctly defaults to 0, so no need to set_layer_addr.
+    SPX_set_tree_addr(wots_addr.as_mut_ptr(), tree);
+    SPX_set_keypair_addr(wots_addr.as_mut_ptr(), idx_leaf);
 
-        copy_subtree_addr(&mut wots_addr, &tree_addr);
-        set_keypair_addr(&mut wots_addr, idx_leaf);
+    SPX_fors_pk_from_sig(root.as_mut_ptr(), sig, mhash.as_ptr(), &ctx, wots_addr.as_ptr());
+    sig = sig.add(SPX_FORS_BYTES);
 
-        copy_keypair_addr(&mut wots_pk_addr, &wots_addr);
+    // For each subtree..
+    for i in 0..SPX_D {
+        SPX_set_layer_addr(tree_addr.as_mut_ptr(), i as u32);
+        SPX_set_tree_addr(tree_addr.as_mut_ptr(), tree);
 
-        SPX_wots_pk_from_sig(
-            wots_pk.as_mut_ptr(),
-            unsafe { sig.add(sig_offset) },
-            root.as_ptr(),
+        SPX_copy_subtree_addr(wots_addr.as_mut_ptr(), tree_addr.as_ptr());
+        SPX_set_keypair_addr(wots_addr.as_mut_ptr(), idx_leaf);
+
+        SPX_copy_keypair_addr(wots_pk_addr.as_mut_ptr(), wots_addr.as_ptr());
+
+        // The WOTS public key is only correct if the signature was correct.
+        SPX_wots_pk_from_sig(wots_pk.as_mut_ptr(), sig, root.as_ptr(), &ctx, wots_addr.as_mut_ptr());
+        sig = sig.add(SPX_WOTS_BYTES);
+
+        // Compute the leaf node using the WOTS public key.
+        SPX_thash(
+            leaf.as_mut_ptr(),
+            wots_pk.as_ptr(),
+            SPX_WOTS_LEN as u32,
             &ctx,
-            &mut wots_addr as *mut _,
+            wots_pk_addr.as_mut_ptr(),
         );
-        sig_offset += SPX_WOTS_BYTES;
 
-        thash(&mut root, &wots_pk, SPX_WOTS_LEN as u32, &ctx, &mut wots_pk_addr);
-
-        let auth = unsafe { core::slice::from_raw_parts(sig.add(sig_offset), SPX_TREE_HEIGHT * SPX_N) };
-        let mut new_root = vec![0u8; SPX_N];
-        compute_root_rs(
-            &mut new_root,
-            &root,
+        // Compute the root node of this subtree.
+        SPX_compute_root(
+            root.as_mut_ptr(),
+            leaf.as_ptr(),
             idx_leaf,
             0,
-            auth,
+            sig,
             SPX_TREE_HEIGHT as u32,
             &ctx,
-            &mut tree_addr,
+            tree_addr.as_mut_ptr(),
         );
-        root = new_root;
-        sig_offset += SPX_TREE_HEIGHT * SPX_N;
+        sig = sig.add(SPX_TREE_HEIGHT * SPX_N);
 
-        idx_leaf = (tree as u32) & ((1u32 << SPX_TREE_HEIGHT) - 1);
+        // Update the indices for the next layer.
+        idx_leaf = (tree & ((1u64 << SPX_TREE_HEIGHT) - 1)) as u32;
         tree >>= SPX_TREE_HEIGHT;
     }
 
-    if root != pub_root {
+    // Check if the root node equals the root node in the public key.
+    let a = core::slice::from_raw_parts(root.as_ptr(), SPX_N);
+    let b = core::slice::from_raw_parts(pub_root, SPX_N);
+    if a != b {
         return -1;
     }
 
     0
 }
 
+/// Returns an array containing the signature followed by the message.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign(
+pub unsafe extern "C" fn crypto_sign(
     sm: *mut u8,
     smlen: *mut u64,
     m: *const u8,
     mlen: u64,
     sk: *const u8,
-) -> i32 {
+) -> c_int {
     let mut siglen: usize = 0;
-    SPX_crypto_sign_signature(sm, &mut siglen as *mut _, m, mlen as usize, sk);
 
-    // memmove(sm + SPX_BYTES, m, mlen)
-    unsafe {
-        core::ptr::copy(m, sm.add(SPX_BYTES), mlen as usize);
-        *smlen = (siglen + mlen as usize) as u64;
-    }
+    crypto_sign_signature(sm, &mut siglen, m, mlen as usize, sk);
+
+    core::ptr::copy(m, sm.add(SPX_BYTES), mlen as usize);
+    *smlen = siglen as u64 + mlen;
+
     0
 }
 
+/// Verifies a given signature-message pair under a given public key.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SPX_crypto_sign_open(
+pub unsafe extern "C" fn crypto_sign_open(
     m: *mut u8,
     mlen: *mut u64,
     sm: *const u8,
     smlen: u64,
     pk: *const u8,
-) -> i32 {
+) -> c_int {
+    // SPHINCS+ signatures are always exactly SPX_BYTES.
     if smlen < SPX_BYTES as u64 {
-        unsafe {
-            let s = core::slice::from_raw_parts_mut(m, smlen as usize);
-            for b in s {
-                *b = 0;
-            }
-            *mlen = 0;
-        }
+        core::ptr::write_bytes(m, 0, smlen as usize);
+        *mlen = 0;
         return -1;
     }
 
-    let computed_mlen = smlen - SPX_BYTES as u64;
-    unsafe {
-        *mlen = computed_mlen;
-    }
+    *mlen = smlen - SPX_BYTES as u64;
 
-    let verify = SPX_crypto_sign_verify(
-        sm,
-        SPX_BYTES,
-        unsafe { sm.add(SPX_BYTES) },
-        computed_mlen as usize,
-        pk,
-    );
-    if verify != 0 {
-        unsafe {
-            let s = core::slice::from_raw_parts_mut(m, smlen as usize);
-            for b in s {
-                *b = 0;
-            }
-            *mlen = 0;
-        }
+    if crypto_sign_verify(sm, SPX_BYTES, sm.add(SPX_BYTES), *mlen as usize, pk) != 0 {
+        core::ptr::write_bytes(m, 0, smlen as usize);
+        *mlen = 0;
         return -1;
     }
 
-    // memmove(m, sm + SPX_BYTES, *mlen)
-    unsafe {
-        core::ptr::copy(sm.add(SPX_BYTES), m, computed_mlen as usize);
-    }
+    // If verification was successful, move the message to the right place.
+    core::ptr::copy(sm.add(SPX_BYTES), m, *mlen as usize);
 
     0
 }

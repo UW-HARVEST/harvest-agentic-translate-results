@@ -23,130 +23,258 @@
 
 //! Rust translation of `src/mdmacros.h`.
 //!
-//! The C header performs all of its work with the preprocessor: the build-time
-//! macros `OP` (one of `add`, `sub`, `mul`) and `REPEAT` (an integer literal
-//! `0`..=`7`, since only `REP0`..`REP7` exist) select which operation function
-//! and which unrolled accumulation sequence get compiled in.
+//! The C header is driven by two build-time knobs coming from the CMake cache:
 //!
-//! Here the same selection is made with Cargo features. Each CMake cache value
-//! becomes a feature with the identical (lowercased) name:
-//!   * `OP`     -> features `add`, `sub`, `mul`
-//!   * `REPEAT` -> features `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`
-//!                 (aliases `repeat_0` .. `repeat_7` are also accepted)
+//! ```text
+//! set(OP     "add" CACHE STRING "operation leveraged")
+//! set(REPEAT "5"   CACHE STRING "iterations tested")
+//! set(CMAKE_C_FLAGS "-DOP=${OP} -DREPEAT=${REPEAT}")
+//! ```
+//!
+//! Those values are mirrored here by Cargo features carrying the *exact same
+//! value names in lowercase*: `add`, `sub`, `mul` for `OP` and `0` .. `7` for
+//! `REPEAT`.  When no feature of a family is enabled the `#ifndef` fallbacks of
+//! `mdmacros.h` apply (`OP add`, `REPEAT 5`).
 
-use std::ffi::c_int;
+#![allow(dead_code)]
 
-/// The operation family selected at build time (C: `OP`).
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Op {
-    Add,
-    Sub,
-    Mul,
-}
+use std::ffi::{c_char, c_int};
 
-/// Selected operation. A feature naming a non-default value wins over the
-/// default (`add`) so that `--features sub` behaves like `-DOP=sub`.
-pub const OP: Op = if cfg!(feature = "mul") {
-    Op::Mul
-} else if cfg!(feature = "sub") {
-    Op::Sub
-} else {
-    Op::Add
-};
-
-/// C: `STR(OP)` -- the stringized operation name (`G_OP_NAME` points here).
-pub const OP_NAME: &str = match OP {
-    Op::Add => "add",
-    Op::Sub => "sub",
-    Op::Mul => "mul",
-};
-
-/// NUL terminated form of [`OP_NAME`], used for the exported `G_OP_NAME`.
-pub const OP_NAME_CSTR: &[u8] = match OP {
-    Op::Add => b"add\0",
-    Op::Sub => b"sub\0",
-    Op::Mul => b"mul\0",
-};
-
-/// The unroll count selected at build time (C: `REPEAT`).
-/// A feature naming a non-default value wins over the default (`5`).
-pub const REPEAT: c_int = if cfg!(feature = "0") {
-    0
-} else if cfg!(feature = "1") {
-    1
-} else if cfg!(feature = "2") {
-    2
-} else if cfg!(feature = "3") {
-    3
-} else if cfg!(feature = "4") {
-    4
-} else if cfg!(feature = "6") {
-    6
-} else if cfg!(feature = "7") {
-    7
-} else {
-    5
-};
-
-/// C: `INIT_FOR(OP)` -- `INIT_add`/`INIT_sub` are 0, `INIT_mul` is 1.
-#[inline]
-pub const fn init_for_op() -> c_int {
-    match OP {
-        Op::Add => 0,
-        Op::Sub => 0,
-        Op::Mul => 1,
-    }
-}
-
-/// C: `STEP_OP(OP, acc, i)`:
-///   `STEP_add(acc,i)` -> `acc += i`
-///   `STEP_sub(acc,i)` -> `acc -= i`
-///   `STEP_mul(acc,i)` -> `acc *= (i + 1)`
+/// The pieces of `<stdio.h>` used by `mdcore.c` / `mdmain.c`.
 ///
-/// Signed overflow is UB in C but wraps on every mainstream compiler; the
-/// wrapping operators reproduce the observed behaviour.
-#[inline]
-pub const fn step_op(acc: c_int, i: c_int) -> c_int {
-    match OP {
-        Op::Add => acc.wrapping_add(i),
-        Op::Sub => acc.wrapping_sub(i),
-        Op::Mul => acc.wrapping_mul(i.wrapping_add(1)),
+/// Going through C's `printf` (instead of Rust's `println!`) keeps the exact
+/// same stdio stream and buffering behaviour as the original program, which
+/// matters when the produced shared library is loaded by a C program that also
+/// writes to `stdout`.
+pub mod cstdio {
+    use std::ffi::{c_char, c_int};
+
+    extern "C" {
+        pub fn printf(format: *const c_char, ...) -> c_int;
     }
 }
 
-/// C: `REPn(OP, acc)` -- applies `STEP_OP` for `i = 0 .. n-1`.
+/* ------------------------------------------------------------------------- */
+/* OP selection: `#define OP add` (or sub / mul)                             */
+/* ------------------------------------------------------------------------- */
+
+// `mul` wins over `sub`, which wins over `add`, so that any combination of
+// features still compiles to exactly one deterministic configuration.
+#[cfg(feature = "mul")]
+mod op_sel {
+    use std::ffi::c_int;
+
+    /// `STR(OP)`
+    pub const OP_NAME: &str = "mul";
+    /// `INIT_mul 1`
+    pub const INIT: c_int = 1;
+
+    /// `OP_FN(OP)` -> `op_mul`
+    #[inline]
+    pub const fn apply(a: c_int, b: c_int) -> c_int {
+        a.wrapping_mul(b)
+    }
+
+    /// `STEP_mul(acc, i) ((acc) *= ((i) + 1))`
+    #[inline]
+    pub const fn step(acc: c_int, i: c_int) -> c_int {
+        acc.wrapping_mul(i.wrapping_add(1))
+    }
+}
+
+#[cfg(all(feature = "sub", not(feature = "mul")))]
+mod op_sel {
+    use std::ffi::c_int;
+
+    /// `STR(OP)`
+    pub const OP_NAME: &str = "sub";
+    /// `INIT_sub 0`
+    pub const INIT: c_int = 0;
+
+    /// `OP_FN(OP)` -> `op_sub`
+    #[inline]
+    pub const fn apply(a: c_int, b: c_int) -> c_int {
+        a.wrapping_sub(b)
+    }
+
+    /// `STEP_sub(acc, i) ((acc) -= (i))`
+    #[inline]
+    pub const fn step(acc: c_int, i: c_int) -> c_int {
+        acc.wrapping_sub(i)
+    }
+}
+
+#[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+mod op_sel {
+    use std::ffi::c_int;
+
+    /// `STR(OP)`
+    pub const OP_NAME: &str = "add";
+    /// `INIT_add 0`
+    pub const INIT: c_int = 0;
+
+    /// `OP_FN(OP)` -> `op_add`
+    #[inline]
+    pub const fn apply(a: c_int, b: c_int) -> c_int {
+        a.wrapping_add(b)
+    }
+
+    /// `STEP_add(acc, i) ((acc) += (i))`
+    #[inline]
+    pub const fn step(acc: c_int, i: c_int) -> c_int {
+        acc.wrapping_add(i)
+    }
+}
+
+/// `STR(OP)` as a Rust string.
+pub const OP_NAME: &str = op_sel::OP_NAME;
+
+/// NUL terminated spelling of `STR(OP)`, used for the `G_OP_NAME` global.
+#[cfg(feature = "mul")]
+pub const OP_NAME_C: &[u8] = b"mul\0";
+#[cfg(all(feature = "sub", not(feature = "mul")))]
+pub const OP_NAME_C: &[u8] = b"sub\0";
+#[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+pub const OP_NAME_C: &[u8] = b"add\0";
+
+/// Pointer to the static NUL terminated operation name.
+pub const fn op_name_ptr() -> *const c_char {
+    OP_NAME_C.as_ptr() as *const c_char
+}
+
+/// `INIT_FOR(OP)`
+pub const INIT: c_int = op_sel::INIT;
+
+/// The operation selected by `OP_FN(OP)`.
+#[inline]
+pub const fn op_apply(a: c_int, b: c_int) -> c_int {
+    op_sel::apply(a, b)
+}
+
+/// `STEP_OP(OP, acc, i)`
+#[inline]
+pub const fn step(acc: c_int, i: c_int) -> c_int {
+    op_sel::step(acc, i)
+}
+
+/* ------------------------------------------------------------------------- */
+/* REPEAT selection: `#define REPEAT 5` (0 .. 7 are supported by REPn)       */
+/* ------------------------------------------------------------------------- */
+
+#[cfg(feature = "0")]
+pub const REPEAT: c_int = 0;
+
+#[cfg(all(feature = "1", not(feature = "0")))]
+pub const REPEAT: c_int = 1;
+
+#[cfg(all(feature = "2", not(feature = "0"), not(feature = "1")))]
+pub const REPEAT: c_int = 2;
+
+#[cfg(all(
+    feature = "3",
+    not(feature = "0"),
+    not(feature = "1"),
+    not(feature = "2")
+))]
+pub const REPEAT: c_int = 3;
+
+#[cfg(all(
+    feature = "4",
+    not(feature = "0"),
+    not(feature = "1"),
+    not(feature = "2"),
+    not(feature = "3")
+))]
+pub const REPEAT: c_int = 4;
+
+#[cfg(all(
+    feature = "5",
+    not(feature = "0"),
+    not(feature = "1"),
+    not(feature = "2"),
+    not(feature = "3"),
+    not(feature = "4")
+))]
+pub const REPEAT: c_int = 5;
+
+#[cfg(all(
+    feature = "6",
+    not(feature = "0"),
+    not(feature = "1"),
+    not(feature = "2"),
+    not(feature = "3"),
+    not(feature = "4"),
+    not(feature = "5")
+))]
+pub const REPEAT: c_int = 6;
+
+#[cfg(all(
+    feature = "7",
+    not(feature = "0"),
+    not(feature = "1"),
+    not(feature = "2"),
+    not(feature = "3"),
+    not(feature = "4"),
+    not(feature = "5"),
+    not(feature = "6")
+))]
+pub const REPEAT: c_int = 7;
+
+// `#ifndef REPEAT / # define REPEAT 5` fallback: no REPEAT feature selected.
+#[cfg(all(
+    not(feature = "0"),
+    not(feature = "1"),
+    not(feature = "2"),
+    not(feature = "3"),
+    not(feature = "4"),
+    not(feature = "5"),
+    not(feature = "6"),
+    not(feature = "7")
+))]
+pub const REPEAT: c_int = 5;
+
+/* ------------------------------------------------------------------------- */
+/* REPEAT-based manual unrolling                                             */
+/* ------------------------------------------------------------------------- */
+
+/// `REPn(op, acc)` for a compile-time known `n`: performs `STEP_OP(op, acc, i)`
+/// for `i` in `0 .. n`.
 #[inline]
 pub const fn rep_n(mut acc: c_int, n: c_int) -> c_int {
     let mut i: c_int = 0;
     while i < n {
-        acc = step_op(acc, i);
+        acc = step(acc, i);
         i += 1;
     }
     acc
 }
 
-/// C: `RUN_LOOP(OP, acc, REPEAT)` -- expands to `REP<REPEAT>(OP, acc)`.
-/// (Only `REP0`..`REP7` exist, so `REPEAT` outside 0..=7 fails to compile in C.)
+/// `RUN_LOOP(OP, acc, REPEAT)` starting from `INIT_FOR(OP)`:
+/// `CHOOSE_REP(REPEAT)(OP, acc)`.
 #[inline]
-pub const fn run_loop(acc: c_int) -> c_int {
-    rep_n(acc, REPEAT)
+pub const fn run_loop_from_init() -> c_int {
+    rep_n(INIT, REPEAT)
 }
 
-/// C: `DO_LOOP` / `FOR_EACH` -- the runtime loop form of the same body.
-/// Unused by the C program (kept for fidelity with the header).
-#[allow(dead_code)]
+/// `DO_LOOP(op, acc, n)` -> `for (int i = 0; i < n; ++i) STEP_OP(op, acc, i);`
 #[inline]
 pub const fn do_loop(acc: c_int, n: c_int) -> c_int {
     rep_n(acc, n)
 }
 
-/// C: `DISPATCH_REP(OP, acc, n)` -- a switch over `n` covering only cases
-/// 0..=6; every other value (including 7 and negatives) hits `default: break;`
-/// and leaves the accumulator untouched.
+/// `DISPATCH_REP(op, acc, n)`: a `switch (n)` over the hand written `REP0`
+/// .. `REP6` expansions; every other value hits `default: break;` and therefore
+/// leaves the accumulator untouched.
 #[inline]
 pub const fn dispatch_rep(acc: c_int, n: c_int) -> c_int {
     match n {
-        0 | 1 | 2 | 3 | 4 | 5 | 6 => rep_n(acc, n),
-        _ => acc,
+        0 => acc,               // REP0: nothing
+        1 => rep_n(acc, 1),     // REP1
+        2 => rep_n(acc, 2),     // REP2
+        3 => rep_n(acc, 3),     // REP3
+        4 => rep_n(acc, 4),     // REP4
+        5 => rep_n(acc, 5),     // REP5
+        6 => rep_n(acc, 6),     // REP6
+        _ => acc,               // default: break
     }
 }

@@ -23,94 +23,80 @@
 
 //! Rust translation of `src/mdcore.c`.
 
+#![allow(dead_code)]
+
 use std::ffi::{c_char, c_int};
 
-use crate::mdmacros::{dispatch_rep, init_for_op, run_loop, Op, OP, OP_NAME_CSTR};
+use crate::mdmacros::{
+    cstdio::printf, dispatch_rep, op_apply, op_name_ptr, run_loop_from_init, INIT, OP_NAME, REPEAT,
+};
 
-/* ---------- Define operations (C: op_add / op_sub / op_mul) ---------- */
+/* ---------------------------- Define operations --------------------------- */
 
-/// C: `int op_add(int a,int b){ return a + b; }`
+/// `int op_add(int a,int b){ return a + b; }`
 #[unsafe(no_mangle)]
 pub extern "C" fn op_add(a: c_int, b: c_int) -> c_int {
     a.wrapping_add(b)
 }
 
-/// C: `int op_sub(int a,int b){ return a - b; }`
+/// `int op_sub(int a,int b){ return a - b; }`
 #[unsafe(no_mangle)]
 pub extern "C" fn op_sub(a: c_int, b: c_int) -> c_int {
     a.wrapping_sub(b)
 }
 
-/// C: `int op_mul(int a,int b){ return a * b; }`
+/// `int op_mul(int a,int b){ return a * b; }`
 #[unsafe(no_mangle)]
 pub extern "C" fn op_mul(a: c_int, b: c_int) -> c_int {
     a.wrapping_mul(b)
 }
 
-/// C: `OP_FN(OP)` -- the `op_<OP>` function picked by the build configuration.
-pub const OP_FN: extern "C" fn(c_int, c_int) -> c_int = match OP {
-    Op::Add => op_add,
-    Op::Sub => op_sub,
-    Op::Mul => op_mul,
-};
-
-/* ---------- Macro-generated accumulator for the selected OP ----------
- * C: DEFINE_ACCUM(OP) expands to
- *      static int accum_<OP>(int n) {
- *          int acc = INIT_FOR(OP);
- *          DISPATCH_REP(OP, acc, n);
- *          return acc;
- *      }
- * Note that DISPATCH_REP only handles n in 0..=6; anything else (7, negatives)
- * falls through `default: break;` and returns the untouched initial value.
- */
+/* ------ The macro-generated accumulator for the selected OP ---------------
+ * DEFINE_ACCUM(OP):
+ *   static int accum_<OP>(int n) {
+ *       int acc = INIT_FOR(OP);
+ *       DISPATCH_REP(OP, acc, n);
+ *       return acc;
+ *   }
+ * ------------------------------------------------------------------------- */
 fn accum_op(n: c_int) -> c_int {
-    let acc = init_for_op();
+    let acc = INIT;
     dispatch_rep(acc, n)
 }
 
-/* ---------- Global macro uses at file scope ---------- */
+/* ------------- Global macro uses at file scope (global init) -------------- */
 
-/// C: `int (*G_OP)(int,int) = OP_FN(OP);`
+/// C type of the `G_OP` global: `int (*)(int, int)`.
+pub type OpFn = extern "C" fn(c_int, c_int) -> c_int;
+
+/// The `op_<OP>` function chosen by `OP_FN(OP)`, as an `extern "C"` pointer.
+#[cfg(feature = "mul")]
+const SELECTED_OP: OpFn = op_mul;
+#[cfg(all(feature = "sub", not(feature = "mul")))]
+const SELECTED_OP: OpFn = op_sub;
+#[cfg(all(not(feature = "sub"), not(feature = "mul")))]
+const SELECTED_OP: OpFn = op_add;
+
+/// `int (*G_OP)(int,int) = OP_FN(OP);`
 ///
-/// The C definition is a *non-const* global, so gcc emits it into the writable
-/// `.data` section. `#[link_section = ".data"]` reproduces that placement (a
-/// plain Rust `static` would land in `.data.rel.ro`, which RELRO makes
-/// read-only) so that a C consumer sees the same object attributes.
+/// This is a *mutable* global in C: `mdmacros.h` declares it as
+/// `extern int (*G_OP)(int, int);` with no `const`, so it lives in a writable
+/// `.data` section and a consumer of the shared library may legitimately
+/// reassign it.  It is therefore translated as a `static mut`: an immutable
+/// `static` would be placed in `.data.rel.ro`, which RELRO maps read-only,
+/// making such a store segfault instead of succeeding as it does in C.
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".data")]
-pub static G_OP: extern "C" fn(c_int, c_int) -> c_int = OP_FN;
+pub static mut G_OP: OpFn = SELECTED_OP;
 
-/// Wrapper making a raw `const char *` usable as an exported static.
-#[repr(transparent)]
-pub struct OpNamePtr(pub *const c_char);
-// The pointer targets a `'static` read-only string, so sharing it is sound.
-unsafe impl Sync for OpNamePtr {}
-
-/// C: `const char *G_OP_NAME = STR(OP);`
+/// `const char *G_OP_NAME = STR(OP);`
 ///
-/// Only the pointee is `const`, so the pointer object itself lives in the
-/// writable `.data` section in the C build; see [`G_OP`].
+/// The `const` applies to the pointed-to characters, not to the pointer itself,
+/// so like `G_OP` this is a writable global in `.data`.
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".data")]
-pub static G_OP_NAME: OpNamePtr = OpNamePtr(OP_NAME_CSTR.as_ptr() as *const c_char);
+pub static mut G_OP_NAME: *const c_char = op_name_ptr();
 
-/* ---------- Helpers ---------- */
+/* -------------------------------- Helpers -------------------------------- */
 
-/// Stand-in for C's `printf` to `stdout`.
-///
-/// `mdcore.c` discards `printf`'s return value, so a failing write (stdout
-/// closed, `/dev/full`, `EPIPE`, ...) is silently ignored and the function still
-/// returns its result. Rust's `print!` macro instead panics on a write error,
-/// which would change the exit status, so write through `Stdout` and drop the
-/// error to keep the observable behaviour identical.
-#[inline]
-fn c_printf(args: core::fmt::Arguments<'_>) {
-    use std::io::Write;
-    let _ = std::io::stdout().lock().write_fmt(args);
-}
-
-/// C:
 /// ```c
 /// int helper_call(int a, int b) {
 ///     int r = (OP_FN(OP))(a, b);
@@ -122,13 +108,18 @@ fn c_printf(args: core::fmt::Arguments<'_>) {
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
-    let r = (OP_FN)(a, b);
-    let acc = run_loop(init_for_op());
-    c_printf(format_args!("helper.call={} helper.acc={}\n", r, acc));
+    let r = op_apply(a, b);
+    let acc = run_loop_from_init();
+    unsafe {
+        printf(
+            c"helper.call=%d helper.acc=%d\n".as_ptr(),
+            r as c_int,
+            acc as c_int,
+        );
+    }
     r.wrapping_add(acc)
 }
 
-/// C:
 /// ```c
 /// int helper_ptr(int a, int b) {
 ///     int (*fp)(int,int) = OP_FN(OP);
@@ -139,13 +130,14 @@ pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
-    let fp: extern "C" fn(c_int, c_int) -> c_int = OP_FN;
+    let fp: OpFn = SELECTED_OP;
     let r = fp(a, b);
-    c_printf(format_args!("helper.ptr={}\n", r));
+    unsafe {
+        printf(c"helper.ptr=%d\n".as_ptr(), r as c_int);
+    }
     r
 }
 
-/// C:
 /// ```c
 /// int use_generated(int n) {
 ///     int r = (ACCUM_FN(OP))(n);
@@ -156,6 +148,20 @@ pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn use_generated(n: c_int) -> c_int {
     let r = accum_op(n);
-    c_printf(format_args!("gen.acc={}\n", r));
+    unsafe {
+        printf(c"gen.acc=%d\n".as_ptr(), r as c_int);
+    }
     r
+}
+
+/* -- Convenience accessors mirroring the header's `extern` declarations. --- */
+
+/// The name of the selected operation (`G_OP_NAME` as a Rust `&str`).
+pub const fn op_name() -> &'static str {
+    OP_NAME
+}
+
+/// The compile-time `REPEAT` value.
+pub const fn repeat() -> c_int {
+    REPEAT
 }

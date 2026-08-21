@@ -1,35 +1,52 @@
-//! Pure-Rust port of the SPHINCS+ reference implementation.
+//! Pure-Rust translation of the SPHINCS+ reference implementation.
 //!
-//! Cargo features select the build-time configuration that the C CMake build
-//! exposed via `HASH_BACKEND`, `THASH`, and `SECPAR`. All combinations of
-//! { haraka | sha2 | shake | blake } x { robust | simple } x
-//! { 128s | 128f | 192s | 192f | 256s | 256f } compile.
+//! Build-time configurability (CMake cache variables `HASH_BACKEND`, `THASH`,
+//! `SECPAR`) is preserved via Cargo features with the exact same lowercase
+//! names. Exactly one hash backend module is compiled, selected with the
+//! priority `sha2` > `shake` > `blake` > `haraka` (the last also being the
+//! default when no backend feature is enabled), matching the CMake default of
+//! `haraka`.
 
-#![allow(clippy::needless_range_loop)]
-#![allow(clippy::too_many_arguments)]
-#![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(static_mut_refs)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(clippy::missing_safety_doc)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_range_loop)]
 
 pub mod address;
-#[cfg(feature = "blake")]
-pub mod blake;
 pub mod context;
-#[cfg(feature = "shake")]
-pub mod fips202;
 pub mod fors;
-pub mod forsx1;
-#[cfg(feature = "haraka")]
-pub mod haraka;
-pub mod hash;
 pub mod merkle;
 pub mod params;
+pub mod randombytes;
 pub mod rng;
-#[cfg(feature = "sha2")]
-pub mod sha2_impl;
 pub mod sign;
-pub mod thash;
 pub mod utils;
 pub mod utilsx1;
 pub mod wots;
 pub mod wotsx1;
+
+// --- Active hash backend (exactly one is compiled) --------------------------
+
+#[cfg(feature = "sha2")]
+#[path = "backends/sha2/mod.rs"]
+pub mod backend;
+
+#[cfg(all(feature = "shake", not(feature = "sha2")))]
+#[path = "backends/shake/mod.rs"]
+pub mod backend;
+
+#[cfg(all(feature = "blake", not(feature = "sha2"), not(feature = "shake")))]
+#[path = "backends/blake/mod.rs"]
+pub mod backend;
+
+#[cfg(all(
+    not(feature = "sha2"),
+    not(feature = "shake"),
+    not(feature = "blake")
+))]
+#[path = "backends/haraka/mod.rs"]
+pub mod backend;
+
+pub use context::SpxCtx;
