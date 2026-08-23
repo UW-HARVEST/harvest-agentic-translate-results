@@ -1,28 +1,31 @@
-//! Translation of utf.c
-use core::ffi::{c_char, c_int};
+//! Translation of c_src/src/utf.c
+use std::ffi::{c_char, c_int};
 
-/// int32_t codepoint
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn utf8_encode(codepoint: i32, buffer: *mut c_char, size: *mut usize) -> c_int {
+pub unsafe extern "C" fn utf8_encode(
+    codepoint: i32,
+    buffer: *mut c_char,
+    size: *mut usize,
+) -> c_int {
     if codepoint < 0 {
         return -1;
     } else if codepoint < 0x80 {
         *buffer.add(0) = codepoint as c_char;
         *size = 1;
     } else if codepoint < 0x800 {
-        *buffer.add(0) = (0xC0 + ((codepoint & 0x7C0) >> 6)) as c_char;
-        *buffer.add(1) = (0x80 + (codepoint & 0x03F)) as c_char;
+        *buffer.add(0) = (0xC0 + ((codepoint & 0x7C0) >> 6)) as u8 as c_char;
+        *buffer.add(1) = (0x80 + (codepoint & 0x03F)) as u8 as c_char;
         *size = 2;
     } else if codepoint < 0x10000 {
-        *buffer.add(0) = (0xE0 + ((codepoint & 0xF000) >> 12)) as c_char;
-        *buffer.add(1) = (0x80 + ((codepoint & 0x0FC0) >> 6)) as c_char;
-        *buffer.add(2) = (0x80 + (codepoint & 0x003F)) as c_char;
+        *buffer.add(0) = (0xE0 + ((codepoint & 0xF000) >> 12)) as u8 as c_char;
+        *buffer.add(1) = (0x80 + ((codepoint & 0x0FC0) >> 6)) as u8 as c_char;
+        *buffer.add(2) = (0x80 + (codepoint & 0x003F)) as u8 as c_char;
         *size = 3;
     } else if codepoint <= 0x10FFFF {
-        *buffer.add(0) = (0xF0 + ((codepoint & 0x1C0000) >> 18)) as c_char;
-        *buffer.add(1) = (0x80 + ((codepoint & 0x03F000) >> 12)) as c_char;
-        *buffer.add(2) = (0x80 + ((codepoint & 0x000FC0) >> 6)) as c_char;
-        *buffer.add(3) = (0x80 + (codepoint & 0x00003F)) as c_char;
+        *buffer.add(0) = (0xF0 + ((codepoint & 0x1C0000) >> 18)) as u8 as c_char;
+        *buffer.add(1) = (0x80 + ((codepoint & 0x03F000) >> 12)) as u8 as c_char;
+        *buffer.add(2) = (0x80 + ((codepoint & 0x000FC0) >> 6)) as u8 as c_char;
+        *buffer.add(3) = (0x80 + (codepoint & 0x00003F)) as u8 as c_char;
         *size = 4;
     } else {
         return -1;
@@ -40,7 +43,8 @@ pub unsafe extern "C" fn utf8_check_first(byte: c_char) -> usize {
     }
 
     if (0x80..=0xBF).contains(&u) {
-        /* continuation byte */
+        /* second, third or fourth byte of a multi-byte
+        sequence, i.e. a "continuation byte" */
         0
     } else if u == 0xC0 || u == 0xC1 {
         /* overlong encoding of an ASCII byte */
@@ -55,7 +59,8 @@ pub unsafe extern "C" fn utf8_check_first(byte: c_char) -> usize {
         /* 4-byte sequence */
         4
     } else {
-        /* u >= 0xF5 : restricted or invalid */
+        /* u >= 0xF5 */
+        /* Restricted (start of 4-, 5- or 6-byte sequence) or invalid UTF-8 */
         0
     }
 }
@@ -66,6 +71,7 @@ pub unsafe extern "C" fn utf8_check_full(
     size: usize,
     codepoint: *mut i32,
 ) -> usize {
+    let mut i: usize;
     let mut value: i32;
     let mut u = *buffer.add(0) as u8;
 
@@ -79,7 +85,7 @@ pub unsafe extern "C" fn utf8_check_full(
         return 0;
     }
 
-    let mut i = 1usize;
+    i = 1;
     while i < size {
         u = *buffer.add(i) as u8;
 
@@ -96,7 +102,7 @@ pub unsafe extern "C" fn utf8_check_full(
         /* not in Unicode range */
         return 0;
     } else if (0xD800..=0xDFFF).contains(&value) {
-        /* UTF-16 surrogate halves */
+        /* invalid code point (UTF-16 surrogate halves) */
         return 0;
     } else if (size == 2 && value < 0x80)
         || (size == 3 && value < 0x800)
@@ -119,26 +125,22 @@ pub unsafe extern "C" fn utf8_iterate(
     bufsize: usize,
     codepoint: *mut i32,
 ) -> *const c_char {
-    let value: i32;
+    let count: usize;
+    let mut value: i32 = 0;
 
     if bufsize == 0 {
         return buffer;
     }
 
-    let count = utf8_check_first(*buffer.add(0));
+    count = utf8_check_first(*buffer.add(0));
     if count == 0 {
-        // count <= 0 (count is size_t so only == 0)
-        return core::ptr::null();
+        return std::ptr::null();
     }
 
     if count == 1 {
-        value = (*buffer.add(0) as u8) as i32;
-    } else {
-        let mut v: i32 = 0;
-        if count > bufsize || utf8_check_full(buffer, count, &mut v) == 0 {
-            return core::ptr::null();
-        }
-        value = v;
+        value = *buffer.add(0) as u8 as i32;
+    } else if count > bufsize || utf8_check_full(buffer, count, &mut value) == 0 {
+        return std::ptr::null();
     }
 
     if !codepoint.is_null() {
@@ -150,7 +152,8 @@ pub unsafe extern "C" fn utf8_iterate(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn utf8_check_string(string: *const c_char, length: usize) -> c_int {
-    let mut i = 0usize;
+    let mut i: usize = 0;
+
     while i < length {
         let count = utf8_check_first(*string.add(i));
         if count == 0 {
@@ -160,7 +163,7 @@ pub unsafe extern "C" fn utf8_check_string(string: *const c_char, length: usize)
                 return 0;
             }
 
-            if utf8_check_full(string.add(i), count, core::ptr::null_mut()) == 0 {
+            if utf8_check_full(string.add(i), count, std::ptr::null_mut()) == 0 {
                 return 0;
             }
 

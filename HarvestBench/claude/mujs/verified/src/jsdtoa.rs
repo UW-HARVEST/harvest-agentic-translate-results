@@ -1,41 +1,66 @@
-//! Translated from jsdtoa.c — locale-independent string<->double conversions.
-#![allow(non_upper_case_globals, non_snake_case)]
+//! Translated from c_src/src/jsdtoa.c
+/* Locale-independent implementations of string <-> double conversions. */
+use crate::jsi::*;
+use crate::prelude::*;
 
-use std::os::raw::{c_char, c_int};
+extern "C" {
+    fn __errno_location() -> *mut c_int;
+}
 
-/* format exponent like sprintf(p, "e%+d", e) */
-#[no_mangle]
-pub unsafe extern "C-unwind" fn js_fmtexp(mut p: *mut c_char, mut e: c_int) {
+/* <errno.h> */
+const ERANGE: c_int = 34;
+
+const TRUE: c_int = 1;
+const FALSE: c_int = 0;
+
+/*
+ * format exponent like sprintf(p, "e%+d", e)
+ */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn js_fmtexp(p: *mut c_char, e: c_int) {
+    let mut p = p;
+    let mut e = e;
     let mut se: [c_char; 9] = [0; 9];
+    /* indexed through a raw pointer: the C code may write past se[8] */
+    let se: *mut c_char = se.as_mut_ptr();
     let mut i: c_int;
 
-    *p = b'e' as c_char;
+    *p = 'e' as c_char;
     p = p.add(1);
     if e < 0 {
-        *p = b'-' as c_char;
+        *p = '-' as c_char;
         p = p.add(1);
         e = -e;
     } else {
-        *p = b'+' as c_char;
+        *p = '+' as c_char;
         p = p.add(1);
     }
     i = 0;
     while e != 0 {
-        se[i as usize] = (e % 10 + '0' as c_int) as c_char;
+        *se.offset(i as isize) = (e % 10 + '0' as c_int) as c_char;
         i += 1;
         e /= 10;
     }
     while i < 1 {
-        se[i as usize] = b'0' as c_char;
+        *se.offset(i as isize) = '0' as c_char;
         i += 1;
     }
     while i > 0 {
         i -= 1;
-        *p = se[i as usize];
+        *p = *se.offset(i as isize);
         p = p.add(1);
     }
-    *p = b'\0' as c_char;
+    *p = '\0' as c_char;
+    p = p.add(1);
 }
+
+/*
+ * grisu2_59_56.c
+ *
+ * Grisu prints the optimal decimal representation of floating-point numbers.
+ *
+ * Copyright (c) 2009 Florian Loitsch
+ */
 
 #[derive(Copy, Clone)]
 struct diy_fp_t {
@@ -44,7 +69,7 @@ struct diy_fp_t {
 }
 
 const DIY_SIGNIFICAND_SIZE: c_int = 64;
-const D_1_LOG2_10: f64 = 0.30102999566398114;
+const D_1_LOG2_10: f64 = 0.30102999566398114; /* 1 / lg(10) */
 
 static powers_ten: [u64; 687] = [
     0xbf29dcaba82fdeae, 0xeef453d6923bd65a, 0x9558b4661b6565f8,
@@ -335,39 +360,60 @@ static powers_ten_e: [c_int; 687] = [
     1046, 1049, 1053, 1056, 1059, 1063, 1066, 1069, 1073, 1076,
 ];
 
-fn cached_power(k: c_int) -> diy_fp_t {
-    let index = (343 + k) as usize;
-    diy_fp_t { f: powers_ten[index], e: powers_ten_e[index] }
+unsafe fn cached_power(k: c_int) -> diy_fp_t {
+    let mut res = diy_fp_t { f: 0, e: 0 };
+    let index: c_int = 343 + k;
+    res.f = powers_ten[index as usize];
+    res.e = powers_ten_e[index as usize];
+    res
 }
 
-fn k_comp(e: c_int, alpha: c_int, _gamma: c_int) -> c_int {
-    (((alpha - e + 63) as f64) * D_1_LOG2_10).ceil() as c_int
+unsafe fn k_comp(e: c_int, alpha: c_int, gamma: c_int) -> c_int {
+    ceil((alpha - e + 63) as f64 * D_1_LOG2_10) as c_int
 }
 
-fn minus(x: diy_fp_t, y: diy_fp_t) -> diy_fp_t {
-    diy_fp_t { f: x.f - y.f, e: x.e }
+unsafe fn minus(x: diy_fp_t, y: diy_fp_t) -> diy_fp_t {
+    let mut r = diy_fp_t { f: 0, e: 0 };
+    r.f = x.f - y.f;
+    r.e = x.e;
+    r
 }
 
-fn multiply(x: diy_fp_t, y: diy_fp_t) -> diy_fp_t {
+unsafe fn multiply(x: diy_fp_t, y: diy_fp_t) -> diy_fp_t {
+    let a: u64;
+    let b: u64;
+    let c: u64;
+    let d: u64;
+    let ac: u64;
+    let bc: u64;
+    let ad: u64;
+    let bd: u64;
+    let mut tmp: u64;
+    let mut r = diy_fp_t { f: 0, e: 0 };
     let M32: u64 = 0xFFFFFFFF;
-    let a = x.f >> 32;
-    let b = x.f & M32;
-    let c = y.f >> 32;
-    let d = y.f & M32;
-    let ac = a.wrapping_mul(c);
-    let bc = b.wrapping_mul(c);
-    let ad = a.wrapping_mul(d);
-    let bd = b.wrapping_mul(d);
-    let mut tmp = (bd >> 32).wrapping_add(ad & M32).wrapping_add(bc & M32);
-    tmp = tmp.wrapping_add(1u64 << 31);
-    diy_fp_t {
-        f: ac.wrapping_add(ad >> 32).wrapping_add(bc >> 32).wrapping_add(tmp >> 32),
-        e: x.e + y.e + 64,
-    }
+    a = x.f >> 32;
+    b = x.f & M32;
+    c = y.f >> 32;
+    d = y.f & M32;
+    ac = a * c;
+    bc = b * c;
+    ad = a * d;
+    bd = b * d;
+    tmp = (bd >> 32) + (ad & M32) + (bc & M32);
+    tmp += (1u32 << 31) as u64;
+    r.f = ac + (ad >> 32) + (bc >> 32) + (tmp >> 32);
+    r.e = x.e + y.e + 64;
+    r
 }
 
-fn double_to_uint64(d: f64) -> u64 {
-    d.to_bits()
+unsafe fn double_to_uint64(d: f64) -> u64 {
+    let mut n: u64 = 0;
+    memcpy(
+        std::ptr::addr_of_mut!(n) as *mut c_void,
+        std::ptr::addr_of!(d) as *const c_void,
+        8,
+    );
+    n
 }
 
 const DP_SIGNIFICAND_SIZE: c_int = 52;
@@ -377,39 +423,53 @@ const DP_EXPONENT_MASK: u64 = 0x7FF0000000000000;
 const DP_SIGNIFICAND_MASK: u64 = 0x000FFFFFFFFFFFFF;
 const DP_HIDDEN_BIT: u64 = 0x0010000000000000;
 
-fn double2diy_fp(d: f64) -> diy_fp_t {
-    let d64 = double_to_uint64(d);
-    let biased_e = ((d64 & DP_EXPONENT_MASK) >> DP_SIGNIFICAND_SIZE) as c_int;
-    let significand = d64 & DP_SIGNIFICAND_MASK;
+unsafe fn double2diy_fp(d: f64) -> diy_fp_t {
+    let d64: u64 = double_to_uint64(d);
+    let biased_e: c_int = ((d64 & DP_EXPONENT_MASK) >> DP_SIGNIFICAND_SIZE) as c_int;
+    let significand: u64 = d64 & DP_SIGNIFICAND_MASK;
+    let mut res = diy_fp_t { f: 0, e: 0 };
     if biased_e != 0 {
-        diy_fp_t { f: significand + DP_HIDDEN_BIT, e: biased_e - DP_EXPONENT_BIAS }
+        res.f = significand + DP_HIDDEN_BIT;
+        res.e = biased_e - DP_EXPONENT_BIAS;
     } else {
-        diy_fp_t { f: significand, e: DP_MIN_EXPONENT + 1 }
+        res.f = significand;
+        res.e = DP_MIN_EXPONENT + 1;
     }
+    res
 }
 
-fn normalize_boundary(inp: diy_fp_t) -> diy_fp_t {
-    let mut res = inp;
+unsafe fn normalize_boundary(in_: diy_fp_t) -> diy_fp_t {
+    let mut res: diy_fp_t = in_;
+    /* Normalize now */
+    /* the original number could have been a denormal. */
     while (res.f & (DP_HIDDEN_BIT << 1)) == 0 {
         res.f <<= 1;
         res.e -= 1;
     }
+    /* do the final shifts in one go. Don't forget the hidden bit (the '-1') */
     res.f <<= DIY_SIGNIFICAND_SIZE - DP_SIGNIFICAND_SIZE - 2;
     res.e = res.e - (DIY_SIGNIFICAND_SIZE - DP_SIGNIFICAND_SIZE - 2);
     res
 }
 
-fn normalized_boundaries(d: f64, out_m_minus: &mut diy_fp_t, out_m_plus: &mut diy_fp_t) {
-    let v = double2diy_fp(d);
-    let mut pl;
-    let mut mi;
-    let significand_is_zero = v.f == DP_HIDDEN_BIT;
-    pl = diy_fp_t { f: (v.f << 1) + 1, e: v.e - 1 };
+unsafe fn normalized_boundaries(
+    d: f64,
+    out_m_minus: *mut diy_fp_t,
+    out_m_plus: *mut diy_fp_t,
+) {
+    let v: diy_fp_t = double2diy_fp(d);
+    let mut pl = diy_fp_t { f: 0, e: 0 };
+    let mut mi = diy_fp_t { f: 0, e: 0 };
+    let significand_is_zero: c_int = (v.f == DP_HIDDEN_BIT) as c_int;
+    pl.f = (v.f << 1) + 1;
+    pl.e = v.e - 1;
     pl = normalize_boundary(pl);
-    if significand_is_zero {
-        mi = diy_fp_t { f: (v.f << 2) - 1, e: v.e - 2 };
+    if significand_is_zero != 0 {
+        mi.f = (v.f << 2) - 1;
+        mi.e = v.e - 2;
     } else {
-        mi = diy_fp_t { f: (v.f << 1) - 1, e: v.e - 1 };
+        mi.f = (v.f << 1) - 1;
+        mi.e = v.e - 1;
     }
     mi.f <<= mi.e - pl.e;
     mi.e = pl.e;
@@ -418,14 +478,24 @@ fn normalized_boundaries(d: f64, out_m_minus: &mut diy_fp_t, out_m_plus: &mut di
 }
 
 const TEN2: u32 = 100;
-unsafe fn digit_gen(Mp: diy_fp_t, mut delta: diy_fp_t, buffer: *mut c_char, len: &mut c_int, K: &mut c_int) {
+
+unsafe fn digit_gen(
+    Mp: diy_fp_t,
+    delta: diy_fp_t,
+    buffer: *mut c_char,
+    len: *mut c_int,
+    K: *mut c_int,
+) {
+    let mut delta = delta;
     let mut div: u32;
     let mut p1: u32;
     let mut p2: u64;
     let mut d: c_int;
     let mut kappa: c_int;
-    let one = diy_fp_t { f: (1u64) << (-Mp.e), e: Mp.e };
-    p1 = (Mp.f >> (-one.e)) as u32;
+    let mut one = diy_fp_t { f: 0, e: 0 };
+    one.f = (1u64) << -Mp.e;
+    one.e = Mp.e;
+    p1 = (Mp.f >> -one.e) as u32;
     p2 = Mp.f & (one.f - 1);
     *len = 0;
     kappa = 3;
@@ -433,27 +503,27 @@ unsafe fn digit_gen(Mp: diy_fp_t, mut delta: diy_fp_t, buffer: *mut c_char, len:
     while kappa > 0 {
         d = (p1 / div) as c_int;
         if d != 0 || *len != 0 {
-            *buffer.add(*len as usize) = (b'0' as c_int + d) as c_char;
+            *buffer.add(*len as usize) = ('0' as c_int + d) as c_char;
             *len += 1;
         }
         p1 %= div;
         kappa -= 1;
         div /= 10;
-        if (((p1 as u64) << (-one.e)) + p2) <= delta.f {
+        if ((p1 as u64) << -one.e) + p2 <= delta.f {
             *K += kappa;
             return;
         }
     }
     loop {
-        p2 = p2.wrapping_mul(10);
-        d = (p2 >> (-one.e)) as c_int;
+        p2 *= 10;
+        d = (p2 >> -one.e) as c_int;
         if d != 0 || *len != 0 {
-            *buffer.add(*len as usize) = (b'0' as c_int + d) as c_char;
+            *buffer.add(*len as usize) = ('0' as c_int + d) as c_char;
             *len += 1;
         }
         p2 &= one.f - 1;
         kappa -= 1;
-        delta.f = delta.f.wrapping_mul(10);
+        delta.f *= 10;
         if !(p2 > delta.f) {
             break;
         }
@@ -461,8 +531,8 @@ unsafe fn digit_gen(Mp: diy_fp_t, mut delta: diy_fp_t, buffer: *mut c_char, len:
     *K += kappa;
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn js_grisu2(v: f64, buffer: *mut c_char, K: *mut c_int) -> c_int {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn js_grisu2(v: f64, buffer: *mut c_char, K: *mut c_int) -> c_int {
     let mut length: c_int = 0;
     let mk: c_int;
     let mut w_m = diy_fp_t { f: 0, e: 0 };
@@ -471,10 +541,14 @@ pub unsafe extern "C-unwind" fn js_grisu2(v: f64, buffer: *mut c_char, K: *mut c
     let mut Wp: diy_fp_t;
     let mut Wm: diy_fp_t;
     let delta: diy_fp_t;
-    let q = 64;
-    let alpha = -59;
-    let gamma = -56;
-    normalized_boundaries(v, &mut w_m, &mut w_p);
+    let q: c_int = 64;
+    let alpha: c_int = -59;
+    let gamma: c_int = -56;
+    normalized_boundaries(
+        v,
+        std::ptr::addr_of_mut!(w_m),
+        std::ptr::addr_of_mut!(w_p),
+    );
     mk = k_comp(w_p.e + q, alpha, gamma);
     c_mk = cached_power(mk);
     Wp = multiply(w_p, c_mk);
@@ -483,68 +557,129 @@ pub unsafe extern "C-unwind" fn js_grisu2(v: f64, buffer: *mut c_char, K: *mut c
     Wp.f -= 1;
     delta = minus(Wp, Wm);
     *K = -mk;
-    digit_gen(Wp, delta, buffer, &mut length, &mut *K);
+    digit_gen(Wp, delta, buffer, std::ptr::addr_of_mut!(length), K);
     length
 }
 
-/* strtod.c */
-static mut maxExponent: c_int = 511;
+/*
+ * strtod.c
+ *
+ * Copyright (c) 1988-1993 The Regents of the University of California.
+ * Copyright (c) 1994 Sun Microsystems, Inc.
+ */
+
+/* Largest possible base 10 exponent. Any exponent larger than this will
+ * already produce underflow or overflow, so there's no need to worry about
+ * additional digits.
+ */
+static maxExponent: c_int = 511;
+
+/* Table giving binary powers of 10. Entry
+ * is 10^2^i. Used to convert decimal
+ * exponents into floating-point numbers.
+ */
 static powersOf10: [f64; 9] = [
-    10., 100., 1.0e4, 1.0e8, 1.0e16, 1.0e32, 1.0e64, 1.0e128, 1.0e256,
+    10.,
+    100.,
+    1.0e4,
+    1.0e8,
+    1.0e16,
+    1.0e32,
+    1.0e64,
+    1.0e128,
+    1.0e256,
 ];
 
-const TRUE: c_int = 1;
-const FALSE: c_int = 0;
-
-#[no_mangle]
-pub unsafe extern "C-unwind" fn js_strtod(string: *const c_char, endPtr: *mut *mut c_char) -> f64 {
+/* Parse a decimal ASCII floating-point number, optionally preceded by white
+ * space. Must have form "-I.FE-X", where I is the integer part of the
+ * mantissa, F is the fractional part of the mantissa, and X is the exponent.
+ * Either of the signs may be "+", "-", or omitted. Either I or F may be
+ * omitted, or both. The decimal point isn't necessary unless F is present.
+ * The "E" may actually be an "e". E and X may both be omitted (but not just
+ * one).
+ */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn js_strtod(string: *const c_char, endPtr: *mut *mut c_char) -> f64 {
     let sign: c_int;
     let mut expSign: c_int = FALSE;
     let mut fraction: f64;
     let mut dblExp: f64;
+    let mut d: *const f64;
     let mut p: *const c_char;
     let mut c: c_int;
 
+    /* Exponent read from "EX" field. */
     let mut exp: c_int = 0;
-    let mut fracExp: c_int;
+
+    /* Exponent that derives from the fractional part. Under normal
+     * circumstances, it is the negative of the number of digits in F.
+     * However, if I is very long, the last digits of I get dropped
+     * (otherwise a long I with a large negative exponent could cause an
+     * unnecessary overflow on I alone). In this case, fracExp is
+     * incremented one for each dropped digit.
+     */
+    let mut fracExp: c_int = 0;
+
+    /* Number of digits in mantissa. */
     let mut mantSize: c_int;
+
+    /* Number of mantissa digits BEFORE decimal point. */
     let mut decPt: c_int;
+
+    /* Temporarily holds location of exponent in string. */
     let pExp: *const c_char;
 
+    /*
+     * Strip off leading blanks and check for a sign.
+     */
+
     p = string;
-    while *p == b' ' as c_char || *p == b'\t' as c_char || *p == b'\n' as c_char || *p == b'\r' as c_char {
-        p = p.add(1);
+    while *p == ' ' as c_char || *p == '\t' as c_char || *p == '\n' as c_char || *p == '\r' as c_char
+    {
+        p = p.offset(1);
     }
-    if *p == b'-' as c_char {
+    if *p == '-' as c_char {
         sign = TRUE;
-        p = p.add(1);
+        p = p.offset(1);
     } else {
-        if *p == b'+' as c_char {
-            p = p.add(1);
+        if *p == '+' as c_char {
+            p = p.offset(1);
         }
         sign = FALSE;
     }
+
+    /*
+     * Count the number of digits in the mantissa (including the decimal
+     * point), and also locate the decimal point.
+     */
 
     decPt = -1;
     mantSize = 0;
     loop {
         c = *p as c_int;
         if !(c >= '0' as c_int && c <= '9' as c_int) {
-            if c != '.' as c_int || decPt >= 0 {
+            if (c != '.' as c_int) || (decPt >= 0) {
                 break;
             }
             decPt = mantSize;
         }
-        p = p.add(1);
+        p = p.offset(1);
         mantSize += 1;
     }
+
+    /*
+     * Now suck up the digits in the mantissa. Use two integers to
+     * collect 9 digits each (this is faster than using floating-point).
+     * If the mantissa has more than 18 digits, ignore the extras, since
+     * they can't affect the value anyway.
+     */
 
     pExp = p;
     p = p.offset(-(mantSize as isize));
     if decPt < 0 {
         decPt = mantSize;
     } else {
-        mantSize -= 1;
+        mantSize -= 1; /* One of the digits was the point. */
     }
     if mantSize > 18 {
         fracExp = decPt - 18;
@@ -552,103 +687,112 @@ pub unsafe extern "C-unwind" fn js_strtod(string: *const c_char, endPtr: *mut *m
     } else {
         fracExp = decPt - mantSize;
     }
-    if mantSize == 0 {
-        fraction = 0.0;
-        p = string;
-        // goto done
-        if !endPtr.is_null() {
-            *endPtr = p as *mut c_char;
-        }
-        if sign != 0 {
-            return -fraction;
-        }
-        return fraction;
-    } else {
-        let mut frac1: c_int;
-        let mut frac2: c_int;
-        frac1 = 0;
-        while mantSize > 9 {
-            c = *p as c_int;
-            p = p.add(1);
-            if c == '.' as c_int {
-                c = *p as c_int;
-                p = p.add(1);
-            }
-            frac1 = 10 * frac1 + (c - '0' as c_int);
-            mantSize -= 1;
-        }
-        frac2 = 0;
-        while mantSize > 0 {
-            c = *p as c_int;
-            p = p.add(1);
-            if c == '.' as c_int {
-                c = *p as c_int;
-                p = p.add(1);
-            }
-            frac2 = 10 * frac2 + (c - '0' as c_int);
-            mantSize -= 1;
-        }
-        fraction = (1.0e9 * frac1 as f64) + frac2 as f64;
-    }
 
-    p = pExp;
-    if *p == b'E' as c_char || *p == b'e' as c_char {
-        p = p.add(1);
-        if *p == b'-' as c_char {
-            expSign = TRUE;
-            p = p.add(1);
+    'done: {
+        if mantSize == 0 {
+            fraction = 0.0;
+            p = string;
+            break 'done;
         } else {
-            if *p == b'+' as c_char {
-                p = p.add(1);
+            let mut frac1: c_int;
+            let mut frac2: c_int;
+            frac1 = 0;
+            while mantSize > 9 {
+                c = *p as c_int;
+                p = p.offset(1);
+                if c == '.' as c_int {
+                    c = *p as c_int;
+                    p = p.offset(1);
+                }
+                frac1 = 10 * frac1 + (c - '0' as c_int);
+                mantSize -= 1;
             }
+            frac2 = 0;
+            while mantSize > 0 {
+                c = *p as c_int;
+                p = p.offset(1);
+                if c == '.' as c_int {
+                    c = *p as c_int;
+                    p = p.offset(1);
+                }
+                frac2 = 10 * frac2 + (c - '0' as c_int);
+                mantSize -= 1;
+            }
+            fraction = (1.0e9 * frac1 as f64) + frac2 as f64;
+        }
+
+        /*
+         * Skim off the exponent.
+         */
+
+        p = pExp;
+        if (*p == 'E' as c_char) || (*p == 'e' as c_char) {
+            p = p.offset(1);
+            if *p == '-' as c_char {
+                expSign = TRUE;
+                p = p.offset(1);
+            } else {
+                if *p == '+' as c_char {
+                    p = p.offset(1);
+                }
+                expSign = FALSE;
+            }
+            while (*p >= '0' as c_char) && (*p <= '9' as c_char) && exp < INT_MAX / 100 {
+                exp = exp * 10 + (*p as c_int - '0' as c_int);
+                p = p.offset(1);
+            }
+            while (*p >= '0' as c_char) && (*p <= '9' as c_char) {
+                p = p.offset(1);
+            }
+        }
+        if expSign != 0 {
+            exp = fracExp - exp;
+        } else {
+            exp = fracExp + exp;
+        }
+
+        /*
+         * Generate a floating-point number that represents the exponent.
+         * Do this by processing the exponent one bit at a time to combine
+         * many powers of 2 of 10. Then combine the exponent with the
+         * fraction.
+         */
+
+        if exp < -maxExponent {
+            exp = maxExponent;
+            expSign = TRUE;
+            *__errno_location() = ERANGE;
+        } else if exp > maxExponent {
+            exp = maxExponent;
+            expSign = FALSE;
+            *__errno_location() = ERANGE;
+        } else if exp < 0 {
+            expSign = TRUE;
+            exp = -exp;
+        } else {
             expSign = FALSE;
         }
-        while *p >= b'0' as c_char && *p <= b'9' as c_char && exp < c_int::MAX / 100 {
-            exp = exp * 10 + (*p as c_int - '0' as c_int);
-            p = p.add(1);
+        dblExp = 1.0;
+        d = powersOf10.as_ptr();
+        while exp != 0 {
+            if (exp & 0o1) != 0 {
+                dblExp *= *d;
+            }
+            exp >>= 1;
+            d = d.offset(1);
         }
-        while *p >= b'0' as c_char && *p <= b'9' as c_char {
-            p = p.add(1);
+        if expSign != 0 {
+            fraction /= dblExp;
+        } else {
+            fraction *= dblExp;
         }
-    }
-    if expSign != 0 {
-        exp = fracExp - exp;
-    } else {
-        exp = fracExp + exp;
     }
 
-    if exp < -maxExponent {
-        exp = maxExponent;
-        expSign = TRUE;
-        *libc::__errno_location() = libc::ERANGE;
-    } else if exp > maxExponent {
-        exp = maxExponent;
-        expSign = FALSE;
-        *libc::__errno_location() = libc::ERANGE;
-    } else if exp < 0 {
-        expSign = TRUE;
-        exp = -exp;
-    } else {
-        expSign = FALSE;
-    }
-    dblExp = 1.0;
-    let mut di = 0usize;
-    while exp != 0 {
-        if (exp & 0o1) != 0 {
-            dblExp *= powersOf10[di];
-        }
-        exp >>= 1;
-        di += 1;
-    }
-    if expSign != 0 {
-        fraction /= dblExp;
-    } else {
-        fraction *= dblExp;
-    }
-
+    /* done: */
     if !endPtr.is_null() {
         *endPtr = p as *mut c_char;
     }
+
     if sign != 0 {
         return -fraction;
     }

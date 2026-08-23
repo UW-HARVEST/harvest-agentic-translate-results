@@ -1,99 +1,129 @@
-//! Translation of legacy/zstd_v03.c (zstd v0.3 decompressor).
-//! Self-contained: defines its own FSE/HUF/BIT/ZSTD-decoder internals.
-//! Target: little-endian 64-bit. Byte-identical reproduction of the C source.
-#![allow(non_snake_case)]
-#![allow(non_camel_case_types)]
-#![allow(non_upper_case_globals)]
-#![allow(dead_code)]
-#![allow(unused_mut)]
-#![allow(unused_assignments)]
-#![allow(unused_parens)]
+//! Rust translation of `legacy/zstd_v03.c` : decoder for the zstd v0.3 frame
+//! format.
+//!
+//! This file is entirely self-contained, exactly like its C counterpart : it
+//! embeds its own (v0.3 vintage) `MEM_*`, `BIT_*`, `FSE_*` and `HUF_*` helpers,
+//! all of which were `static` in the C source and therefore must NOT be
+//! confused with (nor replaced by) the modern shared implementations.
+//!
+//! Only the following symbols are exported (everything else was `static`) :
+//!   `ZSTDv03_createDCtx`, `ZSTDv03_decompress`, `ZSTDv03_decompressContinue`,
+//!   `ZSTDv03_findFrameSizeInfoLegacy`, `ZSTDv03_freeDCtx`, `ZSTDv03_isError`,
+//!   `ZSTDv03_nextSrcSizeToDecompress`, `ZSTDv03_resetDCtx`.
 
-use core::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void};
+use core::ffi::c_void;
+use core::mem::size_of;
+use core::ptr::{addr_of_mut, null, null_mut};
 
-use crate::common::allocations::{free, malloc, memcpy, memmove, memset};
+use crate::libc::{free, malloc, memcpy, memmove, memset};
 
-/* ****************************************************************
- * Error codes (local to this legacy file; values differ from the
- * modern zstd error enum, so they are reproduced here exactly).
- * enum: No_Error=0, GENERIC=1, dstSize_tooSmall=2, srcSize_wrong=3,
- *       prefix_unknown=4, corruption_detected=5, tableLog_tooLarge=6,
- *       maxSymbolValue_tooLarge=7, maxSymbolValue_tooSmall=8, maxCode=9
- * ************************************************************** */
-// NOTE: legacy C includes ../common/error_private.h first, guarding out the
-// file-local enum, so ERROR/ERR_isError use MODERN zstd_errors.h values.
-mod ec {
-    pub const No_Error: usize = 0;
-    pub const GENERIC: usize = 1;
-    pub const dstSize_tooSmall: usize = 70;
-    pub const srcSize_wrong: usize = 72;
-    pub const prefix_unknown: usize = 10;
-    pub const corruption_detected: usize = 20;
-    pub const tableLog_tooLarge: usize = 44;
-    pub const maxSymbolValue_tooLarge: usize = 46;
-    pub const maxSymbolValue_tooSmall: usize = 48;
-    pub const maxCode: usize = 120;
-}
+/* ******************************************************************
+ *  mem.h  (v0.3 private copy)
+ ********************************************************************/
 
-#[inline]
-fn ERROR(code: usize) -> usize {
-    (0usize).wrapping_sub(code)
+type BYTE = u8;
+type U16 = u16;
+type S16 = i16;
+type U32 = u32;
+#[allow(dead_code)]
+type S32 = i32;
+type U64 = u64;
+#[allow(dead_code)]
+type S64 = i64;
+
+#[inline(always)]
+fn MEM_32bits() -> u32 {
+    (size_of::<*const c_void>() == 4) as u32
 }
 
-#[inline]
-fn ERR_isError(code: usize) -> c_uint {
-    (code > ERROR(ec::maxCode)) as c_uint
+#[inline(always)]
+fn MEM_64bits() -> u32 {
+    (size_of::<*const c_void>() == 8) as u32
 }
 
-/* ****************************************************************
- * mem.h : low-level memory access (little-endian 64-bit)
- * ************************************************************** */
-#[inline]
-fn MEM_32bits() -> c_uint {
-    (core::mem::size_of::<*const c_void>() == 4) as c_uint
-}
-#[inline]
-fn MEM_64bits() -> c_uint {
-    (core::mem::size_of::<*const c_void>() == 8) as c_uint
+#[inline(always)]
+fn MEM_isLittleEndian() -> u32 {
+    /* target is little endian */
+    1
 }
 
-#[inline]
-unsafe fn MEM_read16(memPtr: *const c_void) -> u16 {
-    core::ptr::read_unaligned(memPtr as *const u16)
+#[inline(always)]
+unsafe fn MEM_read16(memPtr: *const c_void) -> U16 {
+    (memPtr as *const U16).read_unaligned()
 }
-#[inline]
-unsafe fn MEM_read32(memPtr: *const c_void) -> u32 {
-    core::ptr::read_unaligned(memPtr as *const u32)
+
+#[inline(always)]
+unsafe fn MEM_read32(memPtr: *const c_void) -> U32 {
+    (memPtr as *const U32).read_unaligned()
 }
-#[inline]
-unsafe fn MEM_read64(memPtr: *const c_void) -> u64 {
-    core::ptr::read_unaligned(memPtr as *const u64)
+
+#[inline(always)]
+unsafe fn MEM_read64(memPtr: *const c_void) -> U64 {
+    (memPtr as *const U64).read_unaligned()
 }
-#[inline]
-unsafe fn MEM_write16(memPtr: *mut c_void, value: u16) {
-    core::ptr::write_unaligned(memPtr as *mut u16, value);
+
+#[inline(always)]
+unsafe fn MEM_write16(memPtr: *mut c_void, value: U16) {
+    (memPtr as *mut U16).write_unaligned(value);
 }
-#[inline]
-unsafe fn MEM_readLE16(memPtr: *const c_void) -> u16 {
-    MEM_read16(memPtr)
+
+#[inline(always)]
+unsafe fn MEM_readLE16(memPtr: *const c_void) -> U16 {
+    if MEM_isLittleEndian() != 0 {
+        MEM_read16(memPtr)
+    } else {
+        let p = memPtr as *const BYTE;
+        (*p as U16).wrapping_add((*p.add(1) as U16) << 8)
+    }
 }
-#[inline]
-unsafe fn MEM_writeLE16(memPtr: *mut c_void, val: u16) {
-    MEM_write16(memPtr, val);
+
+#[inline(always)]
+unsafe fn MEM_writeLE16(memPtr: *mut c_void, val: U16) {
+    if MEM_isLittleEndian() != 0 {
+        MEM_write16(memPtr, val);
+    } else {
+        let p = memPtr as *mut BYTE;
+        *p = val as BYTE;
+        *p.add(1) = (val >> 8) as BYTE;
+    }
 }
-#[inline]
-unsafe fn MEM_readLE24(memPtr: *const c_void) -> u32 {
-    MEM_readLE16(memPtr) as u32 + ((*(memPtr as *const u8).add(2) as u32) << 16)
+
+#[inline(always)]
+unsafe fn MEM_readLE24(memPtr: *const c_void) -> U32 {
+    (MEM_readLE16(memPtr) as U32).wrapping_add((*(memPtr as *const BYTE).add(2) as U32) << 16)
 }
-#[inline]
-unsafe fn MEM_readLE32(memPtr: *const c_void) -> u32 {
-    MEM_read32(memPtr)
+
+#[inline(always)]
+unsafe fn MEM_readLE32(memPtr: *const c_void) -> U32 {
+    if MEM_isLittleEndian() != 0 {
+        MEM_read32(memPtr)
+    } else {
+        let p = memPtr as *const BYTE;
+        (*p as U32)
+            .wrapping_add((*p.add(1) as U32) << 8)
+            .wrapping_add((*p.add(2) as U32) << 16)
+            .wrapping_add((*p.add(3) as U32) << 24)
+    }
 }
-#[inline]
-unsafe fn MEM_readLE64(memPtr: *const c_void) -> u64 {
-    MEM_read64(memPtr)
+
+#[inline(always)]
+unsafe fn MEM_readLE64(memPtr: *const c_void) -> U64 {
+    if MEM_isLittleEndian() != 0 {
+        MEM_read64(memPtr)
+    } else {
+        let p = memPtr as *const BYTE;
+        (*p as U64)
+            .wrapping_add((*p.add(1) as U64) << 8)
+            .wrapping_add((*p.add(2) as U64) << 16)
+            .wrapping_add((*p.add(3) as U64) << 24)
+            .wrapping_add((*p.add(4) as U64) << 32)
+            .wrapping_add((*p.add(5) as U64) << 40)
+            .wrapping_add((*p.add(6) as U64) << 48)
+            .wrapping_add((*p.add(7) as U64) << 56)
+    }
 }
-#[inline]
+
+#[inline(always)]
 unsafe fn MEM_readLEST(memPtr: *const c_void) -> usize {
     if MEM_32bits() != 0 {
         MEM_readLE32(memPtr) as usize
@@ -102,185 +132,266 @@ unsafe fn MEM_readLEST(memPtr: *const c_void) -> usize {
     }
 }
 
-/* ****************************************************************
- * bitstream : read backward
- * ************************************************************** */
-#[repr(C)]
-struct BIT_DStream_t {
-    bitContainer: usize,
-    bitsConsumed: c_uint,
-    ptr: *const c_char,
-    start: *const c_char,
+/* ******************************************************************
+ *  Error Management
+ *
+ *  Note : the private error list of zstd_v03.c is guarded by
+ *  `#ifndef ERROR_H_MODULE`, and `../common/error_private.h` (which defines
+ *  that guard) is included first : so the *modern* `ZSTD_error_*` values and
+ *  `ERR_isError()` are the ones actually compiled in.
+ ********************************************************************/
+
+const ZSTD_error_GENERIC: i32 = 1;
+const ZSTD_error_prefix_unknown: i32 = 10;
+const ZSTD_error_corruption_detected: i32 = 20;
+const ZSTD_error_tableLog_tooLarge: i32 = 44;
+const ZSTD_error_maxSymbolValue_tooLarge: i32 = 46;
+const ZSTD_error_maxSymbolValue_tooSmall: i32 = 48;
+const ZSTD_error_dstSize_tooSmall: i32 = 70;
+const ZSTD_error_srcSize_wrong: i32 = 72;
+const ZSTD_error_maxCode: i32 = 120;
+
+/// `ERROR(name)` : `((size_t)-PREFIX(name))`
+#[inline(always)]
+const fn ERROR(code: i32) -> usize {
+    (-(code as isize)) as usize
 }
 
-const BIT_DStream_unfinished: c_int = 0;
-const BIT_DStream_endOfBuffer: c_int = 1;
-const BIT_DStream_completed: c_int = 2;
-const BIT_DStream_overflow: c_int = 3;
-type BIT_DStream_status = c_int;
+#[inline(always)]
+const fn ERR_isError(code: usize) -> u32 {
+    (code > ERROR(ZSTD_error_maxCode)) as u32
+}
 
-#[inline]
-fn BIT_highbit32(val: u32) -> c_uint {
+/* ******************************************************************
+ *  bitstream  (v0.3 private copy) : decompression API (read backward)
+ ********************************************************************/
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct BIT_DStream_t {
+    bitContainer: usize,
+    bitsConsumed: u32,
+    ptr: *const BYTE,   /* C : const char* */
+    start: *const BYTE, /* C : const char* */
+}
+
+impl BIT_DStream_t {
+    const fn new() -> Self {
+        BIT_DStream_t {
+            bitContainer: 0,
+            bitsConsumed: 0,
+            ptr: null(),
+            start: null(),
+        }
+    }
+}
+
+type BIT_DStream_status = u32;
+const BIT_DStream_unfinished: BIT_DStream_status = 0;
+#[allow(dead_code)]
+const BIT_DStream_endOfBuffer: BIT_DStream_status = 1;
+const BIT_DStream_completed: BIT_DStream_status = 2;
+const BIT_DStream_overflow: BIT_DStream_status = 3;
+
+#[inline(always)]
+fn BIT_highbit32(val: U32) -> u32 {
+    /* __builtin_clz(val) ^ 31 */
     val.leading_zeros() ^ 31
 }
 
+/// `BIT_initDStream` : initialize a `BIT_DStream_t`
 unsafe fn BIT_initDStream(
     bitD: *mut BIT_DStream_t,
     srcBuffer: *const c_void,
     srcSize: usize,
 ) -> usize {
     if srcSize < 1 {
-        memset(bitD as *mut c_void, 0, core::mem::size_of::<BIT_DStream_t>());
-        return ERROR(ec::srcSize_wrong);
+        memset(bitD as *mut c_void, 0, size_of::<BIT_DStream_t>());
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
 
-    if srcSize >= core::mem::size_of::<usize>() {
+    if srcSize >= size_of::<usize>() {
         /* normal case */
-        let contain32: u32;
-        (*bitD).start = srcBuffer as *const c_char;
-        (*bitD).ptr =
-            (srcBuffer as *const c_char).add(srcSize - core::mem::size_of::<usize>());
+        let contain32: U32;
+        (*bitD).start = srcBuffer as *const BYTE;
+        (*bitD).ptr = (srcBuffer as *const BYTE)
+            .wrapping_add(srcSize)
+            .wrapping_sub(size_of::<usize>());
         (*bitD).bitContainer = MEM_readLEST((*bitD).ptr as *const c_void);
-        contain32 = *(srcBuffer as *const u8).add(srcSize - 1) as u32;
+        contain32 = *(srcBuffer as *const BYTE).wrapping_add(srcSize - 1) as U32;
         if contain32 == 0 {
-            return ERROR(ec::GENERIC);
+            return ERROR(ZSTD_error_GENERIC); /* endMark not present */
         }
-        (*bitD).bitsConsumed = 8 - BIT_highbit32(contain32);
+        (*bitD).bitsConsumed = 8u32.wrapping_sub(BIT_highbit32(contain32));
     } else {
-        let contain32: u32;
-        (*bitD).start = srcBuffer as *const c_char;
+        let contain32: U32;
+        (*bitD).start = srcBuffer as *const BYTE;
         (*bitD).ptr = (*bitD).start;
-        (*bitD).bitContainer = *((*bitD).start as *const u8) as usize;
-        let sptr = (*bitD).start as *const u8;
-        let szbits = core::mem::size_of::<usize>() * 8;
-        match srcSize {
-            7 => {
-                (*bitD).bitContainer += (*sptr.add(6) as usize) << (szbits - 16);
-                (*bitD).bitContainer += (*sptr.add(5) as usize) << (szbits - 24);
-                (*bitD).bitContainer += (*sptr.add(4) as usize) << (szbits - 32);
-                (*bitD).bitContainer += (*sptr.add(3) as usize) << 24;
-                (*bitD).bitContainer += (*sptr.add(2) as usize) << 16;
-                (*bitD).bitContainer += (*sptr.add(1) as usize) << 8;
-            }
-            6 => {
-                (*bitD).bitContainer += (*sptr.add(5) as usize) << (szbits - 24);
-                (*bitD).bitContainer += (*sptr.add(4) as usize) << (szbits - 32);
-                (*bitD).bitContainer += (*sptr.add(3) as usize) << 24;
-                (*bitD).bitContainer += (*sptr.add(2) as usize) << 16;
-                (*bitD).bitContainer += (*sptr.add(1) as usize) << 8;
-            }
-            5 => {
-                (*bitD).bitContainer += (*sptr.add(4) as usize) << (szbits - 32);
-                (*bitD).bitContainer += (*sptr.add(3) as usize) << 24;
-                (*bitD).bitContainer += (*sptr.add(2) as usize) << 16;
-                (*bitD).bitContainer += (*sptr.add(1) as usize) << 8;
-            }
-            4 => {
-                (*bitD).bitContainer += (*sptr.add(3) as usize) << 24;
-                (*bitD).bitContainer += (*sptr.add(2) as usize) << 16;
-                (*bitD).bitContainer += (*sptr.add(1) as usize) << 8;
-            }
-            3 => {
-                (*bitD).bitContainer += (*sptr.add(2) as usize) << 16;
-                (*bitD).bitContainer += (*sptr.add(1) as usize) << 8;
-            }
-            2 => {
-                (*bitD).bitContainer += (*sptr.add(1) as usize) << 8;
-            }
-            _ => {}
+        (*bitD).bitContainer = *((*bitD).start) as usize;
+        /* switch(srcSize) with fallthrough, cases 7 down to 2 */
+        if srcSize >= 7 {
+            (*bitD).bitContainer = (*bitD).bitContainer.wrapping_add(
+                (*((*bitD).start).add(6) as usize) << (size_of::<usize>() * 8 - 16),
+            );
         }
-        contain32 = *(srcBuffer as *const u8).add(srcSize - 1) as u32;
+        if srcSize >= 6 {
+            (*bitD).bitContainer = (*bitD).bitContainer.wrapping_add(
+                (*((*bitD).start).add(5) as usize) << (size_of::<usize>() * 8 - 24),
+            );
+        }
+        if srcSize >= 5 {
+            (*bitD).bitContainer = (*bitD).bitContainer.wrapping_add(
+                (*((*bitD).start).add(4) as usize) << (size_of::<usize>() * 8 - 32),
+            );
+        }
+        if srcSize >= 4 {
+            (*bitD).bitContainer = (*bitD)
+                .bitContainer
+                .wrapping_add((*((*bitD).start).add(3) as usize) << 24);
+        }
+        if srcSize >= 3 {
+            (*bitD).bitContainer = (*bitD)
+                .bitContainer
+                .wrapping_add((*((*bitD).start).add(2) as usize) << 16);
+        }
+        if srcSize >= 2 {
+            (*bitD).bitContainer = (*bitD)
+                .bitContainer
+                .wrapping_add((*((*bitD).start).add(1) as usize) << 8);
+        }
+        contain32 = *(srcBuffer as *const BYTE).wrapping_add(srcSize - 1) as U32;
         if contain32 == 0 {
-            return ERROR(ec::GENERIC);
+            return ERROR(ZSTD_error_GENERIC); /* endMark not present */
         }
-        (*bitD).bitsConsumed = 8 - BIT_highbit32(contain32);
-        (*bitD).bitsConsumed += ((core::mem::size_of::<usize>() - srcSize) as u32) * 8;
+        (*bitD).bitsConsumed = 8u32.wrapping_sub(BIT_highbit32(contain32));
+        (*bitD).bitsConsumed = (*bitD)
+            .bitsConsumed
+            .wrapping_add(((size_of::<usize>() - srcSize) as U32).wrapping_mul(8));
     }
 
     srcSize
 }
 
-#[inline]
-unsafe fn BIT_lookBits(bitD: *const BIT_DStream_t, nbBits: u32) -> usize {
-    let bitMask: u32 = (core::mem::size_of::<usize>() * 8) as u32 - 1;
+#[inline(always)]
+unsafe fn BIT_lookBits(bitD: *mut BIT_DStream_t, nbBits: U32) -> usize {
+    let bitMask: U32 = (size_of::<usize>() * 8 - 1) as U32;
     (((*bitD).bitContainer << ((*bitD).bitsConsumed & bitMask)) >> 1)
-        >> ((bitMask - nbBits) & bitMask)
+        >> (bitMask.wrapping_sub(nbBits) & bitMask)
 }
 
-#[inline]
-unsafe fn BIT_lookBitsFast(bitD: *const BIT_DStream_t, nbBits: u32) -> usize {
-    let bitMask: u32 = (core::mem::size_of::<usize>() * 8) as u32 - 1;
+/// `BIT_lookBitsFast` : unsafe version; only works if nbBits >= 1
+#[inline(always)]
+unsafe fn BIT_lookBitsFast(bitD: *mut BIT_DStream_t, nbBits: U32) -> usize {
+    let bitMask: U32 = (size_of::<usize>() * 8 - 1) as U32;
     ((*bitD).bitContainer << ((*bitD).bitsConsumed & bitMask))
-        >> (((bitMask + 1) - nbBits) & bitMask)
+        >> ((bitMask.wrapping_add(1).wrapping_sub(nbBits)) & bitMask)
 }
 
-#[inline]
-unsafe fn BIT_skipBits(bitD: *mut BIT_DStream_t, nbBits: u32) {
-    (*bitD).bitsConsumed += nbBits;
+#[inline(always)]
+unsafe fn BIT_skipBits(bitD: *mut BIT_DStream_t, nbBits: U32) {
+    (*bitD).bitsConsumed = (*bitD).bitsConsumed.wrapping_add(nbBits);
 }
 
-#[inline]
-unsafe fn BIT_readBits(bitD: *mut BIT_DStream_t, nbBits: u32) -> usize {
+#[inline(always)]
+unsafe fn BIT_readBits(bitD: *mut BIT_DStream_t, nbBits: U32) -> usize {
     let value = BIT_lookBits(bitD, nbBits);
     BIT_skipBits(bitD, nbBits);
     value
 }
 
-#[inline]
-unsafe fn BIT_readBitsFast(bitD: *mut BIT_DStream_t, nbBits: u32) -> usize {
+/// `BIT_readBitsFast` : unsafe version; only works if nbBits >= 1
+#[inline(always)]
+unsafe fn BIT_readBitsFast(bitD: *mut BIT_DStream_t, nbBits: U32) -> usize {
     let value = BIT_lookBitsFast(bitD, nbBits);
     BIT_skipBits(bitD, nbBits);
     value
 }
 
 unsafe fn BIT_reloadDStream(bitD: *mut BIT_DStream_t) -> BIT_DStream_status {
-    if (*bitD).bitsConsumed > (core::mem::size_of::<usize>() * 8) as u32 {
+    if (*bitD).bitsConsumed > (size_of::<usize>() * 8) as u32 {
+        /* should never happen */
         return BIT_DStream_overflow;
     }
 
-    if (*bitD).ptr >= (*bitD).start.add(core::mem::size_of::<usize>()) {
-        (*bitD).ptr = (*bitD).ptr.offset(-(((*bitD).bitsConsumed >> 3) as isize));
+    if (*bitD).ptr >= (*bitD).start.wrapping_add(size_of::<usize>()) {
+        (*bitD).ptr = (*bitD).ptr.wrapping_sub(((*bitD).bitsConsumed >> 3) as usize);
         (*bitD).bitsConsumed &= 7;
         (*bitD).bitContainer = MEM_readLEST((*bitD).ptr as *const c_void);
         return BIT_DStream_unfinished;
     }
     if (*bitD).ptr == (*bitD).start {
-        if (*bitD).bitsConsumed < (core::mem::size_of::<usize>() * 8) as u32 {
+        if (*bitD).bitsConsumed < (size_of::<usize>() * 8) as u32 {
             return BIT_DStream_endOfBuffer;
         }
         return BIT_DStream_completed;
     }
     {
-        let mut nbBytes: u32 = (*bitD).bitsConsumed >> 3;
+        let mut nbBytes: U32 = (*bitD).bitsConsumed >> 3;
         let mut result: BIT_DStream_status = BIT_DStream_unfinished;
-        if (*bitD).ptr.offset(-(nbBytes as isize)) < (*bitD).start {
-            nbBytes = ((*bitD).ptr as usize - (*bitD).start as usize) as u32;
+        if (*bitD).ptr.wrapping_sub(nbBytes as usize) < (*bitD).start {
+            nbBytes = ((*bitD).ptr as isize - (*bitD).start as isize) as U32; /* ptr > start */
             result = BIT_DStream_endOfBuffer;
         }
-        (*bitD).ptr = (*bitD).ptr.offset(-(nbBytes as isize));
-        (*bitD).bitsConsumed -= nbBytes * 8;
+        (*bitD).ptr = (*bitD).ptr.wrapping_sub(nbBytes as usize);
+        (*bitD).bitsConsumed = (*bitD).bitsConsumed.wrapping_sub(nbBytes.wrapping_mul(8));
         (*bitD).bitContainer = MEM_readLEST((*bitD).ptr as *const c_void);
-        return result;
+        result
     }
 }
 
-#[inline]
-unsafe fn BIT_endOfDStream(dstream: *const BIT_DStream_t) -> c_uint {
-    (((*dstream).ptr == (*dstream).start)
-        && ((*dstream).bitsConsumed == (core::mem::size_of::<usize>() * 8) as u32)) as c_uint
+/// `BIT_endOfDStream` : tells if DStream has reached its exact end
+#[inline(always)]
+unsafe fn BIT_endOfDStream(DStream: *const BIT_DStream_t) -> u32 {
+    (((*DStream).ptr == (*DStream).start)
+        && ((*DStream).bitsConsumed == (size_of::<usize>() * 8) as u32)) as u32
 }
 
-/* ****************************************************************
- * FSE types
- * ************************************************************** */
-type FSE_DTable = u32;
+/* ******************************************************************
+ *  FSE : Finite State Entropy decoder  (v0.3 private copy)
+ ********************************************************************/
+
+type FSE_DTable = U32;
+
+const FSE_MAX_MEMORY_USAGE: u32 = 14;
+#[allow(dead_code)]
+const FSE_DEFAULT_MEMORY_USAGE: u32 = 13;
+const FSE_MAX_SYMBOL_VALUE: usize = 255;
+
+const FSE_MAX_TABLELOG: u32 = FSE_MAX_MEMORY_USAGE - 2;
+#[allow(dead_code)]
+const FSE_MAX_TABLESIZE: u32 = 1u32 << FSE_MAX_TABLELOG;
+const FSE_MIN_TABLELOG: u32 = 5;
+const FSE_TABLELOG_ABSOLUTE_MAX: u32 = 15;
+
+const fn FSE_DTABLE_SIZE_U32(maxTableLog: u32) -> usize {
+    1 + (1usize << maxTableLog)
+}
+
+/// `DTable_max_t`
+type DTable_max_t = [U32; FSE_DTABLE_SIZE_U32(FSE_MAX_TABLELOG)];
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FSE_DState_t {
+    state: usize,
+    table: *const c_void, /* precise table may vary, depending on U16 */
+}
+
+impl FSE_DState_t {
+    const fn new() -> Self {
+        FSE_DState_t {
+            state: 0,
+            table: null(),
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct FSE_DTableHeader {
-    tableLog: u16,
-    fastMode: u16,
-}
+    tableLog: U16,
+    fastMode: U16,
+} /* sizeof U32 */
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -288,295 +399,300 @@ struct FSE_decode_t {
     newState: u16,
     symbol: u8,
     nbBits: u8,
-}
+} /* size == U32 */
 
-#[repr(C)]
-struct FSE_DState_t {
-    state: usize,
-    table: *const c_void,
-}
-
-const FSE_MAX_MEMORY_USAGE: usize = 14;
-const FSE_DEFAULT_MEMORY_USAGE: usize = 13;
-const FSE_MAX_SYMBOL_VALUE: usize = 255;
-const FSE_MAX_TABLELOG: usize = FSE_MAX_MEMORY_USAGE - 2;
-const FSE_MAX_TABLESIZE: usize = 1 << FSE_MAX_TABLELOG;
-const FSE_MAXTABLESIZE_MASK: usize = FSE_MAX_TABLESIZE - 1;
-const FSE_DEFAULT_TABLELOG: usize = FSE_DEFAULT_MEMORY_USAGE - 2;
-const FSE_MIN_TABLELOG: usize = 5;
-const FSE_TABLELOG_ABSOLUTE_MAX: usize = 15;
-
-#[inline]
 unsafe fn FSE_initDState(
     DStatePtr: *mut FSE_DState_t,
     bitD: *mut BIT_DStream_t,
     dt: *const FSE_DTable,
 ) {
-    let DTableH = core::ptr::read_unaligned(dt as *const FSE_DTableHeader);
-    (*DStatePtr).state = BIT_readBits(bitD, DTableH.tableLog as u32);
+    let mut DTableH = FSE_DTableHeader {
+        tableLog: 0,
+        fastMode: 0,
+    };
+    memcpy(
+        addr_of_mut!(DTableH) as *mut c_void,
+        dt as *const c_void,
+        size_of::<FSE_DTableHeader>(),
+    );
+    (*DStatePtr).state = BIT_readBits(bitD, DTableH.tableLog as U32);
     BIT_reloadDStream(bitD);
-    (*DStatePtr).table = dt.add(1) as *const c_void;
+    (*DStatePtr).table = dt.wrapping_add(1) as *const c_void;
 }
 
-#[inline]
-unsafe fn FSE_decodeSymbol(DStatePtr: *mut FSE_DState_t, bitD: *mut BIT_DStream_t) -> u8 {
-    let DInfo =
-        *((*DStatePtr).table as *const FSE_decode_t).add((*DStatePtr).state);
-    let nbBits = DInfo.nbBits as u32;
-    let symbol = DInfo.symbol;
-    let lowBits = BIT_readBits(bitD, nbBits);
-    (*DStatePtr).state = DInfo.newState as usize + lowBits;
+unsafe fn FSE_decodeSymbol(DStatePtr: *mut FSE_DState_t, bitD: *mut BIT_DStream_t) -> BYTE {
+    let DInfo: FSE_decode_t =
+        *((*DStatePtr).table as *const FSE_decode_t).wrapping_add((*DStatePtr).state);
+    let nbBits: U32 = DInfo.nbBits as U32;
+    let symbol: BYTE = DInfo.symbol;
+    let lowBits: usize = BIT_readBits(bitD, nbBits);
+
+    (*DStatePtr).state = (DInfo.newState as usize).wrapping_add(lowBits);
     symbol
 }
 
-#[inline]
-unsafe fn FSE_decodeSymbolFast(DStatePtr: *mut FSE_DState_t, bitD: *mut BIT_DStream_t) -> u8 {
-    let DInfo =
-        *((*DStatePtr).table as *const FSE_decode_t).add((*DStatePtr).state);
-    let nbBits = DInfo.nbBits as u32;
-    let symbol = DInfo.symbol;
-    let lowBits = BIT_readBitsFast(bitD, nbBits);
-    (*DStatePtr).state = DInfo.newState as usize + lowBits;
+unsafe fn FSE_decodeSymbolFast(DStatePtr: *mut FSE_DState_t, bitD: *mut BIT_DStream_t) -> BYTE {
+    let DInfo: FSE_decode_t =
+        *((*DStatePtr).table as *const FSE_decode_t).wrapping_add((*DStatePtr).state);
+    let nbBits: U32 = DInfo.nbBits as U32;
+    let symbol: BYTE = DInfo.symbol;
+    let lowBits: usize = BIT_readBitsFast(bitD, nbBits);
+
+    (*DStatePtr).state = (DInfo.newState as usize).wrapping_add(lowBits);
     symbol
 }
 
-#[inline]
-unsafe fn FSE_endOfDState(DStatePtr: *const FSE_DState_t) -> c_uint {
-    ((*DStatePtr).state == 0) as c_uint
+unsafe fn FSE_endOfDState(DStatePtr: *const FSE_DState_t) -> u32 {
+    ((*DStatePtr).state == 0) as u32
 }
 
-/* ****************************************************************
- * FSE decompression
- * ************************************************************** */
-type DTable_max_t = [u32; 1 + (1 << FSE_MAX_TABLELOG)];
-
-#[inline]
-fn FSE_tableStep(tableSize: u32) -> u32 {
-    (tableSize >> 1) + (tableSize >> 3) + 3
+fn FSE_tableStep(tableSize: U32) -> U32 {
+    (tableSize >> 1).wrapping_add(tableSize >> 3).wrapping_add(3)
 }
 
 unsafe fn FSE_buildDTable(
     dt: *mut FSE_DTable,
-    normalizedCounter: *const i16,
-    maxSymbolValue: c_uint,
-    tableLog: c_uint,
+    normalizedCounter: *const S16,
+    maxSymbolValue: u32,
+    tableLog: u32,
 ) -> usize {
-    let ptr = dt.add(1) as *mut c_void;
-    let mut DTableH = FSE_DTableHeader { tableLog: 0, fastMode: 0 };
-    let tableDecode = ptr as *mut FSE_decode_t;
-    let tableSize: u32 = 1 << tableLog;
-    let tableMask: u32 = tableSize - 1;
-    let step: u32 = FSE_tableStep(tableSize);
-    let mut symbolNext: [u16; FSE_MAX_SYMBOL_VALUE + 1] = [0; FSE_MAX_SYMBOL_VALUE + 1];
-    let mut position: u32 = 0;
-    let mut highThreshold: u32 = tableSize - 1;
-    let largeLimit: i16 = (1 << (tableLog - 1)) as i16;
-    let mut noLarge: u32 = 1;
-    let mut s: u32;
+    let ptr = dt.wrapping_add(1) as *mut c_void;
+    let mut DTableH = FSE_DTableHeader {
+        tableLog: 0,
+        fastMode: 0,
+    };
+    let tableDecode: *mut FSE_decode_t = ptr as *mut FSE_decode_t;
+    let tableSize: U32 = 1u32 << tableLog;
+    let tableMask: U32 = tableSize.wrapping_sub(1);
+    let step: U32 = FSE_tableStep(tableSize);
+    let mut symbolNext: [U16; FSE_MAX_SYMBOL_VALUE + 1] = [0; FSE_MAX_SYMBOL_VALUE + 1];
+    let symbolNextPtr: *mut U16 = symbolNext.as_mut_ptr();
+    let mut position: U32 = 0;
+    let mut highThreshold: U32 = tableSize.wrapping_sub(1);
+    let largeLimit: S16 = (1i32 << (tableLog.wrapping_sub(1))) as S16;
+    let mut noLarge: U32 = 1;
+    let mut s: U32;
 
     /* Sanity Checks */
-    if maxSymbolValue as usize > FSE_MAX_SYMBOL_VALUE {
-        return ERROR(ec::maxSymbolValue_tooLarge);
+    if maxSymbolValue > FSE_MAX_SYMBOL_VALUE as u32 {
+        return ERROR(ZSTD_error_maxSymbolValue_tooLarge);
     }
-    if tableLog as usize > FSE_MAX_TABLELOG {
-        return ERROR(ec::tableLog_tooLarge);
+    if tableLog > FSE_MAX_TABLELOG {
+        return ERROR(ZSTD_error_tableLog_tooLarge);
     }
 
     /* Init, lay down lowprob symbols */
-    DTableH.tableLog = tableLog as u16;
+    DTableH.tableLog = tableLog as U16;
     s = 0;
     while s <= maxSymbolValue {
-        if *normalizedCounter.add(s as usize) == -1 {
-            (*tableDecode.add(highThreshold as usize)).symbol = s as u8;
-            highThreshold -= 1;
-            symbolNext[s as usize] = 1;
+        if *normalizedCounter.wrapping_add(s as usize) == -1 {
+            (*tableDecode.wrapping_add(highThreshold as usize)).symbol = s as BYTE;
+            highThreshold = highThreshold.wrapping_sub(1);
+            *symbolNextPtr.wrapping_add(s as usize) = 1;
         } else {
-            if *normalizedCounter.add(s as usize) >= largeLimit {
+            if *normalizedCounter.wrapping_add(s as usize) >= largeLimit {
                 noLarge = 0;
             }
-            symbolNext[s as usize] = *normalizedCounter.add(s as usize) as u16;
+            *symbolNextPtr.wrapping_add(s as usize) =
+                *normalizedCounter.wrapping_add(s as usize) as U16;
         }
-        s += 1;
+        s = s.wrapping_add(1);
     }
 
     /* Spread symbols */
     s = 0;
     while s <= maxSymbolValue {
-        let mut i: c_int = 0;
-        while i < *normalizedCounter.add(s as usize) as c_int {
-            (*tableDecode.add(position as usize)).symbol = s as u8;
-            position = (position + step) & tableMask;
+        let mut i: i32 = 0;
+        while i < *normalizedCounter.wrapping_add(s as usize) as i32 {
+            (*tableDecode.wrapping_add(position as usize)).symbol = s as BYTE;
+            position = position.wrapping_add(step) & tableMask;
             while position > highThreshold {
-                position = (position + step) & tableMask;
+                position = position.wrapping_add(step) & tableMask; /* lowprob area */
             }
             i += 1;
         }
-        s += 1;
+        s = s.wrapping_add(1);
     }
 
     if position != 0 {
-        return ERROR(ec::GENERIC);
+        /* position must reach all cells once, otherwise normalizedCounter is incorrect */
+        return ERROR(ZSTD_error_GENERIC);
     }
 
     /* Build Decoding table */
     {
-        let mut i: u32 = 0;
+        let mut i: U32 = 0;
         while i < tableSize {
-            let symbol = (*tableDecode.add(i as usize)).symbol;
-            let nextState = symbolNext[symbol as usize];
-            symbolNext[symbol as usize] += 1;
-            (*tableDecode.add(i as usize)).nbBits =
-                (tableLog - BIT_highbit32(nextState as u32)) as u8;
-            (*tableDecode.add(i as usize)).newState =
-                (((nextState as u32) << (*tableDecode.add(i as usize)).nbBits) - tableSize) as u16;
-            i += 1;
+            let symbol: BYTE = (*tableDecode.wrapping_add(i as usize)).symbol;
+            let nextState: U16 = *symbolNextPtr.wrapping_add(symbol as usize);
+            *symbolNextPtr.wrapping_add(symbol as usize) = nextState.wrapping_add(1);
+            (*tableDecode.wrapping_add(i as usize)).nbBits =
+                tableLog.wrapping_sub(BIT_highbit32(nextState as U32)) as BYTE;
+            (*tableDecode.wrapping_add(i as usize)).newState = (((nextState as U32)
+                << (*tableDecode.wrapping_add(i as usize)).nbBits)
+                .wrapping_sub(tableSize)) as U16;
+            i = i.wrapping_add(1);
         }
     }
 
-    DTableH.fastMode = noLarge as u16;
-    core::ptr::write_unaligned(dt as *mut FSE_DTableHeader, DTableH);
+    DTableH.fastMode = noLarge as U16;
+    memcpy(
+        dt as *mut c_void,
+        addr_of_mut!(DTableH) as *const c_void,
+        size_of::<FSE_DTableHeader>(),
+    );
     0
 }
 
-#[inline]
-fn FSE_isError(code: usize) -> c_uint {
+/* ******************************************************************
+ *  FSE helper functions
+ ********************************************************************/
+
+fn FSE_isError(code: usize) -> u32 {
     ERR_isError(code)
 }
 
-#[inline]
-fn FSE_abs(a: i16) -> i16 {
+/* ******************************************************************
+ *  FSE NCount encoding-decoding
+ ********************************************************************/
+
+fn FSE_abs(a: S16) -> S16 {
     if a < 0 {
-        -a
+        a.wrapping_neg()
     } else {
         a
     }
 }
 
 unsafe fn FSE_readNCount(
-    normalizedCounter: *mut i16,
-    maxSVPtr: *mut c_uint,
-    tableLogPtr: *mut c_uint,
+    normalizedCounter: *mut S16,
+    maxSVPtr: *mut u32,
+    tableLogPtr: *mut u32,
     headerBuffer: *const c_void,
     hbSize: usize,
 ) -> usize {
-    let istart = headerBuffer as *const u8;
-    let iend = istart.add(hbSize);
-    let mut ip = istart;
-    let mut nbBits: c_int;
-    let mut remaining: c_int;
-    let mut threshold: c_int;
-    let mut bitStream: u32;
-    let mut bitCount: c_int;
-    let mut charnum: c_uint = 0;
-    let mut previous0: c_int = 0;
+    let istart: *const BYTE = headerBuffer as *const BYTE;
+    let iend: *const BYTE = istart.wrapping_add(hbSize);
+    let mut ip: *const BYTE = istart;
+    let mut nbBits: i32;
+    let mut remaining: i32;
+    let mut threshold: i32;
+    let mut bitStream: U32;
+    let mut bitCount: i32;
+    let mut charnum: u32 = 0;
+    let mut previous0: i32 = 0;
 
     if hbSize < 4 {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     bitStream = MEM_readLE32(ip as *const c_void);
-    nbBits = (bitStream & 0xF) as c_int + FSE_MIN_TABLELOG as c_int;
-    if nbBits > FSE_TABLELOG_ABSOLUTE_MAX as c_int {
-        return ERROR(ec::tableLog_tooLarge);
+    nbBits = ((bitStream & 0xF) as i32) + FSE_MIN_TABLELOG as i32; /* extract tableLog */
+    if nbBits > FSE_TABLELOG_ABSOLUTE_MAX as i32 {
+        return ERROR(ZSTD_error_tableLog_tooLarge);
     }
     bitStream >>= 4;
     bitCount = 4;
-    *tableLogPtr = nbBits as c_uint;
-    remaining = (1 << nbBits) + 1;
-    threshold = 1 << nbBits;
+    *tableLogPtr = nbBits as u32;
+    remaining = (1i32 << nbBits) + 1;
+    threshold = 1i32 << nbBits;
     nbBits += 1;
 
     while (remaining > 1) && (charnum <= *maxSVPtr) {
         if previous0 != 0 {
-            let mut n0: c_uint = charnum;
+            let mut n0: u32 = charnum;
             while (bitStream & 0xFFFF) == 0xFFFF {
-                n0 += 24;
-                if ip < iend.offset(-5) {
-                    ip = ip.add(2);
-                    bitStream = MEM_readLE32(ip as *const c_void) >> bitCount;
+                n0 = n0.wrapping_add(24);
+                if ip < iend.wrapping_sub(5) {
+                    ip = ip.wrapping_add(2);
+                    bitStream = MEM_readLE32(ip as *const c_void).wrapping_shr(bitCount as u32);
                 } else {
                     bitStream >>= 16;
                     bitCount += 16;
                 }
             }
             while (bitStream & 3) == 3 {
-                n0 += 3;
+                n0 = n0.wrapping_add(3);
                 bitStream >>= 2;
                 bitCount += 2;
             }
-            n0 += bitStream & 3;
+            n0 = n0.wrapping_add(bitStream & 3);
             bitCount += 2;
             if n0 > *maxSVPtr {
-                return ERROR(ec::maxSymbolValue_tooSmall);
+                return ERROR(ZSTD_error_maxSymbolValue_tooSmall);
             }
             while charnum < n0 {
-                *normalizedCounter.add(charnum as usize) = 0;
-                charnum += 1;
+                *normalizedCounter.wrapping_add(charnum as usize) = 0;
+                charnum = charnum.wrapping_add(1);
             }
-            if (ip <= iend.offset(-7))
-                || (ip.offset((bitCount >> 3) as isize) <= iend.offset(-4))
+            if (ip <= iend.wrapping_sub(7))
+                || (ip.wrapping_offset((bitCount >> 3) as isize) <= iend.wrapping_sub(4))
             {
-                ip = ip.offset((bitCount >> 3) as isize);
+                ip = ip.wrapping_offset((bitCount >> 3) as isize);
                 bitCount &= 7;
-                bitStream = MEM_readLE32(ip as *const c_void) >> bitCount;
+                bitStream = MEM_readLE32(ip as *const c_void).wrapping_shr(bitCount as u32);
             } else {
                 bitStream >>= 2;
             }
         }
         {
-            let max: i16 = ((2 * threshold - 1) - remaining) as i16;
-            let mut count: i16;
+            let max: S16 = ((2 * threshold - 1) - remaining) as S16;
+            let mut count: S16;
 
-            if (bitStream & (threshold - 1) as u32) < max as u32 {
-                count = (bitStream & (threshold - 1) as u32) as i16;
+            if (bitStream & ((threshold - 1) as U32)) < (max as U32) {
+                count = (bitStream & ((threshold - 1) as U32)) as S16;
                 bitCount += nbBits - 1;
             } else {
-                count = (bitStream & (2 * threshold - 1) as u32) as i16;
-                if count >= threshold as i16 {
-                    count -= max;
+                count = (bitStream & ((2 * threshold - 1) as U32)) as S16;
+                if count as i32 >= threshold {
+                    count = (count as i32 - max as i32) as S16;
                 }
                 bitCount += nbBits;
             }
 
-            count -= 1;
-            remaining -= FSE_abs(count) as c_int;
-            *normalizedCounter.add(charnum as usize) = count;
-            charnum += 1;
-            previous0 = (count == 0) as c_int;
+            count = count.wrapping_sub(1); /* extra accuracy */
+            remaining -= FSE_abs(count) as i32;
+            *normalizedCounter.wrapping_add(charnum as usize) = count;
+            charnum = charnum.wrapping_add(1);
+            previous0 = (count == 0) as i32;
             while remaining < threshold {
                 nbBits -= 1;
                 threshold >>= 1;
             }
 
             {
-                if (ip <= iend.offset(-7))
-                    || (ip.offset((bitCount >> 3) as isize) <= iend.offset(-4))
+                if (ip <= iend.wrapping_sub(7))
+                    || (ip.wrapping_offset((bitCount >> 3) as isize) <= iend.wrapping_sub(4))
                 {
-                    ip = ip.offset((bitCount >> 3) as isize);
+                    ip = ip.wrapping_offset((bitCount >> 3) as isize);
                     bitCount &= 7;
                 } else {
-                    bitCount -= (8 * (iend as isize - 4 - ip as isize)) as c_int;
-                    ip = iend.offset(-4);
+                    bitCount -= (8 * (iend.wrapping_sub(4) as isize - ip as isize)) as i32;
+                    ip = iend.wrapping_sub(4);
                 }
                 bitStream = MEM_readLE32(ip as *const c_void) >> (bitCount & 31);
             }
         }
     }
     if remaining != 1 {
-        return ERROR(ec::GENERIC);
+        return ERROR(ZSTD_error_GENERIC);
     }
-    *maxSVPtr = charnum - 1;
+    *maxSVPtr = charnum.wrapping_sub(1);
 
-    ip = ip.offset(((bitCount + 7) >> 3) as isize);
-    if (ip as usize - istart as usize) > hbSize {
-        return ERROR(ec::srcSize_wrong);
+    ip = ip.wrapping_offset(((bitCount + 7) >> 3) as isize);
+    if ((ip as isize - istart as isize) as usize) > hbSize {
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
-    ip as usize - istart as usize
+    (ip as isize - istart as isize) as usize
 }
 
-unsafe fn FSE_buildDTable_rle(dt: *mut FSE_DTable, symbolValue: u8) -> usize {
+/* ******************************************************************
+ *  Decompression (Byte symbols)
+ ********************************************************************/
+
+unsafe fn FSE_buildDTable_rle(dt: *mut FSE_DTable, symbolValue: BYTE) -> usize {
     let ptr = dt as *mut c_void;
-    let DTableH = ptr as *mut FSE_DTableHeader;
-    let cell = (ptr as *mut FSE_decode_t).add(1);
+    let DTableH: *mut FSE_DTableHeader = ptr as *mut FSE_DTableHeader;
+    let cell: *mut FSE_decode_t = (ptr as *mut FSE_decode_t).wrapping_add(1);
 
     (*DTableH).tableLog = 0;
     (*DTableH).fastMode = 0;
@@ -588,27 +704,29 @@ unsafe fn FSE_buildDTable_rle(dt: *mut FSE_DTable, symbolValue: u8) -> usize {
     0
 }
 
-unsafe fn FSE_buildDTable_raw(dt: *mut FSE_DTable, nbBits: c_uint) -> usize {
+unsafe fn FSE_buildDTable_raw(dt: *mut FSE_DTable, nbBits: u32) -> usize {
     let ptr = dt as *mut c_void;
-    let DTableH = ptr as *mut FSE_DTableHeader;
-    let dinfo = (ptr as *mut FSE_decode_t).add(1);
-    let tableSize: c_uint = 1 << nbBits;
-    let tableMask: c_uint = tableSize - 1;
-    let maxSymbolValue: c_uint = tableMask;
-    let mut s: c_uint;
+    let DTableH: *mut FSE_DTableHeader = ptr as *mut FSE_DTableHeader;
+    let dinfo: *mut FSE_decode_t = (ptr as *mut FSE_decode_t).wrapping_add(1);
+    let tableSize: u32 = 1u32 << nbBits;
+    let tableMask: u32 = tableSize.wrapping_sub(1);
+    let maxSymbolValue: u32 = tableMask;
+    let mut s: u32;
 
+    /* Sanity checks */
     if nbBits < 1 {
-        return ERROR(ec::GENERIC);
+        return ERROR(ZSTD_error_GENERIC); /* min size */
     }
 
-    (*DTableH).tableLog = nbBits as u16;
+    /* Build Decoding Table */
+    (*DTableH).tableLog = nbBits as U16;
     (*DTableH).fastMode = 1;
     s = 0;
     while s <= maxSymbolValue {
-        (*dinfo.add(s as usize)).newState = 0;
-        (*dinfo.add(s as usize)).symbol = s as u8;
-        (*dinfo.add(s as usize)).nbBits = nbBits as u8;
-        s += 1;
+        (*dinfo.wrapping_add(s as usize)).newState = 0;
+        (*dinfo.wrapping_add(s as usize)).symbol = s as BYTE;
+        (*dinfo.wrapping_add(s as usize)).nbBits = nbBits as BYTE;
+        s = s.wrapping_add(1);
     }
 
     0
@@ -620,20 +738,20 @@ unsafe fn FSE_decompress_usingDTable_generic(
     cSrc: *const c_void,
     cSrcSize: usize,
     dt: *const FSE_DTable,
-    fast: c_uint,
+    fast: u32,
 ) -> usize {
-    let ostart = dst as *mut u8;
-    let mut op = ostart;
-    let omax = op.add(maxDstSize);
-    let olimit = omax.offset(-3);
+    let ostart: *mut BYTE = dst as *mut BYTE;
+    let mut op: *mut BYTE = ostart;
+    let omax: *mut BYTE = op.wrapping_add(maxDstSize);
+    let olimit: *mut BYTE = omax.wrapping_sub(3);
 
-    let mut bitD: BIT_DStream_t = core::mem::zeroed();
-    let mut state1: FSE_DState_t = core::mem::zeroed();
-    let mut state2: FSE_DState_t = core::mem::zeroed();
+    let mut bitD = BIT_DStream_t::new();
+    let mut state1 = FSE_DState_t::new();
+    let mut state2 = FSE_DState_t::new();
     let errorCode: usize;
 
     /* Init */
-    errorCode = BIT_initDStream(&mut bitD, cSrc, cSrcSize);
+    errorCode = BIT_initDStream(&mut bitD, cSrc, cSrcSize); /* replaced last arg by maxCompressed Size */
     if FSE_isError(errorCode) != 0 {
         return errorCode;
     }
@@ -641,65 +759,69 @@ unsafe fn FSE_decompress_usingDTable_generic(
     FSE_initDState(&mut state1, &mut bitD, dt);
     FSE_initDState(&mut state2, &mut bitD, dt);
 
-    macro_rules! FSE_GETSYMBOL {
-        ($statePtr:expr) => {
-            if fast != 0 {
-                FSE_decodeSymbolFast($statePtr, &mut bitD)
-            } else {
-                FSE_decodeSymbol($statePtr, &mut bitD)
-            }
-        };
-    }
-
-    /* 4 symbols per loop */
+    /* 4 symbols per loop
+     * note : FSE_MAX_TABLELOG*2+7 and FSE_MAX_TABLELOG*4+7 are both <= 64,
+     * so the intermediate BIT_reloadDStream() calls are compiled out. */
     while (BIT_reloadDStream(&mut bitD) == BIT_DStream_unfinished) && (op < olimit) {
-        *op.add(0) = FSE_GETSYMBOL!(&mut state1);
+        *op.wrapping_add(0) = if fast != 0 {
+            FSE_decodeSymbolFast(&mut state1, &mut bitD)
+        } else {
+            FSE_decodeSymbol(&mut state1, &mut bitD)
+        };
 
-        if FSE_MAX_TABLELOG * 2 + 7 > core::mem::size_of::<usize>() * 8 {
-            BIT_reloadDStream(&mut bitD);
-        }
+        *op.wrapping_add(1) = if fast != 0 {
+            FSE_decodeSymbolFast(&mut state2, &mut bitD)
+        } else {
+            FSE_decodeSymbol(&mut state2, &mut bitD)
+        };
 
-        *op.add(1) = FSE_GETSYMBOL!(&mut state2);
+        *op.wrapping_add(2) = if fast != 0 {
+            FSE_decodeSymbolFast(&mut state1, &mut bitD)
+        } else {
+            FSE_decodeSymbol(&mut state1, &mut bitD)
+        };
 
-        if FSE_MAX_TABLELOG * 4 + 7 > core::mem::size_of::<usize>() * 8 {
-            if BIT_reloadDStream(&mut bitD) > BIT_DStream_unfinished {
-                op = op.add(2);
-                break;
-            }
-        }
+        *op.wrapping_add(3) = if fast != 0 {
+            FSE_decodeSymbolFast(&mut state2, &mut bitD)
+        } else {
+            FSE_decodeSymbol(&mut state2, &mut bitD)
+        };
 
-        *op.add(2) = FSE_GETSYMBOL!(&mut state1);
-
-        if FSE_MAX_TABLELOG * 2 + 7 > core::mem::size_of::<usize>() * 8 {
-            BIT_reloadDStream(&mut bitD);
-        }
-
-        *op.add(3) = FSE_GETSYMBOL!(&mut state2);
-
-        op = op.add(4);
+        op = op.wrapping_add(4);
     }
 
     /* tail */
+    /* note : BIT_reloadDStream(&bitD) >= FSE_DStream_partiallyFilled; Ends at exactly BIT_DStream_completed */
     loop {
         if (BIT_reloadDStream(&mut bitD) > BIT_DStream_completed)
             || (op == omax)
-            || (BIT_endOfDStream(&bitD) != 0 && (fast != 0 || FSE_endOfDState(&state1) != 0))
+            || (BIT_endOfDStream(&bitD) != 0
+                && (fast != 0 || FSE_endOfDState(&state1) != 0))
         {
             break;
         }
 
-        *op = FSE_GETSYMBOL!(&mut state1);
-        op = op.add(1);
+        *op = if fast != 0 {
+            FSE_decodeSymbolFast(&mut state1, &mut bitD)
+        } else {
+            FSE_decodeSymbol(&mut state1, &mut bitD)
+        };
+        op = op.wrapping_add(1);
 
         if (BIT_reloadDStream(&mut bitD) > BIT_DStream_completed)
             || (op == omax)
-            || (BIT_endOfDStream(&bitD) != 0 && (fast != 0 || FSE_endOfDState(&state2) != 0))
+            || (BIT_endOfDStream(&bitD) != 0
+                && (fast != 0 || FSE_endOfDState(&state2) != 0))
         {
             break;
         }
 
-        *op = FSE_GETSYMBOL!(&mut state2);
-        op = op.add(1);
+        *op = if fast != 0 {
+            FSE_decodeSymbolFast(&mut state2, &mut bitD)
+        } else {
+            FSE_decodeSymbol(&mut state2, &mut bitD)
+        };
+        op = op.wrapping_add(1);
     }
 
     /* end ? */
@@ -707,14 +829,14 @@ unsafe fn FSE_decompress_usingDTable_generic(
         && FSE_endOfDState(&state1) != 0
         && FSE_endOfDState(&state2) != 0
     {
-        return op as usize - ostart as usize;
+        return (op as isize - ostart as isize) as usize;
     }
 
     if op == omax {
-        return ERROR(ec::dstSize_tooSmall);
+        return ERROR(ZSTD_error_dstSize_tooSmall); /* dst buffer is full, but cSrc unfinished */
     }
 
-    ERROR(ec::corruption_detected)
+    ERROR(ZSTD_error_corruption_detected)
 }
 
 unsafe fn FSE_decompress_usingDTable(
@@ -724,8 +846,17 @@ unsafe fn FSE_decompress_usingDTable(
     cSrcSize: usize,
     dt: *const FSE_DTable,
 ) -> usize {
-    let DTableH = core::ptr::read_unaligned(dt as *const FSE_DTableHeader);
+    let mut DTableH = FSE_DTableHeader {
+        tableLog: 0,
+        fastMode: 0,
+    };
+    memcpy(
+        addr_of_mut!(DTableH) as *mut c_void,
+        dt as *const c_void,
+        size_of::<FSE_DTableHeader>(),
+    );
 
+    /* select fast mode (static) */
     if DTableH.fastMode != 0 {
         return FSE_decompress_usingDTable_generic(dst, originalSize, cSrc, cSrcSize, dt, 1);
     }
@@ -738,18 +869,20 @@ unsafe fn FSE_decompress(
     cSrc: *const c_void,
     mut cSrcSize: usize,
 ) -> usize {
-    let istart = cSrc as *const u8;
-    let mut ip = istart;
-    let mut counting: [i16; FSE_MAX_SYMBOL_VALUE + 1] = [0; FSE_MAX_SYMBOL_VALUE + 1];
-    let mut dt: DTable_max_t = [0; 1 + (1 << FSE_MAX_TABLELOG)];
-    let mut tableLog: c_uint = 0;
-    let mut maxSymbolValue: c_uint = FSE_MAX_SYMBOL_VALUE as c_uint;
+    let istart: *const BYTE = cSrc as *const BYTE;
+    let mut ip: *const BYTE = istart;
+    let mut counting: [S16; FSE_MAX_SYMBOL_VALUE + 1] = [0; FSE_MAX_SYMBOL_VALUE + 1];
+    let mut dt_storage = core::mem::MaybeUninit::<DTable_max_t>::uninit();
+    let dt: *mut U32 = dt_storage.as_mut_ptr() as *mut U32;
+    let mut tableLog: u32 = 0;
+    let mut maxSymbolValue: u32 = FSE_MAX_SYMBOL_VALUE as u32;
     let mut errorCode: usize;
 
     if cSrcSize < 2 {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong); /* too small input size */
     }
 
+    /* normal FSE decoding mode */
     errorCode = FSE_readNCount(
         counting.as_mut_ptr(),
         &mut maxSymbolValue,
@@ -761,82 +894,89 @@ unsafe fn FSE_decompress(
         return errorCode;
     }
     if errorCode >= cSrcSize {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong); /* too small input size */
     }
-    ip = ip.add(errorCode);
+    ip = ip.wrapping_add(errorCode);
     cSrcSize -= errorCode;
 
-    errorCode = FSE_buildDTable(dt.as_mut_ptr(), counting.as_ptr(), maxSymbolValue, tableLog);
+    errorCode = FSE_buildDTable(dt, counting.as_ptr(), maxSymbolValue, tableLog);
     if FSE_isError(errorCode) != 0 {
         return errorCode;
     }
 
-    FSE_decompress_usingDTable(dst, maxDstSize, ip as *const c_void, cSrcSize, dt.as_ptr())
+    /* always return, even if it is an error code */
+    FSE_decompress_usingDTable(dst, maxDstSize, ip as *const c_void, cSrcSize, dt)
 }
 
-/* ****************************************************************
- * Huff0 : Huffman block decompression
- * ************************************************************** */
-#[inline]
-fn HUF_isError(code: usize) -> c_uint {
+/* ******************************************************************
+ *  Huff0 : Huffman decoder  (v0.3 private copy)
+ ********************************************************************/
+
+fn HUF_isError(code: usize) -> u32 {
     ERR_isError(code)
 }
 
 const HUF_ABSOLUTEMAX_TABLELOG: usize = 16;
 const HUF_MAX_TABLELOG: usize = 12;
+#[allow(dead_code)]
 const HUF_DEFAULT_TABLELOG: usize = HUF_MAX_TABLELOG;
 const HUF_MAX_SYMBOL_VALUE: usize = 255;
-const HUF_DTABLE_SIZE_MAX: usize = 1 + (1 << HUF_MAX_TABLELOG);
+
+const fn HUF_DTABLE_SIZE(maxTableLog: usize) -> usize {
+    1 + (1usize << maxTableLog)
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct HUF_DEltX2 {
-    byte: u8,
-    nbBits: u8,
-}
+    byte: BYTE,
+    nbBits: BYTE,
+} /* single-symbol decoding */
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct HUF_DEltX4 {
-    sequence: u16,
-    nbBits: u8,
-    length: u8,
-}
+    sequence: U16,
+    nbBits: BYTE,
+    length: BYTE,
+} /* double-symbols decoding */
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct sortedSymbol_t {
-    symbol: u8,
-    weight: u8,
+    symbol: BYTE,
+    weight: BYTE,
 }
 
+/// `HUF_readStats` : read compact Huffman tree, saved by `HUF_writeCTable`
 unsafe fn HUF_readStats(
-    huffWeight: *mut u8,
+    huffWeight: *mut BYTE,
     hwSize: usize,
-    rankStats: *mut u32,
-    nbSymbolsPtr: *mut u32,
-    tableLogPtr: *mut u32,
+    rankStats: *mut U32,
+    nbSymbolsPtr: *mut U32,
+    tableLogPtr: *mut U32,
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let mut weightTotal: u32;
-    let mut tableLog: u32;
-    let mut ip = src as *const u8;
+    let mut weightTotal: U32;
+    let tableLog: U32;
+    let mut ip: *const BYTE = src as *const BYTE;
     let mut iSize: usize;
-    let mut oSize: usize;
-    let mut n: u32;
+    let oSize: usize;
+    let mut n: U32;
 
     if srcSize == 0 {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
-    iSize = *ip.add(0) as usize;
+    iSize = *ip as usize;
+    /* memset(huffWeight, 0, hwSize); is not necessary */
 
     if iSize >= 128 {
         /* special header */
         if iSize >= 242 {
             /* RLE */
-            static L: [c_int; 14] = [1, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128];
-            oSize = L[iSize - 242] as usize;
+            static l: [i32; 14] = [1, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128];
+            oSize = *l.as_ptr().wrapping_add(iSize - 242) as usize;
             memset(huffWeight as *mut c_void, 1, hwSize);
             iSize = 0;
         } else {
@@ -844,28 +984,31 @@ unsafe fn HUF_readStats(
             oSize = iSize - 127;
             iSize = (oSize + 1) / 2;
             if iSize + 1 > srcSize {
-                return ERROR(ec::srcSize_wrong);
+                return ERROR(ZSTD_error_srcSize_wrong);
             }
             if oSize >= hwSize {
-                return ERROR(ec::corruption_detected);
+                return ERROR(ZSTD_error_corruption_detected);
             }
-            ip = ip.add(1);
+            ip = ip.wrapping_add(1);
             n = 0;
             while (n as usize) < oSize {
-                *huffWeight.add(n as usize) = *ip.add(n as usize / 2) >> 4;
-                *huffWeight.add(n as usize + 1) = *ip.add(n as usize / 2) & 15;
+                *huffWeight.wrapping_add(n as usize) =
+                    *ip.wrapping_add((n / 2) as usize) >> 4;
+                *huffWeight.wrapping_add(n as usize + 1) =
+                    *ip.wrapping_add((n / 2) as usize) & 15;
                 n += 2;
             }
         }
     } else {
-        /* header compressed with FSE */
+        /* header compressed with FSE (normal case) */
         if iSize + 1 > srcSize {
-            return ERROR(ec::srcSize_wrong);
+            return ERROR(ZSTD_error_srcSize_wrong);
         }
+        /* max (hwSize-1) values decoded, as last one is implied */
         oSize = FSE_decompress(
             huffWeight as *mut c_void,
             hwSize - 1,
-            ip.add(1) as *const c_void,
+            ip.wrapping_add(1) as *const c_void,
             iSize,
         );
         if FSE_isError(oSize) != 0 {
@@ -877,46 +1020,51 @@ unsafe fn HUF_readStats(
     memset(
         rankStats as *mut c_void,
         0,
-        (HUF_ABSOLUTEMAX_TABLELOG + 1) * core::mem::size_of::<u32>(),
+        (HUF_ABSOLUTEMAX_TABLELOG + 1) * size_of::<U32>(),
     );
     weightTotal = 0;
     n = 0;
     while (n as usize) < oSize {
-        if (*huffWeight.add(n as usize) as usize) >= HUF_ABSOLUTEMAX_TABLELOG {
-            return ERROR(ec::corruption_detected);
+        if (*huffWeight.wrapping_add(n as usize) as usize) >= HUF_ABSOLUTEMAX_TABLELOG {
+            return ERROR(ZSTD_error_corruption_detected);
         }
-        *rankStats.add(*huffWeight.add(n as usize) as usize) += 1;
-        weightTotal += (1u32 << *huffWeight.add(n as usize)) >> 1;
+        *rankStats.wrapping_add(*huffWeight.wrapping_add(n as usize) as usize) =
+            (*rankStats.wrapping_add(*huffWeight.wrapping_add(n as usize) as usize))
+                .wrapping_add(1);
+        weightTotal = weightTotal
+            .wrapping_add((1u32 << *huffWeight.wrapping_add(n as usize)) >> 1);
         n += 1;
     }
     if weightTotal == 0 {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
-    /* get last non-null symbol weight */
+    /* get last non-null symbol weight (implied, total must be 2^n) */
     tableLog = BIT_highbit32(weightTotal) + 1;
     if tableLog as usize > HUF_ABSOLUTEMAX_TABLELOG {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected);
     }
     {
-        let total: u32 = 1 << tableLog;
-        let rest: u32 = total - weightTotal;
-        let verif: u32 = 1 << BIT_highbit32(rest);
-        let lastWeight: u32 = BIT_highbit32(rest) + 1;
+        let total: U32 = 1u32 << tableLog;
+        let rest: U32 = total.wrapping_sub(weightTotal);
+        let verif: U32 = 1u32 << BIT_highbit32(rest);
+        let lastWeight: U32 = BIT_highbit32(rest) + 1;
         if verif != rest {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected); /* last value must be a clean power of 2 */
         }
-        *huffWeight.add(oSize) = lastWeight as u8;
-        *rankStats.add(lastWeight as usize) += 1;
+        *huffWeight.wrapping_add(oSize) = lastWeight as BYTE;
+        *rankStats.wrapping_add(lastWeight as usize) =
+            (*rankStats.wrapping_add(lastWeight as usize)).wrapping_add(1);
     }
 
     /* check tree construction validity */
-    if (*rankStats.add(1) < 2) || (*rankStats.add(1) & 1) != 0 {
-        return ERROR(ec::corruption_detected);
+    if (*rankStats.wrapping_add(1) < 2) || (*rankStats.wrapping_add(1) & 1) != 0 {
+        /* by construction : at least 2 elts of rank 1, must be even */
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     /* results */
-    *nbSymbolsPtr = (oSize + 1) as u32;
+    *nbSymbolsPtr = (oSize + 1) as U32;
     *tableLogPtr = tableLog;
     iSize + 1
 }
@@ -925,22 +1073,24 @@ unsafe fn HUF_readStats(
 /* single-symbol decoding */
 /**************************/
 
-unsafe fn HUF_readDTableX2(DTable: *mut u16, src: *const c_void, srcSize: usize) -> usize {
-    let mut huffWeight: [u8; HUF_MAX_SYMBOL_VALUE + 1] = [0; HUF_MAX_SYMBOL_VALUE + 1];
-    let mut rankVal: [u32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
-    let mut tableLog: u32 = 0;
-    let _ip = src as *const u8;
-    let mut iSize: usize;
-    let mut nbSymbols: u32 = 0;
-    let mut n: u32;
-    let mut nextRankStart: u32;
-    let ptr = DTable.add(1) as *mut c_void;
-    let dt = ptr as *mut HUF_DEltX2;
+unsafe fn HUF_readDTableX2(DTable: *mut U16, src: *const c_void, srcSize: usize) -> usize {
+    let mut huffWeight: [BYTE; HUF_MAX_SYMBOL_VALUE + 1] = [0; HUF_MAX_SYMBOL_VALUE + 1];
+    /* large enough for values from 0 to 16 */
+    let mut rankVal: [U32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
+    let rankValPtr: *mut U32 = rankVal.as_mut_ptr();
+    let mut tableLog: U32 = 0;
+    let ip: *const BYTE = src as *const BYTE;
+    let mut iSize: usize = *ip as usize;
+    let mut nbSymbols: U32 = 0;
+    let mut n: U32;
+    let mut nextRankStart: U32;
+    let ptr = DTable.wrapping_add(1) as *mut c_void;
+    let dt: *mut HUF_DEltX2 = ptr as *mut HUF_DEltX2;
 
     iSize = HUF_readStats(
         huffWeight.as_mut_ptr(),
         HUF_MAX_SYMBOL_VALUE + 1,
-        rankVal.as_mut_ptr(),
+        rankValPtr,
         &mut nbSymbols,
         &mut tableLog,
         src,
@@ -951,103 +1101,96 @@ unsafe fn HUF_readDTableX2(DTable: *mut u16, src: *const c_void, srcSize: usize)
     }
 
     /* check result */
-    if tableLog > *DTable.add(0) as u32 {
-        return ERROR(ec::tableLog_tooLarge);
+    if tableLog > *DTable as U32 {
+        return ERROR(ZSTD_error_tableLog_tooLarge); /* DTable is too small */
     }
-    *DTable.add(0) = tableLog as u16;
+    *DTable = tableLog as U16;
 
     /* Prepare ranks */
     nextRankStart = 0;
     n = 1;
     while n <= tableLog {
-        let current = nextRankStart;
-        nextRankStart += rankVal[n as usize] << (n - 1);
-        rankVal[n as usize] = current;
+        let current: U32 = nextRankStart;
+        nextRankStart =
+            nextRankStart.wrapping_add(*rankValPtr.wrapping_add(n as usize) << (n - 1));
+        *rankValPtr.wrapping_add(n as usize) = current;
         n += 1;
     }
 
     /* fill DTable */
     n = 0;
     while n < nbSymbols {
-        let w = huffWeight[n as usize] as u32;
-        let length = (1u32 << w) >> 1;
-        let mut i: u32;
-        let mut d = HUF_DEltX2 { byte: 0, nbBits: 0 };
-        d.byte = n as u8;
-        d.nbBits = (tableLog + 1 - w) as u8;
-        i = rankVal[w as usize];
-        while i < rankVal[w as usize] + length {
-            *dt.add(i as usize) = d;
-            i += 1;
+        let w: U32 = *huffWeight.as_ptr().wrapping_add(n as usize) as U32;
+        let length: U32 = (1u32 << w) >> 1;
+        let mut i: U32;
+        let mut D = HUF_DEltX2 { byte: 0, nbBits: 0 };
+        D.byte = n as BYTE;
+        D.nbBits = (tableLog.wrapping_add(1).wrapping_sub(w)) as BYTE;
+        i = *rankValPtr.wrapping_add(w as usize);
+        while i < (*rankValPtr.wrapping_add(w as usize)).wrapping_add(length) {
+            *dt.wrapping_add(i as usize) = D;
+            i = i.wrapping_add(1);
         }
-        rankVal[w as usize] += length;
+        *rankValPtr.wrapping_add(w as usize) =
+            (*rankValPtr.wrapping_add(w as usize)).wrapping_add(length);
         n += 1;
     }
 
     iSize
 }
 
-#[inline]
 unsafe fn HUF_decodeSymbolX2(
-    dstream: *mut BIT_DStream_t,
+    Dstream: *mut BIT_DStream_t,
     dt: *const HUF_DEltX2,
-    dtLog: u32,
-) -> u8 {
-    let val = BIT_lookBitsFast(dstream, dtLog);
-    let c = (*dt.add(val)).byte;
-    BIT_skipBits(dstream, (*dt.add(val)).nbBits as u32);
+    dtLog: U32,
+) -> BYTE {
+    let val: usize = BIT_lookBitsFast(Dstream, dtLog); /* note : dtLog >= 1 */
+    let c: BYTE = (*dt.wrapping_add(val)).byte;
+    BIT_skipBits(Dstream, (*dt.wrapping_add(val)).nbBits as U32);
     c
 }
 
-macro_rules! HUF_DECODE_SYMBOLX2_0 {
-    ($ptr:expr, $DStreamPtr:expr, $dt:expr, $dtLog:expr) => {{
-        *$ptr = HUF_decodeSymbolX2($DStreamPtr, $dt, $dtLog);
-        $ptr = $ptr.add(1);
-    }};
-}
-macro_rules! HUF_DECODE_SYMBOLX2_1 {
-    ($ptr:expr, $DStreamPtr:expr, $dt:expr, $dtLog:expr) => {{
-        if MEM_64bits() != 0 || (HUF_MAX_TABLELOG <= 12) {
-            HUF_DECODE_SYMBOLX2_0!($ptr, $DStreamPtr, $dt, $dtLog);
-        }
-    }};
-}
-macro_rules! HUF_DECODE_SYMBOLX2_2 {
-    ($ptr:expr, $DStreamPtr:expr, $dt:expr, $dtLog:expr) => {{
-        if MEM_64bits() != 0 {
-            HUF_DECODE_SYMBOLX2_0!($ptr, $DStreamPtr, $dt, $dtLog);
-        }
-    }};
-}
-
+/* HUF_DECODE_SYMBOLX2_0 / _1 / _2 : all three are active, since MEM_64bits() */
 unsafe fn HUF_decodeStreamX2(
-    mut p: *mut u8,
+    mut p: *mut BYTE,
     bitDPtr: *mut BIT_DStream_t,
-    pEnd: *mut u8,
+    pEnd: *mut BYTE,
     dt: *const HUF_DEltX2,
-    dtLog: u32,
+    dtLog: U32,
 ) -> usize {
-    let pStart = p;
+    let pStart: *mut BYTE = p;
 
     /* up to 4 symbols at a time */
-    while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p <= pEnd.offset(-4)) {
-        HUF_DECODE_SYMBOLX2_2!(p, bitDPtr, dt, dtLog);
-        HUF_DECODE_SYMBOLX2_1!(p, bitDPtr, dt, dtLog);
-        HUF_DECODE_SYMBOLX2_2!(p, bitDPtr, dt, dtLog);
-        HUF_DECODE_SYMBOLX2_0!(p, bitDPtr, dt, dtLog);
+    while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p <= pEnd.wrapping_sub(4)) {
+        if MEM_64bits() != 0 {
+            *p = HUF_decodeSymbolX2(bitDPtr, dt, dtLog);
+            p = p.wrapping_add(1);
+        }
+        if MEM_64bits() != 0 || HUF_MAX_TABLELOG <= 12 {
+            *p = HUF_decodeSymbolX2(bitDPtr, dt, dtLog);
+            p = p.wrapping_add(1);
+        }
+        if MEM_64bits() != 0 {
+            *p = HUF_decodeSymbolX2(bitDPtr, dt, dtLog);
+            p = p.wrapping_add(1);
+        }
+        *p = HUF_decodeSymbolX2(bitDPtr, dt, dtLog);
+        p = p.wrapping_add(1);
     }
 
     /* closer to the end */
     while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p < pEnd) {
-        HUF_DECODE_SYMBOLX2_0!(p, bitDPtr, dt, dtLog);
+        *p = HUF_decodeSymbolX2(bitDPtr, dt, dtLog);
+        p = p.wrapping_add(1);
     }
 
-    /* no more data to retrieve from bitstream */
+    /* no more data to retrieve from bitstream, hence no need to reload */
     while p < pEnd {
-        HUF_DECODE_SYMBOLX2_0!(p, bitDPtr, dt, dtLog);
+        *p = HUF_decodeSymbolX2(bitDPtr, dt, dtLog);
+        p = p.wrapping_add(1);
     }
 
-    pEnd as usize - pStart as usize
+    (pEnd as isize - pStart as isize) as usize
 }
 
 unsafe fn HUF_decompress4X2_usingDTable(
@@ -1055,47 +1198,54 @@ unsafe fn HUF_decompress4X2_usingDTable(
     dstSize: usize,
     cSrc: *const c_void,
     cSrcSize: usize,
-    DTable: *const u16,
+    DTable: *const U16,
 ) -> usize {
     if cSrcSize < 10 {
-        return ERROR(ec::corruption_detected);
+        /* strict minimum : jump table + 1 byte per stream */
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     {
-        let istart = cSrc as *const u8;
-        let ostart = dst as *mut u8;
-        let oend = ostart.add(dstSize);
+        let istart: *const BYTE = cSrc as *const BYTE;
+        let ostart: *mut BYTE = dst as *mut BYTE;
+        let oend: *mut BYTE = ostart.wrapping_add(dstSize);
 
         let ptr = DTable as *const c_void;
-        let dt = (ptr as *const HUF_DEltX2).add(1);
-        let dtLog = *DTable.add(0) as u32;
+        let dt: *const HUF_DEltX2 = (ptr as *const HUF_DEltX2).wrapping_add(1);
+        let dtLog: U32 = *DTable as U32;
         let mut errorCode: usize;
 
-        let mut bitD1: BIT_DStream_t = core::mem::zeroed();
-        let mut bitD2: BIT_DStream_t = core::mem::zeroed();
-        let mut bitD3: BIT_DStream_t = core::mem::zeroed();
-        let mut bitD4: BIT_DStream_t = core::mem::zeroed();
-        let length1 = MEM_readLE16(istart as *const c_void) as usize;
-        let length2 = MEM_readLE16(istart.add(2) as *const c_void) as usize;
-        let length3 = MEM_readLE16(istart.add(4) as *const c_void) as usize;
+        /* Init */
+        let mut bitD1 = BIT_DStream_t::new();
+        let mut bitD2 = BIT_DStream_t::new();
+        let mut bitD3 = BIT_DStream_t::new();
+        let mut bitD4 = BIT_DStream_t::new();
+        let length1: usize = MEM_readLE16(istart as *const c_void) as usize;
+        let length2: usize = MEM_readLE16(istart.wrapping_add(2) as *const c_void) as usize;
+        let length3: usize = MEM_readLE16(istart.wrapping_add(4) as *const c_void) as usize;
         let length4: usize;
-        let istart1 = istart.add(6);
-        let istart2 = istart1.add(length1);
-        let istart3 = istart2.add(length2);
-        let istart4 = istart3.add(length3);
-        let segmentSize = (dstSize + 3) / 4;
-        let opStart2 = ostart.add(segmentSize);
-        let opStart3 = opStart2.add(segmentSize);
-        let opStart4 = opStart3.add(segmentSize);
-        let mut op1 = ostart;
-        let mut op2 = opStart2;
-        let mut op3 = opStart3;
-        let mut op4 = opStart4;
-        let mut endSignal: u32;
+        let istart1: *const BYTE = istart.wrapping_add(6); /* jumpTable */
+        let istart2: *const BYTE = istart1.wrapping_add(length1);
+        let istart3: *const BYTE = istart2.wrapping_add(length2);
+        let istart4: *const BYTE = istart3.wrapping_add(length3);
+        let segmentSize: usize = (dstSize + 3) / 4;
+        let opStart2: *mut BYTE = ostart.wrapping_add(segmentSize);
+        let opStart3: *mut BYTE = opStart2.wrapping_add(segmentSize);
+        let opStart4: *mut BYTE = opStart3.wrapping_add(segmentSize);
+        let mut op1: *mut BYTE = ostart;
+        let mut op2: *mut BYTE = opStart2;
+        let mut op3: *mut BYTE = opStart3;
+        let mut op4: *mut BYTE = opStart4;
+        let mut endSignal: U32;
 
-        length4 = cSrcSize.wrapping_sub(length1 + length2 + length3 + 6);
+        length4 = cSrcSize.wrapping_sub(
+            length1
+                .wrapping_add(length2)
+                .wrapping_add(length3)
+                .wrapping_add(6),
+        );
         if length4 > cSrcSize {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
         errorCode = BIT_initDStream(&mut bitD1, istart1 as *const c_void, length1);
         if HUF_isError(errorCode) != 0 {
@@ -1114,45 +1264,68 @@ unsafe fn HUF_decompress4X2_usingDTable(
             return errorCode;
         }
 
-        /* 16-32 symbols per loop */
-        endSignal = (BIT_reloadDStream(&mut bitD1)
+        /* 16-32 symbols per loop (4-8 symbols per stream) */
+        endSignal = BIT_reloadDStream(&mut bitD1)
             | BIT_reloadDStream(&mut bitD2)
             | BIT_reloadDStream(&mut bitD3)
-            | BIT_reloadDStream(&mut bitD4)) as u32;
-        while (endSignal == BIT_DStream_unfinished as u32) && (op4 < oend.offset(-7)) {
-            HUF_DECODE_SYMBOLX2_2!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op4, &mut bitD4, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_1!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_1!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_1!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_1!(op4, &mut bitD4, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_2!(op4, &mut bitD4, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_0!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_0!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_0!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX2_0!(op4, &mut bitD4, dt, dtLog);
+            | BIT_reloadDStream(&mut bitD4);
+        while (endSignal == BIT_DStream_unfinished) && (op4 < oend.wrapping_sub(7)) {
+            if MEM_64bits() != 0 {
+                *op1 = HUF_decodeSymbolX2(&mut bitD1, dt, dtLog);
+                op1 = op1.wrapping_add(1);
+                *op2 = HUF_decodeSymbolX2(&mut bitD2, dt, dtLog);
+                op2 = op2.wrapping_add(1);
+                *op3 = HUF_decodeSymbolX2(&mut bitD3, dt, dtLog);
+                op3 = op3.wrapping_add(1);
+                *op4 = HUF_decodeSymbolX2(&mut bitD4, dt, dtLog);
+                op4 = op4.wrapping_add(1);
+            }
+            if MEM_64bits() != 0 || HUF_MAX_TABLELOG <= 12 {
+                *op1 = HUF_decodeSymbolX2(&mut bitD1, dt, dtLog);
+                op1 = op1.wrapping_add(1);
+                *op2 = HUF_decodeSymbolX2(&mut bitD2, dt, dtLog);
+                op2 = op2.wrapping_add(1);
+                *op3 = HUF_decodeSymbolX2(&mut bitD3, dt, dtLog);
+                op3 = op3.wrapping_add(1);
+                *op4 = HUF_decodeSymbolX2(&mut bitD4, dt, dtLog);
+                op4 = op4.wrapping_add(1);
+            }
+            if MEM_64bits() != 0 {
+                *op1 = HUF_decodeSymbolX2(&mut bitD1, dt, dtLog);
+                op1 = op1.wrapping_add(1);
+                *op2 = HUF_decodeSymbolX2(&mut bitD2, dt, dtLog);
+                op2 = op2.wrapping_add(1);
+                *op3 = HUF_decodeSymbolX2(&mut bitD3, dt, dtLog);
+                op3 = op3.wrapping_add(1);
+                *op4 = HUF_decodeSymbolX2(&mut bitD4, dt, dtLog);
+                op4 = op4.wrapping_add(1);
+            }
+            *op1 = HUF_decodeSymbolX2(&mut bitD1, dt, dtLog);
+            op1 = op1.wrapping_add(1);
+            *op2 = HUF_decodeSymbolX2(&mut bitD2, dt, dtLog);
+            op2 = op2.wrapping_add(1);
+            *op3 = HUF_decodeSymbolX2(&mut bitD3, dt, dtLog);
+            op3 = op3.wrapping_add(1);
+            *op4 = HUF_decodeSymbolX2(&mut bitD4, dt, dtLog);
+            op4 = op4.wrapping_add(1);
 
-            endSignal = (BIT_reloadDStream(&mut bitD1)
+            endSignal = BIT_reloadDStream(&mut bitD1)
                 | BIT_reloadDStream(&mut bitD2)
                 | BIT_reloadDStream(&mut bitD3)
-                | BIT_reloadDStream(&mut bitD4)) as u32;
+                | BIT_reloadDStream(&mut bitD4);
         }
 
         /* check corruption */
         if op1 > opStart2 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op2 > opStart3 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op3 > opStart4 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
+        /* note : op4 supposed already verified within main loop */
 
         /* finish bitStreams one by one */
         HUF_decodeStreamX2(op1, &mut bitD1, opStart2, dt, dtLog);
@@ -1166,9 +1339,10 @@ unsafe fn HUF_decompress4X2_usingDTable(
             & BIT_endOfDStream(&bitD3)
             & BIT_endOfDStream(&bitD4);
         if endSignal == 0 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
 
+        /* decoded size */
         dstSize
     }
 }
@@ -1179,9 +1353,11 @@ unsafe fn HUF_decompress4X2(
     cSrc: *const c_void,
     mut cSrcSize: usize,
 ) -> usize {
-    let mut DTable: [u16; HUF_DTABLE_SIZE_MAX] = [0; HUF_DTABLE_SIZE_MAX];
-    DTable[0] = HUF_MAX_TABLELOG as u16;
-    let mut ip = cSrc as *const u8;
+    /* HUF_CREATE_STATIC_DTABLEX2(DTable, HUF_MAX_TABLELOG) */
+    let mut DTable: [U16; HUF_DTABLE_SIZE(HUF_MAX_TABLELOG)] =
+        [0; HUF_DTABLE_SIZE(HUF_MAX_TABLELOG)];
+    DTable[0] = HUF_MAX_TABLELOG as U16;
+    let mut ip: *const BYTE = cSrc as *const BYTE;
     let errorCode: usize;
 
     errorCode = HUF_readDTableX2(DTable.as_mut_ptr(), cSrc, cSrcSize);
@@ -1189,12 +1365,18 @@ unsafe fn HUF_decompress4X2(
         return errorCode;
     }
     if errorCode >= cSrcSize {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
-    ip = ip.add(errorCode);
+    ip = ip.wrapping_add(errorCode);
     cSrcSize -= errorCode;
 
-    HUF_decompress4X2_usingDTable(dst, dstSize, ip as *const c_void, cSrcSize, DTable.as_ptr())
+    HUF_decompress4X2_usingDTable(
+        dst,
+        dstSize,
+        ip as *const c_void,
+        cSrcSize,
+        DTable.as_ptr(),
+    )
 }
 
 /***************************/
@@ -1203,160 +1385,175 @@ unsafe fn HUF_decompress4X2(
 
 unsafe fn HUF_fillDTableX4Level2(
     DTable: *mut HUF_DEltX4,
-    sizeLog: u32,
-    consumed: u32,
-    rankValOrigin: *const u32,
-    minWeight: c_int,
+    sizeLog: U32,
+    consumed: U32,
+    rankValOrigin: *const U32,
+    minWeight: i32,
     sortedSymbols: *const sortedSymbol_t,
-    sortedListSize: u32,
-    nbBitsBaseline: u32,
-    baseSeq: u16,
+    sortedListSize: U32,
+    nbBitsBaseline: U32,
+    baseSeq: U16,
 ) {
-    let mut DElt = HUF_DEltX4 { sequence: 0, nbBits: 0, length: 0 };
-    let mut rankVal: [u32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
-    let mut s: u32;
+    let mut DElt = HUF_DEltX4 {
+        sequence: 0,
+        nbBits: 0,
+        length: 0,
+    };
+    let mut rankVal: [U32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
+    let rankValPtr: *mut U32 = rankVal.as_mut_ptr();
+    let mut s: U32;
 
     /* get pre-calculated rankVal */
-    core::ptr::copy_nonoverlapping(
-        rankValOrigin,
-        rankVal.as_mut_ptr(),
-        HUF_ABSOLUTEMAX_TABLELOG + 1,
+    memcpy(
+        rankValPtr as *mut c_void,
+        rankValOrigin as *const c_void,
+        (HUF_ABSOLUTEMAX_TABLELOG + 1) * size_of::<U32>(),
     );
 
     /* fill skipped values */
     if minWeight > 1 {
-        let mut i: u32;
-        let skipSize = rankVal[minWeight as usize];
-        MEM_writeLE16(&mut DElt.sequence as *mut u16 as *mut c_void, baseSeq);
-        DElt.nbBits = consumed as u8;
+        let mut i: U32;
+        let skipSize: U32 = *rankValPtr.wrapping_add(minWeight as usize);
+        MEM_writeLE16(addr_of_mut!(DElt.sequence) as *mut c_void, baseSeq);
+        DElt.nbBits = consumed as BYTE;
         DElt.length = 1;
         i = 0;
         while i < skipSize {
-            *DTable.add(i as usize) = DElt;
-            i += 1;
+            *DTable.wrapping_add(i as usize) = DElt;
+            i = i.wrapping_add(1);
         }
     }
 
     /* fill DTable */
     s = 0;
     while s < sortedListSize {
-        let symbol = (*sortedSymbols.add(s as usize)).symbol as u32;
-        let weight = (*sortedSymbols.add(s as usize)).weight as u32;
-        let nbBits = nbBitsBaseline - weight;
-        let length = 1u32 << (sizeLog - nbBits);
-        let start = rankVal[weight as usize];
-        let mut i = start;
-        let end = start + length;
+        /* note : sortedSymbols already skipped */
+        let symbol: U32 = (*sortedSymbols.wrapping_add(s as usize)).symbol as U32;
+        let weight: U32 = (*sortedSymbols.wrapping_add(s as usize)).weight as U32;
+        let nbBits: U32 = nbBitsBaseline.wrapping_sub(weight);
+        let length: U32 = 1u32 << (sizeLog.wrapping_sub(nbBits));
+        let start: U32 = *rankValPtr.wrapping_add(weight as usize);
+        let mut i: U32 = start;
+        let end: U32 = start.wrapping_add(length);
 
         MEM_writeLE16(
-            &mut DElt.sequence as *mut u16 as *mut c_void,
-            (baseSeq as u32 + (symbol << 8)) as u16,
+            addr_of_mut!(DElt.sequence) as *mut c_void,
+            (baseSeq as U32).wrapping_add(symbol << 8) as U16,
         );
-        DElt.nbBits = (nbBits + consumed) as u8;
+        DElt.nbBits = nbBits.wrapping_add(consumed) as BYTE;
         DElt.length = 2;
         loop {
-            *DTable.add(i as usize) = DElt;
-            i += 1;
-            if i >= end {
+            *DTable.wrapping_add(i as usize) = DElt;
+            i = i.wrapping_add(1);
+            if !(i < end) {
                 break;
             }
-        }
+        } /* since length >= 1 */
 
-        rankVal[weight as usize] += length;
-        s += 1;
+        *rankValPtr.wrapping_add(weight as usize) =
+            (*rankValPtr.wrapping_add(weight as usize)).wrapping_add(length);
+        s = s.wrapping_add(1);
     }
 }
 
-type rankVal_t = [[u32; HUF_ABSOLUTEMAX_TABLELOG + 1]; HUF_ABSOLUTEMAX_TABLELOG];
+type rankVal_t = [[U32; HUF_ABSOLUTEMAX_TABLELOG + 1]; HUF_ABSOLUTEMAX_TABLELOG];
 
 unsafe fn HUF_fillDTableX4(
     DTable: *mut HUF_DEltX4,
-    targetLog: u32,
+    targetLog: U32,
     sortedList: *const sortedSymbol_t,
-    sortedListSize: u32,
-    rankStart: *const u32,
-    rankValOrigin: *mut rankVal_t,
-    maxWeight: u32,
-    nbBitsBaseline: u32,
+    sortedListSize: U32,
+    rankStart: *const U32,
+    rankValOrigin: *const rankVal_t,
+    maxWeight: U32,
+    nbBitsBaseline: U32,
 ) {
-    let mut rankVal: [u32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
-    let scaleLog: c_int = nbBitsBaseline as c_int - targetLog as c_int;
-    let minBits: u32 = nbBitsBaseline - maxWeight;
-    let mut s: u32;
+    let mut rankVal: [U32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
+    let rankValPtr: *mut U32 = rankVal.as_mut_ptr();
+    /* note : targetLog >= srcLog, hence scaleLog <= 1 */
+    let scaleLog: i32 = nbBitsBaseline.wrapping_sub(targetLog) as i32;
+    let minBits: U32 = nbBitsBaseline.wrapping_sub(maxWeight);
+    let mut s: U32;
 
-    core::ptr::copy_nonoverlapping(
-        (*rankValOrigin)[0].as_ptr(),
-        rankVal.as_mut_ptr(),
-        HUF_ABSOLUTEMAX_TABLELOG + 1,
+    memcpy(
+        rankValPtr as *mut c_void,
+        rankValOrigin as *const c_void,
+        (HUF_ABSOLUTEMAX_TABLELOG + 1) * size_of::<U32>(),
     );
 
     /* fill DTable */
     s = 0;
     while s < sortedListSize {
-        let symbol = (*sortedList.add(s as usize)).symbol as u16;
-        let weight = (*sortedList.add(s as usize)).weight as u32;
-        let nbBits = nbBitsBaseline - weight;
-        let start = rankVal[weight as usize];
-        let length = 1u32 << (targetLog - nbBits);
+        let symbol: U16 = (*sortedList.wrapping_add(s as usize)).symbol as U16;
+        let weight: U32 = (*sortedList.wrapping_add(s as usize)).weight as U32;
+        let nbBits: U32 = nbBitsBaseline.wrapping_sub(weight);
+        let start: U32 = *rankValPtr.wrapping_add(weight as usize);
+        let length: U32 = 1u32 << (targetLog.wrapping_sub(nbBits));
 
-        if targetLog - nbBits >= minBits {
+        if targetLog.wrapping_sub(nbBits) >= minBits {
             /* enough room for a second symbol */
-            let sortedRank: u32;
-            let mut minWeight: c_int = nbBits as c_int + scaleLog;
+            let sortedRank: U32;
+            let mut minWeight: i32 = nbBits as i32 + scaleLog;
             if minWeight < 1 {
                 minWeight = 1;
             }
-            sortedRank = *rankStart.add(minWeight as usize);
+            sortedRank = *rankStart.wrapping_add(minWeight as usize);
             HUF_fillDTableX4Level2(
-                DTable.add(start as usize),
-                targetLog - nbBits,
+                DTable.wrapping_add(start as usize),
+                targetLog.wrapping_sub(nbBits),
                 nbBits,
-                (*rankValOrigin)[nbBits as usize].as_ptr(),
+                (rankValOrigin as *const U32)
+                    .wrapping_add(nbBits as usize * (HUF_ABSOLUTEMAX_TABLELOG + 1)),
                 minWeight,
-                sortedList.add(sortedRank as usize),
-                sortedListSize - sortedRank,
+                sortedList.wrapping_add(sortedRank as usize),
+                sortedListSize.wrapping_sub(sortedRank),
                 nbBitsBaseline,
                 symbol,
             );
         } else {
-            let mut i: u32;
-            let end = start + length;
-            let mut DElt = HUF_DEltX4 { sequence: 0, nbBits: 0, length: 0 };
+            let mut i: U32;
+            let end: U32 = start.wrapping_add(length);
+            let mut DElt = HUF_DEltX4 {
+                sequence: 0,
+                nbBits: 0,
+                length: 0,
+            };
 
-            MEM_writeLE16(&mut DElt.sequence as *mut u16 as *mut c_void, symbol);
-            DElt.nbBits = nbBits as u8;
+            MEM_writeLE16(addr_of_mut!(DElt.sequence) as *mut c_void, symbol);
+            DElt.nbBits = nbBits as BYTE;
             DElt.length = 1;
             i = start;
             while i < end {
-                *DTable.add(i as usize) = DElt;
-                i += 1;
+                *DTable.wrapping_add(i as usize) = DElt;
+                i = i.wrapping_add(1);
             }
         }
-        rankVal[weight as usize] += length;
-        s += 1;
+        *rankValPtr.wrapping_add(weight as usize) =
+            (*rankValPtr.wrapping_add(weight as usize)).wrapping_add(length);
+        s = s.wrapping_add(1);
     }
 }
 
-unsafe fn HUF_readDTableX4(DTable: *mut u32, src: *const c_void, srcSize: usize) -> usize {
-    let mut weightList: [u8; HUF_MAX_SYMBOL_VALUE + 1] = [0; HUF_MAX_SYMBOL_VALUE + 1];
+unsafe fn HUF_readDTableX4(DTable: *mut U32, src: *const c_void, srcSize: usize) -> usize {
+    let mut weightList: [BYTE; HUF_MAX_SYMBOL_VALUE + 1] = [0; HUF_MAX_SYMBOL_VALUE + 1];
     let mut sortedSymbol: [sortedSymbol_t; HUF_MAX_SYMBOL_VALUE + 1] =
         [sortedSymbol_t { symbol: 0, weight: 0 }; HUF_MAX_SYMBOL_VALUE + 1];
-    let mut rankStats: [u32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
-    let mut rankStart0: [u32; HUF_ABSOLUTEMAX_TABLELOG + 2] = [0; HUF_ABSOLUTEMAX_TABLELOG + 2];
-    let rankStart = rankStart0.as_mut_ptr().add(1);
+    let mut rankStats: [U32; HUF_ABSOLUTEMAX_TABLELOG + 1] = [0; HUF_ABSOLUTEMAX_TABLELOG + 1];
+    let mut rankStart0: [U32; HUF_ABSOLUTEMAX_TABLELOG + 2] = [0; HUF_ABSOLUTEMAX_TABLELOG + 2];
+    let rankStart: *mut U32 = rankStart0.as_mut_ptr().wrapping_add(1);
     let mut rankVal: rankVal_t = [[0; HUF_ABSOLUTEMAX_TABLELOG + 1]; HUF_ABSOLUTEMAX_TABLELOG];
-    let mut tableLog: u32 = 0;
-    let mut maxW: u32;
-    let mut sizeOfSort: u32 = 0;
-    let mut nbSymbols: u32 = 0;
-    let memLog = *DTable.add(0);
-    let _ip = src as *const u8;
-    let mut iSize: usize;
+    let mut tableLog: U32 = 0;
+    let mut maxW: U32;
+    let sizeOfSort: U32;
+    let mut nbSymbols: U32 = 0;
+    let memLog: U32 = *DTable;
+    let ip: *const BYTE = src as *const BYTE;
+    let mut iSize: usize = *ip as usize;
     let ptr = DTable as *mut c_void;
-    let dt = (ptr as *mut HUF_DEltX4).add(1);
+    let dt: *mut HUF_DEltX4 = (ptr as *mut HUF_DEltX4).wrapping_add(1);
 
     if memLog as usize > HUF_ABSOLUTEMAX_TABLELOG {
-        return ERROR(ec::tableLog_tooLarge);
+        return ERROR(ZSTD_error_tableLog_tooLarge);
     }
 
     iSize = HUF_readStats(
@@ -1374,70 +1571,79 @@ unsafe fn HUF_readDTableX4(DTable: *mut u32, src: *const c_void, srcSize: usize)
 
     /* check result */
     if tableLog > memLog {
-        return ERROR(ec::tableLog_tooLarge);
+        return ERROR(ZSTD_error_tableLog_tooLarge); /* DTable can't fit code depth */
     }
 
     /* find maxWeight */
     maxW = tableLog;
-    while rankStats[maxW as usize] == 0 {
+    while *rankStats.as_ptr().wrapping_add(maxW as usize) == 0 {
         if maxW == 0 {
-            return ERROR(ec::GENERIC);
+            return ERROR(ZSTD_error_GENERIC); /* necessarily finds a solution before maxW==0 */
         }
-        maxW -= 1;
+        maxW = maxW.wrapping_sub(1);
     }
 
     /* Get start index of each weight */
     {
-        let mut w: u32;
-        let mut nextRankStart: u32 = 0;
+        let mut w: U32;
+        let mut nextRankStart: U32 = 0;
         w = 1;
         while w <= maxW {
-            let current = nextRankStart;
-            nextRankStart += rankStats[w as usize];
-            *rankStart.add(w as usize) = current;
+            let current: U32 = nextRankStart;
+            nextRankStart =
+                nextRankStart.wrapping_add(*rankStats.as_ptr().wrapping_add(w as usize));
+            *rankStart.wrapping_add(w as usize) = current;
             w += 1;
         }
-        *rankStart.add(0) = nextRankStart;
+        /* put all 0w symbols at the end of sorted list */
+        *rankStart.wrapping_add(0) = nextRankStart;
         sizeOfSort = nextRankStart;
     }
 
     /* sort symbols by weight */
     {
-        let mut s: u32;
-        s = 0;
+        let mut s: U32 = 0;
         while s < nbSymbols {
-            let w = weightList[s as usize] as u32;
-            let r = *rankStart.add(w as usize);
-            *rankStart.add(w as usize) += 1;
-            sortedSymbol[r as usize].symbol = s as u8;
-            sortedSymbol[r as usize].weight = w as u8;
+            let w: U32 = *weightList.as_ptr().wrapping_add(s as usize) as U32;
+            let r: U32 = *rankStart.wrapping_add(w as usize);
+            *rankStart.wrapping_add(w as usize) = r.wrapping_add(1);
+            (*sortedSymbol.as_mut_ptr().wrapping_add(r as usize)).symbol = s as BYTE;
+            (*sortedSymbol.as_mut_ptr().wrapping_add(r as usize)).weight = w as BYTE;
             s += 1;
         }
-        *rankStart.add(0) = 0;
+        /* forget 0w symbols; this is beginning of weight(1) */
+        *rankStart.wrapping_add(0) = 0;
     }
 
     /* Build rankVal */
     {
-        let minBits: u32 = tableLog + 1 - maxW;
-        let mut nextRankVal: u32 = 0;
-        let mut w: u32;
-        let mut consumed: u32;
-        let rescale: c_int = (memLog as c_int - tableLog as c_int) - 1;
+        let minBits: U32 = tableLog.wrapping_add(1).wrapping_sub(maxW);
+        let mut nextRankVal: U32 = 0;
+        let mut w: U32;
+        let mut consumed: U32;
+        let rescale: i32 = (memLog.wrapping_sub(tableLog)) as i32 - 1; /* tableLog <= memLog */
+        let rankVal0: *mut U32 = rankVal.as_mut_ptr() as *mut U32;
         w = 1;
         while w <= maxW {
-            let current = nextRankVal;
-            nextRankVal += rankStats[w as usize] << (w as c_int + rescale);
-            rankVal[0][w as usize] = current;
+            let current: U32 = nextRankVal;
+            nextRankVal = nextRankVal.wrapping_add(
+                (*rankStats.as_ptr().wrapping_add(w as usize))
+                    .wrapping_shl((w as i32 + rescale) as u32),
+            );
+            *rankVal0.wrapping_add(w as usize) = current;
             w += 1;
         }
         consumed = minBits;
-        while consumed <= memLog - minBits {
+        while consumed <= memLog.wrapping_sub(minBits) {
+            let rankValPtr: *mut U32 = (rankVal.as_mut_ptr() as *mut U32)
+                .wrapping_add(consumed as usize * (HUF_ABSOLUTEMAX_TABLELOG + 1));
             w = 1;
             while w <= maxW {
-                rankVal[consumed as usize][w as usize] = rankVal[0][w as usize] >> consumed;
+                *rankValPtr.wrapping_add(w as usize) =
+                    (*rankVal0.wrapping_add(w as usize)).wrapping_shr(consumed);
                 w += 1;
             }
-            consumed += 1;
+            consumed = consumed.wrapping_add(1);
         }
     }
 
@@ -1447,102 +1653,86 @@ unsafe fn HUF_readDTableX4(DTable: *mut u32, src: *const c_void, srcSize: usize)
         sortedSymbol.as_ptr(),
         sizeOfSort,
         rankStart0.as_ptr(),
-        &mut rankVal as *mut rankVal_t,
+        addr_of_mut!(rankVal) as *const rankVal_t,
         maxW,
-        tableLog + 1,
+        tableLog.wrapping_add(1),
     );
 
     iSize
 }
 
-#[inline]
 unsafe fn HUF_decodeSymbolX4(
     op: *mut c_void,
-    dstream: *mut BIT_DStream_t,
+    DStream: *mut BIT_DStream_t,
     dt: *const HUF_DEltX4,
-    dtLog: u32,
-) -> u32 {
-    let val = BIT_lookBitsFast(dstream, dtLog);
-    memcpy(op, dt.add(val) as *const c_void, 2);
-    BIT_skipBits(dstream, (*dt.add(val)).nbBits as u32);
-    (*dt.add(val)).length as u32
+    dtLog: U32,
+) -> U32 {
+    let val: usize = BIT_lookBitsFast(DStream, dtLog); /* note : dtLog >= 1 */
+    memcpy(op, dt.wrapping_add(val) as *const c_void, 2);
+    BIT_skipBits(DStream, (*dt.wrapping_add(val)).nbBits as U32);
+    (*dt.wrapping_add(val)).length as U32
 }
 
-#[inline]
 unsafe fn HUF_decodeLastSymbolX4(
     op: *mut c_void,
-    dstream: *mut BIT_DStream_t,
+    DStream: *mut BIT_DStream_t,
     dt: *const HUF_DEltX4,
-    dtLog: u32,
-) -> u32 {
-    let val = BIT_lookBitsFast(dstream, dtLog);
-    memcpy(op, dt.add(val) as *const c_void, 1);
-    if (*dt.add(val)).length == 1 {
-        BIT_skipBits(dstream, (*dt.add(val)).nbBits as u32);
+    dtLog: U32,
+) -> U32 {
+    let val: usize = BIT_lookBitsFast(DStream, dtLog); /* note : dtLog >= 1 */
+    memcpy(op, dt.wrapping_add(val) as *const c_void, 1);
+    if (*dt.wrapping_add(val)).length == 1 {
+        BIT_skipBits(DStream, (*dt.wrapping_add(val)).nbBits as U32);
     } else {
-        if (*dstream).bitsConsumed < (core::mem::size_of::<usize>() * 8) as u32 {
-            BIT_skipBits(dstream, (*dt.add(val)).nbBits as u32);
-            if (*dstream).bitsConsumed > (core::mem::size_of::<usize>() * 8) as u32 {
-                (*dstream).bitsConsumed = (core::mem::size_of::<usize>() * 8) as u32;
+        if (*DStream).bitsConsumed < (size_of::<usize>() * 8) as u32 {
+            BIT_skipBits(DStream, (*dt.wrapping_add(val)).nbBits as U32);
+            if (*DStream).bitsConsumed > (size_of::<usize>() * 8) as u32 {
+                /* ugly hack; works only because it's the last symbol */
+                (*DStream).bitsConsumed = (size_of::<usize>() * 8) as u32;
             }
         }
     }
     1
 }
 
-macro_rules! HUF_DECODE_SYMBOLX4_0 {
-    ($ptr:expr, $DStreamPtr:expr, $dt:expr, $dtLog:expr) => {{
-        $ptr = $ptr.add(HUF_decodeSymbolX4($ptr as *mut c_void, $DStreamPtr, $dt, $dtLog) as usize);
-    }};
-}
-macro_rules! HUF_DECODE_SYMBOLX4_1 {
-    ($ptr:expr, $DStreamPtr:expr, $dt:expr, $dtLog:expr) => {{
-        if MEM_64bits() != 0 || (HUF_MAX_TABLELOG <= 12) {
-            $ptr = $ptr
-                .add(HUF_decodeSymbolX4($ptr as *mut c_void, $DStreamPtr, $dt, $dtLog) as usize);
-        }
-    }};
-}
-macro_rules! HUF_DECODE_SYMBOLX4_2 {
-    ($ptr:expr, $DStreamPtr:expr, $dt:expr, $dtLog:expr) => {{
-        if MEM_64bits() != 0 {
-            $ptr = $ptr
-                .add(HUF_decodeSymbolX4($ptr as *mut c_void, $DStreamPtr, $dt, $dtLog) as usize);
-        }
-    }};
-}
-
 unsafe fn HUF_decodeStreamX4(
-    mut p: *mut u8,
+    mut p: *mut BYTE,
     bitDPtr: *mut BIT_DStream_t,
-    pEnd: *mut u8,
+    pEnd: *mut BYTE,
     dt: *const HUF_DEltX4,
-    dtLog: u32,
+    dtLog: U32,
 ) -> usize {
-    let pStart = p;
+    let pStart: *mut BYTE = p;
 
     /* up to 8 symbols at a time */
-    while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p < pEnd.offset(-7)) {
-        HUF_DECODE_SYMBOLX4_2!(p, bitDPtr, dt, dtLog);
-        HUF_DECODE_SYMBOLX4_1!(p, bitDPtr, dt, dtLog);
-        HUF_DECODE_SYMBOLX4_2!(p, bitDPtr, dt, dtLog);
-        HUF_DECODE_SYMBOLX4_0!(p, bitDPtr, dt, dtLog);
+    while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p < pEnd.wrapping_sub(7)) {
+        if MEM_64bits() != 0 {
+            p = p.wrapping_add(HUF_decodeSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
+        }
+        if MEM_64bits() != 0 || HUF_MAX_TABLELOG <= 12 {
+            p = p.wrapping_add(HUF_decodeSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
+        }
+        if MEM_64bits() != 0 {
+            p = p.wrapping_add(HUF_decodeSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
+        }
+        p = p.wrapping_add(HUF_decodeSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
     }
 
     /* closer to the end */
-    while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p <= pEnd.offset(-2)) {
-        HUF_DECODE_SYMBOLX4_0!(p, bitDPtr, dt, dtLog);
+    while (BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) && (p <= pEnd.wrapping_sub(2)) {
+        p = p.wrapping_add(HUF_decodeSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
     }
 
-    while p <= pEnd.offset(-2) {
-        HUF_DECODE_SYMBOLX4_0!(p, bitDPtr, dt, dtLog);
+    while p <= pEnd.wrapping_sub(2) {
+        /* no need to reload : reached the end of DStream */
+        p = p.wrapping_add(HUF_decodeSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
     }
 
     if p < pEnd {
-        p = p.add(HUF_decodeLastSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
+        p = p.wrapping_add(HUF_decodeLastSymbolX4(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
     }
 
-    p as usize - pStart as usize
+    (p as isize - pStart as isize) as usize
 }
 
 unsafe fn HUF_decompress4X4_usingDTable(
@@ -1550,47 +1740,54 @@ unsafe fn HUF_decompress4X4_usingDTable(
     dstSize: usize,
     cSrc: *const c_void,
     cSrcSize: usize,
-    DTable: *const u32,
+    DTable: *const U32,
 ) -> usize {
     if cSrcSize < 10 {
-        return ERROR(ec::corruption_detected);
+        /* strict minimum : jump table + 1 byte per stream */
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     {
-        let istart = cSrc as *const u8;
-        let ostart = dst as *mut u8;
-        let oend = ostart.add(dstSize);
+        let istart: *const BYTE = cSrc as *const BYTE;
+        let ostart: *mut BYTE = dst as *mut BYTE;
+        let oend: *mut BYTE = ostart.wrapping_add(dstSize);
 
         let ptr = DTable as *const c_void;
-        let dt = (ptr as *const HUF_DEltX4).add(1);
-        let dtLog = *DTable.add(0);
+        let dt: *const HUF_DEltX4 = (ptr as *const HUF_DEltX4).wrapping_add(1);
+        let dtLog: U32 = *DTable;
         let mut errorCode: usize;
 
-        let mut bitD1: BIT_DStream_t = core::mem::zeroed();
-        let mut bitD2: BIT_DStream_t = core::mem::zeroed();
-        let mut bitD3: BIT_DStream_t = core::mem::zeroed();
-        let mut bitD4: BIT_DStream_t = core::mem::zeroed();
-        let length1 = MEM_readLE16(istart as *const c_void) as usize;
-        let length2 = MEM_readLE16(istart.add(2) as *const c_void) as usize;
-        let length3 = MEM_readLE16(istart.add(4) as *const c_void) as usize;
+        /* Init */
+        let mut bitD1 = BIT_DStream_t::new();
+        let mut bitD2 = BIT_DStream_t::new();
+        let mut bitD3 = BIT_DStream_t::new();
+        let mut bitD4 = BIT_DStream_t::new();
+        let length1: usize = MEM_readLE16(istart as *const c_void) as usize;
+        let length2: usize = MEM_readLE16(istart.wrapping_add(2) as *const c_void) as usize;
+        let length3: usize = MEM_readLE16(istart.wrapping_add(4) as *const c_void) as usize;
         let length4: usize;
-        let istart1 = istart.add(6);
-        let istart2 = istart1.add(length1);
-        let istart3 = istart2.add(length2);
-        let istart4 = istart3.add(length3);
-        let segmentSize = (dstSize + 3) / 4;
-        let opStart2 = ostart.add(segmentSize);
-        let opStart3 = opStart2.add(segmentSize);
-        let opStart4 = opStart3.add(segmentSize);
-        let mut op1 = ostart;
-        let mut op2 = opStart2;
-        let mut op3 = opStart3;
-        let mut op4 = opStart4;
-        let mut endSignal: u32;
+        let istart1: *const BYTE = istart.wrapping_add(6); /* jumpTable */
+        let istart2: *const BYTE = istart1.wrapping_add(length1);
+        let istart3: *const BYTE = istart2.wrapping_add(length2);
+        let istart4: *const BYTE = istart3.wrapping_add(length3);
+        let segmentSize: usize = (dstSize + 3) / 4;
+        let opStart2: *mut BYTE = ostart.wrapping_add(segmentSize);
+        let opStart3: *mut BYTE = opStart2.wrapping_add(segmentSize);
+        let opStart4: *mut BYTE = opStart3.wrapping_add(segmentSize);
+        let mut op1: *mut BYTE = ostart;
+        let mut op2: *mut BYTE = opStart2;
+        let mut op3: *mut BYTE = opStart3;
+        let mut op4: *mut BYTE = opStart4;
+        let mut endSignal: U32;
 
-        length4 = cSrcSize.wrapping_sub(length1 + length2 + length3 + 6);
+        length4 = cSrcSize.wrapping_sub(
+            length1
+                .wrapping_add(length2)
+                .wrapping_add(length3)
+                .wrapping_add(6),
+        );
         if length4 > cSrcSize {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
         errorCode = BIT_initDStream(&mut bitD1, istart1 as *const c_void, length1);
         if HUF_isError(errorCode) != 0 {
@@ -1609,45 +1806,84 @@ unsafe fn HUF_decompress4X4_usingDTable(
             return errorCode;
         }
 
-        /* 16-32 symbols per loop */
-        endSignal = (BIT_reloadDStream(&mut bitD1)
+        /* 16-32 symbols per loop (4-8 symbols per stream) */
+        endSignal = BIT_reloadDStream(&mut bitD1)
             | BIT_reloadDStream(&mut bitD2)
             | BIT_reloadDStream(&mut bitD3)
-            | BIT_reloadDStream(&mut bitD4)) as u32;
-        while (endSignal == BIT_DStream_unfinished as u32) && (op4 < oend.offset(-7)) {
-            HUF_DECODE_SYMBOLX4_2!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op4, &mut bitD4, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_1!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_1!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_1!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_1!(op4, &mut bitD4, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_2!(op4, &mut bitD4, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_0!(op1, &mut bitD1, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_0!(op2, &mut bitD2, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_0!(op3, &mut bitD3, dt, dtLog);
-            HUF_DECODE_SYMBOLX4_0!(op4, &mut bitD4, dt, dtLog);
+            | BIT_reloadDStream(&mut bitD4);
+        while (endSignal == BIT_DStream_unfinished) && (op4 < oend.wrapping_sub(7)) {
+            if MEM_64bits() != 0 {
+                op1 = op1
+                    .wrapping_add(HUF_decodeSymbolX4(op1 as *mut c_void, &mut bitD1, dt, dtLog)
+                        as usize);
+                op2 = op2
+                    .wrapping_add(HUF_decodeSymbolX4(op2 as *mut c_void, &mut bitD2, dt, dtLog)
+                        as usize);
+                op3 = op3
+                    .wrapping_add(HUF_decodeSymbolX4(op3 as *mut c_void, &mut bitD3, dt, dtLog)
+                        as usize);
+                op4 = op4
+                    .wrapping_add(HUF_decodeSymbolX4(op4 as *mut c_void, &mut bitD4, dt, dtLog)
+                        as usize);
+            }
+            if MEM_64bits() != 0 || HUF_MAX_TABLELOG <= 12 {
+                op1 = op1
+                    .wrapping_add(HUF_decodeSymbolX4(op1 as *mut c_void, &mut bitD1, dt, dtLog)
+                        as usize);
+                op2 = op2
+                    .wrapping_add(HUF_decodeSymbolX4(op2 as *mut c_void, &mut bitD2, dt, dtLog)
+                        as usize);
+                op3 = op3
+                    .wrapping_add(HUF_decodeSymbolX4(op3 as *mut c_void, &mut bitD3, dt, dtLog)
+                        as usize);
+                op4 = op4
+                    .wrapping_add(HUF_decodeSymbolX4(op4 as *mut c_void, &mut bitD4, dt, dtLog)
+                        as usize);
+            }
+            if MEM_64bits() != 0 {
+                op1 = op1
+                    .wrapping_add(HUF_decodeSymbolX4(op1 as *mut c_void, &mut bitD1, dt, dtLog)
+                        as usize);
+                op2 = op2
+                    .wrapping_add(HUF_decodeSymbolX4(op2 as *mut c_void, &mut bitD2, dt, dtLog)
+                        as usize);
+                op3 = op3
+                    .wrapping_add(HUF_decodeSymbolX4(op3 as *mut c_void, &mut bitD3, dt, dtLog)
+                        as usize);
+                op4 = op4
+                    .wrapping_add(HUF_decodeSymbolX4(op4 as *mut c_void, &mut bitD4, dt, dtLog)
+                        as usize);
+            }
+            op1 = op1.wrapping_add(
+                HUF_decodeSymbolX4(op1 as *mut c_void, &mut bitD1, dt, dtLog) as usize,
+            );
+            op2 = op2.wrapping_add(
+                HUF_decodeSymbolX4(op2 as *mut c_void, &mut bitD2, dt, dtLog) as usize,
+            );
+            op3 = op3.wrapping_add(
+                HUF_decodeSymbolX4(op3 as *mut c_void, &mut bitD3, dt, dtLog) as usize,
+            );
+            op4 = op4.wrapping_add(
+                HUF_decodeSymbolX4(op4 as *mut c_void, &mut bitD4, dt, dtLog) as usize,
+            );
 
-            endSignal = (BIT_reloadDStream(&mut bitD1)
+            endSignal = BIT_reloadDStream(&mut bitD1)
                 | BIT_reloadDStream(&mut bitD2)
                 | BIT_reloadDStream(&mut bitD3)
-                | BIT_reloadDStream(&mut bitD4)) as u32;
+                | BIT_reloadDStream(&mut bitD4);
         }
 
         /* check corruption */
         if op1 > opStart2 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op2 > opStart3 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op3 > opStart4 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
+        /* note : op4 supposed already verified within main loop */
 
         /* finish bitStreams one by one */
         HUF_decodeStreamX4(op1, &mut bitD1, opStart2, dt, dtLog);
@@ -1661,9 +1897,10 @@ unsafe fn HUF_decompress4X4_usingDTable(
             & BIT_endOfDStream(&bitD3)
             & BIT_endOfDStream(&bitD4);
         if endSignal == 0 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
 
+        /* decoded size */
         dstSize
     }
 }
@@ -1674,21 +1911,29 @@ unsafe fn HUF_decompress4X4(
     cSrc: *const c_void,
     mut cSrcSize: usize,
 ) -> usize {
-    let mut DTable: [u32; HUF_DTABLE_SIZE_MAX] = [0; HUF_DTABLE_SIZE_MAX];
-    DTable[0] = HUF_MAX_TABLELOG as u32;
-    let mut ip = cSrc as *const u8;
+    /* HUF_CREATE_STATIC_DTABLEX4(DTable, HUF_MAX_TABLELOG) */
+    let mut DTable: [U32; HUF_DTABLE_SIZE(HUF_MAX_TABLELOG)] =
+        [0; HUF_DTABLE_SIZE(HUF_MAX_TABLELOG)];
+    DTable[0] = HUF_MAX_TABLELOG as U32;
+    let mut ip: *const BYTE = cSrc as *const BYTE;
 
-    let hSize = HUF_readDTableX4(DTable.as_mut_ptr(), cSrc, cSrcSize);
+    let hSize: usize = HUF_readDTableX4(DTable.as_mut_ptr(), cSrc, cSrcSize);
     if HUF_isError(hSize) != 0 {
         return hSize;
     }
     if hSize >= cSrcSize {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
-    ip = ip.add(hSize);
+    ip = ip.wrapping_add(hSize);
     cSrcSize -= hSize;
 
-    HUF_decompress4X4_usingDTable(dst, dstSize, ip as *const c_void, cSrcSize, DTable.as_ptr())
+    HUF_decompress4X4_usingDTable(
+        dst,
+        dstSize,
+        ip as *const c_void,
+        cSrcSize,
+        DTable.as_ptr(),
+    )
 }
 
 /**********************************/
@@ -1698,35 +1943,39 @@ unsafe fn HUF_decompress4X4(
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct algo_time_t {
-    tableTime: u32,
-    decode256Time: u32,
+    tableTime: U32,
+    decode256Time: U32,
 }
 
-static algoTime: [[algo_time_t; 3]; 16] = [
-    [at(0, 0), at(1, 1), at(2, 2)],
-    [at(0, 0), at(1, 1), at(2, 2)],
-    [at(38, 130), at(1313, 74), at(2151, 38)],
-    [at(448, 128), at(1353, 74), at(2238, 41)],
-    [at(556, 128), at(1353, 74), at(2238, 47)],
-    [at(714, 128), at(1418, 74), at(2436, 53)],
-    [at(883, 128), at(1437, 74), at(2464, 61)],
-    [at(897, 128), at(1515, 75), at(2622, 68)],
-    [at(926, 128), at(1613, 75), at(2730, 75)],
-    [at(947, 128), at(1729, 77), at(3359, 77)],
-    [at(1107, 128), at(2083, 81), at(4006, 84)],
-    [at(1177, 128), at(2379, 87), at(4785, 88)],
-    [at(1242, 128), at(2415, 93), at(5155, 84)],
-    [at(1349, 128), at(2644, 106), at(5260, 106)],
-    [at(1455, 128), at(2422, 124), at(4174, 124)],
-    [at(722, 128), at(1891, 145), at(1936, 146)],
-];
-
-const fn at(tableTime: u32, decode256Time: u32) -> algo_time_t {
+const fn at(tableTime: U32, decode256Time: U32) -> algo_time_t {
     algo_time_t {
         tableTime,
         decode256Time,
     }
 }
+
+static algoTime: [[algo_time_t; 3]; 16] = [
+    /* single, double, quad */
+    [at(0, 0), at(1, 1), at(2, 2)],             /* Q==0 : impossible */
+    [at(0, 0), at(1, 1), at(2, 2)],             /* Q==1 : impossible */
+    [at(38, 130), at(1313, 74), at(2151, 38)],  /* Q == 2 : 12-18% */
+    [at(448, 128), at(1353, 74), at(2238, 41)], /* Q == 3 : 18-25% */
+    [at(556, 128), at(1353, 74), at(2238, 47)], /* Q == 4 : 25-32% */
+    [at(714, 128), at(1418, 74), at(2436, 53)], /* Q == 5 : 32-38% */
+    [at(883, 128), at(1437, 74), at(2464, 61)], /* Q == 6 : 38-44% */
+    [at(897, 128), at(1515, 75), at(2622, 68)], /* Q == 7 : 44-50% */
+    [at(926, 128), at(1613, 75), at(2730, 75)], /* Q == 8 : 50-56% */
+    [at(947, 128), at(1729, 77), at(3359, 77)], /* Q == 9 : 56-62% */
+    [at(1107, 128), at(2083, 81), at(4006, 84)], /* Q ==10 : 62-69% */
+    [at(1177, 128), at(2379, 87), at(4785, 88)], /* Q ==11 : 69-75% */
+    [at(1242, 128), at(2415, 93), at(5155, 84)], /* Q ==12 : 75-81% */
+    [at(1349, 128), at(2644, 106), at(5260, 106)], /* Q ==13 : 81-87% */
+    [at(1455, 128), at(2422, 124), at(4174, 124)], /* Q ==14 : 87-93% */
+    [at(722, 128), at(1891, 145), at(1936, 146)], /* Q ==15 : 93-99% */
+];
+
+type decompressionAlgo =
+    unsafe fn(dst: *mut c_void, dstSize: usize, cSrc: *const c_void, cSrcSize: usize) -> usize;
 
 unsafe fn HUF_decompress(
     dst: *mut c_void,
@@ -1734,148 +1983,219 @@ unsafe fn HUF_decompress(
     cSrc: *const c_void,
     cSrcSize: usize,
 ) -> usize {
+    static decompress: [Option<decompressionAlgo>; 3] = [
+        Some(HUF_decompress4X2 as decompressionAlgo),
+        Some(HUF_decompress4X4 as decompressionAlgo),
+        None,
+    ];
     /* estimate decompression time */
-    let Q: u32;
-    let D256: u32 = (dstSize >> 8) as u32;
-    let mut Dtime: [u32; 3] = [0; 3];
-    let mut algoNb: u32 = 0;
-    let mut n: c_int;
+    let Q: U32;
+    let D256: U32 = (dstSize >> 8) as U32;
+    let mut Dtime: [U32; 3] = [0; 3];
+    let mut algoNb: U32 = 0;
+    let mut n: i32;
 
     /* validation checks */
     if dstSize == 0 {
-        return ERROR(ec::dstSize_tooSmall);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
     if cSrcSize > dstSize {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected); /* invalid */
     }
     if cSrcSize == dstSize {
         memcpy(dst, cSrc, dstSize);
-        return dstSize;
+        return dstSize; /* not compressed */
     }
     if cSrcSize == 1 {
-        memset(dst, *(cSrc as *const u8) as c_int, dstSize);
-        return dstSize;
+        memset(dst, *(cSrc as *const BYTE) as i32, dstSize);
+        return dstSize; /* RLE */
     }
 
     /* decoder timing evaluation */
-    Q = (cSrcSize * 16 / dstSize) as u32;
+    Q = (cSrcSize.wrapping_mul(16) / dstSize) as U32; /* Q < 16 since dstSize > cSrcSize */
     n = 0;
     while n < 3 {
-        Dtime[n as usize] = algoTime[Q as usize][n as usize].tableTime
-            + (algoTime[Q as usize][n as usize].decode256Time * D256);
+        let row = algoTime.as_ptr().wrapping_add(Q as usize);
+        let cell = (*row).as_ptr().wrapping_add(n as usize);
+        Dtime[n as usize] = (*cell)
+            .tableTime
+            .wrapping_add((*cell).decode256Time.wrapping_mul(D256));
         n += 1;
     }
 
-    Dtime[1] += Dtime[1] >> 4;
-    Dtime[2] += Dtime[2] >> 3;
+    /* advantage to algorithms using less memory, for cache eviction */
+    Dtime[1] = Dtime[1].wrapping_add(Dtime[1] >> 4);
+    Dtime[2] = Dtime[2].wrapping_add(Dtime[2] >> 3);
 
     if Dtime[1] < Dtime[0] {
         algoNb = 1;
     }
 
-    if algoNb == 0 {
-        HUF_decompress4X2(dst, dstSize, cSrc, cSrcSize)
-    } else {
-        HUF_decompress4X4(dst, dstSize, cSrc, cSrcSize)
-    }
+    (decompress[algoNb as usize].unwrap_unchecked())(dst, dstSize, cSrc, cSrcSize)
 }
 
-/* ****************************************************************
- * zstd decompression
- * ************************************************************** */
-const ZSTD_MAGICNUMBER: u32 = 0xFD2FB523;
+/* ******************************************************************
+ *  zstd v0.3 : constants
+ ********************************************************************/
 
-const FSE_DTABLE_SIZE_U32_LLFSELog: usize = 1 + (1 << LLFSELog);
-const FSE_DTABLE_SIZE_U32_OffFSELog: usize = 1 + (1 << OffFSELog);
-const FSE_DTABLE_SIZE_U32_MLFSELog: usize = 1 + (1 << MLFSELog);
+#[allow(dead_code)]
+const ZSTD_MEMORY_USAGE: u32 = 17;
 
-const HASH_LOG: usize = ZSTD_MEMORY_USAGE - 2;
-const HASH_TABLESIZE: usize = 1 << HASH_LOG;
-const HASH_MASK: usize = HASH_TABLESIZE - 1;
-const ZSTD_MEMORY_USAGE: usize = 17;
+#[allow(dead_code)]
+const HASH_LOG: u32 = ZSTD_MEMORY_USAGE - 2;
+#[allow(dead_code)]
+const HASH_TABLESIZE: u32 = 1 << HASH_LOG;
+#[allow(dead_code)]
+const HASH_MASK: u32 = HASH_TABLESIZE - 1;
 
-const BLOCKSIZE: usize = 128 * (1 << 10);
-const MIN_SEQUENCES_SIZE: usize = 2 + 2 + 3 + 1;
-const MIN_CBLOCK_SIZE: usize = 3 + MIN_SEQUENCES_SIZE;
-const IS_RAW: u8 = 1; /* BIT0 */
-const IS_RLE: u8 = 2; /* BIT1 */
+#[allow(dead_code)]
+const KNUTH: u32 = 2654435761;
 
+#[allow(dead_code)]
+const BIT7: u32 = 128;
+#[allow(dead_code)]
+const BIT6: u32 = 64;
+#[allow(dead_code)]
+const BIT5: u32 = 32;
+#[allow(dead_code)]
+const BIT4: u32 = 16;
+const BIT1: u32 = 2;
+const BIT0: u32 = 1;
+
+const BLOCKSIZE: usize = 128 * (1 << 10); /* define, for static allocation */
+#[allow(dead_code)]
+const MIN_SEQUENCES_SIZE: usize = 2 /*seqNb*/ + 2 /*dumps*/ + 3 /*seqTables*/ + 1 /*bitStream*/;
+const MIN_CBLOCK_SIZE: usize = 3 /*litCSize*/ + MIN_SEQUENCES_SIZE;
+const IS_RAW: u32 = BIT0;
+const IS_RLE: u32 = BIT1;
+
+#[allow(dead_code)]
+const WORKPLACESIZE: usize = BLOCKSIZE * 3;
 const MINMATCH: usize = 4;
 const MLbits: u32 = 7;
 const LLbits: u32 = 6;
 const Offbits: u32 = 5;
-const MaxML: usize = (1 << MLbits) - 1;
-const MaxLL: usize = (1 << LLbits) - 1;
+const MaxML: usize = (1usize << MLbits) - 1;
+const MaxLL: usize = (1usize << LLbits) - 1;
 const MaxOff: usize = 31;
-const LitFSELog: usize = 11;
-const MLFSELog: usize = 10;
-const LLFSELog: usize = 10;
-const OffFSELog: usize = 9;
+#[allow(dead_code)]
+const LitFSELog: u32 = 11;
+const MLFSELog: u32 = 10;
+const LLFSELog: u32 = 10;
+const OffFSELog: u32 = 9;
+#[allow(dead_code)]
+const MaxSeq: usize = if MaxLL < MaxML { MaxML } else { MaxLL };
 
-const ZSTD_CONTENTSIZE_ERROR: c_ulonglong = 0u64.wrapping_sub(2);
+#[allow(dead_code)]
+const LITERAL_NOENTROPY: u32 = 63;
+#[allow(dead_code)]
+const COMMAND_NOENTROPY: u32 = 7; /* to remove */
 
-const ZSTD_blockHeaderSize: usize = 3;
-const ZSTD_frameHeaderSize: usize = 4;
+const ZSTD_CONTENTSIZE_ERROR: u64 = 0u64.wrapping_sub(2);
 
-#[inline]
+static ZSTD_blockHeaderSize: usize = 3;
+static ZSTD_frameHeaderSize: usize = 4;
+
+const ZSTD_magicNumber: U32 = 0xFD2FB523; /* v0.3 */
+
+/* ******************************************************************
+ *  Memory operations
+ ********************************************************************/
+
+#[inline(always)]
 unsafe fn ZSTD_copy4(dst: *mut c_void, src: *const c_void) {
-    memcpy(dst, src, 4);
-}
-#[inline]
-unsafe fn ZSTD_copy8(dst: *mut c_void, src: *const c_void) {
-    memcpy(dst, src, 8);
+    /* memcpy(dst, src, 4) : possibly overlapping, exactly like the C version */
+    let v = (src as *const u32).read_unaligned();
+    (dst as *mut u32).write_unaligned(v);
 }
 
+#[inline(always)]
+unsafe fn ZSTD_copy8(dst: *mut c_void, src: *const c_void) {
+    /* memcpy(dst, src, 8) : possibly overlapping, exactly like the C version */
+    let v = (src as *const u64).read_unaligned();
+    (dst as *mut u64).write_unaligned(v);
+}
+
+/// `ZSTD_wildcopy` : custom version of memcpy(), can copy up to 7-8 bytes too many
 unsafe fn ZSTD_wildcopy(dst: *mut c_void, src: *const c_void, length: isize) {
-    let mut ip = src as *const u8;
-    let mut op = dst as *mut u8;
-    let oend = op.offset(length);
+    let mut ip: *const BYTE = src as *const BYTE;
+    let mut op: *mut BYTE = dst as *mut BYTE;
+    let oend: *mut BYTE = op.wrapping_offset(length);
     loop {
         ZSTD_copy8(op as *mut c_void, ip as *const c_void);
-        op = op.add(8);
-        ip = ip.add(8);
-        if op >= oend {
+        op = op.wrapping_add(8);
+        ip = ip.wrapping_add(8);
+        if !(op < oend) {
             break;
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-#[repr(u32)]
-enum blockType_t {
-    bt_compressed = 0,
-    bt_raw = 1,
-    bt_rle = 2,
-    bt_end = 3,
+/* **************************************
+ *  Local structures
+ ****************************************/
+
+type blockType_t = u32;
+const bt_compressed: blockType_t = 0;
+const bt_raw: blockType_t = 1;
+const bt_rle: blockType_t = 2;
+const bt_end: blockType_t = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct blockProperties_t {
+    blockType: blockType_t,
+    origSize: U32,
 }
 
 #[repr(C)]
-struct blockProperties_t {
-    blockType: blockType_t,
-    origSize: u32,
+#[allow(dead_code)]
+struct SeqStore_t {
+    buffer: *mut c_void,
+    offsetStart: *mut U32,
+    offset: *mut U32,
+    offCodeStart: *mut BYTE,
+    offCode: *mut BYTE,
+    litStart: *mut BYTE,
+    lit: *mut BYTE,
+    litLengthStart: *mut BYTE,
+    litLength: *mut BYTE,
+    matchLengthStart: *mut BYTE,
+    matchLength: *mut BYTE,
+    dumpsStart: *mut BYTE,
+    dumps: *mut BYTE,
 }
 
-#[inline]
-fn ZSTD_isError(code: usize) -> c_uint {
+/* *************************************
+ *  Error Management
+ ***************************************/
+
+/// `ZSTD_isError` : tells if a return value is an error code
+fn ZSTD_isError(code: usize) -> u32 {
     ERR_isError(code)
 }
 
-/* Decompression section */
+/* *************************************************************
+ *   Decompression section
+ ***************************************************************/
+
 #[repr(C)]
 pub struct ZSTDv03_Dctx_s {
-    LLTable: [u32; FSE_DTABLE_SIZE_U32_LLFSELog],
-    OffTable: [u32; FSE_DTABLE_SIZE_U32_OffFSELog],
-    MLTable: [u32; FSE_DTABLE_SIZE_U32_MLFSELog],
+    LLTable: [U32; FSE_DTABLE_SIZE_U32(LLFSELog)],
+    OffTable: [U32; FSE_DTABLE_SIZE_U32(OffFSELog)],
+    MLTable: [U32; FSE_DTABLE_SIZE_U32(MLFSELog)],
     previousDstEnd: *mut c_void,
     base: *mut c_void,
     expected: usize,
     bType: blockType_t,
-    phase: u32,
-    litPtr: *const u8,
+    phase: U32,
+    litPtr: *const BYTE,
     litSize: usize,
-    litBuffer: [u8; BLOCKSIZE + 8],
+    litBuffer: [BYTE; BLOCKSIZE + 8 /* margin for wildcopy */],
 }
 
+/// `ZSTDv03_Dctx` (public, opaque) — also `ZSTD_DCtx` internally
+pub type ZSTDv03_Dctx = ZSTDv03_Dctx_s;
 type ZSTD_DCtx = ZSTDv03_Dctx_s;
 
 unsafe fn ZSTD_getcBlockSize(
@@ -1883,28 +2203,30 @@ unsafe fn ZSTD_getcBlockSize(
     srcSize: usize,
     bpPtr: *mut blockProperties_t,
 ) -> usize {
-    let in_ = src as *const u8;
-    let headerFlags: u8;
-    let cSize: u32;
+    let in_: *const BYTE = src as *const BYTE;
+    let headerFlags: BYTE;
+    let cSize: U32;
 
     if srcSize < 3 {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
 
     headerFlags = *in_;
-    cSize = *in_.add(2) as u32 + ((*in_.add(1) as u32) << 8) + (((*in_.add(0) as u32) & 7) << 16);
+    cSize = (*in_.wrapping_add(2) as U32)
+        .wrapping_add((*in_.wrapping_add(1) as U32) << 8)
+        .wrapping_add(((*in_ as U32) & 7) << 16);
 
-    (*bpPtr).blockType = core::mem::transmute::<u32, blockType_t>((headerFlags >> 6) as u32);
-    (*bpPtr).origSize = if (*bpPtr).blockType == blockType_t::bt_rle {
+    (*bpPtr).blockType = (headerFlags >> 6) as blockType_t;
+    (*bpPtr).origSize = if (*bpPtr).blockType == bt_rle {
         cSize
     } else {
         0
     };
 
-    if (*bpPtr).blockType == blockType_t::bt_end {
+    if (*bpPtr).blockType == bt_end {
         return 0;
     }
-    if (*bpPtr).blockType == blockType_t::bt_rle {
+    if (*bpPtr).blockType == bt_rle {
         return 1;
     }
     cSize as usize
@@ -1917,7 +2239,7 @@ unsafe fn ZSTD_copyUncompressedBlock(
     srcSize: usize,
 ) -> usize {
     if srcSize > maxDstSize {
-        return ERROR(ec::dstSize_tooSmall);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
     if srcSize > 0 {
         memcpy(dst, src, srcSize);
@@ -1925,106 +2247,125 @@ unsafe fn ZSTD_copyUncompressedBlock(
     srcSize
 }
 
+/// `ZSTD_decompressLiterals` : @return : nb of bytes read from src, or an error code
 unsafe fn ZSTD_decompressLiterals(
     dst: *mut c_void,
     maxDstSizePtr: *mut usize,
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let ip = src as *const u8;
+    let ip: *const BYTE = src as *const BYTE;
 
-    let litSize = (MEM_readLE32(src) & 0x1FFFFF) as usize >> 2;
-    let litCSize = (MEM_readLE32(ip.add(2) as *const c_void) & 0xFFFFFF) as usize >> 5;
+    /* no buffer issue : srcSize >= MIN_CBLOCK_SIZE */
+    let litSize: usize = ((MEM_readLE32(src) & 0x1FFFFF) >> 2) as usize;
+    let litCSize: usize =
+        ((MEM_readLE32(ip.wrapping_add(2) as *const c_void) & 0xFFFFFF) >> 5) as usize;
 
     if litSize > *maxDstSizePtr {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected);
     }
     if litCSize + 5 > srcSize {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
-    if HUF_isError(HUF_decompress(dst, litSize, ip.add(5) as *const c_void, litCSize)) != 0 {
-        return ERROR(ec::corruption_detected);
+    if HUF_isError(HUF_decompress(
+        dst,
+        litSize,
+        ip.wrapping_add(5) as *const c_void,
+        litCSize,
+    )) != 0
+    {
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     *maxDstSizePtr = litSize;
     litCSize + 5
 }
 
-unsafe fn ZSTD_decodeLiteralsBlock(
-    ctx: *mut c_void,
-    src: *const c_void,
-    srcSize: usize,
-) -> usize {
-    let dctx = ctx as *mut ZSTD_DCtx;
-    let istart = src as *const u8;
+/// `ZSTD_decodeLiteralsBlock` : @return : nb of bytes read from src (< srcSize)
+unsafe fn ZSTD_decodeLiteralsBlock(ctx: *mut c_void, src: *const c_void, srcSize: usize) -> usize {
+    let dctx: *mut ZSTD_DCtx = ctx as *mut ZSTD_DCtx;
+    let istart: *const BYTE = src as *const BYTE;
 
+    /* any compressed block with literals segment must be at least this size */
     if srcSize < MIN_CBLOCK_SIZE {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
-    match *istart & 3 {
+    match (*istart as u32) & 3 {
         x if x == IS_RAW => {
-            let litSize = (MEM_readLE32(istart as *const c_void) & 0xFFFFFF) as usize >> 2;
-            if litSize > srcSize - 11 {
+            /* no buffer issue : srcSize >= MIN_CBLOCK_SIZE */
+            let litSize: usize =
+                ((MEM_readLE32(istart as *const c_void) & 0xFFFFFF) >> 2) as usize;
+            if litSize > srcSize.wrapping_sub(11) {
+                /* risk of reading too far with wildcopy */
                 if litSize > BLOCKSIZE {
-                    return ERROR(ec::corruption_detected);
+                    return ERROR(ZSTD_error_corruption_detected);
                 }
-                if litSize > srcSize - 3 {
-                    return ERROR(ec::corruption_detected);
+                if litSize > srcSize.wrapping_sub(3) {
+                    return ERROR(ZSTD_error_corruption_detected);
                 }
                 memcpy(
-                    (*dctx).litBuffer.as_mut_ptr() as *mut c_void,
+                    addr_of_mut!((*dctx).litBuffer) as *mut c_void,
                     istart as *const c_void,
                     litSize,
                 );
-                (*dctx).litPtr = (*dctx).litBuffer.as_ptr();
+                (*dctx).litPtr = addr_of_mut!((*dctx).litBuffer) as *const BYTE;
                 (*dctx).litSize = litSize;
                 memset(
-                    (*dctx).litBuffer.as_mut_ptr().add((*dctx).litSize) as *mut c_void,
+                    (addr_of_mut!((*dctx).litBuffer) as *mut BYTE)
+                        .wrapping_add((*dctx).litSize) as *mut c_void,
                     0,
                     8,
                 );
                 return litSize + 3;
             }
-            (*dctx).litPtr = istart.add(3);
+            /* direct reference into compressed stream */
+            (*dctx).litPtr = istart.wrapping_add(3);
             (*dctx).litSize = litSize;
             litSize + 3
         }
         x if x == IS_RLE => {
-            let litSize = (MEM_readLE32(istart as *const c_void) & 0xFFFFFF) as usize >> 2;
+            /* no buffer issue : srcSize >= MIN_CBLOCK_SIZE */
+            let litSize: usize =
+                ((MEM_readLE32(istart as *const c_void) & 0xFFFFFF) >> 2) as usize;
             if litSize > BLOCKSIZE {
-                return ERROR(ec::corruption_detected);
+                return ERROR(ZSTD_error_corruption_detected);
             }
             memset(
-                (*dctx).litBuffer.as_mut_ptr() as *mut c_void,
-                *istart.add(3) as c_int,
+                addr_of_mut!((*dctx).litBuffer) as *mut c_void,
+                *istart.wrapping_add(3) as i32,
                 litSize + 8,
             );
-            (*dctx).litPtr = (*dctx).litBuffer.as_ptr();
+            (*dctx).litPtr = addr_of_mut!((*dctx).litBuffer) as *const BYTE;
             (*dctx).litSize = litSize;
             4
         }
+        /* default and case 0 */
         _ => {
-            /* default / case 0 */
-            let mut litSize = BLOCKSIZE;
-            let readSize =
-                ZSTD_decompressLiterals((*dctx).litBuffer.as_mut_ptr() as *mut c_void, &mut litSize, src, srcSize);
-            (*dctx).litPtr = (*dctx).litBuffer.as_ptr();
+            let mut litSize: usize = BLOCKSIZE;
+            let readSize: usize = ZSTD_decompressLiterals(
+                addr_of_mut!((*dctx).litBuffer) as *mut c_void,
+                &mut litSize,
+                src,
+                srcSize,
+            );
+            (*dctx).litPtr = addr_of_mut!((*dctx).litBuffer) as *const BYTE;
             (*dctx).litSize = litSize;
             memset(
-                (*dctx).litBuffer.as_mut_ptr().add((*dctx).litSize) as *mut c_void,
+                (addr_of_mut!((*dctx).litBuffer) as *mut BYTE).wrapping_add((*dctx).litSize)
+                    as *mut c_void,
                 0,
                 8,
             );
-            readSize
+            readSize /* works if it's an error too */
         }
     }
 }
 
 unsafe fn ZSTD_decodeSeqHeaders(
-    nbSeq: *mut c_int,
-    dumpsPtr: *mut *const u8,
+    nbSeq: *mut i32,
+    dumpsPtr: *mut *const BYTE,
     dumpsLengthPtr: *mut usize,
     DTableLL: *mut FSE_DTable,
     DTableML: *mut FSE_DTable,
@@ -2032,152 +2373,146 @@ unsafe fn ZSTD_decodeSeqHeaders(
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let istart = src as *const u8;
-    let mut ip = istart;
-    let iend = istart.add(srcSize);
-    let LLtype: u32;
-    let Offtype: u32;
-    let MLtype: u32;
-    let mut LLlog: u32 = 0;
-    let mut Offlog: u32 = 0;
-    let mut MLlog: u32 = 0;
-    let dumpsLength: usize;
+    let istart: *const BYTE = src as *const BYTE;
+    let mut ip: *const BYTE = istart;
+    let iend: *const BYTE = istart.wrapping_add(srcSize);
+    let LLtype: U32;
+    let Offtype: U32;
+    let MLtype: U32;
+    let mut LLlog: U32 = 0;
+    let mut Offlog: U32 = 0;
+    let mut MLlog: U32 = 0;
+    let mut dumpsLength: usize;
 
+    /* check */
     if srcSize < 5 {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
 
     /* SeqHead */
-    *nbSeq = MEM_readLE16(ip as *const c_void) as c_int;
-    ip = ip.add(2);
-    LLtype = (*ip >> 6) as u32;
-    Offtype = ((*ip >> 4) & 3) as u32;
-    MLtype = ((*ip >> 2) & 3) as u32;
+    *nbSeq = MEM_readLE16(ip as *const c_void) as i32;
+    ip = ip.wrapping_add(2);
+    LLtype = (*ip >> 6) as U32;
+    Offtype = ((*ip >> 4) & 3) as U32;
+    MLtype = ((*ip >> 2) & 3) as U32;
     if (*ip & 2) != 0 {
-        dumpsLength = *ip.add(2) as usize;
-        let dl = dumpsLength + ((*ip.add(1) as usize) << 8);
-        ip = ip.add(3);
-        *dumpsPtr = ip;
-        ip = ip.add(dl);
-        *dumpsLengthPtr = dl;
+        dumpsLength = *ip.wrapping_add(2) as usize;
+        dumpsLength = dumpsLength.wrapping_add((*ip.wrapping_add(1) as usize) << 8);
+        ip = ip.wrapping_add(3);
     } else {
-        dumpsLength = *ip.add(1) as usize;
-        let dl = dumpsLength + (((*ip.add(0) as usize) & 1) << 8);
-        ip = ip.add(2);
-        *dumpsPtr = ip;
-        ip = ip.add(dl);
-        *dumpsLengthPtr = dl;
+        dumpsLength = *ip.wrapping_add(1) as usize;
+        dumpsLength = dumpsLength.wrapping_add(((*ip as usize) & 1) << 8);
+        ip = ip.wrapping_add(2);
     }
+    *dumpsPtr = ip;
+    ip = ip.wrapping_add(dumpsLength);
+    *dumpsLengthPtr = dumpsLength;
 
     /* check */
-    if ip > iend.offset(-3) {
-        return ERROR(ec::srcSize_wrong);
+    if ip > iend.wrapping_sub(3) {
+        /* min : all 3 are "raw", hence no header, but at least xxLog bits per type */
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
 
     /* sequences */
     {
-        let mut norm: [i16; MaxML + 1] = [0; MaxML + 1];
+        /* assumption : MaxML >= MaxLL and MaxOff */
+        let mut norm: [S16; MaxML + 1] = [0; MaxML + 1];
         let mut headerSize: usize;
 
         /* Build DTables */
-        match LLtype {
-            x if x == blockType_t::bt_rle as u32 => {
-                LLlog = 0;
-                FSE_buildDTable_rle(DTableLL, *ip);
-                ip = ip.add(1);
+        if LLtype == bt_rle {
+            LLlog = 0;
+            let sym = *ip;
+            ip = ip.wrapping_add(1);
+            FSE_buildDTable_rle(DTableLL, sym);
+        } else if LLtype == bt_raw {
+            LLlog = LLbits;
+            FSE_buildDTable_raw(DTableLL, LLbits);
+        } else {
+            let mut max: U32 = MaxLL as U32;
+            headerSize = FSE_readNCount(
+                norm.as_mut_ptr(),
+                &mut max,
+                &mut LLlog,
+                ip as *const c_void,
+                (iend as isize - ip as isize) as usize,
+            );
+            if FSE_isError(headerSize) != 0 {
+                return ERROR(ZSTD_error_GENERIC);
             }
-            x if x == blockType_t::bt_raw as u32 => {
-                LLlog = LLbits;
-                FSE_buildDTable_raw(DTableLL, LLbits);
+            if LLlog > LLFSELog {
+                return ERROR(ZSTD_error_corruption_detected);
             }
-            _ => {
-                let mut max: c_uint = MaxLL as c_uint;
-                headerSize = FSE_readNCount(
-                    norm.as_mut_ptr(),
-                    &mut max,
-                    &mut LLlog,
-                    ip as *const c_void,
-                    iend as usize - ip as usize,
-                );
-                if FSE_isError(headerSize) != 0 {
-                    return ERROR(ec::GENERIC);
-                }
-                if LLlog as usize > LLFSELog {
-                    return ERROR(ec::corruption_detected);
-                }
-                ip = ip.add(headerSize);
-                FSE_buildDTable(DTableLL, norm.as_ptr(), max, LLlog);
-            }
+            ip = ip.wrapping_add(headerSize);
+            FSE_buildDTable(DTableLL, norm.as_ptr(), max, LLlog);
         }
 
-        match Offtype {
-            x if x == blockType_t::bt_rle as u32 => {
-                Offlog = 0;
-                if ip > iend.offset(-2) {
-                    return ERROR(ec::srcSize_wrong);
-                }
-                FSE_buildDTable_rle(DTableOffb, *ip & MaxOff as u8);
-                ip = ip.add(1);
+        if Offtype == bt_rle {
+            Offlog = 0;
+            if ip > iend.wrapping_sub(2) {
+                /* min : "raw", hence no header, but at least xxLog bits */
+                return ERROR(ZSTD_error_srcSize_wrong);
             }
-            x if x == blockType_t::bt_raw as u32 => {
-                Offlog = Offbits;
-                FSE_buildDTable_raw(DTableOffb, Offbits);
+            let sym = *ip & (MaxOff as BYTE);
+            ip = ip.wrapping_add(1);
+            /* if *ip > MaxOff, data is corrupted */
+            FSE_buildDTable_rle(DTableOffb, sym);
+        } else if Offtype == bt_raw {
+            Offlog = Offbits;
+            FSE_buildDTable_raw(DTableOffb, Offbits);
+        } else {
+            let mut max: U32 = MaxOff as U32;
+            headerSize = FSE_readNCount(
+                norm.as_mut_ptr(),
+                &mut max,
+                &mut Offlog,
+                ip as *const c_void,
+                (iend as isize - ip as isize) as usize,
+            );
+            if FSE_isError(headerSize) != 0 {
+                return ERROR(ZSTD_error_GENERIC);
             }
-            _ => {
-                let mut max: c_uint = MaxOff as c_uint;
-                headerSize = FSE_readNCount(
-                    norm.as_mut_ptr(),
-                    &mut max,
-                    &mut Offlog,
-                    ip as *const c_void,
-                    iend as usize - ip as usize,
-                );
-                if FSE_isError(headerSize) != 0 {
-                    return ERROR(ec::GENERIC);
-                }
-                if Offlog as usize > OffFSELog {
-                    return ERROR(ec::corruption_detected);
-                }
-                ip = ip.add(headerSize);
-                FSE_buildDTable(DTableOffb, norm.as_ptr(), max, Offlog);
+            if Offlog > OffFSELog {
+                return ERROR(ZSTD_error_corruption_detected);
             }
+            ip = ip.wrapping_add(headerSize);
+            FSE_buildDTable(DTableOffb, norm.as_ptr(), max, Offlog);
         }
 
-        match MLtype {
-            x if x == blockType_t::bt_rle as u32 => {
-                MLlog = 0;
-                if ip > iend.offset(-2) {
-                    return ERROR(ec::srcSize_wrong);
-                }
-                FSE_buildDTable_rle(DTableML, *ip);
-                ip = ip.add(1);
+        if MLtype == bt_rle {
+            MLlog = 0;
+            if ip > iend.wrapping_sub(2) {
+                /* min : "raw", hence no header, but at least xxLog bits */
+                return ERROR(ZSTD_error_srcSize_wrong);
             }
-            x if x == blockType_t::bt_raw as u32 => {
-                MLlog = MLbits;
-                FSE_buildDTable_raw(DTableML, MLbits);
+            let sym = *ip;
+            ip = ip.wrapping_add(1);
+            FSE_buildDTable_rle(DTableML, sym);
+        } else if MLtype == bt_raw {
+            MLlog = MLbits;
+            FSE_buildDTable_raw(DTableML, MLbits);
+        } else {
+            let mut max: U32 = MaxML as U32;
+            headerSize = FSE_readNCount(
+                norm.as_mut_ptr(),
+                &mut max,
+                &mut MLlog,
+                ip as *const c_void,
+                (iend as isize - ip as isize) as usize,
+            );
+            if FSE_isError(headerSize) != 0 {
+                return ERROR(ZSTD_error_GENERIC);
             }
-            _ => {
-                let mut max: c_uint = MaxML as c_uint;
-                headerSize = FSE_readNCount(
-                    norm.as_mut_ptr(),
-                    &mut max,
-                    &mut MLlog,
-                    ip as *const c_void,
-                    iend as usize - ip as usize,
-                );
-                if FSE_isError(headerSize) != 0 {
-                    return ERROR(ec::GENERIC);
-                }
-                if MLlog as usize > MLFSELog {
-                    return ERROR(ec::corruption_detected);
-                }
-                ip = ip.add(headerSize);
-                FSE_buildDTable(DTableML, norm.as_ptr(), max, MLlog);
+            if MLlog > MLFSELog {
+                return ERROR(ZSTD_error_corruption_detected);
             }
+            ip = ip.wrapping_add(headerSize);
+            FSE_buildDTable(DTableML, norm.as_ptr(), max, MLlog);
         }
     }
 
-    ip as usize - istart as usize
+    (ip as isize - istart as isize) as usize
 }
 
 #[repr(C)]
@@ -2195,8 +2530,8 @@ struct seqState_t {
     stateOffb: FSE_DState_t,
     stateML: FSE_DState_t,
     prevOffset: usize,
-    dumps: *const u8,
-    dumpsEnd: *const u8,
+    dumps: *const BYTE,
+    dumpsEnd: *const BYTE,
 }
 
 unsafe fn ZSTD_decodeSequence(seq: *mut seq_t, seqState: *mut seqState_t) {
@@ -2204,11 +2539,14 @@ unsafe fn ZSTD_decodeSequence(seq: *mut seq_t, seqState: *mut seqState_t) {
     let prevOffset: usize;
     let mut offset: usize;
     let mut matchLength: usize;
-    let mut dumps = (*seqState).dumps;
-    let de = (*seqState).dumpsEnd;
+    let mut dumps: *const BYTE = (*seqState).dumps;
+    let de: *const BYTE = (*seqState).dumpsEnd;
 
     /* Literal length */
-    litLength = FSE_decodeSymbol(&mut (*seqState).stateLL, &mut (*seqState).DStream) as usize;
+    litLength = FSE_decodeSymbol(
+        addr_of_mut!((*seqState).stateLL),
+        addr_of_mut!((*seqState).DStream),
+    ) as usize;
     prevOffset = if litLength != 0 {
         (*seq).offset
     } else {
@@ -2216,73 +2554,112 @@ unsafe fn ZSTD_decodeSequence(seq: *mut seq_t, seqState: *mut seqState_t) {
     };
     (*seqState).prevOffset = (*seq).offset;
     if litLength == MaxLL {
-        let add: u32 = if dumps < de {
-            let v = *dumps;
-            dumps = dumps.add(1);
-            v as u32
+        let add: U32 = if dumps < de {
+            let v = *dumps as U32;
+            dumps = dumps.wrapping_add(1);
+            v
         } else {
             0
         };
         if add < 255 {
-            litLength += add as usize;
-        } else if dumps.add(3) <= de {
+            litLength = litLength.wrapping_add(add as usize);
+        } else if dumps.wrapping_add(3) <= de {
             litLength = MEM_readLE24(dumps as *const c_void) as usize;
-            dumps = dumps.add(3);
+            dumps = dumps.wrapping_add(3);
         }
         if dumps >= de {
-            dumps = de.offset(-1);
+            /* late correction, to avoid read overflow (data is now corrupted anyway) */
+            dumps = de.wrapping_sub(1);
         }
     }
 
     /* Offset */
     {
+        /* note : size_t faster than U32 */
         static offsetPrefix: [usize; MaxOff + 1] = [
-            1, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
-            131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216, 33554432, 1, 1,
-            1, 1, 1,
+            1, /*fake*/
+            1,
+            2,
+            4,
+            8,
+            16,
+            32,
+            64,
+            128,
+            256,
+            512,
+            1024,
+            2048,
+            4096,
+            8192,
+            16384,
+            32768,
+            65536,
+            131072,
+            262144,
+            524288,
+            1048576,
+            2097152,
+            4194304,
+            8388608,
+            16777216,
+            33554432,
+            /*fake*/ 1,
+            1,
+            1,
+            1,
+            1,
         ];
-        let offsetCode: u32;
-        let mut nbBits: u32;
-        offsetCode =
-            FSE_decodeSymbol(&mut (*seqState).stateOffb, &mut (*seqState).DStream) as u32;
+        let offsetCode: U32;
+        let mut nbBits: U32;
+        /* <= maxOff, by table construction */
+        offsetCode = FSE_decodeSymbol(
+            addr_of_mut!((*seqState).stateOffb),
+            addr_of_mut!((*seqState).DStream),
+        ) as U32;
         if MEM_32bits() != 0 {
-            BIT_reloadDStream(&mut (*seqState).DStream);
+            BIT_reloadDStream(addr_of_mut!((*seqState).DStream));
         }
-        nbBits = offsetCode - 1;
+        nbBits = offsetCode.wrapping_sub(1);
         if offsetCode == 0 {
-            nbBits = 0;
+            nbBits = 0; /* cmove */
         }
-        offset = offsetPrefix[offsetCode as usize]
-            + BIT_readBits(&mut (*seqState).DStream, nbBits);
+        offset = (*offsetPrefix.as_ptr().wrapping_add(offsetCode as usize)).wrapping_add(
+            BIT_readBits(addr_of_mut!((*seqState).DStream), nbBits),
+        );
         if MEM_32bits() != 0 {
-            BIT_reloadDStream(&mut (*seqState).DStream);
+            BIT_reloadDStream(addr_of_mut!((*seqState).DStream));
         }
         if offsetCode == 0 {
-            offset = prevOffset;
+            offset = prevOffset; /* cmove */
         }
     }
 
     /* MatchLength */
-    matchLength = FSE_decodeSymbol(&mut (*seqState).stateML, &mut (*seqState).DStream) as usize;
+    matchLength = FSE_decodeSymbol(
+        addr_of_mut!((*seqState).stateML),
+        addr_of_mut!((*seqState).DStream),
+    ) as usize;
     if matchLength == MaxML {
-        let add: u32 = if dumps < de {
-            let v = *dumps;
-            dumps = dumps.add(1);
-            v as u32
+        let add: U32 = if dumps < de {
+            let v = *dumps as U32;
+            dumps = dumps.wrapping_add(1);
+            v
         } else {
             0
         };
         if add < 255 {
-            matchLength += add as usize;
-        } else if dumps.add(3) <= de {
+            matchLength = matchLength.wrapping_add(add as usize);
+        } else if dumps.wrapping_add(3) <= de {
             matchLength = MEM_readLE24(dumps as *const c_void) as usize;
-            dumps = dumps.add(3);
+            dumps = dumps.wrapping_add(3);
         }
         if dumps >= de {
-            dumps = de.offset(-1);
+            /* late correction, to avoid read overflow (data is now corrupted anyway) */
+            dumps = de.wrapping_sub(1);
         }
     }
-    matchLength += MINMATCH;
+    matchLength = matchLength.wrapping_add(MINMATCH);
 
     /* save result */
     (*seq).litLength = litLength;
@@ -2292,105 +2669,113 @@ unsafe fn ZSTD_decodeSequence(seq: *mut seq_t, seqState: *mut seqState_t) {
 }
 
 unsafe fn ZSTD_execSequence(
-    mut op: *mut u8,
+    mut op: *mut BYTE,
     sequence: seq_t,
-    litPtr: *mut *const u8,
-    litLimit: *const u8,
-    base: *mut u8,
-    oend: *mut u8,
+    litPtr: *mut *const BYTE,
+    litLimit: *const BYTE,
+    base: *mut BYTE,
+    oend: *mut BYTE,
 ) -> usize {
-    static dec32table: [c_int; 8] = [0, 1, 2, 1, 4, 4, 4, 4];
-    static dec64table: [c_int; 8] = [8, 8, 8, 7, 8, 9, 10, 11];
-    let ostart = op;
-    let oLitEnd = op.add(sequence.litLength);
-    let oMatchEnd = op.add(sequence.litLength + sequence.matchLength);
-    let oend_8 = oend.offset(-8);
-    let litEnd = (*litPtr).add(sequence.litLength);
+    static dec32table: [i32; 8] = [0, 1, 2, 1, 4, 4, 4, 4]; /* added */
+    static dec64table: [i32; 8] = [8, 8, 8, 7, 8, 9, 10, 11]; /* subtracted */
+    let ostart: *const BYTE = op;
+    let oLitEnd: *mut BYTE = op.wrapping_add(sequence.litLength);
+    /* risk : address space overflow (32-bits) */
+    let oMatchEnd: *mut BYTE = op
+        .wrapping_add(sequence.litLength)
+        .wrapping_add(sequence.matchLength);
+    let oend_8: *mut BYTE = oend.wrapping_sub(8);
+    let litEnd: *const BYTE = (*litPtr).wrapping_add(sequence.litLength);
 
     /* checks */
-    let seqLength: usize = sequence.litLength + sequence.matchLength;
+    let seqLength: usize = sequence.litLength.wrapping_add(sequence.matchLength);
 
-    if seqLength > (oend as usize - op as usize) {
-        return ERROR(ec::dstSize_tooSmall);
+    if seqLength > ((oend as isize - op as isize) as usize) {
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
-    if sequence.litLength > (litLimit as usize - *litPtr as usize) {
-        return ERROR(ec::corruption_detected);
+    if sequence.litLength > ((litLimit as isize - *litPtr as isize) as usize) {
+        return ERROR(ZSTD_error_corruption_detected);
     }
+    /* Now we know there are no overflow in literal nor match lengths, can use pointer checks */
     if oLitEnd > oend_8 {
-        return ERROR(ec::dstSize_tooSmall);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
-    if sequence.offset > (oLitEnd as usize - base as usize) as u32 as usize {
-        return ERROR(ec::corruption_detected);
+    if sequence.offset > (((oLitEnd as isize - base as isize) as U32) as usize) {
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     if oMatchEnd > oend {
-        return ERROR(ec::dstSize_tooSmall);
+        return ERROR(ZSTD_error_dstSize_tooSmall); /* overwrite beyond dst buffer */
     }
     if litEnd > litLimit {
-        return ERROR(ec::corruption_detected);
+        return ERROR(ZSTD_error_corruption_detected); /* overRead beyond lit buffer */
     }
 
     /* copy Literals */
+    /* note : oLitEnd <= oend-8 : no risk of overwrite beyond oend */
     ZSTD_wildcopy(
         op as *mut c_void,
         *litPtr as *const c_void,
         sequence.litLength as isize,
     );
     op = oLitEnd;
-    *litPtr = litEnd;
+    *litPtr = litEnd; /* update for next sequence */
 
     /* copy Match */
     {
-        let mut match_ = op.offset(-(sequence.offset as isize));
+        let mut match_: *const BYTE = op.wrapping_sub(sequence.offset);
 
-        if sequence.offset > op as usize {
-            return ERROR(ec::corruption_detected);
+        /* check */
+        if sequence.offset > (op as usize) {
+            /* address space overflow test (this test seems kept by clang optimizer) */
+            return ERROR(ZSTD_error_corruption_detected);
         }
-        if match_ < base {
-            return ERROR(ec::corruption_detected);
+        if match_ < base as *const BYTE {
+            return ERROR(ZSTD_error_corruption_detected);
         }
 
         /* close range match, overlap */
         if sequence.offset < 8 {
-            let dec64 = dec64table[sequence.offset];
-            *op.add(0) = *match_.add(0);
-            *op.add(1) = *match_.add(1);
-            *op.add(2) = *match_.add(2);
-            *op.add(3) = *match_.add(3);
-            match_ = match_.add(dec32table[sequence.offset] as usize);
-            ZSTD_copy4(op.add(4) as *mut c_void, match_ as *const c_void);
-            match_ = match_.offset(-(dec64 as isize));
+            let dec64: i32 = dec64table[sequence.offset];
+            *op.wrapping_add(0) = *match_.wrapping_add(0);
+            *op.wrapping_add(1) = *match_.wrapping_add(1);
+            *op.wrapping_add(2) = *match_.wrapping_add(2);
+            *op.wrapping_add(3) = *match_.wrapping_add(3);
+            match_ = match_.wrapping_offset(dec32table[sequence.offset] as isize);
+            ZSTD_copy4(op.wrapping_add(4) as *mut c_void, match_ as *const c_void);
+            match_ = match_.wrapping_offset(-(dec64 as isize));
         } else {
             ZSTD_copy8(op as *mut c_void, match_ as *const c_void);
         }
-        op = op.add(8);
-        match_ = match_.add(8);
+        op = op.wrapping_add(8);
+        match_ = match_.wrapping_add(8);
 
-        if oMatchEnd > oend.offset(-((16 - MINMATCH) as isize)) {
+        if oMatchEnd > oend.wrapping_sub(16 - MINMATCH) {
             if op < oend_8 {
                 ZSTD_wildcopy(
                     op as *mut c_void,
                     match_ as *const c_void,
                     oend_8 as isize - op as isize,
                 );
-                match_ = match_.add(oend_8 as usize - op as usize);
+                match_ = match_.wrapping_offset(oend_8 as isize - op as isize);
                 op = oend_8;
             }
             while op < oMatchEnd {
                 *op = *match_;
-                op = op.add(1);
-                match_ = match_.add(1);
+                op = op.wrapping_add(1);
+                match_ = match_.wrapping_add(1);
             }
         } else {
+            /* works even if matchLength < 8 */
             ZSTD_wildcopy(
                 op as *mut c_void,
                 match_ as *const c_void,
-                sequence.matchLength as isize - 8,
+                (sequence.matchLength as isize) - 8,
             );
         }
     }
 
-    oMatchEnd as usize - ostart as usize
+    (oMatchEnd as isize - ostart as isize) as usize
 }
 
 unsafe fn ZSTD_decompressSequences(
@@ -2400,22 +2785,22 @@ unsafe fn ZSTD_decompressSequences(
     seqStart: *const c_void,
     seqSize: usize,
 ) -> usize {
-    let dctx = ctx as *mut ZSTD_DCtx;
-    let mut ip = seqStart as *const u8;
-    let iend = ip.add(seqSize);
-    let ostart = dst as *mut u8;
-    let mut op = ostart;
-    let oend = ostart.add(maxDstSize);
+    let dctx: *mut ZSTD_DCtx = ctx as *mut ZSTD_DCtx;
+    let mut ip: *const BYTE = seqStart as *const BYTE;
+    let iend: *const BYTE = ip.wrapping_add(seqSize);
+    let ostart: *mut BYTE = dst as *mut BYTE;
+    let mut op: *mut BYTE = ostart;
+    let oend: *mut BYTE = ostart.wrapping_add(maxDstSize);
     let mut errorCode: usize;
     let mut dumpsLength: usize = 0;
-    let mut litPtr = (*dctx).litPtr;
-    let litEnd = litPtr.add((*dctx).litSize);
-    let mut nbSeq: c_int = 0;
-    let mut dumps: *const u8 = core::ptr::null();
-    let DTableLL = (*dctx).LLTable.as_mut_ptr();
-    let DTableML = (*dctx).MLTable.as_mut_ptr();
-    let DTableOffb = (*dctx).OffTable.as_mut_ptr();
-    let base = (*dctx).base as *mut u8;
+    let mut litPtr: *const BYTE = (*dctx).litPtr;
+    let litEnd: *const BYTE = litPtr.wrapping_add((*dctx).litSize);
+    let mut nbSeq: i32 = 0;
+    let mut dumps: *const BYTE = null();
+    let DTableLL: *mut U32 = addr_of_mut!((*dctx).LLTable) as *mut U32;
+    let DTableML: *mut U32 = addr_of_mut!((*dctx).MLTable) as *mut U32;
+    let DTableOffb: *mut U32 = addr_of_mut!((*dctx).OffTable) as *mut U32;
+    let base: *mut BYTE = (*dctx).base as *mut BYTE;
 
     /* Build Decoding Tables */
     errorCode = ZSTD_decodeSeqHeaders(
@@ -2426,77 +2811,102 @@ unsafe fn ZSTD_decompressSequences(
         DTableML,
         DTableOffb,
         ip as *const c_void,
-        iend as usize - ip as usize,
+        (iend as isize - ip as isize) as usize,
     );
     if ZSTD_isError(errorCode) != 0 {
         return errorCode;
     }
-    ip = ip.add(errorCode);
+    ip = ip.wrapping_add(errorCode);
 
     /* Regen sequences */
     {
-        let mut sequence: seq_t = core::mem::zeroed();
-        let mut seqState: seqState_t = core::mem::zeroed();
+        let mut sequence = seq_t {
+            litLength: 0,
+            offset: 0,
+            matchLength: 0,
+        };
+        let mut seqState = seqState_t {
+            DStream: BIT_DStream_t::new(),
+            stateLL: FSE_DState_t::new(),
+            stateOffb: FSE_DState_t::new(),
+            stateML: FSE_DState_t::new(),
+            prevOffset: 0,
+            dumps: null(),
+            dumpsEnd: null(),
+        };
+        let sp: *mut seqState_t = addr_of_mut!(seqState);
 
-        memset(
-            &mut sequence as *mut seq_t as *mut c_void,
-            0,
-            core::mem::size_of::<seq_t>(),
-        );
-        seqState.dumps = dumps;
-        seqState.dumpsEnd = dumps.add(dumpsLength);
+        memset(addr_of_mut!(sequence) as *mut c_void, 0, size_of::<seq_t>());
+        (*sp).dumps = dumps;
+        (*sp).dumpsEnd = dumps.wrapping_add(dumpsLength);
         sequence.offset = 4;
-        seqState.prevOffset = sequence.offset;
+        (*sp).prevOffset = sequence.offset;
         errorCode = BIT_initDStream(
-            &mut seqState.DStream,
+            addr_of_mut!((*sp).DStream),
             ip as *const c_void,
-            iend as usize - ip as usize,
+            (iend as isize - ip as isize) as usize,
         );
         if ERR_isError(errorCode) != 0 {
-            return ERROR(ec::corruption_detected);
+            return ERROR(ZSTD_error_corruption_detected);
         }
-        FSE_initDState(&mut seqState.stateLL, &mut seqState.DStream, DTableLL);
-        FSE_initDState(&mut seqState.stateOffb, &mut seqState.DStream, DTableOffb);
-        FSE_initDState(&mut seqState.stateML, &mut seqState.DStream, DTableML);
+        FSE_initDState(
+            addr_of_mut!((*sp).stateLL),
+            addr_of_mut!((*sp).DStream),
+            DTableLL,
+        );
+        FSE_initDState(
+            addr_of_mut!((*sp).stateOffb),
+            addr_of_mut!((*sp).DStream),
+            DTableOffb,
+        );
+        FSE_initDState(
+            addr_of_mut!((*sp).stateML),
+            addr_of_mut!((*sp).DStream),
+            DTableML,
+        );
 
-        while (BIT_reloadDStream(&mut seqState.DStream) <= BIT_DStream_completed) && (nbSeq > 0) {
+        while (BIT_reloadDStream(addr_of_mut!((*sp).DStream)) <= BIT_DStream_completed)
+            && (nbSeq > 0)
+        {
             let oneSeqSize: usize;
             nbSeq -= 1;
-            ZSTD_decodeSequence(&mut sequence, &mut seqState);
+            ZSTD_decodeSequence(addr_of_mut!(sequence), sp);
             oneSeqSize = ZSTD_execSequence(op, sequence, &mut litPtr, litEnd, base, oend);
             if ZSTD_isError(oneSeqSize) != 0 {
                 return oneSeqSize;
             }
-            op = op.add(oneSeqSize);
+            op = op.wrapping_add(oneSeqSize);
         }
 
         /* check if reached exact end */
-        if BIT_endOfDStream(&seqState.DStream) == 0 {
-            return ERROR(ec::corruption_detected);
+        if BIT_endOfDStream(addr_of_mut!((*sp).DStream)) == 0 {
+            /* requested too much : data is corrupted */
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if nbSeq < 0 {
-            return ERROR(ec::corruption_detected);
+            /* requested too many sequences : data is corrupted */
+            return ERROR(ZSTD_error_corruption_detected);
         }
 
         /* last literal segment */
         {
-            let lastLLSize = litEnd as usize - litPtr as usize;
+            let lastLLSize: usize = (litEnd as isize - litPtr as isize) as usize;
             if litPtr > litEnd {
-                return ERROR(ec::corruption_detected);
+                return ERROR(ZSTD_error_corruption_detected);
             }
-            if op.add(lastLLSize) > oend {
-                return ERROR(ec::dstSize_tooSmall);
+            if op.wrapping_add(lastLLSize) > oend {
+                return ERROR(ZSTD_error_dstSize_tooSmall);
             }
             if lastLLSize > 0 {
-                if op != litPtr as *mut u8 {
+                if op as *const BYTE != litPtr {
                     memmove(op as *mut c_void, litPtr as *const c_void, lastLLSize);
                 }
-                op = op.add(lastLLSize);
+                op = op.wrapping_add(lastLLSize);
             }
         }
     }
 
-    op as usize - ostart as usize
+    (op as isize - ostart as isize) as usize
 }
 
 unsafe fn ZSTD_decompressBlock(
@@ -2506,14 +2916,15 @@ unsafe fn ZSTD_decompressBlock(
     src: *const c_void,
     mut srcSize: usize,
 ) -> usize {
-    let mut ip = src as *const u8;
+    /* blockType == blockCompressed */
+    let mut ip: *const BYTE = src as *const BYTE;
 
     /* Decode literals sub-block */
-    let litCSize = ZSTD_decodeLiteralsBlock(ctx, src, srcSize);
+    let litCSize: usize = ZSTD_decodeLiteralsBlock(ctx, src, srcSize);
     if ZSTD_isError(litCSize) != 0 {
         return litCSize;
     }
-    ip = ip.add(litCSize);
+    ip = ip.wrapping_add(litCSize);
     srcSize -= litCSize;
 
     ZSTD_decompressSequences(ctx, dst, maxDstSize, ip as *const c_void, srcSize)
@@ -2526,88 +2937,91 @@ unsafe fn ZSTD_decompressDCtx(
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let mut ip = src as *const u8;
-    let iend = ip.add(srcSize);
-    let ostart = dst as *mut u8;
-    let mut op = ostart;
-    let oend = ostart.add(maxDstSize);
-    let mut remainingSize = srcSize;
-    let magicNumber: u32;
+    let mut ip: *const BYTE = src as *const BYTE;
+    let iend: *const BYTE = ip.wrapping_add(srcSize);
+    let ostart: *mut BYTE = dst as *mut BYTE;
+    let mut op: *mut BYTE = ostart;
+    let oend: *mut BYTE = ostart.wrapping_add(maxDstSize);
+    let mut remainingSize: usize = srcSize;
+    let magicNumber: U32;
     let mut blockProperties = blockProperties_t {
-        blockType: blockType_t::bt_compressed,
+        blockType: 0,
         origSize: 0,
     };
 
     /* Frame Header */
     if srcSize < ZSTD_frameHeaderSize + ZSTD_blockHeaderSize {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     magicNumber = MEM_readLE32(src);
-    if magicNumber != ZSTD_MAGICNUMBER {
-        return ERROR(ec::prefix_unknown);
+    if magicNumber != ZSTD_magicNumber {
+        return ERROR(ZSTD_error_prefix_unknown);
     }
-    ip = ip.add(ZSTD_frameHeaderSize);
+    ip = ip.wrapping_add(ZSTD_frameHeaderSize);
     remainingSize -= ZSTD_frameHeaderSize;
 
     /* Loop on each block */
     loop {
         let mut decodedSize: usize = 0;
-        let cBlockSize = ZSTD_getcBlockSize(
+        let cBlockSize: usize = ZSTD_getcBlockSize(
             ip as *const c_void,
-            iend as usize - ip as usize,
-            &mut blockProperties,
+            (iend as isize - ip as isize) as usize,
+            addr_of_mut!(blockProperties),
         );
         if ZSTD_isError(cBlockSize) != 0 {
             return cBlockSize;
         }
 
-        ip = ip.add(ZSTD_blockHeaderSize);
-        remainingSize -= ZSTD_blockHeaderSize;
+        ip = ip.wrapping_add(ZSTD_blockHeaderSize);
+        remainingSize = remainingSize.wrapping_sub(ZSTD_blockHeaderSize);
         if cBlockSize > remainingSize {
-            return ERROR(ec::srcSize_wrong);
+            return ERROR(ZSTD_error_srcSize_wrong);
         }
 
         match blockProperties.blockType {
-            blockType_t::bt_compressed => {
+            x if x == bt_compressed => {
                 decodedSize = ZSTD_decompressBlock(
                     ctx,
                     op as *mut c_void,
-                    oend as usize - op as usize,
+                    (oend as isize - op as isize) as usize,
                     ip as *const c_void,
                     cBlockSize,
                 );
             }
-            blockType_t::bt_raw => {
+            x if x == bt_raw => {
                 decodedSize = ZSTD_copyUncompressedBlock(
                     op as *mut c_void,
-                    oend as usize - op as usize,
+                    (oend as isize - op as isize) as usize,
                     ip as *const c_void,
                     cBlockSize,
                 );
             }
-            blockType_t::bt_rle => {
-                return ERROR(ec::GENERIC);
+            x if x == bt_rle => {
+                return ERROR(ZSTD_error_GENERIC); /* not yet supported */
             }
-            blockType_t::bt_end => {
+            x if x == bt_end => {
                 /* end of frame */
                 if remainingSize != 0 {
-                    return ERROR(ec::srcSize_wrong);
+                    return ERROR(ZSTD_error_srcSize_wrong);
                 }
+            }
+            _ => {
+                return ERROR(ZSTD_error_GENERIC); /* impossible */
             }
         }
         if cBlockSize == 0 {
-            break;
+            break; /* bt_end */
         }
 
         if ZSTD_isError(decodedSize) != 0 {
             return decodedSize;
         }
-        op = op.add(decodedSize);
-        ip = ip.add(cBlockSize);
+        op = op.wrapping_add(decodedSize);
+        ip = ip.wrapping_add(cBlockSize);
         remainingSize -= cBlockSize;
     }
 
-    op as usize - ostart as usize
+    (op as isize - ostart as isize) as usize
 }
 
 unsafe fn ZSTD_decompress(
@@ -2616,17 +3030,15 @@ unsafe fn ZSTD_decompress(
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let mut ctx: ZSTD_DCtx = core::mem::zeroed();
-    ctx.base = dst;
-    ZSTD_decompressDCtx(&mut ctx as *mut ZSTD_DCtx as *mut c_void, dst, maxDstSize, src, srcSize)
+    /* C : `ZSTD_DCtx ctx;` — an uninitialized stack object */
+    let mut ctx_storage = core::mem::MaybeUninit::<ZSTD_DCtx>::uninit();
+    let ctx: *mut ZSTD_DCtx = ctx_storage.as_mut_ptr();
+    (*ctx).base = dst;
+    ZSTD_decompressDCtx(ctx as *mut c_void, dst, maxDstSize, src, srcSize)
 }
 
-#[inline]
-unsafe fn ZSTD_errorFrameSizeInfoLegacy(
-    cSize: *mut usize,
-    dBound: *mut c_ulonglong,
-    ret: usize,
-) {
+/// `ZSTD_errorFrameSizeInfoLegacy()` : assumes `cSize` and `dBound` are _not_ NULL
+unsafe fn ZSTD_errorFrameSizeInfoLegacy(cSize: *mut usize, dBound: *mut u64, ret: usize) {
     *cSize = ret;
     *dBound = ZSTD_CONTENTSIZE_ERROR;
 }
@@ -2636,73 +3048,78 @@ pub unsafe extern "C" fn ZSTDv03_findFrameSizeInfoLegacy(
     src: *const c_void,
     srcSize: usize,
     cSize: *mut usize,
-    dBound: *mut c_ulonglong,
+    dBound: *mut u64,
 ) {
-    let mut ip = src as *const u8;
-    let mut remainingSize = srcSize;
+    let mut ip: *const BYTE = src as *const BYTE;
+    let mut remainingSize: usize = srcSize;
     let mut nbBlocks: usize = 0;
-    let magicNumber: u32;
+    let magicNumber: U32;
     let mut blockProperties = blockProperties_t {
-        blockType: blockType_t::bt_compressed,
+        blockType: 0,
         origSize: 0,
     };
 
     /* Frame Header */
     if srcSize < ZSTD_frameHeaderSize + ZSTD_blockHeaderSize {
-        ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, ERROR(ec::srcSize_wrong));
+        ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, ERROR(ZSTD_error_srcSize_wrong));
         return;
     }
     magicNumber = MEM_readLE32(src);
-    if magicNumber != ZSTD_MAGICNUMBER {
-        ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, ERROR(ec::prefix_unknown));
+    if magicNumber != ZSTD_magicNumber {
+        ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, ERROR(ZSTD_error_prefix_unknown));
         return;
     }
-    ip = ip.add(ZSTD_frameHeaderSize);
+    ip = ip.wrapping_add(ZSTD_frameHeaderSize);
     remainingSize -= ZSTD_frameHeaderSize;
 
     /* Loop on each block */
     loop {
-        let cBlockSize =
-            ZSTD_getcBlockSize(ip as *const c_void, remainingSize, &mut blockProperties);
+        let cBlockSize: usize = ZSTD_getcBlockSize(
+            ip as *const c_void,
+            remainingSize,
+            addr_of_mut!(blockProperties),
+        );
         if ZSTD_isError(cBlockSize) != 0 {
             ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, cBlockSize);
             return;
         }
 
-        ip = ip.add(ZSTD_blockHeaderSize);
-        remainingSize -= ZSTD_blockHeaderSize;
+        ip = ip.wrapping_add(ZSTD_blockHeaderSize);
+        remainingSize = remainingSize.wrapping_sub(ZSTD_blockHeaderSize);
         if cBlockSize > remainingSize {
-            ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, ERROR(ec::srcSize_wrong));
+            ZSTD_errorFrameSizeInfoLegacy(cSize, dBound, ERROR(ZSTD_error_srcSize_wrong));
             return;
         }
 
         if cBlockSize == 0 {
-            break;
+            break; /* bt_end */
         }
 
-        ip = ip.add(cBlockSize);
+        ip = ip.wrapping_add(cBlockSize);
         remainingSize -= cBlockSize;
-        nbBlocks += 1;
+        nbBlocks = nbBlocks.wrapping_add(1);
     }
 
-    *cSize = ip as usize - src as usize;
-    *dBound = (nbBlocks * BLOCKSIZE) as c_ulonglong;
+    *cSize = (ip as isize - src as *const BYTE as isize) as usize;
+    *dBound = nbBlocks.wrapping_mul(BLOCKSIZE) as u64;
 }
 
-/* Streaming Decompression API */
+/*******************************
+ *  Streaming Decompression API
+ *******************************/
 
 unsafe fn ZSTD_resetDCtx(dctx: *mut ZSTD_DCtx) -> usize {
     (*dctx).expected = ZSTD_frameHeaderSize;
     (*dctx).phase = 0;
-    (*dctx).previousDstEnd = core::ptr::null_mut();
-    (*dctx).base = core::ptr::null_mut();
+    (*dctx).previousDstEnd = null_mut();
+    (*dctx).base = null_mut();
     0
 }
 
 unsafe fn ZSTD_createDCtx() -> *mut ZSTD_DCtx {
-    let dctx = malloc(core::mem::size_of::<ZSTD_DCtx>()) as *mut ZSTD_DCtx;
+    let dctx: *mut ZSTD_DCtx = malloc(size_of::<ZSTD_DCtx>()) as *mut ZSTD_DCtx;
     if dctx.is_null() {
-        return core::ptr::null_mut();
+        return null_mut();
     }
     ZSTD_resetDCtx(dctx);
     dctx
@@ -2726,17 +3143,19 @@ unsafe fn ZSTD_decompressContinue(
 ) -> usize {
     /* Sanity check */
     if srcSize != (*ctx).expected {
-        return ERROR(ec::srcSize_wrong);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     if dst != (*ctx).previousDstEnd {
+        /* not contiguous */
         (*ctx).base = dst;
     }
 
     /* Decompress : frame header */
     if (*ctx).phase == 0 {
-        let magicNumber: u32 = MEM_readLE32(src);
-        if magicNumber != ZSTD_MAGICNUMBER {
-            return ERROR(ec::prefix_unknown);
+        /* Check frame magic header */
+        let magicNumber: U32 = MEM_readLE32(src);
+        if magicNumber != ZSTD_magicNumber {
+            return ERROR(ZSTD_error_prefix_unknown);
         }
         (*ctx).phase = 1;
         (*ctx).expected = ZSTD_blockHeaderSize;
@@ -2746,14 +3165,15 @@ unsafe fn ZSTD_decompressContinue(
     /* Decompress : block header */
     if (*ctx).phase == 1 {
         let mut bp = blockProperties_t {
-            blockType: blockType_t::bt_compressed,
+            blockType: 0,
             origSize: 0,
         };
-        let blockSize = ZSTD_getcBlockSize(src, ZSTD_blockHeaderSize, &mut bp);
+        let blockSize: usize =
+            ZSTD_getcBlockSize(src, ZSTD_blockHeaderSize, addr_of_mut!(bp));
         if ZSTD_isError(blockSize) != 0 {
             return blockSize;
         }
-        if bp.blockType == blockType_t::bt_end {
+        if bp.blockType == bt_end {
             (*ctx).expected = 0;
             (*ctx).phase = 0;
         } else {
@@ -2769,17 +3189,22 @@ unsafe fn ZSTD_decompressContinue(
     {
         let rSize: usize;
         match (*ctx).bType {
-            blockType_t::bt_compressed => {
-                rSize = ZSTD_decompressBlock(ctx as *mut c_void, dst, maxDstSize, src, srcSize);
+            x if x == bt_compressed => {
+                rSize =
+                    ZSTD_decompressBlock(ctx as *mut c_void, dst, maxDstSize, src, srcSize);
             }
-            blockType_t::bt_raw => {
+            x if x == bt_raw => {
                 rSize = ZSTD_copyUncompressedBlock(dst, maxDstSize, src, srcSize);
             }
-            blockType_t::bt_rle => {
-                return ERROR(ec::GENERIC);
+            x if x == bt_rle => {
+                return ERROR(ZSTD_error_GENERIC); /* not yet handled */
             }
-            blockType_t::bt_end => {
+            x if x == bt_end => {
+                /* should never happen (filtered at phase 1) */
                 rSize = 0;
+            }
+            _ => {
+                return ERROR(ZSTD_error_GENERIC);
             }
         }
         (*ctx).phase = 1;
@@ -2787,15 +3212,15 @@ unsafe fn ZSTD_decompressContinue(
         if ZSTD_isError(rSize) != 0 {
             return rSize;
         }
-        (*ctx).previousDstEnd = (dst as *mut c_char).add(rSize) as *mut c_void;
-        return rSize;
+        (*ctx).previousDstEnd = (dst as *mut BYTE).wrapping_add(rSize) as *mut c_void;
+        rSize
     }
 }
 
 /* wrapper layer */
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTDv03_isError(code: usize) -> c_uint {
+pub unsafe extern "C" fn ZSTDv03_isError(code: usize) -> u32 {
     ZSTD_isError(code)
 }
 
@@ -2810,28 +3235,28 @@ pub unsafe extern "C" fn ZSTDv03_decompress(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTDv03_createDCtx() -> *mut ZSTDv03_Dctx_s {
-    ZSTD_createDCtx() as *mut ZSTDv03_Dctx_s
+pub unsafe extern "C" fn ZSTDv03_createDCtx() -> *mut ZSTDv03_Dctx {
+    ZSTD_createDCtx() as *mut ZSTDv03_Dctx
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTDv03_freeDCtx(dctx: *mut ZSTDv03_Dctx_s) -> usize {
+pub unsafe extern "C" fn ZSTDv03_freeDCtx(dctx: *mut ZSTDv03_Dctx) -> usize {
     ZSTD_freeDCtx(dctx as *mut ZSTD_DCtx)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTDv03_resetDCtx(dctx: *mut ZSTDv03_Dctx_s) -> usize {
+pub unsafe extern "C" fn ZSTDv03_resetDCtx(dctx: *mut ZSTDv03_Dctx) -> usize {
     ZSTD_resetDCtx(dctx as *mut ZSTD_DCtx)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTDv03_nextSrcSizeToDecompress(dctx: *mut ZSTDv03_Dctx_s) -> usize {
+pub unsafe extern "C" fn ZSTDv03_nextSrcSizeToDecompress(dctx: *mut ZSTDv03_Dctx) -> usize {
     ZSTD_nextSrcSizeToDecompress(dctx as *mut ZSTD_DCtx)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTDv03_decompressContinue(
-    dctx: *mut ZSTDv03_Dctx_s,
+    dctx: *mut ZSTDv03_Dctx,
     dst: *mut c_void,
     maxDstSize: usize,
     src: *const c_void,
@@ -2839,7 +3264,3 @@ pub unsafe extern "C" fn ZSTDv03_decompressContinue(
 ) -> usize {
     ZSTD_decompressContinue(dctx as *mut ZSTD_DCtx, dst, maxDstSize, src, srcSize)
 }
-
-
-
-

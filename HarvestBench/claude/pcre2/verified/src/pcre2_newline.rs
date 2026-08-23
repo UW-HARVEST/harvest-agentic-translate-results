@@ -1,50 +1,32 @@
-use crate::pcre2_internal::*;
+// Translated from c_src/src/pcre2_newline.c
+use crate::internal::*;
 
-// GETCHAR for 8-bit UTF: decode UTF-8 char at ptr without advancing.
-#[inline]
-unsafe fn getchar(ptr: PCRE2_SPTR) -> u32 {
-    let c = *ptr as u32;
-    if c < 0xc0 {
-        return c;
-    }
-    getutf8(c, ptr)
-}
+/* This module contains internal functions for testing newlines when more than
+one kind of newline is to be recognized. When a newline is found, its length is
+returned. In principle, we could implement several newline "types", each
+referring to a different set of newline characters. At present, PCRE2 supports
+only NLTYPE_FIXED, which gets handled without these functions, NLTYPE_ANYCRLF,
+and NLTYPE_ANY. The full list of Unicode newline characters is taken from
+http://unicode.org/unicode/reports/tr18/. */
 
-#[inline]
-unsafe fn getutf8(c: u32, eptr: PCRE2_SPTR) -> u32 {
-    if (c & 0x20) == 0 {
-        ((c & 0x1f) << 6) | (*eptr.add(1) as u32 & 0x3f)
-    } else if (c & 0x10) == 0 {
-        ((c & 0x0f) << 12) | ((*eptr.add(1) as u32 & 0x3f) << 6) | (*eptr.add(2) as u32 & 0x3f)
-    } else if (c & 0x08) == 0 {
-        ((c & 0x07) << 18)
-            | ((*eptr.add(1) as u32 & 0x3f) << 12)
-            | ((*eptr.add(2) as u32 & 0x3f) << 6)
-            | (*eptr.add(3) as u32 & 0x3f)
-    } else if (c & 0x04) == 0 {
-        ((c & 0x03) << 24)
-            | ((*eptr.add(1) as u32 & 0x3f) << 18)
-            | ((*eptr.add(2) as u32 & 0x3f) << 12)
-            | ((*eptr.add(3) as u32 & 0x3f) << 6)
-            | (*eptr.add(4) as u32 & 0x3f)
-    } else {
-        ((c & 0x01) << 30)
-            | ((*eptr.add(1) as u32 & 0x3f) << 24)
-            | ((*eptr.add(2) as u32 & 0x3f) << 18)
-            | ((*eptr.add(3) as u32 & 0x3f) << 12)
-            | ((*eptr.add(4) as u32 & 0x3f) << 6)
-            | (*eptr.add(5) as u32 & 0x3f)
-    }
-}
+/*************************************************
+*      Check for newline at given position       *
+*************************************************/
 
-// BACKCHAR: move ptr back over UTF-8 continuation bytes.
-#[inline]
-unsafe fn backchar(mut ptr: PCRE2_SPTR) -> PCRE2_SPTR {
-    while (*ptr & 0xc0) == 0x80 {
-        ptr = ptr.sub(1);
-    }
-    ptr
-}
+/* This function is called only via the IS_NEWLINE macro, which does so only
+when the newline type is NLTYPE_ANY or NLTYPE_ANYCRLF. The case of a fixed
+newline (NLTYPE_FIXED) is handled inline. It is guaranteed that the code unit
+pointed to by ptr is less than the end of the string.
+
+Arguments:
+  ptr          pointer to possible newline
+  type         the newline type
+  endptr       pointer to the end of the string
+  lenptr       where to return the length
+  utf          TRUE if in utf mode
+
+Returns:       TRUE or FALSE
+*/
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _pcre2_is_newline_8(
@@ -54,91 +36,160 @@ pub unsafe extern "C" fn _pcre2_is_newline_8(
     lenptr: *mut u32,
     utf: BOOL,
 ) -> BOOL {
-    let c: u32 = if utf != 0 { getchar(ptr) } else { *ptr as u32 };
+    let mut c: u32;
+
+    if utf != 0 {
+        GETCHAR!(c, ptr);
+    } else {
+        c = *ptr as u32;
+    }
 
     if type_ == NLTYPE_ANYCRLF {
         match c {
             CHAR_LF => {
                 *lenptr = 1;
-                TRUE
+                return TRUE;
             }
+
             CHAR_CR => {
-                *lenptr = if ptr < endptr.sub(1) && *ptr.add(1) as u32 == CHAR_LF { 2 } else { 1 };
-                TRUE
+                *lenptr = if ptr < endptr.sub(1) && *ptr.add(1) as u32 == CHAR_LF {
+                    2
+                } else {
+                    1
+                };
+                return TRUE;
             }
-            _ => FALSE,
+
+            _ => {
+                return FALSE;
+            }
         }
-    } else {
-        // NLTYPE_ANY
+    }
+    /* NLTYPE_ANY */
+    else {
         match c {
             CHAR_LF | CHAR_VT | CHAR_FF => {
                 *lenptr = 1;
-                TRUE
+                return TRUE;
             }
+
             CHAR_CR => {
-                *lenptr = if ptr < endptr.sub(1) && *ptr.add(1) as u32 == CHAR_LF { 2 } else { 1 };
-                TRUE
+                *lenptr = if ptr < endptr.sub(1) && *ptr.add(1) as u32 == CHAR_LF {
+                    2
+                } else {
+                    1
+                };
+                return TRUE;
             }
+
             CHAR_NEL => {
                 *lenptr = if utf != 0 { 2 } else { 1 };
-                TRUE
+                return TRUE;
             }
-            0x2028 | 0x2029 => {
+
+            0x2028 /* LS */ | 0x2029 /* PS */ => {
                 *lenptr = 3;
-                TRUE
+                return TRUE;
             }
-            _ => FALSE,
+
+            _ => {
+                return FALSE;
+            }
         }
     }
 }
 
+/*************************************************
+*     Check for newline at previous position     *
+*************************************************/
+
+/* This function is called only via the WAS_NEWLINE macro, which does so only
+when the newline type is NLTYPE_ANY or NLTYPE_ANYCRLF. The case of a fixed
+newline (NLTYPE_FIXED) is handled inline. It is guaranteed that the initial
+value of ptr is greater than the start of the string that is being processed.
+
+Arguments:
+  ptr          pointer to possible newline
+  type         the newline type
+  startptr     pointer to the start of the string
+  lenptr       where to return the length
+  utf          TRUE if in utf mode
+
+Returns:       TRUE or FALSE
+*/
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _pcre2_was_newline_8(
-    mut ptr: PCRE2_SPTR,
+    ptr: PCRE2_SPTR,
     type_: u32,
     startptr: PCRE2_SPTR,
     lenptr: *mut u32,
     utf: BOOL,
 ) -> BOOL {
+    let mut c: u32;
+    let mut ptr: PCRE2_SPTR = ptr;
     ptr = ptr.sub(1);
-    let c: u32 = if utf != 0 {
-        ptr = backchar(ptr);
-        getchar(ptr)
+
+    if utf != 0 {
+        BACKCHAR!(ptr);
+        GETCHAR!(c, ptr);
     } else {
-        *ptr as u32
-    };
+        c = *ptr as u32;
+    }
 
     if type_ == NLTYPE_ANYCRLF {
         match c {
             CHAR_LF => {
-                *lenptr = if ptr > startptr && *ptr.sub(1) as u32 == CHAR_CR { 2 } else { 1 };
-                TRUE
+                *lenptr = if ptr > startptr && *ptr.offset(-1) as u32 == CHAR_CR {
+                    2
+                } else {
+                    1
+                };
+                return TRUE;
             }
+
             CHAR_CR => {
                 *lenptr = 1;
-                TRUE
+                return TRUE;
             }
-            _ => FALSE,
+
+            _ => {
+                return FALSE;
+            }
         }
-    } else {
+    }
+    /* NLTYPE_ANY */
+    else {
         match c {
             CHAR_LF => {
-                *lenptr = if ptr > startptr && *ptr.sub(1) as u32 == CHAR_CR { 2 } else { 1 };
-                TRUE
+                *lenptr = if ptr > startptr && *ptr.offset(-1) as u32 == CHAR_CR {
+                    2
+                } else {
+                    1
+                };
+                return TRUE;
             }
+
             CHAR_VT | CHAR_FF | CHAR_CR => {
                 *lenptr = 1;
-                TRUE
+                return TRUE;
             }
+
             CHAR_NEL => {
                 *lenptr = if utf != 0 { 2 } else { 1 };
-                TRUE
+                return TRUE;
             }
-            0x2028 | 0x2029 => {
+
+            0x2028 /* LS */ | 0x2029 /* PS */ => {
                 *lenptr = 3;
-                TRUE
+                return TRUE;
             }
-            _ => FALSE,
+
+            _ => {
+                return FALSE;
+            }
         }
     }
 }
+
+/* End of pcre2_newline.c */

@@ -1,6 +1,8 @@
-//! Translation of version.c
-use crate::types::*;
-use core::ffi::{c_char, c_int};
+//! Translation of c_src/src/version.c
+use crate::jansson::{
+    JANSSON_MAJOR_VERSION, JANSSON_MICRO_VERSION, JANSSON_MINOR_VERSION, JANSSON_VERSION,
+};
+use std::ffi::{c_char, c_int};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jansson_version_str() -> *const c_char {
@@ -9,12 +11,14 @@ pub unsafe extern "C" fn jansson_version_str() -> *const c_char {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jansson_version_cmp(major: c_int, minor: c_int, micro: c_int) -> c_int {
-    let diff = JANSSON_MAJOR_VERSION - major;
+    let mut diff: c_int;
+
+    diff = JANSSON_MAJOR_VERSION - major;
     if diff != 0 {
         return diff;
     }
 
-    let diff = JANSSON_MINOR_VERSION - minor;
+    diff = JANSSON_MINOR_VERSION - minor;
     if diff != 0 {
         return diff;
     }

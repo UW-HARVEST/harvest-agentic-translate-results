@@ -1,36 +1,29 @@
-//! Rust translation of the Jansson 2.15 C library, exporting the same C ABI.
-#![feature(c_variadic)]
+//! Rust translation of the Jansson JSON library (c_src/).
+//!
+//! The public ABI mirrors the C library exactly: every symbol exported by the
+//! C shared object is exported here with the same name and signature.
 #![allow(non_camel_case_types)]
-#![allow(non_upper_case_globals)]
 #![allow(non_snake_case)]
-#![allow(unused_parens)]
-#![allow(clippy::all)]
+#![allow(non_upper_case_globals)]
+#![allow(clippy::missing_safety_doc)]
 
-use core::ffi::c_void;
-
-pub mod types;
-
-pub mod dump;
 pub mod dtoa;
+pub mod dtoa_r;
+pub mod dtoa_strtod;
+pub mod dtoa_strtod2;
+pub mod dtoa_tables;
+pub mod dump;
 pub mod error;
 pub mod hashtable;
 pub mod hashtable_seed;
+pub mod jansson;
 pub mod load;
-pub mod lookup3;
+pub mod libc;
 pub mod memory;
 pub mod pack_unpack;
 pub mod strbuffer;
 pub mod strconv;
 pub mod utf;
 pub mod value;
+pub mod va;
 pub mod version;
-
-// Shared libc memcmp helper used by dump.rs's compare_keys.
-extern "C" {
-    fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> core::ffi::c_int;
-}
-
-#[inline]
-pub(crate) unsafe fn c_memcmp(a: *const c_void, b: *const c_void, n: usize) -> core::ffi::c_int {
-    memcmp(a, b, n)
-}

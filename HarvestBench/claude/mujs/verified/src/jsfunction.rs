@@ -1,135 +1,124 @@
-//! Translated from jsfunction.c — Function constructor and prototype methods.
-#![allow(non_snake_case, non_upper_case_globals)]
+//! Translated from c_src/src/jsfunction.c
+use crate::jsi::*;
+use crate::prelude::*;
 
-use crate::jsrun::*;
-use crate::types::*;
-use std::os::raw::{c_char, c_int};
+unsafe extern "C" fn jsB_Function(J: *mut js_State) {
+    let mut i: c_int;
+    let top: c_int = js_gettop(J);
+    let mut sb: *mut js_Buffer = null_mut();
+    let body: *const c_char;
+    let parse: *mut js_Ast;
+    let fun: *mut js_Function;
 
-macro_rules! cstr {
-    ($s:literal) => {
-        concat!($s, "\0").as_ptr() as *const c_char
-    };
-}
-
-unsafe extern "C-unwind" fn jsB_Function(J: *mut js_State) {
-    let top = js_gettop(J);
-    let mut sb: *mut js_Buffer = std::ptr::null_mut();
-    let mut fun: *mut js_Function = std::ptr::null_mut();
-
-    let sb_ptr = std::ptr::addr_of_mut!(sb);
-    let fun_ptr = std::ptr::addr_of_mut!(fun);
-    let caught = crate::jsrun::protect(J, || {
-        /* p1, p2, ..., pn */
-        if top > 2 {
-            let mut i = 1;
-            while i < top - 1 {
-                if i > 1 {
-                    crate::jsintern::js_putc(J, sb_ptr, ',' as c_int);
-                }
-                crate::jsintern::js_puts(J, sb_ptr, js_tostring(J, i));
-                i += 1;
-            }
-            crate::jsintern::js_putc(J, sb_ptr, ')' as c_int);
-            crate::jsintern::js_putc(J, sb_ptr, 0);
-        }
-
-        /* body */
-        let body: *const c_char = if js_isdefined(J, top - 1) != 0 {
-            js_tostring(J, top - 1)
-        } else {
-            cstr!("")
-        };
-
-        let parse = crate::jsparse::jsP_parsefunction(
-            J,
-            cstr!("[string]"),
-            if (*sb_ptr).is_null() {
-                std::ptr::null()
-            } else {
-                (**sb_ptr).s.as_ptr()
-            },
-            body,
-        );
-        *fun_ptr = crate::jscompile::jsC_compilefunction(J, parse);
-    });
-    if caught {
-        js_free(J, sb as *mut _);
-        crate::jsparse::jsP_freeparse(J);
+    if js_try!(J) {
+        js_free(J, sb as *mut c_void);
+        jsP_freeparse(J);
         js_throw(J);
     }
-    js_endtry(J);
-    js_free(J, sb as *mut _);
-    crate::jsparse::jsP_freeparse(J);
 
-    crate::jsvalue::js_newfunction(J, fun, (*J).GE);
+    /* p1, p2, ..., pn */
+    if top > 2 {
+        i = 1;
+        while i < top - 1 {
+            if i > 1 {
+                js_putc(J, &mut sb, ',' as c_int);
+            }
+            js_puts(J, &mut sb, js_tostring(J, i));
+            i += 1;
+        }
+        js_putc(J, &mut sb, ')' as c_int);
+        js_putc(J, &mut sb, 0);
+    }
+
+    /* body */
+    body = if js_isdefined(J, top - 1) != 0 {
+        js_tostring(J, top - 1)
+    } else {
+        c"".as_ptr()
+    };
+
+    parse = jsP_parsefunction(
+        J,
+        c"[string]".as_ptr(),
+        if !sb.is_null() {
+            js_Buffer_s(sb) as *const c_char
+        } else {
+            null()
+        },
+        body,
+    );
+    fun = jsC_compilefunction(J, parse);
+
+    js_endtry(J);
+    js_free(J, sb as *mut c_void);
+    jsP_freeparse(J);
+
+    js_newfunction(J, fun, (*J).GE);
 }
 
-unsafe extern "C-unwind" fn jsB_Function_prototype(J: *mut js_State) {
+unsafe extern "C" fn jsB_Function_prototype(J: *mut js_State) {
     js_pushundefined(J);
 }
 
-unsafe extern "C-unwind" fn Fp_toString(J: *mut js_State) {
-    let self_ = js_toobject(J, 0);
-    let mut sb: *mut js_Buffer = std::ptr::null_mut();
+unsafe extern "C" fn Fp_toString(J: *mut js_State) {
+    let self_: *mut js_Object = js_toobject(J, 0);
+    let mut sb: *mut js_Buffer = null_mut();
+    let mut i: c_int;
 
     if js_iscallable(J, 0) == 0 {
-        crate::jserror::js_typeerror(J, cstr!("not a function"));
+        js_typeerror!(J, c"not a function".as_ptr());
     }
 
-    if (*self_).type_ == JS_CFUNCTION || (*self_).type_ == JS_CSCRIPT {
+    if (*self_).r#type == JS_CFUNCTION || (*self_).r#type == JS_CSCRIPT {
         let F: *mut js_Function = (*self_).u.f.function;
 
-        let sb_ptr = std::ptr::addr_of_mut!(sb);
-        let caught = crate::jsrun::protect(J, || {
-            crate::jsintern::js_puts(J, sb_ptr, cstr!("function "));
-            crate::jsintern::js_puts(J, sb_ptr, (*F).name);
-            crate::jsintern::js_putc(J, sb_ptr, '(' as c_int);
-            let mut i = 0;
-            while i < (*F).numparams {
-                if i > 0 {
-                    crate::jsintern::js_putc(J, sb_ptr, ',' as c_int);
-                }
-                crate::jsintern::js_puts(J, sb_ptr, *(*F).vartab.add(i as usize));
-                i += 1;
+        if js_try!(J) {
+            js_free(J, sb as *mut c_void);
+            js_throw(J);
+        }
+
+        js_puts(J, &mut sb, c"function ".as_ptr());
+        js_puts(J, &mut sb, (*F).name);
+        js_putc(J, &mut sb, '(' as c_int);
+        i = 0;
+        while i < (*F).numparams {
+            if i > 0 {
+                js_putc(J, &mut sb, ',' as c_int);
             }
-            crate::jsintern::js_puts(J, sb_ptr, cstr!(") { [byte code] }"));
-            crate::jsintern::js_putc(J, sb_ptr, 0);
+            js_puts(J, &mut sb, *(*F).vartab.add(i as usize));
+            i += 1;
+        }
+        js_puts(J, &mut sb, c") { [byte code] }".as_ptr());
+        js_putc(J, &mut sb, 0);
 
-            js_pushstring(J, (*sb).s.as_ptr());
-        });
-        if caught {
-            js_free(J, sb as *mut _);
+        js_pushstring(J, js_Buffer_s(sb) as *const c_char);
+        js_endtry(J);
+        js_free(J, sb as *mut c_void);
+    } else if (*self_).r#type == JS_CCFUNCTION {
+        if js_try!(J) {
+            js_free(J, sb as *mut c_void);
             js_throw(J);
         }
-        js_endtry(J);
-        js_free(J, sb as *mut _);
-    } else if (*self_).type_ == JS_CCFUNCTION {
-        let sb_ptr = std::ptr::addr_of_mut!(sb);
-        let caught = crate::jsrun::protect(J, || {
-            crate::jsintern::js_puts(J, sb_ptr, cstr!("function "));
-            crate::jsintern::js_puts(J, sb_ptr, (*self_).u.c.name);
-            crate::jsintern::js_puts(J, sb_ptr, cstr!("() { [native code] }"));
-            crate::jsintern::js_putc(J, sb_ptr, 0);
 
-            js_pushstring(J, (*sb).s.as_ptr());
-        });
-        if caught {
-            js_free(J, sb as *mut _);
-            js_throw(J);
-        }
+        js_puts(J, &mut sb, c"function ".as_ptr());
+        js_puts(J, &mut sb, (*self_).u.c.name);
+        js_puts(J, &mut sb, c"() { [native code] }".as_ptr());
+        js_putc(J, &mut sb, 0);
+
+        js_pushstring(J, js_Buffer_s(sb) as *const c_char);
         js_endtry(J);
-        js_free(J, sb as *mut _);
+        js_free(J, sb as *mut c_void);
     } else {
-        js_pushliteral(J, cstr!("function () { }"));
+        js_pushliteral(J, c"function () { }".as_ptr());
     }
 }
 
-unsafe extern "C-unwind" fn Fp_apply(J: *mut js_State) {
+unsafe extern "C" fn Fp_apply(J: *mut js_State) {
     let mut i: c_int;
-    let n: c_int;
+    let mut n: c_int;
 
     if js_iscallable(J, 0) == 0 {
-        crate::jserror::js_typeerror(J, cstr!("not a function"));
+        js_typeerror!(J, c"not a function".as_ptr());
     }
 
     js_copy(J, 0);
@@ -138,11 +127,10 @@ unsafe extern "C-unwind" fn Fp_apply(J: *mut js_State) {
     if js_isnull(J, 2) != 0 || js_isundefined(J, 2) != 0 {
         n = 0;
     } else {
-        let mut m = crate::jsarray::js_getlength(J, 2);
-        if m < 0 {
-            m = 0;
+        n = js_getlength(J, 2);
+        if n < 0 {
+            n = 0;
         }
-        n = m;
         i = 0;
         while i < n {
             js_getindex(J, 2, i);
@@ -153,14 +141,15 @@ unsafe extern "C-unwind" fn Fp_apply(J: *mut js_State) {
     js_call(J, n);
 }
 
-unsafe extern "C-unwind" fn Fp_call(J: *mut js_State) {
-    let top = js_gettop(J);
+unsafe extern "C" fn Fp_call(J: *mut js_State) {
+    let mut i: c_int;
+    let top: c_int = js_gettop(J);
 
     if js_iscallable(J, 0) == 0 {
-        crate::jserror::js_typeerror(J, cstr!("not a function"));
+        js_typeerror!(J, c"not a function".as_ptr());
     }
 
-    let mut i = 0;
+    i = 0;
     while i < top {
         js_copy(J, i);
         i += 1;
@@ -169,8 +158,8 @@ unsafe extern "C-unwind" fn Fp_call(J: *mut js_State) {
     js_call(J, top - 2);
 }
 
-unsafe extern "C-unwind" fn callbound(J: *mut js_State) {
-    let top = js_gettop(J);
+unsafe extern "C" fn callbound(J: *mut js_State) {
+    let top: c_int = js_gettop(J);
     let mut i: c_int;
     let fun: c_int;
     let args: c_int;
@@ -178,12 +167,12 @@ unsafe extern "C-unwind" fn callbound(J: *mut js_State) {
 
     fun = js_gettop(J);
     js_currentfunction(J);
-    js_getproperty(J, fun, cstr!("__TargetFunction__"));
-    js_getproperty(J, fun, cstr!("__BoundThis__"));
+    js_getproperty(J, fun, c"__TargetFunction__".as_ptr());
+    js_getproperty(J, fun, c"__BoundThis__".as_ptr());
 
     args = js_gettop(J);
-    js_getproperty(J, fun, cstr!("__BoundArguments__"));
-    n = crate::jsarray::js_getlength(J, args);
+    js_getproperty(J, fun, c"__BoundArguments__".as_ptr());
+    n = js_getlength(J, args);
     if n < 0 {
         n = 0;
     }
@@ -203,8 +192,8 @@ unsafe extern "C-unwind" fn callbound(J: *mut js_State) {
     js_call(J, n + top - 1);
 }
 
-unsafe extern "C-unwind" fn constructbound(J: *mut js_State) {
-    let top = js_gettop(J);
+unsafe extern "C" fn constructbound(J: *mut js_State) {
+    let top: c_int = js_gettop(J);
     let mut i: c_int;
     let fun: c_int;
     let args: c_int;
@@ -212,11 +201,11 @@ unsafe extern "C-unwind" fn constructbound(J: *mut js_State) {
 
     fun = js_gettop(J);
     js_currentfunction(J);
-    js_getproperty(J, fun, cstr!("__TargetFunction__"));
+    js_getproperty(J, fun, c"__TargetFunction__".as_ptr());
 
     args = js_gettop(J);
-    js_getproperty(J, fun, cstr!("__BoundArguments__"));
-    n = crate::jsarray::js_getlength(J, args);
+    js_getproperty(J, fun, c"__BoundArguments__".as_ptr());
+    n = js_getlength(J, args);
     if n < 0 {
         n = 0;
     }
@@ -236,15 +225,16 @@ unsafe extern "C-unwind" fn constructbound(J: *mut js_State) {
     js_construct(J, n + top - 1);
 }
 
-unsafe extern "C-unwind" fn Fp_bind(J: *mut js_State) {
-    let top = js_gettop(J);
+unsafe extern "C" fn Fp_bind(J: *mut js_State) {
+    let mut i: c_int;
+    let top: c_int = js_gettop(J);
     let mut n: c_int;
 
     if js_iscallable(J, 0) == 0 {
-        crate::jserror::js_typeerror(J, cstr!("not a function"));
+        js_typeerror!(J, c"not a function".as_ptr());
     }
 
-    n = crate::jsarray::js_getlength(J, 0);
+    n = js_getlength(J, 0);
     if n > top - 2 {
         n -= top - 2;
     } else {
@@ -252,42 +242,74 @@ unsafe extern "C-unwind" fn Fp_bind(J: *mut js_State) {
     }
 
     /* Reuse target function's prototype for HasInstance check. */
-    js_getproperty(J, 0, cstr!("prototype"));
-    crate::jsvalue::js_newcconstructor(J, Some(callbound), Some(constructbound), cstr!("[bind]"), n);
+    js_getproperty(J, 0, c"prototype".as_ptr());
+    js_newcconstructor(
+        J,
+        Some(callbound),
+        Some(constructbound),
+        c"[bind]".as_ptr(),
+        n,
+    );
 
     /* target function */
     js_copy(J, 0);
-    js_defproperty(J, -2, cstr!("__TargetFunction__"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+    js_defproperty(
+        J,
+        -2,
+        c"__TargetFunction__".as_ptr(),
+        JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+    );
 
     /* bound this */
     js_copy(J, 1);
-    js_defproperty(J, -2, cstr!("__BoundThis__"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+    js_defproperty(
+        J,
+        -2,
+        c"__BoundThis__".as_ptr(),
+        JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+    );
 
     /* bound arguments */
-    crate::jsvalue::js_newarray(J);
-    let mut i = 2;
+    js_newarray(J);
+    i = 2;
     while i < top {
         js_copy(J, i);
         js_setindex(J, -2, i - 2);
         i += 1;
     }
-    js_defproperty(J, -2, cstr!("__BoundArguments__"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+    js_defproperty(
+        J,
+        -2,
+        c"__BoundArguments__".as_ptr(),
+        JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+    );
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_initfunction(J: *mut js_State) {
-    (*(*J).Function_prototype).u.c.name = cstr!("Function.prototype");
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_initfunction(J: *mut js_State) {
+    (*(*J).Function_prototype).u.c.name = c"Function.prototype".as_ptr();
     (*(*J).Function_prototype).u.c.function = Some(jsB_Function_prototype);
     (*(*J).Function_prototype).u.c.constructor = None;
     (*(*J).Function_prototype).u.c.length = 0;
 
     js_pushobject(J, (*J).Function_prototype);
     {
-        crate::jsbuiltin::jsB_propf(J, cstr!("Function.prototype.toString"), Some(Fp_toString), 2);
-        crate::jsbuiltin::jsB_propf(J, cstr!("Function.prototype.apply"), Some(Fp_apply), 2);
-        crate::jsbuiltin::jsB_propf(J, cstr!("Function.prototype.call"), Some(Fp_call), 1);
-        crate::jsbuiltin::jsB_propf(J, cstr!("Function.prototype.bind"), Some(Fp_bind), 1);
+        jsB_propf(
+            J,
+            c"Function.prototype.toString".as_ptr(),
+            Some(Fp_toString),
+            2,
+        );
+        jsB_propf(J, c"Function.prototype.apply".as_ptr(), Some(Fp_apply), 2);
+        jsB_propf(J, c"Function.prototype.call".as_ptr(), Some(Fp_call), 1);
+        jsB_propf(J, c"Function.prototype.bind".as_ptr(), Some(Fp_bind), 1);
     }
-    crate::jsvalue::js_newcconstructor(J, Some(jsB_Function), Some(jsB_Function), cstr!("Function"), 1);
-    js_defglobal(J, cstr!("Function"), JS_DONTENUM);
+    js_newcconstructor(
+        J,
+        Some(jsB_Function),
+        Some(jsB_Function),
+        c"Function".as_ptr(),
+        1,
+    );
+    js_defglobal(J, c"Function".as_ptr(), JS_DONTENUM);
 }

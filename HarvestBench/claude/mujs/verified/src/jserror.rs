@@ -1,29 +1,10 @@
-//! Translated from jserror.c — error objects and the error constructors.
-//! Variadic entry points live in shim.c; here we provide the `rs_*` impls that
-//! build the error object and throw, plus the non-variadic `js_new*error`.
-#![allow(non_snake_case)]
-
-use crate::cutil::*;
-use crate::jsrun::*;
-use crate::types::*;
-use std::os::raw::{c_char, c_int, c_void};
-
-macro_rules! cstr {
-    ($s:literal) => {
-        concat!($s, "\0").as_ptr() as *const c_char
-    };
-}
-
-// Re-export the variadic public/internal error functions from the shim so the
-// rest of the crate can call e.g. `crate::jserror::js_typeerror(J, "...")`.
-pub use crate::shim::{
-    js_error, js_evalerror, js_rangeerror, js_referenceerror, js_syntaxerror, js_typeerror,
-    js_urierror, jsC_error, jsP_error_shim, jsP_warning_shim, jsY_error_shim,
-};
+//! Translated from c_src/src/jserror.c
+use crate::jsi::*;
+use crate::prelude::*;
 
 unsafe fn jsB_stacktrace(J: *mut js_State, skip: c_int) -> c_int {
     let mut buf: [c_char; 256] = [0; 256];
-    let mut n = (*J).tracetop - skip;
+    let mut n: c_int = (*J).tracetop - skip;
     if n <= 0 {
         return 0;
     }
@@ -32,140 +13,209 @@ unsafe fn jsB_stacktrace(J: *mut js_State, skip: c_int) -> c_int {
         let file = (*J).trace[n as usize].file;
         let line = (*J).trace[n as usize].line;
         if line > 0 {
-            if *name.add(0) != 0 {
-                libc::snprintf(buf.as_mut_ptr(), 256, cstr!("\n\tat %s (%s:%d)"), name, file, line);
+            if *name != 0 {
+                snprintf(
+                    buf.as_mut_ptr(),
+                    256,
+                    c"\n\tat %s (%s:%d)".as_ptr(),
+                    name,
+                    file,
+                    line,
+                );
             } else {
-                libc::snprintf(buf.as_mut_ptr(), 256, cstr!("\n\tat %s:%d"), file, line);
+                snprintf(buf.as_mut_ptr(), 256, c"\n\tat %s:%d".as_ptr(), file, line);
             }
         } else {
-            libc::snprintf(buf.as_mut_ptr(), 256, cstr!("\n\tat %s (%s)"), name, file);
+            snprintf(buf.as_mut_ptr(), 256, c"\n\tat %s (%s)".as_ptr(), name, file);
         }
         js_pushstring(J, buf.as_ptr());
         if n < (*J).tracetop - skip {
-            crate::jsvalue::js_concat(J);
+            js_concat(J);
         }
         n -= 1;
     }
     1
 }
 
-unsafe extern "C-unwind" fn Ep_toString(J: *mut js_State) {
-    let mut name: *const c_char = cstr!("Error");
-    let mut message: *const c_char = cstr!("");
+unsafe extern "C" fn Ep_toString(J: *mut js_State) {
+    let mut name: *const c_char = c"Error".as_ptr();
+    let mut message: *const c_char = c"".as_ptr();
 
     if js_isobject(J, -1) == 0 {
-        js_typeerror(J, cstr!("not an object"));
+        js_typeerror!(J, c"not an object".as_ptr());
     }
 
-    if js_hasproperty(J, 0, cstr!("name")) != 0 {
+    if js_hasproperty(J, 0, c"name".as_ptr()) != 0 {
         name = js_tostring(J, -1);
     }
-    if js_hasproperty(J, 0, cstr!("message")) != 0 {
+    if js_hasproperty(J, 0, c"message".as_ptr()) != 0 {
         message = js_tostring(J, -1);
     }
 
-    if *name.add(0) == 0 {
+    if *name == 0 {
         js_pushstring(J, message);
-    } else if *message.add(0) == 0 {
+    } else if *message == 0 {
         js_pushstring(J, name);
     } else {
         js_pushstring(J, name);
-        js_pushstring(J, cstr!(": "));
-        crate::jsvalue::js_concat(J);
+        js_pushstring(J, c": ".as_ptr());
+        js_concat(J);
         js_pushstring(J, message);
-        crate::jsvalue::js_concat(J);
+        js_concat(J);
     }
 }
 
-unsafe extern "C-unwind" fn Ep_get_stack(J: *mut js_State) {
+unsafe extern "C" fn Ep_get_stack(J: *mut js_State) {
     Ep_toString(J);
-    js_getproperty(J, 0, cstr!("stackTrace"));
-    crate::jsvalue::js_concat(J);
+    js_getproperty(J, 0, c"stackTrace".as_ptr());
+    js_concat(J);
 }
 
 unsafe fn jsB_ErrorX(J: *mut js_State, prototype: *mut js_Object) -> c_int {
-    js_pushobject(J, crate::jsproperty::jsV_newobject(J, JS_CERROR, prototype));
+    js_pushobject(J, jsV_newobject(J, JS_CERROR, prototype));
     if js_isdefined(J, 1) != 0 {
         js_pushstring(J, js_tostring(J, 1));
-        js_defproperty(J, -2, cstr!("message"), JS_DONTENUM);
+        js_defproperty(J, -2, c"message".as_ptr(), JS_DONTENUM);
     }
     if jsB_stacktrace(J, 1) != 0 {
-        js_defproperty(J, -2, cstr!("stackTrace"), JS_DONTENUM);
+        js_defproperty(J, -2, c"stackTrace".as_ptr(), JS_DONTENUM);
     }
     1
 }
 
 unsafe fn js_newerrorx(J: *mut js_State, message: *const c_char, prototype: *mut js_Object) {
-    js_pushobject(J, crate::jsproperty::jsV_newobject(J, JS_CERROR, prototype));
+    js_pushobject(J, jsV_newobject(J, JS_CERROR, prototype));
     js_pushstring(J, message);
-    js_setproperty(J, -2, cstr!("message"));
+    js_setproperty(J, -2, c"message".as_ptr());
     if jsB_stacktrace(J, 0) != 0 {
-        js_setproperty(J, -2, cstr!("stackTrace"));
+        js_setproperty(J, -2, c"stackTrace".as_ptr());
     }
 }
 
-/* DERROR expansion: for each (name, Name) we get:
- *   static jsB_Name(J)               -> jsB_ErrorX(J, J->Name_prototype)
- *   void js_newname(J, s)            -> js_newerrorx(J, s, J->Name_prototype)  [public]
- *   void js_name(J, fmt, ...)        -> variadic (in shim.c), rs impl throws
- */
-
-macro_rules! derror_impl {
-    ($rs_fn:ident, $new_fn:ident, $jsb_fn:ident, $proto:ident) => {
-        // rs_* : called by the shim after formatting; builds error and throws.
-        #[no_mangle]
-        pub unsafe extern "C-unwind" fn $rs_fn(J: *mut js_State, msg: *const c_char) {
-            js_newerrorx(J, msg, (*J).$proto);
-            js_throw(J);
+macro_rules! DERROR {
+    ($jsB:ident, $new:ident, $str:ident, $va:ident, $proto:ident) => {
+        unsafe extern "C" fn $jsB(J: *mut js_State) {
+            jsB_ErrorX(J, (*J).$proto);
         }
-        // public non-variadic constructor js_new*error
-        #[no_mangle]
-        pub unsafe extern "C-unwind" fn $new_fn(J: *mut js_State, s: *const c_char) {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $new(J: *mut js_State, s: *const c_char) {
             js_newerrorx(J, s, (*J).$proto);
         }
-        // native constructor callback
-        unsafe extern "C-unwind" fn $jsb_fn(J: *mut js_State) {
-            jsB_ErrorX(J, (*J).$proto);
+        /// `js_xxxerror(J, message)` -- the non-variadic core.
+        pub unsafe fn $str(J: *mut js_State, buf: *const c_char) -> ! {
+            js_newerrorx(J, buf, (*J).$proto);
+            js_throw(J)
+        }
+        /// Target of the naked variadic trampoline in lib.rs (referenced with a
+        /// `sym` operand, so it needs no stable linker name).
+        pub unsafe extern "C" fn $va(
+            J: *mut js_State,
+            fmt: *const c_char,
+            ap: *mut VaListTag,
+        ) -> ! {
+            let mut buf: [c_char; 256] = [0; 256];
+            vsnprintf(buf.as_mut_ptr(), 256, fmt, ap);
+            $str(J, buf.as_ptr())
         }
     };
 }
 
-derror_impl!(rs_js_error, js_newerror, jsB_Error, Error_prototype);
-derror_impl!(rs_js_evalerror, js_newevalerror, jsB_EvalError, EvalError_prototype);
-derror_impl!(rs_js_rangeerror, js_newrangeerror, jsB_RangeError, RangeError_prototype);
-derror_impl!(rs_js_referenceerror, js_newreferenceerror, jsB_ReferenceError, ReferenceError_prototype);
-derror_impl!(rs_js_syntaxerror, js_newsyntaxerror, jsB_SyntaxError, SyntaxError_prototype);
-derror_impl!(rs_js_typeerror, js_newtypeerror, jsB_TypeError, TypeError_prototype);
-derror_impl!(rs_js_urierror, js_newurierror, jsB_URIError, URIError_prototype);
+DERROR!(jsB_Error, js_newerror, js_error_str, js_error_va, Error_prototype);
+DERROR!(
+    jsB_EvalError,
+    js_newevalerror,
+    js_evalerror_str,
+    js_evalerror_va,
+    EvalError_prototype
+);
+DERROR!(
+    jsB_RangeError,
+    js_newrangeerror,
+    js_rangeerror_str,
+    js_rangeerror_va,
+    RangeError_prototype
+);
+DERROR!(
+    jsB_ReferenceError,
+    js_newreferenceerror,
+    js_referenceerror_str,
+    js_referenceerror_va,
+    ReferenceError_prototype
+);
+DERROR!(
+    jsB_SyntaxError,
+    js_newsyntaxerror,
+    js_syntaxerror_str,
+    js_syntaxerror_va,
+    SyntaxError_prototype
+);
+DERROR!(
+    jsB_TypeError,
+    js_newtypeerror,
+    js_typeerror_str,
+    js_typeerror_va,
+    TypeError_prototype
+);
+DERROR!(
+    jsB_URIError,
+    js_newurierror,
+    js_urierror_str,
+    js_urierror_va,
+    URIError_prototype
+);
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_initerror(J: *mut js_State) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_initerror(J: *mut js_State) {
     js_pushobject(J, (*J).Error_prototype);
     {
-        crate::jsbuiltin::jsB_props(J, cstr!("name"), cstr!("Error"));
-        crate::jsbuiltin::jsB_propf(J, cstr!("Error.prototype.toString"), Some(Ep_toString), 0);
-        crate::jsbuiltin::jsB_props(J, cstr!("message"), cstr!(""));
+        jsB_props(J, c"name".as_ptr(), c"Error".as_ptr());
+        jsB_propf(
+            J,
+            c"Error.prototype.toString".as_ptr(),
+            Some(Ep_toString),
+            0,
+        );
+        jsB_props(J, c"message".as_ptr(), c"".as_ptr());
 
-        crate::jsvalue::js_newcfunction(J, Some(Ep_get_stack), cstr!("stack"), 0);
+        js_newcfunction(J, Some(Ep_get_stack), c"stack".as_ptr(), 0);
         js_pushnull(J);
-        js_defaccessor(J, -3, cstr!("stack"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+        js_defaccessor(
+            J,
+            -3,
+            c"stack".as_ptr(),
+            JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+        );
     }
-    crate::jsvalue::js_newcconstructor(J, Some(jsB_Error), Some(jsB_Error), cstr!("Error"), 1);
-    js_defglobal(J, cstr!("Error"), JS_DONTENUM);
+    js_newcconstructor(
+        J,
+        Some(jsB_Error),
+        Some(jsB_Error),
+        c"Error".as_ptr(),
+        1,
+    );
+    js_defglobal(J, c"Error".as_ptr(), JS_DONTENUM);
 
-    macro_rules! ierror {
-        ($proto:ident, $jsb:ident, $name:literal) => {
+    macro_rules! IERROR {
+        ($proto:ident, $jsB:ident, $name:expr) => {
             js_pushobject(J, (*J).$proto);
-            crate::jsbuiltin::jsB_props(J, cstr!("name"), cstr!($name));
-            crate::jsvalue::js_newcconstructor(J, Some($jsb), Some($jsb), cstr!($name), 1);
-            js_defglobal(J, cstr!($name), JS_DONTENUM);
+            jsB_props(J, c"name".as_ptr(), $name);
+            js_newcconstructor(J, Some($jsB), Some($jsB), $name, 1);
+            js_defglobal(J, $name, JS_DONTENUM);
         };
     }
 
-    ierror!(EvalError_prototype, jsB_EvalError, "EvalError");
-    ierror!(RangeError_prototype, jsB_RangeError, "RangeError");
-    ierror!(ReferenceError_prototype, jsB_ReferenceError, "ReferenceError");
-    ierror!(SyntaxError_prototype, jsB_SyntaxError, "SyntaxError");
-    ierror!(TypeError_prototype, jsB_TypeError, "TypeError");
-    ierror!(URIError_prototype, jsB_URIError, "URIError");
+    IERROR!(EvalError_prototype, jsB_EvalError, c"EvalError".as_ptr());
+    IERROR!(RangeError_prototype, jsB_RangeError, c"RangeError".as_ptr());
+    IERROR!(
+        ReferenceError_prototype,
+        jsB_ReferenceError,
+        c"ReferenceError".as_ptr()
+    );
+    IERROR!(
+        SyntaxError_prototype,
+        jsB_SyntaxError,
+        c"SyntaxError".as_ptr()
+    );
+    IERROR!(TypeError_prototype, jsB_TypeError, c"TypeError".as_ptr());
+    IERROR!(URIError_prototype, jsB_URIError, c"URIError".as_ptr());
 }

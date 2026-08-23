@@ -1,75 +1,150 @@
-//! Translated from jsparse.c — the parser + constant folding.
-#![allow(non_snake_case, non_upper_case_globals)]
+//! Translated from c_src/src/jsparse.c
+use crate::jsi::*;
+use crate::prelude::*;
 
-use crate::cutil::*;
-use crate::jsrun::{js_free, js_malloc};
-use crate::types::*;
-use std::os::raw::{c_char, c_int, c_void};
-
-macro_rules! cstr {
-    ($s:literal) => {
-        concat!($s, "\0").as_ptr() as *const c_char
+/* #define LIST(h)		jsP_newnode(J, AST_LIST, 0, h, 0, 0, 0) */
+macro_rules! LIST {
+    ($J:expr, $h:expr) => {
+        jsP_newnode($J, AST_LIST, 0, $h, null_mut(), null_mut(), null_mut())
     };
 }
 
-// jsP_error / jsP_warning variadics: rs_ impls called by shim.
-#[no_mangle]
-pub unsafe extern "C-unwind" fn rs_jsP_error(J: *mut js_State, msg: *const c_char) {
-    let mut buf: [c_char; 512] = [0; 512];
-    libc::snprintf(buf.as_mut_ptr(), 256, cstr!("%s:%d: "), (*J).filename, (*J).lexline);
-    strcat(buf.as_mut_ptr(), msg);
-    crate::jserror::js_newsyntaxerror(J, buf.as_ptr());
-    crate::jsrun::js_throw(J);
+/* #define EXP0(x) ... EXP3(x,a,b,c) */
+macro_rules! EXP0 {
+    ($J:expr, $line:expr, $x:expr) => {
+        jsP_newnode($J, $x, $line, null_mut(), null_mut(), null_mut(), null_mut())
+    };
+}
+macro_rules! EXP1 {
+    ($J:expr, $line:expr, $x:expr, $a:expr) => {
+        jsP_newnode($J, $x, $line, $a, null_mut(), null_mut(), null_mut())
+    };
+}
+macro_rules! EXP2 {
+    ($J:expr, $line:expr, $x:expr, $a:expr, $b:expr) => {
+        jsP_newnode($J, $x, $line, $a, $b, null_mut(), null_mut())
+    };
+}
+macro_rules! EXP3 {
+    ($J:expr, $line:expr, $x:expr, $a:expr, $b:expr, $c:expr) => {
+        jsP_newnode($J, $x, $line, $a, $b, $c, null_mut())
+    };
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn rs_jsP_warning(J: *mut js_State, msg: *const c_char) {
+/* #define STM0(x) ... STM4(x,a,b,c,d) */
+macro_rules! STM0 {
+    ($J:expr, $line:expr, $x:expr) => {
+        jsP_newnode($J, $x, $line, null_mut(), null_mut(), null_mut(), null_mut())
+    };
+}
+macro_rules! STM1 {
+    ($J:expr, $line:expr, $x:expr, $a:expr) => {
+        jsP_newnode($J, $x, $line, $a, null_mut(), null_mut(), null_mut())
+    };
+}
+macro_rules! STM2 {
+    ($J:expr, $line:expr, $x:expr, $a:expr, $b:expr) => {
+        jsP_newnode($J, $x, $line, $a, $b, null_mut(), null_mut())
+    };
+}
+macro_rules! STM3 {
+    ($J:expr, $line:expr, $x:expr, $a:expr, $b:expr, $c:expr) => {
+        jsP_newnode($J, $x, $line, $a, $b, $c, null_mut())
+    };
+}
+macro_rules! STM4 {
+    ($J:expr, $line:expr, $x:expr, $a:expr, $b:expr, $c:expr, $d:expr) => {
+        jsP_newnode($J, $x, $line, $a, $b, $c, $d)
+    };
+}
+
+/* JS_NORETURN static void jsP_error(js_State *J, const char *fmt, ...) */
+
+unsafe fn jsP_error_str(J: *mut js_State, msgbuf: *const c_char) -> ! {
     let mut buf: [c_char; 512] = [0; 512];
-    libc::snprintf(buf.as_mut_ptr(), 512, cstr!("%s:%d: warning: %s"), (*J).filename, (*J).lexline, msg);
-    crate::jsstate::js_report(J, buf.as_ptr());
+
+    snprintf(
+        buf.as_mut_ptr(),
+        256,
+        c"%s:%d: ".as_ptr(),
+        (*J).filename,
+        (*J).lexline,
+    );
+    strcat(buf.as_mut_ptr(), msgbuf);
+
+    js_newsyntaxerror(J, buf.as_ptr());
+    js_throw(J)
 }
 
 macro_rules! jsP_error {
-    ($J:expr, $($arg:tt)*) => {
-        crate::jserror::jsP_error_shim($J, $($arg)*)
-    };
-}
-macro_rules! jsP_warning {
-    ($J:expr, $($arg:tt)*) => {
-        crate::jserror::jsP_warning_shim($J, $($arg)*)
-    };
+    ($J:expr, $($a:expr),*) => {{
+        let mut msgbuf__: [c_char; 256] = [0; 256];
+        snprintf(msgbuf__.as_mut_ptr(), 256, $($a),*);
+        jsP_error_str($J, msgbuf__.as_ptr())
+    }};
 }
 
-/* Recursion guards */
+unsafe fn jsP_warning_str(J: *mut js_State, msg: *const c_char) {
+    let mut buf: [c_char; 512] = [0; 512];
+
+    snprintf(
+        buf.as_mut_ptr(),
+        512,
+        c"%s:%d: warning: %s".as_ptr(),
+        (*J).filename,
+        (*J).lexline,
+        msg,
+    );
+    js_report(J, buf.as_ptr());
+}
+
+macro_rules! jsP_warning {
+    ($J:expr, $($a:expr),*) => {{
+        let mut msg__: [c_char; 256] = [0; 256];
+        snprintf(msg__.as_mut_ptr(), 256, $($a),*);
+        jsP_warning_str($J, msg__.as_ptr())
+    }};
+}
+
+/* #define INCREC() if (++J->astdepth > JS_ASTLIMIT) jsP_error(J, "too much recursion") */
 macro_rules! INCREC {
     ($J:expr) => {{
         (*$J).astdepth += 1;
         if (*$J).astdepth > JS_ASTLIMIT {
-            jsP_error!($J, cstr!("too much recursion"));
+            jsP_error!($J, c"too much recursion".as_ptr());
         }
     }};
 }
+/* #define DECREC() --J->astdepth */
 macro_rules! DECREC {
-    ($J:expr) => {
-        (*$J).astdepth -= 1
-    };
+    ($J:expr) => {{
+        (*$J).astdepth -= 1;
+    }};
 }
 
-unsafe fn jsP_newnode(J: *mut js_State, type_: c_int, line: c_int, a: *mut js_Ast, b: *mut js_Ast, c: *mut js_Ast, d: *mut js_Ast) -> *mut js_Ast {
-    let node = js_malloc(J, std::mem::size_of::<js_Ast>() as c_int) as *mut js_Ast;
+unsafe fn jsP_newnode(
+    J: *mut js_State,
+    r#type: c_int,
+    line: c_int,
+    a: *mut js_Ast,
+    b: *mut js_Ast,
+    c: *mut js_Ast,
+    d: *mut js_Ast,
+) -> *mut js_Ast {
+    let node: *mut js_Ast = js_malloc(J, std::mem::size_of::<js_Ast>() as c_int) as *mut js_Ast;
 
-    (*node).type_ = type_;
+    (*node).r#type = r#type;
     (*node).line = line;
     (*node).a = a;
     (*node).b = b;
     (*node).c = c;
     (*node).d = d;
     (*node).number = 0.0;
-    (*node).string = std::ptr::null();
-    (*node).jumps = std::ptr::null_mut();
+    (*node).string = null();
+    (*node).jumps = null_mut();
     (*node).casejump = 0;
 
-    (*node).parent = std::ptr::null_mut();
+    (*node).parent = null_mut();
     if !a.is_null() {
         (*a).parent = node;
     }
@@ -89,24 +164,10 @@ unsafe fn jsP_newnode(J: *mut js_State, type_: c_int, line: c_int, a: *mut js_As
     node
 }
 
-macro_rules! LIST {
-    ($J:expr, $h:expr) => {
-        jsP_newnode($J, AST_LIST, 0, $h, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
-    };
-}
-macro_rules! EXP0 { ($J:expr,$line:expr,$x:expr) => { jsP_newnode($J, $x, $line, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) }; }
-macro_rules! EXP1 { ($J:expr,$line:expr,$x:expr,$a:expr) => { jsP_newnode($J, $x, $line, $a, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) }; }
-macro_rules! EXP2 { ($J:expr,$line:expr,$x:expr,$a:expr,$b:expr) => { jsP_newnode($J, $x, $line, $a, $b, std::ptr::null_mut(), std::ptr::null_mut()) }; }
-macro_rules! EXP3 { ($J:expr,$line:expr,$x:expr,$a:expr,$b:expr,$c:expr) => { jsP_newnode($J, $x, $line, $a, $b, $c, std::ptr::null_mut()) }; }
-macro_rules! STM0 { ($J:expr,$line:expr,$x:expr) => { jsP_newnode($J, $x, $line, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) }; }
-macro_rules! STM1 { ($J:expr,$line:expr,$x:expr,$a:expr) => { jsP_newnode($J, $x, $line, $a, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) }; }
-macro_rules! STM2 { ($J:expr,$line:expr,$x:expr,$a:expr,$b:expr) => { jsP_newnode($J, $x, $line, $a, $b, std::ptr::null_mut(), std::ptr::null_mut()) }; }
-macro_rules! STM3 { ($J:expr,$line:expr,$x:expr,$a:expr,$b:expr,$c:expr) => { jsP_newnode($J, $x, $line, $a, $b, $c, std::ptr::null_mut()) }; }
-macro_rules! STM4 { ($J:expr,$line:expr,$x:expr,$a:expr,$b:expr,$c:expr,$d:expr) => { jsP_newnode($J, $x, $line, $a, $b, $c, $d) }; }
-
 unsafe fn jsP_list(head: *mut js_Ast) -> *mut js_Ast {
-    let mut prev = head;
-    let mut node = (*head).b;
+    /* set parent pointers in list nodes */
+    let mut prev: *mut js_Ast = head;
+    let mut node: *mut js_Ast = (*head).b;
     while !node.is_null() {
         (*node).parent = prev;
         prev = node;
@@ -115,62 +176,82 @@ unsafe fn jsP_list(head: *mut js_Ast) -> *mut js_Ast {
     head
 }
 
-unsafe fn jsP_newstrnode(J: *mut js_State, type_: c_int, s: *const c_char) -> *mut js_Ast {
-    let node = jsP_newnode(J, type_, (*J).lexline, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
-    (*node).string = crate::jsintern::js_intern(J, s);
+unsafe fn jsP_newstrnode(J: *mut js_State, r#type: c_int, s: *const c_char) -> *mut js_Ast {
+    let node: *mut js_Ast = jsP_newnode(
+        J,
+        r#type,
+        (*J).lexline,
+        null_mut(),
+        null_mut(),
+        null_mut(),
+        null_mut(),
+    );
+    (*node).string = js_intern(J, s);
     node
 }
 
-unsafe fn jsP_newnumnode(J: *mut js_State, type_: c_int, n: f64) -> *mut js_Ast {
-    let node = jsP_newnode(J, type_, (*J).lexline, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+unsafe fn jsP_newnumnode(J: *mut js_State, r#type: c_int, n: f64) -> *mut js_Ast {
+    let node: *mut js_Ast = jsP_newnode(
+        J,
+        r#type,
+        (*J).lexline,
+        null_mut(),
+        null_mut(),
+        null_mut(),
+        null_mut(),
+    );
     (*node).number = n;
     node
 }
 
-unsafe fn jsP_freejumps(J: *mut js_State, mut node: *mut js_JumpList) {
+unsafe fn jsP_freejumps(J: *mut js_State, node: *mut js_JumpList) {
+    let mut node = node;
     while !node.is_null() {
-        let next = (*node).next;
+        let next: *mut js_JumpList = (*node).next;
         js_free(J, node as *mut c_void);
         node = next;
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsP_freeparse(J: *mut js_State) {
-    let mut node = (*J).gcast;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsP_freeparse(J: *mut js_State) {
+    let mut node: *mut js_Ast = (*J).gcast;
     while !node.is_null() {
-        let next = (*node).gcnext;
+        let next: *mut js_Ast = (*node).gcnext;
         jsP_freejumps(J, (*node).jumps);
         js_free(J, node as *mut c_void);
         node = next;
     }
-    (*J).gcast = std::ptr::null_mut();
+    (*J).gcast = null_mut();
 }
 
 /* Lookahead */
+
 unsafe fn jsP_next(J: *mut js_State) {
-    (*J).lookahead = crate::jslex::jsY_lex(J);
+    (*J).lookahead = jsY_lex(J);
 }
 
+/* #define jsP_accept(J,x) (J->lookahead == x ? (jsP_next(J), 1) : 0) */
 macro_rules! jsP_accept {
     ($J:expr, $x:expr) => {
-        if (*$J).lookahead == $x {
+        (if (*$J).lookahead == $x {
             jsP_next($J);
-            1
+            1 as c_int
         } else {
-            0
-        }
+            0 as c_int
+        })
     };
 }
 
+/* #define jsP_expect(J,x) if (!jsP_accept(J, x)) jsP_error(...) */
 macro_rules! jsP_expect {
     ($J:expr, $x:expr) => {
         if jsP_accept!($J, $x) == 0 {
             jsP_error!(
                 $J,
-                cstr!("unexpected token: %s (expected %s)"),
-                crate::jslex::jsY_tokenstring((*$J).lookahead),
-                crate::jslex::jsY_tokenstring($x)
+                c"unexpected token: %s (expected %s)".as_ptr(),
+                jsY_tokenstring((*$J).lookahead),
+                jsY_tokenstring($x)
             );
         }
     };
@@ -184,40 +265,51 @@ unsafe fn semicolon(J: *mut js_State) {
     if (*J).newline != 0 || (*J).lookahead == '}' as c_int || (*J).lookahead == 0 {
         return;
     }
-    jsP_error!(J, cstr!("unexpected token: %s (expected ';')"), crate::jslex::jsY_tokenstring((*J).lookahead));
+    jsP_error!(
+        J,
+        c"unexpected token: %s (expected ';')".as_ptr(),
+        jsY_tokenstring((*J).lookahead)
+    );
 }
 
 /* Literals */
+
 unsafe fn identifier(J: *mut js_State) -> *mut js_Ast {
-    let a;
+    let a: *mut js_Ast;
     if (*J).lookahead == TK_IDENTIFIER {
         a = jsP_newstrnode(J, AST_IDENTIFIER, (*J).text);
         jsP_next(J);
         return a;
     }
-    jsP_error!(J, cstr!("unexpected token: %s (expected identifier)"), crate::jslex::jsY_tokenstring((*J).lookahead));
-    unreachable!()
+    jsP_error!(
+        J,
+        c"unexpected token: %s (expected identifier)".as_ptr(),
+        jsY_tokenstring((*J).lookahead)
+    )
 }
 
 unsafe fn identifieropt(J: *mut js_State) -> *mut js_Ast {
     if (*J).lookahead == TK_IDENTIFIER {
         return identifier(J);
     }
-    std::ptr::null_mut()
+    null_mut()
 }
 
 unsafe fn identifiername(J: *mut js_State) -> *mut js_Ast {
     if (*J).lookahead == TK_IDENTIFIER || (*J).lookahead >= TK_BREAK {
-        let a = jsP_newstrnode(J, AST_IDENTIFIER, (*J).text);
+        let a: *mut js_Ast = jsP_newstrnode(J, AST_IDENTIFIER, (*J).text);
         jsP_next(J);
         return a;
     }
-    jsP_error!(J, cstr!("unexpected token: %s (expected identifier or keyword)"), crate::jslex::jsY_tokenstring((*J).lookahead));
-    unreachable!()
+    jsP_error!(
+        J,
+        c"unexpected token: %s (expected identifier or keyword)".as_ptr(),
+        jsY_tokenstring((*J).lookahead)
+    )
 }
 
 unsafe fn arrayelement(J: *mut js_State) -> *mut js_Ast {
-    let line = (*J).lexline;
+    let line: c_int = (*J).lexline;
     if (*J).lookahead == ',' as c_int {
         return EXP0!(J, line, EXP_ELISION);
     }
@@ -225,24 +317,25 @@ unsafe fn arrayelement(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn arrayliteral(J: *mut js_State) -> *mut js_Ast {
-    let head;
-    let mut tail;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
     if (*J).lookahead == ']' as c_int {
-        return std::ptr::null_mut();
+        return null_mut();
     }
-    head = LIST!(J, arrayelement(J));
-    tail = head;
+    tail = LIST!(J, arrayelement(J));
+    head = tail;
     while jsP_accept!(J, ',' as c_int) != 0 {
         if (*J).lookahead != ']' as c_int {
-            (*tail).b = LIST!(J, arrayelement(J));
-            tail = (*tail).b;
+            let t: *mut js_Ast = LIST!(J, arrayelement(J));
+            (*tail).b = t;
+            tail = t;
         }
     }
     jsP_list(head)
 }
 
 unsafe fn propname(J: *mut js_State) -> *mut js_Ast {
-    let name;
+    let name: *mut js_Ast;
     if (*J).lookahead == TK_NUMBER {
         name = jsP_newnumnode(J, EXP_NUMBER, (*J).number);
         jsP_next(J);
@@ -256,23 +349,23 @@ unsafe fn propname(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn propassign(J: *mut js_State) -> *mut js_Ast {
-    let mut name;
-    let value;
-    let arg;
-    let body;
-    let line = (*J).lexline;
+    let mut name: *mut js_Ast;
+    let value: *mut js_Ast;
+    let arg: *mut js_Ast;
+    let body: *mut js_Ast;
+    let line: c_int = (*J).lexline;
 
     name = propname(J);
 
-    if (*J).lookahead != ':' as c_int && (*name).type_ == AST_IDENTIFIER {
-        if strcmp((*name).string, cstr!("get")) == 0 {
+    if (*J).lookahead != ':' as c_int && (*name).r#type == AST_IDENTIFIER {
+        if strcmp((*name).string, c"get".as_ptr()) == 0 {
             name = propname(J);
             jsP_expect!(J, '(' as c_int);
             jsP_expect!(J, ')' as c_int);
             body = funbody(J);
-            return EXP3!(J, line, EXP_PROP_GET, name, std::ptr::null_mut(), body);
+            return EXP3!(J, line, EXP_PROP_GET, name, null_mut(), body);
         }
-        if strcmp((*name).string, cstr!("set")) == 0 {
+        if strcmp((*name).string, c"set".as_ptr()) == 0 {
             name = propname(J);
             jsP_expect!(J, '(' as c_int);
             arg = identifier(J);
@@ -288,68 +381,79 @@ unsafe fn propassign(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn objectliteral(J: *mut js_State) -> *mut js_Ast {
-    let head;
-    let mut tail;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
     if (*J).lookahead == '}' as c_int {
-        return std::ptr::null_mut();
+        return null_mut();
     }
-    head = LIST!(J, propassign(J));
-    tail = head;
+    tail = LIST!(J, propassign(J));
+    head = tail;
     while jsP_accept!(J, ',' as c_int) != 0 {
         if (*J).lookahead == '}' as c_int {
             break;
         }
-        (*tail).b = LIST!(J, propassign(J));
-        tail = (*tail).b;
+        let t: *mut js_Ast = LIST!(J, propassign(J));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 /* Functions */
+
 unsafe fn parameters(J: *mut js_State) -> *mut js_Ast {
-    let head;
-    let mut tail;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
     if (*J).lookahead == ')' as c_int {
-        return std::ptr::null_mut();
+        return null_mut();
     }
-    head = LIST!(J, identifier(J));
-    tail = head;
+    tail = LIST!(J, identifier(J));
+    head = tail;
     while jsP_accept!(J, ',' as c_int) != 0 {
-        (*tail).b = LIST!(J, identifier(J));
-        tail = (*tail).b;
+        let t: *mut js_Ast = LIST!(J, identifier(J));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 unsafe fn fundec(J: *mut js_State, line: c_int) -> *mut js_Ast {
-    let a;
-    let b;
-    let c;
+    let a: *mut js_Ast;
+    let b: *mut js_Ast;
+    let c: *mut js_Ast;
     a = identifier(J);
     jsP_expect!(J, '(' as c_int);
     b = parameters(J);
     jsP_expect!(J, ')' as c_int);
     c = funbody(J);
-    jsP_newnode(J, AST_FUNDEC, line, a, b, c, std::ptr::null_mut())
+    jsP_newnode(J, AST_FUNDEC, line, a, b, c, null_mut())
 }
 
 unsafe fn funstm(J: *mut js_State, line: c_int) -> *mut js_Ast {
-    let a;
-    let b;
-    let c;
+    let a: *mut js_Ast;
+    let b: *mut js_Ast;
+    let c: *mut js_Ast;
     a = identifier(J);
     jsP_expect!(J, '(' as c_int);
     b = parameters(J);
     jsP_expect!(J, ')' as c_int);
     c = funbody(J);
-    // rewrite: var X = function X() {}
-    STM1!(J, line, STM_VAR, LIST!(J, EXP2!(J, line, EXP_VAR, a, EXP3!(J, line, EXP_FUN, a, b, c))))
+    /* rewrite function statement as "var X = function X() {}" */
+    STM1!(
+        J,
+        line,
+        STM_VAR,
+        LIST!(
+            J,
+            EXP2!(J, line, EXP_VAR, a, EXP3!(J, line, EXP_FUN, a, b, c))
+        )
+    )
 }
 
 unsafe fn funexp(J: *mut js_State, line: c_int) -> *mut js_Ast {
-    let a;
-    let b;
-    let c;
+    let a: *mut js_Ast;
+    let b: *mut js_Ast;
+    let c: *mut js_Ast;
     a = identifieropt(J);
     jsP_expect!(J, '(' as c_int);
     b = parameters(J);
@@ -359,9 +463,10 @@ unsafe fn funexp(J: *mut js_State, line: c_int) -> *mut js_Ast {
 }
 
 /* Expressions */
+
 unsafe fn primary(J: *mut js_State) -> *mut js_Ast {
-    let a;
-    let line = (*J).lexline;
+    let mut a: *mut js_Ast;
+    let line: c_int = (*J).lexline;
 
     if (*J).lookahead == TK_IDENTIFIER {
         a = jsP_newstrnode(J, EXP_IDENTIFIER, (*J).text);
@@ -398,44 +503,48 @@ unsafe fn primary(J: *mut js_State) -> *mut js_Ast {
         return EXP0!(J, line, EXP_FALSE);
     }
     if jsP_accept!(J, '{' as c_int) != 0 {
-        let a = EXP1!(J, line, EXP_OBJECT, objectliteral(J));
+        a = EXP1!(J, line, EXP_OBJECT, objectliteral(J));
         jsP_expect!(J, '}' as c_int);
         return a;
     }
     if jsP_accept!(J, '[' as c_int) != 0 {
-        let a = EXP1!(J, line, EXP_ARRAY, arrayliteral(J));
+        a = EXP1!(J, line, EXP_ARRAY, arrayliteral(J));
         jsP_expect!(J, ']' as c_int);
         return a;
     }
     if jsP_accept!(J, '(' as c_int) != 0 {
-        let a = expression(J, 0);
+        a = expression(J, 0);
         jsP_expect!(J, ')' as c_int);
         return a;
     }
 
-    jsP_error!(J, cstr!("unexpected token in expression: %s"), crate::jslex::jsY_tokenstring((*J).lookahead));
-    unreachable!()
+    jsP_error!(
+        J,
+        c"unexpected token in expression: %s".as_ptr(),
+        jsY_tokenstring((*J).lookahead)
+    )
 }
 
 unsafe fn arguments(J: *mut js_State) -> *mut js_Ast {
-    let head;
-    let mut tail;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
     if (*J).lookahead == ')' as c_int {
-        return std::ptr::null_mut();
+        return null_mut();
     }
-    head = LIST!(J, assignment(J, 0));
-    tail = head;
+    tail = LIST!(J, assignment(J, 0));
+    head = tail;
     while jsP_accept!(J, ',' as c_int) != 0 {
-        (*tail).b = LIST!(J, assignment(J, 0));
-        tail = (*tail).b;
+        let t: *mut js_Ast = LIST!(J, assignment(J, 0));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 unsafe fn newexp(J: *mut js_State) -> *mut js_Ast {
-    let a;
-    let b;
-    let line = (*J).lexline;
+    let a: *mut js_Ast;
+    let b: *mut js_Ast;
+    let line: c_int = (*J).lexline;
 
     if jsP_accept!(J, TK_NEW) != 0 {
         a = memberexp(J);
@@ -455,20 +564,20 @@ unsafe fn newexp(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn memberexp(J: *mut js_State) -> *mut js_Ast {
-    let mut a = newexp(J);
-    let mut line;
-    let SAVE = (*J).astdepth;
-    loop {
+    let mut a: *mut js_Ast = newexp(J);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, '.' as c_int) != 0 {
             a = EXP2!(J, line, EXP_MEMBER, a, identifiername(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '[' as c_int) != 0 {
             a = EXP2!(J, line, EXP_INDEX, a, expression(J, 0));
             jsP_expect!(J, ']' as c_int);
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -477,25 +586,25 @@ unsafe fn memberexp(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn callexp(J: *mut js_State) -> *mut js_Ast {
-    let mut a = newexp(J);
-    let mut line;
-    let SAVE = (*J).astdepth;
-    loop {
+    let mut a: *mut js_Ast = newexp(J);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, '.' as c_int) != 0 {
             a = EXP2!(J, line, EXP_MEMBER, a, identifiername(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '[' as c_int) != 0 {
             a = EXP2!(J, line, EXP_INDEX, a, expression(J, 0));
             jsP_expect!(J, ']' as c_int);
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '(' as c_int) != 0 {
             a = EXP2!(J, line, EXP_CALL, a, arguments(J));
             jsP_expect!(J, ')' as c_int);
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -504,8 +613,8 @@ unsafe fn callexp(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn postfix(J: *mut js_State) -> *mut js_Ast {
-    let a = callexp(J);
-    let line = (*J).lexline;
+    let a: *mut js_Ast = callexp(J);
+    let line: c_int = (*J).lexline;
     if (*J).newline == 0 && jsP_accept!(J, TK_INC) != 0 {
         return EXP1!(J, line, EXP_POSTINC, a);
     }
@@ -516,8 +625,8 @@ unsafe fn postfix(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn unary(J: *mut js_State) -> *mut js_Ast {
-    let a;
-    let line = (*J).lexline;
+    let a: *mut js_Ast;
+    let line: c_int = (*J).lexline;
     INCREC!(J);
     if jsP_accept!(J, TK_DELETE) != 0 {
         a = EXP1!(J, line, EXP_DELETE, unary(J));
@@ -544,46 +653,24 @@ unsafe fn unary(J: *mut js_State) -> *mut js_Ast {
     a
 }
 
-macro_rules! binop_loop {
-    ($J:expr, $sub:ident, $notin:expr, $($tok:expr => $exp:expr),+ $(,)?) => {{
-        let mut a = $sub($J, $notin);
-        let SAVE = (*$J).astdepth;
-        let mut line;
-        loop {
-            INCREC!($J);
-            line = (*$J).lexline;
-            let mut matched = false;
-            $(
-                if !matched && jsP_accept!($J, $tok) != 0 {
-                    a = EXP2!($J, line, $exp, a, $sub($J, $notin));
-                    matched = true;
-                }
-            )+
-            if !matched { break; }
-        }
-        (*$J).astdepth = SAVE;
-        a
-    }};
-}
-
 unsafe fn multiplicative(J: *mut js_State) -> *mut js_Ast {
-    let mut a = unary(J);
-    let SAVE = (*J).astdepth;
-    let mut line;
-    loop {
+    let mut a: *mut js_Ast = unary(J);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, '*' as c_int) != 0 {
             a = EXP2!(J, line, EXP_MUL, a, unary(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '/' as c_int) != 0 {
             a = EXP2!(J, line, EXP_DIV, a, unary(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '%' as c_int) != 0 {
             a = EXP2!(J, line, EXP_MOD, a, unary(J));
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -592,19 +679,19 @@ unsafe fn multiplicative(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn additive(J: *mut js_State) -> *mut js_Ast {
-    let mut a = multiplicative(J);
-    let SAVE = (*J).astdepth;
-    let mut line;
-    loop {
+    let mut a: *mut js_Ast = multiplicative(J);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, '+' as c_int) != 0 {
             a = EXP2!(J, line, EXP_ADD, a, multiplicative(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '-' as c_int) != 0 {
             a = EXP2!(J, line, EXP_SUB, a, multiplicative(J));
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -613,23 +700,23 @@ unsafe fn additive(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn shift(J: *mut js_State) -> *mut js_Ast {
-    let mut a = additive(J);
-    let SAVE = (*J).astdepth;
-    let mut line;
-    loop {
+    let mut a: *mut js_Ast = additive(J);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, TK_SHL) != 0 {
             a = EXP2!(J, line, EXP_SHL, a, additive(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_SHR) != 0 {
             a = EXP2!(J, line, EXP_SHR, a, additive(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_USHR) != 0 {
             a = EXP2!(J, line, EXP_USHR, a, additive(J));
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -638,35 +725,35 @@ unsafe fn shift(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn relational(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = shift(J);
-    let SAVE = (*J).astdepth;
-    let mut line;
-    loop {
+    let mut a: *mut js_Ast = shift(J);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, '<' as c_int) != 0 {
             a = EXP2!(J, line, EXP_LT, a, shift(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, '>' as c_int) != 0 {
             a = EXP2!(J, line, EXP_GT, a, shift(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_LE) != 0 {
             a = EXP2!(J, line, EXP_LE, a, shift(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_GE) != 0 {
             a = EXP2!(J, line, EXP_GE, a, shift(J));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_INSTANCEOF) != 0 {
             a = EXP2!(J, line, EXP_INSTANCEOF, a, shift(J));
-            continue;
+            continue 'r#loop;
         }
         if notin == 0 && jsP_accept!(J, TK_IN) != 0 {
             a = EXP2!(J, line, EXP_IN, a, shift(J));
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -675,27 +762,27 @@ unsafe fn relational(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn equality(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = relational(J, notin);
-    let SAVE = (*J).astdepth;
-    let mut line;
-    loop {
+    let mut a: *mut js_Ast = relational(J, notin);
+    let mut line: c_int;
+    let SAVE: c_int = (*J).astdepth;
+    'r#loop: loop {
         INCREC!(J);
         line = (*J).lexline;
         if jsP_accept!(J, TK_EQ) != 0 {
             a = EXP2!(J, line, EXP_EQ, a, relational(J, notin));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_NE) != 0 {
             a = EXP2!(J, line, EXP_NE, a, relational(J, notin));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_STRICTEQ) != 0 {
             a = EXP2!(J, line, EXP_STRICTEQ, a, relational(J, notin));
-            continue;
+            continue 'r#loop;
         }
         if jsP_accept!(J, TK_STRICTNE) != 0 {
             a = EXP2!(J, line, EXP_STRICTNE, a, relational(J, notin));
-            continue;
+            continue 'r#loop;
         }
         break;
     }
@@ -704,9 +791,9 @@ unsafe fn equality(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn bitand(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = equality(J, notin);
-    let SAVE = (*J).astdepth;
-    let mut line = (*J).lexline;
+    let mut a: *mut js_Ast = equality(J, notin);
+    let SAVE: c_int = (*J).astdepth;
+    let mut line: c_int = (*J).lexline;
     while jsP_accept!(J, '&' as c_int) != 0 {
         INCREC!(J);
         a = EXP2!(J, line, EXP_BITAND, a, equality(J, notin));
@@ -717,9 +804,9 @@ unsafe fn bitand(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn bitxor(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = bitand(J, notin);
-    let SAVE = (*J).astdepth;
-    let mut line = (*J).lexline;
+    let mut a: *mut js_Ast = bitand(J, notin);
+    let SAVE: c_int = (*J).astdepth;
+    let mut line: c_int = (*J).lexline;
     while jsP_accept!(J, '^' as c_int) != 0 {
         INCREC!(J);
         a = EXP2!(J, line, EXP_BITXOR, a, bitand(J, notin));
@@ -730,9 +817,9 @@ unsafe fn bitxor(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn bitor(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = bitxor(J, notin);
-    let SAVE = (*J).astdepth;
-    let mut line = (*J).lexline;
+    let mut a: *mut js_Ast = bitxor(J, notin);
+    let SAVE: c_int = (*J).astdepth;
+    let mut line: c_int = (*J).lexline;
     while jsP_accept!(J, '|' as c_int) != 0 {
         INCREC!(J);
         a = EXP2!(J, line, EXP_BITOR, a, bitxor(J, notin));
@@ -743,8 +830,8 @@ unsafe fn bitor(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn logand(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = bitor(J, notin);
-    let line = (*J).lexline;
+    let mut a: *mut js_Ast = bitor(J, notin);
+    let line: c_int = (*J).lexline;
     if jsP_accept!(J, TK_AND) != 0 {
         INCREC!(J);
         a = EXP2!(J, line, EXP_LOGAND, a, logand(J, notin));
@@ -754,8 +841,8 @@ unsafe fn logand(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn logor(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = logand(J, notin);
-    let line = (*J).lexline;
+    let mut a: *mut js_Ast = logand(J, notin);
+    let line: c_int = (*J).lexline;
     if jsP_accept!(J, TK_OR) != 0 {
         INCREC!(J);
         a = EXP2!(J, line, EXP_LOGOR, a, logor(J, notin));
@@ -765,11 +852,11 @@ unsafe fn logor(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn conditional(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let a = logor(J, notin);
-    let line = (*J).lexline;
+    let a: *mut js_Ast = logor(J, notin);
+    let line: c_int = (*J).lexline;
     if jsP_accept!(J, '?' as c_int) != 0 {
-        let b;
-        let c;
+        let b: *mut js_Ast;
+        let c: *mut js_Ast;
         INCREC!(J);
         b = assignment(J, 0);
         jsP_expect!(J, ':' as c_int);
@@ -781,8 +868,8 @@ unsafe fn conditional(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn assignment(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = conditional(J, notin);
-    let line = (*J).lexline;
+    let mut a: *mut js_Ast = conditional(J, notin);
+    let line: c_int = (*J).lexline;
     INCREC!(J);
     if jsP_accept!(J, '=' as c_int) != 0 {
         a = EXP2!(J, line, EXP_ASS, a, assignment(J, notin));
@@ -814,10 +901,9 @@ unsafe fn assignment(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn expression(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let mut a = assignment(J, notin);
-    let SAVE = (*J).astdepth;
-    let mut line = (*J).lexline;
-    let _ = line;
+    let mut a: *mut js_Ast = assignment(J, notin);
+    let SAVE: c_int = (*J).astdepth;
+    let mut line: c_int = (*J).lexline;
     while jsP_accept!(J, ',' as c_int) != 0 {
         INCREC!(J);
         a = EXP2!(J, line, EXP_COMMA, a, assignment(J, notin));
@@ -828,9 +914,10 @@ unsafe fn expression(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 /* Statements */
+
 unsafe fn vardec(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let a = identifier(J);
-    let line = (*J).lexline;
+    let a: *mut js_Ast = identifier(J);
+    let line: c_int = (*J).lexline;
     if jsP_accept!(J, '=' as c_int) != 0 {
         return EXP2!(J, line, EXP_VAR, a, assignment(J, notin));
     }
@@ -838,36 +925,44 @@ unsafe fn vardec(J: *mut js_State, notin: c_int) -> *mut js_Ast {
 }
 
 unsafe fn vardeclist(J: *mut js_State, notin: c_int) -> *mut js_Ast {
-    let head;
-    let mut tail;
-    head = LIST!(J, vardec(J, notin));
-    tail = head;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
+    tail = LIST!(J, vardec(J, notin));
+    head = tail;
     while jsP_accept!(J, ',' as c_int) != 0 {
-        (*tail).b = LIST!(J, vardec(J, notin));
-        tail = (*tail).b;
+        let t: *mut js_Ast = LIST!(J, vardec(J, notin));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 unsafe fn statementlist(J: *mut js_State) -> *mut js_Ast {
-    let head;
-    let mut tail;
-    if (*J).lookahead == '}' as c_int || (*J).lookahead == TK_CASE || (*J).lookahead == TK_DEFAULT {
-        return std::ptr::null_mut();
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
+    if (*J).lookahead == '}' as c_int
+        || (*J).lookahead == TK_CASE
+        || (*J).lookahead == TK_DEFAULT
+    {
+        return null_mut();
     }
-    head = LIST!(J, statement(J));
-    tail = head;
-    while (*J).lookahead != '}' as c_int && (*J).lookahead != TK_CASE && (*J).lookahead != TK_DEFAULT {
-        (*tail).b = LIST!(J, statement(J));
-        tail = (*tail).b;
+    tail = LIST!(J, statement(J));
+    head = tail;
+    while (*J).lookahead != '}' as c_int
+        && (*J).lookahead != TK_CASE
+        && (*J).lookahead != TK_DEFAULT
+    {
+        let t: *mut js_Ast = LIST!(J, statement(J));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 unsafe fn caseclause(J: *mut js_State) -> *mut js_Ast {
-    let a;
-    let b;
-    let line = (*J).lexline;
+    let a: *mut js_Ast;
+    let b: *mut js_Ast;
+    let line: c_int = (*J).lexline;
 
     if jsP_accept!(J, TK_CASE) != 0 {
         a = expression(J, 0);
@@ -882,28 +977,32 @@ unsafe fn caseclause(J: *mut js_State) -> *mut js_Ast {
         return STM1!(J, line, STM_DEFAULT, a);
     }
 
-    jsP_error!(J, cstr!("unexpected token in switch: %s (expected 'case' or 'default')"), crate::jslex::jsY_tokenstring((*J).lookahead));
-    unreachable!()
+    jsP_error!(
+        J,
+        c"unexpected token in switch: %s (expected 'case' or 'default')".as_ptr(),
+        jsY_tokenstring((*J).lookahead)
+    )
 }
 
 unsafe fn caselist(J: *mut js_State) -> *mut js_Ast {
-    let head;
-    let mut tail;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
     if (*J).lookahead == '}' as c_int {
-        return std::ptr::null_mut();
+        return null_mut();
     }
-    head = LIST!(J, caseclause(J));
-    tail = head;
+    tail = LIST!(J, caseclause(J));
+    head = tail;
     while (*J).lookahead != '}' as c_int {
-        (*tail).b = LIST!(J, caseclause(J));
-        tail = (*tail).b;
+        let t: *mut js_Ast = LIST!(J, caseclause(J));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 unsafe fn block(J: *mut js_State) -> *mut js_Ast {
-    let a;
-    let line = (*J).lexline;
+    let a: *mut js_Ast;
+    let line: c_int = (*J).lexline;
     jsP_expect!(J, '{' as c_int);
     a = statementlist(J);
     jsP_expect!(J, '}' as c_int);
@@ -911,7 +1010,7 @@ unsafe fn block(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn forexpression(J: *mut js_State, end: c_int) -> *mut js_Ast {
-    let mut a: *mut js_Ast = std::ptr::null_mut();
+    let mut a: *mut js_Ast = null_mut();
     if (*J).lookahead != end {
         a = expression(J, 0);
     }
@@ -920,32 +1019,36 @@ unsafe fn forexpression(J: *mut js_State, end: c_int) -> *mut js_Ast {
 }
 
 unsafe fn forstatement(J: *mut js_State, line: c_int) -> *mut js_Ast {
-    let mut a;
-    let b;
-    let c;
+    let mut a: *mut js_Ast;
+    let b: *mut js_Ast;
+    let c: *mut js_Ast;
     let d: *mut js_Ast;
     jsP_expect!(J, '(' as c_int);
     if jsP_accept!(J, TK_VAR) != 0 {
         a = vardeclist(J, 1);
         if jsP_accept!(J, ';' as c_int) != 0 {
-            let b = forexpression(J, ';' as c_int);
-            let c = forexpression(J, ')' as c_int);
-            let d = statement(J);
+            let b: *mut js_Ast = forexpression(J, ';' as c_int);
+            let c: *mut js_Ast = forexpression(J, ')' as c_int);
+            let d: *mut js_Ast = statement(J);
             return STM4!(J, line, STM_FOR_VAR, a, b, c, d);
         }
         if jsP_accept!(J, TK_IN) != 0 {
-            let b = expression(J, 0);
+            let b: *mut js_Ast = expression(J, 0);
             jsP_expect!(J, ')' as c_int);
-            let c = statement(J);
+            let c: *mut js_Ast = statement(J);
             return STM3!(J, line, STM_FOR_IN_VAR, a, b, c);
         }
-        jsP_error!(J, cstr!("unexpected token in for-var-statement: %s"), crate::jslex::jsY_tokenstring((*J).lookahead));
+        jsP_error!(
+            J,
+            c"unexpected token in for-var-statement: %s".as_ptr(),
+            jsY_tokenstring((*J).lookahead)
+        );
     }
 
     if (*J).lookahead != ';' as c_int {
         a = expression(J, 1);
     } else {
-        a = std::ptr::null_mut();
+        a = null_mut();
     }
     if jsP_accept!(J, ';' as c_int) != 0 {
         b = forexpression(J, ';' as c_int);
@@ -954,33 +1057,37 @@ unsafe fn forstatement(J: *mut js_State, line: c_int) -> *mut js_Ast {
         return STM4!(J, line, STM_FOR, a, b, c, d);
     }
     if jsP_accept!(J, TK_IN) != 0 {
-        let b = expression(J, 0);
+        b = expression(J, 0);
         jsP_expect!(J, ')' as c_int);
-        let c = statement(J);
+        c = statement(J);
         return STM3!(J, line, STM_FOR_IN, a, b, c);
     }
-    jsP_error!(J, cstr!("unexpected token in for-statement: %s"), crate::jslex::jsY_tokenstring((*J).lookahead));
-    unreachable!()
+    jsP_error!(
+        J,
+        c"unexpected token in for-statement: %s".as_ptr(),
+        jsY_tokenstring((*J).lookahead)
+    )
 }
 
 unsafe fn statement(J: *mut js_State) -> *mut js_Ast {
-    let a;
-    let b;
-    let c;
-    #[allow(unused_variables)]
-    let d: *mut js_Ast;
-    let stm;
-    let line = (*J).lexline;
+    let mut a: *mut js_Ast = null_mut();
+    let mut b: *mut js_Ast = null_mut();
+    let mut c: *mut js_Ast = null_mut();
+    let mut d: *mut js_Ast = null_mut();
+    let stm: *mut js_Ast;
+    let line: c_int = (*J).lexline;
 
     INCREC!(J);
 
     if (*J).lookahead == '{' as c_int {
         stm = block(J);
     } else if jsP_accept!(J, TK_VAR) != 0 {
-        let a = vardeclist(J, 0);
+        a = vardeclist(J, 0);
         semicolon(J);
         stm = STM1!(J, line, STM_VAR, a);
-    } else if jsP_accept!(J, ';' as c_int) != 0 {
+    }
+    /* empty statement */
+    else if jsP_accept!(J, ';' as c_int) != 0 {
         stm = STM0!(J, line, STM_EMPTY);
     } else if jsP_accept!(J, TK_IF) != 0 {
         jsP_expect!(J, '(' as c_int);
@@ -990,7 +1097,7 @@ unsafe fn statement(J: *mut js_State) -> *mut js_Ast {
         if jsP_accept!(J, TK_ELSE) != 0 {
             c = statement(J);
         } else {
-            c = std::ptr::null_mut();
+            c = null_mut();
         }
         stm = STM3!(J, line, STM_IF, a, b, c);
     } else if jsP_accept!(J, TK_DO) != 0 {
@@ -1018,10 +1125,13 @@ unsafe fn statement(J: *mut js_State) -> *mut js_Ast {
         semicolon(J);
         stm = STM1!(J, line, STM_BREAK, a);
     } else if jsP_accept!(J, TK_RETURN) != 0 {
-        if (*J).lookahead != ';' as c_int && (*J).lookahead != '}' as c_int && (*J).lookahead != 0 {
+        if (*J).lookahead != ';' as c_int
+            && (*J).lookahead != '}' as c_int
+            && (*J).lookahead != 0
+        {
             a = expression(J, 0);
         } else {
-            a = std::ptr::null_mut();
+            a = null_mut();
         }
         semicolon(J);
         stm = STM1!(J, line, STM_RETURN, a);
@@ -1044,40 +1154,48 @@ unsafe fn statement(J: *mut js_State) -> *mut js_Ast {
         semicolon(J);
         stm = STM1!(J, line, STM_THROW, a);
     } else if jsP_accept!(J, TK_TRY) != 0 {
-        let mut bb: *mut js_Ast = std::ptr::null_mut();
-        let mut cc: *mut js_Ast = std::ptr::null_mut();
-        let mut dd: *mut js_Ast = std::ptr::null_mut();
-        let aa = block(J);
+        a = block(J);
+        d = null_mut();
+        c = d;
+        b = c;
         if jsP_accept!(J, TK_CATCH) != 0 {
             jsP_expect!(J, '(' as c_int);
-            bb = identifier(J);
+            b = identifier(J);
             jsP_expect!(J, ')' as c_int);
-            cc = block(J);
+            c = block(J);
         }
         if jsP_accept!(J, TK_FINALLY) != 0 {
-            dd = block(J);
+            d = block(J);
         }
-        if bb.is_null() && dd.is_null() {
-            jsP_error!(J, cstr!("unexpected token in try: %s (expected 'catch' or 'finally')"), crate::jslex::jsY_tokenstring((*J).lookahead));
+        if b.is_null() && d.is_null() {
+            jsP_error!(
+                J,
+                c"unexpected token in try: %s (expected 'catch' or 'finally')".as_ptr(),
+                jsY_tokenstring((*J).lookahead)
+            );
         }
-        stm = STM4!(J, line, STM_TRY, aa, bb, cc, dd);
+        stm = STM4!(J, line, STM_TRY, a, b, c, d);
     } else if jsP_accept!(J, TK_DEBUGGER) != 0 {
         semicolon(J);
         stm = STM0!(J, line, STM_DEBUGGER);
     } else if jsP_accept!(J, TK_FUNCTION) != 0 {
-        jsP_warning!(J, cstr!("function statements are not standard"));
+        jsP_warning!(J, c"function statements are not standard".as_ptr());
         stm = funstm(J, line);
-    } else if (*J).lookahead == TK_IDENTIFIER {
-        let aa = expression(J, 0);
-        if (*aa).type_ == EXP_IDENTIFIER && jsP_accept!(J, ':' as c_int) != 0 {
-            (*aa).type_ = AST_IDENTIFIER;
-            let bb = statement(J);
-            stm = STM2!(J, line, STM_LABEL, aa, bb);
+    }
+    /* labelled statement or expression statement */
+    else if (*J).lookahead == TK_IDENTIFIER {
+        a = expression(J, 0);
+        if (*a).r#type == EXP_IDENTIFIER && jsP_accept!(J, ':' as c_int) != 0 {
+            (*a).r#type = AST_IDENTIFIER;
+            b = statement(J);
+            stm = STM2!(J, line, STM_LABEL, a, b);
         } else {
             semicolon(J);
-            stm = aa;
+            stm = a;
         }
-    } else {
+    }
+    /* expression statement */
+    else {
         stm = expression(J, 0);
         semicolon(J);
     }
@@ -1087,8 +1205,9 @@ unsafe fn statement(J: *mut js_State) -> *mut js_Ast {
 }
 
 /* Program */
+
 unsafe fn scriptelement(J: *mut js_State) -> *mut js_Ast {
-    let line = (*J).lexline;
+    let line: c_int = (*J).lexline;
     if jsP_accept!(J, TK_FUNCTION) != 0 {
         return fundec(J, line);
     }
@@ -1096,22 +1215,23 @@ unsafe fn scriptelement(J: *mut js_State) -> *mut js_Ast {
 }
 
 unsafe fn script(J: *mut js_State, terminator: c_int) -> *mut js_Ast {
-    let head;
-    let mut tail;
+    let head: *mut js_Ast;
+    let mut tail: *mut js_Ast;
     if (*J).lookahead == terminator {
-        return std::ptr::null_mut();
+        return null_mut();
     }
-    head = LIST!(J, scriptelement(J));
-    tail = head;
+    tail = LIST!(J, scriptelement(J));
+    head = tail;
     while (*J).lookahead != terminator {
-        (*tail).b = LIST!(J, scriptelement(J));
-        tail = (*tail).b;
+        let t: *mut js_Ast = LIST!(J, scriptelement(J));
+        (*tail).b = t;
+        tail = t;
     }
     jsP_list(head)
 }
 
 unsafe fn funbody(J: *mut js_State) -> *mut js_Ast {
-    let a;
+    let a: *mut js_Ast;
     jsP_expect!(J, '{' as c_int);
     a = script(J, '}' as c_int);
     jsP_expect!(J, '}' as c_int);
@@ -1119,16 +1239,22 @@ unsafe fn funbody(J: *mut js_State) -> *mut js_Ast {
 }
 
 /* Constant folding */
-unsafe fn toint32(d: f64) -> c_int {
-    let two32 = 4294967296.0;
-    let two31 = 2147483648.0;
 
-    if !d.is_finite() || d == 0.0 {
+unsafe fn toint32(d: f64) -> c_int {
+    let mut d = d;
+    let two32: f64 = 4294967296.0;
+    let two31: f64 = 2147483648.0;
+
+    if !isfinite(d) || d == 0.0 {
         return 0;
     }
 
-    let mut d = d % two32;
-    d = if d >= 0.0 { d.floor() } else { d.ceil() + two32 };
+    d = fmod(d, two32);
+    d = if d >= 0.0 {
+        floor(d)
+    } else {
+        ceil(d) + two32
+    };
     if d >= two31 {
         (d - two32) as c_int
     } else {
@@ -1139,39 +1265,46 @@ unsafe fn toint32(d: f64) -> c_int {
 unsafe fn touint32(d: f64) -> c_uint {
     toint32(d) as c_uint
 }
-use std::os::raw::c_uint;
 
 unsafe fn jsP_setnumnode(node: *mut js_Ast, x: f64) -> c_int {
-    (*node).type_ = EXP_NUMBER;
+    (*node).r#type = EXP_NUMBER;
     (*node).number = x;
-    (*node).a = std::ptr::null_mut();
-    (*node).b = std::ptr::null_mut();
-    (*node).c = std::ptr::null_mut();
-    (*node).d = std::ptr::null_mut();
+    (*node).d = null_mut();
+    (*node).c = null_mut();
+    (*node).b = null_mut();
+    (*node).a = null_mut();
     1
 }
 
 unsafe fn jsP_foldconst(node: *mut js_Ast) -> c_int {
-    let x;
-    let y;
-    let a;
-    let b;
+    let x: f64;
+    let y: f64;
+    let a: c_int;
+    let b: c_int;
 
-    if (*node).type_ == AST_LIST {
-        let mut n = node;
-        while !n.is_null() {
-            jsP_foldconst((*n).a);
-            n = (*n).b;
+    if (*node).r#type == AST_LIST {
+        let mut node = node;
+        while !node.is_null() {
+            jsP_foldconst((*node).a);
+            node = (*node).b;
         }
         return 0;
     }
 
-    if (*node).type_ == EXP_NUMBER {
+    if (*node).r#type == EXP_NUMBER {
         return 1;
     }
 
-    a = if !(*node).a.is_null() { jsP_foldconst((*node).a) } else { 0 };
-    b = if !(*node).b.is_null() { jsP_foldconst((*node).b) } else { 0 };
+    a = if !(*node).a.is_null() {
+        jsP_foldconst((*node).a)
+    } else {
+        0
+    };
+    b = if !(*node).b.is_null() {
+        jsP_foldconst((*node).b)
+    } else {
+        0
+    };
     if !(*node).c.is_null() {
         jsP_foldconst((*node).c);
     }
@@ -1181,27 +1314,33 @@ unsafe fn jsP_foldconst(node: *mut js_Ast) -> c_int {
 
     if a != 0 {
         x = (*(*node).a).number;
-        match (*node).type_ {
-            t if t == EXP_NEG => return jsP_setnumnode(node, -x),
-            t if t == EXP_POS => return jsP_setnumnode(node, x),
-            t if t == EXP_BITNOT => return jsP_setnumnode(node, !toint32(x) as f64),
+        match (*node).r#type {
+            EXP_NEG => return jsP_setnumnode(node, -x),
+            EXP_POS => return jsP_setnumnode(node, x),
+            EXP_BITNOT => return jsP_setnumnode(node, (!toint32(x)) as f64),
             _ => {}
         }
 
         if b != 0 {
             y = (*(*node).b).number;
-            match (*node).type_ {
-                t if t == EXP_MUL => return jsP_setnumnode(node, x * y),
-                t if t == EXP_DIV => return jsP_setnumnode(node, x / y),
-                t if t == EXP_MOD => return jsP_setnumnode(node, x % y),
-                t if t == EXP_ADD => return jsP_setnumnode(node, x + y),
-                t if t == EXP_SUB => return jsP_setnumnode(node, x - y),
-                t if t == EXP_SHL => return jsP_setnumnode(node, (toint32(x).wrapping_shl(touint32(y) & 0x1F)) as f64),
-                t if t == EXP_SHR => return jsP_setnumnode(node, (toint32(x) >> (touint32(y) & 0x1F)) as f64),
-                t if t == EXP_USHR => return jsP_setnumnode(node, (touint32(x) >> (touint32(y) & 0x1F)) as f64),
-                t if t == EXP_BITAND => return jsP_setnumnode(node, (toint32(x) & toint32(y)) as f64),
-                t if t == EXP_BITXOR => return jsP_setnumnode(node, (toint32(x) ^ toint32(y)) as f64),
-                t if t == EXP_BITOR => return jsP_setnumnode(node, (toint32(x) | toint32(y)) as f64),
+            match (*node).r#type {
+                EXP_MUL => return jsP_setnumnode(node, x * y),
+                EXP_DIV => return jsP_setnumnode(node, x / y),
+                EXP_MOD => return jsP_setnumnode(node, fmod(x, y)),
+                EXP_ADD => return jsP_setnumnode(node, x + y),
+                EXP_SUB => return jsP_setnumnode(node, x - y),
+                EXP_SHL => {
+                    return jsP_setnumnode(node, (toint32(x) << (touint32(y) & 0x1F)) as f64)
+                }
+                EXP_SHR => {
+                    return jsP_setnumnode(node, (toint32(x) >> (touint32(y) & 0x1F)) as f64)
+                }
+                EXP_USHR => {
+                    return jsP_setnumnode(node, (touint32(x) >> (touint32(y) & 0x1F)) as f64)
+                }
+                EXP_BITAND => return jsP_setnumnode(node, (toint32(x) & toint32(y)) as f64),
+                EXP_BITXOR => return jsP_setnumnode(node, (toint32(x) ^ toint32(y)) as f64),
+                EXP_BITOR => return jsP_setnumnode(node, (toint32(x) | toint32(y)) as f64),
                 _ => {}
             }
         }
@@ -1211,11 +1350,16 @@ unsafe fn jsP_foldconst(node: *mut js_Ast) -> c_int {
 }
 
 /* Main entry point */
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsP_parse(J: *mut js_State, filename: *const c_char, source: *const c_char) -> *mut js_Ast {
-    let p;
 
-    crate::jslex::jsY_initlex(J, filename, source);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsP_parse(
+    J: *mut js_State,
+    filename: *const c_char,
+    source: *const c_char,
+) -> *mut js_Ast {
+    let p: *mut js_Ast;
+
+    jsY_initlex(J, filename, source);
     jsP_next(J);
     (*J).astdepth = 0;
     p = script(J, 0);
@@ -1226,15 +1370,27 @@ pub unsafe extern "C-unwind" fn jsP_parse(J: *mut js_State, filename: *const c_c
     p
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsP_parsefunction(J: *mut js_State, filename: *const c_char, params: *const c_char, body: *const c_char) -> *mut js_Ast {
-    let mut p: *mut js_Ast = std::ptr::null_mut();
-    let line = 0;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsP_parsefunction(
+    J: *mut js_State,
+    filename: *const c_char,
+    params: *const c_char,
+    body: *const c_char,
+) -> *mut js_Ast {
+    let mut p: *mut js_Ast = null_mut();
+    let line: c_int = 0;
     if !params.is_null() {
-        crate::jslex::jsY_initlex(J, filename, params);
+        jsY_initlex(J, filename, params);
         jsP_next(J);
         (*J).astdepth = 0;
         p = parameters(J);
     }
-    EXP3!(J, line, EXP_FUN, std::ptr::null_mut(), p, jsP_parse(J, filename, body))
+    EXP3!(
+        J,
+        line,
+        EXP_FUN,
+        null_mut(),
+        p,
+        jsP_parse(J, filename, body)
+    )
 }

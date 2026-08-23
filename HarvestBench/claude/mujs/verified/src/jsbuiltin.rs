@@ -1,268 +1,350 @@
-//! Translated from jsbuiltin.c — global object init and helpers.
-#![allow(non_snake_case, non_upper_case_globals)]
-
-use crate::cutil::*;
-use crate::jsrun::*;
-use crate::jsvalue::*;
-use crate::types::*;
-use std::os::raw::{c_char, c_int};
-
-macro_rules! cstr {
-    ($s:literal) => {
-        concat!($s, "\0").as_ptr() as *const c_char
-    };
-}
+//! Translated from c_src/src/jsbuiltin.c
+use crate::jsi::*;
+use crate::prelude::*;
 
 unsafe fn jsB_globalf(J: *mut js_State, name: *const c_char, cfun: js_CFunction, n: c_int) {
     js_newcfunction(J, cfun, name, n);
     js_defglobal(J, name, JS_DONTENUM);
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_propf(J: *mut js_State, name: *const c_char, cfun: js_CFunction, n: c_int) {
-    let pname = strrchr(name, '.' as c_int);
-    let pname = if !pname.is_null() { pname.add(1) } else { name };
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_propf(
+    J: *mut js_State,
+    name: *const c_char,
+    cfun: js_CFunction,
+    n: c_int,
+) {
+    let mut pname: *const c_char = strrchr(name, '.' as c_int);
+    pname = if !pname.is_null() {
+        pname.add(1)
+    } else {
+        name
+    };
     js_newcfunction(J, cfun, name, n);
     js_defproperty(J, -2, pname, JS_DONTENUM);
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_propn(J: *mut js_State, name: *const c_char, number: f64) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_propn(J: *mut js_State, name: *const c_char, number: f64) {
     js_pushnumber(J, number);
     js_defproperty(J, -2, name, JS_READONLY | JS_DONTENUM | JS_DONTCONF);
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_props(J: *mut js_State, name: *const c_char, string: *const c_char) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_props(J: *mut js_State, name: *const c_char, string: *const c_char) {
     js_pushliteral(J, string);
     js_defproperty(J, -2, name, JS_DONTENUM);
 }
 
-unsafe extern "C-unwind" fn jsB_parseInt(J: *mut js_State) {
-    let mut s = js_tostring(J, 1);
-    let mut radix = if js_isdefined(J, 2) != 0 { js_tointeger(J, 2) } else { 0 };
-    let mut sign = 1.0f64;
+unsafe extern "C" fn jsB_parseInt(J: *mut js_State) {
+    let mut s: *const c_char = js_tostring(J, 1);
+    let mut radix: c_int = if js_isdefined(J, 2) != 0 {
+        js_tointeger(J, 2)
+    } else {
+        0
+    };
+    let mut sign: f64 = 1.0;
     let n: f64;
-    let mut e: *mut c_char = std::ptr::null_mut();
+    let mut e: *mut c_char = null_mut();
 
-    while crate::jslex::jsY_iswhite(*s as c_int) != 0 || crate::jslex::jsY_isnewline(*s as c_int) != 0 {
+    while jsY_iswhite(*s as c_int) != 0 || jsY_isnewline(*s as c_int) != 0 {
         s = s.add(1);
     }
-    if *s == b'-' as c_char {
+    if *s == '-' as c_char {
         s = s.add(1);
         sign = -1.0;
-    } else if *s == b'+' as c_char {
+    } else if *s == '+' as c_char {
         s = s.add(1);
     }
     if radix == 0 {
         radix = 10;
-        if *s.add(0) == b'0' as c_char && (*s.add(1) == b'x' as c_char || *s.add(1) == b'X' as c_char) {
+        if *s.add(0) == '0' as c_char
+            && (*s.add(1) == 'x' as c_char || *s.add(1) == 'X' as c_char)
+        {
             s = s.add(2);
             radix = 16;
         }
     } else if radix < 2 || radix > 36 {
-        js_pushnumber(J, f64::NAN);
+        js_pushnumber(J, NAN);
         return;
     }
     n = js_strtol(s, &mut e, radix);
     if s == e as *const c_char {
-        js_pushnumber(J, f64::NAN);
+        js_pushnumber(J, NAN);
     } else {
         js_pushnumber(J, n * sign);
     }
 }
 
-unsafe extern "C-unwind" fn jsB_parseFloat(J: *mut js_State) {
-    let mut s = js_tostring(J, 1);
-    let mut e: *mut c_char = std::ptr::null_mut();
+unsafe extern "C" fn jsB_parseFloat(J: *mut js_State) {
+    let mut s: *const c_char = js_tostring(J, 1);
+    let mut e: *mut c_char = null_mut();
     let n: f64;
 
-    while crate::jslex::jsY_iswhite(*s as c_int) != 0 || crate::jslex::jsY_isnewline(*s as c_int) != 0 {
+    while jsY_iswhite(*s as c_int) != 0 || jsY_isnewline(*s as c_int) != 0 {
         s = s.add(1);
     }
-    if strncmp(s, cstr!("Infinity"), 8) == 0 {
-        js_pushnumber(J, f64::INFINITY);
-    } else if strncmp(s, cstr!("+Infinity"), 9) == 0 {
-        js_pushnumber(J, f64::INFINITY);
-    } else if strncmp(s, cstr!("-Infinity"), 9) == 0 {
-        js_pushnumber(J, f64::NEG_INFINITY);
+    if strncmp(s, c"Infinity".as_ptr(), 8) == 0 {
+        js_pushnumber(J, INFINITY);
+    } else if strncmp(s, c"+Infinity".as_ptr(), 9) == 0 {
+        js_pushnumber(J, INFINITY);
+    } else if strncmp(s, c"-Infinity".as_ptr(), 9) == 0 {
+        js_pushnumber(J, -INFINITY);
     } else {
         n = js_stringtofloat(s, &mut e);
         if e as *const c_char == s {
-            js_pushnumber(J, f64::NAN);
+            js_pushnumber(J, NAN);
         } else {
             js_pushnumber(J, n);
         }
     }
 }
 
-unsafe extern "C-unwind" fn jsB_isNaN(J: *mut js_State) {
-    let n = js_tonumber(J, 1);
-    js_pushboolean(J, n.is_nan() as c_int);
+unsafe extern "C" fn jsB_isNaN(J: *mut js_State) {
+    let n: f64 = js_tonumber(J, 1);
+    js_pushboolean(J, isnan(n) as c_int);
 }
 
-unsafe extern "C-unwind" fn jsB_isFinite(J: *mut js_State) {
-    let n = js_tonumber(J, 1);
-    js_pushboolean(J, n.is_finite() as c_int);
+unsafe extern "C" fn jsB_isFinite(J: *mut js_State) {
+    let n: f64 = js_tonumber(J, 1);
+    js_pushboolean(J, isfinite(n) as c_int);
 }
 
 unsafe fn Encode(J: *mut js_State, str_: *const c_char, unescaped: *const c_char) {
-    let str = str_;
-    let mut sb: *mut js_Buffer = std::ptr::null_mut();
-    static HEX: &[u8; 17] = b"0123456789ABCDEF\0";
+    /* NOTE: volatile to silence GCC warning about longjmp clobbering a variable */
+    let mut str: *const c_char = str_;
+    let mut sb: *mut js_Buffer = null_mut();
 
-    let str_ptr = str;
-    let sb_ptr = std::ptr::addr_of_mut!(sb);
-    let caught = protect(J, || {
-        let mut s = str_ptr;
-        while *s != 0 {
-            let c = *s as u8 as c_int;
-            s = s.add(1);
-            if !strchr(unescaped, c).is_null() {
-                crate::jsintern::js_putc(J, sb_ptr, c);
-            } else {
-                crate::jsintern::js_putc(J, sb_ptr, '%' as c_int);
-                crate::jsintern::js_putc(J, sb_ptr, HEX[((c >> 4) & 0xf) as usize] as c_int);
-                crate::jsintern::js_putc(J, sb_ptr, HEX[(c & 0xf) as usize] as c_int);
-            }
-        }
-        crate::jsintern::js_putc(J, sb_ptr, 0);
-        js_pushstring(J, if !sb.is_null() { (*sb).s.as_ptr() } else { cstr!("") });
-    });
-    if caught {
-        js_free(J, sb as *mut _);
+    /* static const char *HEX = "0123456789ABCDEF"; */
+    let HEX: *const c_char = c"0123456789ABCDEF".as_ptr();
+
+    if js_try!(J) {
+        js_free(J, sb as *mut c_void);
         js_throw(J);
     }
+
+    while *vread(&str) != 0 {
+        let p: *const c_char = vread(&str);
+        vwrite(&mut str, p.add(1));
+        let c: c_int = *p as c_uchar as c_int;
+        if !strchr(unescaped, c).is_null() {
+            js_putc(J, &mut sb, c);
+        } else {
+            js_putc(J, &mut sb, '%' as c_int);
+            js_putc(J, &mut sb, *HEX.add((((c >> 4) & 0xf) as usize)) as c_int);
+            js_putc(J, &mut sb, *HEX.add(((c & 0xf) as usize)) as c_int);
+        }
+    }
+    js_putc(J, &mut sb, 0);
+
+    js_pushstring(
+        J,
+        if !sb.is_null() {
+            js_Buffer_s(sb) as *const c_char
+        } else {
+            c"".as_ptr()
+        },
+    );
     js_endtry(J);
-    js_free(J, sb as *mut _);
+    js_free(J, sb as *mut c_void);
 }
 
 unsafe fn Decode(J: *mut js_State, str_: *const c_char, reserved: *const c_char) {
-    let str = str_;
-    let mut sb: *mut js_Buffer = std::ptr::null_mut();
+    /* NOTE: volatile to silence GCC warning about longjmp clobbering a variable */
+    let mut str: *const c_char = str_;
+    let mut sb: *mut js_Buffer = null_mut();
+    let mut a: c_int;
+    let mut b: c_int;
 
-    let str_ptr = str;
-    let sb_ptr = std::ptr::addr_of_mut!(sb);
-    let caught = protect(J, || {
-        let mut s = str_ptr;
-        while *s != 0 {
-            let mut c = *s as u8 as c_int;
-            s = s.add(1);
-            if c != '%' as c_int {
-                crate::jsintern::js_putc(J, sb_ptr, c);
-            } else {
-                if *s.add(0) == 0 || *s.add(1) == 0 {
-                    crate::jserror::js_urierror(J, cstr!("truncated escape sequence"));
-                }
-                let a = *s as c_int;
-                s = s.add(1);
-                let b = *s as c_int;
-                s = s.add(1);
-                if crate::jslex::jsY_ishex(a) == 0 || crate::jslex::jsY_ishex(b) == 0 {
-                    crate::jserror::js_urierror(J, cstr!("invalid escape sequence"));
-                }
-                c = crate::jslex::jsY_tohex(a) << 4 | crate::jslex::jsY_tohex(b);
-                if strchr(reserved, c).is_null() {
-                    crate::jsintern::js_putc(J, sb_ptr, c);
-                } else {
-                    crate::jsintern::js_putc(J, sb_ptr, '%' as c_int);
-                    crate::jsintern::js_putc(J, sb_ptr, a);
-                    crate::jsintern::js_putc(J, sb_ptr, b);
-                }
-            }
-        }
-        crate::jsintern::js_putc(J, sb_ptr, 0);
-        js_pushstring(J, if !sb.is_null() { (*sb).s.as_ptr() } else { cstr!("") });
-    });
-    if caught {
-        js_free(J, sb as *mut _);
+    if js_try!(J) {
+        js_free(J, sb as *mut c_void);
         js_throw(J);
     }
+
+    while *vread(&str) != 0 {
+        let p: *const c_char = vread(&str);
+        vwrite(&mut str, p.add(1));
+        let mut c: c_int = *p as c_uchar as c_int;
+        if c != '%' as c_int {
+            js_putc(J, &mut sb, c);
+        } else {
+            if *vread(&str).add(0) == 0 || *vread(&str).add(1) == 0 {
+                js_urierror!(J, c"truncated escape sequence".as_ptr());
+            }
+            let pa: *const c_char = vread(&str);
+            vwrite(&mut str, pa.add(1));
+            a = *pa as c_int;
+            let pb: *const c_char = vread(&str);
+            vwrite(&mut str, pb.add(1));
+            b = *pb as c_int;
+            if jsY_ishex(a) == 0 || jsY_ishex(b) == 0 {
+                js_urierror!(J, c"invalid escape sequence".as_ptr());
+            }
+            c = jsY_tohex(a) << 4 | jsY_tohex(b);
+            if strchr(reserved, c).is_null() {
+                js_putc(J, &mut sb, c);
+            } else {
+                js_putc(J, &mut sb, '%' as c_int);
+                js_putc(J, &mut sb, a);
+                js_putc(J, &mut sb, b);
+            }
+        }
+    }
+    js_putc(J, &mut sb, 0);
+
+    js_pushstring(
+        J,
+        if !sb.is_null() {
+            js_Buffer_s(sb) as *const c_char
+        } else {
+            c"".as_ptr()
+        },
+    );
     js_endtry(J);
-    js_free(J, sb as *mut _);
+    js_free(J, sb as *mut c_void);
 }
 
-const URIRESERVED: &str = ";/?:@&=+$,";
-const URIALPHA: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const URIDIGIT: &str = "0123456789";
-const URIMARK: &str = "-_.!~*'()";
-
-unsafe extern "C-unwind" fn jsB_decodeURI(J: *mut js_State) {
-    Decode(J, js_tostring(J, 1), cstr!(";/?:@&=+$,#"));
+/* #define URIRESERVED ";/?:@&=+$," */
+macro_rules! URIRESERVED {
+    () => {
+        ";/?:@&=+$,"
+    };
+}
+/* #define URIALPHA "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" */
+macro_rules! URIALPHA {
+    () => {
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    };
+}
+/* #define URIDIGIT "0123456789" */
+macro_rules! URIDIGIT {
+    () => {
+        "0123456789"
+    };
+}
+/* #define URIMARK "-_.!~*'()" */
+macro_rules! URIMARK {
+    () => {
+        "-_.!~*'()"
+    };
+}
+/* #define URIUNESCAPED URIALPHA URIDIGIT URIMARK */
+macro_rules! URIUNESCAPED {
+    () => {
+        concat!(URIALPHA!(), URIDIGIT!(), URIMARK!())
+    };
 }
 
-unsafe extern "C-unwind" fn jsB_decodeURIComponent(J: *mut js_State) {
-    Decode(J, js_tostring(J, 1), cstr!(""));
-}
-
-unsafe extern "C-unwind" fn jsB_encodeURI(J: *mut js_State) {
-    // URIUNESCAPED URIRESERVED "#"  = URIALPHA URIDIGIT URIMARK + reserved + '#'
-    Encode(
+unsafe extern "C" fn jsB_decodeURI(J: *mut js_State) {
+    Decode(
         J,
         js_tostring(J, 1),
-        cstr!("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.!~*'();/?:@&=+$,#"),
+        concat!(URIRESERVED!(), "#", "\0").as_ptr() as *const c_char,
     );
 }
 
-unsafe extern "C-unwind" fn jsB_encodeURIComponent(J: *mut js_State) {
-    // URIUNESCAPED = URIALPHA URIDIGIT URIMARK
+unsafe extern "C" fn jsB_decodeURIComponent(J: *mut js_State) {
+    Decode(J, js_tostring(J, 1), c"".as_ptr());
+}
+
+unsafe extern "C" fn jsB_encodeURI(J: *mut js_State) {
     Encode(
         J,
         js_tostring(J, 1),
-        cstr!("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.!~*'()"),
+        concat!(URIUNESCAPED!(), URIRESERVED!(), "#", "\0").as_ptr() as *const c_char,
     );
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_init(J: *mut js_State) {
-    (*J).Object_prototype = crate::jsproperty::jsV_newobject(J, JS_COBJECT, std::ptr::null_mut());
-    (*J).Array_prototype = crate::jsproperty::jsV_newobject(J, JS_CARRAY, (*J).Object_prototype);
-    (*J).Function_prototype = crate::jsproperty::jsV_newobject(J, JS_CCFUNCTION, (*J).Object_prototype);
-    (*J).Boolean_prototype = crate::jsproperty::jsV_newobject(J, JS_CBOOLEAN, (*J).Object_prototype);
-    (*J).Number_prototype = crate::jsproperty::jsV_newobject(J, JS_CNUMBER, (*J).Object_prototype);
-    (*J).String_prototype = crate::jsproperty::jsV_newobject(J, JS_CSTRING, (*J).Object_prototype);
-    (*J).Date_prototype = crate::jsproperty::jsV_newobject(J, JS_CDATE, (*J).Object_prototype);
+unsafe extern "C" fn jsB_encodeURIComponent(J: *mut js_State) {
+    Encode(
+        J,
+        js_tostring(J, 1),
+        concat!(URIUNESCAPED!(), "\0").as_ptr() as *const c_char,
+    );
+}
 
-    (*J).RegExp_prototype = crate::jsproperty::jsV_newobject(J, JS_CREGEXP, (*J).Object_prototype);
-    (*(*J).RegExp_prototype).u.r.prog = crate::regexp::js_regcompx((*J).alloc, (*J).actx, cstr!("(?:)"), 0, std::ptr::null_mut()) as *mut std::os::raw::c_void;
-    (*(*J).RegExp_prototype).u.r.source = js_strdup(J, cstr!("(?:)"));
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_init(J: *mut js_State) {
+    /* Create the prototype objects here, before the constructors */
+    (*J).Object_prototype = jsV_newobject(J, JS_COBJECT, null_mut());
+    (*J).Array_prototype = jsV_newobject(J, JS_CARRAY, (*J).Object_prototype);
+    (*J).Function_prototype = jsV_newobject(J, JS_CCFUNCTION, (*J).Object_prototype);
+    (*J).Boolean_prototype = jsV_newobject(J, JS_CBOOLEAN, (*J).Object_prototype);
+    (*J).Number_prototype = jsV_newobject(J, JS_CNUMBER, (*J).Object_prototype);
+    (*J).String_prototype = jsV_newobject(J, JS_CSTRING, (*J).Object_prototype);
+    (*J).Date_prototype = jsV_newobject(J, JS_CDATE, (*J).Object_prototype);
 
-    (*J).Error_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Object_prototype);
-    (*J).EvalError_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
-    (*J).RangeError_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
-    (*J).ReferenceError_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
-    (*J).SyntaxError_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
-    (*J).TypeError_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
-    (*J).URIError_prototype = crate::jsproperty::jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
+    (*J).RegExp_prototype = jsV_newobject(J, JS_CREGEXP, (*J).Object_prototype);
+    (*(*J).RegExp_prototype).u.r.prog = js_regcompx(
+        (*J).alloc,
+        (*J).actx,
+        c"(?:)".as_ptr(),
+        0,
+        null_mut(),
+    ) as *mut c_void;
+    (*(*J).RegExp_prototype).u.r.source = js_strdup(J, c"(?:)".as_ptr());
 
-    crate::jsobject::jsB_initobject(J);
-    crate::jsarray::jsB_initarray(J);
-    crate::jsfunction::jsB_initfunction(J);
-    crate::jsboolean::jsB_initboolean(J);
-    crate::jsnumber::jsB_initnumber(J);
-    crate::jsstring::jsB_initstring(J);
-    crate::jsregexp::jsB_initregexp(J);
-    crate::jsdate::jsB_initdate(J);
-    crate::jserror::jsB_initerror(J);
-    crate::jsmath::jsB_initmath(J);
-    crate::json::jsB_initjson(J);
+    /* All the native error types */
+    (*J).Error_prototype = jsV_newobject(J, JS_CERROR, (*J).Object_prototype);
+    (*J).EvalError_prototype = jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
+    (*J).RangeError_prototype = jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
+    (*J).ReferenceError_prototype = jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
+    (*J).SyntaxError_prototype = jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
+    (*J).TypeError_prototype = jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
+    (*J).URIError_prototype = jsV_newobject(J, JS_CERROR, (*J).Error_prototype);
 
-    js_pushnumber(J, f64::NAN);
-    js_defglobal(J, cstr!("NaN"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+    /* Create the constructors and fill out the prototype objects */
+    jsB_initobject(J);
+    jsB_initarray(J);
+    jsB_initfunction(J);
+    jsB_initboolean(J);
+    jsB_initnumber(J);
+    jsB_initstring(J);
+    jsB_initregexp(J);
+    jsB_initdate(J);
+    jsB_initerror(J);
+    jsB_initmath(J);
+    jsB_initjson(J);
 
-    js_pushnumber(J, f64::INFINITY);
-    js_defglobal(J, cstr!("Infinity"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+    /* Initialize the global object */
+    js_pushnumber(J, NAN);
+    js_defglobal(
+        J,
+        c"NaN".as_ptr(),
+        JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+    );
+
+    js_pushnumber(J, INFINITY);
+    js_defglobal(
+        J,
+        c"Infinity".as_ptr(),
+        JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+    );
 
     js_pushundefined(J);
-    js_defglobal(J, cstr!("undefined"), JS_READONLY | JS_DONTENUM | JS_DONTCONF);
+    js_defglobal(
+        J,
+        c"undefined".as_ptr(),
+        JS_READONLY | JS_DONTENUM | JS_DONTCONF,
+    );
 
-    jsB_globalf(J, cstr!("parseInt"), Some(jsB_parseInt), 1);
-    jsB_globalf(J, cstr!("parseFloat"), Some(jsB_parseFloat), 1);
-    jsB_globalf(J, cstr!("isNaN"), Some(jsB_isNaN), 1);
-    jsB_globalf(J, cstr!("isFinite"), Some(jsB_isFinite), 1);
+    jsB_globalf(J, c"parseInt".as_ptr(), Some(jsB_parseInt), 1);
+    jsB_globalf(J, c"parseFloat".as_ptr(), Some(jsB_parseFloat), 1);
+    jsB_globalf(J, c"isNaN".as_ptr(), Some(jsB_isNaN), 1);
+    jsB_globalf(J, c"isFinite".as_ptr(), Some(jsB_isFinite), 1);
 
-    jsB_globalf(J, cstr!("decodeURI"), Some(jsB_decodeURI), 1);
-    jsB_globalf(J, cstr!("decodeURIComponent"), Some(jsB_decodeURIComponent), 1);
-    jsB_globalf(J, cstr!("encodeURI"), Some(jsB_encodeURI), 1);
-    jsB_globalf(J, cstr!("encodeURIComponent"), Some(jsB_encodeURIComponent), 1);
+    jsB_globalf(J, c"decodeURI".as_ptr(), Some(jsB_decodeURI), 1);
+    jsB_globalf(
+        J,
+        c"decodeURIComponent".as_ptr(),
+        Some(jsB_decodeURIComponent),
+        1,
+    );
+    jsB_globalf(J, c"encodeURI".as_ptr(), Some(jsB_encodeURI), 1);
+    jsB_globalf(
+        J,
+        c"encodeURIComponent".as_ptr(),
+        Some(jsB_encodeURIComponent),
+        1,
+    );
 }

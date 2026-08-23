@@ -1,43 +1,51 @@
-//! Translation of pngwio.c - functions for data output.
-use crate::prelude::*;
+//! Translation of `c_src/src/pngwio.c`
 
-/// Write the data to whatever output you are using.
+use crate::*;
+
+/* png_write_data */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_write_data(
     png_ptr: png_structrp,
     data: png_const_bytep,
-    length: size_t,
+    length: usize,
 ) {
-    // NOTE: write_data_fn must not change the buffer!
+    /* NOTE: write_data_fn must not change the buffer! */
     if (*png_ptr).write_data_fn.is_some() {
         ((*png_ptr).write_data_fn.unwrap())(png_ptr, data as png_bytep, length);
     } else {
-        png_error(png_ptr, c"Call to NULL write function".as_ptr());
+        png_error(
+            png_ptr,
+            b"Call to NULL write function\0".as_ptr() as png_const_charp,
+        );
     }
 }
 
-/// Default writer: writes to a C FILE* stored in io_ptr.
+/* png_default_write_data */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_default_write_data(
     png_ptr: png_structp,
     data: png_bytep,
-    length: size_t,
+    length: usize,
 ) {
-    if png_ptr.is_null() {
+    let check: usize;
+
+    if png_ptr == core::ptr::null_mut() {
         return;
     }
-    let check = fwrite(
+
+    check = fwrite(
         data as *const c_void,
         1,
         length,
         (*png_ptr).io_ptr as *mut FILE,
     );
+
     if check != length {
-        png_error(png_ptr, c"Write Error".as_ptr());
+        png_error(png_ptr, b"Write Error\0".as_ptr() as png_const_charp);
     }
 }
 
-/// Flush pending output.
+/* png_flush */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_flush(png_ptr: png_structrp) {
     if (*png_ptr).output_flush_fn.is_some() {
@@ -45,17 +53,20 @@ pub unsafe extern "C" fn png_flush(png_ptr: png_structrp) {
     }
 }
 
-/// Default flush: flushes the C FILE*.
+/* png_default_flush */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_default_flush(png_ptr: png_structp) {
-    if png_ptr.is_null() {
+    let io_ptr: *mut FILE;
+
+    if png_ptr == core::ptr::null_mut() {
         return;
     }
-    let io_ptr = (*png_ptr).io_ptr as *mut FILE;
+
+    io_ptr = (*png_ptr).io_ptr as *mut FILE;
     fflush(io_ptr);
 }
 
-/// Set new output functions for libpng.
+/* png_set_write_fn */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_set_write_fn(
     png_ptr: png_structrp,
@@ -63,7 +74,7 @@ pub unsafe extern "C" fn png_set_write_fn(
     write_data_fn: png_rw_ptr,
     output_flush_fn: png_flush_ptr,
 ) {
-    if png_ptr.is_null() {
+    if png_ptr == core::ptr::null_mut() {
         return;
     }
 
@@ -81,12 +92,14 @@ pub unsafe extern "C" fn png_set_write_fn(
         (*png_ptr).output_flush_fn = Some(png_default_flush);
     }
 
-    // It is an error to read while writing a png file.
+    /* It is an error to read while writing a png file */
     if (*png_ptr).read_data_fn.is_some() {
         (*png_ptr).read_data_fn = None;
+
         png_warning(
             png_ptr,
-            c"Can't set both read_data_fn and write_data_fn in the same structure".as_ptr(),
+            b"Can't set both read_data_fn and write_data_fn in the same structure\0".as_ptr()
+                as png_const_charp,
         );
     }
 }

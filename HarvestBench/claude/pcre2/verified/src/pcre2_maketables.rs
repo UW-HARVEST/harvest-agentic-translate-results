@@ -1,109 +1,157 @@
-use crate::pcre2_internal::*;
-use core::ffi::{c_int, c_void};
-use core::ptr;
+// Translated from c_src/src/pcre2_maketables.c
+use crate::internal::*;
 
-extern "C" {
-    fn tolower(c: c_int) -> c_int;
-    fn toupper(c: c_int) -> c_int;
-    fn islower(c: c_int) -> c_int;
-    fn isupper(c: c_int) -> c_int;
-    fn isdigit(c: c_int) -> c_int;
-    fn isalnum(c: c_int) -> c_int;
-    fn isalpha(c: c_int) -> c_int;
-    fn isspace(c: c_int) -> c_int;
-    fn isxdigit(c: c_int) -> c_int;
-    fn isgraph(c: c_int) -> c_int;
-    fn isprint(c: c_int) -> c_int;
-    fn ispunct(c: c_int) -> c_int;
-    fn iscntrl(c: c_int) -> c_int;
+/* This module contains the external function pcre2_maketables(), which builds
+character tables for PCRE2 in the current locale. */
+
+/*************************************************
+*           Create PCRE2 character tables        *
+*************************************************/
+
+/* This function builds a set of character tables for use by PCRE2 and returns
+a pointer to them. They are build using the ctype functions, and consequently
+their contents will depend upon the current locale setting. When compiled as
+part of the library, the store is obtained via a general context malloc, if
+supplied, but when PCRE2_DFTABLES is defined (when compiling the pcre2_dftables
+freestanding auxiliary program) malloc() is used, and the function has a
+different name so as not to clash with the prototype in pcre2.h.
+
+Arguments:   a PCRE2 general context or NULL
+Returns:     pointer to the contiguous block of data;
+               else NULL if memory allocation failed
+*/
+
+#[inline]
+unsafe fn charfn_to(c: c_int) -> c_int {
+    c
+}
+
+#[inline]
+unsafe fn charfn_from(c: c_int) -> c_int {
+    c
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn pcre2_maketables_8(gcontext: *mut pcre2_general_context) -> *const u8 {
-    let yield_: *mut u8 = if !gcontext.is_null() {
-        ((*gcontext).memctl.malloc.unwrap())(TABLES_LENGTH, (*gcontext).memctl.memory_data) as *mut u8
+pub unsafe extern "C" fn pcre2_maketables_8(
+    gcontext: *mut pcre2_real_general_context,
+) -> *const u8 {
+    let yield_: *mut u8 = (if !gcontext.is_null() {
+        ((*gcontext).memctl.malloc.unwrap())(TABLES_LENGTH, (*gcontext).memctl.memory_data)
     } else {
-        malloc(TABLES_LENGTH) as *mut u8
-    };
+        malloc(TABLES_LENGTH)
+    }) as *mut u8;
+
+    let mut i: c_int;
+    let mut p: *mut u8;
+
     if yield_.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null();
     }
-    let mut p = yield_;
+    p = yield_;
 
-    // Lower casing table
-    for i in 0..256i32 {
-        let c = tolower(i);
-        *p = if c < 256 { c as u8 } else { i as u8 };
+    /* First comes the lower casing table */
+
+    i = 0;
+    while i < 256 {
+        let c: c_int = charfn_from(tolower(charfn_to(i)));
+        *p = (if c < 256 { c } else { i }) as u8;
         p = p.add(1);
+        i += 1;
     }
 
-    // Case-flipping table
-    for i in 0..256i32 {
-        let c = if islower(i) != 0 { toupper(i) } else { tolower(i) };
-        *p = if c < 256 { c as u8 } else { i as u8 };
+    /* Next the case-flipping table */
+
+    i = 0;
+    while i < 256 {
+        let c: c_int = charfn_from(if islower(charfn_to(i)) != 0 {
+            toupper(charfn_to(i))
+        } else {
+            tolower(charfn_to(i))
+        });
+        *p = (if c < 256 { c } else { i }) as u8;
         p = p.add(1);
+        i += 1;
     }
 
-    // Character class tables
+    /* Then the character class tables. Don't try to be clever and save effort on
+    exclusive ones - in some locales things may be different.
+
+    Note that the table for "space" includes everything "isspace" gives, including
+    VT in the default locale. This makes it work for the POSIX class [:space:].
+    From PCRE1 release 8.34 and for all PCRE2 releases it is also correct for Perl
+    space, because Perl added VT at release 5.18.
+
+    Note also that it is possible for a character to be alnum or alpha without
+    being lower or upper, such as "male and female ordinals" (\xAA and \xBA) in the
+    fr_FR locale (at least under Debian Linux's locales as of 12/2005). So we must
+    test for alnum specially. */
+
     memset(p as *mut c_void, 0, cbit_length);
-    for i in 0..256i32 {
-        let iu = i as usize;
-        if isdigit(i) != 0 {
-            *p.add(cbit_digit + iu / 8) |= 1u8 << (i & 7);
+    i = 0;
+    while i < 256 {
+        if isdigit(charfn_to(i)) != 0 {
+            *p.add(cbit_digit + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if isupper(i) != 0 {
-            *p.add(cbit_upper + iu / 8) |= 1u8 << (i & 7);
+        if isupper(charfn_to(i)) != 0 {
+            *p.add(cbit_upper + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if islower(i) != 0 {
-            *p.add(cbit_lower + iu / 8) |= 1u8 << (i & 7);
+        if islower(charfn_to(i)) != 0 {
+            *p.add(cbit_lower + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if isalnum(i) != 0 {
-            *p.add(cbit_word + iu / 8) |= 1u8 << (i & 7);
+        if isalnum(charfn_to(i)) != 0 {
+            *p.add(cbit_word + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if i as u32 == CHAR_UNDERSCORE {
-            *p.add(cbit_word + iu / 8) |= 1u8 << (i & 7);
+        if i == CHAR_UNDERSCORE as c_int {
+            *p.add(cbit_word + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if isspace(i) != 0 {
-            *p.add(cbit_space + iu / 8) |= 1u8 << (i & 7);
+        if isspace(charfn_to(i)) != 0 {
+            *p.add(cbit_space + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if isxdigit(i) != 0 {
-            *p.add(cbit_xdigit + iu / 8) |= 1u8 << (i & 7);
+        if isxdigit(charfn_to(i)) != 0 {
+            *p.add(cbit_xdigit + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if isgraph(i) != 0 {
-            *p.add(cbit_graph + iu / 8) |= 1u8 << (i & 7);
+        if isgraph(charfn_to(i)) != 0 {
+            *p.add(cbit_graph + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if isprint(i) != 0 {
-            *p.add(cbit_print + iu / 8) |= 1u8 << (i & 7);
+        if isprint(charfn_to(i)) != 0 {
+            *p.add(cbit_print + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if ispunct(i) != 0 {
-            *p.add(cbit_punct + iu / 8) |= 1u8 << (i & 7);
+        if ispunct(charfn_to(i)) != 0 {
+            *p.add(cbit_punct + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
-        if iscntrl(i) != 0 {
-            *p.add(cbit_cntrl + iu / 8) |= 1u8 << (i & 7);
+        if iscntrl(charfn_to(i)) != 0 {
+            *p.add(cbit_cntrl + (i / 8) as usize) |= (1u32 << (i & 7)) as u8;
         }
+        i += 1;
     }
     p = p.add(cbit_length);
 
-    // Character type table
-    for i in 0..256i32 {
-        let mut x: u8 = 0;
-        if isspace(i) != 0 {
-            x += ctype_space;
+    /* Finally, the character type table. In this, we used to exclude VT from the
+    white space chars, because Perl didn't recognize it as such for \s and for
+    comments within regexes. However, Perl changed at release 5.18, so PCRE1
+    changed at release 8.34 and it's always been this way for PCRE2. */
+
+    i = 0;
+    while i < 256 {
+        let mut x: c_int = 0;
+        if isspace(charfn_to(i)) != 0 {
+            x += ctype_space as c_int;
         }
-        if isalpha(i) != 0 {
-            x += ctype_letter;
+        if isalpha(charfn_to(i)) != 0 {
+            x += ctype_letter as c_int;
         }
-        if islower(i) != 0 {
-            x += ctype_lcletter;
+        if islower(charfn_to(i)) != 0 {
+            x += ctype_lcletter as c_int;
         }
-        if isdigit(i) != 0 {
-            x += ctype_digit;
+        if isdigit(charfn_to(i)) != 0 {
+            x += ctype_digit as c_int;
         }
-        if isalnum(i) != 0 || i as u32 == CHAR_UNDERSCORE {
-            x += ctype_word;
+        if isalnum(charfn_to(i)) != 0 || i == CHAR_UNDERSCORE as c_int {
+            x += ctype_word as c_int;
         }
-        *p = x;
+        *p = x as u8;
         p = p.add(1);
+        i += 1;
     }
 
     yield_ as *const u8
@@ -111,7 +159,7 @@ pub unsafe extern "C" fn pcre2_maketables_8(gcontext: *mut pcre2_general_context
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pcre2_maketables_free_8(
-    gcontext: *mut pcre2_general_context,
+    gcontext: *mut pcre2_real_general_context,
     tables: *const u8,
 ) {
     if !gcontext.is_null() {
@@ -120,3 +168,5 @@ pub unsafe extern "C" fn pcre2_maketables_free_8(
         free(tables as *mut c_void);
     }
 }
+
+/* End of pcre2_maketables.c */

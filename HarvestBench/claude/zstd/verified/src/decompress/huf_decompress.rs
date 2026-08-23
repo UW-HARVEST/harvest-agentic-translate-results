@@ -1,58 +1,39 @@
-//! Translation of c_src/src/decompress/huf_decompress.c
-//! huff0 huffman decoder, part of Finite State Entropy library.
+//! Translation of `decompress/huf_decompress.c`
 //!
-//! Build configuration assumptions:
-//!   DYNAMIC_BMI2 = 0
-//!   ZSTD_ENABLE_ASM_X86_64_BMI2 = 0  (no assembly; C default fast-loop path)
-//!   HUF_ENABLE_FAST_DECODE = 1
-//! Target: little-endian 64-bit.
+//! Build configuration for this port:
+//!   * `DYNAMIC_BMI2 == 0`  -> only the `_default` (non-bmi2) bodies exist.
+//!   * `HUF_ASM_X86_64_BMI2 == 0` / `ZSTD_ENABLE_ASM_X86_64_BMI2 == 0` -> no asm loops.
+//!   * neither `HUF_FORCE_DECOMPRESS_X1` nor `HUF_FORCE_DECOMPRESS_X2` defined ->
+//!     both decoders are compiled in and `HUF_selectDecoder` is used.
+//!   * `DEBUGLEVEL == 0` -> asserts / DEBUGLOG dropped.
+#![allow(dead_code)]
 
-#![allow(
-    non_snake_case,
-    non_camel_case_types,
-    non_upper_case_globals,
-    dead_code,
-    unused_mut,
-    unused_assignments,
-    unused_parens
-)]
+use crate::common::bits::*;
+use crate::common::bitstream::*;
+use crate::common::entropy_common::HUF_readStats_wksp;
+use crate::common::error_private::*;
+use crate::common::huf::*;
+use crate::common::mem::*;
+use crate::common::zstd_internal::MIN;
+use crate::libc::{ZSTD_memcpy, ZSTD_memset};
+use core::ffi::{c_char, c_int, c_void};
 
-use core::ffi::c_void;
+/* **************************************************************
+ *  Constants
+ ****************************************************************/
 
-use crate::common::bits::highbit32;
-use crate::common::bits::count_trailing_zeros64;
-use crate::common::bitstream::{
-    bit_end_of_dstream, bit_init_dstream, bit_look_bits_fast, bit_reload_dstream,
-    bit_reload_dstream_fast, bit_skip_bits, BIT_DStream_t, BIT_DStream_unfinished,
-};
-use crate::common::error::{code, err_is_error, error};
-use crate::common::huf_common::{
-    HUF_flags_disableFast, HUF_SYMBOLVALUE_MAX, HUF_TABLELOG_ABSOLUTEMAX, HUF_TABLELOG_MAX,
-    HUF_readStats_wksp,
-};
-use crate::common::mem::{
-    mem_32bits, mem_is_little_endian, mem_read64, mem_read_le16, mem_read_le_st, mem_write16,
-    mem_write64,
-};
+const HUF_DECODER_FAST_TABLELOG: U32 = 11;
 
-pub type HUF_DTable = u32;
+/* `HUF_DISABLE_FAST_DECODE` is not defined */
+const HUF_ENABLE_FAST_DECODE: c_int = 1;
 
-const HUF_DECODER_FAST_TABLELOG: u32 = 11;
+/* **************************************************************
+ *  compiler.h helpers used by this file
+ ****************************************************************/
 
-/* HUF_ENABLE_FAST_DECODE (no HUF_DISABLE_FAST_DECODE) */
-const HUF_ENABLE_FAST_DECODE: bool = true;
-
-/* HUF_READ_STATS_WORKSPACE_SIZE_U32 = FSE_DECOMPRESS_WKSP_SIZE_U32(6, HUF_TABLELOG_MAX-1)
- * = FSE_DTABLE_SIZE_U32(6) + 1 + FSE_BUILD_DTABLE_WKSP_SIZE_U32(6,11) + (255+1)/2 + 1
- * = 65 + 1 + 24 + 128 + 1 = 219 */
-const HUF_READ_STATS_WORKSPACE_SIZE_U32: usize = 219;
-
-/* HUF_DECOMPRESS_WORKSPACE_SIZE = (2 << 10) + (1 << 9) = 2560 */
-const HUF_DECOMPRESS_WORKSPACE_SIZE: usize = (2 << 10) + (1 << 9);
-
-/* ZSTD_maybeNullPtrAdd (compiler.h) */
-#[inline]
-unsafe fn ZSTD_maybeNullPtrAdd(ptr: *mut u8, add: isize) -> *mut u8 {
+/// `ZSTD_maybeNullPtrAdd()` : `ptr + add`, except that `NULL + 0 == NULL`.
+#[inline(always)]
+unsafe fn ZSTD_maybeNullPtrAdd(ptr: *mut BYTE, add: isize) -> *mut BYTE {
     if add > 0 {
         ptr.offset(add)
     } else {
@@ -60,78 +41,92 @@ unsafe fn ZSTD_maybeNullPtrAdd(ptr: *mut u8, add: isize) -> *mut u8 {
     }
 }
 
-#[inline]
-fn MIN(a: usize, b: usize) -> usize {
-    if a < b {
-        a
-    } else {
-        b
-    }
-}
+/* **************************************************************
+ *  BMI2 Variant Wrappers
+ ****************************************************************/
+
+type HUF_DecompressUsingDTableFn = unsafe fn(
+    dst: *mut c_void,
+    dstSize: usize,
+    cSrc: *const c_void,
+    cSrcSize: usize,
+    DTable: *const HUF_DTable,
+) -> usize;
 
 /*-***************************/
 /*  generic DTableDesc       */
 /*-***************************/
+
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone, Default)]
 struct DTableDesc {
-    maxTableLog: u8,
-    tableType: u8,
-    tableLog: u8,
-    reserved: u8,
+    maxTableLog: BYTE,
+    tableType: BYTE,
+    tableLog: BYTE,
+    reserved: BYTE,
 }
 
-#[inline]
 unsafe fn HUF_getDTableDesc(table: *const HUF_DTable) -> DTableDesc {
-    let mut dtd = DTableDesc {
-        maxTableLog: 0,
-        tableType: 0,
-        tableLog: 0,
-        reserved: 0,
-    };
-    core::ptr::copy_nonoverlapping(
-        table as *const u8,
-        &mut dtd as *mut DTableDesc as *mut u8,
+    let mut dtd = DTableDesc::default();
+    ZSTD_memcpy(
+        &mut dtd as *mut DTableDesc as *mut c_void,
+        table as *const c_void,
         core::mem::size_of::<DTableDesc>(),
     );
     dtd
 }
 
-#[inline]
-unsafe fn HUF_initFastDStream(ip: *const u8) -> usize {
-    let lastByte = *ip.add(7);
+unsafe fn HUF_initFastDStream(ip: *const BYTE) -> usize {
+    let lastByte: BYTE = *ip.add(7);
     let bitsConsumed: usize = if lastByte != 0 {
-        (8 - highbit32(lastByte as u32)) as usize
+        (8 - ZSTD_highbit32(lastByte as U32)) as usize
     } else {
         0
     };
-    let value = mem_read_le_st(ip as *const c_void) | 1;
+    let value: usize = MEM_readLEST(ip as *const c_void) | 1;
     value << bitsConsumed
 }
 
 /**
- * The input/output arguments to the Huffman fast decoding loop.
+ * The input/output arguments to the Huffman fast decoding loop:
+ *
+ * ip [in/out] - The input pointers, must be updated to reflect what is consumed.
+ * op [in/out] - The output pointers, must be updated to reflect what is written.
+ * bits [in/out] - The bitstream containers, must be updated to reflect the current state.
+ * dt [in] - The decoding table.
+ * ilowest [in] - The beginning of the valid range of the input. Decoders may read
+ *                down to this pointer. It may be below iend[0].
+ * oend [in] - The end of the output stream. op[3] must not cross oend.
+ * iend [in] - The end of each input stream. ip[i] may cross iend[i],
+ *             as long as it is above ilowest, but that indicates corruption.
  */
 #[repr(C)]
+#[derive(Copy, Clone)]
 struct HUF_DecompressFastArgs {
-    ip: [*const u8; 4],
-    op: [*mut u8; 4],
-    bits: [u64; 4],
+    ip: [*const BYTE; 4],
+    op: [*mut BYTE; 4],
+    bits: [U64; 4],
     dt: *const c_void,
-    ilowest: *const u8,
-    oend: *mut u8,
-    iend: [*const u8; 4],
+    ilowest: *const BYTE,
+    oend: *mut BYTE,
+    iend: [*const BYTE; 4],
 }
 
-type HUF_DecompressFastLoopFn = unsafe fn(*mut HUF_DecompressFastArgs);
+impl Default for HUF_DecompressFastArgs {
+    fn default() -> Self {
+        HUF_DecompressFastArgs {
+            ip: [core::ptr::null(); 4],
+            op: [core::ptr::null_mut(); 4],
+            bits: [0; 4],
+            dt: core::ptr::null(),
+            ilowest: core::ptr::null(),
+            oend: core::ptr::null_mut(),
+            iend: [core::ptr::null(); 4],
+        }
+    }
+}
 
-type HUF_DecompressUsingDTableFn = unsafe fn(
-    *mut c_void,
-    usize,
-    *const c_void,
-    usize,
-    *const HUF_DTable,
-) -> usize;
+type HUF_DecompressFastLoopFn = unsafe fn(args: *mut HUF_DecompressFastArgs);
 
 /**
  * Initializes args for the fast decoding loop.
@@ -148,14 +143,16 @@ unsafe fn HUF_DecompressFastArgs_init(
     DTable: *const HUF_DTable,
 ) -> usize {
     let dt = DTable.add(1) as *const c_void;
-    let dtLog = HUF_getDTableDesc(DTable).tableLog as u32;
+    let dtLog: U32 = HUF_getDTableDesc(DTable).tableLog as U32;
 
-    let istart = src as *const u8;
+    let istart = src as *const BYTE;
 
-    let oend = ZSTD_maybeNullPtrAdd(dst as *mut u8, dstSize as isize);
+    let oend = ZSTD_maybeNullPtrAdd(dst as *mut BYTE, dstSize as isize);
 
-    /* The fast decoding loop assumes 64-bit little-endian. */
-    if mem_is_little_endian() == 0 || mem_32bits() != 0 {
+    /* The fast decoding loop assumes 64-bit little-endian.
+     * This condition is false on x32.
+     */
+    if MEM_isLittleEndian() == 0 || MEM_32bits() != 0 {
         return 0;
     }
 
@@ -166,56 +163,81 @@ unsafe fn HUF_DecompressFastArgs_init(
 
     /* strict minimum : jump table + 1 byte per stream */
     if srcSize < 10 {
-        return error(code::CORRUPTION_DETECTED);
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
+    /* Must have at least 8 bytes per stream because we don't handle initializing
+     * smaller bit containers.
+     * If table log is not correct at this point, fallback to the old decoder.
+     * On small inputs we don't have enough data to trigger the fast loop, so use
+     * the old decoder.
+     */
     if dtLog != HUF_DECODER_FAST_TABLELOG {
         return 0;
     }
 
     /* Read the jump table. */
     {
-        let length1 = mem_read_le16(istart as *const c_void) as usize;
-        let length2 = mem_read_le16(istart.add(2) as *const c_void) as usize;
-        let length3 = mem_read_le16(istart.add(4) as *const c_void) as usize;
-        let length4 = srcSize.wrapping_sub(length1 + length2 + length3 + 6);
+        let length1: usize = MEM_readLE16(istart as *const c_void) as usize;
+        let length2: usize = MEM_readLE16(istart.add(2) as *const c_void) as usize;
+        let length3: usize = MEM_readLE16(istart.add(4) as *const c_void) as usize;
+        let length4: usize = srcSize.wrapping_sub(
+            length1
+                .wrapping_add(length2)
+                .wrapping_add(length3)
+                .wrapping_add(6),
+        );
         (*args).iend[0] = istart.add(6); /* jumpTable */
-        (*args).iend[1] = (*args).iend[0].add(length1);
-        (*args).iend[2] = (*args).iend[1].add(length2);
-        (*args).iend[3] = (*args).iend[2].add(length3);
+        (*args).iend[1] = (*args).iend[0].wrapping_add(length1);
+        (*args).iend[2] = (*args).iend[1].wrapping_add(length2);
+        (*args).iend[3] = (*args).iend[2].wrapping_add(length3);
 
+        /* HUF_initFastDStream() requires this, and this small of an input
+         * won't benefit from the ASM loop anyways.
+         */
         if length1 < 8 || length2 < 8 || length3 < 8 || length4 < 8 {
             return 0;
         }
         if length4 > srcSize {
-            return error(code::CORRUPTION_DETECTED); /* overflow */
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
     }
     /* ip[] contains the position that is currently loaded into bits[]. */
-    (*args).ip[0] = (*args).iend[1].sub(core::mem::size_of::<u64>());
-    (*args).ip[1] = (*args).iend[2].sub(core::mem::size_of::<u64>());
-    (*args).ip[2] = (*args).iend[3].sub(core::mem::size_of::<u64>());
-    (*args).ip[3] = (src as *const u8)
-        .add(srcSize)
-        .sub(core::mem::size_of::<u64>());
+    (*args).ip[0] = (*args).iend[1].wrapping_sub(core::mem::size_of::<U64>());
+    (*args).ip[1] = (*args).iend[2].wrapping_sub(core::mem::size_of::<U64>());
+    (*args).ip[2] = (*args).iend[3].wrapping_sub(core::mem::size_of::<U64>());
+    (*args).ip[3] = (src as *const BYTE)
+        .wrapping_add(srcSize)
+        .wrapping_sub(core::mem::size_of::<U64>());
 
     /* op[] contains the output pointers. */
-    (*args).op[0] = dst as *mut u8;
-    (*args).op[1] = (*args).op[0].add((dstSize + 3) / 4);
-    (*args).op[2] = (*args).op[1].add((dstSize + 3) / 4);
-    (*args).op[3] = (*args).op[2].add((dstSize + 3) / 4);
+    (*args).op[0] = dst as *mut BYTE;
+    (*args).op[1] = (*args).op[0].wrapping_add((dstSize + 3) / 4);
+    (*args).op[2] = (*args).op[1].wrapping_add((dstSize + 3) / 4);
+    (*args).op[3] = (*args).op[2].wrapping_add((dstSize + 3) / 4);
 
     /* No point to call the ASM loop for tiny outputs. */
     if (*args).op[3] >= oend {
         return 0;
     }
 
-    /* bits[] is the bit container. */
-    (*args).bits[0] = HUF_initFastDStream((*args).ip[0]) as u64;
-    (*args).bits[1] = HUF_initFastDStream((*args).ip[1]) as u64;
-    (*args).bits[2] = HUF_initFastDStream((*args).ip[2]) as u64;
-    (*args).bits[3] = HUF_initFastDStream((*args).ip[3]) as u64;
+    /* bits[] is the bit container.
+     * It is read from the MSB down to the LSB.
+     * It is shifted left as it is read, and zeros are
+     * shifted in. After the lowest valid bit a 1 is
+     * set, so that CountTrailingZeros(bits[]) can be used
+     * to count how many bits we've consumed.
+     */
+    (*args).bits[0] = HUF_initFastDStream((*args).ip[0]) as U64;
+    (*args).bits[1] = HUF_initFastDStream((*args).ip[1]) as U64;
+    (*args).bits[2] = HUF_initFastDStream((*args).ip[2]) as U64;
+    (*args).bits[3] = HUF_initFastDStream((*args).ip[3]) as U64;
 
+    /* The decoders must be sure to never read beyond ilowest.
+     * This is lower than iend[0], but allowing decoders to read
+     * down to ilowest can allow an extra iteration or two in the
+     * fast loop.
+     */
     (*args).ilowest = istart;
 
     (*args).oend = oend;
@@ -227,25 +249,29 @@ unsafe fn HUF_DecompressFastArgs_init(
 unsafe fn HUF_initRemainingDStream(
     bit: *mut BIT_DStream_t,
     args: *const HUF_DecompressFastArgs,
-    stream: i32,
-    segmentEnd: *mut u8,
+    stream: c_int,
+    segmentEnd: *mut BYTE,
 ) -> usize {
     let s = stream as usize;
     /* Validate that we haven't overwritten. */
     if (*args).op[s] > segmentEnd {
-        return error(code::CORRUPTION_DETECTED);
+        return ERROR(ZSTD_error_corruption_detected);
     }
-    /* Validate that we haven't read beyond iend[]. */
-    if (*args).ip[s] < (*args).iend[s].sub(8) {
-        return error(code::CORRUPTION_DETECTED);
+    /* Validate that we haven't read beyond iend[].
+     * Note that ip[] may be < iend[] because the MSB is
+     * the next bit to read, and we may have consumed 100%
+     * of the stream, so down to iend[i] - 8 is valid.
+     */
+    if (*args).ip[s] < (*args).iend[s].wrapping_sub(8) {
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     /* Construct the BIT_DStream_t. */
-    (*bit).bitContainer = mem_read_le_st((*args).ip[s] as *const c_void);
-    (*bit).bitsConsumed = count_trailing_zeros64((*args).bits[s]);
-    (*bit).start = (*args).ilowest;
+    (*bit).bitContainer = MEM_readLEST((*args).ip[s] as *const c_void);
+    (*bit).bitsConsumed = ZSTD_countTrailingZeros64((*args).bits[s]);
+    (*bit).start = (*args).ilowest as *const c_char;
     (*bit).limitPtr = (*bit).start.add(core::mem::size_of::<usize>());
-    (*bit).ptr = (*args).ip[s];
+    (*bit).ptr = (*args).ip[s] as *const c_char;
 
     0
 }
@@ -253,23 +279,24 @@ unsafe fn HUF_initRemainingDStream(
 /*-***************************/
 /*  single-symbol decoding   */
 /*-***************************/
+
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone, Default)]
 struct HUF_DEltX1 {
-    nbBits: u8,
-    byte: u8,
+    nbBits: BYTE,
+    byte: BYTE,
 }
 
 /**
- * Packs 4 HUF_DEltX1 structs into a U64.
+ * Packs 4 HUF_DEltX1 structs into a U64. This is used to lay down 4 entries at
+ * a time.
  */
-#[inline]
-fn HUF_DEltX1_set4(symbol: u8, nbBits: u8) -> u64 {
-    let mut D4: u64;
-    if mem_is_little_endian() != 0 {
-        D4 = (((symbol as u32) << 8).wrapping_add(nbBits as u32)) as u64;
+unsafe fn HUF_DEltX1_set4(symbol: BYTE, nbBits: BYTE) -> U64 {
+    let mut D4: U64;
+    if MEM_isLittleEndian() != 0 {
+        D4 = (((symbol as U32) << 8).wrapping_add(nbBits as U32)) as U64;
     } else {
-        D4 = ((symbol as u32).wrapping_add((nbBits as u32) << 8)) as u64;
+        D4 = ((symbol as U32).wrapping_add((nbBits as U32) << 8)) as U64;
     }
     D4 = D4.wrapping_mul(0x0001000100010001u64);
     D4
@@ -277,33 +304,42 @@ fn HUF_DEltX1_set4(symbol: u8, nbBits: u8) -> u64 {
 
 /**
  * Increase the tableLog to targetTableLog and rescales the stats.
+ * If tableLog > targetTableLog this is a no-op.
+ * @returns New tableLog
  */
 unsafe fn HUF_rescaleStats(
-    huffWeight: *mut u8,
-    rankVal: *mut u32,
-    nbSymbols: u32,
-    tableLog: u32,
-    targetTableLog: u32,
-) -> u32 {
+    huffWeight: *mut BYTE,
+    rankVal: *mut U32,
+    nbSymbols: U32,
+    tableLog: U32,
+    targetTableLog: U32,
+) -> U32 {
     if tableLog > targetTableLog {
         return tableLog;
     }
     if tableLog < targetTableLog {
-        let scale = targetTableLog - tableLog;
-        let mut s: u32;
-        s = 0;
+        let scale: U32 = targetTableLog - tableLog;
+        /* Increase the weight for all non-zero probability symbols by scale. */
+        let mut s: U32 = 0;
         while s < nbSymbols {
-            let hw = *huffWeight.add(s as usize);
-            *huffWeight.add(s as usize) =
-                hw.wrapping_add(if hw == 0 { 0u8 } else { scale as u8 });
+            let add: BYTE = if *huffWeight.add(s as usize) == 0 {
+                0
+            } else {
+                scale as BYTE
+            };
+            *huffWeight.add(s as usize) = (*huffWeight.add(s as usize)).wrapping_add(add);
             s += 1;
         }
-        s = targetTableLog;
+        /* Update rankVal to reflect the new weights.
+         * All weights except 0 get moved to weight + scale.
+         * Weights [1, scale] are empty.
+         */
+        let mut s: U32 = targetTableLog;
         while s > scale {
             *rankVal.add(s as usize) = *rankVal.add((s - scale) as usize);
             s -= 1;
         }
-        s = scale;
+        let mut s: U32 = scale;
         while s > 0 {
             *rankVal.add(s as usize) = 0;
             s -= 1;
@@ -314,11 +350,11 @@ unsafe fn HUF_rescaleStats(
 
 #[repr(C)]
 struct HUF_ReadDTableX1_Workspace {
-    rankVal: [u32; (HUF_TABLELOG_ABSOLUTEMAX + 1) as usize],
-    rankStart: [u32; (HUF_TABLELOG_ABSOLUTEMAX + 1) as usize],
-    statsWksp: [u32; HUF_READ_STATS_WORKSPACE_SIZE_U32],
-    symbols: [u8; (HUF_SYMBOLVALUE_MAX + 1) as usize],
-    huffWeight: [u8; (HUF_SYMBOLVALUE_MAX + 1) as usize],
+    rankVal: [U32; HUF_TABLELOG_ABSOLUTEMAX as usize + 1],
+    rankStart: [U32; HUF_TABLELOG_ABSOLUTEMAX as usize + 1],
+    statsWksp: [U32; HUF_READ_STATS_WORKSPACE_SIZE_U32],
+    symbols: [BYTE; HUF_SYMBOLVALUE_MAX as usize + 1],
+    huffWeight: [BYTE; HUF_SYMBOLVALUE_MAX as usize + 1],
 }
 
 #[unsafe(no_mangle)]
@@ -328,22 +364,24 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
     srcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let mut tableLog: u32 = 0;
-    let mut nbSymbols: u32 = 0;
+    let mut tableLog: U32 = 0;
+    let mut nbSymbols: U32 = 0;
     let iSize: usize;
     let dtPtr = DTable.add(1) as *mut c_void;
     let dt = dtPtr as *mut HUF_DEltX1;
     let wksp = workSpace as *mut HUF_ReadDTableX1_Workspace;
 
     if core::mem::size_of::<HUF_ReadDTableX1_Workspace>() > wkspSize {
-        return error(code::TABLELOG_TOOLARGE);
+        return ERROR(ZSTD_error_tableLog_tooLarge);
     }
+
+    /* ZSTD_memset(huffWeight, 0, sizeof(huffWeight)); is not necessary */
 
     iSize = HUF_readStats_wksp(
         (*wksp).huffWeight.as_mut_ptr(),
-        (HUF_SYMBOLVALUE_MAX + 1) as usize,
+        HUF_SYMBOLVALUE_MAX as usize + 1,
         (*wksp).rankVal.as_mut_ptr(),
         &mut nbSymbols,
         &mut tableLog,
@@ -353,15 +391,15 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
         core::mem::size_of_val(&(*wksp).statsWksp),
         flags,
     );
-    if err_is_error(iSize) != 0 {
+    if ERR_isError(iSize) != 0 {
         return iSize;
     }
 
     /* Table header */
     {
         let mut dtd = HUF_getDTableDesc(DTable);
-        let maxTableLog = dtd.maxTableLog as u32 + 1;
-        let targetTableLog = MIN(maxTableLog as usize, HUF_DECODER_FAST_TABLELOG as usize) as u32;
+        let maxTableLog: U32 = dtd.maxTableLog as U32 + 1;
+        let targetTableLog: U32 = MIN(maxTableLog, HUF_DECODER_FAST_TABLELOG);
         tableLog = HUF_rescaleStats(
             (*wksp).huffWeight.as_mut_ptr(),
             (*wksp).rankVal.as_mut_ptr(),
@@ -369,73 +407,89 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
             tableLog,
             targetTableLog,
         );
-        if tableLog > (dtd.maxTableLog as u32 + 1) {
-            return error(code::TABLELOG_TOOLARGE);
+        if tableLog > (dtd.maxTableLog as U32 + 1) {
+            /* DTable too small, Huffman tree cannot fit in */
+            return ERROR(ZSTD_error_tableLog_tooLarge);
         }
         dtd.tableType = 0;
-        dtd.tableLog = tableLog as u8;
-        core::ptr::copy_nonoverlapping(
-            &dtd as *const DTableDesc as *const u8,
-            DTable as *mut u8,
+        dtd.tableLog = tableLog as BYTE;
+        ZSTD_memcpy(
+            DTable as *mut c_void,
+            &dtd as *const DTableDesc as *const c_void,
             core::mem::size_of::<DTableDesc>(),
         );
     }
 
-    /* Compute symbols and rankStart given rankVal */
+    /* Compute symbols and rankStart given rankVal:
+     *
+     * rankVal already contains the number of values of each weight.
+     *
+     * symbols contains the symbols ordered by weight. First are the rankVal[0]
+     * weight 0 symbols, followed by the rankVal[1] weight 1 symbols, and so on.
+     * symbols[0] is filled (but unused) to avoid a branch.
+     *
+     * rankStart contains the offset where each rank belongs in the DTable.
+     * rankStart[0] is not filled because there are no entries in the table for
+     * weight 0.
+     */
     {
-        let mut n: i32;
-        let mut nextRankStart: u32 = 0;
-        let unroll = 4i32;
-        let nLimit = nbSymbols as i32 - unroll + 1;
+        let mut n: c_int;
+        let mut nextRankStart: U32 = 0;
+        let unroll: c_int = 4;
+        let nLimit: c_int = nbSymbols as c_int - unroll + 1;
         n = 0;
-        while n < tableLog as i32 + 1 {
-            let curr = nextRankStart;
-            nextRankStart += (*wksp).rankVal[n as usize];
+        while n < tableLog as c_int + 1 {
+            let curr: U32 = nextRankStart;
+            nextRankStart = nextRankStart.wrapping_add((*wksp).rankVal[n as usize]);
             (*wksp).rankStart[n as usize] = curr;
             n += 1;
         }
         n = 0;
         while n < nLimit {
-            let mut u = 0i32;
+            let mut u: c_int = 0;
             while u < unroll {
-                let w = (*wksp).huffWeight[(n + u) as usize] as usize;
+                let w: usize = (*wksp).huffWeight[(n + u) as usize] as usize;
                 let idx = (*wksp).rankStart[w];
-                (*wksp).rankStart[w] += 1;
-                (*wksp).symbols[idx as usize] = (n + u) as u8;
+                (*wksp).rankStart[w] = idx.wrapping_add(1);
+                (*wksp).symbols[idx as usize] = (n + u) as BYTE;
                 u += 1;
             }
             n += unroll;
         }
-        while n < nbSymbols as i32 {
-            let w = (*wksp).huffWeight[n as usize] as usize;
+        while n < nbSymbols as c_int {
+            let w: usize = (*wksp).huffWeight[n as usize] as usize;
             let idx = (*wksp).rankStart[w];
-            (*wksp).rankStart[w] += 1;
-            (*wksp).symbols[idx as usize] = n as u8;
+            (*wksp).rankStart[w] = idx.wrapping_add(1);
+            (*wksp).symbols[idx as usize] = n as BYTE;
             n += 1;
         }
     }
 
-    /* fill DTable */
+    /* fill DTable
+     * We fill all entries of each weight in order.
+     * That way length is a constant for each iteration of the outer loop.
+     * We can switch based on the length to a different inner loop which is
+     * optimized for that particular case.
+     */
     {
-        let mut w: u32;
-        let mut symbol = (*wksp).rankVal[0] as i32;
-        let mut rankStart = 0i32;
+        let mut w: U32;
+        let mut symbol: c_int = (*wksp).rankVal[0] as c_int;
+        let mut rankStart: c_int = 0;
         w = 1;
         while w < tableLog + 1 {
-            let symbolCount = (*wksp).rankVal[w as usize] as i32;
-            let length = (1i32 << w) >> 1;
-            let mut uStart = rankStart;
-            let nbBits = (tableLog + 1 - w) as u8;
-            let mut s: i32;
-            let mut u: i32;
+            let symbolCount: c_int = (*wksp).rankVal[w as usize] as c_int;
+            let length: c_int = (1i32 << w) >> 1;
+            let mut uStart: c_int = rankStart;
+            let nbBits: BYTE = (tableLog + 1 - w) as BYTE;
+            let mut s: c_int;
+            let mut u: c_int;
             match length {
                 1 => {
                     s = 0;
                     while s < symbolCount {
-                        let D = HUF_DEltX1 {
-                            byte: (*wksp).symbols[(symbol + s) as usize],
-                            nbBits,
-                        };
+                        let mut D = HUF_DEltX1::default();
+                        D.byte = (*wksp).symbols[(symbol + s) as usize];
+                        D.nbBits = nbBits;
                         *dt.offset(uStart as isize) = D;
                         uStart += 1;
                         s += 1;
@@ -444,12 +498,11 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
                 2 => {
                     s = 0;
                     while s < symbolCount {
-                        let D = HUF_DEltX1 {
-                            byte: (*wksp).symbols[(symbol + s) as usize],
-                            nbBits,
-                        };
-                        *dt.offset((uStart + 0) as isize) = D;
-                        *dt.offset((uStart + 1) as isize) = D;
+                        let mut D = HUF_DEltX1::default();
+                        D.byte = (*wksp).symbols[(symbol + s) as usize];
+                        D.nbBits = nbBits;
+                        *dt.offset(uStart as isize + 0) = D;
+                        *dt.offset(uStart as isize + 1) = D;
                         uStart += 2;
                         s += 1;
                     }
@@ -457,8 +510,9 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
                 4 => {
                     s = 0;
                     while s < symbolCount {
-                        let D4 = HUF_DEltX1_set4((*wksp).symbols[(symbol + s) as usize], nbBits);
-                        mem_write64(dt.offset(uStart as isize) as *mut c_void, D4);
+                        let D4: U64 =
+                            HUF_DEltX1_set4((*wksp).symbols[(symbol + s) as usize], nbBits);
+                        MEM_write64(dt.offset(uStart as isize) as *mut c_void, D4);
                         uStart += 4;
                         s += 1;
                     }
@@ -466,9 +520,10 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
                 8 => {
                     s = 0;
                     while s < symbolCount {
-                        let D4 = HUF_DEltX1_set4((*wksp).symbols[(symbol + s) as usize], nbBits);
-                        mem_write64(dt.offset(uStart as isize) as *mut c_void, D4);
-                        mem_write64(dt.offset((uStart + 4) as isize) as *mut c_void, D4);
+                        let D4: U64 =
+                            HUF_DEltX1_set4((*wksp).symbols[(symbol + s) as usize], nbBits);
+                        MEM_write64(dt.offset(uStart as isize) as *mut c_void, D4);
+                        MEM_write64(dt.offset(uStart as isize + 4) as *mut c_void, D4);
                         uStart += 8;
                         s += 1;
                     }
@@ -476,13 +531,15 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
                 _ => {
                     s = 0;
                     while s < symbolCount {
-                        let D4 = HUF_DEltX1_set4((*wksp).symbols[(symbol + s) as usize], nbBits);
+                        let D4: U64 =
+                            HUF_DEltX1_set4((*wksp).symbols[(symbol + s) as usize], nbBits);
                         u = 0;
                         while u < length {
-                            mem_write64(dt.offset((uStart + u + 0) as isize) as *mut c_void, D4);
-                            mem_write64(dt.offset((uStart + u + 4) as isize) as *mut c_void, D4);
-                            mem_write64(dt.offset((uStart + u + 8) as isize) as *mut c_void, D4);
-                            mem_write64(dt.offset((uStart + u + 12) as isize) as *mut c_void, D4);
+                            let base = uStart as isize + u as isize;
+                            MEM_write64(dt.offset(base + 0) as *mut c_void, D4);
+                            MEM_write64(dt.offset(base + 4) as *mut c_void, D4);
+                            MEM_write64(dt.offset(base + 8) as *mut c_void, D4);
+                            MEM_write64(dt.offset(base + 12) as *mut c_void, D4);
                             u += 16;
                         }
                         uStart += length;
@@ -498,62 +555,66 @@ pub unsafe extern "C" fn HUF_readDTableX1_wksp(
     iSize
 }
 
-#[inline]
+#[inline(always)]
 unsafe fn HUF_decodeSymbolX1(
     Dstream: *mut BIT_DStream_t,
     dt: *const HUF_DEltX1,
-    dtLog: u32,
-) -> u8 {
-    let val = bit_look_bits_fast(Dstream, dtLog);
-    let c = (*dt.add(val)).byte;
-    bit_skip_bits(Dstream, (*dt.add(val)).nbBits as u32);
+    dtLog: U32,
+) -> BYTE {
+    let val = BIT_lookBitsFast(Dstream, dtLog); /* note : dtLog >= 1 */
+    let c: BYTE = (*dt.add(val as usize)).byte;
+    BIT_skipBits(Dstream, (*dt.add(val as usize)).nbBits as U32);
     c
 }
 
-/* On 64-bit with HUF_TABLELOG_MAX<=12, all of _0/_1/_2 decode. */
-#[inline]
-unsafe fn HUF_decode_symbolx1_0(
-    ptr: &mut *mut u8,
-    ds: *mut BIT_DStream_t,
+/* HUF_DECODE_SYMBOLX1_0 / _1 / _2 :
+ * `_1` is guarded by `MEM_64bits() || (HUF_TABLELOG_MAX<=12)` and `_2` by
+ * `MEM_64bits()`; both are always true for this build, so all three are the
+ * same unconditional decode step. */
+#[inline(always)]
+unsafe fn HUF_DECODE_SYMBOLX1_0(
+    ptr: &mut *mut BYTE,
+    DStreamPtr: *mut BIT_DStream_t,
     dt: *const HUF_DEltX1,
-    dtLog: u32,
+    dtLog: U32,
 ) {
-    **ptr = HUF_decodeSymbolX1(ds, dt, dtLog);
+    **ptr = HUF_decodeSymbolX1(DStreamPtr, dt, dtLog);
     *ptr = (*ptr).add(1);
 }
 
+#[inline(always)]
 unsafe fn HUF_decodeStreamX1(
-    mut p: *mut u8,
+    mut p: *mut BYTE,
     bitDPtr: *mut BIT_DStream_t,
-    pEnd: *mut u8,
+    pEnd: *mut BYTE,
     dt: *const HUF_DEltX1,
-    dtLog: u32,
+    dtLog: U32,
 ) -> usize {
     let pStart = p;
 
     /* up to 4 symbols at a time */
-    if (pEnd as isize - p as isize) > 3 {
-        while ((bit_reload_dstream(bitDPtr) == BIT_DStream_unfinished) as i32
-            & ((p < pEnd.sub(3)) as i32))
+    if pEnd.offset_from(p) > 3 {
+        while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) as c_int
+            & ((p < pEnd.wrapping_sub(3)) as c_int))
             != 0
         {
-            HUF_decode_symbolx1_0(&mut p, bitDPtr, dt, dtLog);
-            HUF_decode_symbolx1_0(&mut p, bitDPtr, dt, dtLog);
-            HUF_decode_symbolx1_0(&mut p, bitDPtr, dt, dtLog);
-            HUF_decode_symbolx1_0(&mut p, bitDPtr, dt, dtLog);
+            HUF_DECODE_SYMBOLX1_0(&mut p, bitDPtr, dt, dtLog);
+            HUF_DECODE_SYMBOLX1_0(&mut p, bitDPtr, dt, dtLog);
+            HUF_DECODE_SYMBOLX1_0(&mut p, bitDPtr, dt, dtLog);
+            HUF_DECODE_SYMBOLX1_0(&mut p, bitDPtr, dt, dtLog);
         }
     } else {
-        bit_reload_dstream(bitDPtr);
+        BIT_reloadDStream(bitDPtr);
     }
 
-    /* MEM_32bits() is false: skip the 32-bit block */
+    /* [0-3] symbols remaining : the `MEM_32bits()` reload loop is compiled out */
 
     /* no more data to retrieve from bitstream, no need to reload */
     while p < pEnd {
-        HUF_decode_symbolx1_0(&mut p, bitDPtr, dt, dtLog);
+        HUF_DECODE_SYMBOLX1_0(&mut p, bitDPtr, dt, dtLog);
     }
 
-    (pEnd as usize - pStart as usize)
+    pEnd.offset_from(pStart) as usize
 }
 
 unsafe fn HUF_decompress1X1_usingDTable_internal_body(
@@ -563,31 +624,34 @@ unsafe fn HUF_decompress1X1_usingDTable_internal_body(
     cSrcSize: usize,
     DTable: *const HUF_DTable,
 ) -> usize {
-    let op = dst as *mut u8;
+    let op = dst as *mut BYTE;
     let oend = ZSTD_maybeNullPtrAdd(op, dstSize as isize);
     let dtPtr = DTable.add(1) as *const c_void;
     let dt = dtPtr as *const HUF_DEltX1;
-    let mut bitD = core::mem::zeroed::<BIT_DStream_t>();
+    let mut bitD = BIT_DStream_t::default();
     let dtd = HUF_getDTableDesc(DTable);
-    let dtLog = dtd.tableLog as u32;
+    let dtLog: U32 = dtd.tableLog as U32;
 
     {
-        let e = bit_init_dstream(&mut bitD, cSrc, cSrcSize);
-        if err_is_error(e) != 0 {
+        let e = BIT_initDStream(&mut bitD, cSrc, cSrcSize);
+        if ERR_isError(e) != 0 {
             return e;
         }
     }
 
     HUF_decodeStreamX1(op, &mut bitD, oend, dt, dtLog);
 
-    if bit_end_of_dstream(&bitD) == 0 {
-        return error(code::CORRUPTION_DETECTED);
+    if BIT_endOfDStream(&bitD) == 0 {
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     dstSize
 }
 
-/* HUF_decompress4X1_usingDTable_internal_body(): @dstSize >= 6 */
+/* HUF_decompress4X1_usingDTable_internal_body():
+ * Conditions :
+ * @dstSize >= 6
+ */
 unsafe fn HUF_decompress4X1_usingDTable_internal_body(
     dst: *mut c_void,
     dstSize: usize,
@@ -595,111 +659,122 @@ unsafe fn HUF_decompress4X1_usingDTable_internal_body(
     cSrcSize: usize,
     DTable: *const HUF_DTable,
 ) -> usize {
+    /* Check */
     if cSrcSize < 10 {
-        return error(code::CORRUPTION_DETECTED);
+        /* strict minimum : jump table + 1 byte per stream */
+        return ERROR(ZSTD_error_corruption_detected);
     }
     if dstSize < 6 {
-        return error(code::CORRUPTION_DETECTED);
+        /* stream 4-split doesn't work */
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     {
-        let istart = cSrc as *const u8;
-        let ostart = dst as *mut u8;
-        let oend = ostart.add(dstSize);
-        let olimit = oend.sub(3);
+        let istart = cSrc as *const BYTE;
+        let ostart = dst as *mut BYTE;
+        let oend = ostart.wrapping_add(dstSize);
+        let olimit = oend.wrapping_sub(3);
         let dtPtr = DTable.add(1) as *const c_void;
         let dt = dtPtr as *const HUF_DEltX1;
 
-        let mut bitD1 = core::mem::zeroed::<BIT_DStream_t>();
-        let mut bitD2 = core::mem::zeroed::<BIT_DStream_t>();
-        let mut bitD3 = core::mem::zeroed::<BIT_DStream_t>();
-        let mut bitD4 = core::mem::zeroed::<BIT_DStream_t>();
-        let length1 = mem_read_le16(istart as *const c_void) as usize;
-        let length2 = mem_read_le16(istart.add(2) as *const c_void) as usize;
-        let length3 = mem_read_le16(istart.add(4) as *const c_void) as usize;
-        let length4 = cSrcSize.wrapping_sub(length1 + length2 + length3 + 6);
-        let istart1 = istart.add(6);
-        let istart2 = istart1.add(length1);
-        let istart3 = istart2.add(length2);
-        let istart4 = istart3.add(length3);
-        let segmentSize = (dstSize + 3) / 4;
-        let opStart2 = ostart.add(segmentSize);
-        let opStart3 = opStart2.add(segmentSize);
-        let opStart4 = opStart3.add(segmentSize);
+        /* Init */
+        let mut bitD1 = BIT_DStream_t::default();
+        let mut bitD2 = BIT_DStream_t::default();
+        let mut bitD3 = BIT_DStream_t::default();
+        let mut bitD4 = BIT_DStream_t::default();
+        let length1: usize = MEM_readLE16(istart as *const c_void) as usize;
+        let length2: usize = MEM_readLE16(istart.add(2) as *const c_void) as usize;
+        let length3: usize = MEM_readLE16(istart.add(4) as *const c_void) as usize;
+        let length4: usize = cSrcSize.wrapping_sub(
+            length1
+                .wrapping_add(length2)
+                .wrapping_add(length3)
+                .wrapping_add(6),
+        );
+        let istart1 = istart.add(6); /* jumpTable */
+        let istart2 = istart1.wrapping_add(length1);
+        let istart3 = istart2.wrapping_add(length2);
+        let istart4 = istart3.wrapping_add(length3);
+        let segmentSize: usize = (dstSize + 3) / 4;
+        let opStart2 = ostart.wrapping_add(segmentSize);
+        let opStart3 = opStart2.wrapping_add(segmentSize);
+        let opStart4 = opStart3.wrapping_add(segmentSize);
         let mut op1 = ostart;
         let mut op2 = opStart2;
         let mut op3 = opStart3;
         let mut op4 = opStart4;
         let dtd = HUF_getDTableDesc(DTable);
-        let dtLog = dtd.tableLog as u32;
-        let mut endSignal: u32 = 1;
+        let dtLog: U32 = dtd.tableLog as U32;
+        let mut endSignal: U32 = 1;
 
         if length4 > cSrcSize {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
         if opStart4 > oend {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
         {
-            let e = bit_init_dstream(&mut bitD1, istart1 as *const c_void, length1);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD1, istart1 as *const c_void, length1);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
         {
-            let e = bit_init_dstream(&mut bitD2, istart2 as *const c_void, length2);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD2, istart2 as *const c_void, length2);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
         {
-            let e = bit_init_dstream(&mut bitD3, istart3 as *const c_void, length3);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD3, istart3 as *const c_void, length3);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
         {
-            let e = bit_init_dstream(&mut bitD4, istart4 as *const c_void, length4);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD4, istart4 as *const c_void, length4);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
 
         /* up to 16 symbols per loop (4 symbols per stream) in 64-bit mode */
-        if (oend as usize - op4 as usize) >= core::mem::size_of::<usize>() {
-            while (endSignal & ((op4 < olimit) as u32)) != 0 {
-                HUF_decode_symbolx1_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op4, &mut bitD4, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op4, &mut bitD4, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op4, &mut bitD4, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx1_0(&mut op4, &mut bitD4, dt, dtLog);
-                endSignal &= (bit_reload_dstream_fast(&mut bitD1) == BIT_DStream_unfinished) as u32;
-                endSignal &= (bit_reload_dstream_fast(&mut bitD2) == BIT_DStream_unfinished) as u32;
-                endSignal &= (bit_reload_dstream_fast(&mut bitD3) == BIT_DStream_unfinished) as u32;
-                endSignal &= (bit_reload_dstream_fast(&mut bitD4) == BIT_DStream_unfinished) as u32;
+        if oend.offset_from(op4) as usize >= core::mem::size_of::<usize>() {
+            while (endSignal & ((op4 < olimit) as U32)) != 0 {
+                HUF_DECODE_SYMBOLX1_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op4, &mut bitD4, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op4, &mut bitD4, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op4, &mut bitD4, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX1_0(&mut op4, &mut bitD4, dt, dtLog);
+                endSignal &= (BIT_reloadDStreamFast(&mut bitD1) == BIT_DStream_unfinished) as U32;
+                endSignal &= (BIT_reloadDStreamFast(&mut bitD2) == BIT_DStream_unfinished) as U32;
+                endSignal &= (BIT_reloadDStreamFast(&mut bitD3) == BIT_DStream_unfinished) as U32;
+                endSignal &= (BIT_reloadDStreamFast(&mut bitD4) == BIT_DStream_unfinished) as U32;
             }
         }
 
-        /* check corruption */
+        /* check corruption
+         * note : should not be necessary : op# advance in lock step, and we
+         *        control op4. */
         if op1 > opStart2 {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op2 > opStart3 {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op3 > opStart4 {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         /* note : op4 supposed already verified within main loop */
 
@@ -711,18 +786,21 @@ unsafe fn HUF_decompress4X1_usingDTable_internal_body(
 
         /* check */
         {
-            let endCheck = bit_end_of_dstream(&bitD1)
-                & bit_end_of_dstream(&bitD2)
-                & bit_end_of_dstream(&bitD3)
-                & bit_end_of_dstream(&bitD4);
+            let endCheck: U32 = BIT_endOfDStream(&bitD1)
+                & BIT_endOfDStream(&bitD2)
+                & BIT_endOfDStream(&bitD3)
+                & BIT_endOfDStream(&bitD4);
             if endCheck == 0 {
-                return error(code::CORRUPTION_DETECTED);
+                return ERROR(ZSTD_error_corruption_detected);
             }
         }
 
+        /* decoded size */
         dstSize
     }
 }
+
+/* HUF_NEED_BMI2_FUNCTION == 0, so `..._internal_bmi2` is not compiled. */
 
 unsafe fn HUF_decompress4X1_usingDTable_internal_default(
     dst: *mut c_void,
@@ -734,90 +812,128 @@ unsafe fn HUF_decompress4X1_usingDTable_internal_default(
     HUF_decompress4X1_usingDTable_internal_body(dst, dstSize, cSrc, cSrcSize, DTable)
 }
 
+/* ZSTD_ENABLE_ASM_X86_64_BMI2 == 0, so
+ * `HUF_decompress4X1_usingDTable_internal_fast_asm_loop` is not declared. */
+
+#[inline(always)]
+unsafe fn HUF_4X1_DECODE_SYMBOL(
+    bits: &mut [U64; 4],
+    op: &[*mut BYTE; 4],
+    dtable: *const U16,
+    stream: usize,
+    symbol: usize,
+) {
+    let index: c_int = (bits[stream] >> 53) as c_int;
+    let entry: c_int = *dtable.add(index as usize) as c_int;
+    bits[stream] = bits[stream].wrapping_shl((entry & 0x3F) as u32);
+    *op[stream].add(symbol) = ((entry >> 8) & 0xFF) as BYTE;
+}
+
+#[inline(always)]
+unsafe fn HUF_4X1_RELOAD_STREAM(
+    bits: &mut [U64; 4],
+    ip: &mut [*const BYTE; 4],
+    op: &mut [*mut BYTE; 4],
+    stream: usize,
+) {
+    let ctz: c_int = ZSTD_countTrailingZeros64(bits[stream]) as c_int;
+    let nbBits: c_int = ctz & 7;
+    let nbBytes: c_int = ctz >> 3;
+    op[stream] = op[stream].add(5);
+    ip[stream] = ip[stream].sub(nbBytes as usize);
+    bits[stream] = MEM_read64(ip[stream] as *const c_void) | 1;
+    bits[stream] = bits[stream].wrapping_shl(nbBits as u32);
+}
+
 unsafe fn HUF_decompress4X1_usingDTable_internal_fast_c_loop(args: *mut HUF_DecompressFastArgs) {
-    let mut bits: [u64; 4] = [0; 4];
-    let mut ip: [*const u8; 4] = [core::ptr::null(); 4];
-    let mut op: [*mut u8; 4] = [core::ptr::null_mut(); 4];
-    let dtable = (*args).dt as *const u16;
+    let mut bits: [U64; 4] = [0; 4];
+    let mut ip: [*const BYTE; 4] = [core::ptr::null(); 4];
+    let mut op: [*mut BYTE; 4] = [core::ptr::null_mut(); 4];
+    let dtable = (*args).dt as *const U16;
     let oend = (*args).oend;
     let ilowest = (*args).ilowest;
 
-    core::ptr::copy_nonoverlapping((*args).bits.as_ptr(), bits.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping((*args).ip.as_ptr(), ip.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping((*args).op.as_ptr(), op.as_mut_ptr(), 4);
+    /* Copy the arguments to local variables */
+    ZSTD_memcpy(
+        bits.as_mut_ptr() as *mut c_void,
+        (*args).bits.as_ptr() as *const c_void,
+        core::mem::size_of::<[U64; 4]>(),
+    );
+    ZSTD_memcpy(
+        ip.as_mut_ptr() as *mut c_void,
+        (*args).ip.as_ptr() as *const c_void,
+        core::mem::size_of::<[*const BYTE; 4]>(),
+    );
+    ZSTD_memcpy(
+        op.as_mut_ptr() as *mut c_void,
+        (*args).op.as_ptr() as *const c_void,
+        core::mem::size_of::<[*mut BYTE; 4]>(),
+    );
 
-    'outer: loop {
-        let olimit: *mut u8;
-        let mut stream: i32;
+    loop {
+        let olimit: *mut BYTE;
+        let mut stream: c_int;
 
         /* Compute olimit */
         {
-            let oiters = (oend as usize - op[3] as usize) / 5;
-            let iiters = (ip[0] as usize - ilowest as usize) / 7;
-            let iters = MIN(oiters, iiters);
-            let symbols = iters * 5;
+            /* Each iteration produces 5 output symbols per stream */
+            let oiters: usize = (oend.offset_from(op[3]) as usize) / 5;
+            /* Each iteration consumes up to 11 bits * 5 = 55 bits < 7 bytes
+             * per stream.
+             */
+            let iiters: usize = (ip[0].offset_from(ilowest) as usize) / 7;
+            /* We can safely run iters iterations before running bounds checks */
+            let iters: usize = MIN(oiters, iiters);
+            let symbols: usize = iters * 5;
 
+            /* We can simply check that op[3] < olimit, instead of checking all
+             * of our bounds, since we can't hit the other bounds until we've run
+             * iters iterations, which only happens when op[3] == olimit.
+             */
             olimit = op[3].add(symbols);
 
+            /* Exit fast decoding loop once we reach the end. */
             if op[3] == olimit {
-                break 'outer;
+                break;
             }
 
+            /* Exit the decoding loop if any input pointer has crossed the
+             * previous one. This indicates corruption, and a precondition
+             * to our loop is that ip[i] >= ip[0].
+             */
+            let mut crossed = false;
             stream = 1;
             while stream < 4 {
                 if ip[stream as usize] < ip[(stream - 1) as usize] {
-                    break 'outer;
+                    crossed = true;
+                    break;
                 }
                 stream += 1;
             }
+            if crossed {
+                break; /* goto _out */
+            }
         }
 
-        macro_rules! decode_symbol {
-            ($stream:expr, $symbol:expr) => {{
-                let index = (bits[$stream] >> 53) as usize;
-                let entry = *dtable.add(index) as i32;
-                bits[$stream] <<= (entry & 0x3F) as u32;
-                *op[$stream].add($symbol) = ((entry >> 8) & 0xFF) as u8;
-            }};
-        }
-        macro_rules! reload_stream {
-            ($stream:expr) => {{
-                let ctz = count_trailing_zeros64(bits[$stream]) as i32;
-                let nbBits = ctz & 7;
-                let nbBytes = ctz >> 3;
-                op[$stream] = op[$stream].add(5);
-                ip[$stream] = ip[$stream].sub(nbBytes as usize);
-                bits[$stream] = mem_read64(ip[$stream] as *const c_void) | 1;
-                bits[$stream] <<= nbBits as u32;
-            }};
-        }
-
+        /* Manually unrolled in the C source; the semantics are identical. */
         loop {
-            decode_symbol!(0, 0);
-            decode_symbol!(1, 0);
-            decode_symbol!(2, 0);
-            decode_symbol!(3, 0);
-            decode_symbol!(0, 1);
-            decode_symbol!(1, 1);
-            decode_symbol!(2, 1);
-            decode_symbol!(3, 1);
-            decode_symbol!(0, 2);
-            decode_symbol!(1, 2);
-            decode_symbol!(2, 2);
-            decode_symbol!(3, 2);
-            decode_symbol!(0, 3);
-            decode_symbol!(1, 3);
-            decode_symbol!(2, 3);
-            decode_symbol!(3, 3);
-            decode_symbol!(0, 4);
-            decode_symbol!(1, 4);
-            decode_symbol!(2, 4);
-            decode_symbol!(3, 4);
+            /* Decode 5 symbols in each of the 4 streams */
+            let mut symbol: usize = 0;
+            while symbol < 5 {
+                let mut st: usize = 0;
+                while st < 4 {
+                    HUF_4X1_DECODE_SYMBOL(&mut bits, &op, dtable, st, symbol);
+                    st += 1;
+                }
+                symbol += 1;
+            }
 
-            reload_stream!(0);
-            reload_stream!(1);
-            reload_stream!(2);
-            reload_stream!(3);
+            /* Reload each of the 4 the bitstreams */
+            let mut st: usize = 0;
+            while st < 4 {
+                HUF_4X1_RELOAD_STREAM(&mut bits, &mut ip, &mut op, st);
+                st += 1;
+            }
 
             if !(op[3] < olimit) {
                 break;
@@ -825,12 +941,29 @@ unsafe fn HUF_decompress4X1_usingDTable_internal_fast_c_loop(args: *mut HUF_Deco
         }
     }
 
-    /* _out: Save the final values back to args. */
-    core::ptr::copy_nonoverlapping(bits.as_ptr(), (*args).bits.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping(ip.as_ptr(), (*args).ip.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping(op.as_ptr(), (*args).op.as_mut_ptr(), 4);
+    /* _out: save the final values of each of the state variables back to args. */
+    ZSTD_memcpy(
+        (*args).bits.as_mut_ptr() as *mut c_void,
+        bits.as_ptr() as *const c_void,
+        core::mem::size_of::<[U64; 4]>(),
+    );
+    ZSTD_memcpy(
+        (*args).ip.as_mut_ptr() as *mut c_void,
+        ip.as_ptr() as *const c_void,
+        core::mem::size_of::<[*const BYTE; 4]>(),
+    );
+    ZSTD_memcpy(
+        (*args).op.as_mut_ptr() as *mut c_void,
+        op.as_ptr() as *const c_void,
+        core::mem::size_of::<[*mut BYTE; 4]>(),
+    );
 }
 
+/**
+ * @returns @p dstSize on success (>= 6)
+ *          0 if the fallback implementation should be used
+ *          An error if an error occurred
+ */
 unsafe fn HUF_decompress4X1_usingDTable_internal_fast(
     dst: *mut c_void,
     dstSize: usize,
@@ -840,12 +973,12 @@ unsafe fn HUF_decompress4X1_usingDTable_internal_fast(
     loopFn: HUF_DecompressFastLoopFn,
 ) -> usize {
     let dt = DTable.add(1) as *const c_void;
-    let _ilowest = cSrc as *const u8;
-    let oend = ZSTD_maybeNullPtrAdd(dst as *mut u8, dstSize as isize);
-    let mut args: HUF_DecompressFastArgs = core::mem::zeroed();
+    let _ilowest = cSrc as *const BYTE;
+    let oend = ZSTD_maybeNullPtrAdd(dst as *mut BYTE, dstSize as isize);
+    let mut args = HUF_DecompressFastArgs::default();
     {
         let ret = HUF_DecompressFastArgs_init(&mut args, dst, dstSize, cSrc, cSrcSize, DTable);
-        if err_is_error(ret) != 0 {
+        if ERR_isError(ret) != 0 {
             return ret;
         }
         if ret == 0 {
@@ -857,45 +990,50 @@ unsafe fn HUF_decompress4X1_usingDTable_internal_fast(
 
     /* finish bit streams one by one. */
     {
-        let segmentSize = (dstSize + 3) / 4;
-        let mut segmentEnd = dst as *mut u8;
-        let mut i = 0i32;
+        let segmentSize: usize = (dstSize + 3) / 4;
+        let mut segmentEnd = dst as *mut BYTE;
+        let mut i: c_int = 0;
         while i < 4 {
-            let mut bit = core::mem::zeroed::<BIT_DStream_t>();
-            if segmentSize <= (oend as usize - segmentEnd as usize) {
+            let mut bit = BIT_DStream_t::default();
+            if segmentSize <= oend.offset_from(segmentEnd) as usize {
                 segmentEnd = segmentEnd.add(segmentSize);
             } else {
                 segmentEnd = oend;
             }
-            let e = HUF_initRemainingDStream(&mut bit, &args, i, segmentEnd);
-            if err_is_error(e) != 0 {
-                return e;
+            {
+                let e = HUF_initRemainingDStream(&mut bit, &args, i, segmentEnd);
+                if ERR_isError(e) != 0 {
+                    return e;
+                }
             }
-            args.op[i as usize] = args.op[i as usize].add(HUF_decodeStreamX1(
+            /* Decompress and validate that we've produced exactly the expected length. */
+            let produced = HUF_decodeStreamX1(
                 args.op[i as usize],
                 &mut bit,
                 segmentEnd,
                 dt as *const HUF_DEltX1,
                 HUF_DECODER_FAST_TABLELOG,
-            ));
+            );
+            args.op[i as usize] = args.op[i as usize].add(produced);
             if args.op[i as usize] != segmentEnd {
-                return error(code::CORRUPTION_DETECTED);
+                return ERROR(ZSTD_error_corruption_detected);
             }
             i += 1;
         }
     }
 
+    /* decoded size */
     dstSize
 }
 
-/* HUF_DGEN(HUF_decompress1X1_usingDTable_internal) : DYNAMIC_BMI2=0 variant */
+/* HUF_DGEN(HUF_decompress1X1_usingDTable_internal) with DYNAMIC_BMI2 == 0 */
 unsafe fn HUF_decompress1X1_usingDTable_internal(
     dst: *mut c_void,
     dstSize: usize,
     cSrc: *const c_void,
     cSrcSize: usize,
     DTable: *const HUF_DTable,
-    _flags: i32,
+    _flags: c_int,
 ) -> usize {
     HUF_decompress1X1_usingDTable_internal_body(dst, dstSize, cSrc, cSrcSize, DTable)
 }
@@ -906,15 +1044,14 @@ unsafe fn HUF_decompress4X1_usingDTable_internal(
     cSrc: *const c_void,
     cSrcSize: usize,
     DTable: *const HUF_DTable,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let fallbackFn: HUF_DecompressUsingDTableFn =
-        HUF_decompress4X1_usingDTable_internal_default;
-    let loopFn: HUF_DecompressFastLoopFn =
-        HUF_decompress4X1_usingDTable_internal_fast_c_loop;
+    let fallbackFn: HUF_DecompressUsingDTableFn = HUF_decompress4X1_usingDTable_internal_default;
+    let loopFn: HUF_DecompressFastLoopFn = HUF_decompress4X1_usingDTable_internal_fast_c_loop;
 
-    /* DYNAMIC_BMI2=0, ZSTD_ENABLE_ASM_X86_64_BMI2=0 */
-    if HUF_ENABLE_FAST_DECODE && (flags & HUF_flags_disableFast) == 0 {
+    /* DYNAMIC_BMI2 == 0 and ZSTD_ENABLE_ASM_X86_64_BMI2 == 0 : nothing to select */
+
+    if HUF_ENABLE_FAST_DECODE != 0 && (flags & HUF_flags_disableFast) == 0 {
         let ret =
             HUF_decompress4X1_usingDTable_internal_fast(dst, dstSize, cSrc, cSrcSize, DTable, loopFn);
         if ret != 0 {
@@ -932,81 +1069,86 @@ unsafe fn HUF_decompress4X1_DCtx_wksp(
     mut cSrcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let mut ip = cSrc as *const u8;
+    let mut ip = cSrc as *const BYTE;
 
     let hSize = HUF_readDTableX1_wksp(dctx, cSrc, cSrcSize, workSpace, wkspSize, flags);
-    if err_is_error(hSize) != 0 {
+    if ERR_isError(hSize) != 0 {
         return hSize;
     }
     if hSize >= cSrcSize {
-        return error(code::SRCSIZE_WRONG);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     ip = ip.add(hSize);
     cSrcSize -= hSize;
 
-    HUF_decompress4X1_usingDTable_internal(dst, dstSize, ip as *const c_void, cSrcSize, dctx, flags)
+    HUF_decompress4X1_usingDTable_internal(
+        dst,
+        dstSize,
+        ip as *const c_void,
+        cSrcSize,
+        dctx,
+        flags,
+    )
 }
 
 /* *************************/
 /* double-symbols decoding */
 /* *************************/
+
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone, Default)]
 struct HUF_DEltX2 {
-    sequence: u16,
-    nbBits: u8,
-    length: u8,
-}
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct sortedSymbol_t {
-    symbol: u8,
+    sequence: U16,
+    nbBits: BYTE,
+    length: BYTE,
 }
 
-/* rankValCol_t = U32[HUF_TABLELOG_MAX+1]; rankVal_t = rankValCol_t[HUF_TABLELOG_MAX] */
-const RANKVALCOL_LEN: usize = (HUF_TABLELOG_MAX + 1) as usize;
-const RANKVAL_ROWS: usize = HUF_TABLELOG_MAX as usize;
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+struct sortedSymbol_t {
+    symbol: BYTE,
+}
+
+type rankValCol_t = [U32; HUF_TABLELOG_MAX as usize + 1];
+type rankVal_t = [rankValCol_t; HUF_TABLELOG_MAX as usize];
 
 /**
  * Constructs a HUF_DEltX2 in a U32.
  */
-#[inline]
-fn HUF_buildDEltX2U32(symbol: u32, nbBits: u32, baseSeq: u32, level: i32) -> u32 {
-    let seq: u32;
-    if mem_is_little_endian() != 0 {
+unsafe fn HUF_buildDEltX2U32(symbol: U32, nbBits: U32, baseSeq: U32, level: c_int) -> U32 {
+    let seq: U32;
+    if MEM_isLittleEndian() != 0 {
         seq = if level == 1 {
             symbol
         } else {
             baseSeq.wrapping_add(symbol << 8)
         };
-        seq.wrapping_add(nbBits << 16).wrapping_add((level as u32) << 24)
+        seq.wrapping_add(nbBits << 16)
+            .wrapping_add((level as U32) << 24)
     } else {
         seq = if level == 1 {
             symbol << 8
         } else {
             (baseSeq << 8).wrapping_add(symbol)
         };
-        (seq << 16).wrapping_add(nbBits << 8).wrapping_add(level as u32)
+        (seq << 16)
+            .wrapping_add(nbBits << 8)
+            .wrapping_add(level as U32)
     }
 }
 
 /**
  * Constructs a HUF_DEltX2.
  */
-#[inline]
-unsafe fn HUF_buildDEltX2(symbol: u32, nbBits: u32, baseSeq: u32, level: i32) -> HUF_DEltX2 {
-    let mut DElt = HUF_DEltX2 {
-        sequence: 0,
-        nbBits: 0,
-        length: 0,
-    };
-    let val = HUF_buildDEltX2U32(symbol, nbBits, baseSeq, level);
-    core::ptr::copy_nonoverlapping(
-        &val as *const u32 as *const u8,
-        &mut DElt as *mut HUF_DEltX2 as *mut u8,
-        core::mem::size_of::<u32>(),
+unsafe fn HUF_buildDEltX2(symbol: U32, nbBits: U32, baseSeq: U32, level: c_int) -> HUF_DEltX2 {
+    let mut DElt = HUF_DEltX2::default();
+    let val: U32 = HUF_buildDEltX2U32(symbol, nbBits, baseSeq, level);
+    ZSTD_memcpy(
+        &mut DElt as *mut HUF_DEltX2 as *mut c_void,
+        &val as *const U32 as *const c_void,
+        core::mem::size_of::<U32>(),
     );
     DElt
 }
@@ -1014,10 +1156,9 @@ unsafe fn HUF_buildDEltX2(symbol: u32, nbBits: u32, baseSeq: u32, level: i32) ->
 /**
  * Constructs 2 HUF_DEltX2s and packs them into a U64.
  */
-#[inline]
-fn HUF_buildDEltX2U64(symbol: u32, nbBits: u32, baseSeq: u16, level: i32) -> u64 {
-    let DElt = HUF_buildDEltX2U32(symbol, nbBits, baseSeq as u32, level);
-    (DElt as u64).wrapping_add((DElt as u64) << 32)
+unsafe fn HUF_buildDEltX2U64(symbol: U32, nbBits: U32, baseSeq: U16, level: c_int) -> U64 {
+    let DElt: U32 = HUF_buildDEltX2U32(symbol, nbBits, baseSeq as U32, level);
+    (DElt as U64).wrapping_add((DElt as U64) << 32)
 }
 
 /**
@@ -1028,18 +1169,18 @@ unsafe fn HUF_fillDTableX2ForWeight(
     mut DTableRank: *mut HUF_DEltX2,
     begin: *const sortedSymbol_t,
     end: *const sortedSymbol_t,
-    nbBits: u32,
-    tableLog: u32,
-    baseSeq: u16,
-    level: i32,
+    nbBits: U32,
+    tableLog: U32,
+    baseSeq: U16,
+    level: c_int,
 ) {
-    let length: u32 = 1u32 << ((tableLog.wrapping_sub(nbBits)) & 0x1F);
+    let length: U32 = 1u32.wrapping_shl(tableLog.wrapping_sub(nbBits) & 0x1F);
     let mut ptr: *const sortedSymbol_t;
     match length {
         1 => {
             ptr = begin;
             while ptr != end {
-                let DElt = HUF_buildDEltX2((*ptr).symbol as u32, nbBits, baseSeq as u32, level);
+                let DElt = HUF_buildDEltX2((*ptr).symbol as U32, nbBits, baseSeq as U32, level);
                 *DTableRank = DElt;
                 DTableRank = DTableRank.add(1);
                 ptr = ptr.add(1);
@@ -1048,7 +1189,7 @@ unsafe fn HUF_fillDTableX2ForWeight(
         2 => {
             ptr = begin;
             while ptr != end {
-                let DElt = HUF_buildDEltX2((*ptr).symbol as u32, nbBits, baseSeq as u32, level);
+                let DElt = HUF_buildDEltX2((*ptr).symbol as U32, nbBits, baseSeq as U32, level);
                 *DTableRank.add(0) = DElt;
                 *DTableRank.add(1) = DElt;
                 DTableRank = DTableRank.add(2);
@@ -1058,16 +1199,16 @@ unsafe fn HUF_fillDTableX2ForWeight(
         4 => {
             ptr = begin;
             while ptr != end {
-                let DEltX2 = HUF_buildDEltX2U64((*ptr).symbol as u32, nbBits, baseSeq, level);
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTableRank.add(0) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                let DEltX2: U64 = HUF_buildDEltX2U64((*ptr).symbol as U32, nbBits, baseSeq, level);
+                ZSTD_memcpy(
+                    DTableRank.add(0) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTableRank.add(2) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTableRank.add(2) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
                 DTableRank = DTableRank.add(4);
                 ptr = ptr.add(1);
@@ -1076,26 +1217,26 @@ unsafe fn HUF_fillDTableX2ForWeight(
         8 => {
             ptr = begin;
             while ptr != end {
-                let DEltX2 = HUF_buildDEltX2U64((*ptr).symbol as u32, nbBits, baseSeq, level);
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTableRank.add(0) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                let DEltX2: U64 = HUF_buildDEltX2U64((*ptr).symbol as U32, nbBits, baseSeq, level);
+                ZSTD_memcpy(
+                    DTableRank.add(0) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTableRank.add(2) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTableRank.add(2) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTableRank.add(4) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTableRank.add(4) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTableRank.add(6) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTableRank.add(6) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
                 DTableRank = DTableRank.add(8);
                 ptr = ptr.add(1);
@@ -1104,28 +1245,28 @@ unsafe fn HUF_fillDTableX2ForWeight(
         _ => {
             ptr = begin;
             while ptr != end {
-                let DEltX2 = HUF_buildDEltX2U64((*ptr).symbol as u32, nbBits, baseSeq, level);
+                let DEltX2: U64 = HUF_buildDEltX2U64((*ptr).symbol as U32, nbBits, baseSeq, level);
                 let DTableRankEnd = DTableRank.add(length as usize);
                 while DTableRank != DTableRankEnd {
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTableRank.add(0) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTableRank.add(0) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTableRank.add(2) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTableRank.add(2) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTableRank.add(4) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTableRank.add(4) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTableRank.add(6) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTableRank.add(6) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
                     DTableRank = DTableRank.add(8);
                 }
@@ -1139,62 +1280,71 @@ unsafe fn HUF_fillDTableX2ForWeight(
  * `rankValOrigin` must be a table of at least (HUF_TABLELOG_MAX + 1) U32 */
 unsafe fn HUF_fillDTableX2Level2(
     DTable: *mut HUF_DEltX2,
-    targetLog: u32,
-    consumedBits: u32,
-    rankVal: *const u32,
-    minWeight: i32,
-    maxWeight1: i32,
+    targetLog: U32,
+    consumedBits: U32,
+    rankVal: *const U32,
+    minWeight: c_int,
+    maxWeight1: c_int,
     sortedSymbols: *const sortedSymbol_t,
-    rankStart: *const u32,
-    nbBitsBaseline: u32,
-    baseSeq: u16,
+    rankStart: *const U32,
+    nbBitsBaseline: U32,
+    baseSeq: U16,
 ) {
+    /* Fill skipped values (all positions up to rankVal[minWeight]).
+     * These are positions only get a single symbol because the combined weight
+     * is too large.
+     */
     if minWeight > 1 {
-        let length: u32 = 1u32 << ((targetLog.wrapping_sub(consumedBits)) & 0x1F);
-        let DEltX2 = HUF_buildDEltX2U64(baseSeq as u32, consumedBits, 0, 1);
-        let skipSize = *rankVal.add(minWeight as usize) as i32;
+        let length: U32 = 1u32.wrapping_shl(targetLog.wrapping_sub(consumedBits) & 0x1F);
+        let DEltX2: U64 = HUF_buildDEltX2U64(
+            baseSeq as U32,
+            consumedBits,
+            /* baseSeq */ 0,
+            /* level */ 1,
+        );
+        let skipSize: c_int = *rankVal.add(minWeight as usize) as c_int;
         match length {
             2 => {
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTable as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTable as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
             }
             4 => {
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTable.add(0) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTable.add(0) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
-                core::ptr::copy_nonoverlapping(
-                    &DEltX2 as *const u64 as *const u8,
-                    DTable.add(2) as *mut u8,
-                    core::mem::size_of::<u64>(),
+                ZSTD_memcpy(
+                    DTable.add(2) as *mut c_void,
+                    &DEltX2 as *const U64 as *const c_void,
+                    core::mem::size_of::<U64>(),
                 );
             }
             _ => {
-                let mut i = 0i32;
+                let mut i: c_int = 0;
                 while i < skipSize {
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTable.offset((i + 0) as isize) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTable.offset(i as isize + 0) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTable.offset((i + 2) as isize) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTable.offset(i as isize + 2) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTable.offset((i + 4) as isize) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTable.offset(i as isize + 4) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
-                    core::ptr::copy_nonoverlapping(
-                        &DEltX2 as *const u64 as *const u8,
-                        DTable.offset((i + 6) as isize) as *mut u8,
-                        core::mem::size_of::<u64>(),
+                    ZSTD_memcpy(
+                        DTable.offset(i as isize + 6) as *mut c_void,
+                        &DEltX2 as *const U64 as *const c_void,
+                        core::mem::size_of::<U64>(),
                     );
                     i += 8;
                 }
@@ -1204,12 +1354,12 @@ unsafe fn HUF_fillDTableX2Level2(
 
     /* Fill each of the second level symbols by weight. */
     {
-        let mut w = minWeight;
+        let mut w: c_int = minWeight;
         while w < maxWeight1 {
-            let begin = *rankStart.add(w as usize) as i32;
-            let end = *rankStart.add((w + 1) as usize) as i32;
-            let nbBits = nbBitsBaseline.wrapping_sub(w as u32);
-            let totalBits = nbBits.wrapping_add(consumedBits);
+            let begin: c_int = *rankStart.add(w as usize) as c_int;
+            let end: c_int = *rankStart.add((w + 1) as usize) as c_int;
+            let nbBits: U32 = nbBitsBaseline.wrapping_sub(w as U32);
+            let totalBits: U32 = nbBits.wrapping_add(consumedBits);
             HUF_fillDTableX2ForWeight(
                 DTable.offset(*rankVal.add(w as usize) as isize),
                 sortedSymbols.offset(begin as isize),
@@ -1217,7 +1367,7 @@ unsafe fn HUF_fillDTableX2Level2(
                 totalBits,
                 targetLog,
                 baseSeq,
-                2,
+                /* level */ 2,
             );
             w += 1;
         }
@@ -1226,49 +1376,54 @@ unsafe fn HUF_fillDTableX2Level2(
 
 unsafe fn HUF_fillDTableX2(
     DTable: *mut HUF_DEltX2,
-    targetLog: u32,
+    targetLog: U32,
     sortedList: *const sortedSymbol_t,
-    rankStart: *const u32,
-    rankValOrigin: *mut [u32; RANKVALCOL_LEN],
-    maxWeight: u32,
-    nbBitsBaseline: u32,
+    rankStart: *const U32,
+    rankValOrigin: *mut rankValCol_t,
+    maxWeight: U32,
+    nbBitsBaseline: U32,
 ) {
-    let rankVal = (*rankValOrigin.add(0)).as_mut_ptr();
-    let scaleLog = nbBitsBaseline as i32 - targetLog as i32;
-    let minBits = nbBitsBaseline.wrapping_sub(maxWeight);
-    let mut w: i32;
-    let wEnd = maxWeight as i32 + 1;
+    let rankVal = rankValOrigin as *const U32;
+    /* note : targetLog >= srcLog, hence scaleLog <= 1 */
+    let scaleLog: c_int = nbBitsBaseline.wrapping_sub(targetLog) as c_int;
+    let minBits: U32 = nbBitsBaseline.wrapping_sub(maxWeight);
+    let mut w: c_int;
+    let wEnd: c_int = maxWeight as c_int + 1;
 
+    /* Fill DTable in order of weight. */
     w = 1;
     while w < wEnd {
-        let begin = *rankStart.add(w as usize) as i32;
-        let end = *rankStart.add((w + 1) as usize) as i32;
-        let nbBits = nbBitsBaseline.wrapping_sub(w as u32);
+        let begin: c_int = *rankStart.add(w as usize) as c_int;
+        let end: c_int = *rankStart.add((w + 1) as usize) as c_int;
+        let nbBits: U32 = nbBitsBaseline.wrapping_sub(w as U32);
 
         if targetLog.wrapping_sub(nbBits) >= minBits {
             /* Enough room for a second symbol. */
-            let mut start = *rankVal.add(w as usize) as i32;
-            let length: u32 = 1u32 << ((targetLog.wrapping_sub(nbBits)) & 0x1F);
-            let mut minWeight = nbBits as i32 + scaleLog;
-            let mut s: i32;
+            let mut start: c_int = *rankVal.add(w as usize) as c_int;
+            let length: U32 = 1u32.wrapping_shl(targetLog.wrapping_sub(nbBits) & 0x1F);
+            let mut minWeight: c_int = nbBits as c_int + scaleLog;
+            let mut s: c_int;
             if minWeight < 1 {
                 minWeight = 1;
             }
+            /* Fill the DTable for every symbol of weight w.
+             * These symbols get at least 1 second symbol.
+             */
             s = begin;
             while s != end {
                 HUF_fillDTableX2Level2(
                     DTable.offset(start as isize),
                     targetLog,
                     nbBits,
-                    (*rankValOrigin.add(nbBits as usize)).as_ptr(),
+                    rankValOrigin.add(nbBits as usize) as *const U32,
                     minWeight,
                     wEnd,
                     sortedList,
                     rankStart,
                     nbBitsBaseline,
-                    (*sortedList.offset(s as isize)).symbol as u16,
+                    (*sortedList.offset(s as isize)).symbol as U16,
                 );
-                start += length as i32;
+                start += length as c_int;
                 s += 1;
             }
         } else {
@@ -1279,8 +1434,8 @@ unsafe fn HUF_fillDTableX2(
                 sortedList.offset(end as isize),
                 nbBits,
                 targetLog,
-                0,
-                1,
+                /* baseSeq */ 0,
+                /* level */ 1,
             );
         }
         w += 1;
@@ -1289,12 +1444,12 @@ unsafe fn HUF_fillDTableX2(
 
 #[repr(C)]
 struct HUF_ReadDTableX2_Workspace {
-    rankVal: [[u32; RANKVALCOL_LEN]; RANKVAL_ROWS],
-    rankStats: [u32; (HUF_TABLELOG_MAX + 1) as usize],
-    rankStart0: [u32; (HUF_TABLELOG_MAX + 3) as usize],
-    sortedSymbol: [sortedSymbol_t; (HUF_SYMBOLVALUE_MAX + 1) as usize],
-    weightList: [u8; (HUF_SYMBOLVALUE_MAX + 1) as usize],
-    calleeWksp: [u32; HUF_READ_STATS_WORKSPACE_SIZE_U32],
+    rankVal: rankVal_t,
+    rankStats: [U32; HUF_TABLELOG_MAX as usize + 1],
+    rankStart0: [U32; HUF_TABLELOG_MAX as usize + 3],
+    sortedSymbol: [sortedSymbol_t; HUF_SYMBOLVALUE_MAX as usize + 1],
+    weightList: [BYTE; HUF_SYMBOLVALUE_MAX as usize + 1],
+    calleeWksp: [U32; HUF_READ_STATS_WORKSPACE_SIZE_U32],
 }
 
 #[unsafe(no_mangle)]
@@ -1304,43 +1459,44 @@ pub unsafe extern "C" fn HUF_readDTableX2_wksp(
     srcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let mut tableLog: u32 = 0;
-    let mut maxW: u32;
-    let mut nbSymbols: u32 = 0;
+    let mut tableLog: U32 = 0;
+    let mut maxW: U32;
+    let mut nbSymbols: U32 = 0;
     let mut dtd = HUF_getDTableDesc(DTable);
-    let mut maxTableLog = dtd.maxTableLog as u32;
+    let mut maxTableLog: U32 = dtd.maxTableLog as U32;
     let iSize: usize;
-    let dtPtr = DTable.add(1) as *mut c_void;
+    let dtPtr = DTable.add(1) as *mut c_void; /* force compiler to avoid strict-aliasing */
     let dt = dtPtr as *mut HUF_DEltX2;
-    let rankStart: *mut u32;
+    let rankStart: *mut U32;
 
     let wksp = workSpace as *mut HUF_ReadDTableX2_Workspace;
 
     if core::mem::size_of::<HUF_ReadDTableX2_Workspace>() > wkspSize {
-        return error(code::GENERIC);
+        return ERROR(ZSTD_error_GENERIC);
     }
 
     rankStart = (*wksp).rankStart0.as_mut_ptr().add(1);
-    core::ptr::write_bytes(
-        (*wksp).rankStats.as_mut_ptr() as *mut u8,
+    ZSTD_memset(
+        (*wksp).rankStats.as_mut_ptr() as *mut c_void,
         0,
         core::mem::size_of_val(&(*wksp).rankStats),
     );
-    core::ptr::write_bytes(
-        (*wksp).rankStart0.as_mut_ptr() as *mut u8,
+    ZSTD_memset(
+        (*wksp).rankStart0.as_mut_ptr() as *mut c_void,
         0,
         core::mem::size_of_val(&(*wksp).rankStart0),
     );
 
     if maxTableLog > HUF_TABLELOG_MAX {
-        return error(code::TABLELOG_TOOLARGE);
+        return ERROR(ZSTD_error_tableLog_tooLarge);
     }
+    /* ZSTD_memset(weightList, 0, sizeof(weightList)); is not necessary */
 
     iSize = HUF_readStats_wksp(
         (*wksp).weightList.as_mut_ptr(),
-        (HUF_SYMBOLVALUE_MAX + 1) as usize,
+        HUF_SYMBOLVALUE_MAX as usize + 1,
         (*wksp).rankStats.as_mut_ptr(),
         &mut nbSymbols,
         &mut tableLog,
@@ -1350,13 +1506,13 @@ pub unsafe extern "C" fn HUF_readDTableX2_wksp(
         core::mem::size_of_val(&(*wksp).calleeWksp),
         flags,
     );
-    if err_is_error(iSize) != 0 {
+    if ERR_isError(iSize) != 0 {
         return iSize;
     }
 
     /* check result */
     if tableLog > maxTableLog {
-        return error(code::TABLELOG_TOOLARGE);
+        return ERROR(ZSTD_error_tableLog_tooLarge); /* DTable can't fit code depth */
     }
     if tableLog <= HUF_DECODER_FAST_TABLELOG && maxTableLog > HUF_DECODER_FAST_TABLELOG {
         maxTableLog = HUF_DECODER_FAST_TABLELOG;
@@ -1364,35 +1520,37 @@ pub unsafe extern "C" fn HUF_readDTableX2_wksp(
 
     /* find maxWeight */
     maxW = tableLog;
-    while (*wksp).rankStats[maxW as usize] == 0 {
-        maxW -= 1;
-    }
+    while *(*wksp).rankStats.as_ptr().add(maxW as usize) == 0 {
+        maxW = maxW.wrapping_sub(1);
+    } /* necessarily finds a solution before 0 */
 
     /* Get start index of each weight */
     {
-        let mut w: u32;
-        let mut nextRankStart: u32 = 0;
+        let mut w: U32;
+        let mut nextRankStart: U32 = 0;
         w = 1;
         while w < maxW + 1 {
-            let curr = nextRankStart;
-            nextRankStart += (*wksp).rankStats[w as usize];
+            let curr: U32 = nextRankStart;
+            nextRankStart = nextRankStart.wrapping_add((*wksp).rankStats[w as usize]);
             *rankStart.add(w as usize) = curr;
             w += 1;
         }
+        /* put all 0w symbols at the end of sorted list */
         *rankStart.add(0) = nextRankStart;
         *rankStart.add((maxW + 1) as usize) = nextRankStart;
     }
 
     /* sort symbols by weight */
     {
-        let mut s: u32 = 0;
+        let mut s: U32 = 0;
         while s < nbSymbols {
-            let w = (*wksp).weightList[s as usize] as u32;
-            let r = *rankStart.add(w as usize);
-            *rankStart.add(w as usize) += 1;
-            (*wksp).sortedSymbol[r as usize].symbol = s as u8;
+            let w: U32 = (*wksp).weightList[s as usize] as U32;
+            let r: U32 = *rankStart.add(w as usize);
+            *rankStart.add(w as usize) = r.wrapping_add(1);
+            (*wksp).sortedSymbol[r as usize].symbol = s as BYTE;
             s += 1;
         }
+        /* forget 0w symbols; this is beginning of weight(1) */
         *rankStart.add(0) = 0;
     }
 
@@ -1400,25 +1558,29 @@ pub unsafe extern "C" fn HUF_readDTableX2_wksp(
     {
         let rankVal0 = (*wksp).rankVal[0].as_mut_ptr();
         {
-            let rescale = (maxTableLog as i32 - tableLog as i32) - 1;
-            let mut nextRankVal: u32 = 0;
-            let mut w: u32 = 1;
+            /* tableLog <= maxTableLog */
+            let rescale: c_int = maxTableLog.wrapping_sub(tableLog).wrapping_sub(1) as c_int;
+            let mut nextRankVal: U32 = 0;
+            let mut w: U32 = 1;
             while w < maxW + 1 {
-                let curr = nextRankVal;
-                nextRankVal = nextRankVal
-                    .wrapping_add((*wksp).rankStats[w as usize] << ((w as i32 + rescale) as u32));
+                let curr: U32 = nextRankVal;
+                nextRankVal = nextRankVal.wrapping_add(
+                    (*wksp).rankStats[w as usize].wrapping_shl(w.wrapping_add(rescale as U32)),
+                );
                 *rankVal0.add(w as usize) = curr;
                 w += 1;
             }
         }
         {
-            let minBits = tableLog + 1 - maxW;
-            let mut consumed = minBits;
-            while consumed < maxTableLog - minBits + 1 {
-                let rankValPtr = (*wksp).rankVal[consumed as usize].as_mut_ptr();
-                let mut w: u32 = 1;
+            let minBits: U32 = tableLog + 1 - maxW;
+            let mut consumed: U32 = minBits;
+            while consumed < maxTableLog.wrapping_sub(minBits).wrapping_add(1) {
+                let rankValPtr =
+                (*wksp).rankVal.as_mut_ptr().add(consumed as usize) as *mut U32;
+                let mut w: U32 = 1;
                 while w < maxW + 1 {
-                    *rankValPtr.add(w as usize) = *rankVal0.add(w as usize) >> consumed;
+                    *rankValPtr.add(w as usize) =
+                        (*rankVal0.add(w as usize)).wrapping_shr(consumed);
                     w += 1;
                 }
                 consumed += 1;
@@ -1436,131 +1598,134 @@ pub unsafe extern "C" fn HUF_readDTableX2_wksp(
         tableLog + 1,
     );
 
-    dtd.tableLog = maxTableLog as u8;
+    dtd.tableLog = maxTableLog as BYTE;
     dtd.tableType = 1;
-    core::ptr::copy_nonoverlapping(
-        &dtd as *const DTableDesc as *const u8,
-        DTable as *mut u8,
+    ZSTD_memcpy(
+        DTable as *mut c_void,
+        &dtd as *const DTableDesc as *const c_void,
         core::mem::size_of::<DTableDesc>(),
     );
     iSize
 }
 
-#[inline]
+#[inline(always)]
 unsafe fn HUF_decodeSymbolX2(
     op: *mut c_void,
     DStream: *mut BIT_DStream_t,
     dt: *const HUF_DEltX2,
-    dtLog: u32,
-) -> u32 {
-    let val = bit_look_bits_fast(DStream, dtLog);
-    core::ptr::copy_nonoverlapping(
-        &(*dt.add(val)).sequence as *const u16 as *const u8,
-        op as *mut u8,
-        2,
-    );
-    bit_skip_bits(DStream, (*dt.add(val)).nbBits as u32);
-    (*dt.add(val)).length as u32
+    dtLog: U32,
+) -> U32 {
+    let val = BIT_lookBitsFast(DStream, dtLog); /* note : dtLog >= 1 */
+    let e = dt.add(val as usize);
+    ZSTD_memcpy(op, core::ptr::addr_of!((*e).sequence) as *const c_void, 2);
+    BIT_skipBits(DStream, (*e).nbBits as U32);
+    (*e).length as U32
 }
 
-#[inline]
+#[inline(always)]
 unsafe fn HUF_decodeLastSymbolX2(
     op: *mut c_void,
     DStream: *mut BIT_DStream_t,
     dt: *const HUF_DEltX2,
-    dtLog: u32,
-) -> u32 {
-    let val = bit_look_bits_fast(DStream, dtLog);
-    core::ptr::copy_nonoverlapping(
-        &(*dt.add(val)).sequence as *const u16 as *const u8,
-        op as *mut u8,
-        1,
-    );
-    if (*dt.add(val)).length == 1 {
-        bit_skip_bits(DStream, (*dt.add(val)).nbBits as u32);
+    dtLog: U32,
+) -> U32 {
+    let val = BIT_lookBitsFast(DStream, dtLog); /* note : dtLog >= 1 */
+    let e = dt.add(val as usize);
+    ZSTD_memcpy(op, core::ptr::addr_of!((*e).sequence) as *const c_void, 1);
+    if (*e).length == 1 {
+        BIT_skipBits(DStream, (*e).nbBits as U32);
     } else {
-        let bcBits = (core::mem::size_of_val(&(*DStream).bitContainer) * 8) as u32;
-        if (*DStream).bitsConsumed < bcBits {
-            bit_skip_bits(DStream, (*dt.add(val)).nbBits as u32);
-            if (*DStream).bitsConsumed > bcBits {
-                (*DStream).bitsConsumed = bcBits;
+        if ((*DStream).bitsConsumed as usize)
+            < core::mem::size_of::<BitContainerType>() * 8
+        {
+            BIT_skipBits(DStream, (*e).nbBits as U32);
+            if (*DStream).bitsConsumed as usize > core::mem::size_of::<BitContainerType>() * 8 {
+                /* ugly hack; works only because it's the last symbol. Note :
+                 * can't easily extract nbBits from just this symbol */
+                (*DStream).bitsConsumed =
+                    (core::mem::size_of::<BitContainerType>() * 8) as u32;
             }
         }
     }
     1
 }
 
-/* On 64-bit, all of _0/_1/_2 decode a symbol. */
-#[inline]
-unsafe fn HUF_decode_symbolx2_0(
-    ptr: &mut *mut u8,
-    ds: *mut BIT_DStream_t,
+/* HUF_DECODE_SYMBOLX2_0 / _1 / _2 : `_1` and `_2` are guarded by conditions
+ * that are always true for this build, so all three are identical. */
+#[inline(always)]
+unsafe fn HUF_DECODE_SYMBOLX2_0(
+    ptr: &mut *mut BYTE,
+    DStreamPtr: *mut BIT_DStream_t,
     dt: *const HUF_DEltX2,
-    dtLog: u32,
+    dtLog: U32,
 ) {
-    let adv = HUF_decodeSymbolX2(*ptr as *mut c_void, ds, dt, dtLog);
-    *ptr = (*ptr).add(adv as usize);
+    let n = HUF_decodeSymbolX2(*ptr as *mut c_void, DStreamPtr, dt, dtLog);
+    *ptr = (*ptr).add(n as usize);
 }
 
+#[inline(always)]
 unsafe fn HUF_decodeStreamX2(
-    mut p: *mut u8,
+    mut p: *mut BYTE,
     bitDPtr: *mut BIT_DStream_t,
-    pEnd: *mut u8,
+    pEnd: *mut BYTE,
     dt: *const HUF_DEltX2,
-    dtLog: u32,
+    dtLog: U32,
 ) -> usize {
     let pStart = p;
 
     /* up to 8 symbols at a time */
-    if (pEnd as usize - p as usize) >= core::mem::size_of_val(&(*bitDPtr).bitContainer) {
-        if dtLog <= 11 {
-            /* MEM_64bits() true */
+    if pEnd.offset_from(p) as usize >= core::mem::size_of::<BitContainerType>() {
+        if dtLog <= 11 && MEM_64bits() != 0 {
             /* up to 10 symbols at a time */
-            while ((bit_reload_dstream(bitDPtr) == BIT_DStream_unfinished) as i32
-                & ((p < pEnd.sub(9)) as i32))
+            while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) as c_int
+                & ((p < pEnd.wrapping_sub(9)) as c_int))
                 != 0
             {
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
             }
         } else {
             /* up to 8 symbols at a time */
-            while ((bit_reload_dstream(bitDPtr) == BIT_DStream_unfinished) as i32
-                & ((p < pEnd.sub(core::mem::size_of_val(&(*bitDPtr).bitContainer) - 1)) as i32))
+            while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) as c_int
+                & ((p < pEnd
+                    .wrapping_sub(core::mem::size_of::<BitContainerType>() - 1))
+                    as c_int))
                 != 0
             {
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
             }
         }
     } else {
-        bit_reload_dstream(bitDPtr);
+        BIT_reloadDStream(bitDPtr);
     }
 
     /* closer to end : up to 2 symbols at a time */
-    if (pEnd as usize - p as usize) >= 2 {
-        while ((bit_reload_dstream(bitDPtr) == BIT_DStream_unfinished) as i32
-            & ((p <= pEnd.sub(2)) as i32))
+    if pEnd.offset_from(p) as usize >= 2 {
+        while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) as c_int
+            & ((p <= pEnd.wrapping_sub(2)) as c_int))
             != 0
         {
-            HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
+            HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
         }
 
-        while p <= pEnd.sub(2) {
-            HUF_decode_symbolx2_0(&mut p, bitDPtr, dt, dtLog);
+        while p <= pEnd.wrapping_sub(2) {
+            /* no need to reload : reached the end of DStream */
+            HUF_DECODE_SYMBOLX2_0(&mut p, bitDPtr, dt, dtLog);
         }
     }
 
     if p < pEnd {
-        p = p.add(HUF_decodeLastSymbolX2(p as *mut c_void, bitDPtr, dt, dtLog) as usize);
+        let n = HUF_decodeLastSymbolX2(p as *mut c_void, bitDPtr, dt, dtLog);
+        p = p.add(n as usize);
     }
 
-    (p as usize - pStart as usize)
+    p.offset_from(pStart) as usize
 }
 
 unsafe fn HUF_decompress1X2_usingDTable_internal_body(
@@ -1570,32 +1735,39 @@ unsafe fn HUF_decompress1X2_usingDTable_internal_body(
     cSrcSize: usize,
     DTable: *const HUF_DTable,
 ) -> usize {
-    let mut bitD = core::mem::zeroed::<BIT_DStream_t>();
+    let mut bitD = BIT_DStream_t::default();
 
+    /* Init */
     {
-        let e = bit_init_dstream(&mut bitD, cSrc, cSrcSize);
-        if err_is_error(e) != 0 {
+        let e = BIT_initDStream(&mut bitD, cSrc, cSrcSize);
+        if ERR_isError(e) != 0 {
             return e;
         }
     }
 
+    /* decode */
     {
-        let ostart = dst as *mut u8;
+        let ostart = dst as *mut BYTE;
         let oend = ZSTD_maybeNullPtrAdd(ostart, dstSize as isize);
-        let dtPtr = DTable.add(1) as *const c_void;
+        let dtPtr = DTable.add(1) as *const c_void; /* force compiler to not use strict-aliasing */
         let dt = dtPtr as *const HUF_DEltX2;
         let dtd = HUF_getDTableDesc(DTable);
-        HUF_decodeStreamX2(ostart, &mut bitD, oend, dt, dtd.tableLog as u32);
+        HUF_decodeStreamX2(ostart, &mut bitD, oend, dt, dtd.tableLog as U32);
     }
 
-    if bit_end_of_dstream(&bitD) == 0 {
-        return error(code::CORRUPTION_DETECTED);
+    /* check */
+    if BIT_endOfDStream(&bitD) == 0 {
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
+    /* decoded size */
     dstSize
 }
 
-/* HUF_decompress4X2_usingDTable_internal_body(): @dstSize >= 6 */
+/* HUF_decompress4X2_usingDTable_internal_body():
+ * Conditions:
+ * @dstSize >= 6
+ */
 unsafe fn HUF_decompress4X2_usingDTable_internal_body(
     dst: *mut c_void,
     dstSize: usize,
@@ -1604,111 +1776,120 @@ unsafe fn HUF_decompress4X2_usingDTable_internal_body(
     DTable: *const HUF_DTable,
 ) -> usize {
     if cSrcSize < 10 {
-        return error(code::CORRUPTION_DETECTED);
+        /* strict minimum : jump table + 1 byte per stream */
+        return ERROR(ZSTD_error_corruption_detected);
     }
     if dstSize < 6 {
-        return error(code::CORRUPTION_DETECTED);
+        /* stream 4-split doesn't work */
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     {
-        let istart = cSrc as *const u8;
-        let ostart = dst as *mut u8;
-        let oend = ostart.add(dstSize);
-        let olimit = oend.sub(core::mem::size_of::<usize>() - 1);
+        let istart = cSrc as *const BYTE;
+        let ostart = dst as *mut BYTE;
+        let oend = ostart.wrapping_add(dstSize);
+        let olimit = oend.wrapping_sub(core::mem::size_of::<usize>() - 1);
         let dtPtr = DTable.add(1) as *const c_void;
         let dt = dtPtr as *const HUF_DEltX2;
 
-        let mut bitD1 = core::mem::zeroed::<BIT_DStream_t>();
-        let mut bitD2 = core::mem::zeroed::<BIT_DStream_t>();
-        let mut bitD3 = core::mem::zeroed::<BIT_DStream_t>();
-        let mut bitD4 = core::mem::zeroed::<BIT_DStream_t>();
-        let length1 = mem_read_le16(istart as *const c_void) as usize;
-        let length2 = mem_read_le16(istart.add(2) as *const c_void) as usize;
-        let length3 = mem_read_le16(istart.add(4) as *const c_void) as usize;
-        let length4 = cSrcSize.wrapping_sub(length1 + length2 + length3 + 6);
-        let istart1 = istart.add(6);
-        let istart2 = istart1.add(length1);
-        let istart3 = istart2.add(length2);
-        let istart4 = istart3.add(length3);
-        let segmentSize = (dstSize + 3) / 4;
-        let opStart2 = ostart.add(segmentSize);
-        let opStart3 = opStart2.add(segmentSize);
-        let opStart4 = opStart3.add(segmentSize);
+        /* Init */
+        let mut bitD1 = BIT_DStream_t::default();
+        let mut bitD2 = BIT_DStream_t::default();
+        let mut bitD3 = BIT_DStream_t::default();
+        let mut bitD4 = BIT_DStream_t::default();
+        let length1: usize = MEM_readLE16(istart as *const c_void) as usize;
+        let length2: usize = MEM_readLE16(istart.add(2) as *const c_void) as usize;
+        let length3: usize = MEM_readLE16(istart.add(4) as *const c_void) as usize;
+        let length4: usize = cSrcSize.wrapping_sub(
+            length1
+                .wrapping_add(length2)
+                .wrapping_add(length3)
+                .wrapping_add(6),
+        );
+        let istart1 = istart.add(6); /* jumpTable */
+        let istart2 = istart1.wrapping_add(length1);
+        let istart3 = istart2.wrapping_add(length2);
+        let istart4 = istart3.wrapping_add(length3);
+        let segmentSize: usize = (dstSize + 3) / 4;
+        let opStart2 = ostart.wrapping_add(segmentSize);
+        let opStart3 = opStart2.wrapping_add(segmentSize);
+        let opStart4 = opStart3.wrapping_add(segmentSize);
         let mut op1 = ostart;
         let mut op2 = opStart2;
         let mut op3 = opStart3;
         let mut op4 = opStart4;
-        let mut endSignal: u32 = 1;
+        let mut endSignal: U32 = 1;
         let dtd = HUF_getDTableDesc(DTable);
-        let dtLog = dtd.tableLog as u32;
+        let dtLog: U32 = dtd.tableLog as U32;
 
         if length4 > cSrcSize {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
         if opStart4 > oend {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected); /* overflow */
         }
         {
-            let e = bit_init_dstream(&mut bitD1, istart1 as *const c_void, length1);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD1, istart1 as *const c_void, length1);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
         {
-            let e = bit_init_dstream(&mut bitD2, istart2 as *const c_void, length2);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD2, istart2 as *const c_void, length2);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
         {
-            let e = bit_init_dstream(&mut bitD3, istart3 as *const c_void, length3);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD3, istart3 as *const c_void, length3);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
         {
-            let e = bit_init_dstream(&mut bitD4, istart4 as *const c_void, length4);
-            if err_is_error(e) != 0 {
+            let e = BIT_initDStream(&mut bitD4, istart4 as *const c_void, length4);
+            if ERR_isError(e) != 0 {
                 return e;
             }
         }
 
         /* 16-32 symbols per loop (4-8 symbols per stream) */
-        if (oend as usize - op4 as usize) >= core::mem::size_of::<usize>() {
-            while (endSignal & ((op4 < olimit) as u32)) != 0 {
-                /* non-clang generic path */
-                HUF_decode_symbolx2_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op4, &mut bitD4, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op4, &mut bitD4, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op4, &mut bitD4, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op1, &mut bitD1, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op2, &mut bitD2, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op3, &mut bitD3, dt, dtLog);
-                HUF_decode_symbolx2_0(&mut op4, &mut bitD4, dt, dtLog);
-                endSignal = ((bit_reload_dstream_fast(&mut bitD1) == BIT_DStream_unfinished) as u32
-                    & (bit_reload_dstream_fast(&mut bitD2) == BIT_DStream_unfinished) as u32
-                    & (bit_reload_dstream_fast(&mut bitD3) == BIT_DStream_unfinished) as u32
-                    & (bit_reload_dstream_fast(&mut bitD4) == BIT_DStream_unfinished) as u32);
+        if oend.offset_from(op4) as usize >= core::mem::size_of::<usize>() {
+            while (endSignal & ((op4 < olimit) as U32)) != 0 {
+                /* gcc build : the non-clang branch */
+                HUF_DECODE_SYMBOLX2_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op4, &mut bitD4, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op4, &mut bitD4, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op4, &mut bitD4, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op1, &mut bitD1, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op2, &mut bitD2, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op3, &mut bitD3, dt, dtLog);
+                HUF_DECODE_SYMBOLX2_0(&mut op4, &mut bitD4, dt, dtLog);
+                let r1 = (BIT_reloadDStreamFast(&mut bitD1) == BIT_DStream_unfinished) as U32;
+                let r2 = (BIT_reloadDStreamFast(&mut bitD2) == BIT_DStream_unfinished) as U32;
+                let r3 = (BIT_reloadDStreamFast(&mut bitD3) == BIT_DStream_unfinished) as U32;
+                let r4 = (BIT_reloadDStreamFast(&mut bitD4) == BIT_DStream_unfinished) as U32;
+                endSignal = r1 & r2 & r3 & r4;
             }
         }
 
         /* check corruption */
         if op1 > opStart2 {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op2 > opStart3 {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         if op3 > opStart4 {
-            return error(code::CORRUPTION_DETECTED);
+            return ERROR(ZSTD_error_corruption_detected);
         }
         /* note : op4 already verified within main loop */
 
@@ -1720,18 +1901,21 @@ unsafe fn HUF_decompress4X2_usingDTable_internal_body(
 
         /* check */
         {
-            let endCheck = bit_end_of_dstream(&bitD1)
-                & bit_end_of_dstream(&bitD2)
-                & bit_end_of_dstream(&bitD3)
-                & bit_end_of_dstream(&bitD4);
+            let endCheck: U32 = BIT_endOfDStream(&bitD1)
+                & BIT_endOfDStream(&bitD2)
+                & BIT_endOfDStream(&bitD3)
+                & BIT_endOfDStream(&bitD4);
             if endCheck == 0 {
-                return error(code::CORRUPTION_DETECTED);
+                return ERROR(ZSTD_error_corruption_detected);
             }
         }
 
+        /* decoded size */
         dstSize
     }
 }
+
+/* HUF_NEED_BMI2_FUNCTION == 0, so `..._internal_bmi2` is not compiled. */
 
 unsafe fn HUF_decompress4X2_usingDTable_internal_default(
     dst: *mut c_void,
@@ -1743,110 +1927,163 @@ unsafe fn HUF_decompress4X2_usingDTable_internal_default(
     HUF_decompress4X2_usingDTable_internal_body(dst, dstSize, cSrc, cSrcSize, DTable)
 }
 
+/* ZSTD_ENABLE_ASM_X86_64_BMI2 == 0, so
+ * `HUF_decompress4X2_usingDTable_internal_fast_asm_loop` is not declared. */
+
+/* HUF_4X2_DECODE_SYMBOL(_stream, _decode3) : the body only runs when
+ * `_decode3 != 0 || _stream != 3`. */
+#[inline(always)]
+unsafe fn HUF_4X2_DECODE_SYMBOL(
+    bits: &mut [U64; 4],
+    op: &mut [*mut BYTE; 4],
+    dtable: *const HUF_DEltX2,
+    stream: usize,
+    decode3: c_int,
+) {
+    if decode3 != 0 || stream != 3 {
+        let index: c_int = (bits[stream] >> 53) as c_int;
+        let entry: HUF_DEltX2 = *dtable.add(index as usize);
+        MEM_write16(op[stream] as *mut c_void, entry.sequence);
+        bits[stream] = bits[stream].wrapping_shl((entry.nbBits as c_int & 0x3F) as u32);
+        op[stream] = op[stream].add(entry.length as usize);
+    }
+}
+
+#[inline(always)]
+unsafe fn HUF_4X2_RELOAD_STREAM(
+    bits: &mut [U64; 4],
+    ip: &mut [*const BYTE; 4],
+    op: &mut [*mut BYTE; 4],
+    dtable: *const HUF_DEltX2,
+    stream: usize,
+) {
+    HUF_4X2_DECODE_SYMBOL(bits, op, dtable, 3, 1);
+    {
+        let ctz: c_int = ZSTD_countTrailingZeros64(bits[stream]) as c_int;
+        let nbBits: c_int = ctz & 7;
+        let nbBytes: c_int = ctz >> 3;
+        ip[stream] = ip[stream].sub(nbBytes as usize);
+        bits[stream] = MEM_read64(ip[stream] as *const c_void) | 1;
+        bits[stream] = bits[stream].wrapping_shl(nbBits as u32);
+    }
+}
+
 unsafe fn HUF_decompress4X2_usingDTable_internal_fast_c_loop(args: *mut HUF_DecompressFastArgs) {
-    let mut bits: [u64; 4] = [0; 4];
-    let mut ip: [*const u8; 4] = [core::ptr::null(); 4];
-    let mut op: [*mut u8; 4] = [core::ptr::null_mut(); 4];
-    let mut oend: [*mut u8; 4] = [core::ptr::null_mut(); 4];
+    let mut bits: [U64; 4] = [0; 4];
+    let mut ip: [*const BYTE; 4] = [core::ptr::null(); 4];
+    let mut op: [*mut BYTE; 4] = [core::ptr::null_mut(); 4];
+    let mut oend: [*mut BYTE; 4] = [core::ptr::null_mut(); 4];
     let dtable = (*args).dt as *const HUF_DEltX2;
     let ilowest = (*args).ilowest;
 
-    core::ptr::copy_nonoverlapping((*args).bits.as_ptr(), bits.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping((*args).ip.as_ptr(), ip.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping((*args).op.as_ptr(), op.as_mut_ptr(), 4);
+    /* Copy the arguments to local registers. */
+    ZSTD_memcpy(
+        bits.as_mut_ptr() as *mut c_void,
+        (*args).bits.as_ptr() as *const c_void,
+        core::mem::size_of::<[U64; 4]>(),
+    );
+    ZSTD_memcpy(
+        ip.as_mut_ptr() as *mut c_void,
+        (*args).ip.as_ptr() as *const c_void,
+        core::mem::size_of::<[*const BYTE; 4]>(),
+    );
+    ZSTD_memcpy(
+        op.as_mut_ptr() as *mut c_void,
+        (*args).op.as_ptr() as *const c_void,
+        core::mem::size_of::<[*mut BYTE; 4]>(),
+    );
 
     oend[0] = op[1];
     oend[1] = op[2];
     oend[2] = op[3];
     oend[3] = (*args).oend;
 
-    /* HUF_4X2_DECODE_SYMBOL(_stream, _decode3) */
-    macro_rules! decode_symbol {
-        ($stream:expr, $decode3:expr) => {{
-            if ($decode3 != 0) || ($stream != 3) {
-                let index = (bits[$stream] >> 53) as usize;
-                let entry = *dtable.add(index);
-                mem_write16(op[$stream] as *mut c_void, entry.sequence);
-                bits[$stream] <<= (entry.nbBits & 0x3F) as u32;
-                op[$stream] = op[$stream].add(entry.length as usize);
-            }
-        }};
-    }
-    /* HUF_4X2_RELOAD_STREAM(_stream) */
-    macro_rules! reload_stream {
-        ($stream:expr) => {{
-            decode_symbol!(3, 1);
-            {
-                let ctz = count_trailing_zeros64(bits[$stream]) as i32;
-                let nbBits = ctz & 7;
-                let nbBytes = ctz >> 3;
-                ip[$stream] = ip[$stream].sub(nbBytes as usize);
-                bits[$stream] = mem_read64(ip[$stream] as *const c_void) | 1;
-                bits[$stream] <<= nbBits as u32;
-            }
-        }};
-    }
-
-    'outer: loop {
-        let olimit: *mut u8;
-        let mut stream: i32;
+    loop {
+        let olimit: *mut BYTE;
+        let mut stream: c_int;
 
         /* Compute olimit */
         {
-            let mut iters = (ip[0] as usize - ilowest as usize) / 7;
+            /* Each loop does 5 table lookups for each of the 4 streams.
+             * Each table lookup consumes up to 11 bits of input, and produces
+             * up to 2 bytes of output.
+             */
+            /* We can consume up to 7 bytes of input per iteration per stream.
+             * We also know that each input pointer is >= ip[0]. So we can run
+             * iters loops before running out of input.
+             */
+            let mut iters: usize = (ip[0].offset_from(ilowest) as usize) / 7;
+            /* Each iteration can produce up to 10 bytes of output per stream.
+             * Each output stream my advance at different rates. So take the
+             * minimum number of safe iterations among all the output streams.
+             */
             stream = 0;
             while stream < 4 {
-                let oiters = (oend[stream as usize] as usize - op[stream as usize] as usize) / 10;
+                let oiters: usize =
+                    (oend[stream as usize].offset_from(op[stream as usize]) as usize) / 10;
                 iters = MIN(iters, oiters);
                 stream += 1;
             }
 
+            /* Each iteration produces at least 5 output symbols. So until
+             * op[3] crosses olimit, we know we haven't executed iters
+             * iterations yet. This saves us maintaining an iters counter,
+             * at the expense of computing the remaining # of iterations
+             * more frequently.
+             */
             olimit = op[3].add(iters * 5);
 
+            /* Exit the fast decoding loop once we reach the end. */
             if op[3] == olimit {
-                break 'outer;
+                break;
             }
 
+            /* Exit the decoding loop if any input pointer has crossed the
+             * previous one. This indicates corruption, and a precondition
+             * to our loop is that ip[i] >= ip[0].
+             */
+            let mut crossed = false;
             stream = 1;
             while stream < 4 {
                 if ip[stream as usize] < ip[(stream - 1) as usize] {
-                    break 'outer;
+                    crossed = true;
+                    break;
                 }
                 stream += 1;
             }
+            if crossed {
+                break; /* goto _out */
+            }
         }
 
+        /* Manually unrolled in the C source; the semantics are identical. */
         loop {
-            /* Decode 5 symbols from each of the first 3 streams (decode3=0). */
-            decode_symbol!(0, 0);
-            decode_symbol!(1, 0);
-            decode_symbol!(2, 0);
-            decode_symbol!(3, 0);
-            decode_symbol!(0, 0);
-            decode_symbol!(1, 0);
-            decode_symbol!(2, 0);
-            decode_symbol!(3, 0);
-            decode_symbol!(0, 0);
-            decode_symbol!(1, 0);
-            decode_symbol!(2, 0);
-            decode_symbol!(3, 0);
-            decode_symbol!(0, 0);
-            decode_symbol!(1, 0);
-            decode_symbol!(2, 0);
-            decode_symbol!(3, 0);
-            decode_symbol!(0, 0);
-            decode_symbol!(1, 0);
-            decode_symbol!(2, 0);
-            decode_symbol!(3, 0);
+            /* Decode 5 symbols from each of the first 3 streams.
+             * The final stream will be decoded during the reload phase
+             * to reduce register pressure.
+             */
+            let mut round: usize = 0;
+            while round < 5 {
+                let mut st: usize = 0;
+                while st < 4 {
+                    HUF_4X2_DECODE_SYMBOL(&mut bits, &mut op, dtable, st, 0);
+                    st += 1;
+                }
+                round += 1;
+            }
 
             /* Decode one symbol from the final stream */
-            decode_symbol!(3, 1);
+            HUF_4X2_DECODE_SYMBOL(&mut bits, &mut op, dtable, 3, 1);
 
-            /* Decode 4 symbols from the final stream & reload bitstreams. */
-            reload_stream!(0);
-            reload_stream!(1);
-            reload_stream!(2);
-            reload_stream!(3);
+            /* Decode 4 symbols from the final stream & reload bitstreams.
+             * The final stream is reloaded last, meaning that all 5 symbols
+             * are decoded from the final stream before it is reloaded.
+             */
+            let mut st: usize = 0;
+            while st < 4 {
+                HUF_4X2_RELOAD_STREAM(&mut bits, &mut ip, &mut op, dtable, st);
+                st += 1;
+            }
 
             if !(op[3] < olimit) {
                 break;
@@ -1854,10 +2091,22 @@ unsafe fn HUF_decompress4X2_usingDTable_internal_fast_c_loop(args: *mut HUF_Deco
         }
     }
 
-    /* _out: Save the final values back to args. */
-    core::ptr::copy_nonoverlapping(bits.as_ptr(), (*args).bits.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping(ip.as_ptr(), (*args).ip.as_mut_ptr(), 4);
-    core::ptr::copy_nonoverlapping(op.as_ptr(), (*args).op.as_mut_ptr(), 4);
+    /* _out: save the final values of each of the state variables back to args. */
+    ZSTD_memcpy(
+        (*args).bits.as_mut_ptr() as *mut c_void,
+        bits.as_ptr() as *const c_void,
+        core::mem::size_of::<[U64; 4]>(),
+    );
+    ZSTD_memcpy(
+        (*args).ip.as_mut_ptr() as *mut c_void,
+        ip.as_ptr() as *const c_void,
+        core::mem::size_of::<[*const BYTE; 4]>(),
+    );
+    ZSTD_memcpy(
+        (*args).op.as_mut_ptr() as *mut c_void,
+        op.as_ptr() as *const c_void,
+        core::mem::size_of::<[*mut BYTE; 4]>(),
+    );
 }
 
 unsafe fn HUF_decompress4X2_usingDTable_internal_fast(
@@ -1869,12 +2118,12 @@ unsafe fn HUF_decompress4X2_usingDTable_internal_fast(
     loopFn: HUF_DecompressFastLoopFn,
 ) -> usize {
     let dt = DTable.add(1) as *const c_void;
-    let _ilowest = cSrc as *const u8;
-    let oend = ZSTD_maybeNullPtrAdd(dst as *mut u8, dstSize as isize);
-    let mut args: HUF_DecompressFastArgs = core::mem::zeroed();
+    let _ilowest = cSrc as *const BYTE;
+    let oend = ZSTD_maybeNullPtrAdd(dst as *mut BYTE, dstSize as isize);
+    let mut args = HUF_DecompressFastArgs::default();
     {
         let ret = HUF_DecompressFastArgs_init(&mut args, dst, dstSize, cSrc, cSrcSize, DTable);
-        if err_is_error(ret) != 0 {
+        if ERR_isError(ret) != 0 {
             return ret;
         }
         if ret == 0 {
@@ -1884,36 +2133,42 @@ unsafe fn HUF_decompress4X2_usingDTable_internal_fast(
 
     loopFn(&mut args);
 
+    /* note : op4 already verified within main loop */
+
     /* finish bitStreams one by one */
     {
-        let segmentSize = (dstSize + 3) / 4;
-        let mut segmentEnd = dst as *mut u8;
-        let mut i = 0i32;
+        let segmentSize: usize = (dstSize + 3) / 4;
+        let mut segmentEnd = dst as *mut BYTE;
+        let mut i: c_int = 0;
         while i < 4 {
-            let mut bit = core::mem::zeroed::<BIT_DStream_t>();
-            if segmentSize <= (oend as usize - segmentEnd as usize) {
+            let mut bit = BIT_DStream_t::default();
+            if segmentSize <= oend.offset_from(segmentEnd) as usize {
                 segmentEnd = segmentEnd.add(segmentSize);
             } else {
                 segmentEnd = oend;
             }
-            let e = HUF_initRemainingDStream(&mut bit, &args, i, segmentEnd);
-            if err_is_error(e) != 0 {
-                return e;
+            {
+                let e = HUF_initRemainingDStream(&mut bit, &args, i, segmentEnd);
+                if ERR_isError(e) != 0 {
+                    return e;
+                }
             }
-            args.op[i as usize] = args.op[i as usize].add(HUF_decodeStreamX2(
+            let produced = HUF_decodeStreamX2(
                 args.op[i as usize],
                 &mut bit,
                 segmentEnd,
                 dt as *const HUF_DEltX2,
                 HUF_DECODER_FAST_TABLELOG,
-            ));
+            );
+            args.op[i as usize] = args.op[i as usize].add(produced);
             if args.op[i as usize] != segmentEnd {
-                return error(code::CORRUPTION_DETECTED);
+                return ERROR(ZSTD_error_corruption_detected);
             }
             i += 1;
         }
     }
 
+    /* decoded size */
     dstSize
 }
 
@@ -1923,17 +2178,17 @@ unsafe fn HUF_decompress4X2_usingDTable_internal(
     cSrc: *const c_void,
     cSrcSize: usize,
     DTable: *const HUF_DTable,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let fallbackFn: HUF_DecompressUsingDTableFn =
-        HUF_decompress4X2_usingDTable_internal_default;
-    let loopFn: HUF_DecompressFastLoopFn =
-        HUF_decompress4X2_usingDTable_internal_fast_c_loop;
+    let fallbackFn: HUF_DecompressUsingDTableFn = HUF_decompress4X2_usingDTable_internal_default;
+    let loopFn: HUF_DecompressFastLoopFn = HUF_decompress4X2_usingDTable_internal_fast_c_loop;
 
-    /* DYNAMIC_BMI2=0, ZSTD_ENABLE_ASM_X86_64_BMI2=0 */
-    if HUF_ENABLE_FAST_DECODE && (flags & HUF_flags_disableFast) == 0 {
-        let ret =
-            HUF_decompress4X2_usingDTable_internal_fast(dst, dstSize, cSrc, cSrcSize, DTable, loopFn);
+    /* DYNAMIC_BMI2 == 0 and ZSTD_ENABLE_ASM_X86_64_BMI2 == 0 : nothing to select */
+
+    if HUF_ENABLE_FAST_DECODE != 0 && (flags & HUF_flags_disableFast) == 0 {
+        let ret = HUF_decompress4X2_usingDTable_internal_fast(
+            dst, dstSize, cSrc, cSrcSize, DTable, loopFn,
+        );
         if ret != 0 {
             return ret;
         }
@@ -1941,14 +2196,14 @@ unsafe fn HUF_decompress4X2_usingDTable_internal(
     fallbackFn(dst, dstSize, cSrc, cSrcSize, DTable)
 }
 
-/* HUF_DGEN(HUF_decompress1X2_usingDTable_internal) : DYNAMIC_BMI2=0 variant */
+/* HUF_DGEN(HUF_decompress1X2_usingDTable_internal) with DYNAMIC_BMI2 == 0 */
 unsafe fn HUF_decompress1X2_usingDTable_internal(
     dst: *mut c_void,
     dstSize: usize,
     cSrc: *const c_void,
     cSrcSize: usize,
     DTable: *const HUF_DTable,
-    _flags: i32,
+    _flags: c_int,
 ) -> usize {
     HUF_decompress1X2_usingDTable_internal_body(dst, dstSize, cSrc, cSrcSize, DTable)
 }
@@ -1962,21 +2217,28 @@ pub unsafe extern "C" fn HUF_decompress1X2_DCtx_wksp(
     mut cSrcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let mut ip = cSrc as *const u8;
+    let mut ip = cSrc as *const BYTE;
 
     let hSize = HUF_readDTableX2_wksp(DCtx, cSrc, cSrcSize, workSpace, wkspSize, flags);
-    if err_is_error(hSize) != 0 {
+    if ERR_isError(hSize) != 0 {
         return hSize;
     }
     if hSize >= cSrcSize {
-        return error(code::SRCSIZE_WRONG);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     ip = ip.add(hSize);
     cSrcSize -= hSize;
 
-    HUF_decompress1X2_usingDTable_internal(dst, dstSize, ip as *const c_void, cSrcSize, DCtx, flags)
+    HUF_decompress1X2_usingDTable_internal(
+        dst,
+        dstSize,
+        ip as *const c_void,
+        cSrcSize,
+        DCtx,
+        flags,
+    )
 }
 
 unsafe fn HUF_decompress4X2_DCtx_wksp(
@@ -1987,21 +2249,28 @@ unsafe fn HUF_decompress4X2_DCtx_wksp(
     mut cSrcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let mut ip = cSrc as *const u8;
+    let mut ip = cSrc as *const BYTE;
 
     let hSize = HUF_readDTableX2_wksp(dctx, cSrc, cSrcSize, workSpace, wkspSize, flags);
-    if err_is_error(hSize) != 0 {
+    if ERR_isError(hSize) != 0 {
         return hSize;
     }
     if hSize >= cSrcSize {
-        return error(code::SRCSIZE_WRONG);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     ip = ip.add(hSize);
     cSrcSize -= hSize;
 
-    HUF_decompress4X2_usingDTable_internal(dst, dstSize, ip as *const c_void, cSrcSize, dctx, flags)
+    HUF_decompress4X2_usingDTable_internal(
+        dst,
+        dstSize,
+        ip as *const c_void,
+        cSrcSize,
+        dctx,
+        flags,
+    )
 }
 
 /* ***********************************/
@@ -2009,51 +2278,65 @@ unsafe fn HUF_decompress4X2_DCtx_wksp(
 /* ***********************************/
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 struct algo_time_t {
-    tableTime: u32,
-    decode256Time: u32,
+    tableTime: U32,
+    decode256Time: U32,
+}
+
+const fn AT(tableTime: U32, decode256Time: U32) -> algo_time_t {
+    algo_time_t {
+        tableTime,
+        decode256Time,
+    }
 }
 
 static algoTime: [[algo_time_t; 2]; 16] = [
     /* single, double */
-    [algo_time_t { tableTime: 0, decode256Time: 0 }, algo_time_t { tableTime: 1, decode256Time: 1 }], /* Q==0 : impossible */
-    [algo_time_t { tableTime: 0, decode256Time: 0 }, algo_time_t { tableTime: 1, decode256Time: 1 }], /* Q==1 : impossible */
-    [algo_time_t { tableTime: 150, decode256Time: 216 }, algo_time_t { tableTime: 381, decode256Time: 119 }], /* Q == 2 */
-    [algo_time_t { tableTime: 170, decode256Time: 205 }, algo_time_t { tableTime: 514, decode256Time: 112 }], /* Q == 3 */
-    [algo_time_t { tableTime: 177, decode256Time: 199 }, algo_time_t { tableTime: 539, decode256Time: 110 }], /* Q == 4 */
-    [algo_time_t { tableTime: 197, decode256Time: 194 }, algo_time_t { tableTime: 644, decode256Time: 107 }], /* Q == 5 */
-    [algo_time_t { tableTime: 221, decode256Time: 192 }, algo_time_t { tableTime: 735, decode256Time: 107 }], /* Q == 6 */
-    [algo_time_t { tableTime: 256, decode256Time: 189 }, algo_time_t { tableTime: 881, decode256Time: 106 }], /* Q == 7 */
-    [algo_time_t { tableTime: 359, decode256Time: 188 }, algo_time_t { tableTime: 1167, decode256Time: 109 }], /* Q == 8 */
-    [algo_time_t { tableTime: 582, decode256Time: 187 }, algo_time_t { tableTime: 1570, decode256Time: 114 }], /* Q == 9 */
-    [algo_time_t { tableTime: 688, decode256Time: 187 }, algo_time_t { tableTime: 1712, decode256Time: 122 }], /* Q ==10 */
-    [algo_time_t { tableTime: 825, decode256Time: 186 }, algo_time_t { tableTime: 1965, decode256Time: 136 }], /* Q ==11 */
-    [algo_time_t { tableTime: 976, decode256Time: 185 }, algo_time_t { tableTime: 2131, decode256Time: 150 }], /* Q ==12 */
-    [algo_time_t { tableTime: 1180, decode256Time: 186 }, algo_time_t { tableTime: 2070, decode256Time: 175 }], /* Q ==13 */
-    [algo_time_t { tableTime: 1377, decode256Time: 185 }, algo_time_t { tableTime: 1731, decode256Time: 202 }], /* Q ==14 */
-    [algo_time_t { tableTime: 1412, decode256Time: 185 }, algo_time_t { tableTime: 1695, decode256Time: 202 }], /* Q ==15 */
+    [AT(0, 0), AT(1, 1)],       /* Q==0 : impossible */
+    [AT(0, 0), AT(1, 1)],       /* Q==1 : impossible */
+    [AT(150, 216), AT(381, 119)], /* Q == 2 : 12-18% */
+    [AT(170, 205), AT(514, 112)], /* Q == 3 : 18-25% */
+    [AT(177, 199), AT(539, 110)], /* Q == 4 : 25-32% */
+    [AT(197, 194), AT(644, 107)], /* Q == 5 : 32-38% */
+    [AT(221, 192), AT(735, 107)], /* Q == 6 : 38-44% */
+    [AT(256, 189), AT(881, 106)], /* Q == 7 : 44-50% */
+    [AT(359, 188), AT(1167, 109)], /* Q == 8 : 50-56% */
+    [AT(582, 187), AT(1570, 114)], /* Q == 9 : 56-62% */
+    [AT(688, 187), AT(1712, 122)], /* Q ==10 : 62-69% */
+    [AT(825, 186), AT(1965, 136)], /* Q ==11 : 69-75% */
+    [AT(976, 185), AT(2131, 150)], /* Q ==12 : 75-81% */
+    [AT(1180, 186), AT(2070, 175)], /* Q ==13 : 81-87% */
+    [AT(1377, 185), AT(1731, 202)], /* Q ==14 : 87-93% */
+    [AT(1412, 185), AT(1695, 202)], /* Q ==15 : 93-99% */
 ];
 
 /** HUF_selectDecoder() :
- * @return : 0==HUF_decompress4X1, 1==HUF_decompress4X2 . */
+ *  Tells which decoder is likely to decode faster,
+ *  based on a set of pre-computed metrics.
+ * @return : 0==HUF_decompress4X1, 1==HUF_decompress4X2 .
+ *  Assumption : 0 < dstSize <= 128 KB */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn HUF_selectDecoder(dstSize: usize, cSrcSize: usize) -> u32 {
+pub unsafe extern "C" fn HUF_selectDecoder(dstSize: usize, cSrcSize: usize) -> U32 {
     /* decoder timing evaluation */
-    let Q: u32 = if cSrcSize >= dstSize {
-        15
-    } else {
-        (cSrcSize * 16 / dstSize) as u32
-    };
-    let D256 = (dstSize >> 8) as u32;
-    let DTime0 = algoTime[Q as usize][0]
-        .tableTime
-        .wrapping_add(algoTime[Q as usize][0].decode256Time.wrapping_mul(D256));
-    let mut DTime1 = algoTime[Q as usize][1]
-        .tableTime
-        .wrapping_add(algoTime[Q as usize][1].decode256Time.wrapping_mul(D256));
-    DTime1 = DTime1.wrapping_add(DTime1 >> 5);
-    (DTime1 < DTime0) as u32
+    {
+        /* Q < 16 */
+        let Q: U32 = if cSrcSize >= dstSize {
+            15
+        } else {
+            (cSrcSize.wrapping_mul(16) / dstSize) as U32
+        };
+        let D256: U32 = (dstSize >> 8) as U32;
+        let DTime0: U32 = algoTime[Q as usize][0].tableTime.wrapping_add(
+            algoTime[Q as usize][0].decode256Time.wrapping_mul(D256),
+        );
+        let mut DTime1: U32 = algoTime[Q as usize][1].tableTime.wrapping_add(
+            algoTime[Q as usize][1].decode256Time.wrapping_mul(D256),
+        );
+        /* small advantage to algorithm using less memory, to reduce cache eviction */
+        DTime1 = DTime1.wrapping_add(DTime1 >> 5);
+        (DTime1 < DTime0) as U32
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -2065,30 +2348,36 @@ pub unsafe extern "C" fn HUF_decompress1X_DCtx_wksp(
     cSrcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
     /* validation checks */
     if dstSize == 0 {
-        return error(code::DSTSIZE_TOOSMALL);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
     if cSrcSize > dstSize {
-        return error(code::CORRUPTION_DETECTED);
+        return ERROR(ZSTD_error_corruption_detected); /* invalid */
     }
     if cSrcSize == dstSize {
-        core::ptr::copy_nonoverlapping(cSrc as *const u8, dst as *mut u8, dstSize);
+        /* not compressed */
+        ZSTD_memcpy(dst, cSrc, dstSize);
         return dstSize;
     }
     if cSrcSize == 1 {
-        core::ptr::write_bytes(dst as *mut u8, *(cSrc as *const u8), dstSize);
+        /* RLE */
+        ZSTD_memset(dst, *(cSrc as *const BYTE) as c_int, dstSize);
         return dstSize;
     }
 
     {
-        let algoNb = HUF_selectDecoder(dstSize, cSrcSize);
+        let algoNb: U32 = HUF_selectDecoder(dstSize, cSrcSize);
         if algoNb != 0 {
-            HUF_decompress1X2_DCtx_wksp(dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags)
+            HUF_decompress1X2_DCtx_wksp(
+                dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags,
+            )
         } else {
-            HUF_decompress1X1_DCtx_wksp(dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags)
+            HUF_decompress1X1_DCtx_wksp(
+                dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags,
+            )
         }
     }
 }
@@ -2100,7 +2389,7 @@ pub unsafe extern "C" fn HUF_decompress1X_usingDTable(
     cSrc: *const c_void,
     cSrcSize: usize,
     DTable: *const HUF_DTable,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
     let dtd = HUF_getDTableDesc(DTable);
     if dtd.tableType != 0 {
@@ -2119,21 +2408,28 @@ pub unsafe extern "C" fn HUF_decompress1X1_DCtx_wksp(
     mut cSrcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
-    let mut ip = cSrc as *const u8;
+    let mut ip = cSrc as *const BYTE;
 
     let hSize = HUF_readDTableX1_wksp(dctx, cSrc, cSrcSize, workSpace, wkspSize, flags);
-    if err_is_error(hSize) != 0 {
+    if ERR_isError(hSize) != 0 {
         return hSize;
     }
     if hSize >= cSrcSize {
-        return error(code::SRCSIZE_WRONG);
+        return ERROR(ZSTD_error_srcSize_wrong);
     }
     ip = ip.add(hSize);
     cSrcSize -= hSize;
 
-    HUF_decompress1X1_usingDTable_internal(dst, dstSize, ip as *const c_void, cSrcSize, dctx, flags)
+    HUF_decompress1X1_usingDTable_internal(
+        dst,
+        dstSize,
+        ip as *const c_void,
+        cSrcSize,
+        dctx,
+        flags,
+    )
 }
 
 #[unsafe(no_mangle)]
@@ -2143,7 +2439,7 @@ pub unsafe extern "C" fn HUF_decompress4X_usingDTable(
     cSrc: *const c_void,
     cSrcSize: usize,
     DTable: *const HUF_DTable,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
     let dtd = HUF_getDTableDesc(DTable);
     if dtd.tableType != 0 {
@@ -2162,32 +2458,26 @@ pub unsafe extern "C" fn HUF_decompress4X_hufOnly_wksp(
     cSrcSize: usize,
     workSpace: *mut c_void,
     wkspSize: usize,
-    flags: i32,
+    flags: c_int,
 ) -> usize {
     /* validation checks */
     if dstSize == 0 {
-        return error(code::DSTSIZE_TOOSMALL);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
     if cSrcSize == 0 {
-        return error(code::CORRUPTION_DETECTED);
+        return ERROR(ZSTD_error_corruption_detected);
     }
 
     {
-        let algoNb = HUF_selectDecoder(dstSize, cSrcSize);
+        let algoNb: U32 = HUF_selectDecoder(dstSize, cSrcSize);
         if algoNb != 0 {
-            HUF_decompress4X2_DCtx_wksp(dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags)
+            HUF_decompress4X2_DCtx_wksp(
+                dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags,
+            )
         } else {
-            HUF_decompress4X1_DCtx_wksp(dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags)
+            HUF_decompress4X1_DCtx_wksp(
+                dctx, dst, dstSize, cSrc, cSrcSize, workSpace, wkspSize, flags,
+            )
         }
     }
 }
-
-
-
-
-
-
-
-
-
-

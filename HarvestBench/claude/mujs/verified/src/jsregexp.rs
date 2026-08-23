@@ -1,23 +1,12 @@
-//! Translated from jsregexp.c — RegExp constructor and prototype methods.
-#![allow(non_snake_case, non_upper_case_globals)]
-
-use crate::cutil::*;
-use crate::jsrun::*;
-use crate::regexp::{Reprog, Resub, REG_ICASE, REG_NEWLINE, REG_NOTBOL};
-use crate::types::*;
-use std::os::raw::{c_char, c_int, c_void};
-
-macro_rules! cstr {
-    ($s:literal) => {
-        concat!($s, "\0").as_ptr() as *const c_char
-    };
-}
+//! Translated from c_src/src/jsregexp.c
+use crate::jsi::*;
+use crate::prelude::*;
 
 unsafe fn escaperegexp(J: *mut js_State, pattern: *const c_char) -> *mut c_char {
-    let copy;
-    let mut p;
-    let mut s;
-    let mut n = 0;
+    let copy: *mut c_char;
+    let mut p: *mut c_char;
+    let mut s: *const c_char;
+    let mut n: c_int = 0;
     s = pattern;
     while *s != 0 {
         if *s == '/' as c_char {
@@ -39,16 +28,16 @@ unsafe fn escaperegexp(J: *mut js_State, pattern: *const c_char) -> *mut c_char 
         s = s.add(1);
     }
     *p = 0;
-    copy
+    return copy;
 }
 
 unsafe fn js_newregexpx(J: *mut js_State, pattern: *const c_char, flags: c_int, is_clone: c_int) {
-    let mut error: *const c_char = std::ptr::null();
-    let obj;
-    let prog;
-    let mut opts;
+    let mut error: *const c_char = null();
+    let obj: *mut js_Object;
+    let prog: *mut Reprog;
+    let mut opts: c_int;
 
-    obj = crate::jsproperty::jsV_newobject(J, JS_CREGEXP, (*J).RegExp_prototype);
+    obj = jsV_newobject(J, JS_CREGEXP, (*J).RegExp_prototype);
 
     opts = 0;
     if flags & JS_REGEXP_I != 0 {
@@ -58,29 +47,43 @@ unsafe fn js_newregexpx(J: *mut js_State, pattern: *const c_char, flags: c_int, 
         opts |= REG_NEWLINE;
     }
 
-    prog = crate::regexp::js_regcompx((*J).alloc, (*J).actx, pattern, opts, &mut error);
+    prog = js_regcompx(
+        (*J).alloc,
+        (*J).actx,
+        pattern,
+        opts,
+        &mut error as *mut *const c_char,
+    );
     if prog.is_null() {
-        crate::jserror::js_syntaxerror(J, cstr!("regular expression: %s"), error);
+        js_syntaxerror!(J, c"regular expression: %s".as_ptr(), error);
     }
 
     (*obj).u.r.prog = prog as *mut c_void;
-    (*obj).u.r.source = if is_clone != 0 { js_strdup(J, pattern) } else { escaperegexp(J, pattern) };
-    (*obj).u.r.flags = flags as u16;
+    (*obj).u.r.source = if is_clone != 0 {
+        js_strdup(J, pattern)
+    } else {
+        escaperegexp(J, pattern)
+    };
+    (*obj).u.r.flags = flags as c_ushort;
     (*obj).u.r.last = 0;
     js_pushobject(J, obj);
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn js_newregexp(J: *mut js_State, pattern: *const c_char, flags: c_int) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn js_newregexp(J: *mut js_State, pattern: *const c_char, flags: c_int) {
     js_newregexpx(J, pattern, flags, 0);
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn js_RegExp_prototype_exec(J: *mut js_State, re: *mut js_Regexp, text: *const c_char) {
-    let mut haystack;
-    let result;
-    let mut i;
-    let mut opts;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn js_RegExp_prototype_exec(
+    J: *mut js_State,
+    re: *mut js_Regexp,
+    text: *const c_char,
+) {
+    let mut haystack: *const c_char;
+    let result: c_int;
+    let mut i: c_int;
+    let mut opts: c_int;
     let mut m: Resub = std::mem::zeroed();
 
     haystack = text;
@@ -93,30 +96,41 @@ pub unsafe extern "C-unwind" fn js_RegExp_prototype_exec(J: *mut js_State, re: *
         }
         if (*re).last > 0 {
             haystack = text.add((*re).last as usize);
-            if (*re).flags as c_int & JS_REGEXP_M == 0 || *haystack.offset(-1) != '\n' as c_char {
+            if ((*re).flags as c_int & JS_REGEXP_M) == 0
+                || *haystack.offset(-1) != '\n' as c_char
+            {
                 opts |= REG_NOTBOL;
             }
         }
     }
 
-    result = crate::regexp::js_regexec((*re).prog as *mut Reprog, haystack, &mut m, opts);
+    result = js_regexec(
+        (*re).prog as *mut Reprog,
+        haystack,
+        &mut m as *mut Resub,
+        opts,
+    );
     if result < 0 {
-        crate::jserror::js_error(J, cstr!("regexec failed"));
+        js_error!(J, c"regexec failed".as_ptr());
     }
     if result == 0 {
-        crate::jsvalue::js_newarray(J);
+        js_newarray(J);
         js_pushstring(J, text);
-        js_setproperty(J, -2, cstr!("input"));
-        js_pushnumber(J, crate::jsstring::js_utfptrtoidx(text, m.sub[0].sp) as f64);
-        js_setproperty(J, -2, cstr!("index"));
+        js_setproperty(J, -2, c"input".as_ptr());
+        js_pushnumber(J, js_utfptrtoidx(text, m.sub[0].sp) as f64);
+        js_setproperty(J, -2, c"index".as_ptr());
         i = 0;
         while i < m.nsub {
-            js_pushlstring(J, m.sub[i as usize].sp, (m.sub[i as usize].ep as isize - m.sub[i as usize].sp as isize) as c_int);
+            js_pushlstring(
+                J,
+                m.sub[i as usize].sp,
+                m.sub[i as usize].ep.offset_from(m.sub[i as usize].sp) as c_int,
+            );
             js_setindex(J, -2, i);
             i += 1;
         }
         if (*re).flags as c_int & JS_REGEXP_G != 0 {
-            (*re).last = (m.sub[0].ep as isize - text as isize) as u16;
+            (*re).last = m.sub[0].ep.offset_from(text) as c_ushort;
         }
         return;
     }
@@ -128,11 +142,11 @@ pub unsafe extern "C-unwind" fn js_RegExp_prototype_exec(J: *mut js_State, re: *
     js_pushnull(J);
 }
 
-unsafe extern "C-unwind" fn Rp_test(J: *mut js_State) {
+unsafe extern "C" fn Rp_test(J: *mut js_State) {
     let re: *mut js_Regexp;
-    let mut text;
-    let result;
-    let mut opts;
+    let mut text: *const c_char;
+    let result: c_int;
+    let mut opts: c_int;
     let mut m: Resub = std::mem::zeroed();
 
     re = js_toregexp(J, 0);
@@ -147,19 +161,19 @@ unsafe extern "C-unwind" fn Rp_test(J: *mut js_State) {
         }
         if (*re).last > 0 {
             text = text.add((*re).last as usize);
-            if (*re).flags as c_int & JS_REGEXP_M == 0 || *text.offset(-1) != '\n' as c_char {
+            if ((*re).flags as c_int & JS_REGEXP_M) == 0 || *text.offset(-1) != '\n' as c_char {
                 opts |= REG_NOTBOL;
             }
         }
     }
 
-    result = crate::regexp::js_regexec((*re).prog as *mut Reprog, text, &mut m, opts);
+    result = js_regexec((*re).prog as *mut Reprog, text, &mut m as *mut Resub, opts);
     if result < 0 {
-        crate::jserror::js_error(J, cstr!("regexec failed"));
+        js_error!(J, c"regexec failed".as_ptr());
     }
     if result == 0 {
         if (*re).flags as c_int & JS_REGEXP_G != 0 {
-            (*re).last = ((*re).last as isize + (m.sub[0].ep as isize - text as isize)) as u16;
+            (*re).last = ((*re).last as isize + m.sub[0].ep.offset_from(text)) as c_ushort;
         }
         js_pushboolean(J, 1);
         return;
@@ -172,22 +186,25 @@ unsafe extern "C-unwind" fn Rp_test(J: *mut js_State) {
     js_pushboolean(J, 0);
 }
 
-unsafe extern "C-unwind" fn jsB_new_RegExp(J: *mut js_State) {
+unsafe extern "C" fn jsB_new_RegExp(J: *mut js_State) {
     let old: *mut js_Regexp;
-    let mut pattern;
-    let mut flags;
-    let mut is_clone = 0;
+    let mut pattern: *const c_char;
+    let mut flags: c_int;
+    let mut is_clone: c_int = 0;
 
     if js_isregexp(J, 1) != 0 {
         if js_isdefined(J, 2) != 0 {
-            crate::jserror::js_typeerror(J, cstr!("cannot supply flags when creating one RegExp from another"));
+            js_typeerror!(
+                J,
+                c"cannot supply flags when creating one RegExp from another".as_ptr()
+            );
         }
         old = js_toregexp(J, 1);
         pattern = (*old).source as *const c_char;
         flags = (*old).flags as c_int;
         is_clone = 1;
     } else if js_isundefined(J, 1) != 0 {
-        pattern = cstr!("(?:)");
+        pattern = c"(?:)".as_ptr();
         flags = 0;
     } else {
         pattern = js_tostring(J, 1);
@@ -195,14 +212,14 @@ unsafe extern "C-unwind" fn jsB_new_RegExp(J: *mut js_State) {
     }
 
     if strlen(pattern) == 0 {
-        pattern = cstr!("(?:)");
+        pattern = c"(?:)".as_ptr();
     }
 
     if js_isdefined(J, 2) != 0 {
-        let mut s = js_tostring(J, 2);
-        let mut g = 0;
-        let mut i = 0;
-        let mut m = 0;
+        let mut s: *const c_char = js_tostring(J, 2);
+        let mut g: c_int = 0;
+        let mut i: c_int = 0;
+        let mut m: c_int = 0;
         while *s != 0 {
             if *s == 'g' as c_char {
                 g += 1;
@@ -211,18 +228,22 @@ unsafe extern "C-unwind" fn jsB_new_RegExp(J: *mut js_State) {
             } else if *s == 'm' as c_char {
                 m += 1;
             } else {
-                crate::jserror::js_syntaxerror(J, cstr!("invalid regular expression flag: '%c'"), *s as c_int);
+                js_syntaxerror!(
+                    J,
+                    c"invalid regular expression flag: '%c'".as_ptr(),
+                    *s as c_int
+                );
             }
             s = s.add(1);
         }
         if g > 1 {
-            crate::jserror::js_syntaxerror(J, cstr!("invalid regular expression flag: 'g'"));
+            js_syntaxerror!(J, c"invalid regular expression flag: 'g'".as_ptr());
         }
         if i > 1 {
-            crate::jserror::js_syntaxerror(J, cstr!("invalid regular expression flag: 'i'"));
+            js_syntaxerror!(J, c"invalid regular expression flag: 'i'".as_ptr());
         }
         if m > 1 {
-            crate::jserror::js_syntaxerror(J, cstr!("invalid regular expression flag: 'm'"));
+            js_syntaxerror!(J, c"invalid regular expression flag: 'm'".as_ptr());
         }
         if g != 0 {
             flags |= JS_REGEXP_G;
@@ -238,58 +259,70 @@ unsafe extern "C-unwind" fn jsB_new_RegExp(J: *mut js_State) {
     js_newregexpx(J, pattern, flags, is_clone);
 }
 
-unsafe extern "C-unwind" fn jsB_RegExp(J: *mut js_State) {
+unsafe extern "C" fn jsB_RegExp(J: *mut js_State) {
     if js_isregexp(J, 1) != 0 {
         return;
     }
     jsB_new_RegExp(J);
 }
 
-unsafe extern "C-unwind" fn Rp_toString(J: *mut js_State) {
+unsafe extern "C" fn Rp_toString(J: *mut js_State) {
     let re: *mut js_Regexp;
-    let mut out: *mut c_char = std::ptr::null_mut();
+    let mut out: *mut c_char = null_mut(); /* char * volatile out = NULL; */
 
     re = js_toregexp(J, 0);
 
-    let out_ptr = std::ptr::addr_of_mut!(out);
-    let caught = protect(J, || {
-        *out_ptr = js_malloc(J, strlen((*re).source) as c_int + 6) as *mut c_char;
-        strcpy(*out_ptr, cstr!("/"));
-        strcat(*out_ptr, (*re).source);
-        strcat(*out_ptr, cstr!("/"));
-        if (*re).flags as c_int & JS_REGEXP_G != 0 {
-            strcat(*out_ptr, cstr!("g"));
-        }
-        if (*re).flags as c_int & JS_REGEXP_I != 0 {
-            strcat(*out_ptr, cstr!("i"));
-        }
-        if (*re).flags as c_int & JS_REGEXP_M != 0 {
-            strcat(*out_ptr, cstr!("m"));
-        }
-
-        js_pop(J, 0);
-        js_pushstring(J, *out_ptr);
-    });
-    if caught {
-        js_free(J, out as *mut c_void);
+    if js_try!(J) {
+        js_free(J, vread(&out) as *mut c_void);
         js_throw(J);
     }
+
+    vwrite(
+        &mut out,
+        js_malloc(J, (strlen((*re).source) + 6) as c_int) as *mut c_char,
+    ); /* extra space for //gim */
+    strcpy(vread(&out), c"/".as_ptr());
+    strcat(vread(&out), (*re).source);
+    strcat(vread(&out), c"/".as_ptr());
+    if (*re).flags as c_int & JS_REGEXP_G != 0 {
+        strcat(vread(&out), c"g".as_ptr());
+    }
+    if (*re).flags as c_int & JS_REGEXP_I != 0 {
+        strcat(vread(&out), c"i".as_ptr());
+    }
+    if (*re).flags as c_int & JS_REGEXP_M != 0 {
+        strcat(vread(&out), c"m".as_ptr());
+    }
+
+    js_pop(J, 0);
+    js_pushstring(J, vread(&out) as *const c_char);
     js_endtry(J);
-    js_free(J, out as *mut c_void);
+    js_free(J, vread(&out) as *mut c_void);
 }
 
-unsafe extern "C-unwind" fn Rp_exec(J: *mut js_State) {
+unsafe extern "C" fn Rp_exec(J: *mut js_State) {
     js_RegExp_prototype_exec(J, js_toregexp(J, 0), js_tostring(J, 1));
 }
 
-#[no_mangle]
-pub unsafe extern "C-unwind" fn jsB_initregexp(J: *mut js_State) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jsB_initregexp(J: *mut js_State) {
     js_pushobject(J, (*J).RegExp_prototype);
     {
-        crate::jsbuiltin::jsB_propf(J, cstr!("RegExp.prototype.toString"), Some(Rp_toString), 0);
-        crate::jsbuiltin::jsB_propf(J, cstr!("RegExp.prototype.test"), Some(Rp_test), 0);
-        crate::jsbuiltin::jsB_propf(J, cstr!("RegExp.prototype.exec"), Some(Rp_exec), 0);
+        jsB_propf(
+            J,
+            c"RegExp.prototype.toString".as_ptr(),
+            Some(Rp_toString),
+            0,
+        );
+        jsB_propf(J, c"RegExp.prototype.test".as_ptr(), Some(Rp_test), 0);
+        jsB_propf(J, c"RegExp.prototype.exec".as_ptr(), Some(Rp_exec), 0);
     }
-    crate::jsvalue::js_newcconstructor(J, Some(jsB_RegExp), Some(jsB_new_RegExp), cstr!("RegExp"), 1);
-    js_defglobal(J, cstr!("RegExp"), JS_DONTENUM);
+    js_newcconstructor(
+        J,
+        Some(jsB_RegExp),
+        Some(jsB_new_RegExp),
+        c"RegExp".as_ptr(),
+        1,
+    );
+    js_defglobal(J, c"RegExp".as_ptr(), JS_DONTENUM);
 }

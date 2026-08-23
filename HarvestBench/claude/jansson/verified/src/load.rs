@@ -1,57 +1,37 @@
-//! Translation of load.c
-#![allow(non_upper_case_globals)]
+//! Translation of c_src/src/load.c
+#![allow(dead_code)]
 
-use crate::error::{jsonp_error_init, jsonp_error_set};
+use crate::error::{jsonp_error_init, jsonp_error_set_1s};
+use crate::jansson::*;
+use crate::libc;
 use crate::memory::{jsonp_free, jsonp_malloc};
 use crate::strbuffer::*;
 use crate::strconv::jsonp_strtod;
-use crate::types::*;
 use crate::utf::{utf8_check_first, utf8_check_full, utf8_encode};
 use crate::value::*;
-use core::ffi::{c_char, c_int, c_void, VaList};
-use core::ptr;
+use std::ffi::{c_char, c_int, c_void};
 
-extern "C" {
-    fn strlen(s: *const c_char) -> usize;
-    fn strcmp(a: *const c_char, b: *const c_char) -> c_int;
-    fn strerror(errnum: c_int) -> *mut c_char;
-    fn memchr(s: *const c_void, c: c_int, n: usize) -> *mut c_void;
-    fn snprintf(s: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
-    fn vsnprintf(s: *mut c_char, n: usize, fmt: *const c_char, ap: VaList) -> c_int;
-    fn strtoll(nptr: *const c_char, endptr: *mut *mut c_char, base: c_int) -> core::ffi::c_longlong;
-    fn __errno_location() -> *mut c_int;
-    fn fgetc(stream: *mut c_void) -> c_int;
-    fn fopen(path: *const c_char, mode: *const c_char) -> *mut c_void;
-    fn fclose(stream: *mut c_void) -> c_int;
-    fn read(fd: c_int, buf: *mut c_void, count: usize) -> isize;
-    fn memset(s: *mut c_void, c: c_int, n: usize) -> *mut c_void;
-    static stdin: *mut c_void;
-}
+pub const STREAM_STATE_OK: c_int = 0;
+pub const STREAM_STATE_EOF: c_int = -1;
+pub const STREAM_STATE_ERROR: c_int = -2;
 
-const EOF: c_int = -1;
-const ERANGE: c_int = 34;
-const STDIN_FILENO: c_int = 0;
+pub const TOKEN_INVALID: c_int = -1;
+pub const TOKEN_EOF: c_int = 0;
+pub const TOKEN_STRING: c_int = 256;
+pub const TOKEN_INTEGER: c_int = 257;
+pub const TOKEN_REAL: c_int = 258;
+pub const TOKEN_TRUE: c_int = 259;
+pub const TOKEN_FALSE: c_int = 260;
+pub const TOKEN_NULL: c_int = 261;
 
-const STREAM_STATE_OK: c_int = 0;
-const STREAM_STATE_EOF: c_int = -1;
-const STREAM_STATE_ERROR: c_int = -2;
-
-const TOKEN_INVALID: c_int = -1;
-const TOKEN_EOF: c_int = 0;
-const TOKEN_STRING: c_int = 256;
-const TOKEN_INTEGER: c_int = 257;
-const TOKEN_REAL: c_int = 258;
-const TOKEN_TRUE: c_int = 259;
-const TOKEN_FALSE: c_int = 260;
-const TOKEN_NULL: c_int = 261;
-
+/* Locale independent versions of isxxx() functions */
 #[inline]
 fn l_isupper(c: c_int) -> bool {
-    ('A' as c_int) <= c && c <= ('Z' as c_int)
+    (b'A' as c_int) <= c && c <= (b'Z' as c_int)
 }
 #[inline]
 fn l_islower(c: c_int) -> bool {
-    ('a' as c_int) <= c && c <= ('z' as c_int)
+    (b'a' as c_int) <= c && c <= (b'z' as c_int)
 }
 #[inline]
 fn l_isalpha(c: c_int) -> bool {
@@ -59,86 +39,96 @@ fn l_isalpha(c: c_int) -> bool {
 }
 #[inline]
 fn l_isdigit(c: c_int) -> bool {
-    ('0' as c_int) <= c && c <= ('9' as c_int)
+    (b'0' as c_int) <= c && c <= (b'9' as c_int)
 }
 #[inline]
 fn l_isxdigit(c: c_int) -> bool {
     l_isdigit(c)
-        || (('A' as c_int) <= c && c <= ('F' as c_int))
-        || (('a' as c_int) <= c && c <= ('f' as c_int))
+        || ((b'A' as c_int) <= c && c <= (b'F' as c_int))
+        || ((b'a' as c_int) <= c && c <= (b'f' as c_int))
 }
 
-type get_func = Option<unsafe extern "C" fn(*mut c_void) -> c_int>;
+pub type get_func = unsafe extern "C" fn(data: *mut c_void) -> c_int;
 
 #[repr(C)]
-struct stream_t {
-    get: get_func,
-    data: *mut c_void,
-    buffer: [c_char; 5],
-    buffer_pos: usize,
-    state: c_int,
-    line: c_int,
-    column: c_int,
-    last_column: c_int,
-    position: usize,
-}
-
-#[repr(C)]
-union lex_value {
-    string: lex_string,
-    integer: json_int_t,
-    real: f64,
+pub struct stream_t {
+    pub get: Option<get_func>,
+    pub data: *mut c_void,
+    pub buffer: [c_char; 5],
+    pub buffer_pos: usize,
+    pub state: c_int,
+    pub line: c_int,
+    pub column: c_int,
+    pub last_column: c_int,
+    pub position: usize,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
-struct lex_string {
-    val: *mut c_char,
-    len: usize,
+pub struct lex_t {
+    pub stream: stream_t,
+    pub saved_text: strbuffer_t,
+    pub flags: usize,
+    pub depth: usize,
+    pub token: c_int,
+    /* union value */
+    pub v_string_val: *mut c_char,
+    pub v_string_len: usize,
+    pub v_integer: json_int_t,
+    pub v_real: f64,
 }
 
-#[repr(C)]
-struct lex_t {
-    stream: stream_t,
-    saved_text: strbuffer_t,
-    flags: usize,
-    depth: usize,
-    token: c_int,
-    value: lex_value,
-}
-
-#[inline]
-unsafe fn stream_to_lex(stream: *mut stream_t) -> *mut lex_t {
-    // stream is first member of lex_t
-    stream as *mut lex_t
+impl lex_t {
+    unsafe fn new() -> lex_t {
+        lex_t {
+            stream: stream_t {
+                get: None,
+                data: std::ptr::null_mut(),
+                buffer: [0; 5],
+                buffer_pos: 0,
+                state: 0,
+                line: 0,
+                column: 0,
+                last_column: 0,
+                position: 0,
+            },
+            saved_text: strbuffer_t::new(),
+            flags: 0,
+            depth: 0,
+            token: 0,
+            v_string_val: std::ptr::null_mut(),
+            v_string_len: 0,
+            v_integer: 0,
+            v_real: 0.0,
+        }
+    }
 }
 
 /*** error reporting ***/
 
-unsafe extern "C" fn error_set(
+/* error_set() with the message already formatted into a
+   JSON_ERROR_TEXT_LENGTH-sized buffer (exactly like vsnprintf() would). */
+unsafe fn error_set_text(
     error: *mut json_error_t,
     lex: *const lex_t,
-    mut code: c_int,
-    msg: *const c_char,
-    ap: ...
+    code0: c_int,
+    msg_text: *mut c_char,
 ) {
-    let mut msg_text = [0 as c_char; JSON_ERROR_TEXT_LENGTH];
-    let mut msg_with_context = [0 as c_char; JSON_ERROR_TEXT_LENGTH];
+    let mut msg_with_context: [c_char; JSON_ERROR_TEXT_LENGTH] = [0; JSON_ERROR_TEXT_LENGTH];
+    let mut code = code0;
 
     let mut line: c_int = -1;
     let mut col: c_int = -1;
     let mut pos: usize = 0;
-    let mut result: *const c_char = msg_text.as_ptr();
+    let mut result: *const c_char = msg_text;
 
     if error.is_null() {
         return;
     }
 
-    vsnprintf(msg_text.as_mut_ptr(), JSON_ERROR_TEXT_LENGTH, msg, ap);
-    msg_text[JSON_ERROR_TEXT_LENGTH - 1] = 0;
+    *msg_text.add(JSON_ERROR_TEXT_LENGTH - 1) = 0;
 
     if !lex.is_null() {
-        let saved_text = strbuffer_value(&(*lex).saved_text);
+        let saved_text = strbuffer_value(std::ptr::addr_of!((*lex).saved_text));
 
         line = (*lex).stream.line;
         col = (*lex).stream.column;
@@ -146,11 +136,11 @@ unsafe extern "C" fn error_set(
 
         if !saved_text.is_null() && *saved_text != 0 {
             if (*lex).saved_text.length <= 20 {
-                snprintf(
+                libc::snprintf(
                     msg_with_context.as_mut_ptr(),
                     JSON_ERROR_TEXT_LENGTH,
                     b"%s near '%s'\0".as_ptr() as *const c_char,
-                    msg_text.as_ptr(),
+                    msg_text,
                     saved_text,
                 );
                 msg_with_context[JSON_ERROR_TEXT_LENGTH - 1] = 0;
@@ -163,13 +153,13 @@ unsafe extern "C" fn error_set(
             }
             if (*lex).stream.state == STREAM_STATE_ERROR {
                 /* No context for UTF-8 decoding errors */
-                result = msg_text.as_ptr();
+                result = msg_text;
             } else {
-                snprintf(
+                libc::snprintf(
                     msg_with_context.as_mut_ptr(),
                     JSON_ERROR_TEXT_LENGTH,
                     b"%s near end of file\0".as_ptr() as *const c_char,
-                    msg_text.as_ptr(),
+                    msg_text,
                 );
                 msg_with_context[JSON_ERROR_TEXT_LENGTH - 1] = 0;
                 result = msg_with_context.as_ptr();
@@ -177,21 +167,26 @@ unsafe extern "C" fn error_set(
         }
     }
 
-    jsonp_error_set(
-        error,
-        line,
-        col,
-        pos,
-        code,
-        b"%s\0".as_ptr() as *const c_char,
-        result,
-    );
+    jsonp_error_set_1s(error, line, col, pos, code, result);
+}
+
+macro_rules! error_set {
+    ($error:expr, $lex:expr, $code:expr, $fmt:expr $(, $arg:expr)*) => {{
+        let mut __msg_text: [c_char; JSON_ERROR_TEXT_LENGTH] = [0; JSON_ERROR_TEXT_LENGTH];
+        libc::snprintf(
+            __msg_text.as_mut_ptr(),
+            JSON_ERROR_TEXT_LENGTH,
+            $fmt.as_ptr() as *const c_char
+            $(, $arg)*
+        );
+        error_set_text($error, $lex, $code, __msg_text.as_mut_ptr());
+    }};
 }
 
 /*** lexical analyzer ***/
 
 unsafe fn stream_init(stream: *mut stream_t, get: get_func, data: *mut c_void) {
-    (*stream).get = get;
+    (*stream).get = Some(get);
     (*stream).data = data;
     (*stream).buffer[0] = 0;
     (*stream).buffer_pos = 0;
@@ -211,7 +206,7 @@ unsafe fn stream_get(stream: *mut stream_t, error: *mut json_error_t) -> c_int {
 
     if (*stream).buffer[(*stream).buffer_pos] == 0 {
         c = ((*stream).get.unwrap())((*stream).data);
-        if c == EOF {
+        if c == libc::EOF {
             (*stream).state = STREAM_STATE_EOF;
             return STREAM_STATE_EOF;
         }
@@ -219,35 +214,38 @@ unsafe fn stream_get(stream: *mut stream_t, error: *mut json_error_t) -> c_int {
         (*stream).buffer[0] = c as c_char;
         (*stream).buffer_pos = 0;
 
-        if 0x80 <= c && c <= 0xFF {
+        if (0x80..=0xFF).contains(&c) {
             /* multi-byte UTF-8 sequence */
-            let count = utf8_check_first(c as c_char);
+            let mut i: usize;
+            let count: usize;
+
+            count = utf8_check_first(c as c_char);
             if count == 0 {
                 (*stream).state = STREAM_STATE_ERROR;
-                error_set(
+                error_set!(
                     error,
-                    stream_to_lex(stream),
+                    stream as *const lex_t,
                     json_error_invalid_utf8,
-                    b"unable to decode byte 0x%x\0".as_ptr() as *const c_char,
-                    c,
+                    b"unable to decode byte 0x%x\0",
+                    c
                 );
                 return STREAM_STATE_ERROR;
             }
 
-            debug_assert!(count >= 2);
-
-            for i in 1..count {
+            i = 1;
+            while i < count {
                 (*stream).buffer[i] = ((*stream).get.unwrap())((*stream).data) as c_char;
+                i += 1;
             }
 
-            if utf8_check_full((*stream).buffer.as_ptr(), count, ptr::null_mut()) == 0 {
+            if utf8_check_full((*stream).buffer.as_ptr(), count, std::ptr::null_mut()) == 0 {
                 (*stream).state = STREAM_STATE_ERROR;
-                error_set(
+                error_set!(
                     error,
-                    stream_to_lex(stream),
+                    stream as *const lex_t,
                     json_error_invalid_utf8,
-                    b"unable to decode byte 0x%x\0".as_ptr() as *const c_char,
-                    c,
+                    b"unable to decode byte 0x%x\0",
+                    c
                 );
                 return STREAM_STATE_ERROR;
             }
@@ -258,7 +256,7 @@ unsafe fn stream_get(stream: *mut stream_t, error: *mut json_error_t) -> c_int {
         }
     }
 
-    c = (*stream).buffer[(*stream).buffer_pos] as u8 as c_int;
+    c = (*stream).buffer[(*stream).buffer_pos] as c_int;
     (*stream).buffer_pos += 1;
 
     (*stream).position += 1;
@@ -267,7 +265,8 @@ unsafe fn stream_get(stream: *mut stream_t, error: *mut json_error_t) -> c_int {
         (*stream).last_column = (*stream).column;
         (*stream).column = 0;
     } else if utf8_check_first(c as c_char) != 0 {
-        /* track the Unicode character column */
+        /* track the Unicode character column, so increment only if
+        this is the first character of a UTF-8 sequence */
         (*stream).column += 1;
     }
 
@@ -287,21 +286,19 @@ unsafe fn stream_unget(stream: *mut stream_t, c: c_int) {
         (*stream).column -= 1;
     }
 
-    debug_assert!((*stream).buffer_pos > 0);
     (*stream).buffer_pos -= 1;
-    debug_assert!((*stream).buffer[(*stream).buffer_pos] as u8 as c_int == c);
 }
 
 unsafe fn lex_get(lex: *mut lex_t, error: *mut json_error_t) -> c_int {
-    stream_get(&mut (*lex).stream, error)
+    stream_get(std::ptr::addr_of_mut!((*lex).stream), error)
 }
 
 unsafe fn lex_save(lex: *mut lex_t, c: c_int) {
-    strbuffer_append_byte(&mut (*lex).saved_text, c as c_char);
+    strbuffer_append_byte(std::ptr::addr_of_mut!((*lex).saved_text), c as c_char);
 }
 
 unsafe fn lex_get_save(lex: *mut lex_t, error: *mut json_error_t) -> c_int {
-    let c = stream_get(&mut (*lex).stream, error);
+    let c = stream_get(std::ptr::addr_of_mut!((*lex).stream), error);
     if c != STREAM_STATE_EOF && c != STREAM_STATE_ERROR {
         lex_save(lex, c);
     }
@@ -309,49 +306,52 @@ unsafe fn lex_get_save(lex: *mut lex_t, error: *mut json_error_t) -> c_int {
 }
 
 unsafe fn lex_unget(lex: *mut lex_t, c: c_int) {
-    stream_unget(&mut (*lex).stream, c);
+    stream_unget(std::ptr::addr_of_mut!((*lex).stream), c);
 }
 
 unsafe fn lex_unget_unsave(lex: *mut lex_t, c: c_int) {
     if c != STREAM_STATE_EOF && c != STREAM_STATE_ERROR {
-        stream_unget(&mut (*lex).stream, c);
-        let _d = strbuffer_pop(&mut (*lex).saved_text);
-        debug_assert!(c == _d as u8 as c_int);
+        stream_unget(std::ptr::addr_of_mut!((*lex).stream), c);
+        strbuffer_pop(std::ptr::addr_of_mut!((*lex).saved_text));
     }
 }
 
 unsafe fn lex_save_cached(lex: *mut lex_t) {
     while (*lex).stream.buffer[(*lex).stream.buffer_pos] != 0 {
-        lex_save(lex, (*lex).stream.buffer[(*lex).stream.buffer_pos] as u8 as c_int);
+        lex_save(
+            lex,
+            (*lex).stream.buffer[(*lex).stream.buffer_pos] as c_int,
+        );
         (*lex).stream.buffer_pos += 1;
         (*lex).stream.position += 1;
     }
 }
 
 unsafe fn lex_free_string(lex: *mut lex_t) {
-    jsonp_free((*lex).value.string.val as *mut c_void);
-    (*lex).value.string.val = ptr::null_mut();
-    (*lex).value.string.len = 0;
+    jsonp_free((*lex).v_string_val as *mut c_void);
+    (*lex).v_string_val = std::ptr::null_mut();
+    (*lex).v_string_len = 0;
 }
 
 /* assumes that str points to 'u' plus at least 4 valid hex digits */
-unsafe fn decode_unicode_escape(str: *const c_char) -> i32 {
-    debug_assert!(*str.add(0) == 'u' as c_char);
-
+unsafe fn decode_unicode_escape(str_: *const c_char) -> i32 {
+    let mut i: usize;
     let mut value: i32 = 0;
-    for i in 1..=4 {
-        let c = *str.add(i);
+
+    i = 1;
+    while i <= 4 {
+        let c = *str_.add(i);
         value <<= 4;
-        let ci = c as u8 as c_int;
-        if l_isdigit(ci) {
-            value += (c as u8 as i32) - ('0' as i32);
-        } else if l_islower(ci) {
-            value += (c as u8 as i32) - ('a' as i32) + 10;
-        } else if l_isupper(ci) {
-            value += (c as u8 as i32) - ('A' as i32) + 10;
+        if l_isdigit(c as c_int) {
+            value += (c as c_int) - ('0' as c_int);
+        } else if l_islower(c as c_int) {
+            value += (c as c_int) - ('a' as c_int) + 10;
+        } else if l_isupper(c as c_int) {
+            value += (c as c_int) - ('A' as c_int) + 10;
         } else {
             return -1;
         }
+        i += 1;
     }
 
     value
@@ -363,41 +363,44 @@ unsafe fn lex_scan_string(lex: *mut lex_t, error: *mut json_error_t) {
     let mut t: *mut c_char;
     let mut i: c_int;
 
-    (*lex).value.string.val = ptr::null_mut();
+    (*lex).v_string_val = std::ptr::null_mut();
     (*lex).token = TOKEN_INVALID;
 
     c = lex_get_save(lex, error);
 
-    while c != '"' as c_int {
+    'outer: loop {
+        if c == '"' as c_int {
+            break;
+        }
         if c == STREAM_STATE_ERROR {
             lex_free_string(lex);
             return;
         } else if c == STREAM_STATE_EOF {
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_premature_end_of_input,
-                b"premature end of input\0".as_ptr() as *const c_char,
+                b"premature end of input\0"
             );
             lex_free_string(lex);
             return;
-        } else if 0 <= c && c <= 0x1F {
+        } else if (0..=0x1F).contains(&c) {
             /* control character */
             lex_unget_unsave(lex, c);
             if c == '\n' as c_int {
-                error_set(
+                error_set!(
                     error,
-                    lex,
+                    lex as *const lex_t,
                     json_error_invalid_syntax,
-                    b"unexpected newline\0".as_ptr() as *const c_char,
+                    b"unexpected newline\0"
                 );
             } else {
-                error_set(
+                error_set!(
                     error,
-                    lex,
+                    lex as *const lex_t,
                     json_error_invalid_syntax,
-                    b"control character 0x%x\0".as_ptr() as *const c_char,
-                    c,
+                    b"control character 0x%x\0",
+                    c
                 );
             }
             lex_free_string(lex);
@@ -409,11 +412,11 @@ unsafe fn lex_scan_string(lex: *mut lex_t, error: *mut json_error_t) {
                 i = 0;
                 while i < 4 {
                     if !l_isxdigit(c) {
-                        error_set(
+                        error_set!(
                             error,
-                            lex,
+                            lex as *const lex_t,
                             json_error_invalid_syntax,
-                            b"invalid escape\0".as_ptr() as *const c_char,
+                            b"invalid escape\0"
                         );
                         lex_free_string(lex);
                         return;
@@ -432,11 +435,11 @@ unsafe fn lex_scan_string(lex: *mut lex_t, error: *mut json_error_t) {
             {
                 c = lex_get_save(lex, error);
             } else {
-                error_set(
+                error_set!(
                     error,
-                    lex,
+                    lex as *const lex_t,
                     json_error_invalid_syntax,
-                    b"invalid escape\0".as_ptr() as *const c_char,
+                    b"invalid escape\0"
                 );
                 lex_free_string(lex);
                 return;
@@ -444,109 +447,117 @@ unsafe fn lex_scan_string(lex: *mut lex_t, error: *mut json_error_t) {
         } else {
             c = lex_get_save(lex, error);
         }
+        continue 'outer;
     }
 
+    /* the actual value is at most of the same length as the source
+    string, because:
+      - shortcut escapes (e.g. "\t") (length 2) are converted to 1 byte
+      - a single \uXXXX escape (length 6) is converted to at most 3 bytes
+      - two \uXXXX escapes (length 12) forming an UTF-16 surrogate pair
+        are converted to 4 bytes
+    */
     t = jsonp_malloc((*lex).saved_text.length + 1) as *mut c_char;
     if t.is_null() {
         /* this is not very nice, since TOKEN_INVALID is returned */
         lex_free_string(lex);
         return;
     }
-    (*lex).value.string.val = t;
+    (*lex).v_string_val = t;
 
     /* + 1 to skip the " */
-    p = strbuffer_value(&(*lex).saved_text).add(1);
+    p = strbuffer_value(std::ptr::addr_of!((*lex).saved_text)).add(1);
 
     while *p != '"' as c_char {
         if *p == '\\' as c_char {
             p = p.add(1);
             if *p == 'u' as c_char {
                 let mut length: usize = 0;
-                let mut value = decode_unicode_escape(p);
+                let mut value: i32;
+
+                value = decode_unicode_escape(p);
                 if value < 0 {
-                    error_set(
+                    error_set!(
                         error,
-                        lex,
+                        lex as *const lex_t,
                         json_error_invalid_syntax,
-                        b"invalid Unicode escape '%.6s'\0".as_ptr() as *const c_char,
-                        p.offset(-1),
+                        b"invalid Unicode escape '%.6s'\0",
+                        p.sub(1)
                     );
                     lex_free_string(lex);
                     return;
                 }
                 p = p.add(5);
 
-                if 0xD800 <= value && value <= 0xDBFF {
+                if (0xD800..=0xDBFF).contains(&value) {
                     /* surrogate pair */
                     if *p == '\\' as c_char && *p.add(1) == 'u' as c_char {
                         p = p.add(1);
                         let value2 = decode_unicode_escape(p);
                         if value2 < 0 {
-                            error_set(
+                            error_set!(
                                 error,
-                                lex,
+                                lex as *const lex_t,
                                 json_error_invalid_syntax,
-                                b"invalid Unicode escape '%.6s'\0".as_ptr() as *const c_char,
-                                p.offset(-1),
+                                b"invalid Unicode escape '%.6s'\0",
+                                p.sub(1)
                             );
                             lex_free_string(lex);
                             return;
                         }
                         p = p.add(5);
 
-                        if 0xDC00 <= value2 && value2 <= 0xDFFF {
+                        if (0xDC00..=0xDFFF).contains(&value2) {
                             /* valid second surrogate */
                             value = ((value - 0xD800) << 10) + (value2 - 0xDC00) + 0x10000;
                         } else {
                             /* invalid second surrogate */
-                            error_set(
+                            error_set!(
                                 error,
-                                lex,
+                                lex as *const lex_t,
                                 json_error_invalid_syntax,
-                                b"invalid Unicode '\\u%04X\\u%04X'\0".as_ptr() as *const c_char,
+                                b"invalid Unicode '\\u%04X\\u%04X'\0",
                                 value,
-                                value2,
+                                value2
                             );
                             lex_free_string(lex);
                             return;
                         }
                     } else {
                         /* no second surrogate */
-                        error_set(
+                        error_set!(
                             error,
-                            lex,
+                            lex as *const lex_t,
                             json_error_invalid_syntax,
-                            b"invalid Unicode '\\u%04X'\0".as_ptr() as *const c_char,
-                            value,
+                            b"invalid Unicode '\\u%04X'\0",
+                            value
                         );
                         lex_free_string(lex);
                         return;
                     }
-                } else if 0xDC00 <= value && value <= 0xDFFF {
-                    error_set(
+                } else if (0xDC00..=0xDFFF).contains(&value) {
+                    error_set!(
                         error,
-                        lex,
+                        lex as *const lex_t,
                         json_error_invalid_syntax,
-                        b"invalid Unicode '\\u%04X'\0".as_ptr() as *const c_char,
-                        value,
+                        b"invalid Unicode '\\u%04X'\0",
+                        value
                     );
                     lex_free_string(lex);
                     return;
                 }
 
-                if utf8_encode(value, t, &mut length) != 0 {
-                    debug_assert!(false);
-                }
+                utf8_encode(value, t, &mut length);
                 t = t.add(length);
             } else {
-                match *p as u8 as char {
-                    '"' | '\\' | '/' => *t = *p,
-                    'b' => *t = 0x08,
-                    'f' => *t = 0x0C,
-                    'n' => *t = 0x0A,
-                    'r' => *t = 0x0D,
-                    't' => *t = 0x09,
-                    _ => debug_assert!(false),
+                match *p as u8 {
+                    b'"' | b'\\' | b'/' => *t = *p,
+                    b'b' => *t = 0x08,
+                    b'f' => *t = 0x0c,
+                    b'n' => *t = 0x0a,
+                    b'r' => *t = 0x0d,
+                    b't' => *t = 0x09,
+                    _ => (),
                 }
                 t = t.add(1);
                 p = p.add(1);
@@ -558,14 +569,15 @@ unsafe fn lex_scan_string(lex: *mut lex_t, error: *mut json_error_t) {
         }
     }
     *t = 0;
-    (*lex).value.string.len = t as usize - (*lex).value.string.val as usize;
+    (*lex).v_string_len = t.offset_from((*lex).v_string_val) as usize;
     (*lex).token = TOKEN_STRING;
 }
 
-unsafe fn lex_scan_number(lex: *mut lex_t, mut c: c_int, error: *mut json_error_t) -> c_int {
+unsafe fn lex_scan_number(lex: *mut lex_t, c0: c_int, error: *mut json_error_t) -> c_int {
     let saved_text: *const c_char;
-    let mut end: *mut c_char = ptr::null_mut();
+    let mut end: *mut c_char = std::ptr::null_mut();
     let mut doubleval: f64 = 0.0;
+    let mut c = c0;
 
     (*lex).token = TOKEN_INVALID;
 
@@ -591,7 +603,7 @@ unsafe fn lex_scan_number(lex: *mut lex_t, mut c: c_int, error: *mut json_error_
         return -1;
     }
 
-    if (*lex).flags & JSON_DECODE_INT_AS_REAL == 0
+    if ((*lex).flags & JSON_DECODE_INT_AS_REAL) == 0
         && c != '.' as c_int
         && c != 'E' as c_int
         && c != 'e' as c_int
@@ -600,33 +612,31 @@ unsafe fn lex_scan_number(lex: *mut lex_t, mut c: c_int, error: *mut json_error_
 
         lex_unget_unsave(lex, c);
 
-        saved_text = strbuffer_value(&(*lex).saved_text);
+        saved_text = strbuffer_value(std::ptr::addr_of!((*lex).saved_text));
 
-        *__errno_location() = 0;
-        intval = strtoll(saved_text, &mut end, 10);
-        if *__errno_location() == ERANGE {
+        libc::set_errno(0);
+        intval = libc::strtoll(saved_text, &mut end, 10);
+        if libc::errno() == libc::ERANGE {
             if intval < 0 {
-                error_set(
+                error_set!(
                     error,
-                    lex,
+                    lex as *const lex_t,
                     json_error_numeric_overflow,
-                    b"too big negative integer\0".as_ptr() as *const c_char,
+                    b"too big negative integer\0"
                 );
             } else {
-                error_set(
+                error_set!(
                     error,
-                    lex,
+                    lex as *const lex_t,
                     json_error_numeric_overflow,
-                    b"too big integer\0".as_ptr() as *const c_char,
+                    b"too big integer\0"
                 );
             }
             return -1;
         }
 
-        debug_assert!(end == saved_text.add((*lex).saved_text.length) as *mut c_char);
-
         (*lex).token = TOKEN_INTEGER;
-        (*lex).value.integer = intval;
+        (*lex).v_integer = intval;
         return 0;
     }
 
@@ -667,25 +677,25 @@ unsafe fn lex_scan_number(lex: *mut lex_t, mut c: c_int, error: *mut json_error_
 
     lex_unget_unsave(lex, c);
 
-    if jsonp_strtod(&mut (*lex).saved_text, &mut doubleval) != 0 {
-        error_set(
+    if jsonp_strtod(std::ptr::addr_of_mut!((*lex).saved_text), &mut doubleval) != 0 {
+        error_set!(
             error,
-            lex,
+            lex as *const lex_t,
             json_error_numeric_overflow,
-            b"real number overflow\0".as_ptr() as *const c_char,
+            b"real number overflow\0"
         );
         return -1;
     }
 
     (*lex).token = TOKEN_REAL;
-    (*lex).value.real = doubleval;
+    (*lex).v_real = doubleval;
     0
 }
 
 unsafe fn lex_scan(lex: *mut lex_t, error: *mut json_error_t) -> c_int {
     let mut c: c_int;
 
-    strbuffer_clear(&mut (*lex).saved_text);
+    strbuffer_clear(std::ptr::addr_of_mut!((*lex).saved_text));
 
     if (*lex).token == TOKEN_STRING {
         lex_free_string(lex);
@@ -736,13 +746,13 @@ unsafe fn lex_scan(lex: *mut lex_t, error: *mut json_error_t) -> c_int {
         }
         lex_unget_unsave(lex, c);
 
-        saved_text = strbuffer_value(&(*lex).saved_text);
+        saved_text = strbuffer_value(std::ptr::addr_of!((*lex).saved_text));
 
-        if strcmp(saved_text, b"true\0".as_ptr() as *const c_char) == 0 {
+        if libc::strcmp(saved_text, b"true\0".as_ptr() as *const c_char) == 0 {
             (*lex).token = TOKEN_TRUE;
-        } else if strcmp(saved_text, b"false\0".as_ptr() as *const c_char) == 0 {
+        } else if libc::strcmp(saved_text, b"false\0".as_ptr() as *const c_char) == 0 {
             (*lex).token = TOKEN_FALSE;
-        } else if strcmp(saved_text, b"null\0".as_ptr() as *const c_char) == 0 {
+        } else if libc::strcmp(saved_text, b"null\0".as_ptr() as *const c_char) == 0 {
             (*lex).token = TOKEN_NULL;
         } else {
             (*lex).token = TOKEN_INVALID;
@@ -758,19 +768,24 @@ unsafe fn lex_scan(lex: *mut lex_t, error: *mut json_error_t) -> c_int {
 }
 
 unsafe fn lex_steal_string(lex: *mut lex_t, out_len: *mut usize) -> *mut c_char {
-    let mut result: *mut c_char = ptr::null_mut();
+    let mut result: *mut c_char = std::ptr::null_mut();
     if (*lex).token == TOKEN_STRING {
-        result = (*lex).value.string.val;
-        *out_len = (*lex).value.string.len;
-        (*lex).value.string.val = ptr::null_mut();
-        (*lex).value.string.len = 0;
+        result = (*lex).v_string_val;
+        *out_len = (*lex).v_string_len;
+        (*lex).v_string_val = std::ptr::null_mut();
+        (*lex).v_string_len = 0;
     }
     result
 }
 
-unsafe fn lex_init(lex: *mut lex_t, get: get_func, flags: usize, data: *mut c_void) -> c_int {
-    stream_init(&mut (*lex).stream, get, data);
-    if strbuffer_init(&mut (*lex).saved_text) != 0 {
+unsafe fn lex_init(
+    lex: *mut lex_t,
+    get: get_func,
+    flags: usize,
+    data: *mut c_void,
+) -> c_int {
+    stream_init(std::ptr::addr_of_mut!((*lex).stream), get, data);
+    if strbuffer_init(std::ptr::addr_of_mut!((*lex).saved_text)) != 0 {
         return -1;
     }
 
@@ -783,7 +798,7 @@ unsafe fn lex_close(lex: *mut lex_t) {
     if (*lex).token == TOKEN_STRING {
         lex_free_string(lex);
     }
-    strbuffer_close(&mut (*lex).saved_text);
+    strbuffer_close(std::ptr::addr_of_mut!((*lex).saved_text));
 }
 
 /*** parser ***/
@@ -791,7 +806,7 @@ unsafe fn lex_close(lex: *mut lex_t) {
 unsafe fn parse_object(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -> *mut json_t {
     let object = json_object();
     if object.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     lex_scan(lex, error);
@@ -805,57 +820,57 @@ unsafe fn parse_object(lex: *mut lex_t, flags: usize, error: *mut json_error_t) 
         let value: *mut json_t;
 
         if (*lex).token != TOKEN_STRING {
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_invalid_syntax,
-                b"string or '}' expected\0".as_ptr() as *const c_char,
+                b"string or '}' expected\0"
             );
             json_decref(object);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         key = lex_steal_string(lex, &mut len);
         if key.is_null() {
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
-        if !memchr(key as *const c_void, 0, len).is_null() {
+        if !libc::memchr(key as *const c_void, 0, len).is_null() {
             jsonp_free(key as *mut c_void);
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_null_byte_in_key,
-                b"NUL byte in object key not supported\0".as_ptr() as *const c_char,
+                b"NUL byte in object key not supported\0"
             );
             json_decref(object);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
-        if flags & JSON_REJECT_DUPLICATES != 0 {
-            if !json_object_getn(object, key, len).is_null() {
-                jsonp_free(key as *mut c_void);
-                error_set(
-                    error,
-                    lex,
-                    json_error_duplicate_key,
-                    b"duplicate object key\0".as_ptr() as *const c_char,
-                );
-                json_decref(object);
-                return ptr::null_mut();
-            }
+        if (flags & JSON_REJECT_DUPLICATES) != 0
+            && !json_object_getn(object, key, len).is_null()
+        {
+            jsonp_free(key as *mut c_void);
+            error_set!(
+                error,
+                lex as *const lex_t,
+                json_error_duplicate_key,
+                b"duplicate object key\0"
+            );
+            json_decref(object);
+            return std::ptr::null_mut();
         }
 
         lex_scan(lex, error);
         if (*lex).token != ':' as c_int {
             jsonp_free(key as *mut c_void);
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_invalid_syntax,
-                b"':' expected\0".as_ptr() as *const c_char,
+                b"':' expected\0"
             );
             json_decref(object);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         lex_scan(lex, error);
@@ -863,13 +878,13 @@ unsafe fn parse_object(lex: *mut lex_t, flags: usize, error: *mut json_error_t) 
         if value.is_null() {
             jsonp_free(key as *mut c_void);
             json_decref(object);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         if json_object_setn_new_nocheck(object, key, len, value) != 0 {
             jsonp_free(key as *mut c_void);
             json_decref(object);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         jsonp_free(key as *mut c_void);
@@ -883,14 +898,14 @@ unsafe fn parse_object(lex: *mut lex_t, flags: usize, error: *mut json_error_t) 
     }
 
     if (*lex).token != '}' as c_int {
-        error_set(
+        error_set!(
             error,
-            lex,
+            lex as *const lex_t,
             json_error_invalid_syntax,
-            b"'}' expected\0".as_ptr() as *const c_char,
+            b"'}' expected\0"
         );
         json_decref(object);
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     object
@@ -899,7 +914,7 @@ unsafe fn parse_object(lex: *mut lex_t, flags: usize, error: *mut json_error_t) 
 unsafe fn parse_array(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -> *mut json_t {
     let array = json_array();
     if array.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     lex_scan(lex, error);
@@ -911,12 +926,12 @@ unsafe fn parse_array(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -
         let elem = parse_value(lex, flags, error);
         if elem.is_null() {
             json_decref(array);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         if json_array_append_new(array, elem) != 0 {
             json_decref(array);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         lex_scan(lex, error);
@@ -928,14 +943,14 @@ unsafe fn parse_array(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -
     }
 
     if (*lex).token != ']' as c_int {
-        error_set(
+        error_set!(
             error,
-            lex,
+            lex as *const lex_t,
             json_error_invalid_syntax,
-            b"']' expected\0".as_ptr() as *const c_char,
+            b"']' expected\0"
         );
         json_decref(array);
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     array
@@ -946,76 +961,78 @@ unsafe fn parse_value(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -
 
     (*lex).depth += 1;
     if (*lex).depth > JSON_PARSER_MAX_DEPTH {
-        error_set(
+        error_set!(
             error,
-            lex,
+            lex as *const lex_t,
             json_error_stack_overflow,
-            b"maximum parsing depth reached\0".as_ptr() as *const c_char,
+            b"maximum parsing depth reached\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     match (*lex).token {
         TOKEN_STRING => {
-            let value = (*lex).value.string.val;
-            let len = (*lex).value.string.len;
+            let value = (*lex).v_string_val;
+            let len = (*lex).v_string_len;
 
-            if flags & JSON_ALLOW_NUL == 0 {
-                if !memchr(value as *const c_void, 0, len).is_null() {
-                    error_set(
-                        error,
-                        lex,
-                        json_error_null_character,
-                        b"\\u0000 is not allowed without JSON_ALLOW_NUL\0".as_ptr()
-                            as *const c_char,
-                    );
-                    return ptr::null_mut();
-                }
+            if (flags & JSON_ALLOW_NUL) == 0
+                && !libc::memchr(value as *const c_void, 0, len).is_null()
+            {
+                error_set!(
+                    error,
+                    lex as *const lex_t,
+                    json_error_null_character,
+                    b"\\u0000 is not allowed without JSON_ALLOW_NUL\0"
+                );
+                return std::ptr::null_mut();
             }
 
             json = jsonp_stringn_nocheck_own(value, len);
-            (*lex).value.string.val = ptr::null_mut();
-            (*lex).value.string.len = 0;
+            (*lex).v_string_val = std::ptr::null_mut();
+            (*lex).v_string_len = 0;
         }
 
         TOKEN_INTEGER => {
-            json = json_integer((*lex).value.integer);
+            json = json_integer((*lex).v_integer);
         }
 
         TOKEN_REAL => {
-            json = json_real((*lex).value.real);
+            json = json_real((*lex).v_real);
         }
 
         TOKEN_TRUE => json = json_true(),
+
         TOKEN_FALSE => json = json_false(),
+
         TOKEN_NULL => json = json_null(),
 
-        0x7B => json = parse_object(lex, flags, error), // '{'
-        0x5B => json = parse_array(lex, flags, error),  // '['
+        0x7b /* '{' */ => json = parse_object(lex, flags, error),
+
+        0x5b /* '[' */ => json = parse_array(lex, flags, error),
 
         TOKEN_INVALID => {
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_invalid_syntax,
-                b"invalid token\0".as_ptr() as *const c_char,
+                b"invalid token\0"
             );
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
 
         _ => {
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_invalid_syntax,
-                b"unexpected token\0".as_ptr() as *const c_char,
+                b"unexpected token\0"
             );
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
     }
 
     if json.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     (*lex).depth -= 1;
@@ -1023,37 +1040,40 @@ unsafe fn parse_value(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -
 }
 
 unsafe fn parse_json(lex: *mut lex_t, flags: usize, error: *mut json_error_t) -> *mut json_t {
+    let result: *mut json_t;
+
     (*lex).depth = 0;
 
     lex_scan(lex, error);
-    if flags & JSON_DECODE_ANY == 0 {
-        if (*lex).token != '[' as c_int && (*lex).token != '{' as c_int {
-            error_set(
-                error,
-                lex,
-                json_error_invalid_syntax,
-                b"'[' or '{' expected\0".as_ptr() as *const c_char,
-            );
-            return ptr::null_mut();
-        }
+    if (flags & JSON_DECODE_ANY) == 0
+        && (*lex).token != '[' as c_int
+        && (*lex).token != '{' as c_int
+    {
+        error_set!(
+            error,
+            lex as *const lex_t,
+            json_error_invalid_syntax,
+            b"'[' or '{' expected\0"
+        );
+        return std::ptr::null_mut();
     }
 
-    let result = parse_value(lex, flags, error);
+    result = parse_value(lex, flags, error);
     if result.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    if flags & JSON_DISABLE_EOF_CHECK == 0 {
+    if (flags & JSON_DISABLE_EOF_CHECK) == 0 {
         lex_scan(lex, error);
         if (*lex).token != TOKEN_EOF {
-            error_set(
+            error_set!(
                 error,
-                lex,
+                lex as *const lex_t,
                 json_error_end_of_input_expected,
-                b"end of file expected\0".as_ptr() as *const c_char,
+                b"end of file expected\0"
             );
             json_decref(result);
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
     }
 
@@ -1072,13 +1092,14 @@ struct string_data_t {
 }
 
 unsafe extern "C" fn string_get(data: *mut c_void) -> c_int {
+    let c: c_char;
     let stream = data as *mut string_data_t;
-    let c = *(*stream).data.add((*stream).pos);
+    c = *(*stream).data.add((*stream).pos);
     if c == 0 {
-        EOF
+        libc::EOF
     } else {
         (*stream).pos += 1;
-        (c as u8) as c_int
+        c as u8 as c_int
     }
 }
 
@@ -1088,20 +1109,23 @@ pub unsafe extern "C" fn json_loads(
     flags: usize,
     error: *mut json_error_t,
 ) -> *mut json_t {
-    let mut lex: lex_t = core::mem::zeroed();
+    let mut lex = lex_t::new();
     let result: *mut json_t;
-    let mut stream_data: string_data_t = core::mem::zeroed();
+    let mut stream_data = string_data_t {
+        data: std::ptr::null(),
+        pos: 0,
+    };
 
     jsonp_error_init(error, b"<string>\0".as_ptr() as *const c_char);
 
     if string.is_null() {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_invalid_argument,
-            b"wrong arguments\0".as_ptr() as *const c_char,
+            b"wrong arguments\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     stream_data.data = string;
@@ -1109,12 +1133,12 @@ pub unsafe extern "C" fn json_loads(
 
     if lex_init(
         &mut lex,
-        Some(string_get),
+        string_get,
         flags,
-        &mut stream_data as *mut _ as *mut c_void,
+        &mut stream_data as *mut string_data_t as *mut c_void,
     ) != 0
     {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     result = parse_json(&mut lex, flags, error);
@@ -1131,14 +1155,15 @@ struct buffer_data_t {
 }
 
 unsafe extern "C" fn buffer_get(data: *mut c_void) -> c_int {
+    let c: c_char;
     let stream = data as *mut buffer_data_t;
     if (*stream).pos >= (*stream).len {
-        return EOF;
+        return libc::EOF;
     }
 
-    let c = *(*stream).data.add((*stream).pos);
+    c = *(*stream).data.add((*stream).pos);
     (*stream).pos += 1;
-    (c as u8) as c_int
+    c as u8 as c_int
 }
 
 #[unsafe(no_mangle)]
@@ -1148,20 +1173,24 @@ pub unsafe extern "C" fn json_loadb(
     flags: usize,
     error: *mut json_error_t,
 ) -> *mut json_t {
-    let mut lex: lex_t = core::mem::zeroed();
+    let mut lex = lex_t::new();
     let result: *mut json_t;
-    let mut stream_data: buffer_data_t = core::mem::zeroed();
+    let mut stream_data = buffer_data_t {
+        data: std::ptr::null(),
+        len: 0,
+        pos: 0,
+    };
 
     jsonp_error_init(error, b"<buffer>\0".as_ptr() as *const c_char);
 
     if buffer.is_null() {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_invalid_argument,
-            b"wrong arguments\0".as_ptr() as *const c_char,
+            b"wrong arguments\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     stream_data.data = buffer;
@@ -1170,12 +1199,12 @@ pub unsafe extern "C" fn json_loadb(
 
     if lex_init(
         &mut lex,
-        Some(buffer_get),
+        buffer_get,
         flags,
-        &mut stream_data as *mut _ as *mut c_void,
+        &mut stream_data as *mut buffer_data_t as *mut c_void,
     ) != 0
     {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     result = parse_json(&mut lex, flags, error);
@@ -1184,21 +1213,21 @@ pub unsafe extern "C" fn json_loadb(
     result
 }
 
-unsafe extern "C" fn fgetc_wrap(data: *mut c_void) -> c_int {
-    fgetc(data)
+unsafe extern "C" fn file_get(data: *mut c_void) -> c_int {
+    libc::fgetc(data as *mut libc::FILE)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_loadf(
-    input: *mut c_void,
+    input: *mut libc::FILE,
     flags: usize,
     error: *mut json_error_t,
 ) -> *mut json_t {
-    let mut lex: lex_t = core::mem::zeroed();
+    let mut lex = lex_t::new();
     let source: *const c_char;
     let result: *mut json_t;
 
-    if input == stdin {
+    if input == libc::stdin {
         source = b"<stdin>\0".as_ptr() as *const c_char;
     } else {
         source = b"<stream>\0".as_ptr() as *const c_char;
@@ -1207,17 +1236,17 @@ pub unsafe extern "C" fn json_loadf(
     jsonp_error_init(error, source);
 
     if input.is_null() {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_invalid_argument,
-            b"wrong arguments\0".as_ptr() as *const c_char,
+            b"wrong arguments\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    if lex_init(&mut lex, Some(fgetc_wrap), flags, input) != 0 {
-        return ptr::null_mut();
+    if lex_init(&mut lex, file_get, flags, input as *mut c_void) != 0 {
+        return std::ptr::null_mut();
     }
 
     result = parse_json(&mut lex, flags, error);
@@ -1229,10 +1258,10 @@ pub unsafe extern "C" fn json_loadf(
 unsafe extern "C" fn fd_get_func(data: *mut c_void) -> c_int {
     let fd = data as *mut c_int;
     let mut c: u8 = 0;
-    if read(*fd, &mut c as *mut _ as *mut c_void, 1) == 1 {
+    if libc::read(*fd, &mut c as *mut u8 as *mut c_void, 1) == 1 {
         return c as c_int;
     }
-    EOF
+    libc::EOF
 }
 
 #[unsafe(no_mangle)]
@@ -1241,11 +1270,12 @@ pub unsafe extern "C" fn json_loadfd(
     flags: usize,
     error: *mut json_error_t,
 ) -> *mut json_t {
-    let mut lex: lex_t = core::mem::zeroed();
+    let mut lex = lex_t::new();
     let source: *const c_char;
     let result: *mut json_t;
+    let mut input_ = input;
 
-    if input == STDIN_FILENO {
+    if input == libc::STDIN_FILENO {
         source = b"<stdin>\0".as_ptr() as *const c_char;
     } else {
         source = b"<stream>\0".as_ptr() as *const c_char;
@@ -1254,24 +1284,23 @@ pub unsafe extern "C" fn json_loadfd(
     jsonp_error_init(error, source);
 
     if input < 0 {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_invalid_argument,
-            b"wrong arguments\0".as_ptr() as *const c_char,
+            b"wrong arguments\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let mut input_v = input;
     if lex_init(
         &mut lex,
-        Some(fd_get_func),
+        fd_get_func,
         flags,
-        &mut input_v as *mut _ as *mut c_void,
+        &mut input_ as *mut c_int as *mut c_void,
     ) != 0
     {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     result = parse_json(&mut lex, flags, error);
@@ -1287,39 +1316,40 @@ pub unsafe extern "C" fn json_load_file(
     error: *mut json_error_t,
 ) -> *mut json_t {
     let result: *mut json_t;
+    let fp: *mut libc::FILE;
 
     jsonp_error_init(error, path);
 
     if path.is_null() {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_invalid_argument,
-            b"wrong arguments\0".as_ptr() as *const c_char,
+            b"wrong arguments\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let fp = fopen(path, b"rb\0".as_ptr() as *const c_char);
+    fp = libc::fopen(path, b"rb\0".as_ptr() as *const c_char);
     if fp.is_null() {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_cannot_open_file,
-            b"unable to open %s: %s\0".as_ptr() as *const c_char,
+            b"unable to open %s: %s\0",
             path,
-            strerror(*__errno_location()),
+            libc::strerror(libc::errno())
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     result = json_loadf(fp, flags, error);
 
-    fclose(fp);
+    libc::fclose(fp);
     result
 }
 
-const MAX_BUF_LEN: usize = 1024;
+pub const MAX_BUF_LEN: usize = 1024;
 
 #[repr(C)]
 struct callback_data_t {
@@ -1331,6 +1361,7 @@ struct callback_data_t {
 }
 
 unsafe extern "C" fn callback_get(data: *mut c_void) -> c_int {
+    let c: c_char;
     let stream = data as *mut callback_data_t;
 
     if (*stream).pos >= (*stream).len {
@@ -1341,13 +1372,15 @@ unsafe extern "C" fn callback_get(data: *mut c_void) -> c_int {
             (*stream).arg,
         );
         if (*stream).len == 0 || (*stream).len == usize::MAX {
-            return EOF;
+            return libc::EOF;
         }
     }
 
-    let c = (*stream).data[(*stream).pos];
+    /* unchecked, exactly like the C code (a misbehaving callback may report a
+    length larger than MAX_BUF_LEN) */
+    c = *(*stream).data.as_ptr().add((*stream).pos);
     (*stream).pos += 1;
-    (c as u8) as c_int
+    c as u8 as c_int
 }
 
 #[unsafe(no_mangle)]
@@ -1357,39 +1390,40 @@ pub unsafe extern "C" fn json_load_callback(
     flags: usize,
     error: *mut json_error_t,
 ) -> *mut json_t {
-    let mut lex: lex_t = core::mem::zeroed();
+    let mut lex = lex_t::new();
     let result: *mut json_t;
 
-    let mut stream_data: callback_data_t = core::mem::zeroed();
+    let mut stream_data = callback_data_t {
+        data: [0; MAX_BUF_LEN],
+        len: 0,
+        pos: 0,
+        callback: None,
+        arg: std::ptr::null_mut(),
+    };
 
-    memset(
-        &mut stream_data as *mut _ as *mut c_void,
-        0,
-        core::mem::size_of::<callback_data_t>(),
-    );
     stream_data.callback = callback;
     stream_data.arg = arg;
 
     jsonp_error_init(error, b"<callback>\0".as_ptr() as *const c_char);
 
     if callback.is_none() {
-        error_set(
+        error_set!(
             error,
-            ptr::null(),
+            std::ptr::null::<lex_t>(),
             json_error_invalid_argument,
-            b"wrong arguments\0".as_ptr() as *const c_char,
+            b"wrong arguments\0"
         );
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     if lex_init(
         &mut lex,
-        Some(callback_get),
+        callback_get,
         flags,
-        &mut stream_data as *mut _ as *mut c_void,
+        &mut stream_data as *mut callback_data_t as *mut c_void,
     ) != 0
     {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     result = parse_json(&mut lex, flags, error);

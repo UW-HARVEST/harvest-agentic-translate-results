@@ -1,27 +1,24 @@
-//! Translation of deprecated/zbuff_decompress.c
-//! Deprecated buffered streaming decompression API, a thin wrapper over the
-//! public ZSTD_DStream streaming API.
+//! Translation of `deprecated/zbuff_decompress.c`
+#![allow(dead_code)]
 
+use crate::zstd_h::*;
 use core::ffi::c_void;
 
-use crate::common::allocations::ZSTD_customMem;
-use crate::zstd_h::{ZSTD_inBuffer, ZSTD_outBuffer};
-
-/* ZBUFF_DCtx is a typedef of ZSTD_DStream */
-pub type ZBUFF_DCtx = c_void;
+/* `ZBUFF_DCtx` is `ZSTD_DStream` == `ZSTD_DCtx` */
+type ZBUFF_DCtx = c_void;
 
 extern "C" {
-    fn ZSTD_createDStream() -> *mut c_void;
-    fn ZSTD_createDStream_advanced(customMem: ZSTD_customMem) -> *mut c_void;
-    fn ZSTD_freeDStream(zds: *mut c_void) -> usize;
+    fn ZSTD_createDStream() -> *mut ZBUFF_DCtx;
+    fn ZSTD_createDStream_advanced(customMem: ZSTD_customMem) -> *mut ZBUFF_DCtx;
+    fn ZSTD_freeDStream(zds: *mut ZBUFF_DCtx) -> usize;
     fn ZSTD_initDStream_usingDict(
-        zds: *mut c_void,
+        zds: *mut ZBUFF_DCtx,
         dict: *const c_void,
         dictSize: usize,
     ) -> usize;
-    fn ZSTD_initDStream(zds: *mut c_void) -> usize;
+    fn ZSTD_initDStream(zds: *mut ZBUFF_DCtx) -> usize;
     fn ZSTD_decompressStream(
-        zds: *mut c_void,
+        zds: *mut ZBUFF_DCtx,
         output: *mut ZSTD_outBuffer,
         input: *mut ZSTD_inBuffer,
     ) -> usize;
@@ -70,23 +67,17 @@ pub unsafe extern "C" fn ZBUFF_decompressContinue(
     src: *const c_void,
     srcSizePtr: *mut usize,
 ) -> usize {
-    let mut outBuff: ZSTD_outBuffer = ZSTD_outBuffer {
-        dst,
-        size: 0,
-        pos: 0,
-    };
-    let mut inBuff: ZSTD_inBuffer = ZSTD_inBuffer {
-        src,
-        size: 0,
-        pos: 0,
-    };
     let result: usize;
-    outBuff.dst = dst;
-    outBuff.pos = 0;
-    outBuff.size = *dstCapacityPtr;
-    inBuff.src = src;
-    inBuff.pos = 0;
-    inBuff.size = *srcSizePtr;
+    let mut outBuff = ZSTD_outBuffer {
+        dst,
+        size: *dstCapacityPtr,
+        pos: 0,
+    };
+    let mut inBuff = ZSTD_inBuffer {
+        src,
+        size: *srcSizePtr,
+        pos: 0,
+    };
     result = ZSTD_decompressStream(zbd, &mut outBuff, &mut inBuff);
     *dstCapacityPtr = outBuff.pos;
     *srcSizePtr = inBuff.pos;

@@ -1,51 +1,54 @@
-//! Translation of hashtable_seed.c
-//! Config: USE_URANDOM, HAVE_OPEN/CLOSE/READ, HAVE_GETTIMEOFDAY, HAVE_GETPID,
-//! HAVE_ATOMIC_BUILTINS, HAVE_SCHED_YIELD => the __atomic path is used.
-#![allow(non_upper_case_globals)]
+//! Translation of c_src/src/hashtable_seed.c
+use crate::libc;
+use std::ffi::{c_char, c_void};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
-use core::ffi::{c_char, c_int, c_void};
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+/* Exported (non-static) in the C library. */
+#[unsafe(no_mangle)]
+pub static mut hashtable_seed: u32 = 0;
 
-extern "C" {
-    fn open(path: *const c_char, flags: c_int, ...) -> c_int;
-    fn close(fd: c_int) -> c_int;
-    fn read(fd: c_int, buf: *mut c_void, count: usize) -> isize;
-    fn gettimeofday(tv: *mut Timeval, tz: *mut c_void) -> c_int;
-    fn getpid() -> c_int;
-    fn sched_yield() -> c_int;
+static mut seed_initialized: u8 = 0;
+
+#[inline]
+pub fn seed_atomic() -> &'static AtomicU32 {
+    unsafe { &*(std::ptr::addr_of!(hashtable_seed) as *const AtomicU32) }
 }
 
-#[repr(C)]
-struct Timeval {
-    tv_sec: i64,
-    tv_usec: i64,
+#[inline]
+fn seed_initialized_atomic() -> &'static AtomicU8 {
+    unsafe { &*(std::ptr::addr_of!(seed_initialized) as *const AtomicU8) }
 }
 
-const O_RDONLY: c_int = 0;
+#[inline]
+pub fn get_hashtable_seed() -> u32 {
+    /* plain (volatile) read of hashtable_seed */
+    unsafe { std::ptr::read_volatile(std::ptr::addr_of!(hashtable_seed)) }
+}
 
 unsafe fn buf_to_uint32(data: *const c_char) -> u32 {
+    let mut i: usize = 0;
     let mut result: u32 = 0;
-    for i in 0..core::mem::size_of::<u32>() {
-        result = (result << 8) | (*data.add(i) as u8) as u32;
+
+    while i < std::mem::size_of::<u32>() {
+        result = (result << 8) | (*data.add(i) as u8 as u32);
+        i += 1;
     }
+
     result
 }
 
-// /dev/urandom
-unsafe fn seed_from_urandom(seed: *mut u32) -> c_int {
-    let mut data = [0 as c_char; 4];
+/* /dev/urandom */
+unsafe fn seed_from_urandom(seed: *mut u32) -> i32 {
+    let mut data: [c_char; 4] = [0; 4];
+    let ok: bool;
 
-    let urandom = open(b"/dev/urandom\0".as_ptr() as *const c_char, O_RDONLY);
+    let urandom = libc::open(b"/dev/urandom\0".as_ptr() as *const c_char, libc::O_RDONLY);
     if urandom == -1 {
         return 1;
     }
 
-    let ok = read(
-        urandom,
-        data.as_mut_ptr() as *mut c_void,
-        core::mem::size_of::<u32>(),
-    ) == core::mem::size_of::<u32>() as isize;
-    close(urandom);
+    ok = libc::read(urandom, data.as_mut_ptr() as *mut c_void, 4) == 4;
+    libc::close(urandom);
 
     if !ok {
         return 1;
@@ -55,16 +58,16 @@ unsafe fn seed_from_urandom(seed: *mut u32) -> c_int {
     0
 }
 
-// gettimeofday() and getpid()
-unsafe fn seed_from_timestamp_and_pid(seed: *mut u32) -> c_int {
-    let mut tv = Timeval {
+/* gettimeofday() and getpid() */
+unsafe fn seed_from_timestamp_and_pid(seed: *mut u32) -> i32 {
+    let mut tv = libc::timeval {
         tv_sec: 0,
         tv_usec: 0,
     };
-    gettimeofday(&mut tv, core::ptr::null_mut());
+    libc::gettimeofday(&mut tv, std::ptr::null_mut());
     *seed = (tv.tv_sec as u32) ^ (tv.tv_usec as u32);
 
-    *seed ^= getpid() as u32;
+    *seed ^= libc::getpid() as u32;
 
     0
 }
@@ -78,6 +81,7 @@ unsafe fn generate_seed() -> u32 {
     }
 
     if done == 0 {
+        /* Fall back to timestamp and PID if no better randomness is available */
         seed_from_timestamp_and_pid(&mut seed);
     }
 
@@ -89,30 +93,25 @@ unsafe fn generate_seed() -> u32 {
     seed
 }
 
-// volatile uint32_t hashtable_seed = 0;
-#[unsafe(no_mangle)]
-pub static hashtable_seed: AtomicU32 = AtomicU32::new(0);
-
-static seed_initialized: AtomicU8 = AtomicU8::new(0);
-
-// __atomic path (HAVE_ATOMIC_BUILTINS && HAVE_SCHED_YIELD)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_seed(seed: usize) {
     let mut new_seed = seed as u32;
 
-    if hashtable_seed.load(Ordering::Relaxed) == 0 {
-        // __atomic_test_and_set(&seed_initialized, __ATOMIC_RELAXED) == 0
-        if seed_initialized.swap(1, Ordering::Relaxed) == 0 {
+    if get_hashtable_seed() == 0 {
+        if seed_initialized_atomic().swap(1, Ordering::Relaxed) == 0 {
             /* Do the seeding ourselves */
             if new_seed == 0 {
                 new_seed = generate_seed();
             }
 
-            hashtable_seed.store(new_seed, Ordering::Release);
+            seed_atomic().store(new_seed, Ordering::Release);
         } else {
             /* Wait for another thread to do the seeding */
-            while hashtable_seed.load(Ordering::Acquire) == 0 {
-                sched_yield();
+            loop {
+                libc::sched_yield();
+                if seed_atomic().load(Ordering::Acquire) != 0 {
+                    break;
+                }
             }
         }
     }

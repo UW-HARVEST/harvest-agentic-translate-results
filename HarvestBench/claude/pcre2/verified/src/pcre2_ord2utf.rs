@@ -1,22 +1,47 @@
-use crate::pcre2_internal::*;
+// Translated from c_src/src/pcre2_ord2utf.c
+use crate::internal::*;
+
+/* This file contains a function that converts a Unicode character code point
+into a UTF string. The behaviour is different for each code unit width. */
+
+/*************************************************
+*          Convert code point to UTF             *
+*************************************************/
+
+/*
+Arguments:
+  cvalue     the character value
+  buffer     pointer to buffer for result
+
+Returns:     number of code units placed in the buffer
+*/
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_ord2utf_8(mut cvalue: u32, buffer: *mut PCRE2_UCHAR) -> u32 {
-    let mut i: u32 = 0;
-    while (i as usize) < _pcre2_utf8_table1_size as usize {
-        if (cvalue as i32) <= _pcre2_utf8_table1[i as usize] {
+pub unsafe extern "C" fn _pcre2_ord2utf_8(
+    mut cvalue: u32,
+    mut buffer: *mut PCRE2_UCHAR,
+) -> c_uint {
+    /* Convert to UTF-8 */
+
+    let mut i: c_uint;
+
+    i = 0;
+    while i < _pcre2_utf8_table1_size {
+        if (cvalue as c_int) <= *_pcre2_utf8_table1.as_ptr().add(i as usize) {
             break;
         }
-        i += 1;
+        i = i.wrapping_add(1);
     }
-    let mut b = buffer.add(i as usize);
-    let mut j = i;
+    buffer = buffer.add(i as usize);
+    let mut j: c_uint = i;
     while j != 0 {
-        *b = (0x80 | (cvalue & 0x3f)) as u8;
-        b = b.sub(1);
+        *buffer = (0x80 | (cvalue & 0x3f)) as PCRE2_UCHAR;
+        buffer = buffer.sub(1);
         cvalue >>= 6;
-        j -= 1;
+        j = j.wrapping_sub(1);
     }
-    *b = (_pcre2_utf8_table2[i as usize] | cvalue as i32) as u8;
-    i + 1
+    *buffer = (*_pcre2_utf8_table2.as_ptr().add(i as usize) | (cvalue as c_int)) as PCRE2_UCHAR;
+    i.wrapping_add(1)
 }
+
+/* End of pcre2_ord2utf.c */

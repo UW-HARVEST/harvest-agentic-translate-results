@@ -1,38 +1,58 @@
-//! Translation of value.c
-#![allow(non_upper_case_globals)]
+//! Translation of c_src/src/value.c
+#![allow(dead_code)]
 
-use crate::hashtable::*;
-use crate::hashtable_seed::{hashtable_seed, json_object_seed};
-use crate::memory::{jsonp_free, jsonp_malloc, jsonp_strndup};
-use crate::types::*;
+use crate::hashtable::{
+    hashtable_clear, hashtable_close, hashtable_del, hashtable_get, hashtable_init, hashtable_iter,
+    hashtable_iter_at, hashtable_iter_key, hashtable_iter_key_len, hashtable_iter_next,
+    hashtable_iter_set, hashtable_iter_value, hashtable_key_to_iter, hashtable_set, hashtable_t,
+};
+use crate::jansson::*;
+use crate::libc;
+use crate::libc::va_list;
+use crate::memory::{jsonp_free, jsonp_malloc, jsonp_realloc, jsonp_strndup};
 use crate::utf::utf8_check_string;
-use core::ffi::{c_char, c_int, c_void, VaList};
-use core::mem::size_of;
-use core::ptr;
-use core::sync::atomic::Ordering;
-
-extern "C" {
-    fn strlen(s: *const c_char) -> usize;
-    fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> c_int;
-    fn memmove(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-    fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-    fn snprintf(s: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
-    fn vsnprintf(s: *mut c_char, n: usize, fmt: *const c_char, ap: VaList) -> c_int;
-}
-
-// re-export refcount helpers under the public no_mangle names is done in lib.rs
+use std::ffi::{c_char, c_int, c_void};
 
 #[inline]
-unsafe fn json_init(json: *mut json_t, type_: json_type) {
+unsafe fn isnan_(x: f64) -> bool {
+    x != x
+}
+
+#[inline]
+unsafe fn isinf_(x: f64) -> bool {
+    !isnan_(x) && isnan_(x - x)
+}
+
+#[inline]
+unsafe fn json_init(json: *mut json_t, type_: c_int) {
     (*json).type_ = type_;
     (*json).refcount = 1;
 }
 
-fn isnan_(x: f64) -> bool {
-    x != x
-}
-fn isinf_(x: f64) -> bool {
-    !isnan_(x) && isnan_(x - x)
+/// Reproduces the json_object_keylen_foreach() macro from jansson.h.
+macro_rules! json_object_keylen_foreach {
+    ($object:expr, $key:ident, $key_len:ident, $value:ident, $body:block) => {{
+        let __obj = $object;
+        #[allow(unused_mut)]
+        let mut $key = json_object_iter_key(json_object_iter(__obj));
+        #[allow(unused_mut)]
+        let mut $key_len = json_object_iter_key_len(json_object_key_to_iter($key));
+        #[allow(unused_mut, unused_assignments)]
+        let mut $value: *mut json_t = std::ptr::null_mut();
+        while !$key.is_null()
+            && {
+                $value = json_object_iter_value(json_object_key_to_iter($key));
+                !$value.is_null()
+            }
+        {
+            $body
+            $key = json_object_iter_key(json_object_iter_next(
+                __obj,
+                json_object_key_to_iter($key),
+            ));
+            $key_len = json_object_iter_key_len(json_object_key_to_iter($key));
+        }
+    }};
 }
 
 #[unsafe(no_mangle)]
@@ -43,7 +63,8 @@ pub unsafe extern "C" fn jsonp_loop_check(
     key_size: usize,
     key_len_out: *mut usize,
 ) -> c_int {
-    let key_len = snprintf(key, key_size, b"%p\0".as_ptr() as *const c_char, json) as usize;
+    let key_len =
+        libc::snprintf(key, key_size, b"%p\0".as_ptr() as *const c_char, json) as usize;
 
     if !key_len_out.is_null() {
         *key_len_out = key_len;
@@ -60,48 +81,50 @@ pub unsafe extern "C" fn jsonp_loop_check(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object() -> *mut json_t {
-    let object = jsonp_malloc(size_of::<json_object_t>()) as *mut json_object_t;
+    let object = jsonp_malloc(std::mem::size_of::<json_object_t>()) as *mut json_object_t;
     if object.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    if hashtable_seed.load(Ordering::Relaxed) == 0 {
+    if crate::hashtable_seed::get_hashtable_seed() == 0 {
         /* Autoseed */
-        json_object_seed(0);
+        crate::hashtable_seed::json_object_seed(0);
     }
 
-    json_init(&mut (*object).json, JSON_OBJECT);
+    json_init(std::ptr::addr_of_mut!((*object).json), JSON_OBJECT);
 
-    if hashtable_init(&mut (*object).hashtable) != 0 {
+    if hashtable_init(std::ptr::addr_of_mut!((*object).hashtable)) != 0 {
         jsonp_free(object as *mut c_void);
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    &mut (*object).json
+    std::ptr::addr_of_mut!((*object).json)
 }
 
 unsafe fn json_delete_object(object: *mut json_object_t) {
-    hashtable_close(&mut (*object).hashtable);
+    hashtable_close(std::ptr::addr_of_mut!((*object).hashtable));
     jsonp_free(object as *mut c_void);
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_size(json: *const json_t) -> usize {
+    let object: *mut json_object_t;
+
     if !json_is_object(json) {
         return 0;
     }
 
-    let object = json_to_object(json);
+    object = json_to_object(json);
     (*object).hashtable.size
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_get(json: *const json_t, key: *const c_char) -> *mut json_t {
     if key.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    json_object_getn(json, key, strlen(key))
+    json_object_getn(json, key, libc::strlen(key))
 }
 
 #[unsafe(no_mangle)]
@@ -110,12 +133,14 @@ pub unsafe extern "C" fn json_object_getn(
     key: *const c_char,
     key_len: usize,
 ) -> *mut json_t {
+    let object: *mut json_object_t;
+
     if key.is_null() || !json_is_object(json) {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let object = json_to_object(json);
-    hashtable_get(&mut (*object).hashtable, key, key_len) as *mut json_t
+    object = json_to_object(json);
+    hashtable_get(std::ptr::addr_of_mut!((*object).hashtable), key, key_len) as *mut json_t
 }
 
 #[unsafe(no_mangle)]
@@ -128,7 +153,7 @@ pub unsafe extern "C" fn json_object_set_new_nocheck(
         json_decref(value);
         return -1;
     }
-    json_object_setn_new_nocheck(json, key, strlen(key), value)
+    json_object_setn_new_nocheck(json, key, libc::strlen(key), value)
 }
 
 #[unsafe(no_mangle)]
@@ -138,6 +163,8 @@ pub unsafe extern "C" fn json_object_setn_new_nocheck(
     key_len: usize,
     value: *mut json_t,
 ) -> c_int {
+    let object: *mut json_object_t;
+
     if value.is_null() {
         return -1;
     }
@@ -146,9 +173,15 @@ pub unsafe extern "C" fn json_object_setn_new_nocheck(
         json_decref(value);
         return -1;
     }
-    let object = json_to_object(json);
+    object = json_to_object(json);
 
-    if hashtable_set(&mut (*object).hashtable, key, key_len, value) != 0 {
+    if hashtable_set(
+        std::ptr::addr_of_mut!((*object).hashtable),
+        key,
+        key_len,
+        value,
+    ) != 0
+    {
         json_decref(value);
         return -1;
     }
@@ -167,7 +200,7 @@ pub unsafe extern "C" fn json_object_set_new(
         return -1;
     }
 
-    json_object_setn_new(json, key, strlen(key), value)
+    json_object_setn_new(json, key, libc::strlen(key), value)
 }
 
 #[unsafe(no_mangle)]
@@ -191,7 +224,7 @@ pub unsafe extern "C" fn json_object_del(json: *mut json_t, key: *const c_char) 
         return -1;
     }
 
-    json_object_deln(json, key, strlen(key))
+    json_object_deln(json, key, libc::strlen(key))
 }
 
 #[unsafe(no_mangle)]
@@ -200,47 +233,31 @@ pub unsafe extern "C" fn json_object_deln(
     key: *const c_char,
     key_len: usize,
 ) -> c_int {
+    let object: *mut json_object_t;
+
     if key.is_null() || !json_is_object(json) {
         return -1;
     }
 
-    let object = json_to_object(json);
-    hashtable_del(&mut (*object).hashtable, key, key_len)
+    object = json_to_object(json);
+    hashtable_del(std::ptr::addr_of_mut!((*object).hashtable), key, key_len)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_clear(json: *mut json_t) -> c_int {
+    let object: *mut json_object_t;
+
     if !json_is_object(json) {
         return -1;
     }
 
-    let object = json_to_object(json);
-    hashtable_clear(&mut (*object).hashtable);
+    object = json_to_object(json);
+    hashtable_clear(std::ptr::addr_of_mut!((*object).hashtable));
 
     0
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn json_object_update(object: *mut json_t, other: *mut json_t) -> c_int {
-    if !json_is_object(object) || !json_is_object(other) {
-        return -1;
-    }
-
-    let mut iter = json_object_iter(other);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value = json_object_iter_value(iter);
-
-        if json_object_setn_nocheck(object, key, key_len, value) != 0 {
-            return -1;
-        }
-        iter = json_object_iter_next(other, iter);
-    }
-
-    0
-}
-
+/* json_object_setn_nocheck() -- static inline in jansson.h */
 #[inline]
 unsafe fn json_object_setn_nocheck(
     object: *mut json_t,
@@ -252,6 +269,21 @@ unsafe fn json_object_setn_nocheck(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn json_object_update(object: *mut json_t, other: *mut json_t) -> c_int {
+    if !json_is_object(object) || !json_is_object(other) {
+        return -1;
+    }
+
+    json_object_keylen_foreach!(other, key, key_len, value, {
+        if json_object_setn_nocheck(object, key, key_len, value) != 0 {
+            return -1;
+        }
+    });
+
+    0
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_update_existing(
     object: *mut json_t,
     other: *mut json_t,
@@ -260,17 +292,11 @@ pub unsafe extern "C" fn json_object_update_existing(
         return -1;
     }
 
-    let mut iter = json_object_iter(other);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value = json_object_iter_value(iter);
-
+    json_object_keylen_foreach!(other, key, key_len, value, {
         if !json_object_getn(object, key, key_len).is_null() {
             json_object_setn_nocheck(object, key, key_len, value);
         }
-        iter = json_object_iter_next(other, iter);
-    }
+    });
 
     0
 }
@@ -284,17 +310,11 @@ pub unsafe extern "C" fn json_object_update_missing(
         return -1;
     }
 
-    let mut iter = json_object_iter(other);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value = json_object_iter_value(iter);
-
+    json_object_keylen_foreach!(other, key, key_len, value, {
         if json_object_getn(object, key, key_len).is_null() {
             json_object_setn_nocheck(object, key, key_len, value);
         }
-        iter = json_object_iter_next(other, iter);
-    }
+    });
 
     0
 }
@@ -305,7 +325,7 @@ pub unsafe extern "C" fn do_object_update_recursive(
     other: *mut json_t,
     parents: *mut hashtable_t,
 ) -> c_int {
-    let mut loop_key = [0 as c_char; LOOP_KEY_LEN];
+    let mut loop_key: [c_char; LOOP_KEY_LEN] = [0; LOOP_KEY_LEN];
     let mut res: c_int = 0;
     let mut loop_key_len: usize = 0;
 
@@ -317,34 +337,26 @@ pub unsafe extern "C" fn do_object_update_recursive(
         parents,
         other,
         loop_key.as_mut_ptr(),
-        size_of::<[c_char; LOOP_KEY_LEN]>(),
+        LOOP_KEY_LEN,
         &mut loop_key_len,
     ) != 0
     {
         return -1;
     }
 
-    let mut iter = json_object_iter(other);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value = json_object_iter_value(iter);
-
-        let v = json_object_getn(object, key, key_len);
+    json_object_keylen_foreach!(other, key, key_len, value, {
+        let v: *mut json_t = json_object_getn(object, key, key_len);
 
         if json_is_object(v) && json_is_object(value) {
             if do_object_update_recursive(v, value, parents) != 0 {
                 res = -1;
                 break;
             }
-        } else {
-            if json_object_setn_nocheck(object, key, key_len, value) != 0 {
-                res = -1;
-                break;
-            }
+        } else if json_object_setn_nocheck(object, key, key_len, value) != 0 {
+            res = -1;
+            break;
         }
-        iter = json_object_iter_next(other, iter);
-    }
+    });
 
     hashtable_del(parents, loop_key.as_ptr(), loop_key_len);
 
@@ -356,12 +368,13 @@ pub unsafe extern "C" fn json_object_update_recursive(
     object: *mut json_t,
     other: *mut json_t,
 ) -> c_int {
-    let mut parents_set: hashtable_t = core::mem::zeroed();
+    let res: c_int;
+    let mut parents_set = hashtable_t::new();
 
     if hashtable_init(&mut parents_set) != 0 {
         return -1;
     }
-    let res = do_object_update_recursive(object, other, &mut parents_set);
+    res = do_object_update_recursive(object, other, &mut parents_set);
     hashtable_close(&mut parents_set);
 
     res
@@ -369,38 +382,54 @@ pub unsafe extern "C" fn json_object_update_recursive(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_iter(json: *mut json_t) -> *mut c_void {
+    let object: *mut json_object_t;
+
     if !json_is_object(json) {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let object = json_to_object(json);
-    hashtable_iter(&mut (*object).hashtable)
+    object = json_to_object(json);
+    hashtable_iter(std::ptr::addr_of_mut!((*object).hashtable))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn json_object_iter_at(json: *mut json_t, key: *const c_char) -> *mut c_void {
+pub unsafe extern "C" fn json_object_iter_at(
+    json: *mut json_t,
+    key: *const c_char,
+) -> *mut c_void {
+    let object: *mut json_object_t;
+
     if key.is_null() || !json_is_object(json) {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let object = json_to_object(json);
-    hashtable_iter_at(&mut (*object).hashtable, key, strlen(key))
+    object = json_to_object(json);
+    hashtable_iter_at(
+        std::ptr::addr_of_mut!((*object).hashtable),
+        key,
+        libc::strlen(key),
+    )
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn json_object_iter_next(json: *mut json_t, iter: *mut c_void) -> *mut c_void {
+pub unsafe extern "C" fn json_object_iter_next(
+    json: *mut json_t,
+    iter: *mut c_void,
+) -> *mut c_void {
+    let object: *mut json_object_t;
+
     if !json_is_object(json) || iter.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let object = json_to_object(json);
-    hashtable_iter_next(&mut (*object).hashtable, iter)
+    object = json_to_object(json);
+    hashtable_iter_next(std::ptr::addr_of_mut!((*object).hashtable), iter)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_iter_key(iter: *mut c_void) -> *const c_char {
     if iter.is_null() {
-        return ptr::null();
+        return std::ptr::null();
     }
 
     hashtable_iter_key(iter) as *const c_char
@@ -418,7 +447,7 @@ pub unsafe extern "C" fn json_object_iter_key_len(iter: *mut c_void) -> usize {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_iter_value(iter: *mut c_void) -> *mut json_t {
     if iter.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     hashtable_iter_value(iter) as *mut json_t
@@ -442,7 +471,7 @@ pub unsafe extern "C" fn json_object_iter_set_new(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_object_key_to_iter(key: *const c_char) -> *mut c_void {
     if key.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     hashtable_key_to_iter(key)
@@ -453,74 +482,69 @@ unsafe fn json_object_equal(object1: *const json_t, object2: *const json_t) -> c
         return 0;
     }
 
-    let mut iter = json_object_iter(object1 as *mut json_t);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value1 = json_object_iter_value(iter);
-
+    json_object_keylen_foreach!(object1 as *mut json_t, key, key_len, value1, {
         let value2 = json_object_getn(object2, key, key_len);
 
         if json_equal(value1, value2) == 0 {
             return 0;
         }
-        iter = json_object_iter_next(object1 as *mut json_t, iter);
-    }
+    });
 
     1
 }
 
 unsafe fn json_object_copy(object: *mut json_t) -> *mut json_t {
-    let result = json_object();
+    let result: *mut json_t;
+
+    result = json_object();
     if result.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let mut iter = json_object_iter(object);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value = json_object_iter_value(iter);
+    json_object_keylen_foreach!(object, key, key_len, value, {
         json_object_setn_nocheck(result, key, key_len, value);
-        iter = json_object_iter_next(object, iter);
-    }
+    });
 
     result
 }
 
 unsafe fn json_object_deep_copy(object: *const json_t, parents: *mut hashtable_t) -> *mut json_t {
-    let mut loop_key = [0 as c_char; LOOP_KEY_LEN];
+    let mut result: *mut json_t;
+    let mut iter: *mut c_void;
+    let mut loop_key: [c_char; LOOP_KEY_LEN] = [0; LOOP_KEY_LEN];
     let mut loop_key_len: usize = 0;
 
     if jsonp_loop_check(
         parents,
         object,
         loop_key.as_mut_ptr(),
-        size_of::<[c_char; LOOP_KEY_LEN]>(),
+        LOOP_KEY_LEN,
         &mut loop_key_len,
     ) != 0
     {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let mut result = json_object();
-    if result.is_null() {
-        hashtable_del(parents, loop_key.as_ptr(), loop_key_len);
-        return result;
-    }
+    result = json_object();
+    if !result.is_null() {
+        /* Cannot use json_object_foreach because object has to be cast non-const */
+        iter = json_object_iter(object as *mut json_t);
+        while !iter.is_null() {
+            let key: *const c_char;
+            let key_len: usize;
+            let value: *const json_t;
+            key = json_object_iter_key(iter);
+            key_len = json_object_iter_key_len(iter);
+            value = json_object_iter_value(iter);
 
-    let mut iter = json_object_iter(object as *mut json_t);
-    while !iter.is_null() {
-        let key = json_object_iter_key(iter);
-        let key_len = json_object_iter_key_len(iter);
-        let value = json_object_iter_value(iter);
-
-        if json_object_setn_new_nocheck(result, key, key_len, do_deep_copy(value, parents)) != 0 {
-            json_decref(result);
-            result = ptr::null_mut();
-            break;
+            if json_object_setn_new_nocheck(result, key, key_len, do_deep_copy(value, parents)) != 0
+            {
+                json_decref(result);
+                result = std::ptr::null_mut();
+                break;
+            }
+            iter = json_object_iter_next(object as *mut json_t, iter);
         }
-        iter = json_object_iter_next(object as *mut json_t, iter);
     }
 
     hashtable_del(parents, loop_key.as_ptr(), loop_key_len);
@@ -532,27 +556,31 @@ unsafe fn json_object_deep_copy(object: *const json_t, parents: *mut hashtable_t
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_array() -> *mut json_t {
-    let array = jsonp_malloc(size_of::<json_array_t>()) as *mut json_array_t;
+    let array = jsonp_malloc(std::mem::size_of::<json_array_t>()) as *mut json_array_t;
     if array.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    json_init(&mut (*array).json, JSON_ARRAY);
+    json_init(std::ptr::addr_of_mut!((*array).json), JSON_ARRAY);
 
     (*array).entries = 0;
     (*array).size = 8;
 
-    (*array).table = jsonp_malloc((*array).size * size_of::<*mut json_t>()) as *mut *mut json_t;
+    (*array).table =
+        jsonp_malloc((*array).size * std::mem::size_of::<*mut json_t>()) as *mut *mut json_t;
     if (*array).table.is_null() {
         jsonp_free(array as *mut c_void);
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    &mut (*array).json
+    std::ptr::addr_of_mut!((*array).json)
 }
 
 unsafe fn json_delete_array(array: *mut json_array_t) {
-    for i in 0..(*array).entries {
+    let mut i: usize = 0;
+
+    while i < (*array).entries {
         json_decref(*(*array).table.add(i));
+        i += 1;
     }
 
     jsonp_free((*array).table as *mut c_void);
@@ -570,13 +598,14 @@ pub unsafe extern "C" fn json_array_size(json: *const json_t) -> usize {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_array_get(json: *const json_t, index: usize) -> *mut json_t {
+    let array: *mut json_array_t;
     if !json_is_array(json) {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    let array = json_to_array(json);
+    array = json_to_array(json);
 
     if index >= (*array).entries {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     *(*array).table.add(index)
@@ -588,6 +617,8 @@ pub unsafe extern "C" fn json_array_set_new(
     index: usize,
     value: *mut json_t,
 ) -> c_int {
+    let array: *mut json_array_t;
+
     if value.is_null() {
         return -1;
     }
@@ -596,7 +627,7 @@ pub unsafe extern "C" fn json_array_set_new(
         json_decref(value);
         return -1;
     }
-    let array = json_to_array(json);
+    array = json_to_array(json);
 
     if index >= (*array).entries {
         json_decref(value);
@@ -610,10 +641,10 @@ pub unsafe extern "C" fn json_array_set_new(
 }
 
 unsafe fn array_move(array: *mut json_array_t, dest: usize, src: usize, count: usize) {
-    memmove(
+    libc::memmove(
         (*array).table.add(dest) as *mut c_void,
         (*array).table.add(src) as *const c_void,
-        count * size_of::<*mut json_t>(),
+        count * std::mem::size_of::<*mut json_t>(),
     );
 }
 
@@ -624,32 +655,32 @@ unsafe fn array_copy(
     spos: usize,
     count: usize,
 ) {
-    memcpy(
+    libc::memcpy(
         dest.add(dpos) as *mut c_void,
         src.add(spos) as *const c_void,
-        count * size_of::<*mut json_t>(),
+        count * std::mem::size_of::<*mut json_t>(),
     );
 }
 
 unsafe fn json_array_grow(array: *mut json_array_t, amount: usize) -> *mut *mut json_t {
+    let new_size: usize;
+    let old_table: *mut *mut json_t;
+    let new_table: *mut *mut json_t;
+
     if (*array).entries + amount <= (*array).size {
         return (*array).table;
     }
 
-    let old_table = (*array).table;
+    old_table = (*array).table;
 
-    let new_size = if (*array).size + amount > (*array).size * 2 {
-        (*array).size + amount
-    } else {
-        (*array).size * 2
-    };
-    let new_table = crate::memory::jsonp_realloc(
+    new_size = std::cmp::max((*array).size + amount, (*array).size * 2);
+    new_table = jsonp_realloc(
         old_table as *mut c_void,
-        (*array).size * size_of::<*mut json_t>(),
-        new_size * size_of::<*mut json_t>(),
+        (*array).size * std::mem::size_of::<*mut json_t>(),
+        new_size * std::mem::size_of::<*mut json_t>(),
     ) as *mut *mut json_t;
     if new_table.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     (*array).size = new_size;
@@ -660,6 +691,8 @@ unsafe fn json_array_grow(array: *mut json_array_t, amount: usize) -> *mut *mut 
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_array_append_new(json: *mut json_t, value: *mut json_t) -> c_int {
+    let array: *mut json_array_t;
+
     if value.is_null() {
         return -1;
     }
@@ -668,7 +701,7 @@ pub unsafe extern "C" fn json_array_append_new(json: *mut json_t, value: *mut js
         json_decref(value);
         return -1;
     }
-    let array = json_to_array(json);
+    array = json_to_array(json);
 
     if json_array_grow(array, 1).is_null() {
         json_decref(value);
@@ -687,6 +720,8 @@ pub unsafe extern "C" fn json_array_insert_new(
     index: usize,
     value: *mut json_t,
 ) -> c_int {
+    let array: *mut json_array_t;
+
     if value.is_null() {
         return -1;
     }
@@ -695,7 +730,7 @@ pub unsafe extern "C" fn json_array_insert_new(
         json_decref(value);
         return -1;
     }
-    let array = json_to_array(json);
+    array = json_to_array(json);
 
     if index > (*array).entries {
         json_decref(value);
@@ -718,10 +753,12 @@ pub unsafe extern "C" fn json_array_insert_new(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_array_remove(json: *mut json_t, index: usize) -> c_int {
+    let array: *mut json_array_t;
+
     if !json_is_array(json) {
         return -1;
     }
-    let array = json_to_array(json);
+    array = json_to_array(json);
 
     if index >= (*array).entries {
         return -1;
@@ -741,13 +778,18 @@ pub unsafe extern "C" fn json_array_remove(json: *mut json_t, index: usize) -> c
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_array_clear(json: *mut json_t) -> c_int {
+    let array: *mut json_array_t;
+    let mut i: usize;
+
     if !json_is_array(json) {
         return -1;
     }
-    let array = json_to_array(json);
+    array = json_to_array(json);
 
-    for i in 0..(*array).entries {
+    i = 0;
+    while i < (*array).entries {
         json_decref(*(*array).table.add(i));
+        i += 1;
     }
 
     (*array).entries = 0;
@@ -756,93 +798,111 @@ pub unsafe extern "C" fn json_array_clear(json: *mut json_t) -> c_int {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_array_extend(json: *mut json_t, other_json: *mut json_t) -> c_int {
+    let array: *mut json_array_t;
+    let other: *mut json_array_t;
+    let mut i: usize;
+
     if !json_is_array(json) || !json_is_array(other_json) {
         return -1;
     }
-    let array = json_to_array(json);
-    let other = json_to_array(other_json);
+    array = json_to_array(json);
+    other = json_to_array(other_json);
 
     if json_array_grow(array, (*other).entries).is_null() {
         return -1;
     }
 
-    for i in 0..(*other).entries {
+    i = 0;
+    while i < (*other).entries {
         json_incref(*(*other).table.add(i));
+        i += 1;
     }
 
-    array_copy((*array).table, (*array).entries, (*other).table, 0, (*other).entries);
+    array_copy(
+        (*array).table,
+        (*array).entries,
+        (*other).table,
+        0,
+        (*other).entries,
+    );
 
     (*array).entries += (*other).entries;
     0
 }
 
 unsafe fn json_array_equal(array1: *const json_t, array2: *const json_t) -> c_int {
-    let size = json_array_size(array1);
+    let mut i: usize;
+    let size: usize;
+
+    size = json_array_size(array1);
     if size != json_array_size(array2) {
         return 0;
     }
 
-    for i in 0..size {
-        let value1 = json_array_get(array1, i);
-        let value2 = json_array_get(array2, i);
+    i = 0;
+    while i < size {
+        let value1: *mut json_t;
+        let value2: *mut json_t;
+
+        value1 = json_array_get(array1, i);
+        value2 = json_array_get(array2, i);
 
         if json_equal(value1, value2) == 0 {
             return 0;
         }
+        i += 1;
     }
 
     1
 }
 
 unsafe fn json_array_copy(array: *mut json_t) -> *mut json_t {
-    let result = json_array();
+    let result: *mut json_t;
+    let mut i: usize;
+
+    result = json_array();
     if result.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let mut i = 0;
+    i = 0;
     while i < json_array_size(array) {
-        json_array_append(result, json_array_get(array, i));
+        /* json_array_append() -- static inline in jansson.h */
+        json_array_append_new(result, json_incref(json_array_get(array, i)));
         i += 1;
     }
 
     result
 }
 
-#[inline]
-unsafe fn json_array_append(array: *mut json_t, value: *mut json_t) -> c_int {
-    json_array_append_new(array, json_incref(value))
-}
-
 unsafe fn json_array_deep_copy(array: *const json_t, parents: *mut hashtable_t) -> *mut json_t {
-    let mut loop_key = [0 as c_char; LOOP_KEY_LEN];
+    let mut result: *mut json_t;
+    let mut i: usize;
+    let mut loop_key: [c_char; LOOP_KEY_LEN] = [0; LOOP_KEY_LEN];
     let mut loop_key_len: usize = 0;
 
     if jsonp_loop_check(
         parents,
         array,
         loop_key.as_mut_ptr(),
-        size_of::<[c_char; LOOP_KEY_LEN]>(),
+        LOOP_KEY_LEN,
         &mut loop_key_len,
     ) != 0
     {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let mut result = json_array();
-    if result.is_null() {
-        hashtable_del(parents, loop_key.as_ptr(), loop_key_len);
-        return result;
-    }
-
-    let mut i = 0;
-    while i < json_array_size(array) {
-        if json_array_append_new(result, do_deep_copy(json_array_get(array, i), parents)) != 0 {
-            json_decref(result);
-            result = ptr::null_mut();
-            break;
+    result = json_array();
+    if !result.is_null() {
+        i = 0;
+        while i < json_array_size(array) {
+            if json_array_append_new(result, do_deep_copy(json_array_get(array, i), parents)) != 0 {
+                json_decref(result);
+                result = std::ptr::null_mut();
+                break;
+            }
+            i += 1;
         }
-        i += 1;
     }
 
     hashtable_del(parents, loop_key.as_ptr(), loop_key_len);
@@ -854,9 +914,10 @@ unsafe fn json_array_deep_copy(array: *const json_t, parents: *mut hashtable_t) 
 
 unsafe fn string_create(value: *const c_char, len: usize, own: c_int) -> *mut json_t {
     let v: *mut c_char;
+    let string: *mut json_string_t;
 
     if value.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     if own != 0 {
@@ -864,29 +925,29 @@ unsafe fn string_create(value: *const c_char, len: usize, own: c_int) -> *mut js
     } else {
         v = jsonp_strndup(value, len);
         if v.is_null() {
-            return ptr::null_mut();
+            return std::ptr::null_mut();
         }
     }
 
-    let string = jsonp_malloc(size_of::<json_string_t>()) as *mut json_string_t;
+    string = jsonp_malloc(std::mem::size_of::<json_string_t>()) as *mut json_string_t;
     if string.is_null() {
         jsonp_free(v as *mut c_void);
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    json_init(&mut (*string).json, JSON_STRING);
+    json_init(std::ptr::addr_of_mut!((*string).json), JSON_STRING);
     (*string).value = v;
     (*string).length = len;
 
-    &mut (*string).json
+    std::ptr::addr_of_mut!((*string).json)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_string_nocheck(value: *const c_char) -> *mut json_t {
     if value.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    string_create(value, strlen(value), 0)
+    string_create(value, libc::strlen(value), 0)
 }
 
 #[unsafe(no_mangle)]
@@ -894,24 +955,28 @@ pub unsafe extern "C" fn json_stringn_nocheck(value: *const c_char, len: usize) 
     string_create(value, len, 0)
 }
 
+/* this is private; "steal" is not a public API concept */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jsonp_stringn_nocheck_own(value: *const c_char, len: usize) -> *mut json_t {
+pub unsafe extern "C" fn jsonp_stringn_nocheck_own(
+    value: *const c_char,
+    len: usize,
+) -> *mut json_t {
     string_create(value, len, 1)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_string(value: *const c_char) -> *mut json_t {
     if value.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    json_stringn(value, strlen(value))
+    json_stringn(value, libc::strlen(value))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_stringn(value: *const c_char, len: usize) -> *mut json_t {
     if value.is_null() || utf8_check_string(value, len) == 0 {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     json_stringn_nocheck(value, len)
@@ -920,7 +985,7 @@ pub unsafe extern "C" fn json_stringn(value: *const c_char, len: usize) -> *mut 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_string_value(json: *const json_t) -> *const c_char {
     if !json_is_string(json) {
-        return ptr::null();
+        return std::ptr::null();
     }
 
     (*json_to_string(json)).value
@@ -936,12 +1001,15 @@ pub unsafe extern "C" fn json_string_length(json: *const json_t) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn json_string_set_nocheck(json: *mut json_t, value: *const c_char) -> c_int {
+pub unsafe extern "C" fn json_string_set_nocheck(
+    json: *mut json_t,
+    value: *const c_char,
+) -> c_int {
     if value.is_null() {
         return -1;
     }
 
-    json_string_setn_nocheck(json, value, strlen(value))
+    json_string_setn_nocheck(json, value, libc::strlen(value))
 }
 
 #[unsafe(no_mangle)]
@@ -950,16 +1018,19 @@ pub unsafe extern "C" fn json_string_setn_nocheck(
     value: *const c_char,
     len: usize,
 ) -> c_int {
+    let dup: *mut c_char;
+    let string: *mut json_string_t;
+
     if !json_is_string(json) || value.is_null() {
         return -1;
     }
 
-    let dup = jsonp_strndup(value, len);
+    dup = jsonp_strndup(value, len);
     if dup.is_null() {
         return -1;
     }
 
-    let string = json_to_string(json);
+    string = json_to_string(json);
     jsonp_free((*string).value as *mut c_void);
     (*string).value = dup;
     (*string).length = len;
@@ -973,7 +1044,7 @@ pub unsafe extern "C" fn json_string_set(json: *mut json_t, value: *const c_char
         return -1;
     }
 
-    json_string_setn(json, value, strlen(value))
+    json_string_setn(json, value, libc::strlen(value))
 }
 
 #[unsafe(no_mangle)]
@@ -995,10 +1066,13 @@ unsafe fn json_delete_string(string: *mut json_string_t) {
 }
 
 unsafe fn json_string_equal(string1: *const json_t, string2: *const json_t) -> c_int {
-    let s1 = json_to_string(string1);
-    let s2 = json_to_string(string2);
+    let s1: *mut json_string_t;
+    let s2: *mut json_string_t;
+
+    s1 = json_to_string(string1);
+    s2 = json_to_string(string2);
     if (*s1).length == (*s2).length
-        && memcmp(
+        && libc::memcmp(
             (*s1).value as *const c_void,
             (*s2).value as *const c_void,
             (*s1).length,
@@ -1011,19 +1085,26 @@ unsafe fn json_string_equal(string1: *const json_t, string2: *const json_t) -> c
 }
 
 unsafe fn json_string_copy(string: *const json_t) -> *mut json_t {
-    let s = json_to_string(string);
+    let s: *mut json_string_t;
+
+    s = json_to_string(string);
     json_stringn_nocheck((*s).value, (*s).length)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn json_vsprintf(fmt: *const c_char, ap: VaList) -> *mut json_t {
-    let mut json: *mut json_t = ptr::null_mut();
+pub unsafe extern "C" fn json_vsprintf(fmt: *const c_char, ap: va_list) -> *mut json_t {
+    let mut json: *mut json_t = std::ptr::null_mut();
     let length: c_int;
     let buf: *mut c_char;
+    let mut aq_store = crate::libc::VaListTag {
+        gp_offset: 0,
+        fp_offset: 0,
+        overflow_arg_area: std::ptr::null_mut(),
+        reg_save_area: std::ptr::null_mut(),
+    };
+    let aq = crate::libc::va_copy(ap, &mut aq_store);
 
-    let aq = ap.clone();
-
-    length = vsnprintf(ptr::null_mut(), 0, fmt, ap);
+    length = libc::vsnprintf(std::ptr::null_mut(), 0, fmt, ap);
     if length < 0 {
         return json;
     }
@@ -1037,7 +1118,7 @@ pub unsafe extern "C" fn json_vsprintf(fmt: *const c_char, ap: VaList) -> *mut j
         return json;
     }
 
-    vsnprintf(buf, length as usize + 1, fmt, aq);
+    libc::vsnprintf(buf, length as usize + 1, fmt, aq);
     if utf8_check_string(buf, length as usize) == 0 {
         jsonp_free(buf as *mut c_void);
         return json;
@@ -1048,23 +1129,18 @@ pub unsafe extern "C" fn json_vsprintf(fmt: *const c_char, ap: VaList) -> *mut j
     json
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn json_sprintf(fmt: *const c_char, ap: ...) -> *mut json_t {
-    json_vsprintf(fmt, ap)
-}
-
 /*** integer ***/
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_integer(value: json_int_t) -> *mut json_t {
-    let integer = jsonp_malloc(size_of::<json_integer_t>()) as *mut json_integer_t;
+    let integer = jsonp_malloc(std::mem::size_of::<json_integer_t>()) as *mut json_integer_t;
     if integer.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    json_init(&mut (*integer).json, JSON_INTEGER);
+    json_init(std::ptr::addr_of_mut!((*integer).json), JSON_INTEGER);
 
     (*integer).value = value;
-    &mut (*integer).json
+    std::ptr::addr_of_mut!((*integer).json)
 }
 
 #[unsafe(no_mangle)]
@@ -1092,11 +1168,7 @@ unsafe fn json_delete_integer(integer: *mut json_integer_t) {
 }
 
 unsafe fn json_integer_equal(integer1: *const json_t, integer2: *const json_t) -> c_int {
-    if json_integer_value(integer1) == json_integer_value(integer2) {
-        1
-    } else {
-        0
-    }
+    (json_integer_value(integer1) == json_integer_value(integer2)) as c_int
 }
 
 unsafe fn json_integer_copy(integer: *const json_t) -> *mut json_t {
@@ -1107,18 +1179,20 @@ unsafe fn json_integer_copy(integer: *const json_t) -> *mut json_t {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_real(value: f64) -> *mut json_t {
+    let real: *mut json_real_t;
+
     if isnan_(value) || isinf_(value) {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    let real = jsonp_malloc(size_of::<json_real_t>()) as *mut json_real_t;
+    real = jsonp_malloc(std::mem::size_of::<json_real_t>()) as *mut json_real_t;
     if real.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    json_init(&mut (*real).json, JSON_REAL);
+    json_init(std::ptr::addr_of_mut!((*real).json), JSON_REAL);
 
     (*real).value = value;
-    &mut (*real).json
+    std::ptr::addr_of_mut!((*real).json)
 }
 
 #[unsafe(no_mangle)]
@@ -1146,11 +1220,7 @@ unsafe fn json_delete_real(real: *mut json_real_t) {
 }
 
 unsafe fn json_real_equal(real1: *const json_t, real2: *const json_t) -> c_int {
-    if json_real_value(real1) == json_real_value(real2) {
-        1
-    } else {
-        0
-    }
+    (json_real_value(real1) == json_real_value(real2)) as c_int
 }
 
 unsafe fn json_real_copy(real: *const json_t) -> *mut json_t {
@@ -1187,17 +1257,17 @@ static mut THE_NULL: json_t = json_t {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_true() -> *mut json_t {
-    &raw mut THE_TRUE
+    std::ptr::addr_of_mut!(THE_TRUE)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_false() -> *mut json_t {
-    &raw mut THE_FALSE
+    std::ptr::addr_of_mut!(THE_FALSE)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_null() -> *mut json_t {
-    &raw mut THE_NULL
+    std::ptr::addr_of_mut!(THE_NULL)
 }
 
 /*** deletion ***/
@@ -1214,8 +1284,10 @@ pub unsafe extern "C" fn json_delete(json: *mut json_t) {
         JSON_STRING => json_delete_string(json_to_string(json)),
         JSON_INTEGER => json_delete_integer(json_to_integer(json)),
         JSON_REAL => json_delete_real(json_to_real(json)),
-        _ => {}
+        _ => (),
     }
+
+    /* json_delete is not called for true, false or null */
 }
 
 /*** equality ***/
@@ -1250,7 +1322,7 @@ pub unsafe extern "C" fn json_equal(json1: *const json_t, json2: *const json_t) 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_copy(json: *mut json_t) -> *mut json_t {
     if json.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     match json_typeof(json) {
@@ -1260,36 +1332,42 @@ pub unsafe extern "C" fn json_copy(json: *mut json_t) -> *mut json_t {
         JSON_INTEGER => json_integer_copy(json),
         JSON_REAL => json_real_copy(json),
         JSON_TRUE | JSON_FALSE | JSON_NULL => json,
-        _ => ptr::null_mut(),
+        _ => std::ptr::null_mut(),
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_deep_copy(json: *const json_t) -> *mut json_t {
-    let mut parents_set: hashtable_t = core::mem::zeroed();
+    let res: *mut json_t;
+    let mut parents_set = hashtable_t::new();
 
     if hashtable_init(&mut parents_set) != 0 {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    let res = do_deep_copy(json, &mut parents_set);
+    res = do_deep_copy(json, &mut parents_set);
     hashtable_close(&mut parents_set);
 
     res
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn do_deep_copy(json: *const json_t, parents: *mut hashtable_t) -> *mut json_t {
+pub unsafe extern "C" fn do_deep_copy(
+    json: *const json_t,
+    parents: *mut hashtable_t,
+) -> *mut json_t {
     if json.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
     match json_typeof(json) {
         JSON_OBJECT => json_object_deep_copy(json, parents),
         JSON_ARRAY => json_array_deep_copy(json, parents),
+        /* for the rest of the types, deep copying doesn't differ from
+        shallow copying */
         JSON_STRING => json_string_copy(json),
         JSON_INTEGER => json_integer_copy(json),
         JSON_REAL => json_real_copy(json),
         JSON_TRUE | JSON_FALSE | JSON_NULL => json as *mut json_t,
-        _ => ptr::null_mut(),
+        _ => std::ptr::null_mut(),
     }
 }

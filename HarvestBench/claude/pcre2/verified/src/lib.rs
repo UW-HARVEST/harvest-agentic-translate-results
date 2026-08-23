@@ -1,23 +1,38 @@
-// PCRE2 10.48 — Rust translation (8-bit, SUPPORT_UNICODE, no JIT).
-#![allow(non_upper_case_globals)]
+// PCRE2 10.48-DEV, 8-bit library, translated from C to Rust.
+//
+// Build configuration reproduced from c_src/CMakeLists.txt + c_src/src/config.h:
+//   PCRE2_CODE_UNIT_WIDTH == 8, SUPPORT_UNICODE, LINK_SIZE == 2,
+//   no SUPPORT_JIT, no EBCDIC, no PCRE2_DEBUG.
+#![allow(dead_code)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused_assignments)]
+#![allow(unused_mut)]
 #![allow(unused_parens)]
-#![allow(dead_code)]
+#![allow(unused_unsafe)]
+#![allow(unused_variables)]
 
-pub mod pcre2_internal;
-pub mod tables_data;
-pub mod error_texts;
+#[macro_use]
+pub mod macros;
+
+pub mod consts_pub;
+pub mod meta;
+pub mod opcodes;
+pub mod ucp;
+
+pub mod internal;
 
 pub mod pcre2_auto_possess;
+pub mod pcre2_chartables;
 pub mod pcre2_chkdint;
 pub mod pcre2_compile;
 pub mod pcre2_compile_cgroup;
 pub mod pcre2_compile_class;
 pub mod pcre2_config;
+pub mod pcre2_context;
 pub mod pcre2_convert;
 pub mod pcre2_dfa_match;
-pub mod pcre2_context;
 pub mod pcre2_error;
 pub mod pcre2_extuni;
 pub mod pcre2_find_bracket;
@@ -25,14 +40,17 @@ pub mod pcre2_jit_compile;
 pub mod pcre2_maketables;
 pub mod pcre2_match;
 pub mod pcre2_match_data;
+pub mod pcre2_match_next;
 pub mod pcre2_newline;
 pub mod pcre2_ord2utf;
 pub mod pcre2_pattern_info;
 pub mod pcre2_script_run;
 pub mod pcre2_serialize;
 pub mod pcre2_string_utils;
-pub mod pcre2_substitute;
 pub mod pcre2_study;
+pub mod pcre2_substitute;
 pub mod pcre2_substring;
+pub mod pcre2_tables;
+pub mod pcre2_ucd;
 pub mod pcre2_valid_utf;
 pub mod pcre2_xclass;

@@ -1,63 +1,29 @@
-// Translation of lz4file.c (LZ4 file v1.10.0).
-#![allow(non_snake_case, non_upper_case_globals, non_camel_case_types)]
+//! Translation of lz4file.c
 
-use core::ffi::c_void;
-use core::ptr;
-
-use crate::lz4frame::{
-    LZ4F_cctx, LZ4F_compressBegin, LZ4F_compressBound, LZ4F_compressEnd, LZ4F_compressUpdate,
-    LZ4F_createCompressionContext, LZ4F_createDecompressionContext, LZ4F_decompress, LZ4F_dctx,
-    LZ4F_default, LZ4F_errorCode_t, LZ4F_frameInfo_t, LZ4F_freeCompressionContext,
-    LZ4F_freeDecompressionContext, LZ4F_getFrameInfo, LZ4F_isError, LZ4F_max1MB, LZ4F_max256KB,
-    LZ4F_max4MB, LZ4F_max64KB, LZ4F_preferences_t,
-};
-
-const LZ4F_VERSION: core::ffi::c_uint = 100;
-const LZ4F_HEADER_SIZE_MAX: usize = 19;
-
-#[repr(C)]
-pub struct FILE {
-    _private: [u8; 0],
-}
+use crate::common::{calloc, free, malloc, memcpy};
+use crate::lz4frame::*;
+use core::ffi::{c_char, c_int, c_void};
 
 extern "C" {
-    fn fread(ptr: *mut c_void, size: usize, nmemb: usize, stream: *mut FILE) -> usize;
-    fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut FILE) -> usize;
-    fn malloc(size: usize) -> *mut c_void;
-    fn calloc(nmemb: usize, size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
-    fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    fn fread(ptr: *mut c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
+    fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
 }
 
-mod err {
-    pub const OK_NoError: usize = 0;
-    pub const ERROR_maxBlockSize_invalid: usize = 2;
-    pub const ERROR_allocation_failed: usize = 9;
-    pub const ERROR_parameter_null: usize = 21;
-    pub const ERROR_io_write: usize = 22;
-    pub const ERROR_io_read: usize = 23;
+#[inline(always)]
+fn returnErrorCode(code: c_int) -> LZ4F_errorCode_t {
+    (0isize).wrapping_sub(code as isize) as usize
 }
 
-#[inline]
-fn returnErrorCode(code: usize) -> LZ4F_errorCode_t {
-    (0usize).wrapping_sub(code)
-}
+/* =====   read API   ===== */
 
-macro_rules! RETURN_ERROR {
-    ($e:ident) => {
-        return returnErrorCode(err::$e)
-    };
-}
-
-/* ===== read API ===== */
 #[repr(C)]
 pub struct LZ4_readFile_t {
-    dctxPtr: *mut LZ4F_dctx,
-    fp: *mut FILE,
-    srcBuf: *mut u8,
-    srcBufNext: usize,
-    srcBufSize: usize,
-    srcBufMaxSize: usize,
+    pub dctxPtr: *mut LZ4F_dctx,
+    pub fp: *mut c_void,
+    pub srcBuf: *mut u8,
+    pub srcBufNext: usize,
+    pub srcBufSize: usize,
+    pub srcBufMaxSize: usize,
 }
 
 unsafe fn LZ4F_freeReadFile(lz4fRead: *mut LZ4_readFile_t) {
@@ -65,44 +31,49 @@ unsafe fn LZ4F_freeReadFile(lz4fRead: *mut LZ4_readFile_t) {
         return;
     }
     LZ4F_freeDecompressionContext((*lz4fRead).dctxPtr);
-    free((*lz4fRead).srcBuf as *mut c_void);
-    free(lz4fRead as *mut c_void);
+    free((*lz4fRead).srcBuf);
+    free(lz4fRead as *mut u8);
 }
 
 unsafe fn LZ4F_freeAndNullReadFile(statePtr: *mut *mut LZ4_readFile_t) {
     LZ4F_freeReadFile(*statePtr);
-    *statePtr = ptr::null_mut();
+    *statePtr = core::ptr::null_mut();
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4F_readOpen(
     lz4fRead: *mut *mut LZ4_readFile_t,
-    fp: *mut FILE,
+    fp: *mut c_void,
 ) -> LZ4F_errorCode_t {
-    let mut buf = [0u8; LZ4F_HEADER_SIZE_MAX];
+    let mut buf: [c_char; LZ4F_HEADER_SIZE_MAX] = [0; LZ4F_HEADER_SIZE_MAX];
     let mut consumedSize: usize;
     let ret: LZ4F_errorCode_t;
 
     if fp.is_null() || lz4fRead.is_null() {
-        RETURN_ERROR!(ERROR_parameter_null);
+        return returnErrorCode(LZ4F_ERROR_parameter_null);
     }
 
     *lz4fRead = calloc(1, core::mem::size_of::<LZ4_readFile_t>()) as *mut LZ4_readFile_t;
     if (*lz4fRead).is_null() {
-        RETURN_ERROR!(ERROR_allocation_failed);
+        return returnErrorCode(LZ4F_ERROR_allocation_failed);
     }
 
     ret = LZ4F_createDecompressionContext(&mut (**lz4fRead).dctxPtr, LZ4F_VERSION);
-    if LZ4F_isError(ret) != 0 {
+    if lz4f_isError(ret) {
         LZ4F_freeAndNullReadFile(lz4fRead);
         return ret;
     }
 
     (**lz4fRead).fp = fp;
-    consumedSize = fread(buf.as_mut_ptr() as *mut c_void, 1, buf.len(), (**lz4fRead).fp);
-    if consumedSize != buf.len() {
+    consumedSize = fread(
+        buf.as_mut_ptr() as *mut c_void,
+        1,
+        LZ4F_HEADER_SIZE_MAX,
+        (**lz4fRead).fp,
+    );
+    if consumedSize != LZ4F_HEADER_SIZE_MAX {
         LZ4F_freeAndNullReadFile(lz4fRead);
-        RETURN_ERROR!(ERROR_io_read);
+        return returnErrorCode(LZ4F_ERROR_io_read);
     }
 
     {
@@ -113,7 +84,7 @@ pub unsafe extern "C" fn LZ4F_readOpen(
             buf.as_ptr() as *const c_void,
             &mut consumedSize,
         );
-        if LZ4F_isError(r) != 0 {
+        if lz4f_isError(r) {
             LZ4F_freeAndNullReadFile(lz4fRead);
             return r;
         }
@@ -133,21 +104,21 @@ pub unsafe extern "C" fn LZ4F_readOpen(
             }
             _ => {
                 LZ4F_freeAndNullReadFile(lz4fRead);
-                RETURN_ERROR!(ERROR_maxBlockSize_invalid);
+                return returnErrorCode(LZ4F_ERROR_maxBlockSize_invalid);
             }
         }
     }
 
-    (**lz4fRead).srcBuf = malloc((**lz4fRead).srcBufMaxSize) as *mut u8;
+    (**lz4fRead).srcBuf = malloc((**lz4fRead).srcBufMaxSize);
     if (**lz4fRead).srcBuf.is_null() {
         LZ4F_freeAndNullReadFile(lz4fRead);
-        RETURN_ERROR!(ERROR_allocation_failed);
+        return returnErrorCode(LZ4F_ERROR_allocation_failed);
     }
 
-    (**lz4fRead).srcBufSize = buf.len() - consumedSize;
+    (**lz4fRead).srcBufSize = LZ4F_HEADER_SIZE_MAX - consumedSize;
     memcpy(
-        (**lz4fRead).srcBuf as *mut c_void,
-        buf.as_ptr().add(consumedSize) as *const c_void,
+        (**lz4fRead).srcBuf,
+        (buf.as_ptr() as *const u8).wrapping_add(consumedSize),
         (**lz4fRead).srcBufSize,
     );
 
@@ -160,31 +131,31 @@ pub unsafe extern "C" fn LZ4F_read(
     buf: *mut c_void,
     size: usize,
 ) -> usize {
-    let mut p = buf as *mut u8;
+    let mut p: *mut u8 = buf as *mut u8;
     let mut next: usize = 0;
 
     if lz4fRead.is_null() || buf.is_null() {
-        RETURN_ERROR!(ERROR_parameter_null);
+        return returnErrorCode(LZ4F_ERROR_parameter_null);
     }
 
     while next < size {
-        let mut srcsize = (*lz4fRead).srcBufSize - (*lz4fRead).srcBufNext;
-        let mut dstsize = size - next;
-        let ret: usize;
+        let mut srcsize: usize = (*lz4fRead).srcBufSize - (*lz4fRead).srcBufNext;
+        let mut dstsize: usize = size - next;
+        let mut ret: usize;
 
         if srcsize == 0 {
-            let r = fread(
+            ret = fread(
                 (*lz4fRead).srcBuf as *mut c_void,
                 1,
                 (*lz4fRead).srcBufMaxSize,
                 (*lz4fRead).fp,
             );
-            if r > 0 {
-                (*lz4fRead).srcBufSize = r;
+            if ret > 0 {
+                (*lz4fRead).srcBufSize = ret;
                 srcsize = (*lz4fRead).srcBufSize;
                 (*lz4fRead).srcBufNext = 0;
             } else {
-                // fread returns size_t; 0 => EOF => break
+                /* ret == 0 : end of file (fread never returns < 0) */
                 break;
             }
         }
@@ -193,17 +164,17 @@ pub unsafe extern "C" fn LZ4F_read(
             (*lz4fRead).dctxPtr,
             p as *mut c_void,
             &mut dstsize,
-            (*lz4fRead).srcBuf.add((*lz4fRead).srcBufNext) as *const c_void,
+            (*lz4fRead).srcBuf.wrapping_add((*lz4fRead).srcBufNext) as *const c_void,
             &mut srcsize,
-            ptr::null(),
+            core::ptr::null(),
         );
-        if LZ4F_isError(ret) != 0 {
+        if lz4f_isError(ret) {
             return ret;
         }
 
         (*lz4fRead).srcBufNext += srcsize;
         next += dstsize;
-        p = p.add(dstsize);
+        p = p.wrapping_add(dstsize);
     }
 
     next
@@ -212,21 +183,22 @@ pub unsafe extern "C" fn LZ4F_read(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4F_readClose(lz4fRead: *mut LZ4_readFile_t) -> LZ4F_errorCode_t {
     if lz4fRead.is_null() {
-        RETURN_ERROR!(ERROR_parameter_null);
+        return returnErrorCode(LZ4F_ERROR_parameter_null);
     }
     LZ4F_freeReadFile(lz4fRead);
-    err::OK_NoError
+    LZ4F_OK_NoError as usize
 }
 
-/* ===== write API ===== */
+/* =====   write API   ===== */
+
 #[repr(C)]
 pub struct LZ4_writeFile_t {
-    cctxPtr: *mut LZ4F_cctx,
-    fp: *mut FILE,
-    dstBuf: *mut u8,
-    maxWriteSize: usize,
-    dstBufMaxSize: usize,
-    errCode: LZ4F_errorCode_t,
+    pub cctxPtr: *mut LZ4F_cctx,
+    pub fp: *mut c_void,
+    pub dstBuf: *mut u8,
+    pub maxWriteSize: usize,
+    pub dstBufMaxSize: usize,
+    pub errCode: LZ4F_errorCode_t,
 }
 
 unsafe fn LZ4F_freeWriteFile(state: *mut LZ4_writeFile_t) {
@@ -234,31 +206,31 @@ unsafe fn LZ4F_freeWriteFile(state: *mut LZ4_writeFile_t) {
         return;
     }
     LZ4F_freeCompressionContext((*state).cctxPtr);
-    free((*state).dstBuf as *mut c_void);
-    free(state as *mut c_void);
+    free((*state).dstBuf);
+    free(state as *mut u8);
 }
 
 unsafe fn LZ4F_freeAndNullWriteFile(statePtr: *mut *mut LZ4_writeFile_t) {
     LZ4F_freeWriteFile(*statePtr);
-    *statePtr = ptr::null_mut();
+    *statePtr = core::ptr::null_mut();
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4F_writeOpen(
     lz4fWrite: *mut *mut LZ4_writeFile_t,
-    fp: *mut FILE,
+    fp: *mut c_void,
     prefsPtr: *const LZ4F_preferences_t,
 ) -> LZ4F_errorCode_t {
-    let mut buf = [0u8; LZ4F_HEADER_SIZE_MAX];
+    let mut buf: [u8; LZ4F_HEADER_SIZE_MAX] = [0; LZ4F_HEADER_SIZE_MAX];
     let mut ret: usize;
 
     if fp.is_null() || lz4fWrite.is_null() {
-        RETURN_ERROR!(ERROR_parameter_null);
+        return returnErrorCode(LZ4F_ERROR_parameter_null);
     }
 
     *lz4fWrite = calloc(1, core::mem::size_of::<LZ4_writeFile_t>()) as *mut LZ4_writeFile_t;
     if (*lz4fWrite).is_null() {
-        RETURN_ERROR!(ERROR_allocation_failed);
+        return returnErrorCode(LZ4F_ERROR_allocation_failed);
     }
     if !prefsPtr.is_null() {
         match (*prefsPtr).frameInfo.blockSizeID {
@@ -276,7 +248,7 @@ pub unsafe extern "C" fn LZ4F_writeOpen(
             }
             _ => {
                 LZ4F_freeAndNullWriteFile(lz4fWrite);
-                RETURN_ERROR!(ERROR_maxBlockSize_invalid);
+                return returnErrorCode(LZ4F_ERROR_maxBlockSize_invalid);
             }
         }
     } else {
@@ -284,14 +256,14 @@ pub unsafe extern "C" fn LZ4F_writeOpen(
     }
 
     (**lz4fWrite).dstBufMaxSize = LZ4F_compressBound((**lz4fWrite).maxWriteSize, prefsPtr);
-    (**lz4fWrite).dstBuf = malloc((**lz4fWrite).dstBufMaxSize) as *mut u8;
+    (**lz4fWrite).dstBuf = malloc((**lz4fWrite).dstBufMaxSize);
     if (**lz4fWrite).dstBuf.is_null() {
         LZ4F_freeAndNullWriteFile(lz4fWrite);
-        RETURN_ERROR!(ERROR_allocation_failed);
+        return returnErrorCode(LZ4F_ERROR_allocation_failed);
     }
 
     ret = LZ4F_createCompressionContext(&mut (**lz4fWrite).cctxPtr, LZ4F_VERSION);
-    if LZ4F_isError(ret) != 0 {
+    if lz4f_isError(ret) {
         LZ4F_freeAndNullWriteFile(lz4fWrite);
         return ret;
     }
@@ -302,19 +274,19 @@ pub unsafe extern "C" fn LZ4F_writeOpen(
         LZ4F_HEADER_SIZE_MAX,
         prefsPtr,
     );
-    if LZ4F_isError(ret) != 0 {
+    if lz4f_isError(ret) {
         LZ4F_freeAndNullWriteFile(lz4fWrite);
         return ret;
     }
 
     if ret != fwrite(buf.as_ptr() as *const c_void, 1, ret, fp) {
         LZ4F_freeAndNullWriteFile(lz4fWrite);
-        RETURN_ERROR!(ERROR_io_write);
+        return returnErrorCode(LZ4F_ERROR_io_write);
     }
 
     (**lz4fWrite).fp = fp;
-    (**lz4fWrite).errCode = err::OK_NoError;
-    err::OK_NoError
+    (**lz4fWrite).errCode = LZ4F_OK_NoError as usize;
+    LZ4F_OK_NoError as usize
 }
 
 #[unsafe(no_mangle)]
@@ -323,12 +295,13 @@ pub unsafe extern "C" fn LZ4F_write(
     buf: *const c_void,
     size: usize,
 ) -> usize {
-    let mut p = buf as *const u8;
-    let mut remain = size;
+    let mut p: *const u8 = buf as *const u8;
+    let mut remain: usize = size;
     let mut chunk: usize;
+    let mut ret: usize;
 
     if lz4fWrite.is_null() || buf.is_null() {
-        RETURN_ERROR!(ERROR_parameter_null);
+        return returnErrorCode(LZ4F_ERROR_parameter_null);
     }
     while remain != 0 {
         if remain > (*lz4fWrite).maxWriteSize {
@@ -337,25 +310,32 @@ pub unsafe extern "C" fn LZ4F_write(
             chunk = remain;
         }
 
-        let r = LZ4F_compressUpdate(
+        ret = LZ4F_compressUpdate(
             (*lz4fWrite).cctxPtr,
             (*lz4fWrite).dstBuf as *mut c_void,
             (*lz4fWrite).dstBufMaxSize,
             p as *const c_void,
             chunk,
-            ptr::null(),
+            core::ptr::null(),
         );
-        if LZ4F_isError(r) != 0 {
-            (*lz4fWrite).errCode = r;
-            return r;
+        if lz4f_isError(ret) {
+            (*lz4fWrite).errCode = ret;
+            return ret;
         }
 
-        if r != fwrite((*lz4fWrite).dstBuf as *const c_void, 1, r, (*lz4fWrite).fp) {
-            (*lz4fWrite).errCode = returnErrorCode(err::ERROR_io_write);
-            RETURN_ERROR!(ERROR_io_write);
+        if ret
+            != fwrite(
+                (*lz4fWrite).dstBuf as *const c_void,
+                1,
+                ret,
+                (*lz4fWrite).fp,
+            )
+        {
+            (*lz4fWrite).errCode = returnErrorCode(LZ4F_ERROR_io_write);
+            return returnErrorCode(LZ4F_ERROR_io_write);
         }
 
-        p = p.add(chunk);
+        p = p.wrapping_add(chunk);
         remain -= chunk;
     }
 
@@ -364,26 +344,34 @@ pub unsafe extern "C" fn LZ4F_write(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4F_writeClose(lz4fWrite: *mut LZ4_writeFile_t) -> LZ4F_errorCode_t {
-    let mut ret: LZ4F_errorCode_t = err::OK_NoError;
+    let mut ret: LZ4F_errorCode_t = LZ4F_OK_NoError as usize;
 
     if lz4fWrite.is_null() {
-        RETURN_ERROR!(ERROR_parameter_null);
+        return returnErrorCode(LZ4F_ERROR_parameter_null);
     }
 
-    if (*lz4fWrite).errCode == err::OK_NoError {
-        ret = LZ4F_compressEnd(
-            (*lz4fWrite).cctxPtr,
-            (*lz4fWrite).dstBuf as *mut c_void,
-            (*lz4fWrite).dstBufMaxSize,
-            ptr::null(),
-        );
-        if LZ4F_isError(ret) != 0 {
-            LZ4F_freeWriteFile(lz4fWrite);
-            return ret;
-        }
+    'out: {
+        if (*lz4fWrite).errCode == LZ4F_OK_NoError as usize {
+            ret = LZ4F_compressEnd(
+                (*lz4fWrite).cctxPtr,
+                (*lz4fWrite).dstBuf as *mut c_void,
+                (*lz4fWrite).dstBufMaxSize,
+                core::ptr::null(),
+            );
+            if lz4f_isError(ret) {
+                break 'out;
+            }
 
-        if ret != fwrite((*lz4fWrite).dstBuf as *const c_void, 1, ret, (*lz4fWrite).fp) {
-            ret = returnErrorCode(err::ERROR_io_write);
+            if ret
+                != fwrite(
+                    (*lz4fWrite).dstBuf as *const c_void,
+                    1,
+                    ret,
+                    (*lz4fWrite).fp,
+                )
+            {
+                ret = returnErrorCode(LZ4F_ERROR_io_write);
+            }
         }
     }
 

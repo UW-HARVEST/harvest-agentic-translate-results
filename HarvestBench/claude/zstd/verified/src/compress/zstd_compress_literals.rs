@@ -1,25 +1,43 @@
-//! Translation of compress/zstd_compress_literals.c
+//! Translation of `compress/zstd_compress_literals.c`
+#![allow(dead_code)]
 
-use core::ffi::c_void;
+use crate::common::error_private::*;
+use crate::common::huf::*;
+use crate::common::mem::*;
+use crate::common::zstd_internal::*;
+use crate::compress::zstd_compress_internal::*;
+use crate::libc::*;
+use core::ffi::{c_int, c_void};
 
-use crate::common::error;
-use crate::common::huf_common::{
-    HUF_flags_bmi2, HUF_flags_optimalDepth, HUF_flags_preferRepeat, HUF_flags_suspectUncompressible,
-    HUF_SYMBOLVALUE_MAX,
-};
-use crate::common::mem::{mem_write_le16, mem_write_le24, mem_write_le32};
-use crate::common::zstd_internal::{
-    set_basic, set_compressed, set_repeat, set_rle, LitHufLog, MIN_LITERALS_FOR_4_STREAMS,
-};
-use crate::compress::huf_compress::{HUF_compress1X_repeat, HUF_compress4X_repeat};
-use crate::compress::zstd_compress_internal::{
-    ZSTD_minGain, ZSTD_hufCTables_t, HUF_CElt, HUF_repeat, HUF_repeat_check, HUF_repeat_none,
-    HUF_repeat_valid,
-};
-use crate::zstd_h::{ZSTD_btultra, ZSTD_lazy, ZSTD_strategy};
-
-/* HUF_OPTIMAL_DEPTH_THRESHOLD == ZSTD_btultra */
-const HUF_OPTIMAL_DEPTH_THRESHOLD: ZSTD_strategy = ZSTD_btultra;
+extern "C" {
+    /* compress/huf_compress.c */
+    fn HUF_compress1X_repeat(
+        dst: *mut c_void,
+        dstSize: usize,
+        src: *const c_void,
+        srcSize: usize,
+        maxSymbolValue: u32,
+        tableLog: u32,
+        workSpace: *mut c_void,
+        wkspSize: usize,
+        hufTable: *mut HUF_CElt,
+        repeat: *mut HUF_repeat,
+        flags: c_int,
+    ) -> usize;
+    fn HUF_compress4X_repeat(
+        dst: *mut c_void,
+        dstSize: usize,
+        src: *const c_void,
+        srcSize: usize,
+        maxSymbolValue: u32,
+        tableLog: u32,
+        workSpace: *mut c_void,
+        wkspSize: usize,
+        hufTable: *mut HUF_CElt,
+        repeat: *mut HUF_repeat,
+        flags: c_int,
+    ) -> usize;
+}
 
 /* **************************************************************
 *  Literals compression - special cases
@@ -31,50 +49,49 @@ pub unsafe extern "C" fn ZSTD_noCompressLiterals(
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let ostart = dst as *mut u8;
-    let flSize: u32 = 1 + (srcSize > 31) as u32 + (srcSize > 4095) as u32;
+    let ostart = dst as *mut BYTE;
+    let flSize: U32 = 1 + ((srcSize > 31) as U32) + ((srcSize > 4095) as U32);
 
     if srcSize + flSize as usize > dstCapacity {
-        return error::error(error::code::DSTSIZE_TOOSMALL);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
 
     match flSize {
         1 => {
             /* 2 - 1 - 5 */
-            *ostart.add(0) = ((set_basic) as usize + (srcSize << 3)) as u8;
+            *ostart.add(0) = ((set_basic as U32).wrapping_add((srcSize << 3) as U32)) as BYTE;
         }
         2 => {
             /* 2 - 2 - 12 */
-            mem_write_le16(
+            MEM_writeLE16(
                 ostart as *mut c_void,
-                ((set_basic) as usize + (1 << 2) + (srcSize << 4)) as u16,
+                ((set_basic as U32)
+                    .wrapping_add(1 << 2)
+                    .wrapping_add((srcSize << 4) as U32)) as U16,
             );
         }
         3 => {
             /* 2 - 2 - 20 */
-            mem_write_le32(
+            MEM_writeLE32(
                 ostart as *mut c_void,
-                ((set_basic) as usize + (3 << 2) + (srcSize << 4)) as u32,
+                (set_basic as U32)
+                    .wrapping_add(3 << 2)
+                    .wrapping_add((srcSize << 4) as U32),
             );
         }
-        _ => {
-            /* not necessary : flSize is {1,2,3} */
-            debug_assert!(false);
-        }
+        _ => {}
     }
 
-    core::ptr::copy_nonoverlapping(src as *const u8, ostart.add(flSize as usize), srcSize);
+    ZSTD_memcpy(ostart.add(flSize as usize) as *mut c_void, src, srcSize);
     srcSize + flSize as usize
 }
 
-unsafe fn allBytesIdentical(src: *const c_void, srcSize: usize) -> i32 {
-    debug_assert!(srcSize >= 1);
-    debug_assert!(!src.is_null());
+unsafe fn allBytesIdentical(src: *const c_void, srcSize: usize) -> c_int {
     {
-        let b = *(src as *const u8);
+        let b = *(src as *const BYTE).add(0);
         let mut p: usize = 1;
         while p < srcSize {
-            if *(src as *const u8).add(p) != b {
+            if *(src as *const BYTE).add(p) != b {
                 return 0;
             }
             p += 1;
@@ -90,63 +107,65 @@ pub unsafe extern "C" fn ZSTD_compressRleLiteralsBlock(
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let ostart = dst as *mut u8;
-    let flSize: u32 = 1 + (srcSize > 31) as u32 + (srcSize > 4095) as u32;
-
-    debug_assert!(dstCapacity >= 4);
-    let _ = dstCapacity;
-    debug_assert!(allBytesIdentical(src, srcSize) != 0);
+    let ostart = dst as *mut BYTE;
+    let flSize: U32 = 1 + ((srcSize > 31) as U32) + ((srcSize > 4095) as U32);
 
     match flSize {
         1 => {
             /* 2 - 1 - 5 */
-            *ostart.add(0) = ((set_rle) as usize + (srcSize << 3)) as u8;
+            *ostart.add(0) = ((set_rle as U32).wrapping_add((srcSize << 3) as U32)) as BYTE;
         }
         2 => {
             /* 2 - 2 - 12 */
-            mem_write_le16(
+            MEM_writeLE16(
                 ostart as *mut c_void,
-                ((set_rle) as usize + (1 << 2) + (srcSize << 4)) as u16,
+                ((set_rle as U32)
+                    .wrapping_add(1 << 2)
+                    .wrapping_add((srcSize << 4) as U32)) as U16,
             );
         }
         3 => {
             /* 2 - 2 - 20 */
-            mem_write_le32(
+            MEM_writeLE32(
                 ostart as *mut c_void,
-                ((set_rle) as usize + (3 << 2) + (srcSize << 4)) as u32,
+                (set_rle as U32)
+                    .wrapping_add(3 << 2)
+                    .wrapping_add((srcSize << 4) as U32),
             );
         }
-        _ => {
-            /* not necessary : flSize is {1,2,3} */
-            debug_assert!(false);
-        }
+        _ => {}
     }
 
-    *ostart.add(flSize as usize) = *(src as *const u8);
+    *ostart.add(flSize as usize) = *(src as *const BYTE);
     flSize as usize + 1
 }
 
-/* ZSTD_minLiteralsToCompress() :
- * returns minimal amount of literals
- * for literal compression to even be attempted.
- * Minimum is made tighter as compression strategy increases.
- */
+/* ZSTD_minLiteralsToCompress() */
 unsafe fn ZSTD_minLiteralsToCompress(strategy: ZSTD_strategy, huf_repeat: HUF_repeat) -> usize {
-    debug_assert!((strategy as i32) >= 0);
-    debug_assert!((strategy as i32) <= 9);
-    /* btultra2 : min 8 bytes;
-     * then 2x larger for each successive compression strategy
-     * max threshold 64 bytes */
     {
-        let shift: i32 = core::cmp::min(9 - (strategy as i32), 3);
+        let shift: c_int = MIN(9 - strategy as c_int, 3);
         let mintc: usize = if huf_repeat == HUF_repeat_valid {
             6
         } else {
-            (8usize) << shift
+            8usize << shift
         };
         mintc
     }
 }
+
+type huf_compress_f = unsafe extern "C" fn(
+    *mut c_void,
+    usize,
+    *const c_void,
+    usize,
+    u32,
+    u32,
+    *mut c_void,
+    usize,
+    *mut HUF_CElt,
+    *mut HUF_repeat,
+    c_int,
+) -> usize;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_compressLiterals(
@@ -159,18 +178,23 @@ pub unsafe extern "C" fn ZSTD_compressLiterals(
     prevHuf: *const ZSTD_hufCTables_t,
     nextHuf: *mut ZSTD_hufCTables_t,
     strategy: ZSTD_strategy,
-    disableLiteralCompression: i32,
-    suspectUncompressible: i32,
-    bmi2: i32,
+    disableLiteralCompression: c_int,
+    suspectUncompressible: c_int,
+    bmi2: c_int,
 ) -> usize {
-    let lhSize: usize = 3 + (srcSize >= 1024) as usize + (srcSize >= 16384) as usize;
-    let ostart = dst as *mut u8;
-    let mut singleStream: u32 = (srcSize < 256) as u32;
-    let mut hType: u32 = set_compressed;
+    let lhSize: usize =
+        3 + ((srcSize >= 1024) as usize) + ((srcSize >= (16 * 1024)) as usize);
+    let ostart = dst as *mut BYTE;
+    let mut singleStream: U32 = (srcSize < 256) as U32;
+    let mut hType: SymbolEncodingType_e = set_compressed;
     let cLitSize: usize;
 
     /* Prepare nextEntropy assuming reusing the existing table */
-    core::ptr::copy_nonoverlapping(prevHuf, nextHuf, 1);
+    ZSTD_memcpy(
+        nextHuf as *mut c_void,
+        prevHuf as *const c_void,
+        core::mem::size_of::<ZSTD_hufCTables_t>(),
+    );
 
     if disableLiteralCompression != 0 {
         return ZSTD_noCompressLiterals(dst, dstCapacity, src, srcSize);
@@ -182,11 +206,11 @@ pub unsafe extern "C" fn ZSTD_compressLiterals(
     }
 
     if dstCapacity < lhSize + 1 {
-        return error::error(error::code::DSTSIZE_TOOSMALL);
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
     {
         let mut repeat: HUF_repeat = (*prevHuf).repeatMode;
-        let flags: i32 = 0
+        let flags: c_int = 0
             | (if bmi2 != 0 { HUF_flags_bmi2 } else { 0 })
             | (if strategy < ZSTD_lazy && srcSize <= 1024 {
                 HUF_flags_preferRepeat
@@ -204,22 +228,11 @@ pub unsafe extern "C" fn ZSTD_compressLiterals(
                 0
             });
 
+        let huf_compress: huf_compress_f;
         if repeat == HUF_repeat_valid && lhSize == 3 {
             singleStream = 1;
         }
-        let huf_compress: unsafe extern "C" fn(
-            *mut c_void,
-            usize,
-            *const c_void,
-            usize,
-            u32,
-            u32,
-            *mut c_void,
-            usize,
-            *mut HUF_CElt,
-            *mut HUF_repeat,
-            i32,
-        ) -> usize = if singleStream != 0 {
+        huf_compress = if singleStream != 0 {
             HUF_compress1X_repeat
         } else {
             HUF_compress4X_repeat
@@ -233,7 +246,7 @@ pub unsafe extern "C" fn ZSTD_compressLiterals(
             LitHufLog,
             entropyWorkspace,
             entropyWorkspaceSize,
-            (*nextHuf).CTable.as_mut_ptr() as *mut HUF_CElt,
+            (*nextHuf).CTable.as_mut_ptr(),
             &mut repeat,
             flags,
         );
@@ -244,21 +257,26 @@ pub unsafe extern "C" fn ZSTD_compressLiterals(
     }
 
     {
-        let minGain: usize = ZSTD_minGain(srcSize, strategy);
-        if (cLitSize == 0) || (cLitSize >= srcSize - minGain) || error::err_is_error(cLitSize) != 0
+        let minGain = ZSTD_minGain(srcSize, strategy);
+        if (cLitSize == 0)
+            || (cLitSize >= srcSize.wrapping_sub(minGain))
+            || ERR_isError(cLitSize) != 0
         {
-            core::ptr::copy_nonoverlapping(prevHuf, nextHuf, 1);
+            ZSTD_memcpy(
+                nextHuf as *mut c_void,
+                prevHuf as *const c_void,
+                core::mem::size_of::<ZSTD_hufCTables_t>(),
+            );
             return ZSTD_noCompressLiterals(dst, dstCapacity, src, srcSize);
         }
     }
     if cLitSize == 1 {
-        /* A return value of 1 signals that the alphabet consists of a single symbol.
-         * However, in some rare circumstances, it could be the compressed size (a single byte).
-         * For that outcome to have a chance to happen, it's necessary that `srcSize < 8`.
-         * (it's also necessary to not generate statistics).
-         * Therefore, in such a case, actively check that all bytes are identical. */
         if (srcSize >= 8) || allBytesIdentical(src, srcSize) != 0 {
-            core::ptr::copy_nonoverlapping(prevHuf, nextHuf, 1);
+            ZSTD_memcpy(
+                nextHuf as *mut c_void,
+                prevHuf as *const c_void,
+                core::mem::size_of::<ZSTD_hufCTables_t>(),
+            );
             return ZSTD_compressRleLiteralsBlock(dst, dstCapacity, src, srcSize);
         }
     }
@@ -272,40 +290,30 @@ pub unsafe extern "C" fn ZSTD_compressLiterals(
     match lhSize {
         3 => {
             /* 2 - 2 - 10 - 10 */
-            if singleStream == 0 {
-                debug_assert!(srcSize >= MIN_LITERALS_FOR_4_STREAMS);
-            }
-            {
-                let lhc: u32 = hType
-                    + (((singleStream == 0) as u32) << 2)
-                    + ((srcSize as u32) << 4)
-                    + ((cLitSize as u32) << 14);
-                mem_write_le24(ostart as *mut c_void, lhc);
-            }
+            let lhc: U32 = (hType as U32)
+                .wrapping_add(((singleStream == 0) as U32) << 2)
+                .wrapping_add((srcSize as U32) << 4)
+                .wrapping_add((cLitSize as U32) << 14);
+            MEM_writeLE24(ostart as *mut c_void, lhc);
         }
         4 => {
             /* 2 - 2 - 14 - 14 */
-            debug_assert!(srcSize >= MIN_LITERALS_FOR_4_STREAMS);
-            {
-                let lhc: u32 =
-                    hType + (2 << 2) + ((srcSize as u32) << 4) + ((cLitSize as u32) << 18);
-                mem_write_le32(ostart as *mut c_void, lhc);
-            }
+            let lhc: U32 = (hType as U32)
+                .wrapping_add(2 << 2)
+                .wrapping_add((srcSize as U32) << 4)
+                .wrapping_add((cLitSize as U32) << 18);
+            MEM_writeLE32(ostart as *mut c_void, lhc);
         }
         5 => {
             /* 2 - 2 - 18 - 18 */
-            debug_assert!(srcSize >= MIN_LITERALS_FOR_4_STREAMS);
-            {
-                let lhc: u32 =
-                    hType + (3 << 2) + ((srcSize as u32) << 4) + ((cLitSize as u32) << 22);
-                mem_write_le32(ostart as *mut c_void, lhc);
-                *ostart.add(4) = (cLitSize >> 10) as u8;
-            }
+            let lhc: U32 = (hType as U32)
+                .wrapping_add(3 << 2)
+                .wrapping_add((srcSize as U32) << 4)
+                .wrapping_add((cLitSize as U32) << 22);
+            MEM_writeLE32(ostart as *mut c_void, lhc);
+            *ostart.add(4) = (cLitSize >> 10) as BYTE;
         }
-        _ => {
-            /* not possible : lhSize is {3,4,5} */
-            debug_assert!(false);
-        }
+        _ => {}
     }
     lhSize + cLitSize
 }

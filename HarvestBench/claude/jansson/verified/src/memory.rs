@@ -1,28 +1,20 @@
-//! Translation of memory.c
-#![allow(non_upper_case_globals)]
+//! Translation of c_src/src/memory.c
+use crate::jansson::{json_free_t, json_malloc_t, json_realloc_t};
+use crate::libc;
+use std::ffi::{c_char, c_void};
 
-use crate::types::*;
-use core::ffi::{c_char, c_void};
-use core::ptr;
-
-extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
-    fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
-    fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-}
-
-// memory function pointers, initialized to the libc functions (as in memory.c)
-static mut do_malloc: json_malloc_t = Some(malloc);
-static mut do_realloc: json_realloc_t = Some(realloc);
-static mut do_free: json_free_t = Some(free);
+/* The C source initialises these to the C library's malloc/realloc/free. */
+static mut DO_MALLOC: json_malloc_t = Some(libc::malloc);
+static mut DO_REALLOC: json_realloc_t = Some(libc::realloc);
+static mut DO_FREE: json_free_t = Some(libc::free);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jsonp_malloc(size: usize) -> *mut c_void {
     if size == 0 {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
-    (do_malloc.unwrap())(size)
+
+    (DO_MALLOC.unwrap())(size)
 }
 
 #[unsafe(no_mangle)]
@@ -30,7 +22,8 @@ pub unsafe extern "C" fn jsonp_free(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
-    (do_free.unwrap())(ptr);
+
+    (DO_FREE.unwrap())(ptr)
 }
 
 #[unsafe(no_mangle)]
@@ -39,21 +32,24 @@ pub unsafe extern "C" fn jsonp_realloc(
     original_size: usize,
     new_size: usize,
 ) -> *mut c_void {
-    if let Some(realloc_fn) = do_realloc {
-        return realloc_fn(ptr, new_size);
+    let new_memory: *mut c_void;
+
+    if let Some(f) = DO_REALLOC {
+        return f(ptr, new_size);
     }
 
     // realloc emulation using malloc and free
     if new_size == 0 {
         if !ptr.is_null() {
-            (do_free.unwrap())(ptr);
+            (DO_FREE.unwrap())(ptr);
         }
-        ptr::null_mut()
+
+        std::ptr::null_mut()
     } else {
-        let new_memory = (do_malloc.unwrap())(new_size);
+        new_memory = (DO_MALLOC.unwrap())(new_size);
 
         if !new_memory.is_null() && !ptr.is_null() {
-            memcpy(
+            libc::memcpy(
                 new_memory,
                 ptr,
                 if original_size < new_size {
@@ -62,7 +58,8 @@ pub unsafe extern "C" fn jsonp_realloc(
                     new_size
                 },
             );
-            (do_free.unwrap())(ptr);
+
+            (DO_FREE.unwrap())(ptr);
         }
 
         new_memory
@@ -70,22 +67,24 @@ pub unsafe extern "C" fn jsonp_realloc(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jsonp_strndup(str: *const c_char, len: usize) -> *mut c_char {
-    let new_str = jsonp_malloc(len + 1) as *mut c_char;
+pub unsafe extern "C" fn jsonp_strndup(str_: *const c_char, len: usize) -> *mut c_char {
+    let new_str: *mut c_char;
+
+    new_str = jsonp_malloc(len + 1) as *mut c_char;
     if new_str.is_null() {
-        return ptr::null_mut();
+        return std::ptr::null_mut();
     }
 
-    memcpy(new_str as *mut c_void, str as *const c_void, len);
+    libc::memcpy(new_str as *mut c_void, str_ as *const c_void, len);
     *new_str.add(len) = 0;
     new_str
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn json_set_alloc_funcs(malloc_fn: json_malloc_t, free_fn: json_free_t) {
-    do_malloc = malloc_fn;
-    do_realloc = None;
-    do_free = free_fn;
+    DO_MALLOC = malloc_fn;
+    DO_REALLOC = None;
+    DO_FREE = free_fn;
 }
 
 #[unsafe(no_mangle)]
@@ -94,9 +93,9 @@ pub unsafe extern "C" fn json_set_alloc_funcs2(
     realloc_fn: json_realloc_t,
     free_fn: json_free_t,
 ) {
-    do_malloc = malloc_fn;
-    do_realloc = realloc_fn;
-    do_free = free_fn;
+    DO_MALLOC = malloc_fn;
+    DO_REALLOC = realloc_fn;
+    DO_FREE = free_fn;
 }
 
 #[unsafe(no_mangle)]
@@ -105,10 +104,10 @@ pub unsafe extern "C" fn json_get_alloc_funcs(
     free_fn: *mut json_free_t,
 ) {
     if !malloc_fn.is_null() {
-        *malloc_fn = do_malloc;
+        *malloc_fn = DO_MALLOC;
     }
     if !free_fn.is_null() {
-        *free_fn = do_free;
+        *free_fn = DO_FREE;
     }
 }
 
@@ -119,12 +118,12 @@ pub unsafe extern "C" fn json_get_alloc_funcs2(
     free_fn: *mut json_free_t,
 ) {
     if !malloc_fn.is_null() {
-        *malloc_fn = do_malloc;
+        *malloc_fn = DO_MALLOC;
     }
     if !realloc_fn.is_null() {
-        *realloc_fn = do_realloc;
+        *realloc_fn = DO_REALLOC;
     }
     if !free_fn.is_null() {
-        *free_fn = do_free;
+        *free_fn = DO_FREE;
     }
 }

@@ -1,21 +1,30 @@
-//! Translation of compress/hist.c — histogram functions.
+//! Translation of `compress/hist.c` (+ `compress/hist.h`)
 #![allow(dead_code)]
-use crate::common::error::{code, err_is_error, error};
-use crate::common::mem::mem_read32;
+
+use crate::common::error_private::*;
+use crate::common::mem::*;
+use crate::libc::{ZSTD_memmove, ZSTD_memset};
 use core::ffi::c_void;
 
-pub const HIST_WKSP_SIZE_U32: usize = 1024;
-pub const HIST_WKSP_SIZE: usize = HIST_WKSP_SIZE_U32 * 4;
+/* --- advanced histogram functions --- */
 
+pub const HIST_WKSP_SIZE_U32: usize = 1024;
+pub const HIST_WKSP_SIZE: usize = HIST_WKSP_SIZE_U32 * core::mem::size_of::<u32>();
+
+/* --- Error management --- */
 #[unsafe(no_mangle)]
 pub extern "C" fn HIST_isError(code: usize) -> u32 {
-    err_is_error(code)
+    ERR_isError(code)
 }
 
+/*-**************************************************************
+ *  Histogram functions
+ ****************************************************************/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HIST_add(count: *mut u32, src: *const c_void, srcSize: usize) {
-    let mut ip = src as *const u8;
-    let end = ip.add(srcSize);
+    let mut ip = src as *const BYTE;
+    let end = ip.wrapping_add(srcSize);
+
     while ip < end {
         *count.add(*ip as usize) += 1;
         ip = ip.add(1);
@@ -29,12 +38,16 @@ pub unsafe extern "C" fn HIST_count_simple(
     src: *const c_void,
     srcSize: usize,
 ) -> u32 {
-    let mut ip = src as *const u8;
-    let end = ip.add(srcSize);
-    let mut maxSymbolValue = *maxSymbolValuePtr;
+    let mut ip = src as *const BYTE;
+    let end = ip.wrapping_add(srcSize);
+    let mut maxSymbolValue: u32 = *maxSymbolValuePtr;
     let mut largestCount: u32 = 0;
 
-    core::ptr::write_bytes(count, 0, (maxSymbolValue + 1) as usize);
+    ZSTD_memset(
+        count as *mut c_void,
+        0,
+        (maxSymbolValue as usize + 1) * core::mem::size_of::<u32>(),
+    );
     if srcSize == 0 {
         *maxSymbolValuePtr = 0;
         return 0;
@@ -46,108 +59,143 @@ pub unsafe extern "C" fn HIST_count_simple(
     }
 
     while *count.add(maxSymbolValue as usize) == 0 {
-        maxSymbolValue -= 1;
+        maxSymbolValue = maxSymbolValue.wrapping_sub(1);
     }
     *maxSymbolValuePtr = maxSymbolValue;
 
-    for s in 0..=maxSymbolValue {
-        if *count.add(s as usize) > largestCount {
-            largestCount = *count.add(s as usize);
+    {
+        let mut s: U32 = 0;
+        while s <= maxSymbolValue {
+            if *count.add(s as usize) > largestCount {
+                largestCount = *count.add(s as usize);
+            }
+            s += 1;
         }
     }
+
     largestCount
 }
 
-const TRUST_INPUT: i32 = 0;
-const CHECK_MAX_SYMBOL_VALUE: i32 = 1;
+type HIST_checkInput_e = i32;
+const trustInput: HIST_checkInput_e = 0;
+const checkMaxSymbolValue: HIST_checkInput_e = 1;
 
-unsafe fn hist_count_parallel_wksp(
+/* HIST_count_parallel_wksp() :
+ * store histogram into 4 intermediate tables, recombined at the end.
+ * this design makes better use of OoO cpus,
+ * and is noticeably faster when some values are heavily repeated.
+ * But it needs some additional workspace for intermediate tables.
+ * `workSpace` must be a U32 table of size >= HIST_WKSP_SIZE_U32.
+ * @return : largest histogram frequency,
+ *           or an error code (notably when histogram's alphabet is larger than *maxSymbolValuePtr) */
+unsafe fn HIST_count_parallel_wksp(
     count: *mut u32,
     maxSymbolValuePtr: *mut u32,
     source: *const c_void,
     sourceSize: usize,
-    check: i32,
-    workSpace: *mut u32,
+    check: HIST_checkInput_e,
+    workSpace: *mut U32,
 ) -> usize {
-    let mut ip = source as *const u8;
-    let iend = ip.add(sourceSize);
-    let countSize = (*maxSymbolValuePtr + 1) as usize * 4;
+    let mut ip = source as *const BYTE;
+    let iend = ip.wrapping_add(sourceSize);
+    let countSize: usize = (*maxSymbolValuePtr as usize + 1) * core::mem::size_of::<u32>();
     let mut max: u32 = 0;
-    let counting1 = workSpace;
-    let counting2 = counting1.add(256);
-    let counting3 = counting2.add(256);
-    let counting4 = counting3.add(256);
+    let Counting1: *mut U32 = workSpace;
+    let Counting2: *mut U32 = Counting1.add(256);
+    let Counting3: *mut U32 = Counting2.add(256);
+    let Counting4: *mut U32 = Counting3.add(256);
 
+    /* safety checks */
     if sourceSize == 0 {
-        core::ptr::write_bytes(count as *mut u8, 0, countSize);
+        ZSTD_memset(count as *mut c_void, 0, countSize);
         *maxSymbolValuePtr = 0;
         return 0;
     }
-    core::ptr::write_bytes(workSpace, 0, 4 * 256);
+    ZSTD_memset(
+        workSpace as *mut c_void,
+        0,
+        4 * 256 * core::mem::size_of::<u32>(),
+    );
 
+    /* by stripes of 16 bytes */
     {
-        let mut cached = mem_read32(ip as *const c_void);
+        let mut cached: U32 = MEM_read32(ip as *const c_void);
         ip = ip.add(4);
-        while ip < iend.sub(15) {
-            let mut c = cached;
-            cached = mem_read32(ip as *const c_void);
+        while ip < iend.wrapping_sub(15) {
+            let mut c: U32 = cached;
+            cached = MEM_read32(ip as *const c_void);
             ip = ip.add(4);
-            *counting1.add((c & 0xFF) as usize) += 1;
-            *counting2.add(((c >> 8) & 0xFF) as usize) += 1;
-            *counting3.add(((c >> 16) & 0xFF) as usize) += 1;
-            *counting4.add((c >> 24) as usize) += 1;
+            *Counting1.add(c as BYTE as usize) += 1;
+            *Counting2.add((c >> 8) as BYTE as usize) += 1;
+            *Counting3.add((c >> 16) as BYTE as usize) += 1;
+            *Counting4.add((c >> 24) as usize) += 1;
             c = cached;
-            cached = mem_read32(ip as *const c_void);
+            cached = MEM_read32(ip as *const c_void);
             ip = ip.add(4);
-            *counting1.add((c & 0xFF) as usize) += 1;
-            *counting2.add(((c >> 8) & 0xFF) as usize) += 1;
-            *counting3.add(((c >> 16) & 0xFF) as usize) += 1;
-            *counting4.add((c >> 24) as usize) += 1;
+            *Counting1.add(c as BYTE as usize) += 1;
+            *Counting2.add((c >> 8) as BYTE as usize) += 1;
+            *Counting3.add((c >> 16) as BYTE as usize) += 1;
+            *Counting4.add((c >> 24) as usize) += 1;
             c = cached;
-            cached = mem_read32(ip as *const c_void);
+            cached = MEM_read32(ip as *const c_void);
             ip = ip.add(4);
-            *counting1.add((c & 0xFF) as usize) += 1;
-            *counting2.add(((c >> 8) & 0xFF) as usize) += 1;
-            *counting3.add(((c >> 16) & 0xFF) as usize) += 1;
-            *counting4.add((c >> 24) as usize) += 1;
+            *Counting1.add(c as BYTE as usize) += 1;
+            *Counting2.add((c >> 8) as BYTE as usize) += 1;
+            *Counting3.add((c >> 16) as BYTE as usize) += 1;
+            *Counting4.add((c >> 24) as usize) += 1;
             c = cached;
-            cached = mem_read32(ip as *const c_void);
+            cached = MEM_read32(ip as *const c_void);
             ip = ip.add(4);
-            *counting1.add((c & 0xFF) as usize) += 1;
-            *counting2.add(((c >> 8) & 0xFF) as usize) += 1;
-            *counting3.add(((c >> 16) & 0xFF) as usize) += 1;
-            *counting4.add((c >> 24) as usize) += 1;
+            *Counting1.add(c as BYTE as usize) += 1;
+            *Counting2.add((c >> 8) as BYTE as usize) += 1;
+            *Counting3.add((c >> 16) as BYTE as usize) += 1;
+            *Counting4.add((c >> 24) as usize) += 1;
         }
-        ip = ip.sub(4);
+        ip = ip.wrapping_sub(4);
     }
 
+    /* finish last symbols */
     while ip < iend {
-        *counting1.add(*ip as usize) += 1;
+        *Counting1.add(*ip as usize) += 1;
         ip = ip.add(1);
     }
 
-    for s in 0..256usize {
-        *counting1.add(s) +=
-            *counting2.add(s) + *counting3.add(s) + *counting4.add(s);
-        if *counting1.add(s) > max {
-            max = *counting1.add(s);
+    {
+        let mut s: U32 = 0;
+        while s < 256 {
+            *Counting1.add(s as usize) = (*Counting1.add(s as usize))
+                .wrapping_add(
+                    (*Counting2.add(s as usize))
+                        .wrapping_add(*Counting3.add(s as usize))
+                        .wrapping_add(*Counting4.add(s as usize)),
+                );
+            if *Counting1.add(s as usize) > max {
+                max = *Counting1.add(s as usize);
+            }
+            s += 1;
         }
     }
 
     {
-        let mut maxSymbolValue = 255usize;
-        while *counting1.add(maxSymbolValue) == 0 {
-            maxSymbolValue -= 1;
+        let mut maxSymbolValue: u32 = 255;
+        while *Counting1.add(maxSymbolValue as usize) == 0 {
+            maxSymbolValue = maxSymbolValue.wrapping_sub(1);
         }
-        if check != 0 && maxSymbolValue as u32 > *maxSymbolValuePtr {
-            return error(code::MAXSYMBOLVALUE_TOOSMALL);
+        if check != 0 && maxSymbolValue > *maxSymbolValuePtr {
+            return ERROR(ZSTD_error_maxSymbolValue_tooSmall);
         }
-        *maxSymbolValuePtr = maxSymbolValue as u32;
-        core::ptr::copy(counting1 as *const u8, count as *mut u8, countSize);
+        *maxSymbolValuePtr = maxSymbolValue;
+        /* in case count & Counting1 are overlapping */
+        ZSTD_memmove(count as *mut c_void, Counting1 as *const c_void, countSize);
     }
     max as usize
 }
 
+/* HIST_countFast_wksp() :
+ * Same as HIST_countFast(), but using an externally provided scratch buffer.
+ * `workSpace` is a writable buffer which must be 4-bytes aligned,
+ * `workSpaceSize` must be >= HIST_WKSP_SIZE
+ */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HIST_countFast_wksp(
     count: *mut u32,
@@ -158,24 +206,28 @@ pub unsafe extern "C" fn HIST_countFast_wksp(
     workSpaceSize: usize,
 ) -> usize {
     if sourceSize < 1500 {
+        /* heuristic threshold */
         return HIST_count_simple(count, maxSymbolValuePtr, source, sourceSize) as usize;
     }
     if (workSpace as usize) & 3 != 0 {
-        return error(code::GENERIC);
-    }
+        return ERROR(ZSTD_error_GENERIC);
+    } /* must be aligned on 4-bytes boundaries */
     if workSpaceSize < HIST_WKSP_SIZE {
-        return error(code::WORKSPACE_TOOSMALL);
+        return ERROR(ZSTD_error_workSpace_tooSmall);
     }
-    hist_count_parallel_wksp(
+    HIST_count_parallel_wksp(
         count,
         maxSymbolValuePtr,
         source,
         sourceSize,
-        TRUST_INPUT,
-        workSpace as *mut u32,
+        trustInput,
+        workSpace as *mut U32,
     )
 }
 
+/* HIST_count_wksp() :
+ * Same as HIST_count(), but using an externally provided scratch buffer.
+ * `workSpace` size must be table of >= HIST_WKSP_SIZE_U32 unsigned */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HIST_count_wksp(
     count: *mut u32,
@@ -186,25 +238,33 @@ pub unsafe extern "C" fn HIST_count_wksp(
     workSpaceSize: usize,
 ) -> usize {
     if (workSpace as usize) & 3 != 0 {
-        return error(code::GENERIC);
-    }
+        return ERROR(ZSTD_error_GENERIC);
+    } /* must be aligned on 4-bytes boundaries */
     if workSpaceSize < HIST_WKSP_SIZE {
-        return error(code::WORKSPACE_TOOSMALL);
+        return ERROR(ZSTD_error_workSpace_tooSmall);
     }
     if *maxSymbolValuePtr < 255 {
-        return hist_count_parallel_wksp(
+        return HIST_count_parallel_wksp(
             count,
             maxSymbolValuePtr,
             source,
             sourceSize,
-            CHECK_MAX_SYMBOL_VALUE,
-            workSpace as *mut u32,
+            checkMaxSymbolValue,
+            workSpace as *mut U32,
         );
     }
     *maxSymbolValuePtr = 255;
-    HIST_countFast_wksp(count, maxSymbolValuePtr, source, sourceSize, workSpace, workSpaceSize)
+    HIST_countFast_wksp(
+        count,
+        maxSymbolValuePtr,
+        source,
+        sourceSize,
+        workSpace,
+        workSpaceSize,
+    )
 }
 
+/* fast variant (unsafe : won't check if src contains values beyond count[] limit) */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HIST_countFast(
     count: *mut u32,
@@ -212,14 +272,14 @@ pub unsafe extern "C" fn HIST_countFast(
     source: *const c_void,
     sourceSize: usize,
 ) -> usize {
-    let mut tmpCounters = [0u32; HIST_WKSP_SIZE_U32];
+    let mut tmpCounters: [u32; HIST_WKSP_SIZE_U32] = [0; HIST_WKSP_SIZE_U32];
     HIST_countFast_wksp(
         count,
         maxSymbolValuePtr,
         source,
         sourceSize,
         tmpCounters.as_mut_ptr() as *mut c_void,
-        core::mem::size_of_val(&tmpCounters),
+        core::mem::size_of::<[u32; HIST_WKSP_SIZE_U32]>(),
     )
 }
 
@@ -230,13 +290,13 @@ pub unsafe extern "C" fn HIST_count(
     src: *const c_void,
     srcSize: usize,
 ) -> usize {
-    let mut tmpCounters = [0u32; HIST_WKSP_SIZE_U32];
+    let mut tmpCounters: [u32; HIST_WKSP_SIZE_U32] = [0; HIST_WKSP_SIZE_U32];
     HIST_count_wksp(
         count,
         maxSymbolValuePtr,
         src,
         srcSize,
         tmpCounters.as_mut_ptr() as *mut c_void,
-        core::mem::size_of_val(&tmpCounters),
+        core::mem::size_of::<[u32; HIST_WKSP_SIZE_U32]>(),
     )
 }

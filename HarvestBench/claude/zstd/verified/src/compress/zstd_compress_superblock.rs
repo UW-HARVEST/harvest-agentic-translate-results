@@ -1,79 +1,79 @@
-//! Faithful translation of compress/zstd_compress_superblock.c
-//!
-//! Build config: DYNAMIC_BMI2=0, single-threaded, LE 64-bit, byte-identical.
-//! FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION is NOT defined (guarded blocks are
-//! compiled in). NDEBUG (asserts are no-ops).
-#![allow(
-    non_snake_case,
-    non_camel_case_types,
-    non_upper_case_globals,
-    dead_code,
-    unused_mut,
-    unused_assignments,
-    unused_parens,
-    unused_variables
-)]
+//! Translation of `compress/zstd_compress_superblock.c`
+#![allow(dead_code)]
 
+use crate::common::bitstream::*;
+use crate::common::error_private::*;
+use crate::common::fse::*;
+use crate::common::huf::*;
+use crate::common::mem::*;
+use crate::common::zstd_internal::*;
+use crate::compress::zstd_compress_internal::*;
+use crate::compress::zstd_compress_sequences::{
+    ZSTD_crossEntropyCost, ZSTD_encodeSequences, ZSTD_fseBitCost,
+};
+use crate::libc::*;
 use core::ffi::{c_int, c_uint, c_void};
-use core::ptr;
 
-use crate::common::bitstream::stream_accumulator_min;
-use crate::common::error::{code, err_is_error, error};
-use crate::common::fse::FSE_CTable;
-use crate::common::huf_common::HUF_flags_bmi2;
-use crate::common::mem::{mem_write_le16, mem_write_le24, mem_write_le32, U16, U32};
-use crate::common::zstd_internal::{
-    bt_compressed, set_basic, set_compressed, set_repeat, set_rle, DefaultMaxOff, LL_bits,
-    LL_defaultNorm, LL_defaultNormLog, MaxLL, MaxML, MaxOff, MINMATCH, ML_bits, ML_defaultNorm,
-    ML_defaultNormLog, OF_defaultNorm, OF_defaultNormLog, LONGNBSEQ, ZSTD_blockHeaderSize,
-};
+/* `KB` macro from zstd_internal.h : #define KB *(1 <<10) */
+const KB: usize = 1 << 10;
 
-use crate::compress::hist::{HIST_countFast_wksp, HIST_count_wksp};
-use crate::compress::huf_compress::{
-    HUF_compress1X_usingCTable, HUF_compress4X_usingCTable, HUF_estimateCompressedSize,
-};
-use crate::compress::zstd_compress_internal::{
-    Repcodes_t, SeqDef, SeqStore_t, SymbolEncodingType_e, ZSTD_CCtx, ZSTD_CCtx_params,
-    ZSTD_compressedBlockState_t, ZSTD_entropyCTables_t, ZSTD_entropyCTablesMetadata_t,
-    ZSTD_fseCTables_t, ZSTD_fseCTablesMetadata_t, ZSTD_getSequenceLength, ZSTD_hufCTables_t,
-    ZSTD_hufCTablesMetadata_t, ZSTD_noCompressBlock, ZSTD_updateRep, HUF_CElt,
-};
-
-type BYTE = u8;
-
-/* from zstd.h */
-const ZSTD_TARGETCBLOCKSIZE_MIN: usize = 1340;
-
-const BYTESCALE: usize = 256;
-
-// ---------------------------------------------------------------------------
-// extern "C" sibling symbols (declared in other compress modules / zstd_compress.c)
-// ---------------------------------------------------------------------------
 extern "C" {
-    fn ZSTD_encodeSequences(
+    /* compress/zstd_compress_literals.c */
+    fn ZSTD_noCompressLiterals(
         dst: *mut c_void,
         dstCapacity: usize,
-        CTable_MatchLength: *const FSE_CTable,
-        mlCodeTable: *const BYTE,
-        CTable_OffsetBits: *const FSE_CTable,
-        ofCodeTable: *const BYTE,
-        CTable_LitLength: *const FSE_CTable,
-        llCodeTable: *const BYTE,
-        sequences: *const SeqDef,
-        nbSeq: usize,
-        longOffsets: c_int,
-        bmi2: c_int,
+        src: *const c_void,
+        srcSize: usize,
+    ) -> usize;
+    fn ZSTD_compressRleLiteralsBlock(
+        dst: *mut c_void,
+        dstCapacity: usize,
+        src: *const c_void,
+        srcSize: usize,
     ) -> usize;
 
-    fn ZSTD_fseBitCost(ctable: *const FSE_CTable, count: *const u32, max: u32) -> usize;
-
-    fn ZSTD_crossEntropyCost(
-        norm: *const i16,
-        accuracyLog: u32,
+    /* compress/huf_compress.c */
+    fn HUF_compress1X_usingCTable(
+        dst: *mut c_void,
+        dstSize: usize,
+        src: *const c_void,
+        srcSize: usize,
+        CTable: *const HUF_CElt,
+        flags: c_int,
+    ) -> usize;
+    fn HUF_compress4X_usingCTable(
+        dst: *mut c_void,
+        dstSize: usize,
+        src: *const c_void,
+        srcSize: usize,
+        CTable: *const HUF_CElt,
+        flags: c_int,
+    ) -> usize;
+    fn HUF_estimateCompressedSize(
+        CTable: *const HUF_CElt,
         count: *const u32,
-        max: u32,
+        maxSymbolValue: u32,
     ) -> usize;
 
+    /* compress/hist.c */
+    fn HIST_count_wksp(
+        count: *mut u32,
+        maxSymbolValuePtr: *mut u32,
+        source: *const c_void,
+        sourceSize: usize,
+        workSpace: *mut c_void,
+        workSpaceSize: usize,
+    ) -> usize;
+    fn HIST_countFast_wksp(
+        count: *mut u32,
+        maxSymbolValuePtr: *mut u32,
+        source: *const c_void,
+        sourceSize: usize,
+        workSpace: *mut c_void,
+        workSpaceSize: usize,
+    ) -> usize;
+
+    /* compress/zstd_compress.c */
     fn ZSTD_buildBlockEntropyStats(
         seqStorePtr: *const SeqStore_t,
         prevEntropy: *const ZSTD_entropyCTables_t,
@@ -83,27 +83,13 @@ extern "C" {
         workspace: *mut c_void,
         wkspSize: usize,
     ) -> usize;
-
-    fn ZSTD_noCompressLiterals(
-        dst: *mut c_void,
-        dstCapacity: usize,
-        src: *const c_void,
-        srcSize: usize,
-    ) -> usize;
-
-    fn ZSTD_compressRleLiteralsBlock(
-        dst: *mut c_void,
-        dstCapacity: usize,
-        src: *const c_void,
-        srcSize: usize,
-    ) -> usize;
 }
 
-/// ZSTD_compressSubBlock_literal() :
-///  Compresses literals section for a sub-block.
-///  @return : compressed size of literals section of a sub-block
-///            Or 0 if unable to compress.
-///            Or error code
+/** ZSTD_compressSubBlock_literal() :
+ *  Compresses literals section for a sub-block.
+ *  @return : compressed size of literals section of a sub-block
+ *            Or 0 if unable to compress.
+ *            Or error code */
 unsafe fn ZSTD_compressSubBlock_literal(
     hufTable: *const HUF_CElt,
     hufMetadata: *const ZSTD_hufCTablesMetadata_t,
@@ -116,11 +102,12 @@ unsafe fn ZSTD_compressSubBlock_literal(
     entropyWritten: *mut c_int,
 ) -> usize {
     let header: usize = if writeEntropy != 0 { 200 } else { 0 };
-    let lhSize: usize =
-        3 + (litSize >= (1024 - header)) as usize + (litSize >= (16 * 1024 - header)) as usize;
+    let lhSize: usize = 3
+        + ((litSize >= (1 * KB - header)) as usize)
+        + ((litSize >= (16 * KB - header)) as usize);
     let ostart = dst as *mut BYTE;
-    let oend = ostart.add(dstSize);
-    let mut op = ostart.add(lhSize);
+    let oend: *mut BYTE = ostart.wrapping_add(dstSize);
+    let mut op: *mut BYTE = ostart.wrapping_add(lhSize);
     let singleStream: U32 = (lhSize == 3) as U32;
     let hType: SymbolEncodingType_e = if writeEntropy != 0 {
         (*hufMetadata).hType
@@ -137,9 +124,9 @@ unsafe fn ZSTD_compressSubBlock_literal(
     }
 
     if writeEntropy != 0 && (*hufMetadata).hType == set_compressed {
-        ptr::copy_nonoverlapping(
-            (*hufMetadata).hufDesBuffer.as_ptr(),
-            op,
+        ZSTD_memcpy(
+            op as *mut c_void,
+            (*hufMetadata).hufDesBuffer.as_ptr() as *const c_void,
             (*hufMetadata).hufDesSize,
         );
         op = op.add((*hufMetadata).hufDesSize);
@@ -167,9 +154,9 @@ unsafe fn ZSTD_compressSubBlock_literal(
                 flags,
             )
         };
-        op = op.add(cSize);
-        cLitSize += cSize;
-        if cSize == 0 || err_is_error(cSize) != 0 {
+        op = op.wrapping_add(cSize);
+        cLitSize = cLitSize.wrapping_add(cSize);
+        if cSize == 0 || ERR_isError(cSize) != 0 {
             return 0;
         }
         /* If we expand and we aren't writing a header then emit uncompressed */
@@ -177,7 +164,9 @@ unsafe fn ZSTD_compressSubBlock_literal(
             return ZSTD_noCompressLiterals(dst, dstSize, literals as *const c_void, litSize);
         }
         /* If we are writing headers then allow expansion that doesn't change our header size. */
-        if lhSize < (3 + (cLitSize >= 1024) as usize + (cLitSize >= 16 * 1024) as usize) {
+        if lhSize
+            < (3 + ((cLitSize >= 1 * KB) as usize) + ((cLitSize >= 16 * KB) as usize))
+        {
             return ZSTD_noCompressLiterals(dst, dstSize, literals as *const c_void, litSize);
         }
     }
@@ -186,23 +175,27 @@ unsafe fn ZSTD_compressSubBlock_literal(
     match lhSize {
         3 => {
             /* 2 - 2 - 10 - 10 */
-            let lhc: U32 = hType
-                + (((singleStream == 0) as U32) << 2)
-                + ((litSize as U32) << 4)
-                + ((cLitSize as U32) << 14);
-            mem_write_le24(ostart as *mut c_void, lhc);
+            let lhc: U32 = (hType as U32)
+                .wrapping_add(((singleStream == 0) as U32) << 2)
+                .wrapping_add((litSize as U32) << 4)
+                .wrapping_add((cLitSize as U32) << 14);
+            MEM_writeLE24(ostart as *mut c_void, lhc);
         }
         4 => {
             /* 2 - 2 - 14 - 14 */
-            let lhc: U32 =
-                hType + (2 << 2) + ((litSize as U32) << 4) + ((cLitSize as U32) << 18);
-            mem_write_le32(ostart as *mut c_void, lhc);
+            let lhc: U32 = (hType as U32)
+                .wrapping_add(2 << 2)
+                .wrapping_add((litSize as U32) << 4)
+                .wrapping_add((cLitSize as U32) << 18);
+            MEM_writeLE32(ostart as *mut c_void, lhc);
         }
         5 => {
             /* 2 - 2 - 18 - 18 */
-            let lhc: U32 =
-                hType + (3 << 2) + ((litSize as U32) << 4) + ((cLitSize as U32) << 22);
-            mem_write_le32(ostart as *mut c_void, lhc);
+            let lhc: U32 = (hType as U32)
+                .wrapping_add(3 << 2)
+                .wrapping_add((litSize as U32) << 4)
+                .wrapping_add((cLitSize as U32) << 22);
+            MEM_writeLE32(ostart as *mut c_void, lhc);
             *ostart.add(4) = (cLitSize >> 10) as BYTE;
         }
         _ => {
@@ -222,22 +215,24 @@ unsafe fn ZSTD_seqDecompressedSize(
 ) -> usize {
     let mut matchLengthSum: usize = 0;
     let mut litLengthSum: usize = 0;
-    let mut n: usize = 0;
+    let mut n: usize;
+    n = 0;
     while n < nbSeqs {
         let seqLen = ZSTD_getSequenceLength(seqStore, sequences.add(n));
-        litLengthSum += seqLen.litLength as usize;
-        matchLengthSum += seqLen.matchLength as usize;
+        litLengthSum = litLengthSum.wrapping_add(seqLen.litLength as usize);
+        matchLengthSum = matchLengthSum.wrapping_add(seqLen.matchLength as usize);
         n += 1;
     }
+    let _ = lastSubBlock;
     let _ = litLengthSum;
-    matchLengthSum + litSize
+    matchLengthSum.wrapping_add(litSize)
 }
 
-/// ZSTD_compressSubBlock_sequences() :
-///  Compresses sequences section for a sub-block.
-///  @return : compressed size of sequences section of a sub-block
-///            Or 0 if it is unable to compress
-///            Or error code.
+/** ZSTD_compressSubBlock_sequences() :
+ *  Compresses sequences section for a sub-block.
+ *  @return : compressed size of sequences section of a sub-block
+ *            Or 0 if it is unable to compress
+ *            Or error code. */
 unsafe fn ZSTD_compressSubBlock_sequences(
     fseTables: *const ZSTD_fseCTables_t,
     fseMetadata: *const ZSTD_fseCTablesMetadata_t,
@@ -254,16 +249,16 @@ unsafe fn ZSTD_compressSubBlock_sequences(
     entropyWritten: *mut c_int,
 ) -> usize {
     let longOffsets: c_int =
-        ((*cctxParams).cParams.windowLog > stream_accumulator_min()) as c_int;
+        ((*cctxParams).cParams.windowLog as U32 > STREAM_ACCUMULATOR_MIN()) as c_int;
     let ostart = dst as *mut BYTE;
-    let oend = ostart.add(dstCapacity);
-    let mut op = ostart;
+    let oend: *mut BYTE = ostart.wrapping_add(dstCapacity);
+    let mut op: *mut BYTE = ostart;
     let seqHead: *mut BYTE;
 
     *entropyWritten = 0;
     /* Sequences Header */
-    if (oend.offset_from(op) as isize) < (3 /*max nbSeq Size*/ + 1 /*seqHead*/) {
-        return error(code::DSTSIZE_TOOSMALL);
+    if oend.offset_from(op) < (3 /*max nbSeq Size*/ + 1/*seqHead*/) {
+        return ERROR(ZSTD_error_dstSize_tooSmall);
     }
     if nbSeq < 128 {
         *op = nbSeq as BYTE;
@@ -274,7 +269,7 @@ unsafe fn ZSTD_compressSubBlock_sequences(
         op = op.add(2);
     } else {
         *op.add(0) = 0xFF;
-        mem_write_le16(op.add(1) as *mut c_void, (nbSeq - LONGNBSEQ as usize) as U16);
+        MEM_writeLE16(op.add(1) as *mut c_void, (nbSeq - LONGNBSEQ as usize) as U16);
         op = op.add(3);
     }
     if nbSeq == 0 {
@@ -286,19 +281,19 @@ unsafe fn ZSTD_compressSubBlock_sequences(
     op = op.add(1);
 
     if writeEntropy != 0 {
-        let LLtype: U32 = (*fseMetadata).llType;
-        let Offtype: U32 = (*fseMetadata).ofType;
-        let MLtype: U32 = (*fseMetadata).mlType;
-        *seqHead = ((LLtype << 6) + (Offtype << 4) + (MLtype << 2)) as BYTE;
-        ptr::copy_nonoverlapping(
-            (*fseMetadata).fseTablesBuffer.as_ptr(),
-            op,
+        let LLtype: U32 = (*fseMetadata).llType as U32;
+        let Offtype: U32 = (*fseMetadata).ofType as U32;
+        let MLtype: U32 = (*fseMetadata).mlType as U32;
+        *seqHead = ((LLtype << 6).wrapping_add(Offtype << 4).wrapping_add(MLtype << 2)) as BYTE;
+        ZSTD_memcpy(
+            op as *mut c_void,
+            (*fseMetadata).fseTablesBuffer.as_ptr() as *const c_void,
             (*fseMetadata).fseTablesSize,
         );
         op = op.add((*fseMetadata).fseTablesSize);
     } else {
-        let repeat: U32 = set_repeat;
-        *seqHead = ((repeat << 6) + (repeat << 4) + (repeat << 2)) as BYTE;
+        let repeat: U32 = set_repeat as U32;
+        *seqHead = ((repeat << 6).wrapping_add(repeat << 4).wrapping_add(repeat << 2)) as BYTE;
     }
 
     {
@@ -316,23 +311,28 @@ unsafe fn ZSTD_compressSubBlock_sequences(
             longOffsets,
             bmi2,
         );
-        if err_is_error(bitstreamSize) != 0 {
+        if ERR_isError(bitstreamSize) != 0 {
             return bitstreamSize;
         }
-        op = op.add(bitstreamSize);
+        op = op.wrapping_add(bitstreamSize);
         /* zstd versions <= 1.3.4 mistakenly report corruption when
-         * FSE_readNCount() receives a buffer < 4 bytes. */
+         * FSE_readNCount() receives a buffer < 4 bytes.
+         * In this exceedingly rare case, we will simply emit an uncompressed
+         * block, since it isn't worth optimizing.
+         */
         if writeEntropy != 0
             && (*fseMetadata).lastCountSize != 0
             && (*fseMetadata).lastCountSize + bitstreamSize < 4
         {
+            /* NCountSize >= 2 && bitstreamSize > 0 ==> lastCountSize == 3 */
             return 0;
         }
     }
 
     /* zstd versions <= 1.4.0 mistakenly report error when
-     * sequences section body size is less than 3 bytes. */
-    if (op.offset_from(seqHead) as isize) < 4 {
+     * sequences section body size is less than 3 bytes.
+     */
+    if op.offset_from(seqHead) < 4 {
         return 0;
     }
 
@@ -340,10 +340,10 @@ unsafe fn ZSTD_compressSubBlock_sequences(
     op.offset_from(ostart) as usize
 }
 
-/// ZSTD_compressSubBlock() :
-///  Compresses a single sub-block.
-///  @return : compressed size of the sub-block
-///            Or 0 if it failed to compress.
+/** ZSTD_compressSubBlock() :
+ *  Compresses a single sub-block.
+ *  @return : compressed size of the sub-block
+ *            Or 0 if it failed to compress. */
 unsafe fn ZSTD_compressSubBlock(
     entropy: *const ZSTD_entropyCTables_t,
     entropyMetadata: *const ZSTD_entropyCTablesMetadata_t,
@@ -365,8 +365,8 @@ unsafe fn ZSTD_compressSubBlock(
     lastBlock: U32,
 ) -> usize {
     let ostart = dst as *mut BYTE;
-    let oend = ostart.add(dstCapacity);
-    let mut op = ostart.add(ZSTD_blockHeaderSize);
+    let oend: *mut BYTE = ostart.wrapping_add(dstCapacity);
+    let mut op: *mut BYTE = ostart.wrapping_add(ZSTD_blockHeaderSize);
     {
         let cLitSize: usize = ZSTD_compressSubBlock_literal(
             (*entropy).huf.CTable.as_ptr() as *const HUF_CElt,
@@ -379,13 +379,13 @@ unsafe fn ZSTD_compressSubBlock(
             writeLitEntropy,
             litEntropyWritten,
         );
-        if err_is_error(cLitSize) != 0 {
+        if ERR_isError(cLitSize) != 0 {
             return cLitSize;
         }
         if cLitSize == 0 {
             return 0;
         }
-        op = op.add(cLitSize);
+        op = op.wrapping_add(cLitSize);
     }
     {
         let cSeqSize: usize = ZSTD_compressSubBlock_sequences(
@@ -403,20 +403,21 @@ unsafe fn ZSTD_compressSubBlock(
             writeSeqEntropy,
             seqEntropyWritten,
         );
-        if err_is_error(cSeqSize) != 0 {
+        if ERR_isError(cSeqSize) != 0 {
             return cSeqSize;
         }
         if cSeqSize == 0 {
             return 0;
         }
-        op = op.add(cSeqSize);
+        op = op.wrapping_add(cSeqSize);
     }
     /* Write block header */
     {
         let cSize: usize = (op.offset_from(ostart) as usize) - ZSTD_blockHeaderSize;
-        let cBlockHeader24: U32 =
-            lastBlock + ((bt_compressed) << 1) + ((cSize << 3) as U32);
-        mem_write_le24(ostart as *mut c_void, cBlockHeader24);
+        let cBlockHeader24: U32 = lastBlock
+            .wrapping_add((bt_compressed as U32) << 1)
+            .wrapping_add((cSize << 3) as U32);
+        MEM_writeLE24(ostart as *mut c_void, cBlockHeader24);
     }
     op.offset_from(ostart) as usize
 }
@@ -447,7 +448,7 @@ unsafe fn ZSTD_estimateSubBlockSize_literal(
             workspace,
             wkspSize,
         );
-        if err_is_error(largest) != 0 {
+        if ERR_isError(largest) != 0 {
             return litSize;
         }
         {
@@ -457,12 +458,12 @@ unsafe fn ZSTD_estimateSubBlockSize_literal(
                 maxSymbolValue,
             );
             if writeEntropy != 0 {
-                cLitSizeEstimate += (*hufMetadata).hufDesSize;
+                cLitSizeEstimate =
+                    cLitSizeEstimate.wrapping_add((*hufMetadata).hufDesSize);
             }
-            return cLitSizeEstimate + literalSectionHeaderSize;
+            return cLitSizeEstimate.wrapping_add(literalSectionHeaderSize);
         }
     }
-    /* impossible */
     0
 }
 
@@ -472,7 +473,7 @@ unsafe fn ZSTD_estimateSubBlockSize_symbolType(
     maxCode: u32,
     nbSeq: usize,
     fseCTable: *const FSE_CTable,
-    additionalBits: *const u8,
+    additionalBits: *const U8,
     defaultNorm: *const i16,
     defaultNormLog: U32,
     defaultMax: U32,
@@ -480,12 +481,13 @@ unsafe fn ZSTD_estimateSubBlockSize_symbolType(
     wkspSize: usize,
 ) -> usize {
     let countWksp = workspace as *mut u32;
-    let mut ctp = codeTable;
-    let ctStart = ctp;
-    let ctEnd = ctStart.add(nbSeq);
+    let mut ctp: *const BYTE = codeTable;
+    let ctStart: *const BYTE = ctp;
+    let ctEnd: *const BYTE = ctStart.wrapping_add(nbSeq);
     let mut cSymbolTypeSizeEstimateInBits: usize = 0;
     let mut max: u32 = maxCode;
 
+    /* can't fail */
     HIST_countFast_wksp(
         countWksp,
         &mut max,
@@ -493,27 +495,30 @@ unsafe fn ZSTD_estimateSubBlockSize_symbolType(
         nbSeq,
         workspace,
         wkspSize,
-    ); /* can't fail */
+    );
     if type_ == set_basic {
         /* We selected this encoding type, so it must be valid. */
         cSymbolTypeSizeEstimateInBits = if max <= defaultMax {
             ZSTD_crossEntropyCost(defaultNorm, defaultNormLog, countWksp, max)
         } else {
-            error(code::GENERIC)
+            ERROR(ZSTD_error_GENERIC)
         };
     } else if type_ == set_rle {
         cSymbolTypeSizeEstimateInBits = 0;
     } else if type_ == set_compressed || type_ == set_repeat {
         cSymbolTypeSizeEstimateInBits = ZSTD_fseBitCost(fseCTable, countWksp, max);
     }
-    if err_is_error(cSymbolTypeSizeEstimateInBits) != 0 {
-        return nbSeq * 10;
+    if ERR_isError(cSymbolTypeSizeEstimateInBits) != 0 {
+        return nbSeq.wrapping_mul(10);
     }
     while ctp < ctEnd {
         if !additionalBits.is_null() {
-            cSymbolTypeSizeEstimateInBits += *additionalBits.add(*ctp as usize) as usize;
+            cSymbolTypeSizeEstimateInBits = cSymbolTypeSizeEstimateInBits
+                .wrapping_add(*additionalBits.add(*ctp as usize) as usize);
         } else {
-            cSymbolTypeSizeEstimateInBits += *ctp as usize; /* for offset, offset code is also the number of additional bits */
+            /* for offset, offset code is also the number of additional bits */
+            cSymbolTypeSizeEstimateInBits =
+                cSymbolTypeSizeEstimateInBits.wrapping_add(*ctp as usize);
         }
         ctp = ctp.add(1);
     }
@@ -536,20 +541,20 @@ unsafe fn ZSTD_estimateSubBlockSize_sequences(
     if nbSeq == 0 {
         return sequencesSectionHeaderSize;
     }
-    cSeqSizeEstimate += ZSTD_estimateSubBlockSize_symbolType(
+    cSeqSizeEstimate = cSeqSizeEstimate.wrapping_add(ZSTD_estimateSubBlockSize_symbolType(
         (*fseMetadata).ofType,
         ofCodeTable,
         MaxOff,
         nbSeq,
         (*fseTables).offcodeCTable.as_ptr(),
-        ptr::null(),
+        core::ptr::null(),
         OF_defaultNorm.as_ptr(),
         OF_defaultNormLog,
         DefaultMaxOff,
         workspace,
         wkspSize,
-    );
-    cSeqSizeEstimate += ZSTD_estimateSubBlockSize_symbolType(
+    ));
+    cSeqSizeEstimate = cSeqSizeEstimate.wrapping_add(ZSTD_estimateSubBlockSize_symbolType(
         (*fseMetadata).llType,
         llCodeTable,
         MaxLL,
@@ -561,8 +566,8 @@ unsafe fn ZSTD_estimateSubBlockSize_sequences(
         MaxLL,
         workspace,
         wkspSize,
-    );
-    cSeqSizeEstimate += ZSTD_estimateSubBlockSize_symbolType(
+    ));
+    cSeqSizeEstimate = cSeqSizeEstimate.wrapping_add(ZSTD_estimateSubBlockSize_symbolType(
         (*fseMetadata).mlType,
         mlCodeTable,
         MaxML,
@@ -574,14 +579,15 @@ unsafe fn ZSTD_estimateSubBlockSize_sequences(
         MaxML,
         workspace,
         wkspSize,
-    );
+    ));
     if writeEntropy != 0 {
-        cSeqSizeEstimate += (*fseMetadata).fseTablesSize;
+        cSeqSizeEstimate = cSeqSizeEstimate.wrapping_add((*fseMetadata).fseTablesSize);
     }
-    cSeqSizeEstimate + sequencesSectionHeaderSize
+    cSeqSizeEstimate.wrapping_add(sequencesSectionHeaderSize)
 }
 
-#[derive(Clone, Copy)]
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
 struct EstimatedBlockSize {
     estLitSize: usize,
     estBlockSize: usize,
@@ -601,10 +607,7 @@ unsafe fn ZSTD_estimateSubBlockSize(
     writeLitEntropy: c_int,
     writeSeqEntropy: c_int,
 ) -> EstimatedBlockSize {
-    let mut ebs = EstimatedBlockSize {
-        estLitSize: 0,
-        estBlockSize: 0,
-    };
+    let mut ebs: EstimatedBlockSize = EstimatedBlockSize::default();
     ebs.estLitSize = ZSTD_estimateSubBlockSize_literal(
         literals,
         litSize,
@@ -625,11 +628,16 @@ unsafe fn ZSTD_estimateSubBlockSize(
         wkspSize,
         writeSeqEntropy,
     );
-    ebs.estBlockSize += ebs.estLitSize + ZSTD_blockHeaderSize;
+    ebs.estBlockSize = ebs
+        .estBlockSize
+        .wrapping_add(ebs.estLitSize)
+        .wrapping_add(ZSTD_blockHeaderSize);
     ebs
 }
 
-unsafe fn ZSTD_needSequenceEntropyTables(fseMetadata: *const ZSTD_fseCTablesMetadata_t) -> c_int {
+unsafe fn ZSTD_needSequenceEntropyTables(
+    fseMetadata: *const ZSTD_fseCTablesMetadata_t,
+) -> c_int {
     if (*fseMetadata).llType == set_compressed || (*fseMetadata).llType == set_rle {
         return 1;
     }
@@ -642,15 +650,23 @@ unsafe fn ZSTD_needSequenceEntropyTables(fseMetadata: *const ZSTD_fseCTablesMeta
     0
 }
 
-unsafe fn countLiterals(seqStore: *const SeqStore_t, sp: *const SeqDef, seqCount: usize) -> usize {
-    let mut n: usize = 0;
+unsafe fn countLiterals(
+    seqStore: *const SeqStore_t,
+    sp: *const SeqDef,
+    seqCount: usize,
+) -> usize {
+    let mut n: usize;
     let mut total: usize = 0;
+    n = 0;
     while n < seqCount {
-        total += ZSTD_getSequenceLength(seqStore, sp.add(n)).litLength as usize;
+        total = total
+            .wrapping_add(ZSTD_getSequenceLength(seqStore, sp.add(n)).litLength as usize);
         n += 1;
     }
     total
 }
+
+const BYTESCALE: usize = 256;
 
 unsafe fn sizeBlockSequences(
     sp: *const SeqDef,
@@ -664,26 +680,39 @@ unsafe fn sizeBlockSequences(
     let mut budget: usize = 0;
     let mut inSize: usize = 0;
     /* entropy headers */
-    let headerSize: usize = (firstSubBlock as usize) * 120 * BYTESCALE; /* generous estimate */
-    budget += headerSize;
+    /* generous estimate */
+    let headerSize: usize = (firstSubBlock as usize)
+        .wrapping_mul(120)
+        .wrapping_mul(BYTESCALE);
+    budget = budget.wrapping_add(headerSize);
 
     /* first sequence => at least one sequence*/
-    budget += (*sp.add(0)).litLength as usize * avgLitCost + avgSeqCost;
+    budget = budget.wrapping_add(
+        ((*sp.add(0)).litLength as usize)
+            .wrapping_mul(avgLitCost)
+            .wrapping_add(avgSeqCost),
+    );
     if budget > targetBudget {
         return 1;
     }
-    inSize = (*sp.add(0)).litLength as usize + ((*sp.add(0)).mlBase as usize + MINMATCH as usize);
+    inSize = ((*sp.add(0)).litLength as usize)
+        .wrapping_add(((*sp.add(0)).mlBase as usize).wrapping_add(MINMATCH));
 
     /* loop over sequences */
     n = 1;
     while n < nbSeqs {
-        let currentCost: usize = (*sp.add(n)).litLength as usize * avgLitCost + avgSeqCost;
-        budget += currentCost;
-        inSize += (*sp.add(n)).litLength as usize + ((*sp.add(n)).mlBase as usize + MINMATCH as usize);
+        let currentCost: usize = ((*sp.add(n)).litLength as usize)
+            .wrapping_mul(avgLitCost)
+            .wrapping_add(avgSeqCost);
+        budget = budget.wrapping_add(currentCost);
+        inSize = inSize.wrapping_add(
+            ((*sp.add(n)).litLength as usize)
+                .wrapping_add(((*sp.add(n)).mlBase as usize).wrapping_add(MINMATCH)),
+        );
         /* stop when sub-block budget is reached */
         if (budget > targetBudget)
             /* though continue to expand until the sub-block is deemed compressible */
-            && (budget < inSize * BYTESCALE)
+            && (budget < inSize.wrapping_mul(BYTESCALE))
         {
             break;
         }
@@ -693,10 +722,13 @@ unsafe fn sizeBlockSequences(
     n
 }
 
-/// ZSTD_compressSubBlock_multi() :
-///  Breaks super-block into multiple sub-blocks and compresses them.
-///  @return : compressed size of the super block (which features multiple ZSTD blocks)
-///            or 0 if it failed to compress.
+/** ZSTD_compressSubBlock_multi() :
+ *  Breaks super-block into multiple sub-blocks and compresses them.
+ *  Entropy will be written into the first block.
+ *  The following blocks use repeat_mode to compress.
+ *  Sub-blocks are all compressed, except the last one when beneficial.
+ *  @return : compressed size of the super block (which features multiple ZSTD blocks)
+ *            or 0 if it failed to compress. */
 unsafe fn ZSTD_compressSubBlock_multi(
     seqStorePtr: *const SeqStore_t,
     prevCBlock: *const ZSTD_compressedBlockState_t,
@@ -714,26 +746,24 @@ unsafe fn ZSTD_compressSubBlock_multi(
 ) -> usize {
     let sstart: *const SeqDef = (*seqStorePtr).sequencesStart;
     let send: *const SeqDef = (*seqStorePtr).sequences;
-    let mut sp: *const SeqDef = sstart; /* tracks progresses within seqStorePtr->sequences */
+    /* tracks progresses within seqStorePtr->sequences */
+    let mut sp: *const SeqDef = sstart;
     let nbSeqs: usize = send.offset_from(sstart) as usize;
     let lstart: *const BYTE = (*seqStorePtr).litStart;
     let lend: *const BYTE = (*seqStorePtr).lit;
     let mut lp: *const BYTE = lstart;
     let nbLiterals: usize = lend.offset_from(lstart) as usize;
     let mut ip: *const BYTE = src as *const BYTE;
-    let iend: *const BYTE = ip.add(srcSize);
+    let iend: *const BYTE = ip.wrapping_add(srcSize);
     let ostart: *mut BYTE = dst as *mut BYTE;
-    let oend: *mut BYTE = ostart.add(dstCapacity);
+    let oend: *mut BYTE = ostart.wrapping_add(dstCapacity);
     let mut op: *mut BYTE = ostart;
     let mut llCodePtr: *const BYTE = (*seqStorePtr).llCode;
     let mut mlCodePtr: *const BYTE = (*seqStorePtr).mlCode;
     let mut ofCodePtr: *const BYTE = (*seqStorePtr).ofCode;
-    let minTarget: usize = ZSTD_TARGETCBLOCKSIZE_MIN; /* enforce minimum size */
-    let targetCBlockSize: usize = if minTarget > (*cctxParams).targetCBlockSize {
-        minTarget
-    } else {
-        (*cctxParams).targetCBlockSize
-    };
+    /* enforce minimum size, to reduce undesirable side effects */
+    let minTarget: usize = ZSTD_TARGETCBLOCKSIZE_MIN as usize;
+    let targetCBlockSize: usize = MAX(minTarget, (*cctxParams).targetCBlockSize);
     let mut writeLitEntropy: c_int =
         ((*entropyMetadata).hufMetadata.hType == set_compressed) as c_int;
     let mut writeSeqEntropy: c_int = 1;
@@ -756,25 +786,23 @@ unsafe fn ZSTD_compressSubBlock_multi(
         );
         /* quick estimation */
         let avgLitCost: usize = if nbLiterals != 0 {
-            (ebs.estLitSize * BYTESCALE) / nbLiterals
+            (ebs.estLitSize.wrapping_mul(BYTESCALE)) / nbLiterals
         } else {
             BYTESCALE
         };
-        let avgSeqCost: usize = ((ebs.estBlockSize - ebs.estLitSize) * BYTESCALE) / nbSeqs;
-        let nbSubBlocks: usize = {
-            let v = (ebs.estBlockSize + (targetCBlockSize / 2)) / targetCBlockSize;
-            if v > 1 {
-                v
-            } else {
-                1
-            }
-        };
+        let avgSeqCost: usize =
+            ((ebs.estBlockSize.wrapping_sub(ebs.estLitSize)).wrapping_mul(BYTESCALE)) / nbSeqs;
+        let nbSubBlocks: usize = MAX(
+            (ebs.estBlockSize.wrapping_add(targetCBlockSize / 2)) / targetCBlockSize,
+            1,
+        );
         let mut n: usize;
-        let mut avgBlockBudget: usize;
+        let avgBlockBudget: usize;
         let mut blockBudgetSupp: usize = 0;
-        avgBlockBudget = (ebs.estBlockSize * BYTESCALE) / nbSubBlocks;
+        avgBlockBudget = (ebs.estBlockSize.wrapping_mul(BYTESCALE)) / nbSubBlocks;
         /* simplification: if estimates states that the full superblock doesn't compress,
-         * just bail out immediately */
+         * just bail out immediately. this will result in the production of a single
+         * uncompressed block covering @srcSize.*/
         if ebs.estBlockSize > srcSize {
             return 0;
         }
@@ -782,17 +810,17 @@ unsafe fn ZSTD_compressSubBlock_multi(
         /* compress and write sub-blocks */
         n = 0;
         while n < nbSubBlocks - 1 {
-            /* determine nb of sequences for current sub-block */
+            /* determine nb of sequences for current sub-block + nbLiterals from next sequence */
             let seqCount: usize = sizeBlockSequences(
                 sp,
                 send.offset_from(sp) as usize,
-                avgBlockBudget + blockBudgetSupp,
+                avgBlockBudget.wrapping_add(blockBudgetSupp),
                 avgLitCost,
                 avgSeqCost,
                 (n == 0) as c_int,
             );
             /* if reached last sequence : break to last sub-block (simplification) */
-            if sp.add(seqCount) == send {
+            if sp.wrapping_add(seqCount) == send {
                 break;
             }
             /* compress sub-block */
@@ -822,18 +850,18 @@ unsafe fn ZSTD_compressSubBlock_multi(
                     &mut seqEntropyWritten,
                     0,
                 );
-                if err_is_error(cSize) != 0 {
+                if ERR_isError(cSize) != 0 {
                     return cSize;
                 }
 
                 /* check compressibility, update state components */
                 if cSize > 0 && cSize < decompressedSize {
-                    ip = ip.add(decompressedSize);
-                    lp = lp.add(litSize);
-                    op = op.add(cSize);
-                    llCodePtr = llCodePtr.add(seqCount);
-                    mlCodePtr = mlCodePtr.add(seqCount);
-                    ofCodePtr = ofCodePtr.add(seqCount);
+                    ip = ip.wrapping_add(decompressedSize);
+                    lp = lp.wrapping_add(litSize);
+                    op = op.wrapping_add(cSize);
+                    llCodePtr = llCodePtr.wrapping_add(seqCount);
+                    mlCodePtr = mlCodePtr.wrapping_add(seqCount);
+                    ofCodePtr = ofCodePtr.wrapping_add(seqCount);
                     /* Entropy only needs to be written once */
                     if litEntropyWritten != 0 {
                         writeLitEntropy = 0;
@@ -841,7 +869,7 @@ unsafe fn ZSTD_compressSubBlock_multi(
                     if seqEntropyWritten != 0 {
                         writeSeqEntropy = 0;
                     }
-                    sp = sp.add(seqCount);
+                    sp = sp.wrapping_add(seqCount);
                     blockBudgetSupp = 0;
                 }
             }
@@ -878,18 +906,18 @@ unsafe fn ZSTD_compressSubBlock_multi(
             &mut seqEntropyWritten,
             lastBlock,
         );
-        if err_is_error(cSize) != 0 {
+        if ERR_isError(cSize) != 0 {
             return cSize;
         }
 
         /* update pointers, the nb of literals borrowed from next sequence must be preserved */
         if cSize > 0 && cSize < decompressedSize {
-            ip = ip.add(decompressedSize);
-            lp = lp.add(litSize);
-            op = op.add(cSize);
-            llCodePtr = llCodePtr.add(seqCount);
-            mlCodePtr = mlCodePtr.add(seqCount);
-            ofCodePtr = ofCodePtr.add(seqCount);
+            ip = ip.wrapping_add(decompressedSize);
+            lp = lp.wrapping_add(litSize);
+            op = op.wrapping_add(cSize);
+            llCodePtr = llCodePtr.wrapping_add(seqCount);
+            mlCodePtr = mlCodePtr.wrapping_add(seqCount);
+            ofCodePtr = ofCodePtr.wrapping_add(seqCount);
             /* Entropy only needs to be written once */
             if litEntropyWritten != 0 {
                 writeLitEntropy = 0;
@@ -897,22 +925,23 @@ unsafe fn ZSTD_compressSubBlock_multi(
             if seqEntropyWritten != 0 {
                 writeSeqEntropy = 0;
             }
-            sp = sp.add(seqCount);
+            sp = sp.wrapping_add(seqCount);
         }
     }
 
     if writeLitEntropy != 0 {
-        ptr::copy_nonoverlapping(
-            &(*prevCBlock).entropy.huf as *const ZSTD_hufCTables_t,
-            &mut (*nextCBlock).entropy.huf as *mut ZSTD_hufCTables_t,
-            1,
+        ZSTD_memcpy(
+            &mut (*nextCBlock).entropy.huf as *mut ZSTD_hufCTables_t as *mut c_void,
+            &(*prevCBlock).entropy.huf as *const ZSTD_hufCTables_t as *const c_void,
+            core::mem::size_of::<ZSTD_hufCTables_t>(),
         );
     }
     if writeSeqEntropy != 0
         && ZSTD_needSequenceEntropyTables(&(*entropyMetadata).fseMetadata) != 0
     {
         /* If we haven't written our entropy tables, then we've violated our contract and
-         * must emit an uncompressed block. */
+         * must emit an uncompressed block.
+         */
         return 0;
     }
 
@@ -926,15 +955,19 @@ unsafe fn ZSTD_compressSubBlock_multi(
             rSize,
             lastBlock,
         );
-        if err_is_error(cSize) != 0 {
+        if ERR_isError(cSize) != 0 {
             return cSize;
         }
-        op = op.add(cSize);
+        op = op.wrapping_add(cSize);
         /* We have to regenerate the repcodes because we've skipped some sequences */
         if sp < send {
             let mut seq: *const SeqDef;
-            let mut rep: Repcodes_t = core::mem::zeroed();
-            ptr::copy_nonoverlapping((*prevCBlock).rep.as_ptr(), rep.rep.as_mut_ptr(), 3);
+            let mut rep: Repcodes_t = Repcodes_t { rep: [0; 3] };
+            ZSTD_memcpy(
+                &mut rep as *mut Repcodes_t as *mut c_void,
+                (*prevCBlock).rep.as_ptr() as *const c_void,
+                core::mem::size_of::<Repcodes_t>(),
+            );
             seq = sstart;
             while seq < sp {
                 ZSTD_updateRep(
@@ -944,7 +977,11 @@ unsafe fn ZSTD_compressSubBlock_multi(
                 );
                 seq = seq.add(1);
             }
-            ptr::copy_nonoverlapping(rep.rep.as_ptr(), (*nextCBlock).rep.as_mut_ptr(), 3);
+            ZSTD_memcpy(
+                (*nextCBlock).rep.as_mut_ptr() as *mut c_void,
+                &rep as *const Repcodes_t as *const c_void,
+                core::mem::size_of::<Repcodes_t>(),
+            );
         }
     }
 
@@ -960,26 +997,32 @@ pub unsafe extern "C" fn ZSTD_compressSuperBlock(
     srcSize: usize,
     lastBlock: c_uint,
 ) -> usize {
-    let mut entropyMetadata: ZSTD_entropyCTablesMetadata_t = core::mem::zeroed();
+    /* C: `ZSTD_entropyCTablesMetadata_t entropyMetadata;` - uninitialized stack object */
+    let mut entropyMetadata_storage =
+        core::mem::MaybeUninit::<ZSTD_entropyCTablesMetadata_t>::uninit();
+    let entropyMetadata: *mut ZSTD_entropyCTablesMetadata_t = entropyMetadata_storage.as_mut_ptr();
 
-    let err = ZSTD_buildBlockEntropyStats(
-        &(*zc).seqStore,
-        &(*(*zc).blockState.prevCBlock).entropy,
-        &mut (*(*zc).blockState.nextCBlock).entropy,
-        &(*zc).appliedParams,
-        &mut entropyMetadata,
-        (*zc).tmpWorkspace,
-        (*zc).tmpWkspSize,
-    );
-    if err_is_error(err) != 0 {
-        return err;
+    {
+        /* statically allocated in resetCCtx */
+        let err_code = ZSTD_buildBlockEntropyStats(
+            &(*zc).seqStore,
+            &(*(*zc).blockState.prevCBlock).entropy,
+            &mut (*(*zc).blockState.nextCBlock).entropy,
+            &(*zc).appliedParams,
+            entropyMetadata,
+            (*zc).tmpWorkspace,
+            (*zc).tmpWkspSize,
+        );
+        if ERR_isError(err_code) != 0 {
+            return err_code;
+        }
     }
 
     ZSTD_compressSubBlock_multi(
         &(*zc).seqStore,
         (*zc).blockState.prevCBlock,
         (*zc).blockState.nextCBlock,
-        &entropyMetadata,
+        entropyMetadata,
         &(*zc).appliedParams,
         dst,
         dstCapacity,
@@ -988,7 +1031,6 @@ pub unsafe extern "C" fn ZSTD_compressSuperBlock(
         (*zc).bmi2,
         lastBlock,
         (*zc).tmpWorkspace,
-        (*zc).tmpWkspSize,
+        (*zc).tmpWkspSize, /* statically allocated in resetCCtx */
     )
 }
-

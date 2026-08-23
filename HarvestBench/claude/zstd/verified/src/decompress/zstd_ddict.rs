@@ -1,34 +1,16 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under both the BSD-style license (found in the
- * LICENSE file in the root directory of this source tree) and the GPLv2 (found
- * in the COPYING file in the root directory of this source tree).
- * You may select, at your option, one of the above-listed licenses.
- */
+//! Translation of `decompress/zstd_ddict.c`
+#![allow(dead_code)]
 
-/* zstd_ddict.c :
- * concentrates all logic that needs to know the internals of ZSTD_DDict object */
-
-use core::ffi::c_void;
-
-use crate::common::allocations::{
-    zstd_custom_free, zstd_custom_malloc, ZSTD_customMem,
-};
-use crate::common::error::{code, err_is_error, error};
-use crate::common::mem::mem_read_le32;
-use crate::common::zstd_internal::ZSTD_FRAMEIDSIZE;
-use crate::zstd_h::{
-    ZSTD_dct_fullDict, ZSTD_dct_rawContent, ZSTD_dictContentType_e, ZSTD_dictLoadMethod_e,
-    ZSTD_dct_auto, ZSTD_dlm_byCopy, ZSTD_dlm_byRef, ZSTD_MAGIC_DICTIONARY,
-};
-
-use crate::decompress::zstd_decompress_internal::{
-    HUF_DTable, ZSTD_entropyDTables_t, ZSTD_DCtx, ZSTD_DDict, ZSTD_HUFFDTABLE_CAPACITY_LOG,
-};
+use crate::common::error_private::*;
+use crate::common::huf::*;
+use crate::common::mem::*;
+use crate::common::zstd_internal::*;
+use crate::decompress::zstd_decompress_internal::*;
+use crate::libc::*;
+use core::ffi::{c_char, c_uint, c_void};
 
 extern "C" {
+    /* decompress/zstd_decompress.c */
     fn ZSTD_loadDEntropy(
         entropy: *mut ZSTD_entropyDTables_t,
         dict: *const c_void,
@@ -36,31 +18,26 @@ extern "C" {
     ) -> usize;
 }
 
-#[inline]
-fn zstd_is_error(code: usize) -> bool {
-    err_is_error(code) != 0
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_DDict_dictContent(ddict: *const ZSTD_DDict) -> *const c_void {
-    debug_assert!(!ddict.is_null());
     (*ddict).dictContent
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_DDict_dictSize(ddict: *const ZSTD_DDict) -> usize {
-    debug_assert!(!ddict.is_null());
     (*ddict).dictSize
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTD_copyDDictParameters(dctx: *mut ZSTD_DCtx, ddict: *const ZSTD_DDict) {
-    debug_assert!(!dctx.is_null());
-    debug_assert!(!ddict.is_null());
+pub unsafe extern "C" fn ZSTD_copyDDictParameters(
+    dctx: *mut ZSTD_DCtx,
+    ddict: *const ZSTD_DDict,
+) {
     (*dctx).dictID = (*ddict).dictID;
     (*dctx).prefixStart = (*ddict).dictContent;
     (*dctx).virtualStart = (*ddict).dictContent;
-    (*dctx).dictEnd = ((*ddict).dictContent as *const u8).add((*ddict).dictSize) as *const c_void;
+    (*dctx).dictEnd =
+        ((*ddict).dictContent as *const BYTE).add((*ddict).dictSize) as *const c_void;
     (*dctx).previousDstEnd = (*dctx).dictEnd;
     if (*ddict).entropyPresent != 0 {
         (*dctx).litEntropy = 1;
@@ -90,29 +67,31 @@ unsafe fn ZSTD_loadEntropy_intoDDict(
 
     if (*ddict).dictSize < 8 {
         if dictContentType == ZSTD_dct_fullDict {
-            return error(code::DICTIONARY_CORRUPTED); /* only accept specified dictionaries */
+            return ERROR(ZSTD_error_dictionary_corrupted);
         }
         return 0; /* pure content mode */
     }
     {
-        let magic: u32 = mem_read_le32((*ddict).dictContent);
+        let magic = MEM_readLE32((*ddict).dictContent);
         if magic != ZSTD_MAGIC_DICTIONARY {
             if dictContentType == ZSTD_dct_fullDict {
-                return error(code::DICTIONARY_CORRUPTED); /* only accept specified dictionaries */
+                return ERROR(ZSTD_error_dictionary_corrupted);
             }
             return 0; /* pure content mode */
         }
     }
-    (*ddict).dictID =
-        mem_read_le32(((*ddict).dictContent as *const u8).add(ZSTD_FRAMEIDSIZE) as *const c_void);
+    (*ddict).dictID = MEM_readLE32(
+        ((*ddict).dictContent as *const c_char).add(ZSTD_FRAMEIDSIZE) as *const c_void,
+    );
 
     /* load entropy tables */
-    if zstd_is_error(ZSTD_loadDEntropy(
-        &mut (*ddict).entropy,
+    if ERR_isError(ZSTD_loadDEntropy(
+        core::ptr::addr_of_mut!((*ddict).entropy),
         (*ddict).dictContent,
         (*ddict).dictSize,
-    )) {
-        return error(code::DICTIONARY_CORRUPTED);
+    )) != 0
+    {
+        return ERROR(ZSTD_error_dictionary_corrupted);
     }
     (*ddict).entropyPresent = 1;
     0
@@ -120,7 +99,7 @@ unsafe fn ZSTD_loadEntropy_intoDDict(
 
 unsafe fn ZSTD_initDDict_internal(
     ddict: *mut ZSTD_DDict,
-    mut dict: *const c_void,
+    dict: *const c_void,
     mut dictSize: usize,
     dictLoadMethod: ZSTD_dictLoadMethod_e,
     dictContentType: ZSTD_dictContentType_e,
@@ -132,23 +111,23 @@ unsafe fn ZSTD_initDDict_internal(
             dictSize = 0;
         }
     } else {
-        let internalBuffer: *mut c_void = zstd_custom_malloc(dictSize, (*ddict).cMem);
+        let internalBuffer = ZSTD_customMalloc(dictSize, (*ddict).cMem);
         (*ddict).dictBuffer = internalBuffer;
         (*ddict).dictContent = internalBuffer;
         if internalBuffer.is_null() {
-            return error(code::MEMORY_ALLOCATION);
+            return ERROR(ZSTD_error_memory_allocation);
         }
-        crate::common::allocations::memcpy(internalBuffer, dict, dictSize);
+        ZSTD_memcpy(internalBuffer, dict, dictSize);
     }
     (*ddict).dictSize = dictSize;
     (*ddict).entropy.hufTable[0] =
-        (ZSTD_HUFFDTABLE_CAPACITY_LOG.wrapping_mul(0x1000001)) as HUF_DTable; /* cover both little and big endian */
+        (ZSTD_HUFFDTABLE_CAPACITY_LOG.wrapping_mul(0x1000001)) as HUF_DTable;
 
     /* parse dictionary content */
     {
-        let _err = ZSTD_loadEntropy_intoDDict(ddict, dictContentType);
-        if zstd_is_error(_err) {
-            return _err;
+        let err_code = ZSTD_loadEntropy_intoDDict(ddict, dictContentType);
+        if ERR_isError(err_code) != 0 {
+            return err_code;
         }
     }
 
@@ -163,21 +142,21 @@ pub unsafe extern "C" fn ZSTD_createDDict_advanced(
     dictContentType: ZSTD_dictContentType_e,
     customMem: ZSTD_customMem,
 ) -> *mut ZSTD_DDict {
-    if (customMem.customAlloc.is_none()) ^ (customMem.customFree.is_none()) {
+    if (customMem.customAlloc.is_none() as i32) ^ (customMem.customFree.is_none() as i32) != 0 {
         return core::ptr::null_mut();
     }
 
     {
-        let ddict: *mut ZSTD_DDict =
-            zstd_custom_malloc(core::mem::size_of::<ZSTD_DDict>(), customMem) as *mut ZSTD_DDict;
+        let ddict =
+            ZSTD_customMalloc(core::mem::size_of::<ZSTD_DDict>(), customMem) as *mut ZSTD_DDict;
         if ddict.is_null() {
             return core::ptr::null_mut();
         }
         (*ddict).cMem = customMem;
         {
-            let initResult: usize =
+            let initResult =
                 ZSTD_initDDict_internal(ddict, dict, dictSize, dictLoadMethod, dictContentType);
-            if zstd_is_error(initResult) {
+            if ERR_isError(initResult) != 0 {
                 ZSTD_freeDDict(ddict);
                 return core::ptr::null_mut();
             }
@@ -186,12 +165,11 @@ pub unsafe extern "C" fn ZSTD_createDDict_advanced(
     }
 }
 
-/*  ZSTD_createDDict() :
- *   Create a digested dictionary, to start decompression without startup delay.
- *   `dict` content is copied inside DDict.
- *   Consequently, `dict` can be released after `ZSTD_DDict` creation */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTD_createDDict(dict: *const c_void, dictSize: usize) -> *mut ZSTD_DDict {
+pub unsafe extern "C" fn ZSTD_createDDict(
+    dict: *const c_void,
+    dictSize: usize,
+) -> *mut ZSTD_DDict {
     let allocator = ZSTD_customMem {
         customAlloc: None,
         customFree: None,
@@ -200,10 +178,6 @@ pub unsafe extern "C" fn ZSTD_createDDict(dict: *const c_void, dictSize: usize) 
     ZSTD_createDDict_advanced(dict, dictSize, ZSTD_dlm_byCopy, ZSTD_dct_auto, allocator)
 }
 
-/*  ZSTD_createDDict_byReference() :
- *  Create a digested dictionary, to start decompression without startup delay.
- *  Dictionary content is simply referenced, it will be accessed during decompression.
- *  Warning : dictBuffer must outlive DDict (DDict must be freed before dictBuffer) */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_createDDict_byReference(
     dictBuffer: *const c_void,
@@ -221,38 +195,36 @@ pub unsafe extern "C" fn ZSTD_createDDict_byReference(
 pub unsafe extern "C" fn ZSTD_initStaticDDict(
     sBuffer: *mut c_void,
     sBufferSize: usize,
-    dict: *const c_void,
+    mut dict: *const c_void,
     dictSize: usize,
     dictLoadMethod: ZSTD_dictLoadMethod_e,
     dictContentType: ZSTD_dictContentType_e,
 ) -> *const ZSTD_DDict {
-    let neededSpace: usize = core::mem::size_of::<ZSTD_DDict>()
+    let neededSpace = core::mem::size_of::<ZSTD_DDict>()
         + (if dictLoadMethod == ZSTD_dlm_byRef {
             0
         } else {
             dictSize
         });
-    let ddict: *mut ZSTD_DDict = sBuffer as *mut ZSTD_DDict;
-    let mut dict = dict;
-    debug_assert!(!sBuffer.is_null());
-    debug_assert!(!dict.is_null());
+    let ddict = sBuffer as *mut ZSTD_DDict;
     if (sBuffer as usize) & 7 != 0 {
-        return core::ptr::null(); /* 8-aligned */
+        return core::ptr::null();
     }
     if sBufferSize < neededSpace {
         return core::ptr::null();
     }
     if dictLoadMethod == ZSTD_dlm_byCopy {
-        crate::common::allocations::memcpy(ddict.add(1) as *mut c_void, dict, dictSize); /* local copy */
+        ZSTD_memcpy(ddict.add(1) as *mut c_void, dict, dictSize);
         dict = ddict.add(1) as *const c_void;
     }
-    if zstd_is_error(ZSTD_initDDict_internal(
+    if ERR_isError(ZSTD_initDDict_internal(
         ddict,
         dict,
         dictSize,
         ZSTD_dlm_byRef,
         dictContentType,
-    )) {
+    )) != 0
+    {
         return core::ptr::null();
     }
     ddict
@@ -261,19 +233,16 @@ pub unsafe extern "C" fn ZSTD_initStaticDDict(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_freeDDict(ddict: *mut ZSTD_DDict) -> usize {
     if ddict.is_null() {
-        return 0; /* support free on NULL */
+        return 0;
     }
     {
-        let cMem: ZSTD_customMem = (*ddict).cMem;
-        zstd_custom_free((*ddict).dictBuffer, cMem);
-        zstd_custom_free(ddict as *mut c_void, cMem);
+        let cMem = (*ddict).cMem;
+        ZSTD_customFree((*ddict).dictBuffer, cMem);
+        ZSTD_customFree(ddict as *mut c_void, cMem);
         0
     }
 }
 
-/*  ZSTD_estimateDDictSize() :
- *  Estimate amount of memory that will be needed to create a dictionary for decompression.
- *  Note : dictionary created by reference using ZSTD_dlm_byRef are smaller */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_estimateDDictSize(
     dictSize: usize,
@@ -290,7 +259,7 @@ pub unsafe extern "C" fn ZSTD_estimateDDictSize(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ZSTD_sizeof_DDict(ddict: *const ZSTD_DDict) -> usize {
     if ddict.is_null() {
-        return 0; /* support sizeof on NULL */
+        return 0;
     }
     core::mem::size_of::<ZSTD_DDict>()
         + (if !(*ddict).dictBuffer.is_null() {
@@ -300,12 +269,8 @@ pub unsafe extern "C" fn ZSTD_sizeof_DDict(ddict: *const ZSTD_DDict) -> usize {
         })
 }
 
-/*  ZSTD_getDictID_fromDDict() :
- *  Provides the dictID of the dictionary loaded into `ddict`.
- *  If @return == 0, the dictionary is not conformant to Zstandard specification, or empty.
- *  Non-conformant dictionaries can still be loaded, but as content-only dictionaries. */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ZSTD_getDictID_fromDDict(ddict: *const ZSTD_DDict) -> core::ffi::c_uint {
+pub unsafe extern "C" fn ZSTD_getDictID_fromDDict(ddict: *const ZSTD_DDict) -> c_uint {
     if ddict.is_null() {
         return 0;
     }

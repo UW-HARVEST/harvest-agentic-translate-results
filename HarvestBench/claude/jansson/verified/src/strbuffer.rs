@@ -1,23 +1,26 @@
-//! Translation of strbuffer.c
+//! Translation of c_src/src/strbuffer.c
+use crate::libc;
 use crate::memory::{jsonp_free, jsonp_malloc, jsonp_realloc};
-use crate::types::*;
-use core::ffi::{c_char, c_int, c_void};
-use core::ptr;
+use std::ffi::{c_char, c_int, c_void};
 
-extern "C" {
-    fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+pub const STRBUFFER_MIN_SIZE: usize = 16;
+pub const STRBUFFER_FACTOR: usize = 2;
+pub const STRBUFFER_SIZE_MAX: usize = usize::MAX;
+
+#[repr(C)]
+pub struct strbuffer_t {
+    pub value: *mut c_char,
+    pub length: usize,
+    pub size: usize,
 }
 
-const STRBUFFER_MIN_SIZE: usize = 16;
-const STRBUFFER_FACTOR: usize = 2;
-const STRBUFFER_SIZE_MAX: usize = usize::MAX;
-
-#[inline]
-fn max(a: usize, b: usize) -> usize {
-    if a > b {
-        a
-    } else {
-        b
+impl strbuffer_t {
+    pub const fn new() -> strbuffer_t {
+        strbuffer_t {
+            value: std::ptr::null_mut(),
+            length: 0,
+            size: 0,
+        }
     }
 }
 
@@ -44,7 +47,7 @@ pub unsafe extern "C" fn strbuffer_close(strbuff: *mut strbuffer_t) {
 
     (*strbuff).size = 0;
     (*strbuff).length = 0;
-    (*strbuff).value = ptr::null_mut();
+    (*strbuff).value = std::ptr::null_mut();
 }
 
 #[unsafe(no_mangle)]
@@ -61,13 +64,14 @@ pub unsafe extern "C" fn strbuffer_value(strbuff: *const strbuffer_t) -> *const 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn strbuffer_steal_value(strbuff: *mut strbuffer_t) -> *mut c_char {
     let result = (*strbuff).value;
-    (*strbuff).value = ptr::null_mut();
+    (*strbuff).value = std::ptr::null_mut();
     result
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn strbuffer_append_byte(strbuff: *mut strbuffer_t, byte: c_char) -> c_int {
-    strbuffer_append_bytes(strbuff, &byte, 1)
+    let b = byte;
+    strbuffer_append_bytes(strbuff, &b as *const c_char, 1)
 }
 
 #[unsafe(no_mangle)]
@@ -76,7 +80,10 @@ pub unsafe extern "C" fn strbuffer_append_bytes(
     data: *const c_char,
     size: usize,
 ) -> c_int {
-    if size >= (*strbuff).size - (*strbuff).length {
+    if size >= (*strbuff).size.wrapping_sub((*strbuff).length) {
+        let new_size: usize;
+        let new_value: *mut c_char;
+
         /* avoid integer overflow */
         if (*strbuff).size > STRBUFFER_SIZE_MAX / STRBUFFER_FACTOR
             || size > STRBUFFER_SIZE_MAX - 1
@@ -85,12 +92,12 @@ pub unsafe extern "C" fn strbuffer_append_bytes(
             return -1;
         }
 
-        let new_size = max(
+        new_size = std::cmp::max(
             (*strbuff).size * STRBUFFER_FACTOR,
             (*strbuff).length + size + 1,
         );
 
-        let new_value =
+        new_value =
             jsonp_realloc((*strbuff).value as *mut c_void, (*strbuff).size, new_size) as *mut c_char;
         if new_value.is_null() {
             return -1;
@@ -100,7 +107,7 @@ pub unsafe extern "C" fn strbuffer_append_bytes(
         (*strbuff).size = new_size;
     }
 
-    memcpy(
+    libc::memcpy(
         (*strbuff).value.add((*strbuff).length) as *mut c_void,
         data as *const c_void,
         size,

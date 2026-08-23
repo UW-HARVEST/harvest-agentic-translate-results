@@ -1,16 +1,10 @@
-// Translated from pcre2_pattern_info.c (PCRE2 10.48, 8-bit, SUPPORT_UNICODE, no JIT).
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
+// Translated from c_src/src/pcre2_pattern_info.c
+use crate::internal::*;
 
-use core::ffi::{c_int, c_void};
+/* The code unit width of this library; used for the mode check below, exactly
+as the C macro PCRE2_CODE_UNIT_WIDTH does. */
 
-use crate::pcre2_internal::*;
-
-// ---------------------------------------------------------------------------
-// Reproduction of the `heapframe` structure layout (pcre2_intmodedep.h) purely
-// so that `offsetof(heapframe, ovector)` can be computed with the correct
-// C layout. Only the layout matters; the type is never instantiated.
+const PCRE2_CODE_UNIT_WIDTH: u32 = 8;
 
 /*************************************************
 *        Return info about compiled pattern      *
@@ -29,11 +23,11 @@ Returns:        0 when data returned
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pcre2_pattern_info_8(
-    code: *const pcre2_code,
+    code: *const pcre2_real_code,
     what: u32,
     where_: *mut c_void,
 ) -> c_int {
-    let re = code as *const pcre2_real_code;
+    let re: *const pcre2_real_code = code;
 
     if where_.is_null()
     /* Requests field length */
@@ -61,19 +55,19 @@ pub unsafe extern "C" fn pcre2_pattern_info_8(
             | PCRE2_INFO_NAMEENTRYSIZE
             | PCRE2_INFO_NAMECOUNT
             | PCRE2_INFO_NEWLINE => {
-                return core::mem::size_of::<u32>() as c_int;
+                return size_of::<u32>() as c_int;
             }
 
             PCRE2_INFO_FIRSTBITMAP => {
-                return core::mem::size_of::<*const u8>() as c_int;
+                return size_of::<*const u8>() as c_int;
             }
 
             PCRE2_INFO_JITSIZE | PCRE2_INFO_SIZE | PCRE2_INFO_FRAMESIZE => {
-                return core::mem::size_of::<usize>() as c_int;
+                return size_of::<usize>() as c_int;
             }
 
             PCRE2_INFO_NAMETABLE => {
-                return core::mem::size_of::<PCRE2_SPTR>() as c_int;
+                return size_of::<PCRE2_SPTR>() as c_int;
             }
 
             _ => {}
@@ -149,15 +143,15 @@ pub unsafe extern "C" fn pcre2_pattern_info_8(
 
         PCRE2_INFO_FIRSTBITMAP => {
             *(where_ as *mut *const u8) = if ((*re).flags & PCRE2_FIRSTMAPSET) != 0 {
-                &(*re).start_bitmap[0] as *const u8
+                (*re).start_bitmap.as_ptr()
             } else {
-                core::ptr::null()
+                std::ptr::null()
             };
         }
 
         PCRE2_INFO_FRAMESIZE => {
-            *(where_ as *mut usize) = core::mem::offset_of!(heapframe, ovector)
-                + (*re).top_bracket as usize * 2 * core::mem::size_of::<PCRE2_SIZE>();
+            *(where_ as *mut usize) = offset_of!(heapframe, ovector)
+                + (*re).top_bracket as usize * 2 * size_of::<PCRE2_SIZE>();
         }
 
         PCRE2_INFO_HASBACKSLASHC => {
@@ -180,7 +174,7 @@ pub unsafe extern "C" fn pcre2_pattern_info_8(
         }
 
         PCRE2_INFO_JITSIZE => {
-            // SUPPORT_JIT is not defined.
+            /* SUPPORT_JIT is not defined */
             *(where_ as *mut usize) = 0;
         }
 
@@ -225,7 +219,7 @@ pub unsafe extern "C" fn pcre2_pattern_info_8(
 
         PCRE2_INFO_NAMETABLE => {
             *(where_ as *mut PCRE2_SPTR) =
-                (code as *const u8).add(core::mem::size_of::<pcre2_real_code>()) as PCRE2_SPTR;
+                (re as *const c_char).add(size_of::<pcre2_real_code>()) as PCRE2_SPTR;
         }
 
         PCRE2_INFO_NEWLINE => {
@@ -259,12 +253,12 @@ Returns:        0 when successfully completed
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pcre2_callout_enumerate_8(
-    code: *const pcre2_code,
-    callback: Option<unsafe extern "C" fn(*mut pcre2_callout_enumerate_block, *mut c_void) -> c_int>,
+    code: *const pcre2_real_code,
+    callback: pcre2_callout_enumerate_fn,
     callout_data: *mut c_void,
 ) -> c_int {
-    let re = code as *const pcre2_real_code;
-    let mut cb: pcre2_callout_enumerate_block = core::mem::zeroed();
+    let re: *const pcre2_real_code = code;
+    let mut cb: pcre2_callout_enumerate_block = std::mem::zeroed();
     let mut cc: PCRE2_SPTR;
     let utf: BOOL;
 
@@ -288,83 +282,141 @@ pub unsafe extern "C" fn pcre2_callout_enumerate_8(
     }
 
     cb.version = 0;
-    cc = (code as *const u8).add((*re).code_start) as PCRE2_SPTR;
+    cc = (re as *const u8).add((*re).code_start) as PCRE2_SPTR;
 
     loop {
         let rc: c_int;
-        let op = *cc;
-        match op {
+        match *cc as u32 {
             OP_END => {
                 return 0;
             }
 
-            OP_CHAR | OP_CHARI | OP_NOT | OP_NOTI | OP_STAR | OP_MINSTAR | OP_PLUS | OP_MINPLUS
-            | OP_QUERY | OP_MINQUERY | OP_UPTO | OP_MINUPTO | OP_EXACT | OP_POSSTAR | OP_POSPLUS
-            | OP_POSQUERY | OP_POSUPTO | OP_STARI | OP_MINSTARI | OP_PLUSI | OP_MINPLUSI
-            | OP_QUERYI | OP_MINQUERYI | OP_UPTOI | OP_MINUPTOI | OP_EXACTI | OP_POSSTARI
-            | OP_POSPLUSI | OP_POSQUERYI | OP_POSUPTOI | OP_NOTSTAR | OP_NOTMINSTAR | OP_NOTPLUS
-            | OP_NOTMINPLUS | OP_NOTQUERY | OP_NOTMINQUERY | OP_NOTUPTO | OP_NOTMINUPTO
-            | OP_NOTEXACT | OP_NOTPOSSTAR | OP_NOTPOSPLUS | OP_NOTPOSQUERY | OP_NOTPOSUPTO
-            | OP_NOTSTARI | OP_NOTMINSTARI | OP_NOTPLUSI | OP_NOTMINPLUSI | OP_NOTQUERYI
-            | OP_NOTMINQUERYI | OP_NOTUPTOI | OP_NOTMINUPTOI | OP_NOTEXACTI | OP_NOTPOSSTARI
-            | OP_NOTPOSPLUSI | OP_NOTPOSQUERYI | OP_NOTPOSUPTOI => {
-                cc = cc.add(_pcre2_OP_lengths_8[op as usize] as usize);
-                if utf != 0 && HAS_EXTRALEN(*cc.sub(1) as u32) {
-                    cc = cc.add(GET_EXTRALEN(*cc.sub(1) as u32) as usize);
+            OP_CHAR
+            | OP_CHARI
+            | OP_NOT
+            | OP_NOTI
+            | OP_STAR
+            | OP_MINSTAR
+            | OP_PLUS
+            | OP_MINPLUS
+            | OP_QUERY
+            | OP_MINQUERY
+            | OP_UPTO
+            | OP_MINUPTO
+            | OP_EXACT
+            | OP_POSSTAR
+            | OP_POSPLUS
+            | OP_POSQUERY
+            | OP_POSUPTO
+            | OP_STARI
+            | OP_MINSTARI
+            | OP_PLUSI
+            | OP_MINPLUSI
+            | OP_QUERYI
+            | OP_MINQUERYI
+            | OP_UPTOI
+            | OP_MINUPTOI
+            | OP_EXACTI
+            | OP_POSSTARI
+            | OP_POSPLUSI
+            | OP_POSQUERYI
+            | OP_POSUPTOI
+            | OP_NOTSTAR
+            | OP_NOTMINSTAR
+            | OP_NOTPLUS
+            | OP_NOTMINPLUS
+            | OP_NOTQUERY
+            | OP_NOTMINQUERY
+            | OP_NOTUPTO
+            | OP_NOTMINUPTO
+            | OP_NOTEXACT
+            | OP_NOTPOSSTAR
+            | OP_NOTPOSPLUS
+            | OP_NOTPOSQUERY
+            | OP_NOTPOSUPTO
+            | OP_NOTSTARI
+            | OP_NOTMINSTARI
+            | OP_NOTPLUSI
+            | OP_NOTMINPLUSI
+            | OP_NOTQUERYI
+            | OP_NOTMINQUERYI
+            | OP_NOTUPTOI
+            | OP_NOTMINUPTOI
+            | OP_NOTEXACTI
+            | OP_NOTPOSSTARI
+            | OP_NOTPOSPLUSI
+            | OP_NOTPOSQUERYI
+            | OP_NOTPOSUPTOI => {
+                cc = cc.add(*_pcre2_OP_lengths_8.as_ptr().add(*cc as usize) as usize);
+                if utf != 0 && HAS_EXTRALEN!(*cc.offset(-1)) {
+                    cc = cc.add(GET_EXTRALEN!(*cc.offset(-1)) as usize);
                 }
             }
 
-            OP_TYPESTAR | OP_TYPEMINSTAR | OP_TYPEPLUS | OP_TYPEMINPLUS | OP_TYPEQUERY
-            | OP_TYPEMINQUERY | OP_TYPEUPTO | OP_TYPEMINUPTO | OP_TYPEEXACT | OP_TYPEPOSSTAR
-            | OP_TYPEPOSPLUS | OP_TYPEPOSQUERY | OP_TYPEPOSUPTO => {
-                cc = cc.add(_pcre2_OP_lengths_8[op as usize] as usize);
-                if *cc.sub(1) == OP_PROP || *cc.sub(1) == OP_NOTPROP {
+            OP_TYPESTAR
+            | OP_TYPEMINSTAR
+            | OP_TYPEPLUS
+            | OP_TYPEMINPLUS
+            | OP_TYPEQUERY
+            | OP_TYPEMINQUERY
+            | OP_TYPEUPTO
+            | OP_TYPEMINUPTO
+            | OP_TYPEEXACT
+            | OP_TYPEPOSSTAR
+            | OP_TYPEPOSPLUS
+            | OP_TYPEPOSQUERY
+            | OP_TYPEPOSUPTO => {
+                cc = cc.add(*_pcre2_OP_lengths_8.as_ptr().add(*cc as usize) as usize);
+                if *cc.offset(-1) as u32 == OP_PROP || *cc.offset(-1) as u32 == OP_NOTPROP {
                     cc = cc.add(2);
                 }
             }
 
-            // SUPPORT_WIDE_CHARS is defined in the 8-bit build with SUPPORT_UNICODE.
+            /* SUPPORT_WIDE_CHARS */
             OP_XCLASS | OP_ECLASS => {
-                cc = cc.add(GET(cc, 1) as usize);
+                cc = cc.add(GET!(cc, 1) as usize);
             }
 
             OP_MARK | OP_COMMIT_ARG | OP_PRUNE_ARG | OP_SKIP_ARG | OP_THEN_ARG => {
-                cc = cc.add(_pcre2_OP_lengths_8[op as usize] as usize + *cc.add(1) as usize);
+                cc = cc.add(
+                    *_pcre2_OP_lengths_8.as_ptr().add(*cc as usize) as usize + *cc.add(1) as usize,
+                );
             }
 
             OP_CALLOUT => {
-                cb.pattern_position = GET(cc, 1) as PCRE2_SIZE;
-                cb.next_item_length = GET(cc, 1 + LINK_SIZE) as PCRE2_SIZE;
+                cb.pattern_position = GET!(cc, 1) as PCRE2_SIZE;
+                cb.next_item_length = GET!(cc, 1 + LINK_SIZE) as PCRE2_SIZE;
                 cb.callout_number = *cc.add(1 + 2 * LINK_SIZE) as u32;
                 cb.callout_string_offset = 0;
                 cb.callout_string_length = 0;
-                cb.callout_string = core::ptr::null();
+                cb.callout_string = std::ptr::null();
                 rc = (callback.unwrap())(&mut cb, callout_data);
                 if rc != 0 {
                     return rc;
                 }
-                cc = cc.add(_pcre2_OP_lengths_8[op as usize] as usize);
+                cc = cc.add(*_pcre2_OP_lengths_8.as_ptr().add(*cc as usize) as usize);
             }
 
             OP_CALLOUT_STR => {
-                cb.pattern_position = GET(cc, 1) as PCRE2_SIZE;
-                cb.next_item_length = GET(cc, 1 + LINK_SIZE) as PCRE2_SIZE;
+                cb.pattern_position = GET!(cc, 1) as PCRE2_SIZE;
+                cb.next_item_length = GET!(cc, 1 + LINK_SIZE) as PCRE2_SIZE;
                 cb.callout_number = 0;
-                cb.callout_string_offset = GET(cc, 1 + 3 * LINK_SIZE) as PCRE2_SIZE;
-                cb.callout_string_length = GET(cc, 1 + 2 * LINK_SIZE)
-                    .wrapping_sub((1 + 4 * LINK_SIZE) as u32)
-                    .wrapping_sub(2) as PCRE2_SIZE;
-                cb.callout_string = cc.add((1 + 4 * LINK_SIZE) + 1);
+                cb.callout_string_offset = GET!(cc, 1 + 3 * LINK_SIZE) as PCRE2_SIZE;
+                cb.callout_string_length =
+                    (GET!(cc, 1 + 2 * LINK_SIZE) as PCRE2_SIZE) - (1 + 4 * LINK_SIZE) - 2;
+                cb.callout_string = cc.add(1 + 4 * LINK_SIZE).add(1);
                 rc = (callback.unwrap())(&mut cb, callout_data);
                 if rc != 0 {
                     return rc;
                 }
-                cc = cc.add(GET(cc, 1 + 2 * LINK_SIZE) as usize);
+                cc = cc.add(GET!(cc, 1 + 2 * LINK_SIZE) as usize);
             }
 
             _ => {
-                cc = cc.add(_pcre2_OP_lengths_8[op as usize] as usize);
+                cc = cc.add(*_pcre2_OP_lengths_8.as_ptr().add(*cc as usize) as usize);
             }
         }
     }
 }
+
+/* End of pcre2_pattern_info.c */

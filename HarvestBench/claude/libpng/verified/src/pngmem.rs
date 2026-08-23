@@ -1,195 +1,234 @@
-//! Translation of pngmem.c - memory allocation.
-use crate::prelude::*;
+//! Translation of `c_src/src/pngmem.c`
 
-/// Free a png_struct.
+use crate::*;
+
+/* png_destroy_png_struct */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_destroy_png_struct(png_ptr: png_structrp) {
-    if !png_ptr.is_null() {
-        // png_free might call png_error and may call png_get_mem_ptr, so fake a
-        // temporary png_struct to support this.
-        let mut dummy_struct: png_struct_def = core::ptr::read(png_ptr);
-        memset(png_ptr as *mut c_void, 0, core::mem::size_of::<png_struct_def>());
+    if png_ptr != core::ptr::null_mut() {
+        /* png_free might call png_error and may certainly call
+         * png_get_mem_ptr, so fake a temporary png_struct to support this.
+         */
+        let mut dummy_struct: png_struct = core::ptr::read(png_ptr);
+        memset(png_ptr as *mut c_void, 0, core::mem::size_of::<png_struct>());
         png_free(&mut dummy_struct, png_ptr as png_voidp);
 
-        // We may have a jmp_buf left to deallocate.
+        /* We may have a jmp_buf left to deallocate. */
         png_free_jmpbuf(&mut dummy_struct);
     }
 }
 
-/// Allocate memory and zero it.
+/* png_calloc */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn png_calloc(png_ptr: png_const_structrp, size: png_alloc_size_t) -> png_voidp {
-    let ret = png_malloc(png_ptr, size);
-    if !ret.is_null() {
+pub unsafe extern "C" fn png_calloc(
+    png_ptr: png_const_structrp,
+    size: png_alloc_size_t,
+) -> png_voidp {
+    let ret: png_voidp;
+
+    ret = png_malloc(png_ptr, size);
+
+    if ret != core::ptr::null_mut() {
         memset(ret, 0, size);
     }
+
     ret
 }
 
-/// Base allocator: honours user malloc_fn and limits, returns NULL on failure.
+/* png_malloc_base */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_malloc_base(
     png_ptr: png_const_structrp,
     size: png_alloc_size_t,
 ) -> png_voidp {
-    // size > PNG_SIZE_MAX check (PNG_SIZE_MAX == usize::MAX so always false, but
-    // kept for fidelity).
+    /* This is checked too because the system malloc call below takes a (size_t).
+     */
     if size > PNG_SIZE_MAX {
-        return ptr::null_mut();
+        return core::ptr::null_mut();
     }
 
-    if !png_ptr.is_null() && (*png_ptr).malloc_fn.is_some() {
-        return ((*png_ptr).malloc_fn.unwrap())(png_ptr as png_structrp, size);
+    if png_ptr != core::ptr::null_mut() && (*png_ptr).malloc_fn.is_some() {
+        return ((*png_ptr).malloc_fn.unwrap())(png_ptr, size);
     }
 
-    malloc(size as size_t)
+    /* Use the system malloc */
+    malloc(size)
 }
 
+/* png_malloc_array_checked */
 unsafe fn png_malloc_array_checked(
     png_ptr: png_const_structrp,
     nelements: c_int,
-    element_size: size_t,
+    element_size: usize,
 ) -> png_voidp {
-    let req = nelements as png_alloc_size_t; // known to be > 0
+    let req: png_alloc_size_t = nelements as png_alloc_size_t; /* known to be > 0 */
 
     if req <= PNG_SIZE_MAX / element_size {
         return png_malloc_base(png_ptr, req * element_size);
     }
 
-    ptr::null_mut()
+    /* The failure case when the request is too large */
+    core::ptr::null_mut()
 }
 
+/* png_malloc_array */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_malloc_array(
     png_ptr: png_const_structrp,
     nelements: c_int,
-    element_size: size_t,
+    element_size: usize,
 ) -> png_voidp {
     if nelements <= 0 || element_size == 0 {
-        png_error(png_ptr, c"internal error: array alloc".as_ptr());
+        png_error(
+            png_ptr,
+            b"internal error: array alloc\0".as_ptr() as png_const_charp,
+        );
     }
 
     png_malloc_array_checked(png_ptr, nelements, element_size)
 }
 
+/* png_realloc_array */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_realloc_array(
     png_ptr: png_const_structrp,
     old_array: png_const_voidp,
     old_elements: c_int,
     add_elements: c_int,
-    element_size: size_t,
+    element_size: usize,
 ) -> png_voidp {
-    // These are internal errors:
+    /* These are internal errors: */
     if add_elements <= 0
         || element_size == 0
         || old_elements < 0
-        || (old_array.is_null() && old_elements > 0)
+        || (old_array == core::ptr::null() && old_elements > 0)
     {
-        png_error(png_ptr, c"internal error: array realloc".as_ptr());
+        png_error(
+            png_ptr,
+            b"internal error: array realloc\0".as_ptr() as png_const_charp,
+        );
     }
 
-    if add_elements <= c_int::MAX - old_elements {
-        let new_array =
+    /* Check for overflow on the elements count (so the caller does not have to
+     * check.)
+     */
+    if add_elements <= INT_MAX - old_elements {
+        let new_array: png_voidp =
             png_malloc_array_checked(png_ptr, old_elements + add_elements, element_size);
 
-        if !new_array.is_null() {
+        if new_array != core::ptr::null_mut() {
+            /* Because png_malloc_array worked the size calculations below cannot
+             * overflow.
+             */
             if old_elements > 0 {
                 memcpy(
                     new_array,
                     old_array,
-                    element_size * (old_elements as usize),
+                    element_size * (old_elements as c_uint) as usize,
                 );
             }
 
             memset(
-                (new_array as *mut u8).add(element_size * (old_elements as usize)) as *mut c_void,
+                (new_array as *mut c_char).add(element_size * (old_elements as c_uint) as usize)
+                    as *mut c_void,
                 0,
-                element_size * (add_elements as usize),
+                element_size * (add_elements as c_uint) as usize,
             );
 
             return new_array;
         }
     }
 
-    ptr::null_mut()
+    core::ptr::null_mut() /* error */
 }
 
-/// Allocate memory, error out on failure.
+/* png_malloc */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn png_malloc(png_ptr: png_const_structrp, size: png_alloc_size_t) -> png_voidp {
-    if png_ptr.is_null() {
-        return ptr::null_mut();
+pub unsafe extern "C" fn png_malloc(
+    png_ptr: png_const_structrp,
+    size: png_alloc_size_t,
+) -> png_voidp {
+    let ret: png_voidp;
+
+    if png_ptr == core::ptr::null_mut() {
+        return core::ptr::null_mut();
     }
 
-    let ret = png_malloc_base(png_ptr, size);
+    ret = png_malloc_base(png_ptr, size);
 
-    if ret.is_null() {
-        png_error(png_ptr, c"Out of memory".as_ptr());
+    if ret == core::ptr::null_mut() {
+        png_error(png_ptr, b"Out of memory\0".as_ptr() as png_const_charp);
     }
 
     ret
 }
 
-/// Bypass any user allocator (default allocator).
+/* png_malloc_default */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_malloc_default(
     png_ptr: png_const_structrp,
     size: png_alloc_size_t,
 ) -> png_voidp {
-    if png_ptr.is_null() {
-        return ptr::null_mut();
+    let ret: png_voidp;
+
+    if png_ptr == core::ptr::null_mut() {
+        return core::ptr::null_mut();
     }
 
-    let ret = png_malloc_base(ptr::null(), size);
+    /* Passing 'NULL' here bypasses the application provided memory handler. */
+    ret = png_malloc_base(core::ptr::null_mut(), size);
 
-    if ret.is_null() {
-        png_error(png_ptr, c"Out of Memory".as_ptr());
+    if ret == core::ptr::null_mut() {
+        png_error(png_ptr, b"Out of Memory\0".as_ptr() as png_const_charp);
     }
 
     ret
 }
 
-/// Allocate memory, warn and return NULL on failure.
+/* png_malloc_warn */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_malloc_warn(
     png_ptr: png_const_structrp,
     size: png_alloc_size_t,
 ) -> png_voidp {
-    if !png_ptr.is_null() {
-        let ret = png_malloc_base(png_ptr, size);
-        if !ret.is_null() {
+    if png_ptr != core::ptr::null_mut() {
+        let ret: png_voidp = png_malloc_base(png_ptr, size);
+
+        if ret != core::ptr::null_mut() {
             return ret;
         }
-        png_warning(png_ptr, c"Out of memory".as_ptr());
+
+        png_warning(png_ptr, b"Out of memory\0".as_ptr() as png_const_charp);
     }
-    ptr::null_mut()
+
+    core::ptr::null_mut()
 }
 
-/// Free memory allocated by png_malloc.
+/* png_free */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn png_free(png_ptr: png_const_structrp, ptr_: png_voidp) {
-    if png_ptr.is_null() || ptr_.is_null() {
+pub unsafe extern "C" fn png_free(png_ptr: png_const_structrp, ptr: png_voidp) {
+    if png_ptr == core::ptr::null_mut() || ptr == core::ptr::null_mut() {
         return;
     }
 
     if (*png_ptr).free_fn.is_some() {
-        ((*png_ptr).free_fn.unwrap())(png_ptr as png_structrp, ptr_);
+        ((*png_ptr).free_fn.unwrap())(png_ptr, ptr);
     } else {
-        png_free_default(png_ptr, ptr_);
+        png_free_default(png_ptr, ptr);
     }
 }
 
+/* png_free_default */
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn png_free_default(png_ptr: png_const_structrp, ptr_: png_voidp) {
-    if png_ptr.is_null() || ptr_.is_null() {
+pub unsafe extern "C" fn png_free_default(png_ptr: png_const_structrp, ptr: png_voidp) {
+    if png_ptr == core::ptr::null_mut() || ptr == core::ptr::null_mut() {
         return;
     }
 
-    free(ptr_);
+    free(ptr);
 }
 
-/// Set user memory functions.
+/* png_set_mem_fn */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_set_mem_fn(
     png_ptr: png_structrp,
@@ -197,18 +236,19 @@ pub unsafe extern "C" fn png_set_mem_fn(
     malloc_fn: png_malloc_ptr,
     free_fn: png_free_ptr,
 ) {
-    if !png_ptr.is_null() {
+    if png_ptr != core::ptr::null_mut() {
         (*png_ptr).mem_ptr = mem_ptr;
         (*png_ptr).malloc_fn = malloc_fn;
         (*png_ptr).free_fn = free_fn;
     }
 }
 
-/// Get the user mem_ptr.
+/* png_get_mem_ptr */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn png_get_mem_ptr(png_ptr: png_const_structrp) -> png_voidp {
-    if png_ptr.is_null() {
-        return ptr::null_mut();
+    if png_ptr == core::ptr::null_mut() {
+        return core::ptr::null_mut();
     }
+
     (*png_ptr).mem_ptr
 }
