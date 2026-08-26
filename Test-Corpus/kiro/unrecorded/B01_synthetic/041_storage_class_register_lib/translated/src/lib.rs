@@ -1,7 +1,0 @@
-use std::ffi::c_int;
-
-#[unsafe(no_mangle)]
-pub extern "C" fn driver(x: c_int) {
-    let y = 2 * x + 300;
-    println!("{}", y);
-}

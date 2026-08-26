@@ -1,1 +1,0 @@
-void siphash(int init);
