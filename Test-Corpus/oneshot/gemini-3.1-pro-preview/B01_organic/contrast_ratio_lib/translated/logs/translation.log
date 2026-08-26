@@ -1,0 +1,213 @@
+=== OPENROUTER REQUEST ===
+Model: google/gemini-3.1-pro-preview
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"typedef struct cb_rgb_255 {\r\n    unsigned char R;\r\n    unsigned char G;\r\n    unsigned char B;\r\n} cb_rgb_255;\r\n\r\nfloat contrast_ratio(cb_rgb_255 A, cb_rgb_255 B);\r\n"},{"path":"src/lib.c","contents":"#include <math.h>\r\n\r\n#include \"lib.h\"\r\n\r\nstatic float cbLuminance(float R, float G, float B) {\r\n    R = ((float)(R > 0.04045 ? pow((R + 0.055) / 1.055, 2.4) : R / 12.92));\r\n    G = ((float)(G > 0.04045 ? pow((G + 0.055) / 1.055, 2.4) : G / 12.92));\r\n    B = ((float)(B > 0.04045 ? pow((B + 0.055) / 1.055, 2.4) : B / 12.92));\r\n    float Result = 0.2126f * R + 0.7152f * G + 0.0722f * B;\r\n    return Result;\r\n}\r\n\r\nstatic float cbContrastRatio(float RA, float GA, float BA, float RB, float GB,\r\n                      float BB) {\r\n    float LumA = cbLuminance(RA, GA, BA);\r\n    float LumB = cbLuminance(RB, GB, BB);\r\n    float High = LumA, Low = LumB;\r\n    if (High < Low) {\r\n        High = LumB, Low = LumA;\r\n    }\r\n    float Ratio = High / Low;\r\n    return Ratio;\r\n}\r\n\r\nfloat contrast_ratio(cb_rgb_255 A, cb_rgb_255 B) {\r\n    return cbContrastRatio(((float)(A.R) / 255.f), ((float)(A.G) / 255.f),\r\n                           ((float)(A.B) / 255.f), ((float)(B.R) / 255.f),\r\n                           ((float)(B.G) / 255.f), ((float)(B.B) / 255.f));\r\n}\r\n"},{"path":"CMakeLists.txt","contents":"cmake_minimum_required(VERSION 3.10)\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\ncmake_path(GET parent FILENAME project_name)\nproject(${project_name})\nadd_library(${project_name} SHARED\n    src/lib.c)\n\ntarget_include_directories(${project_name} PUBLIC include)\ntarget_include_directories(${project_name} PRIVATE src)\n\ntarget_link_libraries(${project_name} PRIVATE m)\n\ninstall(TARGETS ${project_name}\n    DESTINATION lib)\ninstall(DIRECTORY include/\n    DESTINATION includ
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776186746-gEPs7GbKtNNEM1BGQ2Tz","object":"chat.completion","created":1776186746,"model":"google/gemini-3.1-pro-preview-20260219","provider":"Google","system_fingerprint":null,"choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"STOP","message":{"role":"assistant","content":"{\n  \"files\": [\n    {\n      \"path\": \"src/lib.rs\",\n      \"contents\": \"use std::ffi::c_uchar;\\n\\n#[repr(C)]\\n#[derive(Debug, Copy, Clone)]\\npub struct cb_rgb_255 {\\n    pub R: c_uchar,\\n    pub G: c_uchar,\\n    pub B: c_uchar,\\n}\\n\\nfn cb_luminance(mut r: f32, mut g: f32, mut b: f32) -> f32 {\\n    r = if r > 0.04045 {\\n        ((r + 0.055) / 1.055).powf(2.4)\\n    } else {\\n        r / 12.92\\n    };\\n    g = if g > 0.04045 {\\n        ((g + 0.055) / 1.055).powf(2.4)\\n    } else {\\n        g / 12.92\\n    };\\n    b = if b > 0.04045 {\\n        ((b + 0.055) / 1.055).powf(2.4)\\n    } else {\\n        b / 12.92\\n    };\\n    0.2126 * r + 0.7152 * g + 0.0722 * b\\n}\\n\\nfn cb_contrast_ratio(ra: f32, ga: f32, ba: f32, rb: f32, gb: f32, bb: f32) -> f32 {\\

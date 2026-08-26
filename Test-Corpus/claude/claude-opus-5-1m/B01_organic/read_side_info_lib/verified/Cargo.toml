@@ -1,0 +1,29 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "read_side_info_lib"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The C reference is compiled by gcc with no sanitizers and no inserted runtime
+# UB checks (c_src/CMakeLists.txt sets no CMAKE_BUILD_TYPE => plain -O0).
+# rustc's `-C debug-assertions` additionally turns on `-Z ub-checks`, which
+# injects a "null pointer dereference occurred" panic in front of every raw
+# pointer dereference. That check has no counterpart in the C build, so with it
+# enabled a null `bs_t *` aborts (SIGABRT) in Rust where the C faults (SIGSEGV).
+# Disabling it makes the dev profile semantically comparable to the C build (and
+# to the release profile that consumers actually link against).
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

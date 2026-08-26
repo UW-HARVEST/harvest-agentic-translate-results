@@ -1,0 +1,49 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# The C project (c_src/CMakeLists.txt) builds a single executable from
+#   src/main.c src/engine.c src/a.c src/b.c src/util.c src/lib.c
+# Every non-static function in those files has external linkage, so when the
+# same sources are compiled into a shared object they are all exported.
+# The Rust translation therefore lives in a lib target that is built both as a
+# `cdylib` (for symbol/ABI parity with the C .so) and as an `rlib` (so the
+# `driver` binary can reuse it).  `src/main.rs` is a `#![no_main]` shim whose
+# entry point is the library's `#[no_mangle] extern "C" fn main`, exactly like
+# the C program.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+# The library defines the process entry point (`#[no_mangle] extern "C" fn main`),
+# so it cannot be linked into rustc's own test harness (which generates a second
+# `main`).  All testing happens in tests/, through `libloading` on the built
+# shared objects, which is what the verification task requires anyway.
+test = false
+doctest = false
+
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = true
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+harness = true
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+# `src/main.rs` is `#![no_main]`; it has no unit tests and must not be run by the
+# test harness (it *is* the program).
+test = false
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,48 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+# `cdylib` so the translation can be loaded through `dlopen` and compared with
+# the C shared library symbol-for-symbol.  The `rlib` is only there so that
+# `cargo test` treats the library as a dependency of the integration tests and
+# always rebuilds `libdriver.so` before running them.  The tests never link it
+# (the library exports a `#[no_mangle] main`, which would clash with libtest's
+# entry point), they load the `.so` through `dlopen`.
+crate-type = ["cdylib", "rlib"]
+# No unit-test binary for the lib target: it exports `#[no_mangle] main`, which
+# would collide with libtest's generated entry point.
+test = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[[test]]
+name = "phase_b_valid"
+path = "tests/phase_b_valid.rs"
+harness = false
+
+[[test]]
+name = "phase_c_errors"
+path = "tests/phase_c_errors.rs"
+harness = false
+
+[[test]]
+name = "phase_d_symbols"
+path = "tests/phase_d_symbols.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

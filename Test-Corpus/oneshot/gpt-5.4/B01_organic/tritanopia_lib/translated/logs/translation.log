@@ -1,0 +1,103 @@
+=== OPENROUTER REQUEST ===
+Model: openai/gpt-5.4
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"typedef struct cb_rgb_255 {\r\n    unsigned char R;\r\n    unsigned char G;\r\n    unsigned char B;\r\n} cb_rgb_255;\r\n\r\ncb_rgb_255 tritanopia(cb_rgb_255 RGB);\r\n"},{"path":"src/lib.c","contents":"#include <math.h>\r\n\r\n#include \"lib.h\"\r\n\r\ntypedef struct cb_rgb {\r\n    float R;\r\n    float G;\r\n    float B;\r\n} cb_rgb;\r\n\r\nstatic cb_rgb cbRemoveGammaRGB(cb_rgb RGB) {\r\n    cb_rgb Result = {\r\n        ((float)(RGB.R > 0.04045 ? pow((RGB.R + 0.055) / 1.055, 2.4)\r\n                                 : RGB.R / 12.92)),\r\n        ((float)(RGB.G > 0.04045 ? pow((RGB.G + 0.055) / 1.055, 2.4)\r\n                                 : RGB.G / 12.92)),\r\n        ((float)(RGB.B > 0.04045 ? pow((RGB.B + 0.055) / 1.055, 2.4)\r\n                                 : RGB.B / 12.92))};\r\n    return Result;\r\n}\r\n\r\nstatic cb_rgb cbNorm(cb_rgb_255 RGB) {\r\n    cb_rgb Result = {((float)(RGB.R) / 255.f), ((float)(RGB.G) / 255.f),\r\n                     ((float)(RGB.B) / 255.f)};\r\n    return Result;\r\n}\r\n\r\nstatic cb_rgb_255 cbDenorm(cb_rgb RGB) {\r\n    cb_rgb_255 Result = {((unsigned char)((RGB.R) * 255.f + 0.5f)),\r\n                         ((unsigned char)((RGB.G) * 255.f + 0.5f)),\r\n                         ((unsigned char)((RGB.B) * 255.f + 0.5f))};\r\n    return Result;\r\n}\r\n\r\nstatic cb_rgb cbApplyGammaRGB(cb_rgb RGB) {\r\n    cb_rgb Result = {((float)(RGB.R > 0.00313080495356037151702786377709\r\n                                  ? 1.055 * pow((RGB.R), 0.4166666666) - 0.055\r\n                                  : RGB.R * 12.92)),\r\n                     ((float)(RGB.G > 0.00313080495356037151702786377709\r\n                                  ? 1.055 * pow((RGB.G), 0.4166666666) - 0.055\r\n                                  : RGB.G * 12.92)),\r\n                     ((float)(RGB.B > 0.00313080495356037151702786377709
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776171707-WtwAxV1Wcncrxwrk3J5q","object":"chat.completion","created":1776171707,"model":"openai/gpt-5.4-20260305","provider":"OpenAI","system_fingerprint":null,"service_tier":"default","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"completed","message":{"role":"assistant","content":"{\"files\":[{\"path\":\"Cargo.toml\",\"contents\":\"[package]\\nname = \\\"project_name\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[lib]\\ncrate-type = [\\\"cdylib\\\", \\\"rlib\\\"]\\n\\n[dependencies]\\n\"},{\"path\":\"src/lib.rs\",\"contents\":\"#[repr(C)]\\n#[derive(Copy, Clone)]\\npub struct cb_rgb_255 {\\n    pub R: u8,\\n    pub G: u8,\\n    pub B: u8,\\n}\\n\\n#[derive(Copy, Clone)]\\nstruct CbRgb {\\n    R: f32,\\n    G: f32,\\n    B: f32,\\n}\\n\\nfn cb_remove_gamma_rgb(rgb: CbRgb) -> CbRgb {\\n    CbRgb {\\n        R: if rgb.R > 0.04045 {\\n            ((rgb.R + 0.055) / 1.055).powf(2.4)\\n        } else {\\n            rgb.R / 12.92\\n        },\\n        G: if rgb.G > 0.04045 {\\n            ((rgb.G + 0.055) / 1.055).powf(2.4)\\n        } else {\\n            rgb.G / 12.92\\n        },\\n        B: if rgb.B > 0.04045 {\\n            ((rgb.B + 0.055) / 1.055).powf(2.4)\\n        } else {\\n            rgb.B / 12.92\\n        },\\n    }\\n}\\n\\nfn cb_norm(rgb: cb_rgb_255) -> CbRgb {\\n    CbRgb {\\n        R: rgb.R as f32 / 255.0,\\n        G: rgb.G as f32 / 255.0,\\n        B: rgb.B as f32 / 255.0,\\n    }\\n}\\n\\nfn cb_denorm(rgb: CbRgb) -> cb_rgb_255 {\\n    cb_rgb_255 {\\n        R: (rgb.R * 255.0 + 0.5) as u8,\\n        G: (rgb.G * 255.0 + 0.5) as u8,\\n        B: (rgb.B * 255.0 + 0.5) as u8,\\n    }\\n}\\n\\nfn cb_apply_ga

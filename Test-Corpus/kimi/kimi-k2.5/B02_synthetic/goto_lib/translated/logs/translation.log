@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/goto.h","contents":"/*\n * Copyright 2025 MIT Lincoln Laboratory\n * Permission is hereby granted, free of charge,\n * to any person obtaining a copy of this software\n * and associated documentation files (the \"Software\"),\n * to deal in the Software without restriction,\n * including without limitation the rights to use, copy,\n * modify, merge, publish, distribute, sublicense,\n * and/or sell copies of the Software,\n * and to permit persons to whom the Software is furnished to do so,\n * subject to the following conditions:\n * \n * The above copyright notice and this permission notice\n * shall be included in all copies or substantial portions of the Software.\n * \n * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n * THE WARRANTIES OF MERCHANTABILITY,\n * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n */\n\nint driver(int num, const char* filename);\n"},{"path":"src/goto.c","contents":"/*\n * Copyright 2025 MIT Lincoln Laboratory\n * Permission is hereby granted, free of charge,\n * to any person obtaining a copy of this software\n * and associated documentation files (the \"Software\"),\n * to deal in the Software without restriction,\n * including without limitation the rights to use, copy,\n * modify, merge, publish, distribute, sublicense,\n * and/or sell copies of the Software,\n * and to permit persons to whom the Software is furnished to do so,\n * subject to the following conditions:\n * \n * The above copyright notice and this permission notice\n * shall be included in all copies or sub
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, c_int, CStr};\nuse std::fs::File;\nuse std::io::{self, BufRead, BufReader, Write};\nuse std::os::raw::c_void;\nuse std::ptr;\n\nfn forward_goto_example(x: c_int) -> c_int {\n    if x < 0 {\n        eprintln!(\"Error: negative input\");\n        return -1;\n    }\n\n    println!(\"Processing: {}\", x);\n    x * 2\n}\n\nfn open_with_cleanup(filename: &str) -> Option<File> {\n    let file = match File::open(filename) {\n        Ok(f) => f,\n        Err(_) => {\n            eprintln!(\"Error: opening or processing file {}\", filename);\n            return None;\n        }\n    };\n\n    let reader = BufReader::new(&file);\n    for line in reader.lines() {\n        match line {\n            Ok(l) => println!(\"{}\", l),\n            Err(_) => {\n                eprintln!(\"Error: opening or processing file {}\", filename);\n                return None;\n            }\n        }\n    }\n\n    Some(file)\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn driver(num: c_int, filename: *const c_char) -> c_int {\n    let res = forward_goto_example(num);\n    if res == -1 {\n        return -1;\n    } else {\n        println!(\"Goto output: {}\", res);\n    }\n\n    let c_str = unsafe {\n        if filename.is_null() {\n            return -2;\n        }\n        CStr::from_ptr(filename)\n    };\n\n    let filename_str = match c_str.to_str() {\n        Ok(s) => s,\n        Err(_) => return -2,\n    };\n\n    match open_with_cleanup(filename_str) {\n        None => -2,\n        Some(_) => 0,\n    }\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"goto\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"driver\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

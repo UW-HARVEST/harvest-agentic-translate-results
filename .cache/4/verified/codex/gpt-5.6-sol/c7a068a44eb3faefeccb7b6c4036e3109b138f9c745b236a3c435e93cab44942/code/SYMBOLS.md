@@ -1,0 +1,143 @@
+# Dynamic Symbol Surface
+
+Mechanically extracted with:
+
+```sh
+nm -D --defined-only c_src/build/libjansson.so | awk '{print $3}' | sort -u
+```
+
+The default C and Rust shared libraries each define 130 symbols. `comm -3` is
+empty, so every C symbol is present in Rust with the exact name.
+
+| # | C symbol | Rust export |
+|---:|---|:---:|
+| 1 | `do_deep_copy` | yes |
+| 2 | `do_object_update_recursive` | yes |
+| 3 | `dtoa` | yes |
+| 4 | `dtoa_divmax` | yes |
+| 5 | `dtoa_r` | yes |
+| 6 | `freedtoa` | yes |
+| 7 | `gethex` | yes |
+| 8 | `hashtable_clear` | yes |
+| 9 | `hashtable_close` | yes |
+| 10 | `hashtable_del` | yes |
+| 11 | `hashtable_get` | yes |
+| 12 | `hashtable_init` | yes |
+| 13 | `hashtable_iter` | yes |
+| 14 | `hashtable_iter_at` | yes |
+| 15 | `hashtable_iter_key` | yes |
+| 16 | `hashtable_iter_key_len` | yes |
+| 17 | `hashtable_iter_next` | yes |
+| 18 | `hashtable_iter_set` | yes |
+| 19 | `hashtable_iter_value` | yes |
+| 20 | `hashtable_seed` | yes |
+| 21 | `hashtable_set` | yes |
+| 22 | `jansson_version_cmp` | yes |
+| 23 | `jansson_version_str` | yes |
+| 24 | `json_array` | yes |
+| 25 | `json_array_append_new` | yes |
+| 26 | `json_array_clear` | yes |
+| 27 | `json_array_extend` | yes |
+| 28 | `json_array_get` | yes |
+| 29 | `json_array_insert_new` | yes |
+| 30 | `json_array_remove` | yes |
+| 31 | `json_array_set_new` | yes |
+| 32 | `json_array_size` | yes |
+| 33 | `json_copy` | yes |
+| 34 | `json_deep_copy` | yes |
+| 35 | `json_delete` | yes |
+| 36 | `json_dump_callback` | yes |
+| 37 | `json_dump_file` | yes |
+| 38 | `json_dumpb` | yes |
+| 39 | `json_dumpf` | yes |
+| 40 | `json_dumpfd` | yes |
+| 41 | `json_dumps` | yes |
+| 42 | `json_equal` | yes |
+| 43 | `json_false` | yes |
+| 44 | `json_get_alloc_funcs` | yes |
+| 45 | `json_get_alloc_funcs2` | yes |
+| 46 | `json_integer` | yes |
+| 47 | `json_integer_set` | yes |
+| 48 | `json_integer_value` | yes |
+| 49 | `json_load_callback` | yes |
+| 50 | `json_load_file` | yes |
+| 51 | `json_loadb` | yes |
+| 52 | `json_loadf` | yes |
+| 53 | `json_loadfd` | yes |
+| 54 | `json_loads` | yes |
+| 55 | `json_null` | yes |
+| 56 | `json_number_value` | yes |
+| 57 | `json_object` | yes |
+| 58 | `json_object_clear` | yes |
+| 59 | `json_object_del` | yes |
+| 60 | `json_object_deln` | yes |
+| 61 | `json_object_get` | yes |
+| 62 | `json_object_getn` | yes |
+| 63 | `json_object_iter` | yes |
+| 64 | `json_object_iter_at` | yes |
+| 65 | `json_object_iter_key` | yes |
+| 66 | `json_object_iter_key_len` | yes |
+| 67 | `json_object_iter_next` | yes |
+| 68 | `json_object_iter_set_new` | yes |
+| 69 | `json_object_iter_value` | yes |
+| 70 | `json_object_key_to_iter` | yes |
+| 71 | `json_object_seed` | yes |
+| 72 | `json_object_set_new` | yes |
+| 73 | `json_object_set_new_nocheck` | yes |
+| 74 | `json_object_setn_new` | yes |
+| 75 | `json_object_setn_new_nocheck` | yes |
+| 76 | `json_object_size` | yes |
+| 77 | `json_object_update` | yes |
+| 78 | `json_object_update_existing` | yes |
+| 79 | `json_object_update_missing` | yes |
+| 80 | `json_object_update_recursive` | yes |
+| 81 | `json_pack` | yes |
+| 82 | `json_pack_ex` | yes |
+| 83 | `json_real` | yes |
+| 84 | `json_real_set` | yes |
+| 85 | `json_real_value` | yes |
+| 86 | `json_set_alloc_funcs` | yes |
+| 87 | `json_set_alloc_funcs2` | yes |
+| 88 | `json_sprintf` | yes |
+| 89 | `json_string` | yes |
+| 90 | `json_string_length` | yes |
+| 91 | `json_string_nocheck` | yes |
+| 92 | `json_string_set` | yes |
+| 93 | `json_string_set_nocheck` | yes |
+| 94 | `json_string_setn` | yes |
+| 95 | `json_string_setn_nocheck` | yes |
+| 96 | `json_string_value` | yes |
+| 97 | `json_stringn` | yes |
+| 98 | `json_stringn_nocheck` | yes |
+| 99 | `json_true` | yes |
+| 100 | `json_unpack` | yes |
+| 101 | `json_unpack_ex` | yes |
+| 102 | `json_vpack_ex` | yes |
+| 103 | `json_vsprintf` | yes |
+| 104 | `json_vunpack_ex` | yes |
+| 105 | `jsonp_dtostr` | yes |
+| 106 | `jsonp_error_init` | yes |
+| 107 | `jsonp_error_set` | yes |
+| 108 | `jsonp_error_set_source` | yes |
+| 109 | `jsonp_error_vset` | yes |
+| 110 | `jsonp_free` | yes |
+| 111 | `jsonp_loop_check` | yes |
+| 112 | `jsonp_malloc` | yes |
+| 113 | `jsonp_realloc` | yes |
+| 114 | `jsonp_stringn_nocheck_own` | yes |
+| 115 | `jsonp_strndup` | yes |
+| 116 | `jsonp_strtod` | yes |
+| 117 | `strbuffer_append_byte` | yes |
+| 118 | `strbuffer_append_bytes` | yes |
+| 119 | `strbuffer_clear` | yes |
+| 120 | `strbuffer_close` | yes |
+| 121 | `strbuffer_init` | yes |
+| 122 | `strbuffer_pop` | yes |
+| 123 | `strbuffer_steal_value` | yes |
+| 124 | `strbuffer_value` | yes |
+| 125 | `strtod__unused` | yes |
+| 126 | `utf8_check_first` | yes |
+| 127 | `utf8_check_full` | yes |
+| 128 | `utf8_check_string` | yes |
+| 129 | `utf8_encode` | yes |
+| 130 | `utf8_iterate` | yes |

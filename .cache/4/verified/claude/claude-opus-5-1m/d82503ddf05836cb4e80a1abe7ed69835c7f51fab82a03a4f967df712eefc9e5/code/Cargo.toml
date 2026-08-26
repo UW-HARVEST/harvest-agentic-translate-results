@@ -1,0 +1,32 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# The C project (c_src/CMakeLists.txt) only declares `add_executable(driver
+# src/main.c)`, so the primary artifact is the executable below.
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+# Additionally exposed as a cdylib so that the differential test-suite can
+# dlopen() the Rust build and call the very same exported symbols the C
+# shared-library build exposes (printLine / bad / good / main).  Only "cdylib"
+# is listed on purpose: an `rlib` would be linked into the integration-test
+# binaries and its `#[no_mangle] main` would clash with the libtest harness.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+# No build-time configuration axes exist for this crate: there are no
+# [features], and the C build system has no options either (see CONFIGS.md).
+[features]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

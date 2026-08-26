@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int envy(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <stdlib.h>\r\n#include <string.h>\r\n#include <ctype.h>\r\n\r\nstruct ConfigFlags {\r\n    unsigned int verbose : 1;\r\n    unsigned int debug : 1;\r\n    unsigned int optimize : 1;\r\n    unsigned int cache_enabled : 1;\r\n    unsigned int log_level : 3;\r\n    unsigned int reserved : 1;\r\n};\r\n\r\nstruct ProcessState {\r\n    struct ConfigFlags flags;\r\n    int base_value;\r\n    int multiplier;\r\n    char operation;\r\n};\r\n\r\n#define BUFFER_SIZE 256\r\n\r\nint parse_env_numeric(const char* env_name, int default_val) {\r\n    char* env_value =
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::env;\nuse std::ffi::CStr;\nuse std::os::raw::{c_char, c_int};\n\n#[repr(C)]\nstruct ConfigFlags {\n    bits: u8,\n}\n\nimpl ConfigFlags {\n    fn new() -> Self {\n        ConfigFlags { bits: 0 }\n    }\n\n    fn verbose(&self) -> bool {\n        (self.bits & 0x01) != 0\n    }\n\n    fn set_verbose(&mut self, value: bool) {\n        if value {\n            self.bits |= 0x01;\n        } else {\n            self.bits &= !0x01;\n        }\n    }\n\n    fn debug(&self) -> bool {\n        (self.bits & 0x02) != 0\n    }\n\n    fn set_debug(&mut self, value: bool) {\n        if value {\n            self.bits |= 0x02;\n        } else {\n            self.bits &= !0x02;\n        }\n    }\n\n    fn optimize(&self) -> bool {\n        (self.bits & 0x04) != 0\n    }\n\n    fn set_optimize(&mut self, value: bool) {\n        if value {\n            self.bits |= 0x04;\n        } else {\n            self.bits &= !0x04;\n        }\n    }\n\n    fn cache_enabled(&self) -> bool {\n        (self.bits & 0x08) != 0\n    }\n\n    fn set_cache_enabled(&mut self, value: bool) {\n        if value {\n            self.bits |= 0x08;\n        } else {\n            self.bits &= !0x08;\n        }\n    }\n\n    fn log_level(&self) -> u8 {\n        (self.bits >> 4) & 0x07\n    }\n\n    fn set_log_level(&mut self, value: u8) {\n        self.bits = (self.bits & 0x8F) | ((value & 0x07) << 4);\n    }\n}\n\nstruct ProcessState {\n    flags: ConfigFlags,\n    base_value: c_int,\n    multiplier: c_int,\n    operation: char,\n}\n\nimpl Clone for ProcessState {\n    fn clone(&self) -> Self {\n        ProcessState {\n            flags: ConfigFlags { bits: self.flags.bits },\n            base_value: self.base_value,\n            multiplier: self.multiplier,\n            operation: self.operation,\n        }\n    }\n}\n\nconst BUFFER_SIZE: usize = 256;\n\nfn parse_env_numeric(env_name: &str, default_val: c_int) -> c_int {\n    let env_value = match env::var(env_name) {\n        Ok(v) => v,\n        Err(_) => return default_val,\n    };\n\n    if env_value.contains(',') {\n        eprintln!(\"Warning: Invalid character in {}\", env_name);\n        return default_val;\n    }\n\n    if env_value.contains(';') {\n        eprintln!(\"Warning: Semicolon found in {}\", env_name);\n        return default_val;\n    }\n\n    env_value.parse::<c_int>().unwrap_or(default_val)\n}\n\nfn init_config_from_env(flags: &mut ConfigFlags) {\n    let verbose_env = env::var(\"PROG_VERBOSE\").ok();\n    let debug_env = env::var(\"PROG_DEBUG\").ok();\n    let optimize_env = env::var(\"PROG_OPTIMIZE\").ok();\n\n    flags.set_verbose(verbose_env.as_ref().map_or(false, |v| v.contains('1')));\n    flags.set_debug(debug_env.as_ref().map_or(false, |v| v.contains('1')));\n    flags.set_optimize(optimize_env.is_some());\n    flags.set_cache_enabled(true);\n    flags.set_log_level(3);\n}\n\nfn perform_operation(val1: c_int, val2: c_int, flags: &ConfigFlags) -> c_int {\n    let operation_mode: c_int = 0o755;\n\n    let mut result = if flags.optimize() {\n        val1 + val2\n    } else {\n        (val1 * flags.log_level() as c_int) + (val2 / 2)\n    };\n\n    if flags.debug() {\n        println!(\"Debug: operation_mode = {:o} (octal)\", operation_mode);\n        println!(\"Debug: result before adjustment = {}\", result);\n    }\n\n    result\n}\n\nfn apply_bit_operations(value: c_int, flags: &ConfigFlags) -> c_int {\n    let mut adjusted = value;\n\n    if flags.verbose() {\n        adjusted = adjusted << 1;\n    }\n\n    if flags.cache_enabled() {\n        adjusted = adjusted | 0x0F;\n    }\n\n    adjusted\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn envy(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let mut state = ProcessState {\n        flags: ConfigFlags::new(),\n        base_value: 0,\n        multiplier: 0,\n        operation: '+',\n    };\n\n    init_config_from_env(&mut state.flags);\n\n    let base_offset = parse_env_numeric(\"PROG_BASE_OFFSET\", 0o100);\n    let multiplier = parse_env_numeric(\"PROG_MULTIPLIER\", 0o12);\n\n    if state.flags.verbose() {\n        println!(\"Verbose mode enabled\");\n        println!(\"Base offset: {} (from octal 0100)\", base_offset);\n        println!(\"Multiplier: {} (from octal 012)\", multiplier);\n    }\n\n    state.base_value = param1;\n    state.multiplier = multiplier;\n    state.operation = '+';\n\n    let state_backup = state.clone();\n\n    if state.flags.debug() {\n        println!(\"Debug: Created state backup using memcpy\");\n        println!(\"Debug: Backup base_value = {}\", state_backup.base_value);\n    }\n\n    let mut result = perform_operation(param1, param2, &state.flags);\n\n    if param3 != 0 {\n        result += param3 * state.multiplier;\n    }\n\n    if param4 != 0 {\n        result += param4 >> 2;\n    }\n\n    result = apply_bit_operations(result, &state.flags);\n    result += base_offset;\n\n    let buffer = format!(\"Result:{}:Complete\", result);\n\n    if let Some(colon_pos) = buffer.find(':') {\n        if state.flags.verbose() {\n            println!(\"Found colon at position: {}\", colon_pos);\n        }\n\n        if buffer[colon_pos + 1..].find(':').is_some() && state.flags.debug() {\n            println!(\"Debug: Result string format validated\");\n        }\n    }\n\n    if result < 0 {\n        state.base_value = state_backup.base_value;\n        state.multiplier = state_backup.multiplier;\n        state.operation = state_backup.operation;\n        state.flags.bits = state_backup.flags.bits;\n        result = state.base_value;\n\n        if state.flags.verbose() {\n            println!(\"Restored state from backup\");\n        }\n    }\n\n    if state.flags.verbose() {\n        println!(\"Final result: {}\", result);\n        println!(\n            \"Configuration - Debug: {}, Optimize: {}, Log Level: {}\",\n            state.flags.debug() as c_int,\n            state.flags.optimize() as c_int,\n            state.flags.log_level()\n        );\n    }\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

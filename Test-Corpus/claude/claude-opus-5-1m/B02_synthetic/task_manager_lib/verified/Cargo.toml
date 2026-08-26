@@ -1,0 +1,52 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+# "cdylib" is the artifact under test (libdriver.so, the direct counterpart of
+# the CMake-built C libdriver.so). "rlib" is added ONLY so that `cargo test`
+# actually emits the cdylib: a cdylib-only lib target cannot be linked by test
+# targets, so Cargo skips producing the .so and the differential tests would find
+# nothing to dlopen. The tests still never link against the crate -- every call
+# goes through libloading + dlsym on the .so, exactly like an external C caller.
+crate-type = ["cdylib", "rlib"]
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+# Out-of-process differential oracle. Runs without libtest so that it fully
+# controls its own stdout/stderr: it re-executes itself as a child process to
+# compare rows of ERRORS.md whose observable is the *termination signal*
+# (null-pointer dereferences) or which need a sacrificial address space
+# (forced `malloc` failures via RLIMIT_AS).
+[[test]]
+name = "phase_c_process"
+path = "tests/phase_c_process.rs"
+harness = false
+
+# The C library performs no null / alignment / overflow validation: a NULL
+# `TaskManager *` is simply dereferenced and the process dies with SIGSEGV, and
+# integer arithmetic wraps. Rust's `debug-assertions` (which also gate the
+# implicit `ub_checks` on raw-pointer dereferences) would instead turn those
+# exact inputs into a Rust panic + SIGABRT plus a message on stderr, i.e. an
+# observable divergence from the C ground truth. They are therefore disabled for
+# every profile so the shipped `.so` behaves identically to `libdriver.so` built
+# by CMake.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+opt-level = 2
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

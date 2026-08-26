@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the \"Software\"),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n\n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\nint betagamma(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the \"Software\"),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or sub
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::alloc::{alloc, dealloc, Layout};\nuse std::ffi::{c_char, c_int, c_void};\nuse std::ptr;\nuse std::slice;\n\n#[repr(C)]\npub struct DataBlock {\n    pub id: c_int,\n    pub name: [c_char; 32],\n    pub flags: u8,\n}\n\n#[repr(C)]\npub struct MemoryBlock {\n    pub data: *mut c_int,\n    pub size: usize,\n}\n\npub fn create_block(id: c_int, name: *const c_char, flags: u8) -> DataBlock {\n    let mut block = DataBlock {\n        id,\n        name: [0; 32],\n        flags,\n    };\n    unsafe {\n        let name_len = libc::strlen(name);\n        let copy_len = name_len.min(31);\n        ptr::copy_nonoverlapping(name, block.name.as_mut_ptr(), copy_len);\n        block.name[copy_len] = 0;\n    }\n    block\n}\n\npub fn allocate_block(count: usize, init_value: c_int) -> *mut MemoryBlock {\n    unsafe {\n        let layout = Layout::new::<MemoryBlock>();\n        let mb = alloc(layout) as *mut MemoryBlock;\n        if mb.is_null() {\n            return ptr::null_mut();\n        }\n\n        let data_layout = Layout::array::<c_int>(count).unwrap();\n        let data = alloc(data_layout) as *mut c_int;\n        if data.is_null() {\n            dealloc(mb as *mut u8, layout);\n            return ptr::null_mut();\n        }\n\n        ptr::write_bytes(data, 0, count);\n\n        for i in 0..count {\n            *data.add(i) = init_value + i as c_int;\n        }\n\n        (*mb).data = data;\n        (*mb).size = count;\n\n        mb\n    }\n}\n\npub fn free_block(mb: *mut MemoryBlock) {\n    unsafe {\n        if !mb.is_null() {\n            if !(*mb).data.is_null() {\n                let data_layout = Layout::array::<c_int>((*mb).size).unwrap();\n                dealloc((*mb).data as *mut u8, data_layout);\n            }\n            let layout = Layout::new::<MemoryBlock>();\n            dealloc(mb as *mut u8, layout);\n        }\n    }\n}\n\npub fn compute_hash(mb1: *mut MemoryBlock, mb2: *mut MemoryBlock) -> c_int {\n    let mut hash: c_int = 0;\n\n    unsafe {\n        if (*mb1).data < (*mb2).data {\n            hash += 100;\n        } else if (*mb1).data > (*mb2).data {\n            hash += 200;\n        }\n\n        if mb1 < mb2 {\n            hash += 10;\n        } else if mb1 > mb2 {\n            hash += 20;\n        }\n    }\n\n    hash\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn betagamma(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let mut result: c_int = 0;\n\n    let mut blocks: [DataBlock; 3] = [\n        DataBlock {\n            id: 1,\n            name: [0; 32],\n            flags: 0b10101010,\n        },\n        DataBlock {\n            id: 2,\n            name: [0; 32],\n            flags: 0b11001100,\n        },\n        DataBlock {\n            id: 3,\n            name: [0; 32],\n            flags: 0b11110000,\n        },\n    ];\n\n    unsafe {\n        let name1 = b\"Block_Alpha\\0\".as_ptr() as *const c_char;\n        let name2 = b\"Block_Beta\\0\".as_ptr() as *const c_char;\n        let name3 = b\"Block_Gamma\\0\".as_ptr() as *const c_char;\n        ptr::copy_nonoverlapping(name1, blocks[0].name.as_mut_ptr(), 12);\n        ptr::copy_nonoverlapping(name2, blocks[1].name.as_mut_ptr(), 11);\n        ptr::copy_nonoverlapping(name3, blocks[2].name.as_mut_ptr(), 12);\n    }\n\n    for i in 0..3 {\n        let current = &blocks[i];\n\n        let mut flag_contribution: c_int = 0;\n        if current.flags & 0b00001111 != 0 {\n            flag_contribution += param1;\n        }\n        if current.flags & 0b11110000 != 0 {\n            flag_contribution += param2;\n        }\n        if current.flags & 0b10101010 != 0 {\n            flag_contribution += param3;\n        }\n        if current.flags & 0b01010101 != 0 {\n            flag_contribution += param4;\n        }\n\n        result += flag_contribution * current.id;\n    }\n\n    let block_size = ((param1 % 10) + 5) as usize;\n    let mem1 = allocate_block(block_size, param1);\n    let mem2 = allocate_block(block_size, param2);\n\n    if mem1.is_null() || mem2.is_null() {\n        free_block(mem1);\n        free_block(mem2);\n        return -1;\n    }\n\n    let hash = compute_hash(mem1, mem2);\n    result += hash;\n\n    let mut sum1: c_int = 0;\n    let mut sum2: c_int = 0;\n    unsafe {\n        let slice1 = slice::from_raw_parts((*mem1).data, (*mem1).size);\n        let slice2 = slice::from_raw_parts((*mem2).data, (*mem2).size);\n        for &val in slice1 {\n            sum1 += val;\n        }\n        for &val in slice2 {\n            sum2 += val;\n        }\n    }\n\n    result += (sum1 - sum2) / 10;\n\n    let mut special = DataBlock {\n        id: 99,\n        name: [0; 32],\n        flags: 0b11111111,\n    };\n    unsafe {\n        let special_name = b\"Modified\\0\".as_ptr() as *const c_char;\n        ptr::copy_nonoverlapping(special_name, special.name.as_mut_ptr(), 9);\n    }\n\n    unsafe {\n        if (*mem1).data != (*mem2).data {\n            result += special.id;\n        }\n\n        if !(*mem1).data.is_null() && !(*mem2).data.is_null() {\n            result += special.flags as c_int;\n        }\n    }\n\n    free_block(mem1);\n    free_block(mem2);\n\n    result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nlibc = \"0.2\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\", \"staticlib\"]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

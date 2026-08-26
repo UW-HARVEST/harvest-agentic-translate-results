@@ -1,0 +1,42 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# The C source builds both an executable (CMakeLists.txt: add_executable) and,
+# for differential testing, a shared library (`gcc -shared`). Mirror both.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+# `cdylib` is the artifact compared against the C `.so`; `rlib` makes `cargo
+# test` build the lib target (into `target/<profile>/deps/`) so the tests always
+# have a freshly compiled `libdriver.so` available — see
+# `tests/common/mod.rs::rust_lib_path`, which picks the freshest copy and refuses
+# to run against a stale one.
+crate-type = ["cdylib", "rlib"]
+test = false
+doctest = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+test = false
+
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+
+# In-process differential test: owns fd 1 (dup2 capture), so it must not share
+# the process with libtest's own stdout writes.
+[[test]]
+name = "inprocess"
+path = "tests/inprocess.rs"
+harness = false
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

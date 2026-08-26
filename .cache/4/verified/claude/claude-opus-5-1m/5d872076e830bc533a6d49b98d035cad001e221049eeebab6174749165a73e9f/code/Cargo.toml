@@ -1,0 +1,25 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# Standalone child process used by the error-path tests: it loads one of the two
+# shared libraries and calls into it, so that aborting / exiting / crashing
+# behaviour (e.g. `exit(30)` on allocation failure, SIGSEGV on NULL input) can be
+# observed differentially without taking down the test harness.
+[[test]]
+name = "child"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,34 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The differential tests capture file descriptor 1 to compare the bytes the C
+# and Rust shared objects write to stdout.  That is process-global state, so the
+# default multi-threaded libtest harness (which reports progress on stdout from
+# another thread) would corrupt the capture; each test target therefore uses its
+# own strictly sequential runner (see `tests/common/mod.rs::run`).
+[[test]]
+name = "harness_selfcheck"
+harness = false
+
+[[test]]
+name = "differential_valid"
+harness = false
+
+[[test]]
+name = "differential_errors"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

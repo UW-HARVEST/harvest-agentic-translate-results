@@ -1,0 +1,51 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. When asked to generate a structured JSON response, you always respond with valid JSON only: never any preceeding markdown block formatting, and you take extreme care for the JSON to be valid. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/main.c",
+  "contents": "int main() {\n  return 0;\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_executable(driver\n    src/main.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/main.rs",
+  "contents": "fn main() {\n\n}",
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"src/luggage.c","contents":"// By Jan Wrobel <wrr@mixedbit.org>\n\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\n#define LUGGAGE_ID_LENGTH 8\n#define FLIGHT_ID_LENGTH 6\n#define AIRPORT_CODE_LENGTH 3\n#define COMMENTS_LENGTH 80\n\ntypedef struct RoutingDirective {\n\tunsigned int time_stamp;\n\tchar luggage_id[LUGGAGE_ID_LENGTH + 1];\n\tchar flight_id[FLIGHT_ID_LENGTH + 1];\n\tchar departure[AIRPORT_CODE_LENGTH + 1];\n\tchar arrival[AIRPORT_CODE_LENGTH + 1];\n\tchar comments[COMMENTS_LENGTH + 1];\n\tstruct RoutingDirective *next_directive;\n} RoutingDirective;\n\nvoid addRoutingDirectiveToList(RoutingDirective *previous_directive,\n\t\t\t       RoutingDirective *new_directive) {\n\tRoutingDirective *next_directive = previous_directive->next_directive;\n\tif (next_directive == NULL ||\n\t    next_directive->time_stamp > new_directive->time_stamp) {\n\t\tnew_directive->next_directive = next_directive;\n\t\tprevious_directive->next_directive = new_directive;\n\t} else {\n\t\taddRoutingDirectiveToList(next_directive, new_directive);\n\t}\n}\n\nint supersedes(RoutingDirective *directive, char *luggage_id, char *departure) {\n\tif (directive == NULL) {\n\t\treturn 0;\n\t}\n\tif (strcmp(directive->luggage_id, luggage_id) != 0) {\n\t\treturn supersedes(directive->next_directive,\n\t\t\t\t  luggage_id,\n\t\t\t\t  departure);\n\t}\n\tif (strcmp(directive->departure, departure) == 0) {\n\t\treturn 1;\n\t}\n\treturn 0;\n}\n\nint superseded(RoutingDirective *directive) {\n\treturn supersedes(directive->next_directive,\n\t\t\t  directive->luggage_id,\n\t\t\t  directive->departure);\n}\n\n\nint matches(char* expected, char* actual) {\n\treturn (expected[0] == '-' || strcmp(expected, actual) == 0);\n}\n\nvoid printMatchingDirectives(RoutingDirective* first_directive,\n\t\t\t     char *expected_luggage_id,\n\t\t\t     char *expected_flight_id,\n\t\t\t     char 
+
+=== RESPONSE ===
+ {"files":[{"path":"src/main.rs","contents":"use std::io::{self, BufRead};\n\nconst LUGGAGE_ID_LENGTH: usize = 8;\nconst FLIGHT_ID_LENGTH: usize = 6;\nconst AIRPORT_CODE_LENGTH: usize = 3;\nconst COMMENTS_LENGTH: usize = 80;\n\nstruct RoutingDirective {\n    time_stamp: u32,\n    luggage_id: String,\n    flight_id: String,\n    departure: String,\n    arrival: String,\n    comments: String,\n    next_directive: Option<Box<RoutingDirective>>,\n}\n\nfn add_routing_directive_to_list(\n    previous_directive: &mut RoutingDirective,\n    new_directive: Box<RoutingDirective>,\n) {\n    match &mut previous_directive.next_directive {\n        None => {\n            previous_directive.next_directive = Some(new_directive);\n        }\n        Some(next) => {\n            if next.time_stamp > new_directive.time_stamp {\n                let mut new_directive = new_directive;\n                new_directive.next_directive = previous_directive.next_directive.take();\n                previous_directive.next_directive = Some(new_directive);\n            } else {\n                add_routing_directive_to_list(next, new_directive);\n            }\n        }\n    }\n}\n\nfn supersedes(directive: Option<&RoutingDirective>, luggage_id: &str, departure: &str) -> bool {\n    let directive = match directive {\n        None => return false,\n        Some(d) => d,\n    };\n    if directive.luggage_id != luggage_id {\n        return supersedes(directive.next_directive.as_deref(), luggage_id, departure);\n    }\n    directive.departure == departure\n}\n\nfn superseded(directive: &RoutingDirective) -> bool {\n    supersedes(\n        directive.next_directive.as_deref(),\n        &directive.luggage_id,\n        &directive.departure,\n    )\n}\n\nfn matches(expected: &str, actual: &str) -> bool {\n    expected == \"-\" || expected == actual\n}\n\nfn print_matching_directives(\n    first_directive: Option<&RoutingDirective>,\n    expected_luggage_id: &str,\n    expected_flight_id: &str,\n    expected_departure: &str,\n    expected_arrival: &str,\n) {\n    let mut directive = first_directive;\n    while let Some(d) = directive {\n        if !superseded(d)\n            && matches(expected_luggage_id, &d.luggage_id)\n            && matches(expected_flight_id, &d.flight_id)\n            && matches(expected_departure, &d.departure)\n            && matches(expected_arrival, &d.arrival)\n        {\n            println!(\n                \"{:010} {} {} {} {} {}\",\n                d.time_stamp, d.luggage_id, d.flight_id, d.departure, d.arrival, d.comments\n            );\n        }\n        directive = d.next_directive.as_deref();\n    }\n}\n\nfn main() {\n    let args: Vec<String> = std::env::args().collect();\n    if args.len() != 5 {\n        eprintln!(\"Command line error: 4 arguments expected\");\n        std::process::exit(1);\n    }\n\n    let mut directive_list_head = RoutingDirective {\n        time_stamp: 0,\n        luggage_id: String::new(),\n        flight_id: String::new(),\n        departure: String::new(),\n        arrival: String::new(),\n        comments: String::new(),\n        next_directive: None,\n    };\n\n    let stdin = io::stdin();\n    for line in stdin.lock().lines() {\n        let line = match line {\n            Ok(l) => l,\n            Err(_) => break,\n        };\n        let parts: Vec<&str> = line.split_whitespace().collect();\n        if parts.len() < 5 {\n            continue;\n        }\n\n        let time_stamp: u32 = match parts[0].parse() {\n            Ok(t) => t,\n            Err(_) => continue,\n        };\n\n        let luggage_id = parts[1].to_string();\n        let flight_id = parts[2].to_string();\n        let departure = parts[3].to_string();\n        let arrival = parts[4].to_string();\n        let comments = if parts.len() > 5 {\n            parts[5..].join(\" \")\n        } else {\n            String::new()\n        };\n\n        let new_directive = Box::new(RoutingDirective {\n            time_stamp,\n            luggage_id,\n            flight_id,\n            departure,\n            arrival,\n            comments,\n            next_directive: None,\n        });\n\n        add_routing_directive_to_list(&mut directive_list_head, new_directive);\n    }\n\n    print_matching_directives(\n        directive_list_head.next_directive.as_deref(),\n        &args[1],\n        &args[2],\n        &args[3],\n        &args[4],\n    );\n}\n"},{"path":"Cargo.toml","contents":"[package]\nname = \"driver\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"}]}
+
+
+=== STDERR ===

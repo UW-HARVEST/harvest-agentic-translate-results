@@ -1,0 +1,70 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"#include <stdint.h>\n\nunsigned hdr_bitrate(const uint8_t *h);\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\n\nunsigned hdr_bitrate(const uint8_t *h) {\n    static const uint8_t halfrate[2][3][15] = {\n        {{0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80},\n         {0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80},\n         {0, 16, 24, 28, 32, 40, 48, 56, 64, 72, 80, 88, 96, 112, 128}},\n        {{0, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160},\n         {0, 16, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192},\n         {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224}},\n    };\n    return 2 *\n           halfrate[!!((h[1]) & 0x8)][(((h[1]) >> 1) & 3) - 1][((h[2]) >> 4)];\n}\n"},{"path":"CMakeLists.txt","contents":"cmake_minimum_required(VERSION 3.10)\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\ncmake_path(GET parent FILENAME project_name)\nproject(${project_name})\nadd_library(${project_name} SHARED\n    src/lib.c)\n\ntarget_include_directories(${project_name} PUBLIC include)\ntarget_include_directories(${project_name} PRIVATE src)\n\ninstall(TARGETS ${project_name}\n    DESTINATION lib)\ninstall(DIRECTORY include/\n    DESTINATION include)\n\n"}]}
+
+return as JSON
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::{c_uchar, c_uint};\n\nstatic HALFRATE: [[[u8; 15]; 3]; 2] = [\n    [\n        [0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80],\n        [0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80],\n        [0, 16, 24, 28, 32, 40, 48, 56, 64, 72, 80, 88, 96, 112, 128],\n    ],\n    [\n        [0, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160],\n        [0, 16, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192],\n        [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224],\n    ],\n];\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn hdr_bitrate(h: *const c_uchar) -> c_uint {\n    let h = unsafe { std::slice::from_raw_parts(h, 4) };\n    let idx1 = if (h[1] & 0x8) != 0 { 1 } else { 0 };\n    let idx2 = (((h[1]) >> 1) & 3) as usize - 1;\n    let idx3 = ((h[2]) >> 4) as usize;\n    2 * HALFRATE[idx1][idx2][idx3] as c_uint\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

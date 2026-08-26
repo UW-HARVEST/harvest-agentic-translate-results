@@ -1,0 +1,449 @@
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:368:
+ pub unsafe extern "C" fn print_order(order: Order) {
+     unsafe {
+         printf(
+[31m-            b"  Order - Customer ID: %d, Name: %s\n\0"
+[m[31m-                .as_ptr()
+[m[31m-                .cast(),
+[m[32m+            b"  Order - Customer ID: %d, Name: %s\n\0".as_ptr().cast(),
+[m             order.customer_id,
+             order.customer_name.as_ptr(),
+         );
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:393:
+     let item_pointer = item.as_mut_ptr();
+     unsafe {
+         ptr::addr_of_mut!((*item_pointer).id).write(id);
+[31m-        strncpy(
+[m[31m-            ptr::addr_of_mut!((*item_pointer).name).cast(),
+[m[31m-            name,
+[m[31m-            63,
+[m[31m-        );
+[m[32m+        strncpy(ptr::addr_of_mut!((*item_pointer).name).cast(), name, 63);
+[m         (*item_pointer).name[63] = 0;
+         strncpy(
+             ptr::addr_of_mut!((*item_pointer).category).cast(),
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:439:
+         return;
+     }
+ 
+[31m-    unsafe { printf(b"\n=== Inventory Statistics (Array) ===\n\0".as_ptr().cast()) };
+[m[32m+    unsafe {
+[m[32m+        printf(
+[m[32m+            b"\n=== Inventory Statistics (Array) ===\n\0"
+[m[32m+                .as_ptr()
+[m[32m+                .cast(),
+[m[32m+        )
+[m[32m+    };
+[m     let mut total_value = 0.0;
+     let mut total_items: c_int = 0;
+     let mut max_price = 0.0;
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:462:
+             b"Total unique items: %zu\n\0".as_ptr().cast(),
+             (*items).size,
+         );
+[32m+        printf(b"Total item count: %d\n\0".as_ptr().cast(), total_items);
+[m         printf(
+[31m-            b"Total item count: %d\n\0".as_ptr().cast(),
+[m[31m-            total_items,
+[m[31m-        );
+[m[31m-        printf(
+[m             b"Total inventory value: $%.2f\n\0".as_ptr().cast(),
+             total_value,
+         );
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:474:
+             b"Average item price: $%.2f\n\0".as_ptr().cast(),
+             total_value / f64::from(total_items),
+         );
+[32m+        printf(b"Most expensive item: $%.2f\n\0".as_ptr().cast(), max_price);
+[m         printf(
+[31m-            b"Most expensive item: $%.2f\n\0".as_ptr().cast(),
+[m[31m-            max_price,
+[m[31m-        );
+[m[31m-        printf(
+[m             b"Least expensive item: $%.2f\n\0".as_ptr().cast(),
+             min_price,
+         );
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:512:
+ 
+     unsafe {
+         printf(b"Total orders: %zu\n\0".as_ptr().cast(), (*orders).size);
+[32m+        printf(b"Total revenue: $%.2f\n\0".as_ptr().cast(), total_revenue);
+[m         printf(
+[31m-            b"Total revenue: $%.2f\n\0".as_ptr().cast(),
+[m[31m-            total_revenue,
+[m[31m-        );
+[m[31m-        printf(
+[m             b"Average order value: $%.2f\n\0".as_ptr().cast(),
+             total_revenue / (*orders).size as f64,
+         );
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:523:
+         printf(b"Largest order: $%.2f\n\0".as_ptr().cast(), max_order);
+[31m-        printf(
+[m[31m-            b"Smallest order: $%.2f\n\0".as_ptr().cast(),
+[m[31m-            min_order,
+[m[31m-        );
+[m[32m+        printf(b"Smallest order: $%.2f\n\0".as_ptr().cast(), min_order);
+[m     }
+ }
+ 
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:531:
+ #[no_mangle]
+[31m-pub unsafe extern "C" fn find_items_by_category(
+[m[31m-    items: *mut ArrayItem,
+[m[31m-    category: *const c_char,
+[m[31m-) {
+[m[32m+pub unsafe extern "C" fn find_items_by_category(items: *mut ArrayItem, category: *const c_char) {
+[m     if items.is_null() || category.is_null() {
+         return;
+     }
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/lib.rs:567:
+ 
+     unsafe {
+         printf(
+[31m-            b"\n=== Items priced above $%.2f ===\n\0"
+[m[31m-                .as_ptr()
+[m[31m-                .cast(),
+[m[32m+            b"\n=== Items priced above $%.2f ===\n\0".as_ptr().cast(),
+[m             min_price,
+         );
+     }
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/inventory.rs:32:
+     }
+ }
+ 
+[31m-pub fn create_order(
+[m[31m-    customer_id: i32,
+[m[31m-    customer_name: &'static str,
+[m[31m-    total_amount: f64,
+[m[31m-) -> Order {
+[m[32m+pub fn create_order(customer_id: i32, customer_name: &'static str, total_amount: f64) -> Order {
+[m     Order {
+         customer_id,
+         customer_name,
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/main.rs:47:
+     let sum: i32 = int_array.iter().sum();
+     writeln!(out)?;
+     writeln!(out, "Sum: {sum}")?;
+[31m-    writeln!(out, "Average: {:.2}", f64::from(sum) / int_array.len() as f64)?;
+[m[32m+    writeln!(
+[m[32m+        out,
+[m[32m+        "Average: {:.2}",
+[m[32m+        f64::from(sum) / int_array.len() as f64
+[m[32m+    )?;
+[m 
+     write!(
+         out,
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/main.rs:216:
+     }
+ 
+     writeln!(out, "Total large orders: {large_order_count}")?;
+[31m-    writeln!(
+[m[31m-        out,
+[m[31m-        "Revenue from large orders: ${large_order_total:.2}"
+[m[31m-    )
+[m[32m+    writeln!(out, "Revenue from large orders: ${large_order_total:.2}")
+[m }
+ 
+ fn demo_mixed_operations<W: Write>(out: &mut W) -> io::Result<()> {
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/main.rs:263:
+     writeln!(out, "List iteration count: {list_count}")?;
+ 
+     let price_threshold = 200.0;
+[31m-    writeln!(
+[m[31m-        out,
+[m[31m-        "\n--- Items above ${price_threshold:.2} (Array) ---"
+[m[31m-    )?;
+[m[32m+    writeln!(out, "\n--- Items above ${price_threshold:.2} (Array) ---")?;
+[m     for item in &array_inventory {
+         if item.price >= price_threshold {
+             writeln!(out, "  {}: ${:.2}", item.name, item.price)?;
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/src/main.rs:273:
+         }
+     }
+ 
+[31m-    writeln!(
+[m[31m-        out,
+[m[31m-        "\n--- Items above ${price_threshold:.2} (List) ---"
+[m[31m-    )?;
+[m[32m+    writeln!(out, "\n--- Items above ${price_threshold:.2} (List) ---")?;
+[m     for item in &list_inventory {
+         if item.price >= price_threshold {
+             writeln!(out, "  {}: ${:.2}", item.name, item.price)?;
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:185:
+     assert_eq!(unsafe { (*left).size }, unsafe { (*right).size });
+     assert_eq!(unsafe { (*left).capacity }, unsafe { (*right).capacity });
+     for index in 0..unsafe { (*left).size } {
+[31m-        T::assert_same(
+[m[31m-            unsafe { get_left(left, index) },
+[m[31m-            unsafe { get_right(right, index) },
+[m[31m-        );
+[m[32m+        T::assert_same(unsafe { get_left(left, index) }, unsafe {
+[m[32m+            get_right(right, index)
+[m[32m+        });
+[m     }
+ }
+ 
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:202:
+ 
+     let create_c: Create<T> = unsafe { symbol(&libraries.c, &format!("array_{prefix}_create")) };
+     let create_r: Create<T> = unsafe { symbol(&libraries.rust, &format!("array_{prefix}_create")) };
+[31m-    let destroy_c: Destroy<T> =
+[m[31m-        unsafe { symbol(&libraries.c, &format!("array_{prefix}_destroy")) };
+[m[32m+    let destroy_c: Destroy<T> = unsafe { symbol(&libraries.c, &format!("array_{prefix}_destroy")) };
+[m     let destroy_r: Destroy<T> =
+         unsafe { symbol(&libraries.rust, &format!("array_{prefix}_destroy")) };
+     let push_c: Push<T> = unsafe { symbol(&libraries.c, &format!("array_{prefix}_push")) };
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:222:
+         clear_c(empty_left);
+         clear_r(empty_right);
+     }
+[31m-    assert_eq!(unsafe { size_c(empty_left) }, unsafe { size_r(empty_right) });
+[m[32m+    assert_eq!(unsafe { size_c(empty_left) }, unsafe {
+[m[32m+        size_r(empty_right)
+[m[32m+    });
+[m     unsafe {
+         destroy_c(empty_left);
+         destroy_r(empty_right);
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:244:
+         let count = 18 + (rng.next_u64() as usize % 23);
+         for _ in 0..count {
+             let value = T::random(&mut rng);
+[31m-            assert_eq!(
+[m[31m-                unsafe { push_c(left, value) },
+[m[31m-                unsafe { push_r(right, value) }
+[m[31m-            );
+[m[32m+            assert_eq!(unsafe { push_c(left, value) }, unsafe {
+[m[32m+                push_r(right, value)
+[m[32m+            });
+[m             unsafe { assert_array_contents(left, right, get_c, get_r) };
+         }
+ 
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:258:
+         assert_eq!(unsafe { size_c(left) }, 0);
+         assert_eq!(unsafe { size_c(left) }, unsafe { size_r(right) });
+         let reuse = T::random(&mut rng);
+[31m-        assert_eq!(
+[m[31m-            unsafe { push_c(left, reuse) },
+[m[31m-            unsafe { push_r(right, reuse) }
+[m[31m-        );
+[m[32m+        assert_eq!(unsafe { push_c(left, reuse) }, unsafe {
+[m[32m+            push_r(right, reuse)
+[m[32m+        });
+[m         unsafe { assert_array_contents(left, right, get_c, get_r) };
+         unsafe {
+             destroy_c(left);
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:289:
+     for (left_value, right_value) in left_values.into_iter().zip(right_values) {
+         T::assert_same(left_value, right_value);
+     }
+[31m-    assert_eq!(
+[m[31m-        unsafe { (*left).tail.is_null() },
+[m[31m-        unsafe { (*right).tail.is_null() }
+[m[31m-    );
+[m[32m+    assert_eq!(unsafe { (*left).tail.is_null() }, unsafe {
+[m[32m+        (*right).tail.is_null()
+[m[32m+    });
+[m     if !unsafe { (*left).tail.is_null() } {
+         assert!(unsafe { (*(*left).tail).next.is_null() });
+         assert!(unsafe { (*(*right).tail).next.is_null() });
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:308:
+ 
+     let create_c: Create<T> = unsafe { symbol(&libraries.c, &format!("list_{prefix}_create")) };
+     let create_r: Create<T> = unsafe { symbol(&libraries.rust, &format!("list_{prefix}_create")) };
+[31m-    let destroy_c: Destroy<T> =
+[m[31m-        unsafe { symbol(&libraries.c, &format!("list_{prefix}_destroy")) };
+[m[32m+    let destroy_c: Destroy<T> = unsafe { symbol(&libraries.c, &format!("list_{prefix}_destroy")) };
+[m     let destroy_r: Destroy<T> =
+         unsafe { symbol(&libraries.rust, &format!("list_{prefix}_destroy")) };
+[31m-    let append_c: Insert<T> =
+[m[31m-        unsafe { symbol(&libraries.c, &format!("list_{prefix}_append")) };
+[m[31m-    let append_r: Insert<T> =
+[m[31m-        unsafe { symbol(&libraries.rust, &format!("list_{prefix}_append")) };
+[m[31m-    let prepend_c: Insert<T> =
+[m[31m-        unsafe { symbol(&libraries.c, &format!("list_{prefix}_prepend")) };
+[m[32m+    let append_c: Insert<T> = unsafe { symbol(&libraries.c, &format!("list_{prefix}_append")) };
+[m[32m+    let append_r: Insert<T> = unsafe { symbol(&libraries.rust, &format!("list_{prefix}_append")) };
+[m[32m+    let prepend_c: Insert<T> = unsafe { symbol(&libraries.c, &format!("list_{prefix}_prepend")) };
+[m     let prepend_r: Insert<T> =
+         unsafe { symbol(&libraries.rust, &format!("list_{prefix}_prepend")) };
+     let size_c: Size<T> = unsafe { symbol(&libraries.c, &format!("list_{prefix}_size")) };
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:332:
+         clear_c(empty_left);
+         clear_r(empty_right);
+     }
+[31m-    assert_eq!(unsafe { size_c(empty_left) }, unsafe { size_r(empty_right) });
+[m[32m+    assert_eq!(unsafe { size_c(empty_left) }, unsafe {
+[m[32m+        size_r(empty_right)
+[m[32m+    });
+[m     unsafe {
+         destroy_c(empty_left);
+         destroy_r(empty_right);
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:348:
+         for _ in 0..(16 + rng.next_u64() as usize % 17) {
+             let value = T::random(&mut rng);
+             let (left_result, right_result) = if rng.next_u64() & 1 == 0 {
+[31m-                (
+[m[31m-                    unsafe { append_c(left, value) },
+[m[31m-                    unsafe { append_r(right, value) },
+[m[31m-                )
+[m[32m+                (unsafe { append_c(left, value) }, unsafe {
+[m[32m+                    append_r(right, value)
+[m[32m+                })
+[m             } else {
+[31m-                (
+[m[31m-                    unsafe { prepend_c(left, value) },
+[m[31m-                    unsafe { prepend_r(right, value) },
+[m[31m-                )
+[m[32m+                (unsafe { prepend_c(left, value) }, unsafe {
+[m[32m+                    prepend_r(right, value)
+[m[32m+                })
+[m             };
+             assert_eq!(left_result, right_result);
+             assert_eq!(unsafe { size_c(left) }, unsafe { size_r(right) });
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:370:
+         assert_eq!(unsafe { size_c(left) }, 0);
+         assert_eq!(unsafe { size_c(left) }, unsafe { size_r(right) });
+         let reuse = T::random(&mut rng);
+[31m-        assert_eq!(
+[m[31m-            unsafe { append_c(left, reuse) },
+[m[31m-            unsafe { append_r(right, reuse) }
+[m[31m-        );
+[m[32m+        assert_eq!(unsafe { append_c(left, reuse) }, unsafe {
+[m[32m+            append_r(right, reuse)
+[m[32m+        });
+[m         unsafe { assert_list_contents(left, right) };
+         unsafe {
+             destroy_c(left);
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:567:
+                 let id = rng.next_i32();
+                 let quantity = rng.next_i32();
+                 Item::assert_same(
+[31m-                    unsafe {
+[m[31m-                        item_c(
+[m[31m-                            id,
+[m[31m-                            name.as_ptr(),
+[m[31m-                            category.as_ptr(),
+[m[31m-                            price,
+[m[31m-                            quantity,
+[m[31m-                        )
+[m[31m-                    },
+[m[31m-                    unsafe {
+[m[31m-                        item_r(
+[m[31m-                            id,
+[m[31m-                            name.as_ptr(),
+[m[31m-                            category.as_ptr(),
+[m[31m-                            price,
+[m[31m-                            quantity,
+[m[31m-                        )
+[m[31m-                    },
+[m[32m+                    unsafe { item_c(id, name.as_ptr(), category.as_ptr(), price, quantity) },
+[m[32m+                    unsafe { item_r(id, name.as_ptr(), category.as_ptr(), price, quantity) },
+[m                 );
+             }
+ 
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:635:
+     type OrderStats = unsafe extern "C" fn(*mut List<Order>);
+ 
+     let libraries = unsafe { Libraries::load() };
+[31m-    let inventory_c: InventoryStats =
+[m[31m-        unsafe { symbol(&libraries.c, "calculate_inventory_stats") };
+[m[32m+    let inventory_c: InventoryStats = unsafe { symbol(&libraries.c, "calculate_inventory_stats") };
+[m     let inventory_r: InventoryStats =
+         unsafe { symbol(&libraries.rust, "calculate_inventory_stats") };
+     let orders_c: OrderStats = unsafe { symbol(&libraries.c, "calculate_order_stats") };
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:724:
+     type FindExpensive = unsafe extern "C" fn(*mut List<Item>, c_double);
+ 
+     let libraries = unsafe { Libraries::load() };
+[31m-    let category_c: FindCategory =
+[m[31m-        unsafe { symbol(&libraries.c, "find_items_by_category") };
+[m[31m-    let category_r: FindCategory =
+[m[31m-        unsafe { symbol(&libraries.rust, "find_items_by_category") };
+[m[31m-    let expensive_c: FindExpensive =
+[m[31m-        unsafe { symbol(&libraries.c, "find_expensive_items") };
+[m[31m-    let expensive_r: FindExpensive =
+[m[31m-        unsafe { symbol(&libraries.rust, "find_expensive_items") };
+[m[32m+    let category_c: FindCategory = unsafe { symbol(&libraries.c, "find_items_by_category") };
+[m[32m+    let category_r: FindCategory = unsafe { symbol(&libraries.rust, "find_items_by_category") };
+[m[32m+    let expensive_c: FindExpensive = unsafe { symbol(&libraries.c, "find_expensive_items") };
+[m[32m+    let expensive_r: FindExpensive = unsafe { symbol(&libraries.rust, "find_expensive_items") };
+[m     let destroy_array_c: unsafe extern "C" fn(*mut Array<Item>) =
+         unsafe { symbol(&libraries.c, "array_item_t_destroy") };
+     let destroy_array_r: unsafe extern "C" fn(*mut Array<Item>) =
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:822:
+             let create_r: unsafe extern "C" fn(usize) -> *mut Array<$type> =
+                 unsafe { symbol(&libraries.rust, concat!("array_", $prefix, "_create")) };
+ 
+[31m-            assert_eq!(
+[m[31m-                unsafe { push_c(ptr::null_mut(), $value) },
+[m[31m-                unsafe { push_r(ptr::null_mut(), $value) }
+[m[31m-            );
+[m[31m-            assert_eq!(
+[m[31m-                unsafe { size_c(ptr::null_mut()) },
+[m[31m-                unsafe { size_r(ptr::null_mut()) }
+[m[31m-            );
+[m[32m+            assert_eq!(unsafe { push_c(ptr::null_mut(), $value) }, unsafe {
+[m[32m+                push_r(ptr::null_mut(), $value)
+[m[32m+            });
+[m[32m+            assert_eq!(unsafe { size_c(ptr::null_mut()) }, unsafe {
+[m[32m+                size_r(ptr::null_mut())
+[m[32m+            });
+[m             unsafe {
+                 clear_c(ptr::null_mut());
+                 clear_r(ptr::null_mut());
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:836:
+                 destroy_c(ptr::null_mut());
+                 destroy_r(ptr::null_mut());
+             }
+[31m-            assert_eq!(
+[m[31m-                unsafe { create_c(usize::MAX).is_null() },
+[m[31m-                unsafe { create_r(usize::MAX).is_null() }
+[m[31m-            );
+[m[32m+            assert_eq!(unsafe { create_c(usize::MAX).is_null() }, unsafe {
+[m[32m+                create_r(usize::MAX).is_null()
+[m[32m+            });
+[m         }};
+     }
+ 
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:866:
+             let destroy_r: unsafe extern "C" fn(*mut List<$type>) =
+                 unsafe { symbol(&libraries.rust, concat!("list_", $prefix, "_destroy")) };
+ 
+[31m-            assert_eq!(
+[m[31m-                unsafe { append_c(ptr::null_mut(), $value) },
+[m[31m-                unsafe { append_r(ptr::null_mut(), $value) }
+[m[31m-            );
+[m[31m-            assert_eq!(
+[m[31m-                unsafe { prepend_c(ptr::null_mut(), $value) },
+[m[31m-                unsafe { prepend_r(ptr::null_mut(), $value) }
+[m[31m-            );
+[m[31m-            assert_eq!(
+[m[31m-                unsafe { size_c(ptr::null_mut()) },
+[m[31m-                unsafe { size_r(ptr::null_mut()) }
+[m[31m-            );
+[m[32m+            assert_eq!(unsafe { append_c(ptr::null_mut(), $value) }, unsafe {
+[m[32m+                append_r(ptr::null_mut(), $value)
+[m[32m+            });
+[m[32m+            assert_eq!(unsafe { prepend_c(ptr::null_mut(), $value) }, unsafe {
+[m[32m+                prepend_r(ptr::null_mut(), $value)
+[m[32m+            });
+[m[32m+            assert_eq!(unsafe { size_c(ptr::null_mut()) }, unsafe {
+[m[32m+                size_r(ptr::null_mut())
+[m[32m+            });
+[m             unsafe {
+                 clear_c(ptr::null_mut());
+                 clear_r(ptr::null_mut());
+Diff in /local/home/scheschb/.harvest/work/harvest-work-uyrU1z/translated_rust/tests/differential.rs:1032:
+             assert_eq!(realloc_c, -1);
+             assert_eq!(realloc_c, realloc_r);
+             assert_eq!(unsafe { (*array_c).size }, unsafe { (*array_r).size });
+[31m-            assert_eq!(
+[m[31m-                unsafe { (*array_c).capacity },
+[m[31m-                unsafe { (*array_r).capacity }
+[m[31m-            );
+[m[32m+            assert_eq!(unsafe { (*array_c).capacity }, unsafe {
+[m[32m+                (*array_r).capacity
+[m[32m+            });
+[m             unsafe {
+                 disable();
+                 destroy_c(array_c);

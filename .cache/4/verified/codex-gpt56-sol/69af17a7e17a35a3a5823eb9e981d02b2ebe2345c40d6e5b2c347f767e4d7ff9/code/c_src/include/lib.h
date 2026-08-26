@@ -1,1 +1,0 @@
-int doubleneg(int a, int b, int c, int d);

@@ -1,0 +1,36 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "merge_sort_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The C library is compiled with no UB instrumentation whatsoever (see
+# c_src/CMakeLists.txt: no flags, so plain `cc -O0`). Rust's debug-mode
+# `ub_checks` / overflow-checks have no counterpart in C: they turn the
+# out-of-contract calls that the C performs *unchecked* (null scratch pointer,
+# negative `size`, overlapping buffers) into `SIGABRT` panics, which makes a
+# byte-for-byte / signal-for-signal differential comparison against the C
+# impossible by construction. The translation expresses every wrapping
+# operation explicitly via `wrapping_*`, so these checks are not load-bearing
+# for its semantics. Disabling them here means `cargo test` exercises an
+# artifact that is faithful to the C ABI contract.
+#
+# `run_all_configs.sh` additionally re-runs the whole suite against the
+# `release` artifact, and runs the valid-path phase a third time with
+# `-C debug-assertions=on -C overflow-checks=on` to prove that no UB check or
+# arithmetic-overflow check ever fires on in-contract input.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

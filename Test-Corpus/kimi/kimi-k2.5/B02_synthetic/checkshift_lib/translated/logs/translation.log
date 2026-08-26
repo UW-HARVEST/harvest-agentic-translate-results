@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the \"Software\"),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n\n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\nint checkshift(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies o
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::c_int;\nuse std::sync::Mutex;\n\nconst OP_ADD: u8 = 0x01;\nconst OP_MULTIPLY: u8 = 0x02;\nconst OP_XOR: u8 = 0x03;\nconst OP_SHIFT: u8 = 0x04;\nconst MAGIC_NUMBER: u32 = 0xDEADBEEF;\nconst MASK_LOWER: u32 = 0x0000FFFF;\n\nstatic STATIC_MULTIPLIER: Mutex<i32> = Mutex::new(3);\nstatic STATIC_ADDEND: Mutex<i32> = Mutex::new(100);\nstatic STATIC_SHIFT_AMOUNT: Mutex<i32> = Mutex::new(2);\n\ntype OperationFunc = fn(i32, i32) -> i32;\n\nstruct ComputeState {\n    accumulator: i32,\n    operation_count: i32,\n    checksum: u32,\n}\n\nfn multiply_with_static(a: i32, b: i32) -> i32 {\n    (a * b) * *STATIC_MULTIPLIER.lock().unwrap()\n}\n\nfn add_with_static(a: i32, b: i32) -> i32 {\n    (a + b) + *STATIC_ADDEND.lock().unwrap()\n}\n\nfn xor_operation(a: i32, b: i32) -> i32 {\n    a ^ b ^ 0xABCD\n}\n\nfn shift_with_static(a: i32, b: i32) -> i32 {\n    let shift = *STATIC_SHIFT_AMOUNT.lock().unwrap();\n    (a << shift) | (b >> shift)\n}\n\nfn get_operation(opcode: i32) -> Option<OperationFunc> {\n    static mut OPS: [Option<OperationFunc>; 4] = [None, None, None, None];\n    static INIT: std::sync::Once = std::sync::Once::new();\n\n    INIT.call_once(|| {\n        unsafe {\n            OPS[0] = Some(multiply_with_static);\n            OPS[1] = Some(add_with_static);\n            OPS[2] = Some(xor_operation);\n            OPS[3] = Some(shift_with_static);\n        }\n    });\n\n    if opcode >= 0 && opcode < 4 {\n        unsafe { OPS[opcode as usize] }\n    } else {\n        None\n    }\n}\n\nfn execute_operation(func: Option<OperationFunc>, a: i32, b: i32, op_name: &str) -> i32 {\n    let func = match func {\n        Some(f) => f,\n        None => {\n            println!(\"Error: Operation function pointer is NULL for {}\", op_name);\n            return 0;\n        }\n    };\n\n    println!(\"Variable a = {}\", a);\n    println!(\"Variable b = {}\", b);\n\n    let result = func(a, b);\n    println!(\"Result of {}: {}\", op_name, result);\n\n    result\n}\n\nfn compute_checksum(values: &[i32]) -> u32 {\n    let mut checksum: u32 = 0;\n\n    if !values.is_empty() {\n        let copy_count = values.len().min(4);\n        let buffer: Vec<u8> = values[..copy_count]\n            .iter()\n            .flat_map(|&v| v.to_ne_bytes())\n            .collect();\n\n        for &byte in &buffer {\n            checksum = (checksum << 1) ^ (byte as u32);\n        }\n\n        checksum ^= MAGIC_NUMBER;\n    }\n\n    checksum & MASK_LOWER\n}\n\nfn init_state(state: &mut ComputeState, initial_value: i32) {\n    state.accumulator = initial_value;\n    state.operation_count = 0;\n    state.checksum = 0x0000;\n\n    println!(\"State initialized with accumulator = {}\", state.accumulator);\n}\n\nfn apply_operation(state: &mut ComputeState, value: i32, func: Option<OperationFunc>) {\n    let func = match func {\n        Some(f) => f,\n        None => {\n            println!(\"Error: operation function pointer is NULL in apply_operation\");\n            return;\n        }\n    };\n\n    state.accumulator = func(state.accumulator, value);\n    state.operation_count += 1;\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn checkshift(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    println!(\"\\n=== Starting foo function ===\");\n    println!(\"Parameters: {}, {}, {}, {}\", param1, param2, param3, param4);\n\n    let mut state = ComputeState {\n        accumulator: 0,\n        operation_count: 0,\n        checksum: 0,\n    };\n\n    init_state(&mut state, param1);\n\n    let params = [param1, param2, param3, param4];\n\n    let mult_op = get_operation(0);\n    let add_op = get_operation(1);\n    let xor_op = get_operation(2);\n    let shift_op = get_operation(3);\n\n    println!(\"\\n--- Operation 1: Multiply ---\");\n    apply_operation(&mut state, param2, mult_op);\n\n    println!(\"\\n--- Operation 2: Add ---\");\n    apply_operation(&mut state, param3, add_op);\n\n    println!(\"\\n--- Operation 3: XOR ---\");\n    let xor_result = execute_operation(xor_op, state.accumulator, param4, \"XOR\");\n\n    println!(\"\\n--- Operation 4: Shift ---\");\n    let shift_result = execute_operation(shift_op, xor_result, param2, \"SHIFT\");\n\n    state.checksum = compute_checksum(&params);\n    println!(\"\\nComputed checksum: 0x{:04X}\", state.checksum);\n\n    let final_result = (state.accumulator + shift_result) ^ (state.checksum as i32);\n\n    println!(\"\\nFinal accumulator: {}\", state.accumulator);\n    println!(\"Operation count: {}\", state.operation_count);\n    println!(\"Final result: {}\", final_result);\n\n    println!(\"=== Ending foo function ===\\n\");\n\n    final_result\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

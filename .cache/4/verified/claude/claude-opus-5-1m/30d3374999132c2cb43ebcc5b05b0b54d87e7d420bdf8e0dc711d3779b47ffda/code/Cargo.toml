@@ -1,0 +1,29 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+# The C source compiled with `gcc -shared -fPIC` exports one symbol: `main`.
+# This target exports the same symbol so external callers can dlopen either.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+# The library exports a symbol literally called `main`; building it as a test
+# harness would clash with the Rust-generated entry point. The differential
+# tests live in tests/ and load the .so through libloading anyway.
+test = false
+doctest = false
+
+[dev-dependencies]
+# used by tests/ to dlopen the C .so and the Rust .so side by side
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

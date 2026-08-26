@@ -1,0 +1,141 @@
+=== OPENROUTER REQUEST ===
+Model: openai/gpt-5.4
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int findrep(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <string.h>\r\n#include <stdlib.h>\r\n\r\ntypedef int (*operation_func)(int, int);\r\ntypedef void (*string_processor)(char*, int);\r\n\r\nstatic int accumulator = 0;\r\nstatic int multiplier = 1;\r\nstatic int operation_count = 0;\r\n\r\nint add_to_accumulator(int a, int b) {\r\n    accumulator += (a + b);\r\n    operation_count++;\r\n    return accumulator;\r\n}\r\n\r\nint multiply_with_multiplier(int a, int b) {\r\n    multiplier *= (a * b);\r\n    operation_count++;\r\n    return multiplier;\r\n}\r\n\r\nint subtract_from_accumulator(int a, int b)
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776174208-te8rNcyD89SrIrlGi2Iv","object":"chat.completion","created":1776174208,"model":"openai/gpt-5.4-20260305","provider":"OpenAI","system_fingerprint":null,"service_tier":"default","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"completed","message":{"role":"assistant","content":"{\"files\":[{\"path\":\"Cargo.toml\",\"contents\":\"[package]\\nname = \\\"project_name\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[lib]\\ncrate-type = [\\\"cdylib\\\"]\\n\\n[dependencies]\\n\"},{\"path\":\"src/lib.rs\",\"contents\":\"use std::os::raw::c_int;\\nuse std::sync::Mutex;\\n\\ntype OperationFunc = fn(c_int, c_int) -> c_int;\\n\\n#[derive(Clone, Copy)]\\nstruct State {\\n    accumulator: c_int,\\n    multiplier: c_int,\\n    operation_count: c_int,\\n}\\n\\nstatic STATE: Mutex<State> = Mutex::new(State {\\n    accumulator: 0,\\n    multiplier: 1,\\n    operation_count: 0,\\n});\\n\\nfn add_to_accumulator(a: c_int, b: c_int) -> c_int {\\n    let mut state = STATE.lock().unwrap();\\n    state.accumulator += a + b;\\n    state.operation_count += 1;\\n    state.accumulator\\n}\\n\\nfn multiply_with_multiplier(a: c_int, b: c_int) -> c_int {\\n    let mut state = STATE.lock().unwrap();\\n    state.multiplier *= a * b;\\n    state.operation_count += 1;\\n    state.multiplier\\n}\\n\\nfn subtract_from_accumulator(a: c_int, b: c_int) -> c_int {\\n    let mut state = STATE.lock().unwrap();\\n    state.accumulator -= a - b;\\n    state.o

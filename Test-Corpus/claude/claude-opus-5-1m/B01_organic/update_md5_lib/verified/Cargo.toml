@@ -1,0 +1,32 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "update_md5_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# This crate is a faithful, byte-for-byte translation of a C library and is
+# consumed through its C ABI.  The C code has no language-level safety net: it
+# dereferences whatever pointer it is handed (a NULL argument must fault with
+# SIGSEGV, exactly as the C does) and it relies on unsigned wraparound
+# throughout.  rustc's dev-profile UB checks would instead turn a NULL
+# dereference into a Rust panic/abort (SIGABRT), which is an observable
+# divergence from the C at the FFI boundary, so they are disabled here to keep
+# the `dev` build's behaviour identical to `release` and to the C.
+# All arithmetic in `src/lib.rs` already uses explicit `wrapping_*`, so
+# `overflow-checks` is a no-op for correctness and is disabled for the same
+# reason.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

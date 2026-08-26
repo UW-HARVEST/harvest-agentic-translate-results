@@ -1,0 +1,28 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# The C sources (c_src/src/sillymain.c + c_src/src/main.c) are compiled into a
+# shared object for differential testing; the Rust translation is exposed the
+# same way (cdylib) so the `#[no_mangle]` export wrappers are exercised too.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+# This crate has no compile-time configuration: there is no [features] section,
+# so the only valid feature combination is the empty one (see CONFIGS.md).
+[features]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

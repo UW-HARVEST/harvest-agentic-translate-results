@@ -1,0 +1,32 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "load_png_mem_lib"
+path = "src/lib.rs"
+# "rlib" is added purely so that `cargo test` also materialises the cdylib
+# (`cargo test` does not build a cdylib-only lib target).  The integration tests
+# never link the crate — they always `dlopen` the produced `.so`.
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+
+# The C library has no build-time configuration at all (see c_src/CMakeLists.txt:
+# no `option()`, no `#ifdef`, no `target_compile_definitions`), therefore the
+# Rust crate has no `[features]` either.  The single valid feature combination is
+# the empty (default) one -- see CONFIGS.md.
+[features]
+default = []
+
+[dev-dependencies]
+libloading = "0.8"
+# Used to *generate* valid zlib/DEFLATE streams for the differential tests.
+flate2 = "1"
+# fork()/waitpid() so that a differential test can observe a process that
+# aborts (the C library is built with assert() enabled).
+libc = "0.2"

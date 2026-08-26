@@ -1,0 +1,36 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "unfilter_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+flate2 = "1"
+
+# The C library is built by CMake with no build type, i.e. `-O0` and no
+# sanitizers: signed arithmetic wraps and an invalid pointer dereference simply
+# faults. Rust's `debug-assertions` additionally turn on `-Cub-checks`, which
+# replaces a NULL dereference with a controlled `panic!`/`abort` and a signed
+# overflow with a panic — observably different from the C library. Turn both off
+# so the shipped `cdylib` reproduces the C build's behaviour exactly.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+
+# Test code itself keeps all its checks.
+[profile.test]
+debug-assertions = true
+overflow-checks = true
+
+[workspace]

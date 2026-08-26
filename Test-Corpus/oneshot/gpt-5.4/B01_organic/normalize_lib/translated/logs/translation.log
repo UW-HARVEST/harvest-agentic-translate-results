@@ -1,0 +1,71 @@
+=== OPENROUTER REQUEST ===
+Model: openai/gpt-5.4
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"void normalize(float *dest, const float *src, int size);\n"},{"path":"src/lib.c","contents":"#include <math.h>\n#include <string.h>\n\n#include \"lib.h\"\n\nvoid normalize(float *dest, const float *src, int size) {\n    float sum = 0.0f;\n    int i;\n    for (i = 0; i < size; i++)\n        sum += src[i] * src[i];\n    if (sum > 0.0f) {\n        sum = 1.0f / sqrtf(sum);\n        for (i = 0; i < size; i++)\n            dest[i] = src[i] * sum;\n    } else if (dest != src) {\n        memset(dest, 0, size * sizeof(float));\n    }\n}\n"},{"path":"CMakeLists.txt","contents":"cmake_minimum_required(VERSION 3.10)\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\ncmake_path(GET parent FILENAME project_name)\nproject(${project_name})\nadd_library(${project_name} SHARED\n    src/lib.c)\n\ntarget_include_directories(${project_name} PUBLIC include)\ntarget_include_directories(${project_name} PRIVATE src)\n\ntarget_link_libraries(${project_name} PRIVATE m)\n\ninstall(TARGETS ${project_name}\n    DESTINATION lib)\ninstall(DIRECTORY include/\n    DESTINATION include)\n\n"}]}
+
+return as JSON
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776171585-TWk3sCD7WczBxrw2WE9p","object":"chat.completion","created":1776171585,"model":"openai/gpt-5.4-20260305","provider":"OpenAI","system_fingerprint":null,"service_tier":"default","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"completed","message":{"role":"assistant","content":"{\"files\":[{\"path\":\"Cargo.toml\",\"contents\":\"[package]\\nname = \\\"project_name\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[lib]\\ncrate-type = [\\\"cdylib\\\"]\\n\\n[dependencies]\\n\"},{\"path\":\"src/lib.rs\",\"contents\":\"use std::os::raw::c_int;\\nuse std::ptr;\\nuse std::slice;\\n\\n#[unsafe(no_mangle)]\\npub extern \\\"C\\\" fn normalize(dest: *mut f32, src: *const f32, size: c_int) {\\n    if size <= 0 {\\n        return;\\n    }\\n\\n    let len = size as usize;\\n\\n    let src_slice = unsafe { slice::from_raw_parts(src, len) };\\n    let sum = src_slice.iter().map(|&x| x * x).sum::<f32>();\\n\\n    if sum > 0.0 {\\n        let scale = 1.0f32 / sum.sqrt();\\n        let dest_slice = unsafe { slice::from_raw_parts_mut(dest, len) };\\n        for i in 0..len {\\n            dest_slice[i] = src_slice[i] * scale;\\n        }\\n    } else if !ptr::eq(dest as *const f32, src) {\\n        let dest_slice = unsafe { slice::from_raw_parts_mut(dest, len) };\\n        dest_slice.fill(0.0);\\n    }\\n}\\n\"}]}","refusal":null,"reasoning":null}}],"usage":{"prompt_tokens":744,"completion_tokens":336,"total_tokens":1080,"cost":0,"is_byok":true,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0,"audio_tokens":0,"video_tokens":0},"cost_details":{"upstream_inference_cost":0.0069,"upstream_inference_prompt_cost":0.00186,"upstream_inference_completions_cost":0.00504},"completion_tokens_details":{"reasoning_tokens":0,"image_tokens":0,"audio_tokens":0}}}

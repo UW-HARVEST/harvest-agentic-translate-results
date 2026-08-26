@@ -1,0 +1,197 @@
+=== OPENROUTER REQUEST ===
+Model: google/gemini-3.1-pro-preview
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"#include <stdint.h>\n\nint hdr_compare(const uint8_t *h1, const uint8_t *h2);\n"},{"path":"src/lib.c","contents":"#include \"lib.h\"\n\nstatic int hdr_valid(const uint8_t *h) {\n    return h[0] == 0xff && ((h[1] & 0xF0) == 0xf0 || (h[1] & 0xFE) == 0xe2) &&\n           ((((h[1]) >> 1) & 3) != 0) && (((h[2]) >> 4) != 15) &&\n           ((((h[2]) >> 2) & 3) != 3);\n}\n\nint hdr_compare(const uint8_t *h1, const uint8_t *h2) {\n    return hdr_valid(h2) && ((h1[1] ^ h2[1]) & 0xFE) == 0 &&\n           ((h1[2] ^ h2[2]) & 0x0C) == 0 &&\n           !((((h1[2]) & 0xF0) == 0) ^ (((h2[2]) & 0xF0) == 0));\n}\n"},{"path":"CMakeLists.txt","contents":"cmake_minimum_required(VERSION 3.10)\ncmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)\ncmake_path(GET parent FILENAME project_name)\nproject(${project_name})\nadd_library(${project_name} SHARED\n    src/lib.c)\n\ntarget_include_directories(${project_name} PUBLIC include)\ntarget_include_directories(${project_name} PRIVATE src)\n\ninstall(TARGETS ${project_name}\n    DESTINATION lib)\ninstall(DIRECTORY include/\n    DESTINATION include)\n\n"}]}
+
+return as JSON
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776187940-gkQSt8AE1SIfaYkFjsXv","object":"chat.completion","created":1776187940,"model":"google/gemini-3.1-pro-preview-20260219","provider":"Google","system_fingerprint":null,"choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"STOP","message":{"role":"assistant","content":"{\n  \"files\": [\n    {\n      \"path\": \"src/lib.rs\",\n      \"contents\": \"use std::os::raw::c_int;\\n\\nfn hdr_valid(h: &[u8]) -> bool {\\n    h[0] == 0xff && ((h[1] & 0xF0) == 0xf0 || (h[1] & 0xFE) == 0xe2) &&\\n    (((h[1] >> 1) & 3) != 0) && ((h[2] >> 4) != 15) &&\\n    (((h[2] >> 2) & 3) != 3)\\n}\\n\\n#[unsafe(no_mangle)]\\npub extern \\\"C\\\" fn hdr_compare(h1: *const u8, h2: *const u8) -> c_int {\\n    let h1_slice = unsafe { std::slice::from_raw_parts(h1, 3) };\\n    let h2_slice = unsafe { std::slice::from_raw_parts(h2, 3) };\\n\\n    let result = hdr_valid(h2_slice) && ((h1_slice[1] ^ h2_slice[1]) & 0xFE) == 0 &&\\n           ((h1_slice[2] ^ h2_slice[2]) & 0x0C) == 0 &&\\n           !(((h1_slice[2] & 0xF0) == 0) ^ ((h2_slice[2] & 0xF0) == 0));\\n\\n    result as c_int\\n}\\n\"\n    },\n    {\n      \"path\": \"Cargo.toml\",\n      \"contents\": \"[package]\\n

@@ -1,0 +1,43 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+# The library exports `main` with C linkage, because that is one of the two
+# symbols the C shared object exports (c_src/CMakeLists.txt compiles
+# src/main.c into it).  A libtest harness generates its own entry point, so a
+# `--lib` test binary cannot be linked ("entry symbol `main` declared multiple
+# times"); the same is true of a doctest binary.  Verification does not need
+# either: the whole suite lives in tests/ and reaches the code exclusively
+# through dlsym on the two shared objects, exactly like an external consumer.
+test = false
+doctest = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+# `src/main.rs` is `#![no_main]`: its entry point IS the `main` the library
+# exports (the translation of c_src/src/main.c), so a libtest harness cannot be
+# built for it either.  tests/driver_cli.rs compares the two executables by
+# running them, which is the only meaningful way to test a `main`.
+test = false
+
+[features]
+# The C build (c_src/CMakeLists.txt) has no configuration options at all:
+# it always compiles src/q_math.c + src/main.c with -Iinc -Isrc and links -lm.
+# There is therefore exactly ONE valid build configuration, mirrored here by an
+# empty default feature set.  `--no-default-features` and `--features ""` select
+# the same (only) configuration.
+default = []
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+opt-level = 2
+
+[workspace]

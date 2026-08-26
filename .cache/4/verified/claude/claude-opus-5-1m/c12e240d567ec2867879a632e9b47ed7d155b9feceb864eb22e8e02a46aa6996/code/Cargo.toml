@@ -1,0 +1,26 @@
+[package]
+name = "stb_perlin_cli"
+version = "0.1.0"
+edition = "2021"
+
+# The library exposes the same C ABI surface as the shared object built from
+# `c_src/src/main.c`, so differential tests can dlopen both and compare.
+[lib]
+name = "stb_perlin_cli"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+# The translation reproduces C's wrapping integer arithmetic explicitly with
+# `wrapping_*`, so no overflow checks are needed (this is also the default).
+overflow-checks = false
+
+[workspace]

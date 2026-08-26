@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the \"Software\"),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n\n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\nint arity(int len, int *params);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the \"Software\"),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial p
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::os::raw::{c_int, c_uchar};\n\n#[repr(C)]\nstruct DataBlock {\n    values: [c_int; 4],\n    count: c_int,\n    label: *mut u8,\n}\n\nfn shift_array(arr: &mut [c_int], positions: usize) {\n    let size = arr.len();\n    if positions > 0 && positions < size {\n        arr.copy_within(0..size - positions, positions);\n        for i in 0..positions {\n            arr[i] = 0;\n        }\n    }\n}\n\nfn process_string(str: &str) -> c_int {\n    if !str.is_empty() {\n        str.len() as c_int\n    } else {\n        0\n    }\n}\n\nfn apply_bitmask(value: c_int, operation: c_int) -> c_int {\n    let mask1: c_int = 0b11110000;\n    let mask2: c_int = 0b00001111;\n    let mask3: c_int = 0b10101010;\n    let mask4: c_int = 0b01010101;\n\n    match operation {\n        0 => value & mask1,\n        1 => value & mask2,\n        2 => value | mask3,\n        3 => value ^ mask4,\n        _ => value,\n    }\n}\n\nfn init_matrix() -> [[c_int; 4]; 3] {\n    [\n        [1, 2, 3, 4],\n        [5, 6, 7, 8],\n        [9, 10, 11, 12],\n    ]\n}\n\nfn compare_allocations(val1: c_int, val2: c_int) -> c_int {\n    let ptr1 = Box::new(val1);\n    let ptr2 = Box::new(val2);\n\n    let result = if &*ptr1 as *const c_int < &*ptr2 as *const c_int {\n        1\n    } else if &*ptr1 as *const c_int > &*ptr2 as *const c_int {\n        2\n    } else {\n        3\n    };\n\n    let uninit_ptr = &*ptr1;\n    let result = result + if *uninit_ptr > 0 { 10 } else { 0 };\n\n    result\n}\n\nfn arity4(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {\n    let mut result: c_int = 0;\n\n    let mut block = DataBlock {\n        values: [param1, param2, param3, param4],\n        count: 4,\n        label: std::ptr::null_mut(),\n    };\n\n    let test_str = \"Hello\";\n    let empty_str = \"\";\n\n    let len1 = process_string(test_str);\n    let len2 = process_string(empty_str);\n\n    result += len1 + len2;\n\n    shift_array(&mut block.values, 1);\n\n    for i in 0..block.count as usize {\n        result += block.values[i];\n    }\n\n    result = apply_bitmask(result, param1 % 4);\n\n    let matrix = init_matrix();\n\n    result += matrix[0][0] + matrix[2][3];\n\n    let alloc_result = compare_allocations(param1, param2);\n    result += alloc_result;\n\n    if param3 != 0 {\n        result = (result * param3) / 100;\n    }\n\n    if param4 != 0 {\n        result += param4;\n    }\n\n    result\n}\n\nfn arity2(p1: c_int, p2: c_int) -> c_int {\n    arity4(p1, p2, 0, 0)\n}\n\nfn arity3(p1: c_int, p2: c_int, p3: c_int) -> c_int {\n    arity4(p1, p2, p3, 0)\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn arity(len: c_uchar, params: *const c_int) -> c_int {\n    if len < 2 {\n        return -1;\n    } else if len == 2 {\n        unsafe {\n            arity2(*params, *params.add(1))\n        }\n    } else if len == 3 {\n        unsafe {\n            arity3(*params, *params.add(1), *params.add(2))\n        }\n    } else {\n        unsafe {\n            arity4(*params, *params.add(1), *params.add(2), *params.add(3))\n        }\n    }\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

@@ -1,0 +1,32 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "normalize_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+opt-level = 3
+
+# The C original performs no null check, no alignment check and no signed
+# overflow check; `gcc` emits none either. rustc's debug-assertion runtime
+# checks (`CheckNull`, `CheckAlignment`, overflow checks) would inject a
+# non-unwinding panic -> `abort()` on exactly the inputs where the C library
+# faults (SIGSEGV) or wraps, so the dev-profile `.so` would NOT be
+# behaviourally identical to the C `.so`. They are therefore disabled: this
+# crate must reproduce the C behaviour byte-for-byte in every profile.
+# See ERRORS.md rows 11, 12 and the `crash_paths.rs` parity tests.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

@@ -1,0 +1,125 @@
+=== OPENROUTER REQUEST ===
+Model: openai/gpt-5.4
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int dataentry(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <stdlib.h>\r\n#include <string.h>\r\n\r\n#define MAX_ENTRIES 10\r\n#define NAME_LENGTH 32\r\n\r\ntypedef struct {\r\n    int id;\r\n    int value;\r\n    char name[NAME_LENGTH];\r\n} DataEntry;\r\n\r\nstatic int lookup_table[4][3] = {\r\n    {10, 20, 30},\r\n    {40, 50, 60},\r\n    {70, 80, 90},\r\n    {100, 110, 120}\r\n};\r\n\r\nstatic DataEntry* find_entry(DataEntry* entries, int count, int target_id) {\r\n    DataEntry* ptr = entries;\r\n    DataEntry* end = entries + count;\r\n\r\n    while (ptr < end) {\r\n        if (ptr->id == target_id) 
+
+=== RAW RESPONSE (first 2000 chars) ===
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1776174162-7QJzdk3NzzSIoYNeA1YC","object":"chat.completion","created":1776174162,"model":"openai/gpt-5.4-20260305","provider":"OpenAI","system_fingerprint":null,"service_tier":"default","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","native_finish_reason":"completed","message":{"role":"assistant","content":"{\"files\":[{\"path\":\"Cargo.toml\",\"contents\":\"[package]\\nname = \\\"project_name\\\"\\nversion = \\\"0.1.0\\\"\\nedition = \\\"2024\\\"\\n\\n[lib]\\ncrate-type = [\\\"cdylib\\\"]\\n\\n[dependencies]\\n\"},{\"path\":\"src/lib.rs\",\"contents\":\"use std::os::raw::c_int;\\n\\nconst NAME_LENGTH: usize = 32;\\n\\n#[derive(Clone)]\\nstruct DataEntry {\\n    id: c_int,\\n    value: c_int,\\n    name: [u8; NAME_LENGTH],\\n}\\n\\nstatic LOOKUP_TABLE: [[c_int; 3]; 4] = [\\n    [10, 20, 30],\\n    [40, 50, 60],\\n    [70, 80, 90],\\n    [100, 110, 120],\\n];\\n\\nfn find_entry(entries: &mut [DataEntry], target_id: c_int) -> Option<&mut DataEntry> {\\n    entries.iter_mut().find(|entry| entry.id == target_id)\\n}\\n\\nfn write_c_string(dest: &mut [u8], src: &str) {\\n    if dest.is_empty() {\\n        return;\\n    }\\n    let bytes = src.as_bytes();\\n    let len = bytes.len().min(dest.len().saturating_sub(1));\\n    dest[..len].copy_from_slice(&bytes[..len]);\\n    dest[len] = 0;\\n    for b in &mut dest[len + 1..] {\\n        *b = 0;\\n    }\\n}\\n\\nfn c_string_len(buf: &[u8]) -> usize {\\n    buf.iter().position(|&b| b == 0).unwrap_or(buf.len())\\n}\\n\\nfn process_name(dest: &mut [u8], src: &str, _max_len: c_int) -> c_int {\\n    if dest

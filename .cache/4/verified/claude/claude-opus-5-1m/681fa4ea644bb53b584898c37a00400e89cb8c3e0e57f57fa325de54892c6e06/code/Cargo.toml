@@ -1,0 +1,27 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "spec_ray_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# The crate is a 1:1 translation of a C library that performs no pointer
+# validation.  rustc's debug-only UB checks (`ub_checks`, enabled together with
+# `debug-assertions`) turn a null-pointer store into a non-unwinding panic
+# (SIGABRT), whereas the C library faults (SIGSEGV).  Disabling them keeps the
+# dev-profile `.so` behaviourally identical to the C one *and* identical to the
+# release-profile `.so`.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

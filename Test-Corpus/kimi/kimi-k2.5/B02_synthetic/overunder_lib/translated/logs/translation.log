@@ -1,0 +1,68 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/lib.c",
+  "contents": "int a_lib_function(const char* input) {\n  return strlen(input);\n}"
+},
+{
+  "path": "include/lib.h",
+  "contents": "int a_lib_function(const char* input);\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_library(mylibname\n    src/lib.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/lib.rs",
+  "contents": "use std::ffi::{CStr, c_char};\nuse std::os::raw::c_int;\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn a_lib_function(input: *const c_char) -> c_int {\n    let c_str = unsafe {\n        CStr::from_ptr(input)\n    };\n    c_str.to_bytes().len() as c_int\n}"
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"include/lib.h","contents":"int overunder(int a, int b, int c, int d);\n"},{"path":"src/lib.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\r\n// Permission is hereby granted, free of charge,\r\n// to any person obtaining a copy of this software\r\n// and associated documentation files (the “Software”),\r\n// to deal in the Software without restriction,\r\n// including without limitation the rights to use, copy,\r\n// modify, merge, publish, distribute, sublicense,\r\n// and/or sell copies of the Software,\r\n// and to permit persons to whom the Software is furnished to do so,\r\n// subject to the following conditions:\r\n//\r\n// The above copyright notice and this permission notice\r\n// shall be included in all copies or substantial portions of the Software.\r\n//\r\n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\r\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\r\n// THE WARRANTIES OF MERCHANTABILITY,\r\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\r\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\r\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\r\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\r\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\r\n\r\n#include <stdio.h>\r\n#include <stdlib.h>\r\n#include <string.h>\r\n#include <math.h> // ignore hard blocker \"compiler builtins\" from here\r\n#include <limits.h>\r\n\r\n#define MAKE_VAR_NAME(prefix, suffix) prefix##suffix\r\n#define PRINT_VAR(name) printf(#name \" = %d\\n\", name)\r\n\r\ntypedef struct {\r\n    int id;\r\n    double value;\r\n    char label[20];\r\n} DataBlock;\r\n\r\nint safe_double_to_int(double d) {\r\n    if (d > (double)INT_MAX) {\r\n        return INT_MAX;\r\n    } else if (d < (double)INT_MIN) {\r\n        return INT_MIN;\r\n    } else if (isnan(d)) {\
+
+=== RESPONSE ===
+ ```json
+{
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "contents": "use std::ffi::{c_char, c_double, c_int, CStr, CString};\nuse std::os::raw::c_void;\nuse std::ptr;\n\n#[repr(C)]\npub struct DataBlock {\n    pub id: c_int,\n    pub value: c_double,\n    pub label: [c_char; 20],\n}\n\nfn safe_double_to_int(d: c_double) -> c_int {\n    if d > c_int::MAX as c_double {\n        c_int::MAX\n    } else if d < c_int::MIN as c_double {\n        c_int::MIN\n    } else if d.is_nan() {\n        0\n    } else {\n        d as c_int\n    }\n}\n\nfn process_with_fallthrough(code: c_int, base_value: c_int) -> c_int {\n    let mut result = base_value;\n\n    match code {\n        5 => {\n            result += 50;\n            result += 40;\n            result += 30;\n            result += 20;\n            result += 10;\n        }\n        4 => {\n            result += 40;\n            result += 30;\n            result += 20;\n            result += 10;\n        }\n        3 => {\n            result += 30;\n            result += 20;\n            result += 10;\n        }\n        2 => {\n            result += 20;\n            result += 10;\n        }\n        1 => {\n            result += 10;\n        }\n        0 => {\n            result = 0;\n        }\n        _ => {\n            result = -1;\n        }\n    }\n\n    result\n}\n\nfn copy_data_block(dest: *mut DataBlock, src: *const DataBlock) {\n    unsafe {\n        ptr::copy_nonoverlapping(src, dest, 1);\n    }\n}\n\nfn handle_pointer_operations(value: c_int) -> c_int {\n    let local_value = value * 2;\n    let result = local_value + 100;\n    result\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn overunder(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {\n    let mut total: c_int = 0;\n\n    let result_1: c_int = a;\n    let result_2: c_int = b;\n    let result_3: c_int = c;\n    let result_4: c_int = d;\n\n    println!(\"result_1 = {}\", result_1);\n    println!(\"result_2 = {}\", result_2);\n\n    let temp1: c_double = a as c_double * 1.5;\n    let temp2: c_double = b as c_double * 2.7;\n    let temp3: c_double = c as c_double / 3.3;\n    let temp4: c_double = ((d * d + a * a) as c_double).sqrt();\n\n    let conv1: c_int = safe_double_to_int(temp1);\n    let conv2: c_int = safe_double_to_int(temp2);\n    let conv3: c_int = safe_double_to_int(temp3);\n    let conv4: c_int = safe_double_to_int(temp4);\n\n    println!(\"Converted values: {}, {}, {}, {}\", conv1, conv2, conv3, conv4);\n\n    let switch_result: c_int = process_with_fallthrough(a % 6, b);\n    println!(\"Switch fall-through result: {}\", switch_result);\n\n    let mut source_block: DataBlock = unsafe { std::mem::zeroed() };\n    source_block.id = a;\n    source_block.value = temp1;\n    let label_str = CString::new(\"Source\").unwrap();\n    let label_bytes = label_str.as_bytes_with_nul();\n    let copy_len = label_bytes.len().min(19);\n    unsafe {\n        ptr::copy_nonoverlapping(\n            label_bytes.as_ptr() as *const c_char,\n            source_block.label.as_mut_ptr(),\n            copy_len,\n        );\n        source_block.label[copy_len] = 0;\n    }\n\n    let mut dest_block: DataBlock = unsafe { std::mem::zeroed() };\n    copy_data_block(&mut dest_block, &source_block);\n\n    let label_cstr = unsafe {\n        CStr::from_ptr(dest_block.label.as_ptr())\n    };\n    let label_str = label_cstr.to_str().unwrap_or(\"\");\n    println!(\n        \"Copied block: id={}, value={:.2}, label={}\",\n        dest_block.id, dest_block.value, label_str\n    );\n\n    let ptr_result: c_int = handle_pointer_operations(c);\n    println!(\"Pointer operation result: {}\", ptr_result);\n\n    total = conv1 + conv2 + conv3 + conv4 + switch_result + ptr_result;\n    total += dest_block.id;\n\n    let overflow_test: c_double = 1e15;\n    let safe_conv: c_int = safe_double_to_int(overflow_test);\n    println!(\"Overflow protected conversion: {}\", safe_conv);\n\n    let underflow_test: c_double = -1e15;\n    let safe_conv2: c_int = safe_double_to_int(underflow_test);\n    println!(\"Underflow protected conversion: {}\", safe_conv2);\n\n    let array1: [c_int; 5] = [a, b, c, d, a + b];\n    let mut array2: [c_int; 5] = [0; 5];\n\n    array2.copy_from_slice(&array1);\n\n    print!(\"Array copied via memcpy: \");\n    for i in 0..5 {\n        print!(\"{} \", array2[i]);\n        total += array2[i];\n    }\n    println!();\n\n    total\n}\n"
+    },
+    {
+      "path": "Cargo.toml",
+      "contents": "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\nname = \"lib\"\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n"
+    }
+  ]
+}
+```
+
+
+=== STDERR ===

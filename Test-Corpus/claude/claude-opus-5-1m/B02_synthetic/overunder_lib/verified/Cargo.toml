@@ -1,0 +1,25 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "overunder_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `overunder` writes to stdout via libc `printf`, so the differential tests for
+# it must redirect fd 1 (a process-global resource). libtest's own progress
+# output would interleave into that capture, so these rows run in a custom
+# single-threaded harness instead.
+[[test]]
+name = "phase_overunder"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

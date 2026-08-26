@@ -1,0 +1,30 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+# cdylib only: the library exports a C-ABI `main` symbol, which would collide
+# with the binary target's own `main` if the library were also an rlib.
+crate-type = ["cdylib"]
+# The library exports a C-ABI `main`, so it cannot be linked into libtest's own
+# harness (which supplies its own `main`); the library is exercised through
+# `dlopen` by the integration tests in tests/ instead.
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

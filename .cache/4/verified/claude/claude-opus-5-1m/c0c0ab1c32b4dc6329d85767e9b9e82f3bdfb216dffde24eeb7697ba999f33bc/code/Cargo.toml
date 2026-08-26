@@ -1,0 +1,46 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+# Shared object whose exported C-ABI symbols mirror the C build exactly
+# (fma_array, driver, main).  `cdylib` only: no rlib is produced so that the
+# integration tests cannot link the crate directly -- they must `dlopen` the
+# resulting `libdriver.so`, exactly like an external consumer.
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+# Redirecting fd 1 to capture what the C `driver` prints is process-global, and
+# libtest writes its own progress to fd 1 from other threads.  This test target
+# therefore brings its own single-threaded `main` instead of libtest's harness.
+[[test]]
+name = "in_process_stdout"
+path = "tests/in_process_stdout.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+# The C functions take bare `int *` and dereference them with no NULL check, so
+# an invalid pointer is a hardware fault (SIGSEGV) -- and a misaligned `int *`
+# is simply an unaligned load on x86-64.  rustc's `-C debug-assertions` inserts
+# null/alignment checks in front of every raw-pointer dereference, which turns
+# those faults into a Rust panic -> `abort()` (SIGABRT) inside an `extern "C"`
+# function.  That is a *behavioural* difference from the C, and it exists only
+# in the dev profile (release has the checks off), so switch it off here too:
+# the debug artifact must fault exactly like the release artifact and like C.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

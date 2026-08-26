@@ -1,0 +1,51 @@
+=== BEDROCK REQUEST ===
+Model: moonshotai.kimi-k2.5
+Region: us-east-1
+
+=== SYSTEM PROMPT ===
+You are a code translation tool. You translate provided C projects into a Rust projects including Cargo manifest. You translate functions, methods, structs, and modules but not comments. Do not include or write any new comments. You preserve external interfaces but internally use cannonical and safe Rust as much as possible. When asked to generate a structured JSON response, you always respond with valid JSON only: never any preceeding markdown block formatting, and you take extreme care for the JSON to be valid. For example, given the following prompt:
+
+```
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{ "files": [
+{
+  "path": "src/main.c",
+  "contents": "int main() {\n  return 0;\n}"
+},
+{
+  "path": "CMakeLists.txt",
+  "contents": "cmake_minimum_required(VERSION 3.10)\nproject(noop)\nadd_executable(driver\n    src/main.c)",
+}
+]
+}
+
+return as JSON
+```
+
+You should return:
+
+```
+{ "files": [
+{
+  "path": "src/main.rs",
+  "contents": "fn main() {\n\n}",
+},
+{
+  "path": "Cargo.toml",
+  "contents": "[package]\nname = \"noop\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+}
+]
+}
+```
+
+=== USER MESSAGE (first 2000 chars) ===
+Please translate the following C project into a Rust project including Cargo manifest:
+
+{"files":[{"path":"src/mdcore.c","contents":"// Copyright 2025 MIT Lincoln Laboratory\n// Permission is hereby granted, free of charge,\n// to any person obtaining a copy of this software\n// and associated documentation files (the “Software”),\n// to deal in the Software without restriction,\n// including without limitation the rights to use, copy,\n// modify, merge, publish, distribute, sublicense,\n// and/or sell copies of the Software,\n// and to permit persons to whom the Software is furnished to do so,\n// subject to the following conditions:\n// \n// The above copyright notice and this permission notice\n// shall be included in all copies or substantial portions of the Software.\n// \n// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO\n// THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE\n// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE\n// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n#include <stdio.h>\n#include \"mdmacros.h\"\n\n/* Define operations */\nint op_add(int a,int b){ return a + b; }\nint op_sub(int a,int b){ return a - b; }\nint op_mul(int a,int b){ return a * b; }\n\n/* Define the macro-generated accumulator for the selected OP */\nDEFINE_ACCUM(OP)\n\n/* Global macro uses at file scope (exercises expansion at global init) */\nint (*G_OP)(int,int) = OP_FN(OP);\nconst char *G_OP_NAME = STR(OP);\n\nint helper_call(int a, int b) {\n    int r = (OP_FN(OP))(a, b);\n    int acc = INIT_FOR(OP);\n    RUN_LOOP(OP, acc, REPEAT);\n    printf(\"helper.call=%d helper.acc=%d\\n\", r, acc);\n    return r + acc;\n}\n\nint helper_ptr(int a, int b) {\n    int (*fp)(int,int) = OP_FN(OP
+
+=== RESPONSE ===
+ {"files":[{"path":"src/lib.rs","contents":"use std::env;\n\npub fn op_add(a: i32, b: i32) -> i32 { a + b }\npub fn op_sub(a: i32, b: i32) -> i32 { a - b }\npub fn op_mul(a: i32, b: i32) -> i32 { a * b }\n\npub const OP: &str = env!(\"OP\", \"add\");\npub const REPEAT: usize = {\n    const S: &str = env!(\"REPEAT\", \"5\");\n    parse_usize(S)\n};\n\nconst fn parse_usize(s: &str) -> usize {\n    let mut i = 0;\n    let mut val = 0usize;\n    let bytes = s.as_bytes();\n    while i < bytes.len() {\n        let b = bytes[i];\n        if b >= b'0' && b <= b'9' {\n            val = val * 10 + (b - b'0') as usize;\n        }\n        i += 1;\n    }\n    val\n}\n\npub fn step_add(acc: &mut i32, i: i32) { *acc += i; }\npub fn step_sub(acc: &mut i32, i: i32) { *acc -= i; }\npub fn step_mul(acc: &mut i32, i: i32) { *acc *= i + 1; }\n\npub fn init_add() -> i32 { 0 }\npub fn init_sub() -> i32 { 0 }\npub fn init_mul() -> i32 { 1 }\n\npub fn run_loop_add(acc: &mut i32, n: usize) {\n    for i in 0..n {\n        step_add(acc, i as i32);\n    }\n}\n\npub fn run_loop_sub(acc: &mut i32, n: usize) {\n    for i in 0..n {\n        step_sub(acc, i as i32);\n    }\n}\n\npub fn run_loop_mul(acc: &mut i32, n: usize) {\n    for i in 0..n {\n        step_mul(acc, i as i32);\n    }\n}\n\npub fn accum_add(n: usize) -> i32 {\n    let mut acc = init_add();\n    run_loop_add(&mut acc, n);\n    acc\n}\n\npub fn accum_sub(n: usize) -> i32 {\n    let mut acc = init_sub();\n    run_loop_sub(&mut acc, n);\n    acc\n}\n\npub fn accum_mul(n: usize) -> i32 {\n    let mut acc = init_mul();\n    run_loop_mul(&mut acc, n);\n    acc\n}\n\npub static G_OP_NAME: &str = OP;\n\npub fn g_op(a: i32, b: i32) -> i32 {\n    match OP {\n        \"sub\" => op_sub(a, b),\n        \"mul\" => op_mul(a, b),\n        _ => op_add(a, b),\n    }\n}\n\npub fn op_fn(a: i32, b: i32) -> i32 {\n    match OP {\n        \"sub\" => op_sub(a, b),\n        \"mul\" => op_mul(a, b),\n        _ => op_add(a, b),\n    }\n}\n\npub fn init_for() -> i32 {\n    match OP {\n        \"sub\" => init_sub(),\n        \"mul\" => init_mul(),\n        _ => init_add(),\n    }\n}\n\npub fn run_loop(acc: &mut i32, n: usize) {\n    match OP {\n        \"sub\" => run_loop_sub(acc, n),\n        \"mul\" => run_loop_mul(acc, n),\n        _ => run_loop_add(acc, n),\n    }\n}\n\npub fn accum_fn(n: usize) -> i32 {\n    match OP {\n        \"sub\" => accum_sub(n),\n        \"mul\" => accum_mul(n),\n        _ => accum_add(n),\n    }\n}\n\npub fn helper_call(a: i32, b: i32) -> i32 {\n    let r = op_fn(a, b);\n    let mut acc = init_for();\n    run_loop(&mut acc, REPEAT);\n    println!(\"helper.call={} helper.acc={}\", r, acc);\n    r + acc\n}\n\npub fn helper_ptr(a: i32, b: i32) -> i32 {\n    let r = op_fn(a, b);\n    println!(\"helper.ptr={}\", r);\n    r\n}\n\npub fn use_generated(n: usize) -> i32 {\n    let r = accum_fn(n);\n    println!(\"gen.acc={}\", r);\n    r\n}\n"},{"path":"src/main.rs","contents":"use std::env;\n\nfn main() {\n    let args: Vec<String> = env::args().collect();\n    if args.len() < 3 {\n        eprintln!(\"usage: {} A B\", args[0]);\n        std::process::exit(2);\n    }\n    let a: i32 = args[1].parse().expect(\"invalid integer\");\n    let b: i32 = args[2].parse().expect(\"invalid integer\");\n\n    let r_call = driver::op_fn(a, b);\n    let mut acc = driver::init_for();\n    driver::run_loop(&mut acc, driver::REPEAT);\n\n    let x1 = driver::helper_call(a, b);\n    let x2 = driver::helper_ptr(a, b);\n    let x3 = driver::use_generated(driver::REPEAT);\n    let g = driver::g_op(a, b);\n\n    println!(\"op={} call={} acc={} g.call={}\", driver::G_OP_NAME, r_call, acc, g);\n    println!(\"summary={}\", r_call + acc + x1 + x2 + x3 + g);\n}\n"},{"path":"Cargo.toml","contents":"[package]\nname = \"driver\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n\n[features]\ndefault = []\n\n[profile.dev]\nrustflags = [\"--cfg\", 'OP=\"add\"', \"--cfg\", 'REPEAT=\"5\"']\n\n[profile.release]\nrustflags = [\"--cfg\", 'OP=\"add\"', \"--cfg\", 'REPEAT=\"5\"']\n"}]}
+
+
+=== STDERR ===

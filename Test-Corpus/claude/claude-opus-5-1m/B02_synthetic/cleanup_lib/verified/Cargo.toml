@@ -1,0 +1,22 @@
+[package]
+name = "translated_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "cleanup_lib"
+# "lib" is present only so that the integration tests in tests/ depend on the
+# lib target and cargo therefore REBUILDS the cdylib before running them.
+# With crate-type = ["cdylib"] alone, `cargo test` silently runs against a stale
+# libcleanup_lib.so. The tests still load the cdylib exclusively through
+# libloading/dlsym and never link against or call the rlib.
+crate-type = ["lib", "cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

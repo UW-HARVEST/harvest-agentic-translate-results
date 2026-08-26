@@ -1,0 +1,35 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+# The C library (c_src/) exposes no build-time configuration: CMakeLists.txt has
+# no `option()`/`add_definitions()` and driver.c/driver.h contain no `#ifdef`
+# branches beyond the include guard. Consequently there is exactly ONE valid
+# feature combination for this crate: the empty set (no features at all).
+[features]
+default = []
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+# `driver` reports its result only by writing to the process-wide libc `stdout`,
+# so every differential test has to redirect file descriptor 1. That is global
+# state, which is incompatible with libtest's parallel threads (and with
+# libtest's own progress output going to fd 1). The suite therefore ships its own
+# strictly sequential runner.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

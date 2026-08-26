@@ -1,0 +1,63 @@
+# ERRORS.md — Phase A: ERROR-SURFACE TABLE
+
+Every distinct way `c_src/src/lib.c` rejects / errors on / falls back for input. Derived mechanically
+by grepping for `return -1`, `return 0`, `return NULL`, `return OP_*`, `default:`, `== NULL`,
+`== 0`, `>= MAX_NODES`, `!= parent_id`, `!= node_id`, `strncpy`, `[31]`, and every `if` guard.
+There are no `assert`s in the C source.
+
+`||` short-circuits are split into **one row per operand**, because each operand is a distinct
+rejection condition even where the second is unreachable in practice.
+
+Constants: `MAX_NODES == 50`, `sizeof(TreeNode) == 52`, `label` capacity 32 with a hard
+`label[31] = '\0'`, sentinel "no node" id `-1`.
+
+Test file: `tests/phase_c_errors.rs`. Every row is asserted to produce the **same** value from the
+C `.so` and the Rust `.so` (same sentinel/error code, not merely "both failed").
+
+| #  | function | trigger (exact invalid input/condition) | expected C result | test | ✔ |
+|----|----------|------------------------------------------|-------------------|------|---|
+| 1  | `divide_op` | `b == 0` (line 64) | returns `0` (no trap) | `err01_divide_by_zero` | [x] |
+| 2  | `modulo_op` | `b == 0` (line 69) | returns `0` (no trap) | `err02_modulo_by_zero` | [x] |
+| 3  | `find_node_by_id` | loop completes without `node_table[i].id == id`, i.e. id absent from the first `node_count` entries | returns `NULL` (line 79) | `err03_find_absent_id` | [x] |
+| 4  | `find_node_by_id` | `node_count == 0` (loop body never runs) — every id is absent | returns `NULL` | `err04_find_on_empty_table` | [x] |
+| 5  | `find_node_by_id` | id present only at index `>= node_count` (stale row from an earlier, larger tree) | returns `NULL` — search is bounded by `node_count`, not by table capacity | `err05_find_beyond_node_count` | [x] |
+| 6  | `add_tree_node` | `node_count >= MAX_NODES` (== 50) (line 83) | returns `-1`, **`node_table` and `node_count` completely unmodified** | `err06_table_full` | [x] |
+| 7  | `add_tree_node` | `node_count > MAX_NODES` (e.g. 51, set through the exported `node_count` global) | returns `-1` (same `>=` branch) | `err07_node_count_over_max` | [x] |
+| 8  | `add_tree_node` | `parent_id != -1` and `find_node_by_id(parent_id) == NULL` (line 98, 1st operand) | returns `-1`, **but `node_table[node_count]` has ALREADY been overwritten** (id/value/parent_id/-1/-1/label) while `node_count` is NOT incremented — partial-write side effect must match byte-for-byte | `err08_parent_not_found_partial_write` | [x] |
+| 9  | `add_tree_node` | `parent_id != -1` and `parent->id != parent_id` (line 98, 2nd operand) | returns `-1`; unreachable in practice because `find_node_by_id` only returns a node whose `id == parent_id`, so this operand is always false — asserted by showing every successful lookup takes the success path | `err09_parent_id_mismatch_unreachable` | [x] |
+| 10 | `add_tree_node` | `parent_id == -1` (sentinel "no parent") — parent lookup skipped entirely | **succeeds**: returns `node_count - 1`, no parent link written | `err10_parent_sentinel_minus_one` | [x] |
+| 11 | `add_tree_node` | parent already has BOTH `left_child_id != -1` and `right_child_id != -1` (both `if`s at 102/104 fail) | **succeeds** (returns index) but the child link is silently DROPPED — parent unchanged, child's `parent_id` still points at it | `err11_parent_full_link_dropped` | [x] |
+| 12 | `add_tree_node` | `label` longer than 31 bytes | truncated: `strncpy(...,31)` copies 31 bytes with **no NUL**, then `label[31] = '\0'` terminates it. Bytes 32.. of the caller's string are dropped | `err12_label_truncation` | [x] |
+| 12b | `add_tree_node` | `label[31]` when byte 31 of the destination row was **non-zero** beforehand (reachable by writing the exported `node_table` directly) | `node->label[31] = '\0'` is a write `strncpy(...,31)` can never perform; it must clear byte 31 unconditionally. Tests pre-poison the row with `0xFF`/`0x01`/`0x80`/`'A'` so the write is observable — a zeroed table would hide a missing store | `err12b_label_byte31_always_cleared` | [x] |
+| 13 | `add_tree_node` | `label` exactly 31 bytes | 31 bytes copied, `label[31] = '\0'` — full string preserved, no padding | `err13_label_exactly_31` | [x] |
+| 14 | `add_tree_node` | `label` shorter than 31 bytes (incl. empty `""`) | copied + **zero-padded to 31 bytes** by `strncpy`, then `label[31] = '\0'` — all 32 bytes deterministic | `err14_label_short_zero_padded` | [x] |
+| 15 | `calculate_tree_sum` | `find_node_by_id(node_id) == NULL` (line 116, 1st operand) — id absent | returns `0` (line 117) | `err15_sum_absent_id` | [x] |
+| 16 | `calculate_tree_sum` | `node->id != node_id` (line 116, 2nd operand) | returns `0`; unreachable for the same reason as row 9 | `err16_sum_id_mismatch_unreachable` | [x] |
+| 17 | `calculate_tree_sum` | node's `left_child_id` / `right_child_id` names an id that is NOT in the table (dangling child pointer) | that subtree contributes `0` (recursive call hits row 15); parent's own value still counted | `err17_dangling_child_id` | [x] |
+| 18 | `calculate_tree_sum` | `left_child_id == -1` and/or `right_child_id == -1` (sentinel) | that side is skipped without recursing; leaf returns just `node->value` | `err18_leaf_sentinels` | [x] |
+| 19 | `parse_operation` | `op_str == NULL` (line 134, 1st operand) | returns `OP_ADD` (1) — **no deref, no crash**; the NULL check short-circuits before `strchr` | `err19_parse_null` | [x] |
+| 20 | `parse_operation` | `op_str` non-NULL but contains none of `+ * - / %` (incl. empty string `""`) | returns `OP_ADD` (1) via the final fallback (line 149) | `err20_parse_no_operator` | [x] |
+| 21 | `parse_operation` | string contains several operators, e.g. `"%/-*+"` | `+` wins, then `*`, `-`, `/`, `%` — fixed check order, NOT position in the string | `err21_parse_precedence` | [x] |
+| 22 | `get_operation_func` | `op` outside `1..=5`: `0`, `6`, `-1`, `INT_MIN`, `INT_MAX`, and every value in `-8..=16` | `default:` returns `add_op` (line 159) | `err22_get_func_out_of_range_enum` | [x] |
+| 23 | `get_operation_func` | out-of-range enum passed across FFI where C `enum Operation` has no such variant (C accepts any `int`) | same as row 22 — the returned pointer must be each library's own `add_op`, verified by `dlsym` address comparison **and** by calling it | `err23_get_func_enum_is_addr_of_add_op` | [x] |
+| 24 | `inreftree` | `param2 == 0` ⇒ `target->value == 0` (line 180, 2nd operand) | `target_id` falls back from `2` to `1`, changing the final `func(tree_sum, target_id)` operand | `err24_inreftree_target_value_zero` | [x] |
+| 25 | `inreftree` | `target == NULL` (line 180, 1st operand) | `target_id = 1`; unreachable because the label scan always finds `"left"` (id 2, which is always present) — asserted by exhaustive equality over the reachable space | `err25_inreftree_target_null_unreachable` | [x] |
+| 26 | `inreftree` | `tree_sum % 4` is **negative** (`-1`, `-2`, `-3`) ⇒ `op_string[negative]` reads *before* the `"+*-%"` literal | **UB, but deterministic**: `.rodata` holds `"root\0left\0right\0left-left\0+*-%\0"`, so `op_string[-1]=='\0'`, `[-2]=='t'`, `[-3]=='f'`; none is an operator ⇒ `parse_operation` falls through to `OP_ADD`. Rust reproduces the same literal pool in `RODATA` (`src/lib.rs`), verified byte-for-byte against `objdump -s -j .rodata`. Checked for robustness: rebuilding the C at `-O0/-O1/-O2/-O3/-Os` moves the literal (tail-merging shifts it from offset 0x2032 to 0x2015) but the three preceding bytes are `'f' 't' '\0'` in **every** case, and the whole suite passes against all five builds | `err26_inreftree_negative_remainder` | [x] |
+| 27 | `inreftree` | `tree_sum == INT_MIN` ⇒ `INT_MIN % 4 == 0` (no overflow) | `OP_ADD`; then `add_op(INT_MIN, target_id)` **signed-overflows** — gcc `-O0` wraps, Rust must wrap identically | `err27_inreftree_int_min_sum` | [x] |
+| 28 | `add_op`/`subtract_op`/`multiply_op` | signed integer overflow (`INT_MAX+1`, `INT_MIN-1`, `INT_MAX*INT_MAX`, …) | UB per ISO C, but gcc `-O0` emits plain `add`/`sub`/`imul` ⇒ two's-complement wraparound. Rust uses `wrapping_*` to match | `err28_arith_overflow_wraps` | [x] |
+| 29 | `calculate_tree_sum` | accumulated sum overflows `int` | same wraparound as row 28, via `sum +=` | `err29_sum_overflow_wraps` | [x] |
+| 30 | `calculate_tree_sum` | the same child id is reachable twice (duplicate ids / diamond), so a subtree is counted more than once | no cycle detection: the value is added once **per path**; terminates and must match exactly | `err30_diamond_double_count` | [x] |
+| 31 | `find_node_by_id` | duplicate ids in the table | returns the **first** (lowest-index) match; later duplicates are unreachable | `err31_duplicate_ids_first_wins` | [x] |
+| 32 | all | generic FFI boundaries: NULL pointer, empty string, zero-length label, `node_count` one below / one above capacity, ids at `INT_MIN`/`INT_MAX`/`0`/`-1`, enum one step past each end of `1..=5` | identical values from both libraries | `err32_generic_boundaries` | [x] |
+
+## Rows deliberately NOT differentially tested (hard UB — the C process dies, so there is no
+## return value to compare). Each is documented here as required, and each is *statically*
+## confirmed to be unreachable from `inreftree`, the only entry point in the public header.
+
+| #  | function | trigger | C behaviour | why not tested |
+|----|----------|---------|-------------|----------------|
+| U1 | `divide_op` / `modulo_op` | `a == INT_MIN && b == -1` | x86 `idiv` overflow ⇒ **SIGFPE**, process killed | A trap has no return value, so "byte-identical result" is undefined. `ub01_int_min_div_traps_in_c` runs all four cases in child processes and **measures** the outcome: C `divide_op` → killed by signal 8 (SIGFPE), C `modulo_op` → signal 8; Rust returns `-2147483648` and `0` (`wrapping_div` / `wrapping_rem`). A hardware trap is not reproducible from safe Rust (`a / b` would panic ⇒ SIGABRT, a *different* failure), so wrapping is the closest defined behaviour. Unreachable from `inreftree`: `op_string` contains no `/`, and the `%` path always passes `target_id ∈ {1,2}`. |
+| U2 | `add_tree_node` | `label == NULL` | `strncpy` dereferences NULL ⇒ **SIGSEGV** | Same reason; both libraries fault. Unreachable from `inreftree` (all four labels are string literals). |
+| U3 | `add_tree_node` | `node_count < 0` (set via the exported global) | `>= MAX_NODES` is false, then `&node_table[negative]` ⇒ out-of-bounds **write** before the array | Corrupts unrelated memory in whichever library is called; not a comparable "result". Unreachable from `inreftree` (it sets `node_count = 0` first). |
+| U4 | `find_node_by_id` / `calculate_tree_sum` | `node_count > 50` | reads `node_table[50..node_count]`, past the 2600-byte object | Out-of-bounds read; unreachable from `inreftree`. Row 7 covers the *reachable* half of this (`add_tree_node`, which rejects before indexing). **This is a measured C-vs-Rust divergence, caused by the linker's arbitrary BSS ordering rather than by the translation:** `nm -D -S` shows the C `.so` at `node_table @0x4060` (2600 bytes) and `node_count @0x4a88` — i.e. `node_count` sits *exactly* at `node_table + 2600`, so the out-of-bounds row `node_table[50]` **aliases `node_count` itself**. The Rust `.so` puts `node_count @0x507e4`, 4 bytes *before* `node_table @0x507e8`. Distinguishing input: zeroed table, `node_count = 51`, `find_node_by_id(51)` → C returns `&node_table[50]` (reading its own `node_count`), Rust returns `NULL`. Reaching this requires the caller to write the exported `node_count` past its documented range, which is already UB in C; the ordering of two independent BSS objects is not something a translation can (or portably should) reproduce. |
+| U5 | `calculate_tree_sum` | a child id forms a **cycle**. Cheapest trigger: leave `node_table` zeroed and set `node_count > 0` — a zeroed row has `id == 0` **and** `left_child_id == 0`, so it is its own left child; also reachable by adding a second node whose `id` equals its own `parent_id` | unbounded recursion ⇒ **stack overflow** | No comparable return value, but `ub02_cycle_overflows_stack_in_both` runs both libraries in child processes and asserts they terminate **identically** — same signal, same exit code, same stack-overflow diagnostic. (Under the Rust test harness the runtime's guard-page handler catches it and aborts; outside a Rust runtime the same recursion ends in `SIGSEGV`. The test compares the two libraries against each other rather than against a hard-coded signal number, so it is valid either way.) Row 30 covers the finite (diamond) form of the same missing-cycle-detection defect. |
