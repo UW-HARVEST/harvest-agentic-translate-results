@@ -1,0 +1,1029 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
+
+[39m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -100 && echo "---TRANSLATION---" && find translation -type f -not -path '*/target/*' | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory and both subtrees
+
+total 16
+drwxr-xr-x.   5 scheschb amazon    53 Aug 26 20:42 .
+drwxr-xr-x. 189 scheschb amazon 16384 Aug 26 20:42 ..
+drwxr-xr-x.   2 scheschb amazon    27 Aug 26 20:42 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Aug 26 20:42 c_src
+drwxr-xr-x.   3 scheschb amazon    53 Aug 26 20:42 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---TRANSLATION---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== CMakeLists.txt ===" && cat c_src/CMakeLists.txt && echo "=== include/lib.h ===" && cat c_src/include/lib.h && echo "=== wc ===" && wc -l c_src/src/lib.c translation/src/lib.rs translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists, header, and line counts
+
+=== CMakeLists.txt ===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+=== include/lib.h ===
+#include <stdint.h>
+
+typedef uint32_t tflac_u32;
+
+tflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth);
+=== wc ===
+  10 c_src/src/lib.c
+ 149 translation/src/lib.rs
+  14 translation/Cargo.toml
+ 173 total
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== c_src/src/lib.c ===" && cat -A c_src/src/lib.c | sed 's/\$$//' | head -20; echo "=== raw ==="; cat c_src/src/lib.c; echo "=== Cargo.toml ==="; cat translation/Cargo.toml; echo "=== lib.rs ==="; cat translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C source and Rust translation
+
+=== c_src/src/lib.c ===
+#include "lib.h"^M
+^M
+tflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth) {^M
+    return 18U + channels +^M
+           (((blocksize * bitdepth * (channels * (channels != 2))) +^M
+             (blocksize * bitdepth * (channels == 2)) +^M
+             (blocksize * (bitdepth + (bitdepth != 32)) * (channels == 2)) +^M
+             +7) /^M
+            8);^M
+}^M
+=== raw ===
+#include "lib.h"
+
+tflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth) {
+    return 18U + channels +
+           (((blocksize * bitdepth * (channels * (channels != 2))) +
+             (blocksize * bitdepth * (channels == 2)) +
+             (blocksize * (bitdepth + (bitdepth != 32)) * (channels == 2)) +
+             +7) /
+            8);
+}
+=== Cargo.toml ===
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "max_size_frame_lib"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+=== lib.rs ===
+//! Rust translation of `c_src/src/lib.c`.
+//!
+//! The C library exposes a single function, `max_size_frame`, which computes an
+//! upper bound on the encoded size of a FLAC frame. The header declares no
+//! namespace-renaming macros, so the final linker symbol is plain
+//! `max_size_frame`.
+//!
+//! Every operand in the C expression has type `uint32_t` (`tflac_u32`), and the
+//! comparison sub-expressions (`channels != 2`, `channels == 2`,
+//! `bitdepth != 32`) yield an `int` of 0 or 1 that is then converted to
+//! `unsigned int` by the usual arithmetic conversions. Unsigned overflow in C is
+//! defined to wrap modulo 2^32, so all arithmetic below uses the explicit
+//! `wrapping_*` operations to reproduce the original behaviour bit for bit,
+//! including any overflow the original code may exhibit.
+
+/// Mirrors `typedef uint32_t tflac_u32;` from `include/lib.h`.
+#[allow(non_camel_case_types)]
+pub type tflac_u32 = u32;
+
+/// Converts a C comparison result (`0` or `1`) into `tflac_u32`, matching the
+/// implicit `int` -> `unsigned int` conversion performed by C.
+#[inline]
+fn flag(cond: bool) -> tflac_u32 {
+    cond as tflac_u32
+}
+
+/// ```c
+/// tflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth) {
+///     return 18U + channels +
+///            (((blocksize * bitdepth * (channels * (channels != 2))) +
+///              (blocksize * bitdepth * (channels == 2)) +
+///              (blocksize * (bitdepth + (bitdepth != 32)) * (channels == 2)) +
+///              +7) /
+///             8);
+/// }
+/// ```
+///
+/// The grouping and evaluation order of the C source is preserved exactly:
+/// `*` is left-associative, so `blocksize * bitdepth * X` is
+/// `(blocksize * bitdepth) * X`, and the three products are summed
+/// left-to-right together with the trailing `+7` before the single division by
+/// `8`.
+#[unsafe(no_mangle)]
+pub extern "C" fn max_size_frame(
+    blocksize: tflac_u32,
+    channels: tflac_u32,
+    bitdepth: tflac_u32,
+) -> tflac_u32 {
+    // (blocksize * bitdepth * (channels * (channels != 2)))
+    let term1 = blocksize
+        .wrapping_mul(bitdepth)
+        .wrapping_mul(channels.wrapping_mul(flag(channels != 2)));
+
+    // (blocksize * bitdepth * (channels == 2))
+    let term2 = blocksize
+        .wrapping_mul(bitdepth)
+        .wrapping_mul(flag(channels == 2));
+
+    // (blocksize * (bitdepth + (bitdepth != 32)) * (channels == 2))
+    let term3 = blocksize
+        .wrapping_mul(bitdepth.wrapping_add(flag(bitdepth != 32)))
+        .wrapping_mul(flag(channels == 2));
+
+    // (term1 + term2 + term3 + +7) / 8
+    let bits = term1
+        .wrapping_add(term2)
+        .wrapping_add(term3)
+        .wrapping_add(7);
+    let bytes = bits / 8;
+
+    // 18U + channels + bytes
+    18u32.wrapping_add(channels).wrapping_add(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Independent re-derivation of the C expression using 64-bit math with an
+    /// explicit truncation to 32 bits at every step, mimicking how a C compiler
+    /// evaluates the unsigned expression.
+    fn reference(blocksize: u64, channels: u64, bitdepth: u64) -> u32 {
+        let m = |a: u64, b: u64| (a.wrapping_mul(b)) & 0xFFFF_FFFF;
+        let a = |x: u64, y: u64| (x.wrapping_add(y)) & 0xFFFF_FFFF;
+
+        let ne2 = u64::from(channels != 2);
+        let eq2 = u64::from(channels == 2);
+        let ne32 = u64::from(bitdepth != 32);
+
+        let t1 = m(m(blocksize, bitdepth), m(channels, ne2));
+        let t2 = m(m(blocksize, bitdepth), eq2);
+        let t3 = m(m(blocksize, a(bitdepth, ne32)), eq2);
+
+        let bits = a(a(a(t1, t2), t3), 7);
+        a(a(18, channels), bits / 8) as u32
+    }
+
+    #[test]
+    fn matches_reference_on_typical_inputs() {
+        for &blocksize in &[0u32, 1, 16, 576, 1152, 4096, 65535] {
+            for channels in 0u32..=8 {
+                for &bitdepth in &[0u32, 1, 8, 12, 16, 20, 24, 32] {
+                    assert_eq!(
+                        max_size_frame(blocksize, channels, bitdepth),
+                        reference(blocksize.into(), channels.into(), bitdepth.into()),
+                        "blocksize={blocksize} channels={channels} bitdepth={bitdepth}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn matches_reference_on_overflowing_inputs() {
+        let extremes = [0u32, 1, 2, 3, 0x0000_FFFF, 0x8000_0000, u32::MAX];
+        for &blocksize in &extremes {
+            for &channels in &extremes {
+                for &bitdepth in &extremes {
+                    assert_eq!(
+                        max_size_frame(blocksize, channels, bitdepth),
+                        reference(blocksize.into(), channels.into(), bitdepth.into()),
+                        "blocksize={blocksize} channels={channels} bitdepth={bitdepth}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Hand-computed spot checks.
+    #[test]
+    fn spot_checks() {
+        // Stereo, 16-bit, 4096 samples: channels == 2 selects term2 and term3.
+        // term1 = 0, term2 = 4096*16*1 = 65536, term3 = 4096*17*1 = 69632.
+        // (65536 + 69632 + 7) / 8 = 135175 / 8 = 16896. 18 + 2 + 16896 = 16916.
+        assert_eq!(max_size_frame(4096, 2, 16), 16916);
+
+        // Mono, 16-bit, 4096 samples: only term1 contributes.
+        // term1 = 4096*16*(1*1) = 65536. (65536 + 7)/8 = 8192. 18 + 1 + 8192 = 8211.
+        assert_eq!(max_size_frame(4096, 1, 16), 8211);
+
+        // Zero channels: every term vanishes. (0 + 0 + 0 + 7)/8 = 0. 18 + 0 + 0 = 18.
+        assert_eq!(max_size_frame(4096, 0, 16), 18);
+
+        // 32-bit depth keeps the (bitdepth != 32) bump at zero.
+        // term2 = 1152*32 = 36864, term3 = 1152*32 = 36864.
+        // (36864 + 36864 + 7)/8 = 73735/8 = 9216. 18 + 2 + 9216 = 9236.
+        assert_eq!(max_size_frame(1152, 2, 32), 9236);
+    }
+}
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[38;5;141m> [0mTiny project: single function, no [38;5;10m[features][0m in Cargo.toml, no build-time options in CMakeLists — so there is exactly one configuration to verify.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && tail -5 /tmp/cmake.log && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+-- Generating done
+-- Build files have been written to: /local/home/scheschb/.harvest/work/harvest-work-kEuRHL/c_src/build
+[ 50%] Building C object CMakeFiles/harvest-work-kEuRHL.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-kEuRHL.so
+[100%] Built target harvest-work-kEuRHL
+-rwxr-xr-x. 1 scheschb amazon 15672 Aug 26 20:42 libharvest-work-kEuRHL.so
+[38;5;244m - Completed in 0.642s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rustc --version && cargo --version && timeout 300 cargo check --no-default-features 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain and run cargo check
+
+rustc 1.94.0 (4a4ef493e 2026-03-02)
+cargo 1.94.0 (85eff7c80 2026-01-15)
+    Checking translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+[38;5;244m - Completed in 0.183s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Now add [38;5;10mlibloading[0m and build the Rust [38;5;10m.so[0m.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -5 && ls -la target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib in release mode
+
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+-rwxr-xr-x. 2 scheschb amazon 393448 Aug 26 20:42 target/release/libmax_size_frame_lib.so
+[38;5;244m - Completed in 0.168s[0m
+
+[?25l[0m[38;5;141m> [0mNow compare exported symbols (step 8) before writing tests.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mecho "=== C .so dynamic symbols (defined) ===" && nm -D --defined-only c_src/build/libharvest-work-kEuRHL.so | awk '$2=="T"||$2=="W"||$2=="D"||$2=="B"||$2=="R"' 
+echo "=== Rust .so: does it export max_size_frame? ==="
+nm -D --defined-only translation/target/release/libmax_size_frame_lib.so | grep -w max_size_frame[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported dynamic symbols between C and Rust .so
+
+=== C .so dynamic symbols (defined) ===
+00000000000010f9 T max_size_frame
+=== Rust .so: does it export max_size_frame? ===
+0000000000011c40 T max_size_frame
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== full C exported ===" && nm -D --defined-only c_src/build/libharvest-work-kEuRHL.so
+echo "=== C exported, filtered to non-underscore ===" 
+nm -D --defined-only c_src/build/libharvest-work-kEuRHL.so | awk '{print $3}' | grep -v '^_' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libmax_size_frame_lib.so | awk '{print $3}' | grep -v '^_' | sort > /tmp/rs_syms.txt
+echo "--- in C but missing from Rust ---"; comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt; echo "(end)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Full symbol diff
+
+=== full C exported ===
+00000000000010f9 T max_size_frame
+=== C exported, filtered to non-underscore ===
+--- in C but missing from Rust ---
+(end)
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[38;5;141m> [0mSymbols match exactly. Now the differential test harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create libloading-based differential test comparing C and Rust .so exports
+
+[48;2;40;67;43m[39m+      1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Differential test: loads BOTH the C shared library and the Rust `cdylib`[K
+[0m[48;2;40;67;43m[39m+      2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m through `libloading` and compares `max_size_frame` results byte-for-byte.[K
+[0m[48;2;40;67;43m[39m+      3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
+[0m[48;2;40;67;43m[39m+      4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Neither implementation is called directly; both go through the dynamic[K
+[0m[48;2;40;67;43m[39m+      5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m symbol table exactly as an external C caller would, which also exercises the[K
+[0m[48;2;40;67;43m[39m+      6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m `#[no_mangle]` export wrapper on the Rust side.[K
+[0m[48;2;40;67;43m[39m+      7[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      8[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mpath[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206mPath[38;2;192;197;206m,[38;2;192;197;206m PathBuf[38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      9[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     10[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mlibloading[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206mLibrary[38;2;192;197;206m,[38;2;192;197;206m Symbol[38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     11[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `tflac_u32 max_size_frame(tflac_u32, tflac_u32, tflac_u32)`[K
+[0m[48;2;40;67;43m[39m+     13[0m:[39m[48;2;24;38;30m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mMaxSizeFrameFn[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m([38;2;180;142;173mu32[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     14[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     15[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mworkspace_root[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     16[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m CARGO_MANIFEST_DIR == <root>/translation[K
+[0m[48;2;40;67;43m[39m+     17[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206mPath[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206menv![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mCARGO_MANIFEST_DIR[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     18[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mparent[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     19[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtranslation/ must have a parent directory[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     20[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mto_path_buf[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     21[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Locates the C shared library produced by `c_src/CMakeLists.txt`. The CMake[K
+[0m[48;2;40;67;43m[39m+     24[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m project name is derived from the parent directory name, so the file name is[K
+[0m[48;2;40;67;43m[39m+     25[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m not fixed; glob the build directory instead.[K
+[0m[48;2;40;67;43m[39m+     26[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mc_library_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     27[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m build_dir [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mworkspace_root[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mc_src[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mbuild[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m entries [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mfs[38;2;192;197;206m::[38;2;192;197;206mread_dir[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mbuild_dir[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap_or_else[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106me[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mpanic![38;2;192;197;206m([K
+[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m"[38;2;163;190;140mcannot read {}: {e}. Build the C library first:[38;2;150;181;180m\n[38;2;163;190;140m  cd c_src && mkdir -p build && cd build && [38;2;163;190;140m\[K
+[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [38;2;163;190;140m             cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            build_dir.[38;2;150;181;180mdisplay[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     35[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m candidates[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mVec[38;2;192;197;206m<[38;2;192;197;206mPathBuf[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m entries[K
+[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mfilter_map[38;2;192;197;206m([38;2;192;197;206mResult[38;2;192;197;206m::[38;2;192;197;206mok[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mmap[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106me[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206me.[38;2;150;181;180mpath[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mfilter[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106mp[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m name [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mmatch[38;2;192;197;206m p.[38;2;150;181;180mfile_name[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mand_then[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106mn[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206mn.[38;2;150;181;180mto_str[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206mSome[38;2;192;197;206m([38;2;192;197;206mn[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=>[38;2;192;197;206m n[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206mNone[38;2;192;197;206m [38;2;192;197;206m=>[38;2;192;197;206m [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;208;135;112mfalse[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            name.[38;2;150;181;180mstarts_with[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mlib[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m name.[38;2;150;181;180mends_with[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m.so[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m p.[38;2;150;181;180mis_file[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mcollect[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    candidates.[38;2;150;181;180msort[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    candidates.[38;2;150;181;180minto_iter[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mnext[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap_or_else[38;2;192;197;206m([38;2;192;197;206m|[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mpanic![38;2;192;197;206m([K
+[0m[48;2;40;67;43m[39m+     51[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m"[38;2;163;190;140mno lib*.so found in {}; build the C library first[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            build_dir.[38;2;150;181;180mdisplay[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     53[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     54[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Locates the Rust `cdylib` for the profile the test binary was built with.[K
+[0m[48;2;40;67;43m[39m+     58[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m The test executable lives in `target/<profile>/deps/`, and the `cdylib`[K
+[0m[48;2;40;67;43m[39m+     59[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m sits one level up in `target/<profile>/`.[K
+[0m[48;2;40;67;43m[39m+     60[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mrust_library_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m file_name [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mformat![38;2;192;197;206m([38;2;192;197;206m"[38;2;208;135;112m{}[38;2;163;190;140mmax_size_frame_lib[38;2;208;135;112m{}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mconsts[38;2;192;197;206m::[38;2;208;135;112mDLL_PREFIX[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mconsts[38;2;192;197;206m::[38;2;208;135;112mDLL_SUFFIX[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     62[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m exe [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mcurrent_exe[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mcurrent_exe[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     64[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m dir [38;2;192;197;206m=[38;2;192;197;206m exe.[38;2;150;181;180mparent[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mmap[38;2;192;197;206m([38;2;192;197;206mPath[38;2;192;197;206m::[38;2;192;197;206mto_path_buf[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mwhile[38;2;192;197;206m [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206mSome[38;2;192;197;206m([38;2;192;197;206md[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m dir [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     66[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m candidate [38;2;192;197;206m=[38;2;192;197;206m d.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mfile_name[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     67[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m candidate.[38;2;150;181;180mis_file[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m candidate[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     69[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        dir [38;2;192;197;206m=[38;2;192;197;206m d.[38;2;150;181;180mparent[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mmap[38;2;192;197;206m([38;2;192;197;206mPath[38;2;192;197;206m::[38;2;192;197;206mto_path_buf[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     72[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Fall back to the conventional profile directories.[K
+[0m[48;2;40;67;43m[39m+     74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m target [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mworkspace_root[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtranslation[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtarget[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m profile [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;192;197;206m"[38;2;163;190;140mdebug[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mrelease[38;2;192;197;206m"[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m candidate [38;2;192;197;206m=[38;2;192;197;206m target.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206mprofile[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mfile_name[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m candidate.[38;2;150;181;180mis_file[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m candidate[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     81[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     82[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206mpanic![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mcould not locate {file_name}; run `cargo build` first[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     83[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     84[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     85[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     86[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106m_c_lib[38;2;192;197;206m:[38;2;192;197;206m Library,[K
+[0m[48;2;40;67;43m[39m+     87[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106m_rust_lib[38;2;192;197;206m:[38;2;192;197;206m Library,[K
+[0m[48;2;40;67;43m[39m+     88[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mc[38;2;192;197;206m:[38;2;192;197;206m MaxSizeFrameFn,[K
+[0m[48;2;40;67;43m[39m+     89[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mrust[38;2;192;197;206m:[38;2;192;197;206m MaxSizeFrameFn,[K
+[0m[48;2;40;67;43m[39m+     90[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     91[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     92[0m:[39m[48;2;24;38;30m [38;2;180;142;173mimpl[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     93[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mload[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mSelf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     94[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_path[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mc_library_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     95[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m rust_path [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mrust_library_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     96[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     97[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m SAFETY: both paths point at shared objects we just built; loading them[K
+[0m[48;2;40;67;43m[39m+     98[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m runs their (empty) initialisers.[K
+[0m[48;2;40;67;43m[39m+     99[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mc_lib[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mLibrary[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m&[38;2;180;142;173mc_path[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    100[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            .[38;2;150;181;180munwrap_or_else[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106me[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206mpanic![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mdlopen {}: {e}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_path[38;2;192;197;206m.[38;2;150;181;180mdisplay[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    101[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m rust_lib [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mLibrary[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mrust_path[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    102[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            .[38;2;150;181;180munwrap_or_else[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106me[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206mpanic![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mdlopen {}: {e}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m rust_path.[38;2;150;181;180mdisplay[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    103[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    104[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m SAFETY: the symbol has the C signature declared in include/lib.h.[K
+[0m[48;2;40;67;43m[39m+    105[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m c[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mMaxSizeFrameFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;180;142;173mc_lib[38;2;192;197;206m.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mmax_size_frame[38;2;150;181;180m\0[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    106[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            .[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mC .so must export max_size_frame[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    107[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m rust[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mSymbol[38;2;192;197;206m<[38;2;192;197;206mMaxSizeFrameFn[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m rust_lib.[38;2;150;181;180mget[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m"[38;2;163;190;140mmax_size_frame[38;2;150;181;180m\0[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    108[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            .[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mRust .so must export max_size_frame[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    109[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    110[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206mc[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    111[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m rust [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206mrust[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    112[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    113[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        Impls [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    114[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            _c_lib[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mc_lib[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    115[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            _rust_lib[38;2;192;197;206m:[38;2;192;197;206m rust_lib[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    116[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            c[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    117[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            rust[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    118[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    119[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    120[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    121[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtrack_caller[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    122[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179massert_same[38;2;192;197;206m([38;2;192;197;206m&[38;2;191;97;106mself[38;2;192;197;206m, [38;2;191;97;106mblocksize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m, [38;2;191;97;106mchannels[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m, [38;2;191;97;106mbitdepth[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    123[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m SAFETY: plain integer-in/integer-out FFI calls, no pointers involved.[K
+[0m[48;2;40;67;43m[39m+    124[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m expected [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m([38;2;191;97;106mself[38;2;192;197;206m.c[38;2;192;197;206m)[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    125[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m actual [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m([38;2;191;97;106mself[38;2;192;197;206m.rust[38;2;192;197;206m)[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    126[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206massert_eq![38;2;192;197;206m([K
+[0m[48;2;40;67;43m[39m+    127[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            expected[38;2;192;197;206m,[38;2;192;197;206m actual[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    128[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m"[38;2;163;190;140mmax_size_frame(blocksize={blocksize}, channels={channels}, bitdepth={bitdepth}): [38;2;163;190;140m\[K
+[0m[48;2;40;67;43m[39m+    129[0m:[39m[48;2;24;38;30m [38;2;163;190;140m             C returned {expected}, Rust returned {actual}[38;2;192;197;206m"[K
+[0m[48;2;40;67;43m[39m+    130[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    131[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    132[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    133[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    134[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Values that matter for the three predicates in the expression[K
+[0m[48;2;40;67;43m[39m+    135[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m (`channels != 2`, `channels == 2`, `bitdepth != 32`) plus 32-bit wrap-around[K
+[0m[48;2;40;67;43m[39m+    136[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m boundaries.[K
+[0m[48;2;40;67;43m[39m+    137[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mINTERESTING[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;180;142;173mu32[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[K
+[0m[48;2;40;67;43m[39m+    138[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    139[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m1[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    140[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m2[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    141[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m3[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    142[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m4[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    143[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m5[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    144[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m6[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    145[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m7[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    146[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m8[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    147[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m12[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    148[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m16[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    149[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m20[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    150[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m24[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    151[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m31[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    152[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m32[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    153[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m33[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    154[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m64[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    155[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m255[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    156[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m256[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    157[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m576[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    158[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m1152[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    159[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m4096[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    160[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m4607[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    161[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m65535[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    162[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m65536[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    163[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x00FF_FFFF[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    164[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x0100_0000[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    165[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x1FFF_FFFF[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    166[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x2000_0000[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    167[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x7FFF_FFFF[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    168[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x8000_0000[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    169[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0x8000_0001[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    170[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0xFFFF_FFFE[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    171[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0xFFFF_FFFF[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+    172[0m:[39m[48;2;24;38;30m [38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    173[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    174[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    175[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mboth_libraries_export_the_symbol[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    176[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Loading succeeds only if both .so files export `max_size_frame`.[K
+[0m[48;2;40;67;43m[39m+    177[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m impls [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m::[38;2;192;197;206mload[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    178[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;208;135;112m4096[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    179[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    180[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    181[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Realistic FLAC parameter space: every channel count and bit depth an encoder[K
+[0m[48;2;40;67;43m[39m+    182[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m can produce, across the standard block sizes.[K
+[0m[48;2;40;67;43m[39m+    183[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    184[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmatches_c_on_realistic_flac_parameters[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    185[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m impls [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m::[38;2;192;197;206mload[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    186[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m blocksize [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;208;135;112m0[38;2;180;142;173mu32[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m192[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m576[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m1152[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2304[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m4096[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m4608[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m8192[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m16384[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m65535[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    187[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m channels [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;180;142;173mu32[38;2;192;197;206m..[38;2;192;197;206m=[38;2;208;135;112m8[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    188[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mfor[38;2;192;197;206m bitdepth [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;180;142;173mu32[38;2;192;197;206m..[38;2;192;197;206m=[38;2;208;135;112m32[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    189[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    190[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    191[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    192[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    193[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    194[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    195[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Exhaustive cross product of the boundary values, which covers unsigned[K
+[0m[48;2;40;67;43m[39m+    196[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m overflow in each of the three product terms and in the final sum.[K
+[0m[48;2;40;67;43m[39m+    197[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    198[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmatches_c_on_boundary_cross_product[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    199[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m impls [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m::[38;2;192;197;206mload[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    200[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mblocksize [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112mINTERESTING[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    201[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mchannels [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112mINTERESTING[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    202[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mbitdepth [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112mINTERESTING[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    203[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    204[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    205[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    206[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    207[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    208[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    209[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Dense sweep of small values, where the `+7` rounding and the `/ 8`[K
+[0m[48;2;40;67;43m[39m+    210[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m truncation are most easily observed.[K
+[0m[48;2;40;67;43m[39m+    211[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    212[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmatches_c_on_dense_small_values[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    213[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m impls [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m::[38;2;192;197;206mload[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    214[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m blocksize [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;180;142;173mu32[38;2;192;197;206m..[38;2;192;197;206m=[38;2;208;135;112m40[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    215[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mfor[38;2;192;197;206m channels [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;180;142;173mu32[38;2;192;197;206m..[38;2;192;197;206m=[38;2;208;135;112m40[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    216[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mfor[38;2;192;197;206m bitdepth [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;180;142;173mu32[38;2;192;197;206m..[38;2;192;197;206m=[38;2;208;135;112m40[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    217[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    218[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    219[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    220[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    221[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    222[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    223[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Deterministic pseudo-random fuzzing over the full 32-bit domain (SplitMix64,[K
+[0m[48;2;40;67;43m[39m+    224[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m so the test needs no external RNG crate and always replays identically).[K
+[0m[48;2;40;67;43m[39m+    225[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mtest[38;2;192;197;206m][K
+[0m[48;2;40;67;43m[39m+    226[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmatches_c_on_pseudorandom_inputs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    227[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m impls [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mImpls[38;2;192;197;206m::[38;2;192;197;206mload[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    228[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    229[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m state[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu64[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0x243F_6A88_85A3_08D3[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    230[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m next [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mmove[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    231[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        state [38;2;192;197;206m=[38;2;192;197;206m state.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m0x9E37_79B9_7F4A_7C15[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    232[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m z [38;2;192;197;206m=[38;2;192;197;206m state[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    233[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        z [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mz [38;2;192;197;206m^[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mz [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m30[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mwrapping_mul[38;2;192;197;206m([38;2;208;135;112m0xBF58_476D_1CE4_E5B9[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    234[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        z [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mz [38;2;192;197;206m^[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mz [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m27[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mwrapping_mul[38;2;192;197;206m([38;2;208;135;112m0x94D0_49BB_1331_11EB[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    235[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mz [38;2;192;197;206m^[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mz [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m31[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mu32[K
+[0m[48;2;40;67;43m[39m+    236[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    237[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    238[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m [38;2;192;197;206min[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m..[38;2;208;135;112m200_000[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+    239[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m blocksize [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mnext[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    240[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m channels [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mnext[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    241[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m bitdepth [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mnext[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    242[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    243[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    244[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Also probe with the predicate-relevant values forced in, so the[K
+[0m[48;2;40;67;43m[39m+    245[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m `channels == 2` / `bitdepth == 32` branches get random partners.[K
+[0m[48;2;40;67;43m[39m+    246[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m,[38;2;192;197;206m bitdepth[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    247[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m channels[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m32[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    248[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        impls.[38;2;150;181;180massert_same[38;2;192;197;206m([38;2;192;197;206mblocksize[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m32[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    249[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+    250[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --no-default-features 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run cargo test
+
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/translation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running unittests src/lib.rs (target/debug/deps/max_size_frame_lib-40c475524a8a9bdd)
+
+running 3 tests
+test tests::matches_reference_on_overflowing_inputs ... ok
+test tests::spot_checks ... ok
+test tests::matches_reference_on_typical_inputs ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-db1e38ce24af6d1d)
+
+running 5 tests
+test both_libraries_export_the_symbol ... ok
+test matches_c_on_realistic_flac_parameters ... ok
+test matches_c_on_boundary_cross_product ... ok
+test matches_c_on_dense_small_values ... ok
+test matches_c_on_pseudorandom_inputs ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[38;5;244m - Completed in 0.492s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --no-default-features 2>&1 | tail -15 && echo "=== also default (no --no-default-features) ===" && timeout 600 cargo test 2>&1 | tail -8[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run tests in release mode and default config
+
+test tests::spot_checks ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-9caa4c4dd3cc14c9)
+
+running 5 tests
+test both_libraries_export_the_symbol ... ok
+test matches_c_on_realistic_flac_parameters ... ok
+test matches_c_on_boundary_cross_product ... ok
+test matches_c_on_dense_small_values ... ok
+test matches_c_on_pseudorandom_inputs ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+=== also default (no --no-default-features) ===
+test both_libraries_export_the_symbol ... ok
+test matches_c_on_realistic_flac_parameters ... ok
+test matches_c_on_boundary_cross_product ... ok
+test matches_c_on_dense_small_values ... ok
+test matches_c_on_pseudorandom_inputs ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[38;5;244m - Completed in 0.589s[0m
+
+[?25l[0m[38;5;141m> [0mLet me do a one-off high-volume fuzz to be confident, then revert to the committed count.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && sed -i 's/for _ in 0..200_000 {/for _ in 0..5_000_000 {/' tests/differential.rs && timeout 600 cargo test --release matches_c_on_pseudorandom_inputs 2>&1 | tail -6; sed -i 's/for _ in 0..5_000_000 {/for _ in 0..200_000 {/' tests/differential.rs; echo "reverted:"; grep -n "for _ in 0\.\." tests/differential.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: One-off 20M-call fuzz run, then revert iteration count
+
+
+running 1 test
+test matches_c_on_pseudorandom_inputs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.15s
+
+reverted:
+238:    for _ in 0..200_000 {
+[38;5;244m - Completed in 0.497s[0m
+
+[?25l[0m[38;5;141m> [0mSanity-check that the harness actually catches mismatches (guard against a vacuous test):[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && sed -i 's/^        .wrapping_add(7);$/        .wrapping_add(8); \/\/ MUTATION/' src/lib.rs && grep -n "MUTATION" src/lib.rs && timeout 600 cargo test --release --test differential 2>&1 | grep -E "^test |test result|C returned" | head -12; cp /tmp/lib.rs.bak src/lib.rs; echo "--- restored ---"; grep -c MUTATION src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation-test the harness to prove it detects mismatches
+
+68:        .wrapping_add(8); // MUTATION
+test both_libraries_export_the_symbol ... ok
+test matches_c_on_realistic_flac_parameters ... ok
+test matches_c_on_boundary_cross_product ... ok
+test matches_c_on_dense_small_values ... ok
+test matches_c_on_pseudorandom_inputs ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+--- restored ---
+0
+[38;5;244m - Completed in 0.353s[0m
+
+[?25l[0m[38;5;141m> [0mThe harness silently passed a mutated Rust source — it's loading a stale [38;5;10m.so[0m. Investigating.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && ls --time-style=full-iso -l target/release/libmax_size_frame_lib.so && touch src/lib.rs && timeout 300 cargo test --release --test differential 2>&1 | tail -4 && echo "--- so mtime after cargo test ---" && ls --time-style=full-iso -l target/release/libmax_size_frame_lib.so && date +"now: %F %T"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check whether cargo test rebuilds the cdylib
+
+-rwxr-xr-x. 2 scheschb amazon 393448 2026-08-26 20:42:50.329228246 +0000 target/release/libmax_size_frame_lib.so
+test matches_c_on_pseudorandom_inputs ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+--- so mtime after cargo test ---
+-rwxr-xr-x. 2 scheschb amazon 393448 2026-08-26 20:42:50.329228246 +0000 target/release/libmax_size_frame_lib.so
+now: 2026-08-26 20:44:47
+[38;5;244m - Completed in 0.73s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: [38;5;10mcargo test[0m never rebuilds the [38;5;10mcdylib[0m, so the test was asserting against a stale artifact. I'll make the harness build the Rust [38;5;10m.so[0m itself, into a separate target dir to avoid deadlocking on cargo's build lock.[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Make the test build the cdylib itself instead of globbing a possibly stale artifact
+
+[48;2;79;40;40m[39m- 57     [0m:[39m[48;2;36;25;28m [38;2;101;115;126m///[38;2;101;115;126m Locates the Rust `cdylib` for the profile the test binary was built with.[K
+[0m[48;2;79;40;40m[39m- 58     [0m:[39m[48;2;36;25;28m [38;2;101;115;126m///[38;2;101;115;126m The test executable lives in `target/<profile>/deps/`, and the `cdylib`[K
+[0m[48;2;79;40;40m[39m- 59     [0m:[39m[48;2;36;25;28m [38;2;101;115;126m///[38;2;101;115;126m sits one level up in `target/<profile>/`.[K
+[0m[48;2;40;67;43m[39m+      57[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Builds and locates the Rust `cdylib` under test.[K
+[0m[48;2;40;67;43m[39m+      58[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
+[0m[48;2;40;67;43m[39m+      59[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `cargo test` does **not** rebuild a `cdylib`-only lib target for integration[K
+[0m[48;2;40;67;43m[39m+      60[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m tests, so simply globbing `target/<profile>/` would happily dlopen a stale[K
+[0m[48;2;40;67;43m[39m+      61[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m artifact and let a broken translation pass. This function therefore invokes[K
+[0m[48;2;40;67;43m[39m+      62[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `cargo build --lib` itself, into a dedicated `--target-dir` so it cannot[K
+[0m[48;2;40;67;43m[39m+      63[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m deadlock against the build-directory lock the outer `cargo test` still holds.[K
+[0m[48;2;43;48;59m[39m  60,  64[0m:[39m[48;2;43;48;59m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mrust_library_path[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;79;40;40m[39m- 61     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m file_name [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mformat![38;2;192;197;206m([38;2;192;197;206m"[38;2;208;135;112m{}[38;2;163;190;140mmax_size_frame_lib[38;2;208;135;112m{}[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mconsts[38;2;192;197;206m::[38;2;208;135;112mDLL_PREFIX[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mconsts[38;2;192;197;206m::[38;2;208;135;112mDLL_SUFFIX[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mstatic[38;2;192;197;206m [38;2;208;135;112mPATH[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mOnceLock[38;2;192;197;206m<[38;2;192;197;206mPathBuf[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mOnceLock[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      66[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112mPATH[38;2;192;197;206m.[38;2;150;181;180mget_or_init[38;2;192;197;206m([38;2;192;197;206mbuild_rust_library[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mclone[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      67[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[0m[48;2;43;48;59m[39m  62,  68[0m:[39m[48;2;43;48;59m [K
+[0m[48;2;79;40;40m[39m- 63     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m exe [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mcurrent_exe[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mexpect[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mcurrent_exe[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 64     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m dir [38;2;192;197;206m=[38;2;192;197;206m exe.[38;2;150;181;180mparent[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mmap[38;2;192;197;206m([38;2;192;197;206mPath[38;2;192;197;206m::[38;2;192;197;206mto_path_buf[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 65     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;180;142;173mwhile[38;2;192;197;206m [38;2;180;142;173mlet[38;2;192;197;206m [38;2;192;197;206mSome[38;2;192;197;206m([38;2;192;197;206md[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m dir [38;2;192;197;206m{[K
+[0m[48;2;79;40;40m[39m- 66     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m candidate [38;2;192;197;206m=[38;2;192;197;206m d.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mfile_name[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 67     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m candidate.[38;2;150;181;180mis_file[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;79;40;40m[39m- 68     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m candidate[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 69     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;79;40;40m[39m- 70     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        dir [38;2;192;197;206m=[38;2;192;197;206m d.[38;2;150;181;180mparent[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mmap[38;2;192;197;206m([38;2;192;197;206mPath[38;2;192;197;206m::[38;2;192;197;206mto_path_buf[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      69[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mbuild_rust_library[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m PathBuf[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+      70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m manifest_dir [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mPath[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206menv![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mCARGO_MANIFEST_DIR[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m target_dir [38;2;192;197;206m=[38;2;192;197;206m manifest_dir.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtarget[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mdifferential-cdylib[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      72[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Mirror the profile the test binary itself was compiled with.[K
+[0m[48;2;40;67;43m[39m+      74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m release [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mcfg![38;2;192;197;206m([38;2;150;181;180mnot[38;2;192;197;206m([38;2;192;197;206mdebug_assertions[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      75[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m cmd [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mCommand[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mvar_os[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mCARGO[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180munwrap_or_else[38;2;192;197;206m([38;2;192;197;206m|[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mcargo[38;2;192;197;206m"[38;2;192;197;206m.[38;2;150;181;180minto[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    cmd.[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mbuild[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--lib[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--manifest-path[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206mmanifest_dir.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mCargo.toml[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      81[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--target-dir[38;2;192;197;206m"[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      82[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mtarget_dir[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+      83[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--offline[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      84[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m release [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+      85[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        cmd.[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--release[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;43;48;59m[39m  71,  86[0m:[39m[48;2;43;48;59m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;43;48;59m[39m  72,  87[0m:[39m[48;2;43;48;59m [K
+[0m[48;2;79;40;40m[39m- 73     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Fall back to the conventional profile directories.[K
+[0m[48;2;79;40;40m[39m- 74     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m target [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mworkspace_root[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtranslation[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mtarget[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 75     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m profile [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[38;2;192;197;206m"[38;2;163;190;140mdebug[38;2;192;197;206m"[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mrelease[38;2;192;197;206m"[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;79;40;40m[39m- 76     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m candidate [38;2;192;197;206m=[38;2;192;197;206m target.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206mprofile[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mfile_name[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 77     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m candidate.[38;2;150;181;180mis_file[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;79;40;40m[39m- 78     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m candidate[38;2;192;197;206m;[K
+[0m[48;2;79;40;40m[39m- 79     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m        [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+      88[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Reproduce the feature selection this test binary was built with, so every[K
+[0m[48;2;40;67;43m[39m+      89[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m `cargo test --no-default-features --features <combo>` invocation loads a[K
+[0m[48;2;40;67;43m[39m+      90[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m matching .so. `translation` currently declares no [features]; the list is[K
+[0m[48;2;40;67;43m[39m+      91[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m built via cfg! so it stays correct if features are added later.[K
+[0m[48;2;40;67;43m[39m+      92[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    cmd.[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--no-default-features[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      93[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m features[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mVec[38;2;192;197;206m<[38;2;192;197;206m&[38;2;180;142;173mstr[38;2;192;197;206m>[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mENABLED_FEATURES[38;2;192;197;206m.[38;2;150;181;180miter[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mcopied[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mflatten[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mcollect[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      94[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m [38;2;192;197;206m![38;2;192;197;206mfeatures.[38;2;150;181;180mis_empty[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+      95[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        cmd.[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m--features[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180marg[38;2;192;197;206m([38;2;192;197;206mfeatures.[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140m,[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+      96[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+      97[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+      98[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m `cargo test` exports variables that would otherwise leak into the nested[K
+[0m[48;2;40;67;43m[39m+      99[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m build and confuse it about which package or target directory to use.[K
+[0m[48;2;40;67;43m[39m+     100[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfor[38;2;192;197;206m var [38;2;192;197;206min[38;2;192;197;206m [38;2;192;197;206m[[K
+[0m[48;2;40;67;43m[39m+     101[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mCARGO_MANIFEST_DIR[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     102[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mCARGO_PKG_NAME[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     103[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mCARGO_CRATE_NAME[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     104[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mCARGO_PRIMARY_PACKAGE[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     105[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mCARGO_TARGET_DIR[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     106[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mRUSTC_WORKSPACE_WRAPPER[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     107[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
+[0m[48;2;40;67;43m[39m+     108[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        cmd.[38;2;150;181;180menv_remove[38;2;192;197;206m([38;2;192;197;206mvar[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;43;48;59m[39m  80, 109[0m:[39m[48;2;43;48;59m [38;2;192;197;206m    [38;2;192;197;206m}[K
+[0m[48;2;43;48;59m[39m  81, 110[0m:[39m[48;2;43;48;59m [K
+[0m[48;2;79;40;40m[39m- 82     [0m:[39m[48;2;36;25;28m [38;2;192;197;206m    [38;2;192;197;206mpanic![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mcould not locate {file_name}; run `cargo build` first[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     111[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m output [38;2;192;197;206m=[38;2;192;197;206m cmd[K
+[0m[48;2;40;67;43m[39m+     112[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180moutput[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     113[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180munwrap_or_else[38;2;192;197;206m([38;2;192;197;206m|[38;2;191;97;106me[38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206mpanic![38;2;192;197;206m([38;2;192;197;206m"[38;2;163;190;140mfailed to spawn cargo to build the cdylib: {e}[38;2;192;197;206m"[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     114[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206massert![38;2;192;197;206m([K
+[0m[48;2;40;67;43m[39m+     115[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        output.status.[38;2;150;181;180msuccess[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     116[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mnested `cargo build --lib` failed ({}):[38;2;150;181;180m\n[38;2;163;190;140m{}[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     117[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        output.status[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     118[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mString[38;2;192;197;206m::[38;2;192;197;206mfrom_utf8_lossy[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206moutput.stderr[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     119[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     120[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     121[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m file_name [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mformat![38;2;192;197;206m([K
+[0m[48;2;40;67;43m[39m+     122[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;208;135;112m{}[38;2;163;190;140mmax_size_frame_lib[38;2;208;135;112m{}[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     123[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mconsts[38;2;192;197;206m::[38;2;208;135;112mDLL_PREFIX[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     124[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206menv[38;2;192;197;206m::[38;2;192;197;206mconsts[38;2;192;197;206m::[38;2;208;135;112mDLL_SUFFIX[K
+[0m[48;2;40;67;43m[39m+     125[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     126[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m path [38;2;192;197;206m=[38;2;192;197;206m target_dir[K
+[0m[48;2;40;67;43m[39m+     127[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;180;142;173mif[38;2;192;197;206m release [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mrelease[38;2;192;197;206m"[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mdebug[38;2;192;197;206m"[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     128[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mjoin[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mfile_name[38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     129[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206massert![38;2;192;197;206m([K
+[0m[48;2;40;67;43m[39m+     130[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        path.[38;2;150;181;180mis_file[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     131[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m"[38;2;163;190;140mnested build did not produce {}[38;2;192;197;206m"[38;2;192;197;206m,[K
+[0m[48;2;40;67;43m[39m+     132[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        path.[38;2;150;181;180mdisplay[38;2;192;197;206m([38;2;192;197;206m)[K
+[0m[48;2;40;67;43m[39m+     133[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m)[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     134[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    path[K
+[0m[48;2;43;48;59m[39m  83, 135[0m:[39m[48;2;43;48;59m [38;2;192;197;206m}[K
+[0m[48;2;40;67;43m[39m+     136[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     137[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Features enabled for this test binary. `translation` declares none, so this[K
+[0m[48;2;40;67;43m[39m+     138[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m is empty; add `cfg!(feature = "x").then_some("x")` entries alongside any new[K
+[0m[48;2;40;67;43m[39m+     139[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m feature so the nested `cdylib` build stays in sync.[K
+[0m[48;2;40;67;43m[39m+     140[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mENABLED_FEATURES[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;192;197;206mOption[38;2;192;197;206m<[38;2;192;197;206m&[38;2;180;142;173mstr[38;2;192;197;206m>[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[[38;2;192;197;206m][38;2;192;197;206m;[K
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add needed imports
+
+[48;2;43;48;59m[39m  8,  8[0m:[39m[48;2;43;48;59m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mpath[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206mPath[38;2;192;197;206m,[38;2;192;197;206m PathBuf[38;2;192;197;206m}[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mprocess[38;2;192;197;206m::[38;2;192;197;206mCommand[38;2;192;197;206m;[K
+[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206msync[38;2;192;197;206m::[38;2;192;197;206mOnceLock[38;2;192;197;206m;[K
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow re-run the mutation check — the test must now fail.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && sed -i 's/^        .wrapping_add(7);$/        .wrapping_add(8); \/\/ MUTATION/' src/lib.rs && timeout 600 cargo test --release --test differential 2>&1 | grep -E "^test |test result|C returned" | head -12; cp /tmp/lib.rs.bak src/lib.rs; echo "--- restored, MUTATION count: $(grep -c MUTATION src/lib.rs) ---"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run mutation check to validate harness now detects mismatches
+
+test matches_c_on_pseudorandom_inputs ... FAILED
+test matches_c_on_boundary_cross_product ... FAILED
+test matches_c_on_realistic_flac_parameters ... FAILED
+test matches_c_on_dense_small_values ... FAILED
+test both_libraries_export_the_symbol ... FAILED
+assertion `left == right` failed: max_size_frame(blocksize=749794975, channels=2484536135, bitdepth=3713358160): C returned 2688006259, Rust returned 2688006260
+assertion `left == right` failed: max_size_frame(blocksize=0, channels=0, bitdepth=0): C returned 18, Rust returned 19
+assertion `left == right` failed: max_size_frame(blocksize=0, channels=0, bitdepth=0): C returned 18, Rust returned 19
+assertion `left == right` failed: max_size_frame(blocksize=0, channels=0, bitdepth=0): C returned 18, Rust returned 19
+assertion `left == right` failed: max_size_frame(blocksize=4096, channels=2, bitdepth=16): C returned 16916, Rust returned 16917
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+--- restored, MUTATION count: 0 ---
+[38;5;244m - Completed in 0.640s[0m
+
+[?25l[0m[38;5;141m> [0mThe harness is now genuinely differential. Re-running clean across both profiles:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && for prof in "" "--release"; do echo "=== profile: ${prof:-debug} ==="; timeout 600 cargo test --no-default-features $prof 2>&1 | grep -E "test result|FAILED|error"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full test suite in debug and release after restoring source
+
+=== profile: debug ===
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+=== profile: --release ===
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+[38;5;244m - Completed in 0.905s[0m
+
+[?25l[0m[38;5;141m> [0mNow automate the feature-combination sweep and symbol diff into a script (step 1/2/8/9), so it stays correct if features are ever added.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/verify.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Automation script enumerating feature combos, checking, testing, and diffing symbols
+
+[48;2;40;67;43m[39m+      1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#[38;2;101;115;126m!/usr/bin/env bash[K
+[0m[48;2;40;67;43m[39m+      2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# Verifies the Rust translation against the C ground truth for EVERY valid[K
+[0m[48;2;40;67;43m[39m+      3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# feature combination declared in translation/Cargo.toml.[K
+[0m[48;2;40;67;43m[39m+      4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#[K
+[0m[48;2;40;67;43m[39m+      5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#   1. enumerate feature combinations from [features][K
+[0m[48;2;40;67;43m[39m+      6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#   2. cargo check each combination[K
+[0m[48;2;40;67;43m[39m+      7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#   3. build the C shared library[K
+[0m[48;2;40;67;43m[39m+      8[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#   4. cargo test each combination (differential tests via libloading)[K
+[0m[48;2;40;67;43m[39m+      9[0m:[39m[48;2;24;38;30m [38;2;101;115;126m#   5. diff exported dynamic symbols: C .so vs Rust .so[K
+[0m[48;2;40;67;43m[39m+     10[0m:[39m[48;2;24;38;30m [38;2;101;115;126mset -uo pipefail[K
+[0m[48;2;40;67;43m[39m+     11[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     12[0m:[39m[48;2;24;38;30m [38;2;101;115;126mROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"[K
+[0m[48;2;40;67;43m[39m+     13[0m:[39m[48;2;24;38;30m [38;2;101;115;126mCRATE="$ROOT/translation"[K
+[0m[48;2;40;67;43m[39m+     14[0m:[39m[48;2;24;38;30m [38;2;101;115;126mLOG_DIR="${TMPDIR:-/tmp}/translation-verify"[K
+[0m[48;2;40;67;43m[39m+     15[0m:[39m[48;2;24;38;30m [38;2;101;115;126mmkdir -p "$LOG_DIR"[K
+[0m[48;2;40;67;43m[39m+     16[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     17[0m:[39m[48;2;24;38;30m [38;2;101;115;126mfail=0[K
+[0m[48;2;40;67;43m[39m+     18[0m:[39m[48;2;24;38;30m [38;2;101;115;126mnote() { printf '\n== %s\n' "$*"; }[K
+[0m[48;2;40;67;43m[39m+     19[0m:[39m[48;2;24;38;30m [38;2;101;115;126mok()   { printf '   PASS  %s\n' "$*"; }[K
+[0m[48;2;40;67;43m[39m+     20[0m:[39m[48;2;24;38;30m [38;2;101;115;126mbad()  { printf '   FAIL  %s\n' "$*"; fail=1; }[K
+[0m[48;2;40;67;43m[39m+     21[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# ---------------------------------------------------------------------------[K
+[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# 1. Enumerate feature combinations.[K
+[0m[48;2;40;67;43m[39m+     24[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# ---------------------------------------------------------------------------[K
+[0m[48;2;40;67;43m[39m+     25[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# Feature names come from the [features] table; "default" is excluded because it[K
+[0m[48;2;40;67;43m[39m+     26[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# is expressed via --no-default-features / explicit feature lists instead.[K
+[0m[48;2;40;67;43m[39m+     27[0m:[39m[48;2;24;38;30m [38;2;101;115;126mmapfile -t FEATURES < <([K
+[0m[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  awk '[K
+[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    /^\[features\]/ { in_f = 1; next }[K
+[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    /^\[/           { in_f = 0 }[K
+[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    in_f && /^[A-Za-z0-9_-]+[[:space:]]*=/ {[K
+[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      sub(/[[:space:]]*=.*/, "", $0); if ($0 != "default") print $0[K
+[0m[48;2;40;67;43m[39m+     33[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    }[K
+[0m[48;2;40;67;43m[39m+     34[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  ' "$CRATE/Cargo.toml"[K
+[0m[48;2;40;67;43m[39m+     35[0m:[39m[48;2;24;38;30m [38;2;101;115;126m)[K
+[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [38;2;101;115;126mCOMBOS=()[K
+[0m[48;2;40;67;43m[39m+     38[0m:[39m[48;2;24;38;30m [38;2;101;115;126mif [ "${#FEATURES[@]}" -eq 0 ]; then[K
+[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  # No [features] table: the empty set is the only valid configuration.[K
+[0m[48;2;40;67;43m[39m+     40[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  COMBOS=("")[K
+[0m[48;2;40;67;43m[39m+     41[0m:[39m[48;2;24;38;30m [38;2;101;115;126melse[K
+[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  n=${#FEATURES[@]}[K
+[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  for ((mask = 0; mask < (1 << n); mask++)); do[K
+[0m[48;2;40;67;43m[39m+     44[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    combo=()[K
+[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    for ((i = 0; i < n; i++)); do[K
+[0m[48;2;40;67;43m[39m+     46[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      (((mask >> i) & 1)) && combo+=("${FEATURES[$i]}")[K
+[0m[48;2;40;67;43m[39m+     47[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    done[K
+[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    COMBOS+=("$(IFS=,; echo "${combo[*]}")")[K
+[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  done[K
+[0m[48;2;40;67;43m[39m+     50[0m:[39m[48;2;24;38;30m [38;2;101;115;126mfi[K
+[0m[48;2;40;67;43m[39m+     51[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     52[0m:[39m[48;2;24;38;30m [38;2;101;115;126mnote "feature combinations to verify: ${#COMBOS[@]}"[K
+[0m[48;2;40;67;43m[39m+     53[0m:[39m[48;2;24;38;30m [38;2;101;115;126mfor c in "${COMBOS[@]}"; do printf '   - %s\n' "${c:-<none>}"; done[K
+[0m[48;2;40;67;43m[39m+     54[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     55[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# ---------------------------------------------------------------------------[K
+[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# 3. Build the C shared library (ground truth).[K
+[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# ---------------------------------------------------------------------------[K
+[0m[48;2;40;67;43m[39m+     58[0m:[39m[48;2;24;38;30m [38;2;101;115;126mnote "building C shared library"[K
+[0m[48;2;40;67;43m[39m+     59[0m:[39m[48;2;24;38;30m [38;2;101;115;126mif (cd "$ROOT/c_src" && mkdir -p build && cd build \[K
+[0m[48;2;40;67;43m[39m+     60[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON \[K
+[0m[48;2;40;67;43m[39m+     61[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      && cmake --build .) > "$LOG_DIR/cmake.log" 2>&1; then[K
+[0m[48;2;40;67;43m[39m+     62[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  ok "cmake build"[K
+[0m[48;2;40;67;43m[39m+     63[0m:[39m[48;2;24;38;30m [38;2;101;115;126melse[K
+[0m[48;2;40;67;43m[39m+     64[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  bad "cmake build (see $LOG_DIR/cmake.log)"[K
+[0m[48;2;40;67;43m[39m+     65[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  exit 1[K
+[0m[48;2;40;67;43m[39m+     66[0m:[39m[48;2;24;38;30m [38;2;101;115;126mfi[K
+[0m[48;2;40;67;43m[39m+     67[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     68[0m:[39m[48;2;24;38;30m [38;2;101;115;126mC_SO="$(find "$ROOT/c_src/build" -maxdepth 1 -name 'lib*.so' -type f | sort | head -n1)"[K
+[0m[48;2;40;67;43m[39m+     69[0m:[39m[48;2;24;38;30m [38;2;101;115;126m[ -n "$C_SO" ] || { bad "no lib*.so produced by cmake"; exit 1; }[K
+[0m[48;2;40;67;43m[39m+     70[0m:[39m[48;2;24;38;30m [38;2;101;115;126mprintf '   C .so: %s\n' "$C_SO"[K
+[0m[48;2;40;67;43m[39m+     71[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     72[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# ---------------------------------------------------------------------------[K
+[0m[48;2;40;67;43m[39m+     73[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# 2 + 4 + 5. Per-combination check, test, and symbol diff.[K
+[0m[48;2;40;67;43m[39m+     74[0m:[39m[48;2;24;38;30m [38;2;101;115;126m# ---------------------------------------------------------------------------[K
+[0m[48;2;40;67;43m[39m+     75[0m:[39m[48;2;24;38;30m [38;2;101;115;126mfor combo in "${COMBOS[@]}"; do[K
+[0m[48;2;40;67;43m[39m+     76[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  label="${combo:-<none>}"[K
+[0m[48;2;40;67;43m[39m+     77[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  slug="$(echo "${combo:-none}" | tr ',' '_')"[K
+[0m[48;2;40;67;43m[39m+     78[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  args=(--no-default-features)[K
+[0m[48;2;40;67;43m[39m+     79[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  [ -n "$combo" ] && args+=(--features "$combo")[K
+[0m[48;2;40;67;43m[39m+     80[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     81[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  note "feature combination: $label"[K
+[0m[48;2;40;67;43m[39m+     82[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     83[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  for profile in "" "--release"; do[K
+[0m[48;2;40;67;43m[39m+     84[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    pslug="${profile:---debug}"; pslug="${pslug#--}"[K
+[0m[48;2;40;67;43m[39m+     85[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     86[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    if timeout 600 cargo check --manifest-path "$CRATE/Cargo.toml" \[K
+[0m[48;2;40;67;43m[39m+     87[0m:[39m[48;2;24;38;30m [38;2;101;115;126m         "${args[@]}" $profile > "$LOG_DIR/check-$slug-$pslug.log" 2>&1; then[K
+[0m[48;2;40;67;43m[39m+     88[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      ok "cargo check ($pslug)"[K
+[0m[48;2;40;67;43m[39m+     89[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    else[K
+[0m[48;2;40;67;43m[39m+     90[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      bad "cargo check ($pslug) -- see $LOG_DIR/check-$slug-$pslug.log"[K
+[0m[48;2;40;67;43m[39m+     91[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      tail -n 20 "$LOG_DIR/check-$slug-$pslug.log"[K
+[0m[48;2;40;67;43m[39m+     92[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      continue[K
+[0m[48;2;40;67;43m[39m+     93[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    fi[K
+[0m[48;2;40;67;43m[39m+     94[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+     95[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    if timeout 600 cargo test --manifest-path "$CRATE/Cargo.toml" \[K
+[0m[48;2;40;67;43m[39m+     96[0m:[39m[48;2;24;38;30m [38;2;101;115;126m         "${args[@]}" $profile > "$LOG_DIR/test-$slug-$pslug.log" 2>&1; then[K
+[0m[48;2;40;67;43m[39m+     97[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      ok "cargo test ($pslug)"[K
+[0m[48;2;40;67;43m[39m+     98[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    else[K
+[0m[48;2;40;67;43m[39m+     99[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      bad "cargo test ($pslug) -- see $LOG_DIR/test-$slug-$pslug.log"[K
+[0m[48;2;40;67;43m[39m+    100[0m:[39m[48;2;24;38;30m [38;2;101;115;126m      grep -E 'panicked|assertion|C returned|test result' \[K
+[0m[48;2;40;67;43m[39m+    101[0m:[39m[48;2;24;38;30m [38;2;101;115;126m        "$LOG_DIR/test-$slug-$pslug.log" | head -n 20[K
+[0m[48;2;40;67;43m[39m+    102[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    fi[K
+[0m[48;2;40;67;43m[39m+    103[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  done[K
+[0m[48;2;40;67;43m[39m+    104[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    105[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  # Symbol parity. The differential test builds the cdylib into a dedicated[K
+[0m[48;2;40;67;43m[39m+    106[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  # target dir; compare that freshly built artifact against the C .so.[K
+[0m[48;2;40;67;43m[39m+    107[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  RUST_SO="$(find "$CRATE/target/differential-cdylib" -maxdepth 2 \[K
+[0m[48;2;40;67;43m[39m+    108[0m:[39m[48;2;24;38;30m [38;2;101;115;126m               -name 'libmax_size_frame_lib.so' -type f 2>/dev/null | sort | head -n1)"[K
+[0m[48;2;40;67;43m[39m+    109[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  if [ -z "$RUST_SO" ]; then[K
+[0m[48;2;40;67;43m[39m+    110[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    bad "no Rust .so found for symbol comparison"[K
+[0m[48;2;40;67;43m[39m+    111[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    continue[K
+[0m[48;2;40;67;43m[39m+    112[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  fi[K
+[0m[48;2;40;67;43m[39m+    113[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    114[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  nm -D --defined-only "$C_SO"    | awk '{print $3}' | grep -v '^_' | sort -u > "$LOG_DIR/c-syms.txt"[K
+[0m[48;2;40;67;43m[39m+    115[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  nm -D --defined-only "$RUST_SO" | awk '{print $3}' | grep -v '^_' | sort -u > "$LOG_DIR/rust-syms-$slug.txt"[K
+[0m[48;2;40;67;43m[39m+    116[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  missing="$(comm -23 "$LOG_DIR/c-syms.txt" "$LOG_DIR/rust-syms-$slug.txt")"[K
+[0m[48;2;40;67;43m[39m+    117[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  if [ -z "$missing" ]; then[K
+[0m[48;2;40;67;43m[39m+    118[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    ok "symbol parity ($(wc -l < "$LOG_DIR/c-syms.txt") C symbols all exported by Rust)"[K
+[0m[48;2;40;67;43m[39m+    119[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  else[K
+[0m[48;2;40;67;43m[39m+    120[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    bad "Rust .so is missing symbols exported by the C .so:"[K
+[0m[48;2;40;67;43m[39m+    121[0m:[39m[48;2;24;38;30m [38;2;101;115;126m    printf '%s\n' "$missing" | sed 's/^/         /'[K
+[0m[48;2;40;67;43m[39m+    122[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  fi[K
+[0m[48;2;40;67;43m[39m+    123[0m:[39m[48;2;24;38;30m [38;2;101;115;126mdone[K
+[0m[48;2;40;67;43m[39m+    124[0m:[39m[48;2;24;38;30m [K
+[0m[48;2;40;67;43m[39m+    125[0m:[39m[48;2;24;38;30m [38;2;101;115;126mnote "result"[K
+[0m[48;2;40;67;43m[39m+    126[0m:[39m[48;2;24;38;30m [38;2;101;115;126mif [ "$fail" -eq 0 ]; then[K
+[0m[48;2;40;67;43m[39m+    127[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  echo "   ALL FEATURE COMBINATIONS VERIFIED AGAINST C"[K
+[0m[48;2;40;67;43m[39m+    128[0m:[39m[48;2;24;38;30m [38;2;101;115;126melse[K
+[0m[48;2;40;67;43m[39m+    129[0m:[39m[48;2;24;38;30m [38;2;101;115;126m  echo "   VERIFICATION FAILED"[K
+[0m[48;2;40;67;43m[39m+    130[0m:[39m[48;2;24;38;30m [38;2;101;115;126mfi[K
+[0m[48;2;40;67;43m[39m+    131[0m:[39m[48;2;24;38;30m [38;2;101;115;126mexit "$fail"[K
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-kEuRHL/verify.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mchmod +x verify.sh && timeout 600 ./verify.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full verification script
+
+
+== feature combinations to verify: 1
+   - <none>
+
+== building C shared library
+   PASS  cmake build
+   C .so: /local/home/scheschb/.harvest/work/harvest-work-kEuRHL/c_src/build/libharvest-work-kEuRHL.so
+
+== feature combination: <none>
+   PASS  cargo check (debug)
+   PASS  cargo test (debug)
+   PASS  cargo check (release)
+   PASS  cargo test (release)
+   PASS  symbol parity (1 C symbols all exported by Rust)
+
+== result
+   ALL FEATURE COMBINATIONS VERIFIED AGAINST C
+[38;5;244m - Completed in 0.516s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. Everything passes.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the project actually is[0m[0m
+[0m[0m
+A single function. [38;5;10mc_src/include/lib.h[0m declares one public symbol, [38;5;10mtflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth)[0m — a FLAC frame size upper bound — and [38;5;10mc_src/src/lib.c[0m is its 8-line body.[0m[0m
+[0m[0m
+Feature combinations: exactly one. [38;5;10mtranslation/Cargo.toml[0m has no [38;5;10m[features][0m table, and [38;5;10mc_src/CMakeLists.txt[0m has no options, [38;5;10moption()[0m calls, or conditional compile definitions. The empty feature set is the only valid configuration, so [38;5;10m#[cfg(feature = "...")][0m gating was not needed anywhere. [38;5;10mcargo check --no-default-features[0m was already clean — no compile errors to fix.[0m[0m
+[0m[0m
+[38;5;252m[1m## The bug I found was in the test harness, not the translation[0m[0m
+[0m[0m
+My first version of the differential test globbed [38;5;10mtarget/<profile>/[0m for the Rust [38;5;10m.so[0m. That passed — but so did a deliberately mutated translation ([38;5;10m+7[0m changed to [38;5;10m+8[0m). Cause: [38;5;10mcargo test[0m does [1mnot[22m rebuild a [38;5;10mcdylib[0m-only lib target for integration tests. I confirmed it directly — after [38;5;10mtouch src/lib.rs[0m, [38;5;10mcargo test[0m left the [38;5;10m.so[0m mtime untouched. The test was dlopening a stale artifact and its green result meant nothing.[0m[0m
+[0m[0m
+Fix: the harness now shells out to [38;5;10mcargo build --lib[0m itself, into a dedicated [38;5;10m--target-dir[0m ([38;5;10mtarget/differential-cdylib[0m) so it cannot deadlock on the build-directory lock the outer [38;5;10mcargo test[0m still holds. Re-running the same mutation now fails all five tests with concrete diffs ([38;5;10mC returned 16916, Rust returned 16917[0m), which is what proves the harness is non-vacuous.[0m[0m
+[0m[0m
+[38;5;252m[1m## Results[0m[0m
+[0m[0m
+[38;5;10mtranslation/tests/differential.rs[0m loads both the C [38;5;10m.so[0m and the Rust [38;5;10m.so[0m via [38;5;10mlibloading[0m and calls only through their exported symbols — the Rust function is never called directly, so the [38;5;10m#[no_mangle][0m wrapper is under test too. Coverage: realistic FLAC parameter space, exhaustive cross product of 34 boundary values (wrap-around in each of the three product terms and the final sum), a dense 41³ small-value sweep for the [38;5;10m+7[0m rounding and [38;5;10m/8[0m truncation, and deterministic SplitMix64 fuzzing over the full 32-bit domain. All pass in debug and release. A one-off 20M-call fuzz run also came back clean.[0m[0m
+[0m[0m
+Symbol parity holds: the C [38;5;10m.so[0m exports exactly one non-internal symbol, [38;5;10mmax_size_frame[0m, and the Rust [38;5;10m.so[0m exports it under the same name. The header defines no renaming macros, so there are no macro-generated symbols to chase.[0m[0m
+[0m[0m
+The translation itself needed no changes — it is a faithful transcription, using [38;5;10mwrapping_*[0m throughout to match C's defined unsigned wrap-around, with the [38;5;10mint[0m-to-[38;5;10munsigned[0m conversion of the three comparison sub-expressions handled correctly.[0m[0m
+[0m[0m
+Two files added, nothing in [38;5;10mc_src/[0m touched:[0m[0m
+- [38;5;10mtranslation/tests/differential.rs[0m — the FFI differential harness[0m[0m
+- [38;5;10mverify.sh[0m — enumerates feature combos from [38;5;10mCargo.toml[0m, then runs [38;5;10mcargo check[0m, [38;5;10mcargo test[0m, and the [38;5;10mnm -D[0m symbol diff for each; generalizes automatically if features are added later[0m[0m
+[0m[0m
+One caveat worth flagging: the pre-existing unit tests in [38;5;10msrc/lib.rs[0m compare the translation against a reference re-derivation written in the same file, so they cannot catch a misreading of the C. The differential tests are the ones carrying the correctness guarantee.[0m[0m
+[38;5;8m
+ ▸ Credits: 9.04 • Time: 4m 46s
+
+[0m[1G[0m[0m[?25h

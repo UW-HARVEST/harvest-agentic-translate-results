@@ -1,0 +1,24 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rev16_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# Integration tests run under the `dev` profile and drive millions of FFI calls
+# through both shared libraries; optimise the harness so the exhaustive sweeps
+# finish well inside the test timeout. This does not affect the `.so` under
+# test, which is always the artifact built by `cargo build --release`.
+[profile.dev]
+opt-level = 2
+
+[workspace]

@@ -1,0 +1,184 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
+
+[39m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m.[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m.[0m [38;5;244m(11 entries)[0m
+[38;5;244m - Completed in 0.1s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C source, CMakeLists, Rust main and Cargo.toml
+
+↱ Operation 1: Reading file: [38;5;141m./c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m./c_src/CMakeLists.txt[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m./translation/src/main.rs[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m./translation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2164 bytes[0m from ./c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1209 bytes[0m from ./c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m6049 bytes[0m from ./translation/src/main.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m119 bytes[0m from ./translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && echo OK && tail -5 /tmp/cmake.log[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the C program
+
+OK
+-- Generating done
+-- Build files have been written to: /local/home/scheschb/.harvest/work/harvest-work-ysFYks/c_src/build
+[ 50%] Building C object CMakeFiles/driver.dir/src/main.c.o
+[100%] Linking C executable driver
+[100%] Built target driver
+[38;5;244m - Completed in 0.728s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust program
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-ysFYks/translation)
+    Finished `release` profile [optimized] target(s) in 0.29s
+[38;5;244m - Completed in 0.320s[0m
+
+[?25l[0m[38;5;141m> [0mBoth build. Now a quick manual differential sweep to find mismatches before writing the test suite.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mC=./c_src/build/driver
+R=./translation/target/release/driver
+run() {
+  co=$("$C" "$@" 2>/tmp/ce); cs=$?
+  ro=$("$R" "$@" 2>/tmp/re); rs=$?
+  if [ "$co" != "$ro" ] || [ "$cs" != "$rs" ] || ! diff -q /tmp/ce /tmp/re >/dev/null; then
+    echo "MISMATCH args=[$*]"
+    echo "  C  status=$cs out=$(printf %s "$co" | head -c 200 | tr '\n' '|')"
+    echo "  R  status=$rs out=$(printf %s "$ro" | head -c 200 | tr '\n' '|')"
+  else
+    echo "ok args=[$*] status=$cs out=$(printf %s "$co" | head -c 80 | tr '\n' '|')"
+  fi
+}
+run
+run 1
+run 1 2 3
+run 5 5
+run 0 5
+run -5 5
+run 3 0
+run 3 -1
+run abc 5
+run 5 abc
+run "" 5
+run 5 ""
+run " 7 " 3
+run +7 3
+run - 3
+run 99999999999999999999 3
+run -99999999999999999999 3
+run 2147483647 3
+run 4294967296 3
+run 0x10 3
+run 1 40
+run 7 1
+[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential sweep across branch classes
+
+ok args=[] status=1 out=Error: should only be two (integer) arguments!
+ok args=[1] status=1 out=Error: should only be two (integer) arguments!
+ok args=[1 2 3] status=1 out=Error: should only be two (integer) arguments!
+ok args=[5 5] status=0 out=6|12|24|48|96
+ok args=[0 5] status=0 out=1|2|4|8|16
+ok args=[-5 5] status=0 out=-4|-3|-2|-1|0
+ok args=[3 0] status=0 out=
+ok args=[3 -1] status=0 out=
+ok args=[abc 5] status=1 out=Error: first argument must be an integer!
+ok args=[5 abc] status=1 out=Error: second argument must be an integer!
+ok args=[ 5] status=1 out=Error: first argument must be an integer!
+ok args=[5 ] status=1 out=Error: second argument must be an integer!
+ok args=[ 7  3] status=0 out=8|16|32
+ok args=[+7 3] status=0 out=8|16|32
+ok args=[- 3] status=1 out=Error: first argument must be an integer!
+ok args=[99999999999999999999 3] status=0 out=0|1|2
+ok args=[-99999999999999999999 3] status=0 out=1|2|4
+ok args=[2147483647 3] status=0 out=-2147483648|0|0
+ok args=[4294967296 3] status=0 out=1|2|4
+ok args=[0x10 3] status=0 out=1|2|4
+ok args=[1 40] status=0 out=2|4|8|16|32|64|128|256|512|1024|2048|4096|8192|16384|32768|65536|131072|262144|5
+ok args=[7 1] status=0 out=8
+[38;5;244m - Completed in 0.274s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=./c_src/build/driver
+R=./translation/target/release/driver
+run() {
+  co=$("$C" "$@" 2>/tmp/ce); cs=$?
+  ro=$("$R" "$@" 2>/tmp/re); rs=$?
+  if [ "$co" != "$ro" ] || [ "$cs" != "$rs" ] || ! diff -q /tmp/ce /tmp/re >/dev/null; then
+    echo "MISMATCH args=[$*] Cst=$cs Rst=$rs"
+    echo "  C=$(printf %s "$co" | head -c 300 | tr '\n' '|')"
+    echo "  R=$(printf %s "$ro" | head -c 300 | tr '\n' '|')"
+  else
+    echo "ok [$*] st=$cs :: $(printf %s "$co" | head -c 90 | tr '\n' '|')"
+  fi
+}
+run 0 0
+run -0 4
+run -1 4
+run -3 8
+run 1 1
+run 2 4
+run 1e5 3
+run 12abc 3
+run 3 12abc
+run "  12" 3
+run "$(printf '\t\n 12')" 3
+run 9223372036854775807 4
+run 9223372036854775808 4
+run -9223372036854775808 4
+run -9223372036854775809 4
+run 2147483648 4
+run -2147483648 4
+run -2147483649 4
+run 4 2147483647x
+run 5 2147483648
+run 5 -2147483648
+run "$(printf 'caf\xe9')" 3
+run 3 "$(printf '\xff\xfe')"
+run "$(printf '\xff5')" 3
+run . 3
+run 3 .
+run ++5 3
+run -+5 3
+run " " 3
+run "--" 3
+run 0000000000000000000000005 3
+run 30 3
+run 31 3
+run 1073741823 4
+[0m[38;5;244m (using tool: shell)[0m
+Purpose: Second deeper differential sweep incl. non-UTF8 and overflow edges
+
+ok [0 0] st=0 :: 
+ok [-0 4] st=0 :: 1|2|4|8
+ok [-1 4] st=0 :: 0|1|2|4
+ok [-3 8] st=0 :: -2|-1|0|1|2|4|8|16
+ok [1 1] st=0 :: 2
+ok [2 4] st=0 :: 3|6|12|24
+ok [1e5 3] st=0 :: 2|4|8
+ok [12abc 3] st=0 :: 13|26|52
+ok [3 12abc] st=0 :: 4|8|16|32|64|128|256|512|1024|2048|4096|8192
+ok [  12 3] st=0 :: 13|26|52
+ok [	
+ 12 3] st=0 :: 13|26|52
+ok [9223372036854775807 4] st=0 :: 0|1|2|4
+ok [9223372036854775808 4] st=0 :: 0|1|2|4
+ok [-9223372036854775808 4] st=0 :: 1|2|4|8
+ok [-9223372036854775809 4] st=0 :: 1|2|4|8
+ok [2147483648 4] st=0 :: -2147483647|-2147483646|-2147483645|-2147483644
+ok [-2147483648 4] st=0 :: -2147483647|-2147483646|-2147483645|-2147483644
+ok [-2147483649 4] st=0 :: -2147483648|0|0|0

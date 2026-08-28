@@ -1,0 +1,44 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "unfilter_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[features]
+# Mirrors the C build's `NDEBUG` switch.
+#
+# The reference C shared library is built by the command in the task
+# description (`cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON`), which sets no
+# `CMAKE_BUILD_TYPE` and therefore does *not* define `NDEBUG`: `assert()` is
+# live and `__assert_fail` shows up in `nm -D -u`.  `c-asserts` (on by default)
+# reproduces that library.  Building with `--no-default-features` reproduces a
+# `-DNDEBUG` build of the same C source instead.
+default = ["c-asserts"]
+c-asserts = []
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[profile.release]
+panic = "abort"
+overflow-checks = false
+debug-assertions = false
+
+# The translation deliberately reproduces the C source's semantics, including
+# its wrap-around arithmetic and the raw, possibly out-of-range accesses the C
+# code performs (`cp_decode`'s `tree[-1]`, `unfilter`'s negative strides,
+# `cp_block` writing through a NULL `out`).  Rust's debug UB checks and overflow
+# checks would report *the C code's* behaviour as Rust panics, which would make
+# a `cargo build` (dev) artifact behave differently from the C library it is
+# supposed to mirror - so they are off here too.
+[profile.dev]
+overflow-checks = false
+debug-assertions = false
+
+[workspace]

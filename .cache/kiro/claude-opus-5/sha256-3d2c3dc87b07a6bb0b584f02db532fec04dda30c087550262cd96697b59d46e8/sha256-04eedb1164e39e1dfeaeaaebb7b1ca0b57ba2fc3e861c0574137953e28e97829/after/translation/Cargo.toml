@@ -1,0 +1,70 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+# Mirrors the CMake project: one shared library plus the `driver` executable.
+[lib]
+name = "macrodepth_add_5"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+# The CMake cache variables become Cargo features, named after the *values* those
+# variables can take (lowercased):
+#
+#   set(OP     "add" CACHE STRING ...)  ->  features `add`, `sub`, `mul`
+#   set(REPEAT "5"   CACHE STRING ...)  ->  features `0` .. `7`
+#
+# `default = []` reproduces the `#ifndef OP / #ifndef REPEAT` fallbacks in
+# mdmacros.h (OP=add, REPEAT=5), so a plain `cargo build` matches a plain
+# `cmake` configure. Because no default feature is forced on, selecting a
+# feature explicitly is never ambiguous.
+#
+# Readable aliases (`op_add`, `repeat_5`, ...) are provided as well; each simply
+# turns on the canonical feature. Every combination of features compiles: when
+# several values of the same variable are enabled, resolution is deterministic
+# (for OP: mul > sub > add; for REPEAT: the lowest enabled value wins).
+[features]
+default = []
+
+# ---- OP ----
+add = []
+sub = []
+mul = []
+
+# ---- REPEAT ----
+"0" = []
+"1" = []
+"2" = []
+"3" = []
+"4" = []
+"5" = []
+"6" = []
+"7" = []
+
+# ---- aliases ----
+op_add = ["add"]
+op_sub = ["sub"]
+op_mul = ["mul"]
+repeat_0 = ["0"]
+repeat_1 = ["1"]
+repeat_2 = ["2"]
+repeat_3 = ["3"]
+repeat_4 = ["4"]
+repeat_5 = ["5"]
+repeat_6 = ["6"]
+repeat_7 = ["7"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The parity tests redirect file descriptor 1 to capture what the two shared
+# objects print, so they must be the only writer to stdout: libtest's own
+# progress output would otherwise land in the captured bytes. Hence a custom
+# harness that runs the checks strictly sequentially.
+[[test]]
+name = "ffi_parity"
+path = "tests/ffi_parity.rs"
+harness = false
+
+[workspace]

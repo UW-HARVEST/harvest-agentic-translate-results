@@ -1,0 +1,29 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "overunder_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[workspace]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# Both differential suites capture the process-wide fd 1 in order to compare
+# the `printf` output of the C and Rust libraries byte-for-byte. libtest's
+# default harness runs cases on multiple threads and writes its own progress
+# text to fd 1, which would land inside a capture. A custom sequential runner
+# (`harness::run_suite`) keeps every capture exclusive and reproducible.
+[[test]]
+name = "phase_b_valid"
+path = "tests/phase_b_valid.rs"
+harness = false
+
+[[test]]
+name = "phase_c_errors"
+path = "tests/phase_c_errors.rs"
+harness = false

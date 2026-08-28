@@ -1,0 +1,30 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "findrep_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# `src/lib.c` is compiled by CMake with no optimisation and no sanitisers, so in the
+# C: a null dereference simply faults (SIGSEGV) and signed arithmetic wraps silently.
+# Rust's default dev-profile `debug-assertions` inserts a "null pointer dereference"
+# precondition check that turns that same fault into a non-unwinding panic, which
+# aborts (SIGABRT) — an observable divergence from the C for the null-pointer inputs
+# in ERRORS.md rows 18 and 19. Turning these off keeps the dev cdylib behaviourally
+# identical to the release cdylib, and to the C, in every profile.
+# (`overflow-checks` is redundant because every arithmetic op already uses
+# `wrapping_*`, but it is pinned for the same reason.)
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

@@ -1,0 +1,39 @@
+[package]
+name = "harvest_work_srthue"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "str_dups_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# This crate is a literal transliteration of C code: it must reproduce the C's
+# wrapping arithmetic and its raw-pointer behaviour *exactly*, in every profile.
+#
+# Rust's debug-only runtime checks are NOT C semantics and actively break
+# fidelity:
+#   * `overflow-checks` panics where C silently wraps;
+#   * `debug-assertions` injects null-pointer and alignment checks on raw
+#     pointer dereferences, which turns C's SIGSEGV on e.g.
+#     `stbds_hash_string(NULL, seed)` into a Rust abort (SIGABRT), and turns the
+#     C's legal-on-x86 unaligned `char *` store (any `elemsize` that is not a
+#     multiple of 8) into an abort as well.
+#
+# Disabling both makes the dev build behave identically to the release build,
+# which is what the differential tests compare against the C `.so`.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

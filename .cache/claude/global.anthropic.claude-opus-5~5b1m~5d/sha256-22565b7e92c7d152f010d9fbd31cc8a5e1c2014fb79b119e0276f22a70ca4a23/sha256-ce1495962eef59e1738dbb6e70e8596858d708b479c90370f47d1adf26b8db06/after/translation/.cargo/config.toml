@@ -1,0 +1,21 @@
+# The verification environment has no egress to crates.io, but the `libloading`
+# dev-dependency (and its `cfg-if` transitive dep) are already present in the
+# local cargo registry cache and pinned in Cargo.lock, so the build resolves
+# entirely offline.
+#
+# If you are building somewhere with network access and an empty cargo cache,
+# delete this file (or remove the `[net]` section) so cargo may download the
+# pinned versions.
+[net]
+offline = true
+
+[env]
+# The library under test reads the *process environment* and writes to the
+# *process stdout/stderr*. Both are global, so the differential tests must run
+# one at a time: they swap fds 1/2 onto capture files, and libtest's own
+# "test foo ... ok" progress lines would otherwise be written to those same fds
+# by the harness thread and land inside a captured output buffer.
+#
+# A global mutex inside the tests is not sufficient, because the progress lines
+# are emitted by libtest itself, outside any test body. Hence: one test thread.
+RUST_TEST_THREADS = "1"

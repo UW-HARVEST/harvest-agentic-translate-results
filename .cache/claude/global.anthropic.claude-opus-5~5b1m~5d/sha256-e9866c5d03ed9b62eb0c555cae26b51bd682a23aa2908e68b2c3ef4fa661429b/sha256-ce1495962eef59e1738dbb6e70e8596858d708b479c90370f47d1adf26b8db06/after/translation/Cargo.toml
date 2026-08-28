@@ -1,0 +1,33 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "normalize_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# This crate is a byte-for-byte ABI-compatible replacement for a C library, so
+# it must reproduce the C behaviour even for inputs that are UB in both
+# languages (NULL pointers, negative sizes). rustc's debug-assertion UB checks
+# turn a NULL dereference into a Rust `abort()` (SIGABRT) where the C code
+# faults (SIGSEGV), which is an observable divergence, so they are off in every
+# profile.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

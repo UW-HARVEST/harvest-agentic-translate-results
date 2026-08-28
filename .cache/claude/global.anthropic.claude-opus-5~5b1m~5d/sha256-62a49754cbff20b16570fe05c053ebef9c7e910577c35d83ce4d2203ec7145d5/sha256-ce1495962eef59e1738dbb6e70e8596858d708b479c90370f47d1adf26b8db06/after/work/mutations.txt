@@ -1,0 +1,58 @@
+c2Maxv-x|s/        if a.x > b.x { a.x } else { b.x },/        if a.x >= b.x { a.x } else { b.x },/
+c2Minv-y|s/        if a.y < b.y { a.y } else { b.y },/        if a.y <= b.y { a.y } else { b.y },/
+c2Clampv-swap|s/    c2Maxv(lo, c2Minv(a, hi))/    c2Minv(hi, c2Maxv(a, lo))/
+c2Dot-sign|s/    a.x \* b.x + a.y \* b.y/    a.x * b.x - a.y * b.y/
+c2Det2-swap|s/    a.x \* b.y - a.y \* b.x/    a.y * b.x - a.x * b.y/
+c2Skew-sign|s/    b.x = -a.y;\n    b.y = a.x;/XX/
+c2Mulrv-sign|s/    c2V(a.c \* b.x - a.s \* b.y, a.s \* b.x + a.c \* b.y)/    c2V(a.c * b.x + a.s * b.y, a.s * b.x + a.c * b.y)/
+c2MulrvT-sign|s/    c2V(a.c \* b.x + a.s \* b.y, -a.s \* b.x + a.c \* b.y)/    c2V(a.c * b.x + a.s * b.y, a.s * b.x + a.c * b.y)/
+c2BBVerts-order|s/    \*out.add(1) = c2V((\*bb).max.x, (\*bb).min.y);/    *out.add(1) = c2V((*bb).min.x, (*bb).max.y);/
+c2MakeProxy-circle-count|s/            (\*p).count = 1;/            (*p).count = 2;/
+c2MakeProxy-aabb-radius|s/            (\*p).radius = 0.0;/            (*p).radius = 1.0;/
+c2MakeProxy-capsule-swap|s/            (\*p).verts\[0\] = (\*c).a;\n            (\*p).verts\[1\] = (\*c).b;/XX/
+metric-2-3-swap|s/        2 => c2Len(c2Sub((\*s).verts\[1\].p, (\*s).verts\[0\].p)),/        2 => c2Det2((*s).verts[1].p, (*s).verts[0].p),/
+metric-default|s/        \_ => 0.0,\n    }\n}\n\n#\[unsafe(no_mangle)\]\npub extern "C" fn c2Mulrv/XX/
+c22-v-strict|s/    if v <= 0.0 {/    if v < 0.0 {/
+c22-u-strict|s/    } else if u <= 0.0 {/    } else if u < 0.0 {/
+c22-uv-swap|s/        (\*s).verts\[0\].u = u;\n        (\*s).verts\[1\].u = v;/XX/
+c23-b0|s/    if vAB <= 0.0 \&\& uCA <= 0.0 {/    if vAB < 0.0 \&\& uCA <= 0.0 {/
+c23-b1|s/    } else if uAB <= 0.0 \&\& vBC <= 0.0 {/    } else if uAB < 0.0 \&\& vBC <= 0.0 {/
+c23-b2|s/    } else if uBC <= 0.0 \&\& vCA <= 0.0 {/    } else if uBC <= 0.0 \&\& vCA < 0.0 {/
+c23-b3|s/    } else if uAB > 0.0 \&\& vAB > 0.0 \&\& wABC <= 0.0 {/    } else if uAB > 0.0 \&\& vAB > 0.0 \&\& wABC < 0.0 {/
+c23-b4|s/    } else if uBC > 0.0 \&\& vBC > 0.0 \&\& uABC <= 0.0 {/    } else if uBC > 0.0 \&\& vBC > 0.0 \&\& uABC < 0.0 {/
+c23-b5|s/    } else if uCA > 0.0 \&\& vCA > 0.0 \&\& vABC <= 0.0 {/    } else if uCA > 0.0 \&\& vCA > 0.0 \&\& vABC < 0.0 {/
+c23-area|s/    let area = c2Det2(c2Sub(b, a), c2Sub(c, a));/    let area = c2Det2(c2Sub(c, a), c2Sub(b, a));/
+c23-uABC|s/    let uABC = c2Det2(b, c) \* area;/    let uABC = c2Det2(c, b) * area;/
+c2D-det-strict|s/            if c2Det2(ab, c2Neg((\*s).verts\[0\].p)) > 0.0 {/            if c2Det2(ab, c2Neg((*s).verts[0].p)) >= 0.0 {/
+c2D-skew-ccw|s/                return c2Skew(ab);\n            }\n            c2CCW90(ab)/XX/
+c2Support-init|s/    let mut i: c_int = 1;/    let mut i: c_int = 0;/
+c2Witness-den|s/    let den = 1.0f32 \/ (\*s).div;\n    match (\*s).count {\n        1 => {\n            \*a = (\*s).verts\[0\].sA;/XX/
+c2L-count2|s/        2 => c2Add(\n            c2Mulvs((\*s).verts\[0\].p, den \* (\*s).verts\[0\].u),/XX/
+gjk-iter-cap|s/    while iter < 20 {/    while iter < 19 {/
+gjk-d1d0|s/        if d1 > d0 {/        if d1 >= d0 {/
+gjk-eps|s/        if c2Dot(d, d) < C2_FLT_EPSILON \* C2_FLT_EPSILON {/        if c2Dot(d, d) <= C2_FLT_EPSILON * C2_FLT_EPSILON {/
+gjk-count3|s/        if s.count == 3 {/        if s.count >= 3 {/
+gjk-hit-ab|s/    if hit != 0 {\n        a = b;/XX/
+gjk-radius-cond|s/    } else if use_radius != 0 {/    } else if use_radius == 1 {/
+gjk-dist-gt|s/        if dist > rA + rB \&\& dist > C2_FLT_EPSILON {/        if dist >= rA + rB \&\& dist > C2_FLT_EPSILON {/
+gjk-dist-eps|s/        if dist > rA + rB \&\& dist > C2_FLT_EPSILON {/        if dist > rA + rB \&\& dist >= C2_FLT_EPSILON {/
+gjk-mid-half|s/            let p = c2Mulvs(c2Add(a, b), 0.5f32);/            let p = c2Mulvs(c2Add(a, b), 0.25f32);/
+gjk-support-neg|s/        let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, c2Neg(d)));/        let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, d));/
+gjk-supportB-neg|s/        let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, d));/        let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, c2Neg(d)));/
+gjk-p-sub|s/        (\*v).p = c2Sub((\*v).sB, (\*v).sA);\n        let mut dup: c_int = 0;/XX/
+gjk-cache-good|s/        let cache_was_good = (\*cache).count != 0;/        let cache_was_good = (*cache).count > 0;/
+gjk-cache-u|s/                (\*v).u = 0.0;/                (*v).u = 1.0;/
+gjk-fresh-div|s/        s.div = 1.0f32;\n        s.count = 1;/XX/
+aabb-d0|s/    let d0: c_int = (B.max.x < A.min.x) as c_int;/    let d0: c_int = (B.max.x <= A.min.x) as c_int;/
+aabb-or|s/    ((d0 | d1 | d2 | d3) == 0) as c_int/    ((d0 \& d1 \& d2 \& d3) == 0) as c_int/
+cc-strict|s/    (d2 < r2) as c_int\n}\n\n#\[unsafe(no_mangle)\]\npub extern "C" fn c2CircletoAABB/XX/
+ca-r2|s/    let r2 = A.r \* A.r;/    let r2 = A.r.abs();/
+cap-da|s/    if da < 0.0 {/    if da <= 0.0 {/
+cap-db|s/        if db < 0.0 {/        if db <= 0.0 {/
+cap-r|s/    (d2 < r \* r) as c_int/    (d2 <= r * r) as c_int/
+collided-aabb-circle-swap|s/            C2_TYPE_CIRCLE => c2CircletoAABB(\n                (B as \*const c2Circle).read_unaligned(),\n                (A as \*const c2AABB).read_unaligned(),\n            ),/XX/
+gjkpred-ne|s/        ) != 0.0\n        {\n            return 0;\n        }\n    }\n    1\n}\n\n#\[unsafe(no_mangle)\]\npub extern "C" fn c2CapsuletoCapsule/XX/
+ptr-circle-r|s/            (\*circle).r = c;/            (*circle).r = d;/
+ptr-aabb|s/            (\*aabb).max = c2V(c, d);/            (*aabb).max = c2V(d, c);/
+ptr-capsule-r|s/            (\*capsule).r = e;/            (*capsule).r = d;/
+omni-order|s/    c2Collided(A, type_a, B, type_b)/    c2Collided(B, type_b, A, type_a)/

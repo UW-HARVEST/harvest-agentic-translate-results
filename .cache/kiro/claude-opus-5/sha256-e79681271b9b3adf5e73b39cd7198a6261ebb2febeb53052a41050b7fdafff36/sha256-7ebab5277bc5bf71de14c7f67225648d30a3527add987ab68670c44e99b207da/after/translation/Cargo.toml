@@ -1,0 +1,21 @@
+[package]
+name = "buffapp"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "buffapp_lib"
+# "cdylib" is the shipped artifact. "rlib" is added so that integration tests
+# depend on the lib target and cargo therefore rebuilds the cdylib as part of
+# `cargo test`; without it the tests silently dlopen a stale .so. The tests
+# still load the cdylib via libloading and never link against the rlib.
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

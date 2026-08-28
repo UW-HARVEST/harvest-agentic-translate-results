@@ -1,0 +1,74 @@
+// ===========================================================================
+// Row 14b — warm cache with every reachable (count, index) combination
+// ===========================================================================
+#[test]
+fn err_row14b_cache_all_index_combinations() {
+    for_each_pair(|c, r, label| {
+        let mut rng = Rng::new(0x031A);
+        // Sweep every cache the caller could legitimately hand back: count in
+        // 1..=3 and indices in range for the corresponding proxy vertex count.
+        for &ta in VALID_TYPES.iter() {
+            for &tb in VALID_TYPES.iter() {
+                let na = match ta {
+                    C2_TYPE_CIRCLE => 1,
+                    C2_TYPE_AABB => 4,
+                    _ => 2,
+                };
+                let nb = match tb {
+                    C2_TYPE_CIRCLE => 1,
+                    C2_TYPE_AABB => 4,
+                    _ => 2,
+                };
+                for count in 1..=3 {
+                    for trial in 0..120 {
+                        let sa = Shape::random(&mut rng, ta, 10.0);
+                        let sb = Shape::random(&mut rng, tb, 10.0);
+                        let mut ia = [0i32; 3];
+                        let mut ib = [0i32; 3];
+                        for k in 0..3 {
+                            ia[k] = rng.below(na) as c_int;
+                            ib[k] = rng.below(nb) as c_int;
+                        }
+                        let seed = c2GJKCache {
+                            metric: match rng.below(5) {
+                                0 => 0.0,
+                                1 => rng.ordinary(1.0e3),
+                                2 => -1.0e9,
+                                3 => f32::NEG_INFINITY,
+                                _ => rng.special_no_nan(),
+                            },
+                            count,
+                            iA: ia,
+                            iB: ib,
+                            div: match rng.below(4) {
+                                0 => 1.0,
+                                1 => 0.0,
+                                2 => rng.ordinary(10.0),
+                                _ => rng.special_no_nan(),
+                            },
+                        };
+                        let mut ck = seed;
+                        let mut rk = seed;
+                        let co = gjk(c, &sa, &sb, None, None, true, true, true, 1, Some(&mut ck));
+                        let ro = gjk(r, &sa, &sb, None, None, true, true, true, 1, Some(&mut rk));
+                        assert!(
+                            f32_same(co.0, ro.0) && v_same(co.1, ro.1) && v_same(co.2, ro.2)
+                                && co.3 == ro.3,
+                            "{label} err14b ta={ta} tb={tb} count={count} #{trial} cache={}\n  A={sa:?} B={sb:?}\n  C dist={} a={} b={} it={}\n  R dist={} a={} b={} it={}",
+                            fmt_cache(&seed),
+                            fmt_f32(co.0), fmt_v(co.1), fmt_v(co.2), co.3,
+                            fmt_f32(ro.0), fmt_v(ro.1), fmt_v(ro.2), ro.3,
+                        );
+                        assert!(
+                            cache_same(&ck, &rk),
+                            "{label} err14b ta={ta} tb={tb} count={count} #{trial}: cache\n  in: {}\n  C: {}\n  R: {}",
+                            fmt_cache(&seed),
+                            fmt_cache(&ck),
+                            fmt_cache(&rk)
+                        );
+                    }
+                }
+            }
+        }
+    });
+}

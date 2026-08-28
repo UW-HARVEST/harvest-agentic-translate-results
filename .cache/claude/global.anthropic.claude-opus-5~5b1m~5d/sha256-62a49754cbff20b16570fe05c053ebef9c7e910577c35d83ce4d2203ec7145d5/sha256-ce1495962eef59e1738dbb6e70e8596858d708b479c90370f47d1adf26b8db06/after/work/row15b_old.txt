@@ -1,0 +1,105 @@
+// ===========================================================================
+// Row 15b — the exact `min_metric < max_metric * 2.0f` equality boundary
+// ===========================================================================
+//
+// The L400 test is `!(min_metric < max_metric * 2.0f && metric < -1.0e8f)`.
+// Reaching the `&&`-holds side needs the *reloaded* simplex metric to be below
+// -1e8, which needs `cache->count == 3` and a hugely negative
+// `c2Det2(b.p - a.p, c.p - a.p)`. That is fully controllable through the public
+// interface, because the caller owns the `c2GJKCache`:
+//
+//   A = AABB min(0,0) max(1,1)              -> verts (0,0) (1,0) (1,1) (0,1)
+//   B = AABB min(0,0) max(X,Y)              -> verts (0,0) (X,0) (X,Y) (0,Y)
+//   cache.count = 3, iA = [0,0,0], iB = [0,3,1]
+//     => p0 = (0,0), p1 = (0,Y), p2 = (X,0)
+//     => metric = c2Det2((0,Y), (X,0)) = -X*Y
+//
+// Picking `X * Y == -metric_old * 2` puts `min_metric` exactly on
+// `max_metric * 2.0f`, i.e. straight on the `<` / `<=` boundary.
+#[test]
+fn err_row15b_cache_metric_equality_boundary() {
+    for_each_pair(|c, r, label| {
+        let sa = Shape::Aabb(c2AABB {
+            min: c2v { x: 0.0, y: 0.0 },
+            max: c2v { x: 1.0, y: 1.0 },
+        });
+        let mut checked = 0usize;
+        let mut boundary = 0usize;
+        // Exact powers of two keep every product representable in f32.
+        for xe in 28..=40i32 {
+            let x = (2.0f32).powi(xe);
+            for ye in 0..=6i32 {
+                let y = (2.0f32).powi(ye);
+                let sb = Shape::Aabb(c2AABB {
+                    min: c2v { x: 0.0, y: 0.0 },
+                    max: c2v { x, y },
+                });
+                let metric = -(x * y); // what the C recomputes on reload
+                // metric_old values that straddle the equality:
+                //   metric_old == metric / 2  =>  min == max*2  exactly
+                for metric_old in [
+                    metric * 0.5,             // exactly on the boundary
+                    metric * 0.5 * 1.000_000_1, // a hair inside
+                    metric * 0.5 * 0.999_999_9, // a hair outside
+                    metric * 0.25,
+                    metric * 4.0,
+                    metric,
+                    -metric,
+                    0.0,
+                    f32::NEG_INFINITY,
+                    f32::INFINITY,
+                ] {
+                    for div in [1.0f32, 0.0, -1.0, x] {
+                        let seed = c2GJKCache {
+                            metric: metric_old,
+                            count: 3,
+                            iA: [0, 0, 0],
+                            iB: [0, 3, 1],
+                            div,
+                        };
+                        let mut ck = seed;
+                        let mut rk = seed;
+                        for ur in [0, 1] {
+                            let mut ck2 = ck;
+                            let mut rk2 = rk;
+                            let co =
+                                gjk(c, &sa, &sb, None, None, true, true, true, ur, Some(&mut ck2));
+                            let ro =
+                                gjk(r, &sa, &sb, None, None, true, true, true, ur, Some(&mut rk2));
+                            assert!(
+                                f32_same(co.0, ro.0) && v_same(co.1, ro.1) && v_same(co.2, ro.2)
+                                    && co.3 == ro.3,
+                                "{label} err15b x=2^{xe} y=2^{ye} metric_old={} div={} ur={ur}:\n  C dist={} a={} b={} it={}\n  R dist={} a={} b={} it={}",
+                                fmt_f32(metric_old), fmt_f32(div),
+                                fmt_f32(co.0), fmt_v(co.1), fmt_v(co.2), co.3,
+                                fmt_f32(ro.0), fmt_v(ro.1), fmt_v(ro.2), ro.3,
+                            );
+                            assert!(
+                                cache_same(&ck2, &rk2),
+                                "{label} err15b x=2^{xe} y=2^{ye} metric_old={} div={} ur={ur}: cache\n  C: {}\n  R: {}",
+                                fmt_f32(metric_old), fmt_f32(div),
+                                fmt_cache(&ck2), fmt_cache(&rk2),
+                            );
+                            checked += 1;
+                        }
+                        ck = seed;
+                        rk = seed;
+                        let _ = (ck.count, rk.count);
+                        // Bookkeeping: did we build a genuine boundary case?
+                        let mn = if metric < metric_old { metric } else { metric_old };
+                        let mx = if metric > metric_old { metric } else { metric_old };
+                        if metric < -1.0e8 && mn == mx * 2.0 {
+                            boundary += 1;
+                        }
+                    }
+                }
+            }
+        }
+        println!("{label} err15b: {checked} comparisons, {boundary} exact-equality cases");
+        assert!(
+            boundary > 0,
+            "{label} err15b: never produced `min_metric == max_metric * 2.0f` with metric < -1e8"
+        );
+    });
+}
+

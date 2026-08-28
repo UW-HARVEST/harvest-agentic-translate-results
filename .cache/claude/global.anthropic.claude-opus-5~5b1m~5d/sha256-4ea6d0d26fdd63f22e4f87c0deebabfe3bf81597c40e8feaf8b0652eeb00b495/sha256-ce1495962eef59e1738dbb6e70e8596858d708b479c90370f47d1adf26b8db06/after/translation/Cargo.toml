@@ -1,0 +1,28 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "hsl_to_rgb_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# The C is compiled with no runtime checks whatsoever (`lib.c` dereferences
+# `dest`/`src` unconditionally — see ERRORS.md rows E11-E13). Rust's
+# debug-assertion-gated UB checks would turn a null-pointer dereference into a
+# non-unwinding panic (`SIGABRT`) instead of the `SIGSEGV` the C produces, so the
+# dev profile must not enable them either; otherwise the debug artifact is not a
+# faithful translation. There is no integer arithmetic in this crate, so nothing
+# else is affected.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

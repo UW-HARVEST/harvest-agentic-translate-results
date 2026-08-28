@@ -1,0 +1,45 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "next_double_lib"
+
+[profile.release]
+panic = "abort"
+
+# This crate is a C-ABI shared object: the *caller* (C code) owns the
+# `cn_rnd_t *` contract, exactly as it does for the original C library.
+#
+# Rust's *optional* undefined-behaviour checks (`debug-assertions`) insert null
+# and alignment assertions on every pointer dereference. For a `cn_rnd_t *` of
+# NULL, the C library faults with `SIGSEGV`, whereas those checks abort the
+# process with `SIGABRT` -- an observable difference for an identical input.
+# They are therefore switched off so the shared object behaves identically to
+# the C library in every profile.
+#
+# `overflow-checks` is deliberately left ON: the C relies on `uint64_t` wrapping
+# (`return x + y;`), so this keeps the translation's use of `wrapping_add`
+# continuously verified rather than silently relying on release-mode wrapping.
+[profile.dev]
+debug-assertions = false
+overflow-checks = true
+
+# A deliberately paranoid extra configuration used by the test suite: identical
+# to `dev` but with Rust's optional UB checks turned back ON. Every valid-input
+# and error-path row must still match the C bit-for-bit under this profile; the
+# only permitted difference is that a NULL `cn_rnd_t *` (undefined behaviour in
+# both languages) is turned into a fail-safe `SIGABRT` instead of `SIGSEGV`.
+[profile.ubcheck]
+inherits = "dev"
+debug-assertions = true
+overflow-checks = true
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[workspace]

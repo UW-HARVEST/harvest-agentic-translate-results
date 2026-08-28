@@ -1,0 +1,31 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hatch_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# This crate is a faithful translation of C that deliberately performs C-style
+# raw pointer loads/stores with no validation (see `process_pointer_data`,
+# `manipulate_records`, `shift_array_data`, `apply_operation`). With debug
+# assertions on, rustc injects a "null pointer dereference occurred" /
+# "misaligned pointer dereference" check that turns the C's SIGSEGV into a Rust
+# panic-abort (SIGABRT), i.e. it changes the OBSERVABLE behaviour of the library
+# relative to the C. Turning the checks off keeps the dev/test profile
+# byte-for-byte behaviour-compatible with the C reference, exactly like the
+# release profile. All arithmetic already uses explicit `wrapping_*` operations,
+# so `overflow-checks` has no effect either way.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

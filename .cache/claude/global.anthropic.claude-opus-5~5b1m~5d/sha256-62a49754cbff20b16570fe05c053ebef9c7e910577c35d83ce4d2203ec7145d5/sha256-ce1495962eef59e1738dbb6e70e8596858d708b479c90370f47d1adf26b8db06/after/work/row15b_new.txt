@@ -1,0 +1,138 @@
+// ===========================================================================
+// Row 15b — the exact `min_metric < max_metric * 2.0f` equality boundary
+// ===========================================================================
+//
+// L400 is `if (!(min_metric < max_metric * 2.0f && metric < -1.0e8f))
+//              cache_was_read = 1;`
+//
+// Reaching the side where the `&&` HOLDS (so `cache_was_read` stays 0 and the
+// cached simplex is discarded) needs the *reloaded* simplex metric below -1e8,
+// which needs `cache->count == 3` and a hugely negative
+// `c2Det2(b.p - a.p, c.p - a.p)`. All of that is caller-controllable, because
+// the caller owns the `c2GJKCache` and the C validates none of it.
+//
+// Construction:
+//   A = AABB min(0,0) max(1,1)        -> verts (0,0) (1,0) (1,1) (0,1)
+//   B = AABB min(X,0) max(0,1)        -> verts (X,0) (0,0) (0,1) (X,1)
+//       (an inverted box -- perfectly legal, the C never validates)
+//   cache.count = 3, iA = [0,0,0], iB = [0,1,2]
+//     => p0 = (X,0), p1 = (0,0), p2 = (0,1)
+//     => metric = c2Det2(p1-p0, p2-p0) = c2Det2((-X,0), (-X,1)) = -X
+//
+// With `X = 2^28`, `metric = -2^28`, comfortably below -1e8. Setting
+// `cache->metric` (i.e. `metric_old`) to exactly `-2^27` makes
+// `max_metric * 2.0f == -2^28 == min_metric` EXACTLY, i.e. lands precisely on
+// the `<` boundary. And this cache is observable: `c23` on that simplex takes
+// the vertex-B branch (`uAB <= 0 && vBC <= 0`), leaving `verts[0] = {iA:0,
+// iB:1, p:(0,0)}`, whereas a fresh start has `verts[0] = {iA:0, iB:0,
+// p:(X,0)}` -- so the returned distance, witness points and written-back cache
+// all differ between `cache_was_read == 0` and `== 1`.
+#[test]
+fn err_row15b_cache_metric_equality_boundary() {
+    /// One f32 step further away from zero (more negative, for negative input).
+    fn more_negative(v: f32) -> f32 {
+        assert!(v < 0.0);
+        f32::from_bits(v.to_bits() + 1)
+    }
+    /// One f32 step closer to zero (less negative, for negative input).
+    fn less_negative(v: f32) -> f32 {
+        assert!(v < 0.0);
+        f32::from_bits(v.to_bits() - 1)
+    }
+
+    for_each_pair(|c, r, label| {
+        let mut observable = 0usize;
+        let mut checked = 0usize;
+        for xe in 28..=40i32 {
+            let x = (2.0f32).powi(xe);
+            for ye in 0..=4i32 {
+                let y = (2.0f32).powi(ye);
+                let sa = Shape::Aabb(c2AABB {
+                    min: c2v { x: 0.0, y: 0.0 },
+                    max: c2v { x: 1.0, y: y },
+                });
+                // Inverted in x, so the determinant comes out negative.
+                let sb = Shape::Aabb(c2AABB {
+                    min: c2v { x, y: 0.0 },
+                    max: c2v { x: 0.0, y },
+                });
+                // metric the C recomputes when it reloads this cache
+                let metric = -(x * y);
+                assert!(metric < -1.0e8, "construction should give metric < -1e8");
+                let half = metric * 0.5; // exact: power-of-two scaling
+
+                let mk = |metric_old: f32| c2GJKCache {
+                    metric: metric_old,
+                    count: 3,
+                    iA: [0, 0, 0],
+                    iB: [0, 1, 2],
+                    div: 1.0,
+                };
+
+                // Three metric_old values straddling the `<` boundary:
+                //   less_negative(half): min < max*2  =>  TRUE  => cache discarded
+                //   half exactly:        min < max*2  =>  FALSE => cache USED
+                //   more_negative(half): min < max*2  =>  FALSE => cache USED
+                let variants = [
+                    ("below", less_negative(half)),
+                    ("exact", half),
+                    ("above", more_negative(half)),
+                ];
+                let mut outs = Vec::new();
+                for (tag, metric_old) in variants {
+                    let seed = mk(metric_old);
+                    let mut ck = seed;
+                    let mut rk = seed;
+                    let co = gjk(c, &sa, &sb, None, None, true, true, true, 1, Some(&mut ck));
+                    let ro = gjk(r, &sa, &sb, None, None, true, true, true, 1, Some(&mut rk));
+                    assert!(
+                        f32_same(co.0, ro.0) && v_same(co.1, ro.1) && v_same(co.2, ro.2)
+                            && co.3 == ro.3,
+                        "{label} err15b [{tag}] x=2^{xe} y=2^{ye} metric_old={}:\n  C dist={} a={} b={} it={}\n  R dist={} a={} b={} it={}",
+                        fmt_f32(metric_old),
+                        fmt_f32(co.0), fmt_v(co.1), fmt_v(co.2), co.3,
+                        fmt_f32(ro.0), fmt_v(ro.1), fmt_v(ro.2), ro.3,
+                    );
+                    assert!(
+                        cache_same(&ck, &rk),
+                        "{label} err15b [{tag}] x=2^{xe} y=2^{ye} metric_old={}: cache\n  C: {}\n  R: {}",
+                        fmt_f32(metric_old),
+                        fmt_cache(&ck),
+                        fmt_cache(&rk)
+                    );
+                    checked += 1;
+                    outs.push((tag, co, ck));
+                }
+                // Self-validation: the boundary must actually be *observable*,
+                // otherwise this test would not be able to detect a `<` -> `<=`
+                // change. "below" (cache discarded) must differ from "above"
+                // (cache used), and "exact" must agree with "above" because the
+                // C uses a strict `<`.
+                let (_, below, below_k) = &outs[0];
+                let (_, exact, exact_k) = &outs[1];
+                let (_, above, above_k) = &outs[2];
+                let differs = |p: &(f32, c2v, c2v, c_int), q: &(f32, c2v, c2v, c_int), pk: &c2GJKCache, qk: &c2GJKCache| {
+                    !(f32_same(p.0, q.0) && v_same(p.1, q.1) && v_same(p.2, q.2) && p.3 == q.3
+                        && cache_same(pk, qk))
+                };
+                if differs(below, above, below_k, above_k) {
+                    observable += 1;
+                    assert!(
+                        !differs(exact, above, exact_k, above_k),
+                        "{label} err15b x=2^{xe} y=2^{ye}: `min_metric == max_metric*2.0f` must take the SAME path as `>` (strict `<`), but exact={:?}/{} differs from above={:?}/{}",
+                        exact,
+                        fmt_cache(exact_k),
+                        above,
+                        fmt_cache(above_k)
+                    );
+                }
+            }
+        }
+        println!("{label} err15b: {checked} comparisons, {observable} observable boundary cases");
+        assert!(
+            observable > 0,
+            "{label} err15b: the `min_metric < max_metric * 2.0f` boundary was never observable, so this test cannot detect a change there"
+        );
+    });
+}
+

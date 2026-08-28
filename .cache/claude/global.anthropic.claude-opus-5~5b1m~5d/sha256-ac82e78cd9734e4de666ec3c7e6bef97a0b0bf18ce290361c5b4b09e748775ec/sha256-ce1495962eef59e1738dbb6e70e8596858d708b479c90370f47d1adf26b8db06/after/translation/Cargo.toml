@@ -1,0 +1,31 @@
+[package]
+name = "harvest_translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "synth_pair_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# `synth_pair` reproduces the C's contract verbatim: it validates nothing and
+# dereferences `pcm` / `z` unconditionally. rustc's debug assertions insert a
+# language-UB check that turns a null `pcm` into a Rust panic ("null pointer
+# dereference occurred") and therefore SIGABRT, whereas the C shared library
+# faults with SIGSEGV. That is an FFI-observable behavioural difference, so the
+# checks are disabled for the dev profile too (see ERRORS.md row E21, enforced
+# by `err_e21_null_pointers_both_segfault`).
+#
+# Nothing is lost: every arithmetic operation in `src/lib.rs` that could
+# overflow already uses explicit `wrapping_*` methods, matching the C.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

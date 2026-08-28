@@ -1,0 +1,31 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ima_parse_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+
+# The C library (`c_src/src/lib.c`, built by CMake with no instrumentation)
+# dereferences NULL for some inputs -- see ERRORS.md rows 4-7 -- and faults with
+# SIGSEGV.  Rust's optional Undefined-Behaviour checks (rustc's MIR null-check
+# pass plus the `assert_unsafe_precondition!` guards inside `ptr::read_unaligned`
+# and friends) are compiled in whenever `debug-assertions` is enabled, and they
+# turn exactly those loads into a non-unwinding panic -> SIGABRT.  That is an
+# observable divergence from the C library, so the instrumentation is disabled
+# to keep the dev-profile cdylib behaviourally identical to the release-profile
+# cdylib and to the C .so.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

@@ -1,0 +1,25 @@
+[package]
+name = "confusion"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "confusion_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# A custom harness is required: the differential checks redirect fd 1 to
+# capture printf output, which is process-wide state.  libtest's own progress
+# reporting from other threads would otherwise be interleaved into the capture.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

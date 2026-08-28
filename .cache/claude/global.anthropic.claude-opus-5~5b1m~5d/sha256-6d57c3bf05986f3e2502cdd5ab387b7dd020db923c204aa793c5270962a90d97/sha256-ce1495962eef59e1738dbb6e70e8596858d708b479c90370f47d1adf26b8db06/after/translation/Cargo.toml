@@ -1,0 +1,29 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "helxo_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The translation reproduces the C semantics literally: every arithmetic
+# operation that can overflow uses the wrapping form, and the raw pointer
+# arithmetic faithfully reproduces the C's UB paths (e.g. `stbds_arrgrowf`
+# dereferencing `NULL + sizeof(header)` after a failed `realloc`, which the C
+# build resolves as SIGSEGV). libstd's debug assertions would turn those into a
+# Rust panic (SIGABRT), i.e. the dev profile would behave differently from both
+# the release profile and the C library, so they are switched off.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+
+[workspace]

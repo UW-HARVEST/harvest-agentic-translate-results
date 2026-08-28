@@ -1,0 +1,42 @@
+[package]
+name = "lib"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mathop_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+# This crate is a translation of a C library and must reproduce the C's
+# *unchecked* semantics exactly, in every profile:
+#   * arithmetic already uses explicit `wrapping_*`, so overflow checks are
+#     redundant;
+#   * rustc's UB checks (enabled together with debug assertions) would turn the
+#     C's unchecked NULL dereference in `perform_computation_with_history` into a
+#     Rust panic -> SIGABRT, whereas the C dies with SIGSEGV. Disabling them
+#     makes the dev artifact behave identically to the release artifact and to
+#     the C. See ERRORS.md rows 17/18.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# All tests that compare `mathop`'s printf output run in this single
+# `harness = false` binary. The libtest harness writes its own progress lines
+# ("test <name> ... ok") to fd 1, which would interleave with -- and corrupt --
+# a captured stdout region in a concurrently running test. A hand-written main
+# runs these checks strictly sequentially, so the only bytes on fd 1 during a
+# capture are the ones the libraries printed. It also fixes the call order,
+# which makes the hidden `static` history counter deterministic and assertable.
+[[test]]
+name = "phase_stdout"
+path = "tests/phase_stdout.rs"
+harness = false

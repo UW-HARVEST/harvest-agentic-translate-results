@@ -1,0 +1,34 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The C library is compiled by `c_src/CMakeLists.txt` with no sanitizers and
+# contains no `assert`s: when it is handed a NULL `TaskManager *` /
+# `const char *` (it never null-checks any parameter) the result is a raw
+# hardware null dereference — SIGSEGV, no diagnostic.
+#
+# `debug-assertions` makes rustc inject `ub_checks` into this crate, which turn
+# the very same dereference into a Rust panic ("null pointer dereference
+# occurred") on stderr followed by SIGABRT. That is an *observable behavioural
+# difference* from the C at the FFI boundary, so the checks are disabled for the
+# dev profile too, keeping the translation faithful in every profile.
+# See translation/tests/errors.rs rows e15-e18, e22, e36.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

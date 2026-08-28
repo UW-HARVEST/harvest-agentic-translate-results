@@ -1,0 +1,994 @@
+        -:    0:Source:lib.c
+        -:    0:Graph:libcov.so-lib.gcno
+        -:    0:Data:libcov.so-lib.gcda
+        -:    0:Runs:6
+        -:    1:#include "lib.h"
+        -:    2:#include <math.h>
+        -:    3:#include <stdlib.h>
+        -:    4:
+        -:    5:typedef struct c2v {
+        -:    6:	float x;
+        -:    7:	float y;
+        -:    8:} c2v;
+        -:    9:
+        -:   10:typedef struct c2r {
+        -:   11:	float c;
+        -:   12:	float s;
+        -:   13:} c2r;
+        -:   14:
+        -:   15:typedef struct c2x {
+        -:   16:	c2v p;
+        -:   17:	c2r r;
+        -:   18:} c2x;
+        -:   19:
+        -:   20:typedef struct c2Circle {
+        -:   21:	c2v p;
+        -:   22:	float r;
+        -:   23:} c2Circle;
+        -:   24:
+        -:   25:typedef struct c2AABB {
+        -:   26:	c2v min;
+        -:   27:	c2v max;
+        -:   28:} c2AABB;
+        -:   29:
+        -:   30:typedef struct c2Capsule {
+        -:   31:	c2v a;
+        -:   32:	c2v b;
+        -:   33:	float r;
+        -:   34:} c2Capsule;
+        -:   35:
+        -:   36:typedef struct c2GJKCache {
+        -:   37:	float metric;
+        -:   38:	int count;
+        -:   39:	int iA[3];
+        -:   40:	int iB[3];
+        -:   41:	float div;
+        -:   42:} c2GJKCache;
+        -:   43:
+function c2V called 9256390 returned 100% blocks executed 100%
+  9256390:   44:c2v c2V(float x, float y) {
+        -:   45:	c2v a;
+  9256390:   46:	a.x = x;
+  9256390:   47:	a.y = y;
+  9256390:   48:	return a;
+        -:   49:}
+        -:   50:
+function c2Mulvs called 3002274 returned 100% blocks executed 100%
+  3002274:   51:c2v c2Mulvs(c2v a, float b) {
+  3002274:   52:	a.x *= b;
+  3002274:   53:	a.y *= b;
+  3002274:   54:	return a;
+        -:   55:}
+        -:   56:
+function c2Maxv called 91224 returned 100% blocks executed 100%
+    91224:   57:c2v c2Maxv(c2v a, c2v b) {
+    91224:   58:	return c2V(((a.x) > (b.x) ? (a.x) : (b.x)),
+branch  0 taken 47% (fallthrough)
+branch  1 taken 53%
+call    2 returned 100%
+    91224:   59:			((a.y) > (b.y) ? (a.y) : (b.y)));
+branch  0 taken 45% (fallthrough)
+branch  1 taken 55%
+        -:   60:}
+        -:   61:
+function c2Minv called 91224 returned 100% blocks executed 100%
+    91224:   62:c2v c2Minv(c2v a, c2v b) {
+    91224:   63:	return c2V(((a.x) < (b.x) ? (a.x) : (b.x)),
+branch  0 taken 42% (fallthrough)
+branch  1 taken 58%
+call    2 returned 100%
+    91224:   64:			((a.y) < (b.y) ? (a.y) : (b.y)));
+branch  0 taken 42% (fallthrough)
+branch  1 taken 58%
+        -:   65:}
+        -:   66:
+function c2Clampv called 75216 returned 100% blocks executed 100%
+    75216:   67:c2v c2Clampv(c2v a, c2v lo, c2v hi) {
+    75216:   68:	return c2Maxv(lo, c2Minv(a, hi));
+call    0 returned 100%
+call    1 returned 100%
+        -:   69:}
+        -:   70:
+function c2Sub called 5794514 returned 100% blocks executed 100%
+  5794514:   71:c2v c2Sub(c2v a, c2v b) {
+  5794514:   72:	a.x -= b.x;
+  5794514:   73:	a.y -= b.y;
+  5794514:   74:	return a;
+        -:   75:}
+        -:   76:
+function c2Dot called 9865488 returned 100% blocks executed 100%
+  9865488:   77:float c2Dot(c2v a, c2v b) {
+  9865488:   78:	return a.x * b.x + a.y * b.y;
+        -:   79:}
+        -:   80:
+function c2RotIdentity called 948026 returned 100% blocks executed 100%
+   948026:   81:c2r c2RotIdentity(void) {
+        -:   82:	c2r r;
+   948026:   83:	r.c = 1.0f;
+   948026:   84:	r.s = 0;
+   948026:   85:	return r;
+        -:   86:}
+        -:   87:
+function c2xIdentity called 948022 returned 100% blocks executed 100%
+   948022:   88:c2x c2xIdentity(void) {
+        -:   89:	c2x x;
+   948022:   90:	x.p = c2V(0, 0);
+call    0 returned 100%
+   948022:   91:	x.r = c2RotIdentity();
+call    0 returned 100%
+   948022:   92:	return x;
+        -:   93:}
+        -:   94:
+        -:   95:typedef struct {
+        -:   96:	float radius;
+        -:   97:	int count;
+        -:   98:	c2v verts[8];
+        -:   99:} c2Proxy;
+        -:  100:
+function c2BBVerts called 429696 returned 100% blocks executed 100%
+   429696:  101:void c2BBVerts(c2v *out, c2AABB *bb) {
+   429696:  102:	out[0] = bb->min;
+   429696:  103:	out[1] = c2V(bb->max.x, bb->min.y);
+call    0 returned 100%
+   429696:  104:	out[2] = bb->max;
+   429696:  105:	out[3] = c2V(bb->min.x, bb->max.y);
+call    0 returned 100%
+   429696:  106:}
+        -:  107:
+function c2MakeProxy called 1221428 returned 100% blocks executed 100%
+  1221428:  108:void c2MakeProxy(const void *shape, C2_TYPE type, c2Proxy *p) {
+  1221428:  109:	switch (type) {
+branch  0 taken 30%
+branch  1 taken 33%
+branch  2 taken 37%
+branch  3 taken 1%
+   366546:  110:		case C2_TYPE_CIRCLE: {
+   366546:  111:					     c2Circle *c = (c2Circle *)shape;
+   366546:  112:					     p->radius = c->r;
+   366546:  113:					     p->count = 1;
+   366546:  114:					     p->verts[0] = c->p;
+   366546:  115:				     } break;
+   405696:  116:		case C2_TYPE_AABB: {
+   405696:  117:					   c2AABB *bb = (c2AABB *)shape;
+   405696:  118:					   p->radius = 0;
+   405696:  119:					   p->count = 4;
+   405696:  120:					   c2BBVerts(p->verts, bb);
+call    0 returned 100%
+   405696:  121:				   } break;
+   447166:  122:		case C2_TYPE_CAPSULE: {
+   447166:  123:					      c2Capsule *c = (c2Capsule *)shape;
+   447166:  124:					      p->radius = c->r;
+   447166:  125:					      p->count = 2;
+   447166:  126:					      p->verts[0] = c->a;
+   447166:  127:					      p->verts[1] = c->b;
+   447166:  128:				      } break;
+        -:  129:	}
+  1221428:  130:}
+        -:  131:
+        -:  132:typedef struct {
+        -:  133:	c2v sA;
+        -:  134:	c2v sB;
+        -:  135:	c2v p;
+        -:  136:	float u;
+        -:  137:	int iA;
+        -:  138:	int iB;
+        -:  139:} c2sv;
+        -:  140:
+        -:  141:typedef struct {
+        -:  142:	c2sv a, b, c, d;
+        -:  143:	float div;
+        -:  144:	int count;
+        -:  145:} c2Simplex;
+        -:  146:
+function c2Len called 1040166 returned 100% blocks executed 100%
+  1040166:  147:float c2Len(c2v a) {
+  1040166:  148:	return sqrtf(c2Dot(a, a));
+call    0 returned 100%
+        -:  149:}
+        -:  150:
+function c2Det2 called 1125102 returned 100% blocks executed 100%
+  1125102:  151:float c2Det2(c2v a, c2v b) {
+  1125102:  152:	return a.x * b.y - a.y * b.x;
+        -:  153:}
+        -:  154:
+function c2GJKSimplexMetric called 305590 returned 100% blocks executed 100%
+   305590:  155:float c2GJKSimplexMetric(c2Simplex *s) {
+   305590:  156:	switch (s->count) {
+branch  0 taken 56%
+branch  1 taken 29%
+branch  2 taken 15%
+   172222:  157:		default:
+        -:  158:		case 1:
+   172222:  159:			return 0;
+    88000:  160:		case 2:
+    88000:  161:			return c2Len(c2Sub(s->b.p, s->a.p));
+call    0 returned 100%
+call    1 returned 100%
+    45368:  162:		case 3:
+    45368:  163:			return c2Det2(c2Sub(s->b.p, s->a.p), c2Sub(s->c.p, s->a.p));
+call    0 returned 100%
+call    1 returned 100%
+call    2 returned 100%
+        -:  164:	}
+        -:  165:}
+        -:  166:
+function c2Mulrv called 3150584 returned 100% blocks executed 100%
+  3150584:  167:c2v c2Mulrv(c2r a, c2v b) {
+  3150584:  168:	return c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y);
+call    0 returned 100%
+        -:  169:}
+        -:  170:
+function c2Add called 4595258 returned 100% blocks executed 100%
+  4595258:  171:c2v c2Add(c2v a, c2v b) {
+  4595258:  172:	a.x += b.x;
+  4595258:  173:	a.y += b.y;
+  4595258:  174:	return a;
+        -:  175:}
+        -:  176:
+function c2Mulxv called 3134584 returned 100% blocks executed 100%
+  3134584:  177:c2v c2Mulxv(c2x a, c2v b) {
+  3134584:  178:	return c2Add(c2Mulrv(a.r, b), a.p);
+call    0 returned 100%
+call    1 returned 100%
+        -:  179:}
+        -:  180:
+function c22 called 380834 returned 100% blocks executed 100%
+   380834:  181:void c22(c2Simplex *s) {
+   380834:  182:	c2v a = s->a.p;
+   380834:  183:	c2v b = s->b.p;
+   380834:  184:	float u = c2Dot(b, c2Sub(b, a));
+call    0 returned 100%
+call    1 returned 100%
+   380834:  185:	float v = c2Dot(a, c2Sub(a, b));
+call    0 returned 100%
+call    1 returned 100%
+   380834:  186:	if (v <= 0) {
+branch  0 taken 7% (fallthrough)
+branch  1 taken 93%
+    26742:  187:		s->a.u = 1.0f;
+    26742:  188:		s->div = 1.0f;
+    26742:  189:		s->count = 1;
+   354092:  190:	} else if (u <= 0) {
+branch  0 taken 30% (fallthrough)
+branch  1 taken 70%
+   105974:  191:		s->a = s->b;
+   105974:  192:		s->a.u = 1.0f;
+   105974:  193:		s->div = 1.0f;
+   105974:  194:		s->count = 1;
+        -:  195:	} else {
+   248118:  196:		s->a.u = u;
+   248118:  197:		s->b.u = v;
+   248118:  198:		s->div = u + v;
+   248118:  199:		s->count = 2;
+        -:  200:	}
+   380834:  201:}
+        -:  202:
+function c23 called 185340 returned 100% blocks executed 100%
+   185340:  203:void c23(c2Simplex *s) {
+   185340:  204:	c2v a = s->a.p;
+   185340:  205:	c2v b = s->b.p;
+   185340:  206:	c2v c = s->c.p;
+   185340:  207:	float uAB = c2Dot(b, c2Sub(b, a));
+call    0 returned 100%
+call    1 returned 100%
+   185340:  208:	float vAB = c2Dot(a, c2Sub(a, b));
+call    0 returned 100%
+call    1 returned 100%
+   185340:  209:	float uBC = c2Dot(c, c2Sub(c, b));
+call    0 returned 100%
+call    1 returned 100%
+   185340:  210:	float vBC = c2Dot(b, c2Sub(b, c));
+call    0 returned 100%
+call    1 returned 100%
+   185340:  211:	float uCA = c2Dot(a, c2Sub(a, c));
+call    0 returned 100%
+call    1 returned 100%
+   185340:  212:	float vCA = c2Dot(c, c2Sub(c, a));
+call    0 returned 100%
+call    1 returned 100%
+   185340:  213:	float area = c2Det2(c2Sub(b, a), c2Sub(c, a));
+call    0 returned 100%
+call    1 returned 100%
+call    2 returned 100%
+   185340:  214:	float uABC = c2Det2(b, c) * area;
+call    0 returned 100%
+   185340:  215:	float vABC = c2Det2(c, a) * area;
+call    0 returned 100%
+   185340:  216:	float wABC = c2Det2(a, b) * area;
+call    0 returned 100%
+   185340:  217:	if (vAB <= 0 && uCA <= 0) {
+branch  0 taken 5% (fallthrough)
+branch  1 taken 95%
+branch  2 taken 65% (fallthrough)
+branch  3 taken 35%
+     6468:  218:		s->a.u = 1.0f;
+     6468:  219:		s->div = 1.0f;
+     6468:  220:		s->count = 1;
+   178872:  221:	} else if (uAB <= 0 && vBC <= 0) {
+branch  0 taken 4% (fallthrough)
+branch  1 taken 96%
+branch  2 taken 50% (fallthrough)
+branch  3 taken 50%
+     3492:  222:		s->a = s->b;
+     3492:  223:		s->a.u = 1.0f;
+     3492:  224:		s->div = 1.0f;
+     3492:  225:		s->count = 1;
+   175380:  226:	} else if (uBC <= 0 && vCA <= 0) {
+branch  0 taken 20% (fallthrough)
+branch  1 taken 80%
+branch  2 taken 18% (fallthrough)
+branch  3 taken 82%
+     6486:  227:		s->a = s->c;
+     6486:  228:		s->a.u = 1.0f;
+     6486:  229:		s->div = 1.0f;
+     6486:  230:		s->count = 1;
+   168894:  231:	} else if (uAB > 0 && vAB > 0 && wABC <= 0) {
+branch  0 taken 98% (fallthrough)
+branch  1 taken 2%
+branch  2 taken 99% (fallthrough)
+branch  3 taken 1%
+branch  4 taken 10% (fallthrough)
+branch  5 taken 90%
+    15994:  232:		s->a.u = uAB;
+    15994:  233:		s->b.u = vAB;
+    15994:  234:		s->div = uAB + vAB;
+    15994:  235:		s->count = 2;
+   152900:  236:	} else if (uBC > 0 && vBC > 0 && uABC <= 0) {
+branch  0 taken 84% (fallthrough)
+branch  1 taken 16%
+branch  2 taken 99% (fallthrough)
+branch  3 taken 1%
+branch  4 taken 42% (fallthrough)
+branch  5 taken 58%
+    53758:  237:		s->a = s->b;
+    53758:  238:		s->b = s->c;
+    53758:  239:		s->a.u = uBC;
+    53758:  240:		s->b.u = vBC;
+    53758:  241:		s->div = uBC + vBC;
+    53758:  242:		s->count = 2;
+    99142:  243:	} else if (uCA > 0 && vCA > 0 && vABC <= 0) {
+branch  0 taken 93% (fallthrough)
+branch  1 taken 7%
+branch  2 taken 95% (fallthrough)
+branch  3 taken 5%
+branch  4 taken 24% (fallthrough)
+branch  5 taken 76%
+    21240:  244:		s->b = s->a;
+    21240:  245:		s->a = s->c;
+    21240:  246:		s->a.u = uCA;
+    21240:  247:		s->b.u = vCA;
+    21240:  248:		s->div = uCA + vCA;
+    21240:  249:		s->count = 2;
+        -:  250:	} else {
+    77902:  251:		s->a.u = uABC;
+    77902:  252:		s->b.u = vABC;
+    77902:  253:		s->c.u = wABC;
+    77902:  254:		s->div = uABC + vABC + wABC;
+    77902:  255:		s->count = 3;
+        -:  256:	}
+   185340:  257:}
+        -:  258:
+function c2Neg called 1882730 returned 100% blocks executed 100%
+  1882730:  259:c2v c2Neg(c2v a) {
+  1882730:  260:	return c2V(-a.x, -a.y);
+call    0 returned 100%
+        -:  261:}
+        -:  262:
+function c2Skew called 168552 returned 100% blocks executed 100%
+   168552:  263:c2v c2Skew(c2v a) {
+        -:  264:	c2v b;
+   168552:  265:	b.x = -a.y;
+   168552:  266:	b.y = a.x;
+   168552:  267:	return b;
+        -:  268:}
+        -:  269:
+function c2CCW90 called 185822 returned 100% blocks executed 100%
+   185822:  270:c2v c2CCW90(c2v a) {
+        -:  271:	c2v b;
+   185822:  272:	b.x = a.y;
+   185822:  273:	b.y = -a.x;
+   185822:  274:	return b;
+        -:  275:}
+        -:  276:
+function c2D called 978326 returned 100% blocks executed 100%
+   978326:  277:c2v c2D(c2Simplex *s) {
+   978326:  278:	switch (s->count) {
+branch  0 taken 64%
+branch  1 taken 33%
+branch  2 taken 3%
+   627320:  279:		case 1:
+   627320:  280:			return c2Neg(s->a.p);
+call    0 returned 100%
+   322374:  281:		case 2: {
+   322374:  282:				c2v ab = c2Sub(s->b.p, s->a.p);
+call    0 returned 100%
+   322374:  283:				if (c2Det2(ab, c2Neg(s->a.p)) > 0)
+call    0 returned 100%
+call    1 returned 100%
+branch  2 taken 47% (fallthrough)
+branch  3 taken 53%
+   152552:  284:					return c2Skew(ab);
+call    0 returned 100%
+   169822:  285:				return c2CCW90(ab);
+call    0 returned 100%
+        -:  286:			}
+    28632:  287:		case 3:
+        -:  288:		default:
+    28632:  289:			return c2V(0, 0);
+call    0 returned 100%
+        -:  290:	}
+        -:  291:}
+        -:  292:
+function c2Support called 1885732 returned 100% blocks executed 100%
+  1885732:  293:int c2Support(const c2v *verts, int count, c2v d) {
+  1885732:  294:	int imax = 0;
+  1885732:  295:	float dmax = c2Dot(verts[0], d);
+call    0 returned 100%
+  4785416:  296:	for (int i = 1; i < count; ++i) {
+branch  0 taken 61%
+branch  1 taken 39% (fallthrough)
+  2899684:  297:		float dot = c2Dot(verts[i], d);
+call    0 returned 100%
+  2899684:  298:		if (dot > dmax) {
+branch  0 taken 35% (fallthrough)
+branch  1 taken 65%
+  1023132:  299:			imax = i;
+  1023132:  300:			dmax = dot;
+        -:  301:		}
+        -:  302:	}
+  1885732:  303:	return imax;
+        -:  304:}
+        -:  305:
+function c2Witness called 636504 returned 100% blocks executed 100%
+   636504:  306:void c2Witness(c2Simplex *s, c2v *a, c2v *b) {
+   636504:  307:	float den = 1.0f / s->div;
+   636504:  308:	switch (s->count) {
+branch  0 taken 56%
+branch  1 taken 28%
+branch  2 taken 13%
+branch  3 taken 3%
+   355404:  309:		case 1:
+   355404:  310:			*a = s->a.sA;
+   355404:  311:			*b = s->a.sB;
+   355404:  312:			break;
+   180790:  313:		case 2:
+   180790:  314:			*a = c2Add(c2Mulvs(s->a.sA, (den * s->a.u)),
+call    0 returned 100%
+call    1 returned 100%
+   180790:  315:					c2Mulvs(s->b.sA, (den * s->b.u)));
+call    0 returned 100%
+   180790:  316:			*b = c2Add(c2Mulvs(s->a.sB, (den * s->a.u)),
+call    0 returned 100%
+call    1 returned 100%
+   180790:  317:					c2Mulvs(s->b.sB, (den * s->b.u)));
+call    0 returned 100%
+   180790:  318:			break;
+    81190:  319:		case 3:
+    81190:  320:			*a = c2Add(c2Add(c2Mulvs(s->a.sA, (den * s->a.u)),
+call    0 returned 100%
+call    1 returned 100%
+call    2 returned 100%
+    81190:  321:						c2Mulvs(s->b.sA, (den * s->b.u))),
+call    0 returned 100%
+    81190:  322:					c2Mulvs(s->c.sA, (den * s->c.u)));
+call    0 returned 100%
+    81190:  323:			*b = c2Add(c2Add(c2Mulvs(s->a.sB, (den * s->a.u)),
+call    0 returned 100%
+call    1 returned 100%
+call    2 returned 100%
+    81190:  324:						c2Mulvs(s->b.sB, (den * s->b.u))),
+call    0 returned 100%
+    81190:  325:					c2Mulvs(s->c.sB, (den * s->c.u)));
+call    0 returned 100%
+    81190:  326:			break;
+    19120:  327:		default:
+    19120:  328:			*a = c2V(0, 0);
+call    0 returned 100%
+    19120:  329:			*b = c2V(0, 0);
+call    0 returned 100%
+        -:  330:	}
+   636504:  331:}
+        -:  332:
+function c2Div called 354534 returned 100% blocks executed 100%
+   354534:  333:c2v c2Div(c2v a, float b) {
+   354534:  334:	return c2Mulvs(a, 1.0f / b);
+call    0 returned 100%
+        -:  335:}
+        -:  336:
+function c2Norm called 338422 returned 100% blocks executed 100%
+   338422:  337:c2v c2Norm(c2v a) {
+   338422:  338:	return c2Div(a, c2Len(a));
+call    0 returned 100%
+call    1 returned 100%
+        -:  339:}
+        -:  340:
+function c2L called 1026262 returned 100% blocks executed 100%
+  1026262:  341:c2v c2L(c2Simplex *s) {
+  1026262:  342:    float den = 1.0f / s->div;
+  1026262:  343:    switch (s->count) {
+branch  0 taken 66%
+branch  1 taken 32%
+branch  2 taken 3%
+   672650:  344:    case 1:
+   672650:  345:        return s->a.p;
+   325492:  346:    case 2:
+   325492:  347:        return c2Add(c2Mulvs(s->a.p, (den * s->a.u)),
+call    0 returned 100%
+call    1 returned 100%
+   325492:  348:                     c2Mulvs(s->b.p, (den * s->b.u)));
+call    0 returned 100%
+    28120:  349:    default:
+    28120:  350:        return c2V(0, 0);
+call    0 returned 100%
+        -:  351:    }
+        -:  352:}
+        -:  353:
+function c2MulrvT called 1850068 returned 100% blocks executed 100%
+  1850068:  354:c2v c2MulrvT(c2r a, c2v b) {
+  1850068:  355:    return c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y);
+call    0 returned 100%
+        -:  356:}
+        -:  357:
+function c2GJK called 597704 returned 100% blocks executed 100%
+   597704:  358:float c2GJK(const void *A, C2_TYPE typeA, const c2x *ax_ptr, const void *B,
+        -:  359:		C2_TYPE typeB, const c2x *bx_ptr, c2v *outA, c2v *outB,
+        -:  360:		int use_radius, int *iterations, c2GJKCache *cache) {
+        -:  361:	c2x ax;
+        -:  362:	c2x bx;
+   597704:  363:	if (!ax_ptr)
+branch  0 taken 79% (fallthrough)
+branch  1 taken 21%
+   471176:  364:		ax = c2xIdentity();
+call    0 returned 100%
+        -:  365:	else
+   126528:  366:		ax = *ax_ptr;
+   597704:  367:	if (!bx_ptr)
+branch  0 taken 80% (fallthrough)
+branch  1 taken 20%
+   476842:  368:		bx = c2xIdentity();
+call    0 returned 100%
+        -:  369:	else
+   120862:  370:		bx = *bx_ptr;
+        -:  371:	c2Proxy pA;
+        -:  372:	c2Proxy pB;
+   597704:  373:	c2MakeProxy(A, typeA, &pA);
+call    0 returned 100%
+   597704:  374:	c2MakeProxy(B, typeB, &pB);
+call    0 returned 100%
+        -:  375:	c2Simplex s;
+   597704:  376:	c2sv *verts = &s.a;
+   597704:  377:	int cache_was_read = 0;
+   597704:  378:	if (cache) {
+branch  0 taken 30% (fallthrough)
+branch  1 taken 70%
+   180138:  379:		int cache_was_good = !!cache->count;
+   180138:  380:		if (cache_was_good) {
+branch  0 taken 53% (fallthrough)
+branch  1 taken 47%
+   233984:  381:			for (int i = 0; i < cache->count; ++i) {
+branch  0 taken 59%
+branch  1 taken 41% (fallthrough)
+   139132:  382:				int iA = cache->iA[i];
+   139132:  383:				int iB = cache->iB[i];
+   139132:  384:				c2v sA = c2Mulxv(ax, pA.verts[iA]);
+call    0 returned 100%
+   139132:  385:				c2v sB = c2Mulxv(bx, pB.verts[iB]);
+call    0 returned 100%
+   139132:  386:				c2sv *v = verts + i;
+   139132:  387:				v->iA = iA;
+   139132:  388:				v->sA = sA;
+   139132:  389:				v->iB = iB;
+   139132:  390:				v->sB = sB;
+   139132:  391:				v->p = c2Sub(v->sB, v->sA);
+call    0 returned 100%
+   139132:  392:				v->u = 0;
+        -:  393:			}
+    94852:  394:			s.count = cache->count;
+    94852:  395:			s.div = cache->div;
+    94852:  396:			float metric_old = cache->metric;
+    94852:  397:			float metric = c2GJKSimplexMetric(&s);
+call    0 returned 100%
+    94852:  398:			float min_metric = metric < metric_old ? metric : metric_old;
+branch  0 taken 16% (fallthrough)
+branch  1 taken 84%
+    94852:  399:			float max_metric = metric > metric_old ? metric : metric_old;
+branch  0 taken 30% (fallthrough)
+branch  1 taken 70%
+    94852:  400:			if (!(min_metric < max_metric * 2.0f && metric < -1.0e8f))
+branch  0 taken 65% (fallthrough)
+branch  1 taken 35%
+branch  2 taken 100% (fallthrough)
+branch  3 taken 1%
+    94578:  401:				cache_was_read = 1;
+        -:  402:		}
+        -:  403:	}
+   597704:  404:	if (!cache_was_read) {
+branch  0 taken 84% (fallthrough)
+branch  1 taken 16%
+   503126:  405:		s.a.iA = 0;
+   503126:  406:		s.a.iB = 0;
+   503126:  407:		s.a.sA = c2Mulxv(ax, pA.verts[0]);
+call    0 returned 100%
+   503126:  408:		s.a.sB = c2Mulxv(bx, pB.verts[0]);
+call    0 returned 100%
+   503126:  409:		s.a.p = c2Sub(s.a.sB, s.a.sA);
+call    0 returned 100%
+   503126:  410:		s.a.u = 1.0f;
+   503126:  411:		s.div = 1.0f;
+   503126:  412:		s.count = 1;
+        -:  413:	}
+        -:  414:	int saveA[3], saveB[3];
+   597704:  415:	int save_count = 0;
+   597704:  416:	float d0 = 3.40282346638528859811704183484516925e+38F;
+   597704:  417:	float d1 = 3.40282346638528859811704183484516925e+38F;
+   597704:  418:	int iter = 0;
+   597704:  419:	int hit = 0;
+  1059652:  420:	while (iter < 20) {
+branch  0 taken 100%
+branch  1 taken 0% (fallthrough)
+  1059652:  421:		save_count = s.count;
+  2769686:  422:		for (int i = 0; i < save_count; ++i) {
+branch  0 taken 62%
+branch  1 taken 38% (fallthrough)
+  1710034:  423:			saveA[i] = verts[i].iA;
+  1710034:  424:			saveB[i] = verts[i].iB;
+        -:  425:		}
+  1059652:  426:		switch (s.count) {
+branch  0 taken 51%
+branch  1 taken 33%
+branch  2 taken 15%
+branch  3 taken 1%
+   539284:  427:			case 1:
+   539284:  428:				break;
+   344994:  429:			case 2:
+   344994:  430:				c22(&s);
+call    0 returned 100%
+   344994:  431:				break;
+   160254:  432:			case 3:
+   160254:  433:				c23(&s);
+call    0 returned 100%
+   160254:  434:				break;
+        -:  435:		}
+  1059652:  436:		if (s.count == 3) {
+branch  0 taken 7% (fallthrough)
+branch  1 taken 93%
+    69590:  437:			hit = 1;
+   597704:  438:			break;
+        -:  439:		}
+   990062:  440:		c2v p = c2L(&s);
+call    0 returned 100%
+   990062:  441:		d1 = c2Dot(p, p);
+call    0 returned 100%
+   990062:  442:		if (d1 > d0)
+branch  0 taken 4% (fallthrough)
+branch  1 taken 96%
+    42448:  443:			break;
+   947614:  444:		d0 = d1;
+   947614:  445:		c2v d = c2D(&s);
+call    0 returned 100%
+   947614:  446:		if (c2Dot(d, d) < 1.19209289550781250000000000000000000e-7F *
+call    0 returned 100%
+branch  1 taken 3% (fallthrough)
+branch  2 taken 97%
+        -:  447:				1.19209289550781250000000000000000000e-7F)
+    30580:  448:			break;
+   917034:  449:		int iA = c2Support(pA.verts, pA.count, c2MulrvT(ax.r, c2Neg(d)));
+call    0 returned 100%
+call    1 returned 100%
+call    2 returned 100%
+   917034:  450:		c2v sA = c2Mulxv(ax, pA.verts[iA]);
+call    0 returned 100%
+   917034:  451:		int iB = c2Support(pB.verts, pB.count, c2MulrvT(bx.r, d));
+call    0 returned 100%
+call    1 returned 100%
+   917034:  452:		c2v sB = c2Mulxv(bx, pB.verts[iB]);
+call    0 returned 100%
+   917034:  453:		c2sv *v = verts + s.count;
+   917034:  454:		v->iA = iA;
+   917034:  455:		v->sA = sA;
+   917034:  456:		v->iB = iB;
+   917034:  457:		v->sB = sB;
+   917034:  458:		v->p = c2Sub(v->sB, v->sA);
+call    0 returned 100%
+   917034:  459:		int dup = 0;
+  1775236:  460:		for (int i = 0; i < save_count; ++i) {
+branch  0 taken 74%
+branch  1 taken 26% (fallthrough)
+  1313288:  461:			if (iA == saveA[i] && iB == saveB[i]) {
+branch  0 taken 57% (fallthrough)
+branch  1 taken 43%
+branch  2 taken 60% (fallthrough)
+branch  3 taken 40%
+   455086:  462:				dup = 1;
+   455086:  463:				break;
+        -:  464:			}
+        -:  465:		}
+   917034:  466:		if (dup)
+branch  0 taken 50% (fallthrough)
+branch  1 taken 50%
+   455086:  467:			break;
+   461948:  468:		++s.count;
+   461948:  469:		++iter;
+        -:  470:	}
+        -:  471:	c2v a, b;
+   597704:  472:	c2Witness(&s, &a, &b);
+call    0 returned 100%
+   597704:  473:	float dist = c2Len(c2Sub(a, b));
+call    0 returned 100%
+call    1 returned 100%
+   597704:  474:	if (hit) {
+branch  0 taken 12% (fallthrough)
+branch  1 taken 88%
+    69590:  475:		a = b;
+    69590:  476:		dist = 0;
+   528114:  477:	} else if (use_radius) {
+branch  0 taken 82% (fallthrough)
+branch  1 taken 18%
+   432842:  478:		float rA = pA.radius;
+   432842:  479:		float rB = pB.radius;
+   432842:  480:		if (dist > rA + rB &&
+branch  0 taken 75% (fallthrough)
+branch  1 taken 25%
+branch  2 taken 100% (fallthrough)
+branch  3 taken 1%
+   322386:  481:				dist > 1.19209289550781250000000000000000000e-7F) {
+   322386:  482:			dist -= rA + rB;
+   322386:  483:			c2v n = c2Norm(c2Sub(b, a));
+call    0 returned 100%
+call    1 returned 100%
+   322386:  484:			a = c2Add(a, c2Mulvs(n, rA));
+call    0 returned 100%
+call    1 returned 100%
+   322386:  485:			b = c2Sub(b, c2Mulvs(n, rB));
+call    0 returned 100%
+call    1 returned 100%
+   322386:  486:			if (a.x == b.x && a.y == b.y)
+branch  0 taken 5% (fallthrough)
+branch  1 taken 95%
+branch  2 taken 1% (fallthrough)
+branch  3 taken 100%
+       16:  487:				dist = 0;
+        -:  488:		} else {
+   110456:  489:			c2v p = c2Mulvs(c2Add(a, b), 0.5f);
+call    0 returned 100%
+call    1 returned 100%
+   110456:  490:			a = p;
+   110456:  491:			b = p;
+   110456:  492:			dist = 0;
+        -:  493:		}
+        -:  494:	}
+   597704:  495:	if (cache) {
+branch  0 taken 30% (fallthrough)
+branch  1 taken 70%
+   180138:  496:		cache->metric = c2GJKSimplexMetric(&s);
+call    0 returned 100%
+   180138:  497:		cache->count = s.count;
+   438692:  498:		for (int i = 0; i < s.count; ++i) {
+branch  0 taken 59%
+branch  1 taken 41% (fallthrough)
+   258554:  499:			c2sv *v = verts + i;
+   258554:  500:			cache->iA[i] = v->iA;
+   258554:  501:			cache->iB[i] = v->iB;
+        -:  502:		}
+   180138:  503:		cache->div = s.div;
+        -:  504:	}
+   597704:  505:	if (outA)
+branch  0 taken 87% (fallthrough)
+branch  1 taken 13%
+   517166:  506:		*outA = a;
+   597704:  507:	if (outB)
+branch  0 taken 87% (fallthrough)
+branch  1 taken 13%
+   517166:  508:		*outB = b;
+   597704:  509:	if (iterations)
+branch  0 taken 87% (fallthrough)
+branch  1 taken 13%
+   517166:  510:		*iterations = iter;
+   597704:  511:	return dist;
+        -:  512:}
+        -:  513:
+function c2AABBtoAABB called 33656 returned 100% blocks executed 100%
+    33656:  514:int c2AABBtoAABB(c2AABB A, c2AABB B) {
+    33656:  515:	int d0 = B.max.x < A.min.x;
+    33656:  516:	int d1 = A.max.x < B.min.x;
+    33656:  517:	int d2 = B.max.y < A.min.y;
+    33656:  518:	int d3 = A.max.y < B.min.y;
+    33656:  519:	return !(d0 | d1 | d2 | d3);
+        -:  520:}
+        -:  521:
+function c2AABBtoCapsule called 38406 returned 100% blocks executed 100%
+    38406:  522:int c2AABBtoCapsule(c2AABB A, c2Capsule B) {
+    38406:  523:	if (c2GJK(&A, C2_TYPE_AABB, 0, &B, C2_TYPE_CAPSULE, 0, 0, 0, 1, 0, 0))
+call    0 returned 100%
+branch  1 taken 54% (fallthrough)
+branch  2 taken 46%
+    20626:  524:		return 0;
+    17780:  525:	return 1;
+        -:  526:}
+        -:  527:
+function c2CapsuletoCapsule called 28812 returned 100% blocks executed 100%
+    28812:  528:int c2CapsuletoCapsule(c2Capsule A, c2Capsule B) {
+    28812:  529:	if (c2GJK(&A, C2_TYPE_CAPSULE, 0, &B, C2_TYPE_CAPSULE, 0, 0, 0, 1, 0, 0))
+call    0 returned 100%
+branch  1 taken 53% (fallthrough)
+branch  2 taken 47%
+    15268:  530:		return 0;
+    13544:  531:	return 1;
+        -:  532:}
+        -:  533:
+function c2CircletoCircle called 25632 returned 100% blocks executed 100%
+    25632:  534:int c2CircletoCircle(c2Circle A, c2Circle B) {
+    25632:  535:	c2v c = c2Sub(B.p, A.p);
+call    0 returned 100%
+    25632:  536:	float d2 = c2Dot(c, c);
+call    0 returned 100%
+    25632:  537:	float r2 = A.r + B.r;
+    25632:  538:	r2 = r2 * r2;
+    25632:  539:	return d2 < r2;
+        -:  540:}
+        -:  541:
+function c2CircletoAABB called 51216 returned 100% blocks executed 100%
+    51216:  542:int c2CircletoAABB(c2Circle A, c2AABB B) {
+    51216:  543:	c2v L = c2Clampv(A.p, B.min, B.max);
+call    0 returned 100%
+    51216:  544:	c2v ab = c2Sub(A.p, L);
+call    0 returned 100%
+    51216:  545:	float d2 = c2Dot(ab, ab);
+call    0 returned 100%
+    51216:  546:	float r2 = A.r * A.r;
+    51216:  547:	return d2 < r2;
+        -:  548:}
+        -:  549:
+function c2CircletoCapsule called 43246 returned 100% blocks executed 100%
+    43246:  550:int c2CircletoCapsule(c2Circle A, c2Capsule B) {
+    43246:  551:	c2v n = c2Sub(B.b, B.a);
+call    0 returned 100%
+    43246:  552:	c2v ap = c2Sub(A.p, B.a);
+call    0 returned 100%
+    43246:  553:	float da = c2Dot(ap, n);
+call    0 returned 100%
+        -:  554:	float d2;
+    43246:  555:	if (da < 0)
+branch  0 taken 21% (fallthrough)
+branch  1 taken 79%
+     9292:  556:		d2 = c2Dot(ap, ap);
+call    0 returned 100%
+        -:  557:	else {
+    33954:  558:		float db = c2Dot(c2Sub(A.p, B.b), n);
+call    0 returned 100%
+call    1 returned 100%
+    33954:  559:		if (db < 0) {
+branch  0 taken 45% (fallthrough)
+branch  1 taken 55%
+    15228:  560:			c2v e = c2Sub(ap, c2Mulvs(n, (da / c2Dot(n, n))));
+call    0 returned 100%
+call    1 returned 100%
+call    2 returned 100%
+    15228:  561:			d2 = c2Dot(e, e);
+call    0 returned 100%
+        -:  562:		} else {
+    18726:  563:			c2v bp = c2Sub(A.p, B.b);
+call    0 returned 100%
+    18726:  564:			d2 = c2Dot(bp, bp);
+call    0 returned 100%
+        -:  565:		}
+        -:  566:	}
+    43246:  567:	float r = A.r + B.r;
+    43246:  568:	return d2 < r * r;
+        -:  569:}
+        -:  570:
+function c2Collided called 134586 returned 100% blocks executed 100%
+   134586:  571:int c2Collided(const void *A, C2_TYPE typeA, const void *B, C2_TYPE typeB) {
+   134586:  572:	switch (typeA) {
+branch  0 taken 27%
+branch  1 taken 27%
+branch  2 taken 27%
+branch  3 taken 18%
+    36818:  573:		case C2_TYPE_CIRCLE:
+    36818:  574:			switch (typeB) {
+branch  0 taken 26%
+branch  1 taken 26%
+branch  2 taken 26%
+branch  3 taken 22%
+     9604:  575:				case C2_TYPE_CIRCLE:
+     9604:  576:					return c2CircletoCircle(*(c2Circle *)A, *(c2Circle *)B);
+call    0 returned 100%
+     9602:  577:				case C2_TYPE_AABB:
+     9602:  578:					return c2CircletoAABB(*(c2Circle *)A, *(c2AABB *)B);
+call    0 returned 100%
+     9602:  579:				case C2_TYPE_CAPSULE:
+     9602:  580:					return c2CircletoCapsule(*(c2Circle *)A, *(c2Capsule *)B);
+call    0 returned 100%
+     8010:  581:				default:
+     8010:  582:					return 0;
+        -:  583:			}
+        -:  584:			break;
+    36816:  585:		case C2_TYPE_AABB:
+    36816:  586:			switch (typeB) {
+branch  0 taken 26%
+branch  1 taken 26%
+branch  2 taken 26%
+branch  3 taken 22%
+     9602:  587:				case C2_TYPE_CIRCLE:
+     9602:  588:					return c2CircletoAABB(*(c2Circle *)B, *(c2AABB *)A);
+call    0 returned 100%
+     9602:  589:				case C2_TYPE_AABB:
+     9602:  590:					return c2AABBtoAABB(*(c2AABB *)A, *(c2AABB *)B);
+call    0 returned 100%
+     9602:  591:				case C2_TYPE_CAPSULE:
+     9602:  592:					return c2AABBtoCapsule(*(c2AABB *)A, *(c2Capsule *)B);
+call    0 returned 100%
+     8010:  593:				default:
+     8010:  594:					return 0;
+        -:  595:			}
+        -:  596:			break;
+    36816:  597:		case C2_TYPE_CAPSULE:
+    36816:  598:			switch (typeB) {
+branch  0 taken 26%
+branch  1 taken 26%
+branch  2 taken 26%
+branch  3 taken 22%
+     9602:  599:				case C2_TYPE_CIRCLE:
+     9602:  600:					return c2CircletoCapsule(*(c2Circle *)B, *(c2Capsule *)A);
+call    0 returned 100%
+     9602:  601:				case C2_TYPE_AABB:
+     9602:  602:					return c2AABBtoCapsule(*(c2AABB *)B, *(c2Capsule *)A);
+call    0 returned 100%
+     9602:  603:				case C2_TYPE_CAPSULE:
+     9602:  604:					return c2CapsuletoCapsule(*(c2Capsule *)A, *(c2Capsule *)B);
+call    0 returned 100%
+     8010:  605:				default:
+     8010:  606:					return 0;
+        -:  607:			}
+        -:  608:			break;
+    24136:  609:		default:
+    24136:  610:			return 0;
+        -:  611:	}
+        -:  612:}
+        -:  613:
+function ptr_from_parts called 187506 returned 100% blocks executed 100%
+   187506:  614:void *ptr_from_parts(C2_TYPE typ, float a, float b, float c, float d, float e) {
+        -:  615:	c2Circle *circle;
+        -:  616:	c2AABB *aabb;
+        -:  617:	c2Capsule *capsule;
+        -:  618:
+   187506:  619:	switch (typ) {
+branch  0 taken 29%
+branch  1 taken 29%
+branch  2 taken 29%
+branch  3 taken 13%
+    54434:  620:	case C2_TYPE_CIRCLE:
+    54434:  621:		circle = malloc(sizeof(c2Circle));
+    54434:  622:		circle->p = c2V(a, b);
+call    0 returned 100%
+    54434:  623:		circle->r = c;
+    54434:  624:		return (void*)circle;
+    54430:  625:	case C2_TYPE_AABB:
+    54430:  626:		aabb = malloc(sizeof(c2AABB));
+    54430:  627:		aabb->min = c2V(a, b);
+call    0 returned 100%
+    54430:  628:		aabb->max = c2V(c, d);
+call    0 returned 100%
+    54430:  629:		return (void*)aabb;
+    54430:  630:	case C2_TYPE_CAPSULE:
+    54430:  631:		capsule = malloc(sizeof(c2Capsule));
+    54430:  632:		capsule->a = c2V(a, b);
+call    0 returned 100%
+    54430:  633:		capsule->b = c2V(c, d);
+call    0 returned 100%
+    54430:  634:		capsule->r = e;
+    54430:  635:		return (void*)capsule;
+        -:  636:	}
+    24212:  637:}
+        -:  638:
+function omni_collide called 81740 returned 100% blocks executed 100%
+    81740:  639:int omni_collide(C2_TYPE type_a, float a1, float a2, float a3, float a4, float a5,
+        -:  640:		C2_TYPE type_b, float b1, float b2, float b3, float b4, float b5) {
+    81740:  641:	void *A = ptr_from_parts(type_a, a1, a2, a3, a4, a5);
+call    0 returned 100%
+    81740:  642:	void *B = ptr_from_parts(type_b, b1, b2, b3, b4, b5);
+call    0 returned 100%
+        -:  643:
+    81740:  644:	return c2Collided(A, type_a, B, type_b);
+call    0 returned 100%
+        -:  645:}

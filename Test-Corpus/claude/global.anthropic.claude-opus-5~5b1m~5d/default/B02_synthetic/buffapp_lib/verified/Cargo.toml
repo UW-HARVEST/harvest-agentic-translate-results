@@ -1,0 +1,30 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "buffapp_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+# This crate is a 1:1 translation of a C library and must reproduce the C's
+# behaviour for EVERY input, including the inputs on which the C has undefined
+# behaviour (NULL dereferences, INT_MIN / -1, signed overflow). Rust's
+# debug-assertions turn those into panics -- and a panic escaping an
+# `extern "C"` function aborts, so the process dies with SIGABRT where the C
+# dies with SIGSEGV/SIGFPE. Disabling the checks in the dev profile keeps the
+# debug cdylib observably identical to the C, exactly as the release one is.
+# (Verified by tests/phase_c_errors.rs run against both profiles.)
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[workspace]

@@ -1,0 +1,36 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "gjk_cache_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# This crate is a byte-exact drop-in replacement for a C shared object, so its
+# *observable* behaviour must not depend on the build profile.  Two `rustc` debug
+# features would otherwise change it:
+#
+#   * `debug-assertions` enables libcore's `ub_checks`, which turn a raw-pointer
+#     dereference of NULL into a Rust panic -> `abort()` (SIGABRT).  The C simply
+#     faults (SIGSEGV).  `c_src/src/lib.c` dereferences its pointer arguments
+#     without any validation, so callers that pass NULL must see the same fatal
+#     signal from either library.
+#   * `overflow-checks` panics on signed `i32` wrap-around, whereas the C (built
+#     at `-O0`, no `-ftrapv`) wraps silently -- reachable from the unvalidated
+#     `int count` parameters.
+#
+# Both are therefore disabled in the dev profile so that `cargo build` and
+# `cargo build --release` produce libraries with identical semantics.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

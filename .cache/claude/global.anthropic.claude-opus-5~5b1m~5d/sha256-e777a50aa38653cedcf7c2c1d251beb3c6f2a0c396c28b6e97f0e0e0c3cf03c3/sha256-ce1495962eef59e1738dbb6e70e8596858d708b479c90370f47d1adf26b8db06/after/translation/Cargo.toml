@@ -1,0 +1,29 @@
+[package]
+name = "lib"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "maxnmin_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.dev]
+# The C dereferences caller-supplied pointers with no null check
+# (`strncpy(dst, name, 49)` at lib.c:56 and `if (*str)` at lib.c:102), so
+# `add_node(.., NULL, ..)` / `process_string(NULL)` die with SIGSEGV. Rust's
+# debug assertions insert a "null pointer dereference" UB check that turns those
+# same calls into a panic -> abort (SIGABRT), i.e. a *different* observable
+# failure mode than the C. Turning them off keeps the dev-profile cdylib
+# behaviourally identical to the release one and to the C. Nothing else in this
+# crate relies on debug assertions: every arithmetic operation uses an explicit
+# `wrapping_*` method, so overflow checks are a no-op here as well.
+debug-assertions = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

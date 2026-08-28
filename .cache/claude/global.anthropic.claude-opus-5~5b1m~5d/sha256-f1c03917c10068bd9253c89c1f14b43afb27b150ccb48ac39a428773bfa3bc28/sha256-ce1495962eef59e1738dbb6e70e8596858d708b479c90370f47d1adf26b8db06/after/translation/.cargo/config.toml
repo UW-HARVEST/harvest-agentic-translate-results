@@ -1,0 +1,8 @@
+# The differential tests redirect the process-global file descriptors 1 and 2
+# to capture what the C / Rust `.so`s print through C stdio. That is inherently
+# process-wide, so the test harness must not run tests concurrently — otherwise
+# libtest's own progress output (and other tests' output) lands inside a capture
+# window. `tests/common/mod.rs` also serializes with a mutex and holds Rust's
+# stdout/stderr locks, but running single-threaded is the robust guarantee.
+[env]
+RUST_TEST_THREADS = "1"

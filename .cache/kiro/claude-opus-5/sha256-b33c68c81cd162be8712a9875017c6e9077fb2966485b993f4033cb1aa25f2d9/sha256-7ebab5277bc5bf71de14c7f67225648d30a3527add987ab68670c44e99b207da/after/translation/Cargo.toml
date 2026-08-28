@@ -1,0 +1,22 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# `rlib` is listed alongside `cdylib` so that `cargo test` rebuilds the shared
+# object before the integration tests dlopen it. With `cdylib` alone the lib
+# target has no dependents among the test targets and cargo leaves a stale .so
+# in place. The tests still load the `cdylib` and call it through the FFI
+# boundary; they never link the rlib.
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+name = "agglom_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

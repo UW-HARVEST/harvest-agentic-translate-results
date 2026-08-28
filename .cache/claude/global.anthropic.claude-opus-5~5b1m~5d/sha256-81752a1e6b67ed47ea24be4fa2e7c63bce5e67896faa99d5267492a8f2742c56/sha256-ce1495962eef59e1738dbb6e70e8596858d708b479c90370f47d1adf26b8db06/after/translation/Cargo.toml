@@ -1,0 +1,34 @@
+[package]
+name = "lib"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "matrixsum_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# The C library performs raw, unchecked loads and stores; it makes no alignment or
+# non-null promises about a caller-supplied `DynamicArray *`, and dereferencing a
+# NULL `arr->data` in C raises SIGSEGV. rustc's debug assertions add
+# `Assert(PointerAlignment)` / `Assert(NullPointerDereference)` and the
+# `ptr::copy_nonoverlapping` precondition check to those same accesses, and each
+# one lowers to `panic_nounwind` -> `abort()`. That makes the dev-profile cdylib
+# abort where the C returns normally (misaligned pointer) or raise SIGABRT where
+# the C raises SIGSEGV (`data == NULL`) — i.e. the checks are themselves the
+# divergence. Turning them off makes the dev profile behave like the C, and like
+# the release profile.
+#
+# This costs nothing in safety here: every arithmetic operation in `src/lib.rs`
+# already uses an explicit `wrapping_*` operation to model C's semantics, so no
+# overflow assertion was ever load-bearing. Verified by `tests/phase_c_crash.rs`.
+[profile.dev]
+debug-assertions = false
+
+[workspace]

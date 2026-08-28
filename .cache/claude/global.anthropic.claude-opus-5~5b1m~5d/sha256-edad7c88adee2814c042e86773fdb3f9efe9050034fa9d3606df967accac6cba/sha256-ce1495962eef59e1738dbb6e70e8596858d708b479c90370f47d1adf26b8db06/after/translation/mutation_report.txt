@@ -1,0 +1,91 @@
+CAUGHT  siphash tail: drop the sign-extension of d[3]<<24
+          -> cfg08_hash_bytes_all_lengths_random,cfg09_hash_bytes_patterns,cfg10_hash_bytes_seed_sweep
+CAUGHT  siphash main loop: drop the sign-extension of the low int
+          -> cfg08_hash_bytes_all_lengths_random,cfg09_hash_bytes_patterns,cfg10_hash_bytes_seed_sweep
+CAUGHT  siphash: C_ROUNDS 2 -> 1 for the tail block only
+          -> cfg08_hash_bytes_all_lengths_random,cfg09_hash_bytes_patterns,cfg10_hash_bytes_seed_sweep
+CAUGHT  hash_string: rotate 9 -> 8
+          -> cfg11_hash_string_random_ascii,cfg12_hash_string_high_bit_bytes,cfg13_hash_string_seed_sweep
+CAUGHT  hash_string: (unsigned char) -> (signed char)
+          -> cfg12_hash_string_high_bit_bytes
+CAUGHT  hash_string: final `hash + seed` -> `hash`
+          -> cfg11_hash_string_random_ascii,cfg12_hash_string_high_bit_bytes,cfg13_hash_string_seed_sweep
+CAUGHT  make_hash_index: used_count_threshold sc-sc/4 -> sc-sc/2
+          -> cfg14_rand_seed_and_advance
+CAUGHT  make_hash_index: tombstone_count_threshold drops the >>4 term
+          -> cfg24_binary_keysize_sweep,cfg25_binary_growth_thresholds,cfg26_binary_duplicate_keys,cfg28_binary_elemsize_sweep
+CAUGHT  make_hash_index: shrink-threshold gate <= 8 -> < 8
+          -> cfg14_rand_seed_and_advance
+CAUGHT  make_hash_index: seed taken AFTER the advance instead of before
+          -> cfg14_rand_seed_and_advance
+MISSED  make_hash_index: cache-line alignment 64 -> 32
+CAUGHT  hmput_key: temp_key refresh guard mode >= -> mode ==
+          -> cfg50a_out_of_range_mode_string_path
+CAUGHT  hmput_key: wrap-around dup hit ALSO refreshes temp_key ('fixing' the C bug)
+          -> cfg43_string_duplicates_temp_key,cfg43b_shputs_writes_temp_key_back,cfg50a_out_of_range_mode_string_path
+CAUGHT  hmput_key: bucket index i-1 -> i
+          -> cfg23_binary_bootstrap_single_insert,cfg24_binary_keysize_sweep,cfg25_binary_growth_thresholds,cfg26_binary_duplicate_keys
+CAUGHT  hmput_key: initial string.mode DEFAULT -> STRDUP
+          -> cfg41_implicit_sh_default
+CAUGHT  hmput_key: tombstone not reused
+          -> cfg35_binary_tombstone_rebuild
+MISSED  hmdel_key: strdup free guard mode == -> mode >=
+CAUGHT  hmdel_key: final_index off by one
+          -> signal: 6, SIGABRT
+CAUGHT  hmdel_key: temp = 1 -> temp = 2 on a successful delete
+          -> cfg27_binary_zero_keysize,cfg32_binary_delete_all_random_order,cfg34_binary_shrink_cascade,cfg35_binary_tombstone_rebuild
+MISSED  hmdel_key: shrink gate slot_count > 8 -> >= 8
+CAUGHT  hmdel_key: rebuild gate > -> >=
+          -> cfg27_binary_zero_keysize,cfg32_binary_delete_all_random_order,cfg34_binary_shrink_cascade,cfg35_binary_tombstone_rebuild
+CAUGHT  hmget_key_ts: *temp = -1 -> -2 on a missing key
+          -> cfg24_binary_keysize_sweep,cfg29_binary_get_hit_and_miss
+CAUGHT  hmput_default: drops the `length == 0` disjunct
+          -> cfg31_hmput_default
+CAUGHT  hmfree_func: STRDUP sweep starts at 0 instead of 1
+          -> signal: 11, SIGSEGV
+CAUGHT  shmode_func: (unsigned char) truncation -> saturation
+          -> signal: 11, SIGSEGV
+CAUGHT  stralloc: `++block` gate < MAX -> <= MAX
+          -> cfg20_stralloc_block_saturation
+CAUGHT  stralloc: len > blocksize -> len >= blocksize
+          -> cfg18b_stralloc_len_exactly_blocksize
+CAUGHT  stralloc: oversized splice becomes a head insert
+          -> cfg18_stralloc_oversized_splice,cfg18b_stralloc_len_exactly_blocksize,cfg19_stralloc_interleaved,cfg21_stralloc_shift_count_overflow
+CAUGHT  stralloc: BLOCKSIZE_MIN 512 -> 256
+          -> cfg15_stralloc_single_string,cfg16_stralloc_many_short,cfg17_stralloc_oversized_first,cfg18_stralloc_oversized_splice
+CAUGHT  stralloc: block>>1 -> block
+          -> cfg16_stralloc_many_short,cfg17_stralloc_oversized_first,cfg18_stralloc_oversized_splice,cfg18b_stralloc_len_exactly_blocksize
+CAUGHT  strreset: forgets to memset the arena
+          -> cfg15_stralloc_single_string,cfg16_stralloc_many_short,cfg17_stralloc_oversized_first,cfg18_stralloc_oversized_splice
+CAUGHT  arrgrowf: forgets to init temp on a fresh allocation
+          -> cfg01_arrgrowf_fresh_small_min_cap,cfg02_arrgrowf_fresh_random_addlen,cfg03_arrgrowf_identity_when_capacity_suffices,cfg04_05_arrgrowf_doubling_and_exact_fit
+CAUGHT  arrgrowf: doubling uses 3x
+          -> cfg04_05_arrgrowf_doubling_and_exact_fit,cfg06_arrgrowf_append_loop
+CAUGHT  stbds_hmlen: length-1 -> length
+          -> signal: 11, SIGSEGV
+CAUGHT  strkey: format test_%d -> test%d
+          -> cfg52_strkey
+MISSED  str_dups: sh_new_strdup -> sh_new_arena
+MISSED  str_dups: skips the strreset between the arena loop and the map block
+CAUGHT  drop BOTH reachable asserts (c_src/src/lib.c:846 and :849) in hmdel_key
+          -> err_34_hmdel_mode_ge_2_mid_delete_aborts,err_39_hmdel_nonzero_keyoffset
+
+CAUGHT  33
+MISSED  5
+SKIPPED 0
+
+SURVIVING MUTATIONS:
+  [expected/equivalent] make_hash_index: cache-line alignment 64 -> 32
+        purely an internal allocation-layout detail; bucket contents, thresholds and every probe result are unchanged, and no address is ever compared
+  [expected/equivalent] hmdel_key: strdup free guard mode == -> mode >=
+        the only difference is whether a strdup'd key leaks; the element is already past `length` so hmfree_func never touches it either way, and no address is compared - detecting this needs an allocator hook
+  [expected/equivalent] hmdel_key: shrink gate slot_count > 8 -> >= 8
+        dead clause: at slot_count == 8 make_hash_index forces used_count_shrink_threshold = 0 (c_src/src/lib.c:399-400), and `used_count < 0` is vacuously false for a size_t, so the extra slot_count test can never change the outcome
+  [expected/equivalent] str_dups: sh_new_strdup -> sh_new_arena
+        str_dups returns void and its only observable is stdout; both key ownership modes satisfy the three asserts and print the identical `a <num>` line
+  [expected/equivalent] str_dups: skips the strreset between the arena loop and the map block
+        a pure memory leak; stdout is byte-identical
+
+UNEXPLAINED SURVIVORS: NONE
+exit=0
+9a583ac3dc6680a7f8329867213572cf  src/lib.rs

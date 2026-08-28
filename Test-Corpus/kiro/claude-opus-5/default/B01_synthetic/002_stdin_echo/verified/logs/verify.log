@@ -1,0 +1,186 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
+
+[39m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m.[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m.[0m [38;5;244m(11 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141mc_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141mc_src/CMakeLists.txt[0m, all lines
+↱ Operation 3: Reading file: [38;5;141mtranslation/src/main.rs[0m, all lines
+↱ Operation 4: Reading file: [38;5;141mtranslation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1345 bytes[0m from c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1204 bytes[0m from c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4247 bytes[0m from translation/src/main.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m120 bytes[0m from translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && echo OK && ls -la[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the C program with cmake
+
+OK
+total 64
+drwxr-xr-x. 3 scheschb amazon   103 Aug 28 07:53 .
+drwxr-xr-x. 4 scheschb amazon    52 Aug 28 07:53 ..
+-rw-r--r--. 1 scheschb amazon 14010 Aug 28 07:53 CMakeCache.txt
+drwxr-xr-x. 5 scheschb amazon 16384 Aug 28 07:53 CMakeFiles
+-rw-r--r--. 1 scheschb amazon  5326 Aug 28 07:53 Makefile
+-rw-r--r--. 1 scheschb amazon  1703 Aug 28 07:53 cmake_install.cmake
+-rwxr-xr-x. 1 scheschb amazon 16832 Aug 28 07:53 driver
+[38;5;244m - Completed in 1.24s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-JeADxn/translation)
+    Finished `release` profile [optimized] target(s) in 0.28s
+[38;5;244m - Completed in 0.308s[0m
+
+[?25l[0m[38;5;141m> [0mBoth build. Now a quick differential smoke test across the interesting input classes.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+run() {
+  name="$1"; shift
+  printf '%s' "$1" > /tmp/in.bin 2>/dev/null || true
+  co=$("$C" < /tmp/in.bin 2>/tmp/ce; echo "rc=$?")
+  ro=$("$R" < /tmp/in.bin 2>/tmp/re; echo "rc=$?")
+  if [ "$co" = "$ro" ] && cmp -s /tmp/ce /tmp/re; then echo "OK    $name"; else echo "DIFF  $name"; echo "  C: $(echo "$co" | od -c | head -3)"; echo "  R: $(echo "$ro" | od -c | head -3)"; fi
+}
+run empty ''
+run one-line 'hello
+'
+run no-trailing-nl 'hello'
+run multi 'a
+b
+c
+'
+run only-nl '
+
+
+'
+run crlf $'a\r\nb\r\n'
+run len126 "$(printf 'a%.0s' $(seq 1 126))
+"
+run len127 "$(printf 'a%.0s' $(seq 1 127))
+"
+run len128 "$(printf 'a%.0s' $(seq 1 128))
+"
+run len300 "$(printf 'a%.0s' $(seq 1 300))"
+run tab-spaces $'  \t x \n'
+[0m[38;5;244m (using tool: shell)[0m
+Purpose: Smoke test differential comparison across input classes
+
+OK    empty
+OK    one-line
+OK    no-trailing-nl
+OK    multi
+OK    only-nl
+OK    crlf
+OK    len126
+OK    len127
+OK    len128
+OK    len300
+OK    tab-spaces
+[38;5;244m - Completed in 0.97s[0m
+
+[?25l[0m[38;5;141m> [0mNow the binary cases (NUL bytes, invalid UTF-8) that bash variables can't carry:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/diff.py <<'EOF'
+import subprocess, sys
+C="c_src/build/driver"; R="translation/target/release/driver"
+cases = {
+ "nul-mid": b"a\x00b\ncd\n",
+ "nul-first": b"\x00abc\ndef\n",
+ "nul-only": b"\x00",
+ "nul-at-end": b"abc\n\x00",
+ "all-nuls": b"\x00"*10,
+ "invalid-utf8": bytes([0xff,0xfe,0x80,0x0a,0xc3,0x28,0x0a]),
+ "high-bytes-no-nl": bytes(range(1,256)),           # no 0x00, contains 0x0a
+ "full-256": bytes(range(0,256)),
+ "nul-after-127": b"a"*127 + b"\x00" + b"rest\n",
+ "nul-exactly-127th": b"a"*126 + b"\x00" + b"\n",
+ "cr-only": b"a\rb\rc",
+ "big-10k-nonl": b"x"*10000,
+ "big-lines": (b"line\n"*3000),
+ "nul-and-long": b"y"*200 + b"\x00" + b"z"*200 + b"\n",
+ "eof-mid-127": b"q"*127,
+ "utf8-multibyte-split": ("é"*100).encode(),        # 200 bytes, splits a char at 127
+}
+bad=0
+for name,data in cases.items():
+    c=subprocess.run([C],input=data,capture_output=True)
+    r=subprocess.run([R],input=data,capture_output=True)
+    ok = c.stdout==r.stdout and c.stderr==r.stderr and c.returncode==r.returncode
+    print(("OK    " if ok else "DIFF  ")+name)
+    if not ok:
+        bad+=1
+        print("  rc", c.returncode, r.returncode)
+        print("  C out", c.stdout[:120])
+        print("  R out", r.stdout[:120])
+        print("  C err", c.stderr[:120], "R err", r.stderr[:120])
+sys.exit(1 if bad else 0)
+EOF
+python3 /tmp/diff.py[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test with binary inputs including NUL bytes
+
+OK    nul-mid
+OK    nul-first
+OK    nul-only
+OK    nul-at-end
+OK    all-nuls
+OK    invalid-utf8
+OK    high-bytes-no-nl
+OK    full-256
+OK    nul-after-127
+OK    nul-exactly-127th
+OK    cr-only
+OK    big-10k-nonl
+OK    big-lines
+OK    nul-and-long
+OK    eof-mid-127
+OK    utf8-multibyte-split
+[38;5;244m - Completed in 0.87s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+echo "--- args ignored ---"
+echo hi | $C foo bar baz; echo "C rc=$?"
+echo hi | $R foo bar baz; echo "R rc=$?"
+echo "--- stdin closed (fd0 closed) ---"
+$C <&- ; echo "C rc=$?"
+$R <&- ; echo "R rc=$?"
+echo "--- stdin is a directory ---"
+$C < /tmp ; echo "C rc=$?"
+$R < /tmp ; echo "R rc=$?"
+echo "--- SIGPIPE: reader exits early ---"
+(yes hello 2>/dev/null | $C 2>/dev/null | head -c 10 >/dev/null); echo "C pipeline rc=$?"
+(yes hello 2>/dev/null | $R 2>/dev/null | head -c 10 >/dev/null); echo "R pipeline rc=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test args, closed stdin, directory stdin, SIGPIPE behavior
+
+--- args ignored ---
+hi
+C rc=0
+hi
+R rc=0
+--- stdin closed (fd0 closed) ---
+C rc=0
+R rc=0
+--- stdin is a directory ---
+C rc=0
+R rc=0
+--- SIGPIPE: reader exits early ---
+C pipeline rc=0
+[1G[0m[0m[?25h

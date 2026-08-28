@@ -1,0 +1,33 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "tfm_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+
+# `tfm` dereferences its pointer arguments unconditionally, exactly as the C
+# does. Passing a NULL `src`/`dest` with `count > 0` is undefined behaviour in
+# the C too, and the C `.so` faults with SIGSEGV. rustc's UB sanitizer — enabled
+# implicitly by `debug-assertions` — would instead turn that same input into a
+# Rust panic and hence SIGABRT, so a debug-profile `.so` would NOT be
+# behaviourally identical to the C (verified by `tests/phase_c.rs::e06`/`e07`,
+# which compare the terminating signal of both objects in a forked child).
+# Turn it off so EVERY profile of this library reproduces the C bit-for-bit and
+# fault-for-fault. Integer overflow checks are kept on: nothing in `src/lib.rs`
+# relies on wrapping (the loop counter uses explicit `wrapping_add`), and the
+# differential test harness benefits from them.
+[profile.dev]
+debug-assertions = false
+overflow-checks = true
+
+[workspace]
