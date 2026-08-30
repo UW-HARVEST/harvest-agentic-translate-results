@@ -1,0 +1,47 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The differential suites capture file descriptor 1 for the whole process, so
+# they must run their cases sequentially from one thread. libtest's parallel
+# runner also writes its progress lines to fd 1 and would land inside the
+# captured bytes, so these suites bring their own single-threaded runner
+# (`tests/common/mod.rs::Runner`) instead.
+[[test]]
+name = "configs"
+path = "tests/configs.rs"
+harness = false
+
+[[test]]
+name = "errors"
+path = "tests/errors.rs"
+harness = false
+
+[[test]]
+name = "smoke"
+path = "tests/smoke.rs"
+harness = false
+
+[[test]]
+name = "optlevels"
+path = "tests/optlevels.rs"
+harness = false
+
+# Symbol parity does no stdout capturing, so plain libtest is fine here.
+[[test]]
+name = "symbols"
+path = "tests/symbols.rs"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,1874 @@
+[38;5;9mError[38;5;11m: no agent with name kiro_plain found. Falling back to user specified default
+[0m[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -100 && echo "---TRANSLATION---" && find translation -type f -not -path "*/target/*" | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: List directory structure
+
+total 48
+drwxr-xr-x.   5 scheschb amazon    69 Aug 28 13:37 .
+drwxr-xr-x. 612 scheschb amazon 32768 Aug 28 13:37 ..
+drwxr-xr-x.   2 scheschb amazon    35 Aug 28 13:37 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Aug 28 13:37 c_src
+drwxr-xr-x.   3 scheschb amazon    69 Aug 28 13:37 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---TRANSLATION---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt; echo "=====HEADER====="; cat c_src/include/driver.h; echo "=====CARGO====="; cat translation/Cargo.toml; echo "=====WC====="; wc -l c_src/src/driver.c translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read build configs and header
+
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_library(driver SHARED
+    src/driver.c)
+
+target_include_directories(driver PUBLIC include)
+target_include_directories(driver PRIVATE src)
+
+install(TARGETS driver
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=====HEADER=====
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef DRIVER_H_
+#define DRIVER_H_
+
+void driver(char c);
+
+#endif //DRIVER_H_=====CARGO=====
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+=====WC=====
+  48 c_src/src/driver.c
+ 213 translation/src/lib.rs
+ 261 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/src/driver.c; echo "=====RUST====="; cat translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C and Rust sources
+
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "driver.h"
+
+#include <ctype.h>
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+void driver(char c) {
+    setlocale(LC_ALL, "C");
+    
+    printf("alphanumeric: %d\n", isalnum(c));
+    printf("alphabetic: %d\n", isalpha(c));
+    printf("lowercase: %d\n", islower(c));
+    printf("uppercase: %d\n", isupper(c));
+    printf("digit: %d\n", isdigit(c));
+    printf("hexadecimal: %d\n", isxdigit(c));
+    printf("control: %d\n", iscntrl(c));
+    printf("graphical: %d\n", isgraph(c));
+    printf("space: %d\n", isspace(c));
+    printf("blank: %d\n", isblank(c));
+    printf("printing: %d\n", isprint(c));
+    printf("punctuation: %d\n", ispunct(c));
+    printf("to lower: %c\n", tolower(c));
+    printf("to upper: %c\n", toupper(c));
+}
+=====RUST=====
+// Rust translation of c_src/src/driver.c
+//
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+use std::ffi::{c_char, c_int};
+
+// ---------------------------------------------------------------------------
+// C runtime interop
+//
+// Output is emitted through the C library's `printf` (rather than Rust's
+// `println!`) so that this library shares the caller's stdio stream and
+// buffering exactly as the original C did.  `setlocale` is likewise the real
+// libc call, because the original `driver()` mutates global locale state and a
+// caller may observe that.
+// ---------------------------------------------------------------------------
+extern "C" {
+    fn setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
+    fn printf(format: *const c_char, ...) -> c_int;
+}
+
+/// `LC_ALL` on glibc / Linux.
+const LC_ALL: c_int = 6;
+
+// ---------------------------------------------------------------------------
+// glibc `<ctype.h>` character-class bits, from `_ISbit(n)`:
+//
+//     _ISbit(n) = n < 8 ? (1 << n) << 8 : (1 << n) >> 8
+//
+// This matters for byte-identical output: glibc's `isalpha()` and friends
+// return the masked table entry, *not* a normalized 0/1.  So `isalpha('a')`
+// yields 1024, and the C program prints "alphabetic: 1024".
+// ---------------------------------------------------------------------------
+const IS_UPPER: c_int = 0x0100; // 256
+const IS_LOWER: c_int = 0x0200; // 512
+const IS_ALPHA: c_int = 0x0400; // 1024
+const IS_DIGIT: c_int = 0x0800; // 2048
+const IS_XDIGIT: c_int = 0x1000; // 4096
+const IS_SPACE: c_int = 0x2000; // 8192
+const IS_PRINT: c_int = 0x4000; // 16384
+const IS_GRAPH: c_int = 0x8000; // 32768
+const IS_BLANK: c_int = 0x0001; // 1
+const IS_CNTRL: c_int = 0x0002; // 2
+const IS_PUNCT: c_int = 0x0004; // 4
+const IS_ALNUM: c_int = 0x0008; // 8
+
+/// The class bits glibc's "C" locale table holds for a character.
+///
+/// glibc indexes its table with the (possibly negative) `int` value of the
+/// argument; the table's negative half (-128..=-1, i.e. what a *signed* `char`
+/// holding a byte >= 0x80 becomes) is all zeroes in the "C" locale, so every
+/// class query for such a byte answers 0.
+fn ctype_class(c: c_int) -> c_int {
+    if !(0..=127).contains(&c) {
+        return 0;
+    }
+    let b = c as u8;
+    let mut m = 0;
+
+    let upper = b.is_ascii_uppercase();
+    let lower = b.is_ascii_lowercase();
+    let digit = b.is_ascii_digit();
+    let alpha = upper || lower;
+    // Printable: SPACE through '~'.  Graphical is the same minus SPACE.
+    let print = (0x20..=0x7e).contains(&b);
+    let graph = (0x21..=0x7e).contains(&b);
+
+    if upper {
+        m |= IS_UPPER;
+    }
+    if lower {
+        m |= IS_LOWER;
+    }
+    if alpha {
+        m |= IS_ALPHA;
+    }
+    if digit {
+        m |= IS_DIGIT;
+    }
+    if b.is_ascii_hexdigit() {
+        m |= IS_XDIGIT;
+    }
+    // Whitespace in the "C" locale: HT, LF, VT, FF, CR and SPACE.
+    if matches!(b, b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' ') {
+        m |= IS_SPACE;
+    }
+    if print {
+        m |= IS_PRINT;
+    }
+    if graph {
+        m |= IS_GRAPH;
+    }
+    // Blank in the "C" locale: HT and SPACE.
+    if matches!(b, b'\t' | b' ') {
+        m |= IS_BLANK;
+    }
+    if b < 0x20 || b == 0x7f {
+        m |= IS_CNTRL;
+    }
+    // Punctuation: graphical but neither alphabetic nor numeric.
+    if graph && !alpha && !digit {
+        m |= IS_PUNCT;
+    }
+    if alpha || digit {
+        m |= IS_ALNUM;
+    }
+    m
+}
+
+fn isalnum(c: c_int) -> c_int {
+    ctype_class(c) & IS_ALNUM
+}
+fn isalpha(c: c_int) -> c_int {
+    ctype_class(c) & IS_ALPHA
+}
+fn islower(c: c_int) -> c_int {
+    ctype_class(c) & IS_LOWER
+}
+fn isupper(c: c_int) -> c_int {
+    ctype_class(c) & IS_UPPER
+}
+fn isdigit(c: c_int) -> c_int {
+    ctype_class(c) & IS_DIGIT
+}
+fn isxdigit(c: c_int) -> c_int {
+    ctype_class(c) & IS_XDIGIT
+}
+fn iscntrl(c: c_int) -> c_int {
+    ctype_class(c) & IS_CNTRL
+}
+fn isgraph(c: c_int) -> c_int {
+    ctype_class(c) & IS_GRAPH
+}
+fn isspace(c: c_int) -> c_int {
+    ctype_class(c) & IS_SPACE
+}
+fn isblank(c: c_int) -> c_int {
+    ctype_class(c) & IS_BLANK
+}
+fn isprint(c: c_int) -> c_int {
+    ctype_class(c) & IS_PRINT
+}
+fn ispunct(c: c_int) -> c_int {
+    ctype_class(c) & IS_PUNCT
+}
+
+/// "C" locale `tolower`: only 'A'..='Z' map; everything else (including the
+/// negative indices produced by high bytes in a signed `char`) is identity.
+fn tolower(c: c_int) -> c_int {
+    if (b'A' as c_int..=b'Z' as c_int).contains(&c) {
+        c + 32
+    } else {
+        c
+    }
+}
+
+/// "C" locale `toupper`; identity outside 'a'..='z'.
+fn toupper(c: c_int) -> c_int {
+    if (b'a' as c_int..=b'z' as c_int).contains(&c) {
+        c - 32
+    } else {
+        c
+    }
+}
+
+/// Translation of `void driver(char c)`.
+///
+/// `c` is a C `char`, which is *signed* on the x86-64 / AArch64 Linux ABIs, so
+/// it is modelled as `i8` and widens to a negative `c_int` for bytes >= 0x80 —
+/// matching the original's integer promotion at each `is*`/`to*` call site.
+#[unsafe(no_mangle)]
+pub extern "C" fn driver(c: c_char) {
+    let c: c_int = c as c_int;
+
+    unsafe {
+        setlocale(LC_ALL, c"C".as_ptr());
+
+        printf(c"alphanumeric: %d\n".as_ptr(), isalnum(c));
+        printf(c"alphabetic: %d\n".as_ptr(), isalpha(c));
+        printf(c"lowercase: %d\n".as_ptr(), islower(c));
+        printf(c"uppercase: %d\n".as_ptr(), isupper(c));
+        printf(c"digit: %d\n".as_ptr(), isdigit(c));
+        printf(c"hexadecimal: %d\n".as_ptr(), isxdigit(c));
+        printf(c"control: %d\n".as_ptr(), iscntrl(c));
+        printf(c"graphical: %d\n".as_ptr(), isgraph(c));
+        printf(c"space: %d\n".as_ptr(), isspace(c));
+        printf(c"blank: %d\n".as_ptr(), isblank(c));
+        printf(c"printing: %d\n".as_ptr(), isprint(c));
+        printf(c"punctuation: %d\n".as_ptr(), ispunct(c));
+        printf(c"to lower: %c\n".as_ptr(), tolower(c));
+        printf(c"to upper: %c\n".as_ptr(), toupper(c));
+    }
+}
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, single-file project. Let me check for features and toolchain, and build both sides.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; cmake --version | head -1; cc --version | head -1
+echo "--- features in Cargo.toml ---"; grep -n "\[features\]" -A20 translation/Cargo.toml || echo "NO [features] SECTION"
+echo "--- cargo lock ---"; cat translation/Cargo.lock[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain versions and features
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+cmake version 3.22.2
+cc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+--- features in Cargo.toml ---
+NO [features] SECTION
+--- cargo lock ---
+# This file is automatically @generated by Cargo.
+# It is not intended for manual editing.
+version = 4
+
+[[package]]
+name = "driver"
+version = "0.1.0"
+[38;5;244m - Completed in 0.40s[0m
+
+[?25l[0m[38;5;141m> [0mNo [38;5;10m[features][0m section, so there is exactly one build configuration to verify. Building both sides now.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null && cmake --build . 2>&1 | tail -5 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+-rwxr-xr-x. 1 scheschb amazon 16000 Aug 28 13:38 libdriver.so
+[38;5;244m - Completed in 0.445s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo check --no-default-features 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: cargo check default/no-default-features
+
+    Checking driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+[38;5;244m - Completed in 0.91s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo fetch 2>&1 | tail -10[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fetch libloading dependency
+
+    Updating crates.io index
+     Locking 3 packages to latest compatible versions
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+[38;5;244m - Completed in 0.75s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared harness for differential testing of the C and Rust `driver` shared
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! libraries.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Both libraries are loaded with `libloading` and invoked purely through their
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! exported C symbols, so the Rust `#[no_mangle]` wrappers are exercised the
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! same way an external caller would exercise them.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::io::Read;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::os::unix::io::AsRawFd;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use std::sync::OnceLock;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// Minimal libc bindings, resolved at run time out of the already-loaded libc.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Used to move file descriptor 1 around so that the `printf` output produced
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// *inside* the two shared libraries can be captured.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m struct Libc {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     _lib: Library,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     dup: unsafe extern "C" fn(c_int) -> c_int,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     dup2: unsafe extern "C" fn(c_int, c_int) -> c_int,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     close: unsafe extern "C" fn(c_int) -> c_int,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     fflush: unsafe extern "C" fn(*mut c_void) -> c_int,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m fn libc() -> &'static Libc {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     static LIBC: OnceLock<Libc> = OnceLock::new();
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     LIBC.get_or_init(|| unsafe {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         let lib = Library::new("libc.so.6").expect("failed to dlopen libc.so.6");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         let dup: Symbol<unsafe extern "C" fn(c_int) -> c_int> = lib.get(b"dup\0").unwrap();
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         let dup2: Symbol<unsafe extern "C" fn(c_int, c_int) -> c_int> = lib.get(b"dup2\0").unwrap();
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         let close: Symbol<unsafe extern "C" fn(c_int) -> c_int> = lib.get(b"close\0").unwrap();
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         let fflush: Symbol<unsafe extern "C" fn(*mut c_void) -> c_int> =
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             lib.get(b"fflush\0").unwrap();
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         let (dup, dup2, close, fflush) = (*dup, *dup2, *close, *fflush);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         Libc {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             _lib: lib,
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             dup,
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             dup2,
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             close,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             fflush,
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// The workspace root (the directory holding `c_src/` and `translation/`).
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m pub fn project_root() -> PathBuf {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR is `<root>/translation`.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         .expect("manifest dir has a parent")
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// Path to the shared library built from `c_src/`.
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m pub fn c_library_path() -> PathBuf {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     let p = project_root().join("c_src/build/libdriver.so");
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         p.is_file(),
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         "C shared library not found at {}.\nBuild it with:\n  cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m          && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         p.display()
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     p
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// Path to the `cdylib` produced by this crate, discovered relative to the test
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// binary so it follows whichever profile cargo is currently using.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m pub fn rust_library_path() -> PathBuf {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     // .../target/<profile>/deps/<test>-<hash>
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     let deps = exe.parent().expect("deps dir");
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     let candidates = [
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         deps.join("libdriver.so"),
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         deps.parent().map(|d| d.join("libdriver.so")).unwrap(),
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     for c in candidates.iter() {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         if c.is_file() {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             return c.clone();
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         "Rust cdylib libdriver.so not found near {}. Run `cargo build` first.",
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         deps.display()
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// A loaded `driver` implementation, addressed only through its exported
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m /// symbols.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m pub struct DriverLib {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     lib: Library,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     name: &'static str,
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m impl DriverLib {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     pub fn open(path: &Path, name: &'static str) -> Self {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         let lib = unsafe { Library::new(path) }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("failed to dlopen {}: {e}", path.display()));
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         DriverLib { lib, name }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     pub fn name(&self) -> &'static str {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         self.name
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     /// Look up `driver` in *this* library only (libloading uses `RTLD_LOCAL`,
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     /// so the two copies never shadow each other).
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     fn driver_fn(&self) -> Symbol<'_, unsafe extern "C" fn(c_char)> {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         unsafe { self.lib.get(b"driver\0") }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("{}: missing exported symbol `driver`: {e}", self.name))
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     /// Call `driver(c)` and return everything it wrote to stdout.
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     pub fn driver_output(&self, c: c_char) -> Vec<u8> {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         let f = self.driver_fn();
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         capture_stdout(|| unsafe { f(c) })
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m /// Run `body` with file descriptor 1 redirected into a temporary file and
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// return the bytes written.
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m /// This is deliberately fd-level rather than Rust-level: the output under test
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m /// is produced by libc `printf` inside a dynamically loaded object, which knows
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m /// nothing about Rust's `io::stdout`.
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m pub fn capture_stdout<F: FnOnce()>(body: F) -> Vec<u8> {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     let libc = libc();
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     let mut path = std::env::temp_dir();
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     path.push(format!(
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         "driver-capture-{}-{:?}.out",
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         std::process::id(),
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         std::thread::current().id()
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     ));
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     let bytes = unsafe {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         // Flush anything already buffered so it is not misattributed.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         (libc.fflush)(std::ptr::null_mut());
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         let file = std::fs::File::create(&path).expect("create capture file");
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         let saved = (libc.dup)(1);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         assert!(saved >= 0, "dup(1) failed");
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         assert!((libc.dup2)(file.as_raw_fd(), 1) >= 0, "dup2 failed");
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         drop(file);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         body();
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         (libc.fflush)(std::ptr::null_mut());
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         assert!((libc.dup2)(saved, 1) >= 0, "dup2 restore failed");
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         (libc.close)(saved);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         let mut buf = Vec::new();
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         std::fs::File::open(&path)
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             .expect("reopen capture file")
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             .read_to_end(&mut buf)
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             .expect("read capture file");
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         buf
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let _ = std::fs::remove_file(&path);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     bytes
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m /// Render bytes so mismatches are readable in assertion messages.
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m pub fn show(bytes: &[u8]) -> String {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let mut s = String::new();
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     for &b in bytes {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         match b {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m             b'\n' => s.push_str("\\n"),
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m             0x20..=0x7e => s.push(b as char),
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             _ => s.push_str(&format!("\\x{b:02x}")),
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     s
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m /// Every `char` value, in the order a C `signed char` would enumerate them.
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m pub fn all_char_values() -> Vec<c_char> {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     (i8::MIN..=i8::MAX).map(|v| v as c_char).collect()
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Serialize stdout captures
+
+[49m[39m  127, 127[0m:[39m[49m pub fn capture_stdout<F: FnOnce()>(body: F) -> Vec<u8> {
+[0m[49m[38;5;10m+      128[0m:[38;5;10m[49m     // fd 1 is process-wide state, so only one capture may be in flight.
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m 
+[0m[49m[39m  128, 132[0m:[39m[49m     let libc = libc();
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the differential test suite.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/driver_diff.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test suite for driver()
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests: the C `libdriver.so` and the Rust `libdriver.so` are
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! both loaded via `libloading` and compared byte-for-byte through their
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! exported symbols.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! `driver()` is the only entry point in `include/driver.h`, and everything it
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! computes (`isalnum`, `isalpha`, ..., `tolower`, `toupper`) is observable only
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! through the lines it prints. The tests therefore work upward from the
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! individual classification lines to the whole function's output.
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::ffi::c_char;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m struct Pair {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     c: DriverLib,
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     rust: DriverLib,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m fn pair() -> Pair {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     Pair {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         c: DriverLib::open(&c_library_path(), "C"),
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         rust: DriverLib::open(&rust_library_path(), "Rust"),
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// Split `driver`'s output into its `label: value` lines.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m fn fields(out: &[u8]) -> Vec<(String, Vec<u8>)> {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     let mut v = Vec::new();
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     for line in out.split(|&b| b == b'\n') {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         if line.is_empty() {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         match line.iter().position(|&b| b == b':') {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             Some(i) => {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m                 let label = String::from_utf8_lossy(&line[..i]).to_string();
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m                 let value = line[i + 1..].strip_prefix(b" ").unwrap_or(&line[i + 1..]);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m                 v.push((label, value.to_vec()));
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             None => v.push((String::new(), line.to_vec())),
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m // Level 1: the individual character-classification / conversion lines.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m // Each of these compares one field of the output across all 256 `char` values,
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m // which isolates a single underlying `<ctype.h>` operation per test.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m fn check_field(label: &str) {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let p = pair();
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     let mut checked = 0usize;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     for c in all_char_values() {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         let cf = fields(&p.c.driver_output(c));
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         let rf = fields(&p.rust.driver_output(c));
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         let cv = cf
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             .find(|(l, _)| l == label)
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             .unwrap_or_else(|| panic!("C output has no `{label}:` line for char {c}"));
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         let rv = rf.iter().find(|(l, _)| l == label).unwrap_or_else(|| {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             panic!(
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m                 "Rust output has no `{label}:` line for char {c}; got labels {:?}",
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m                 rf.iter().map(|(l, _)| l).collect::<Vec<_>>()
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             )
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             show(&cv.1),
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             show(&rv.1),
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             "`{label}` differs for char {c} (byte 0x{:02x})",
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m             c as u8
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         checked += 1;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     assert_eq!(checked, 256);
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m fn alphanumeric_matches() {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     check_field("alphanumeric");
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m fn alphabetic_matches() {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     check_field("alphabetic");
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m fn lowercase_matches() {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     check_field("lowercase");
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m fn uppercase_matches() {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     check_field("uppercase");
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m fn digit_matches() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     check_field("digit");
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m fn hexadecimal_matches() {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     check_field("hexadecimal");
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m fn control_matches() {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     check_field("control");
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m fn graphical_matches() {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     check_field("graphical");
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m fn space_matches() {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     check_field("space");
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m fn blank_matches() {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     check_field("blank");
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m fn printing_matches() {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     check_field("printing");
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m fn punctuation_matches() {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     check_field("punctuation");
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m fn to_lower_matches() {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     check_field("to lower");
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m fn to_upper_matches() {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     check_field("to upper");
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m // Level 2: the whole `driver()` output, byte-for-byte.
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m fn driver_output_identical_for_every_char() {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     let p = pair();
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     let mut diffs = Vec::new();
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     for c in all_char_values() {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         let expected = p.c.driver_output(c);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         let actual = p.rust.driver_output(c);
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         if expected != actual {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m             diffs.push(format!(
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                 "char {c} (byte 0x{:02x}):\n  C   : {}\n  Rust: {}",
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 c as u8,
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                 show(&expected),
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m                 show(&actual)
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m             ));
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         diffs.is_empty(),
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         "{} of 256 char values differ:\n{}",
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         diffs.len(),
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         diffs.join("\n")
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m /// The C output is not empty and has the expected shape, so that an "identical"
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m /// result cannot be an artifact of the capture harness silently producing
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m /// nothing for both libraries.
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m fn capture_harness_actually_captures() {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let p = pair();
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let out = p.c.driver_output(b'a' as c_char);
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     assert!(!out.is_empty(), "captured no output from the C library");
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         fields(&out).len(),
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         14,
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         "expected 14 output lines, got: {}",
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         show(&out)
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     let labels: Vec<String> = fields(&out).into_iter().map(|(l, _)| l).collect();
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         labels,
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         vec![
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             "alphanumeric",
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m             "alphabetic",
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m             "lowercase",
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             "uppercase",
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m             "digit",
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m             "hexadecimal",
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m             "control",
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             "graphical",
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             "space",
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m             "blank",
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             "printing",
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m             "punctuation",
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m             "to lower",
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m             "to upper",
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         ]
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m /// Repeated calls must stay identical: `driver()` calls `setlocale(LC_ALL, "C")`
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m /// every time, so neither implementation may depend on residual global state.
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m fn repeated_calls_are_stable() {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     let p = pair();
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     for c in [b'A' as c_char, b'z' as c_char, b'5' as c_char, 0, -1, -128] {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         let c_first = p.c.driver_output(c);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         let r_first = p.rust.driver_output(c);
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         for _ in 0..3 {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m                 show(&c_first),
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m                 show(&p.c.driver_output(c)),
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m                 "C output not stable for char {c}"
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m                 show(&r_first),
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m                 show(&p.rust.driver_output(c)),
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m                 "Rust output not stable for char {c}"
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         assert_eq!(show(&c_first), show(&r_first), "mismatch for char {c}");
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m /// Interleaving the two libraries must not change either one's answer, which
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m /// would indicate one of them is corrupting shared global state (locale,
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m /// stdio buffering, ...).
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m fn interleaved_calls_do_not_interfere() {
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     let p = pair();
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     for c in all_char_values() {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         let r1 = p.rust.driver_output(c);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         let c1 = p.c.driver_output(c);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         let r2 = p.rust.driver_output(c);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         assert_eq!(show(&r1), show(&r2), "Rust perturbed by C call, char {c}");
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         assert_eq!(show(&c1), show(&r1), "mismatch for char {c}");
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/driver_diff.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the symbol-export parity test.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/symbols.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create symbol export parity test
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Symbol export parity: every symbol the C `.so` exports must also be exported
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! by the Rust `.so` under the exact same name.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::collections::BTreeSet;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::path::Path;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::process::Command;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// Dynamic symbols *defined* by an object, as reported by `nm -D`.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// `nm -D` lists both defined and undefined dynamic symbols; undefined ones
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// (type `U`/`w`) are imports, not exports, so they are filtered out. Symbols
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m /// belonging to the toolchain's own bookkeeping are ignored because they are an
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// artifact of the linker rather than of the translated source.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m fn exported_symbols(path: &Path) -> BTreeSet<String> {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     let out = Command::new("nm")
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m         .arg("-D")
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         .arg("--defined-only")
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         .arg(path)
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         .expect("failed to run `nm`");
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         out.status.success(),
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         "nm -D {} failed: {}",
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         path.display(),
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let ignored = |name: &str| {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         matches!(
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m             name,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             "_init"
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m                 | "_fini"
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m                 | "__bss_start"
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m                 | "_edata"
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m                 | "_end"
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m                 | "__cxa_finalize"
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m                 | "_ITM_registerTMCloneTable"
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m                 | "_ITM_deregisterTMCloneTable"
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m                 | "__gmon_start__"
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         ) || name.starts_with("rust_")
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             || name.starts_with("__rust")
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             || name.starts_with("_ZN")
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m             || name.starts_with("_RN")
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     String::from_utf8_lossy(&out.stdout)
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         .lines()
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         .filter_map(|line| {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             // "<addr> <type> <name>"; undefined symbols have no address.
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             let mut it = line.split_whitespace();
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             let first = it.next()?;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             let (ty, name) = if first.len() == 1 {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                 (first, it.next()?)
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m                 (it.next()?, it.next()?)
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             if matches!(ty, "U" | "w" | "v") {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m                 return None;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             let name = name.split('@').next().unwrap_or(name);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             if ignored(name) {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m                 return None;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             Some(name.to_string())
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         .collect()
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m fn rust_exports_every_c_symbol() {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     let c_syms = exported_symbols(&c_library_path());
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let rust_syms = exported_symbols(&rust_library_path());
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         c_syms.contains("driver"),
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         "sanity check failed: C .so does not export `driver`; found {c_syms:?}"
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     let missing: Vec<&String> = c_syms.difference(&rust_syms).collect();
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         missing.is_empty(),
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         "Rust .so is missing symbols exported by the C .so: {missing:?}\n\
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m          C exports:    {c_syms:?}\n\
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m          Rust exports: {rust_syms:?}"
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// Each exported C symbol must be resolvable through `dlsym` on the Rust
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// library too, not merely present in the symbol table.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m fn c_symbols_are_dlsym_resolvable_in_rust_so() {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let c_syms = exported_symbols(&c_library_path());
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let rust = DriverLib::open(&rust_library_path(), "Rust");
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     for name in &c_syms {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         let mut cname = name.clone().into_bytes();
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         cname.push(0);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             rust.has_symbol(&cname),
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             "`{name}` is exported by the C .so but not resolvable in the Rust .so"
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/symbols.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add has_symbol helper
+
+[49m[39m  103, 103[0m:[39m[49m     pub fn name(&self) -> &'static str {
+[0m[49m[39m  104, 104[0m:[39m[49m         self.name
+[0m[49m[38;5;10m+      105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m     /// Whether `dlsym` on this library resolves `name` (NUL-terminated).
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m     pub fn has_symbol(&self, name: &[u8]) -> bool {
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m         unsafe { self.lib.get::<*const c_void>(name) }.is_ok()
+[0m[49m[39m  105, 110[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build 2>&1 | tail -5 && ls -la target/debug/libdriver.so && timeout 600 cargo test 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build cdylib and run tests
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+-rwxr-xr-x. 2 scheschb amazon 4332312 Aug 28 13:40 target/debug/libdriver.so
+175 | pub fn show(bytes: &[u8]) -> String {
+    |        ^^^^
+
+warning: function `all_char_values` is never used
+   --> tests/common/mod.rs:188:8
+    |
+188 | pub fn all_char_values() -> Vec<c_char> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: methods `name` and `has_symbol` are never used
+   --> tests/common/mod.rs:103:12
+    |
+ 96 | impl DriverLib {
+    | -------------- methods in this implementation
+...
+103 |     pub fn name(&self) -> &'static str {
+    |            ^^^^
+...
+108 |     pub fn has_symbol(&self, name: &[u8]) -> bool {
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `driver` (test "symbols") generated 7 warnings
+warning: `driver` (test "driver_diff") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+     Running unittests src/lib.rs (target/debug/deps/driver-0c21e8ae16b4c1f7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/driver_diff.rs (target/debug/deps/driver_diff-3e7d37c0b9c42ab8)
+
+running 18 tests
+test capture_harness_actually_captures ... oktest driver_output_identical_for_every_char ... ok
+test repeated_calls_are_stable ... ok
+test interleaved_calls_do_not_interfere ... test alphanumeric_matches ... ok
+test control_matches ... ok
+test lowercase_matches ... ok
+
+test alphabetic_matches ... ok
+test hexadecimal_matches ... ok
+
+test digit_matches ... ok
+test to_lower_matches ... test uppercase_matches ... ok
+test graphical_matches ... 
+ok
+test to_upper_matches ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests/symbols.rs (target/debug/deps/symbols-fee1c17bd3843629)
+
+running 2 tests
+test c_symbols_are_dlsym_resolvable_in_rust_so ... ok
+test rust_exports_every_c_symbol ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+[38;5;244m - Completed in 1.367s[0m
+
+[?25l[0m[38;5;141m> [0mAll green. Let me independently verify the harness isn't trivially passing — dump actual outputs and confirm a deliberate defect would be caught.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-fFbGl8 && python3 -c "
+import ctypes, os, sys, tempfile
+def run(lib, ch):
+    l = ctypes.CDLL(lib, mode=ctypes.RTLD_LOCAL)
+    f = l.driver; f.restype=None; f.argtypes=[ctypes.c_char]
+    libc = ctypes.CDLL('libc.so.6')
+    libc.fflush(None)
+    saved = os.dup(1)
+    fd = os.open('/tmp/x.out', os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o644)
+    os.dup2(fd,1); os.close(fd)
+    f(ctypes.c_char(bytes([ch&0xff])))
+    libc.fflush(None)
+    os.dup2(saved,1); os.close(saved)
+    return open('/tmp/x.out','rb').read()
+for ch in [ord('a'), ord('5'), ord(' '), 0x09, 0x00, 0x7f, 0x80, 0xff, ord('~')]:
+    c = run('c_src/build/libdriver.so', ch)
+    r = run('translation/target/debug/libdriver.so', ch)
+    print('byte 0x%02x  match=%s' % (ch, c==r))
+    print('  C   :', c)
+    if c!=r: print('  Rust:', r)
+"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Independently dump C vs Rust outputs via python ctypes
+
+byte 0x61  match=True
+  C   : b'alphanumeric: 8\nalphabetic: 1024\nlowercase: 512\nuppercase: 0\ndigit: 0\nhexadecimal: 4096\ncontrol: 0\ngraphical: 32768\nspace: 0\nblank: 0\nprinting: 16384\npunctuation: 0\nto lower: a\nto upper: A\n'
+byte 0x35  match=True
+  C   : b'alphanumeric: 8\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 2048\nhexadecimal: 4096\ncontrol: 0\ngraphical: 32768\nspace: 0\nblank: 0\nprinting: 16384\npunctuation: 0\nto lower: 5\nto upper: 5\n'
+byte 0x20  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 0\ngraphical: 0\nspace: 8192\nblank: 1\nprinting: 16384\npunctuation: 0\nto lower:  \nto upper:  \n'
+byte 0x09  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 2\ngraphical: 0\nspace: 8192\nblank: 1\nprinting: 0\npunctuation: 0\nto lower: \t\nto upper: \t\n'
+byte 0x00  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 2\ngraphical: 0\nspace: 0\nblank: 0\nprinting: 0\npunctuation: 0\nto lower: \x00\nto upper: \x00\n'
+byte 0x7f  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 2\ngraphical: 0\nspace: 0\nblank: 0\nprinting: 0\npunctuation: 0\nto lower: \x7f\nto upper: \x7f\n'
+byte 0x80  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 0\ngraphical: 0\nspace: 0\nblank: 0\nprinting: 0\npunctuation: 0\nto lower: \x80\nto upper: \x80\n'
+byte 0xff  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 0\ngraphical: 0\nspace: 0\nblank: 0\nprinting: 0\npunctuation: 0\nto lower: \xff\nto upper: \xff\n'
+byte 0x7e  match=True
+  C   : b'alphanumeric: 0\nalphabetic: 0\nlowercase: 0\nuppercase: 0\ndigit: 0\nhexadecimal: 0\ncontrol: 0\ngraphical: 32768\nspace: 0\nblank: 0\nprinting: 16384\npunctuation: 4\nto lower: ~\nto upper: ~\n'
+[38;5;244m - Completed in 0.47s[0m
+
+[?25l[0m[38;5;141m> [0mValues are the real glibc bitmask returns (1024, 8192, etc.), so the comparison is meaningful. Now a mutation check to prove the tests can fail.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && sed -i 's/const IS_PUNCT: c_int = 0x0004;/const IS_PUNCT: c_int = 0x0005;/' src/lib.rs && timeout 600 cargo test 2>&1 | grep -E "^test result|FAILED|punctuation.*ok|test punctuation" | head; echo "=== restore ==="; cp /tmp/lib.rs.bak src/lib.rs && timeout 600 cargo test 2>&1 | grep -E "^test result"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test to validate test sensitivity
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test punctuation_matches ... ok
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+=== restore ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+[38;5;244m - Completed in 2.48s[0m
+
+[?25l[0m[38;5;141m> [0mThe mutation did not fail the test — [38;5;10mcargo test[0m does not rebuild the [38;5;10mcdylib[0m, so the tests were loading a stale [38;5;10m.so[0m. Fixing the harness to build and freshness-check the Rust library.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Build cdylib from harness with freshness check
+
+[49m[38;5;9m- 68     [0m:[38;5;9m[49m /// Path to the `cdylib` produced by this crate, discovered relative to the test
+[0m[49m[38;5;9m- 69     [0m:[38;5;9m[49m /// binary so it follows whichever profile cargo is currently using.
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m /// Path to the `cdylib` produced by this crate.
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m /// `cargo test` does **not** emit the `cdylib` artifact for a
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m /// `crate-type = ["cdylib"]` package (integration tests cannot link it), so
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m /// without help the tests would happily load a stale `libdriver.so` left over
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m /// from an earlier `cargo build`. The harness therefore builds the library
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m /// itself, using the same profile as the running test binary, and then asserts
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m /// the artifact is newer than the sources.
+[0m[49m[39m  70,  76[0m:[39m[49m pub fn rust_library_path() -> PathBuf {
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m     static PATH: OnceLock<PathBuf> = OnceLock::new();
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m     PATH.get_or_init(build_rust_library).clone()
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m fn build_rust_library() -> PathBuf {
+[0m[49m[39m  71,  82[0m:[39m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[38;5;9m- 72     [0m:[38;5;9m[49m     // .../target/<profile>/deps/<test>-<hash>
+[0m[49m[38;5;9m- 73     [0m:[38;5;9m[49m     let deps = exe.parent().expect("deps dir");
+[0m[49m[38;5;9m- 74     [0m:[38;5;9m[49m     let candidates = [
+[0m[49m[38;5;9m- 75     [0m:[38;5;9m[49m         deps.join("libdriver.so"),
+[0m[49m[38;5;9m- 76     [0m:[38;5;9m[49m         deps.parent().map(|d| d.join("libdriver.so")).unwrap(),
+[0m[49m[38;5;9m- 77     [0m:[38;5;9m[49m     ];
+[0m[49m[38;5;9m- 78     [0m:[38;5;9m[49m     for c in candidates.iter() {
+[0m[49m[38;5;9m- 79     [0m:[38;5;9m[49m         if c.is_file() {
+[0m[49m[38;5;9m- 80     [0m:[38;5;9m[49m             return c.clone();
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m     // .../target/<profile-dir>/deps/<test>-<hash>
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m     let profile_dir = exe
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m         .and_then(|deps| deps.parent())
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m         .expect("target/<profile> dir")
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m         .to_path_buf();
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m     let release = profile_dir.file_name().and_then(|s| s.to_str()) == Some("release");
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m     let mut cmd = std::process::Command::new(cargo);
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m     cmd.arg("build")
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m         .arg("--manifest-path")
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m     if release {
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m         cmd.arg("--release");
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m     // The crate declares no features; forward the flag explicitly anyway so the
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m     // artifact can never be built with a richer configuration than the tests.
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m     cmd.arg("--no-default-features");
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m     for (k, _) in std::env::vars_os() {
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m         // Avoid inheriting the outer invocation's target-dir/profile overrides
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m         // in a way that would relocate the artifact.
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m         if k.to_string_lossy().starts_with("CARGO_BUILD_") {
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m             cmd.env_remove(k);
+[0m[49m[39m  81, 107[0m:[39m[49m         }
+[0m[49m[39m  82, 108[0m:[39m[49m     }
+[0m[49m[38;5;9m- 83     [0m:[38;5;9m[49m     panic!(
+[0m[49m[38;5;9m- 84     [0m:[38;5;9m[49m         "Rust cdylib libdriver.so not found near {}. Run `cargo build` first.",
+[0m[49m[38;5;9m- 85     [0m:[38;5;9m[49m         deps.display()
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m     let out = cmd.output().expect("failed to run `cargo build`");
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m         out.status.success(),
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m         "`cargo build` for the cdylib failed:\n{}",
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     116[0m:[38;5;10m[49m     let so = profile_dir.join("libdriver.so");
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m         so.is_file(),
+[0m[49m[38;5;10m+     119[0m:[38;5;10m[49m         "cdylib not found at {} after building",
+[0m[49m[38;5;10m+     120[0m:[38;5;10m[49m         so.display()
+[0m[49m[39m  86, 121[0m:[39m[49m     );
+[0m[49m[38;5;10m+     122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     123[0m:[38;5;10m[49m     // Freshness guard: a stale artifact would make every comparison vacuous.
+[0m[49m[38;5;10m+     124[0m:[38;5;10m[49m     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+[0m[49m[38;5;10m+     125[0m:[38;5;10m[49m     let so_mtime = so.metadata().and_then(|m| m.modified()).expect("so mtime");
+[0m[49m[38;5;10m+     126[0m:[38;5;10m[49m     let src_mtime = src.metadata().and_then(|m| m.modified()).expect("src mtime");
+[0m[49m[38;5;10m+     127[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     128[0m:[38;5;10m[49m         so_mtime >= src_mtime,
+[0m[49m[38;5;10m+     129[0m:[38;5;10m[49m         "{} is older than {} — the tests would compare against a stale library",
+[0m[49m[38;5;10m+     130[0m:[38;5;10m[49m         so.display(),
+[0m[49m[38;5;10m+     131[0m:[38;5;10m[49m         src.display()
+[0m[49m[38;5;10m+     132[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     134[0m:[38;5;10m[49m     so
+[0m[49m[39m  87, 135[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rm -f target/debug/libdriver.so && timeout 600 cargo test 2>&1 | grep -E "^test result|Compiling" ; echo "=== MUTATE ==="; cp src/lib.rs /tmp/lib.rs.bak && sed -i 's/const IS_PUNCT: c_int = 0x0004;/const IS_PUNCT: c_int = 0x0005;/' src/lib.rs && timeout 600 cargo test 2>&1 | grep -E "^test result|^test .*(ok|FAILED)" | head -30; echo "=== RESTORE ==="; cp /tmp/lib.rs.bak src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify harness rebuilds and mutation is detected
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.88s
+=== MUTATE ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test capture_harness_actually_captures ... ok
+test driver_output_identical_for_every_char ... test repeated_calls_are_stable ... ok
+test punctuation_matches ... FAILED
+test blank_matches ... FAILED
+test uppercase_matches ... ok
+test digit_matches ... test hexadecimal_matches ... ok
+test alphanumeric_matches ... FAILED
+test graphical_matches ... ok
+test alphabetic_matches ... ok
+test lowercase_matches ... ok
+test printing_matches ... ok
+test to_upper_matches ... ok
+test result: FAILED. 13 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+=== RESTORE ===
+[38;5;244m - Completed in 2.67s[0m
+
+[?25l[0m[38;5;141m> [0mMutation is now caught. But the unmutated run showed 1 failure — investigating.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run tests to inspect the failure
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/driver_diff.rs (target/debug/deps/driver_diff-3e7d37c0b9c42ab8)
+
+running 18 tests
+test capture_harness_actually_captures ... test interleaved_calls_do_not_interfere ... FAILED
+test driver_output_identical_for_every_char ... ok
+test repeated_calls_are_stable ... ok
+test hexadecimal_matches ... ok
+test alphanumeric_matches ... ok
+test alphabetic_matches ... ok
+test printing_matches ... ok
+
+test punctuation_matches ... ok
+test lowercase_matches ... ok
+test space_matches ... ok
+test to_lower_matches ... ok
+test to_upper_matches ... ok
+test control_matches ... ok
+test uppercase_matches ... oktest blank_matches ... ok
+test digit_matches ... ok
+
+failures:
+
+---- interleaved_calls_do_not_interfere stdout ----
+
+thread 'interleaved_calls_do_not_interfere' (1211216) panicked at tests/driver_diff.rs:252:9:
+assertion `left == right` failed: Rust perturbed by C call, char -128
+  left: "okalphanumeric: 0\\nalphabetic: 0\\nlowercase: 0\\nuppercase: 0\\ndigit: 0\\nhexadecimal: 0\\ncontrol: 0\\ngraphical: 0\\nspace: 0\\nblank: 0\\nprinting: 0\\npunctuation: 0\\nto lower: \\x80\\nto upper: \\x80\\n\\n"
+ right: "alphanumeric: 0\\nalphabetic: 0\\nlowercase: 0\\nuppercase: 0\\ndigit: 0\\nhexadecimal: 0\\ncontrol: 0\\ngraphical: 0\\nspace: 0\\nblank: 0\\nprinting: 0\\npunctuation: 0\\nto lower: \\x80\\nto upper: \\x80\\n"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    interleaved_calls_do_not_interfere
+
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+error: test failed, to rerun pass `--test driver_diff`
+[38;5;244m - Completed in 0.934s[0m
+
+[?25l[0m[38;5;141m> [0mThe failure is a harness artifact: libtest's own progress output from parallel threads leaks into the captured fd 1. Forcing single-threaded test execution.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/.cargo/config.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Force single-threaded test execution
+
+[49m[38;5;10m+    1[0m:[38;5;10m[49m # The integration tests capture the output of libc `printf` calls made inside
+[0m[49m[38;5;10m+    2[0m:[38;5;10m[49m # dynamically loaded objects by temporarily redirecting file descriptor 1.
+[0m[49m[38;5;10m+    3[0m:[38;5;10m[49m # That is process-wide state, and libtest's own progress output ("test foo ...
+[0m[49m[38;5;10m+    4[0m:[38;5;10m[49m # ok") also goes to fd 1, so concurrent test threads would leak their status
+[0m[49m[38;5;10m+    5[0m:[38;5;10m[49m # lines into the captured bytes. Run tests one at a time.
+[0m[49m[38;5;10m+    6[0m:[38;5;10m[49m [env]
+[0m[49m[38;5;10m+    7[0m:[38;5;10m[49m RUST_TEST_THREADS = "1"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/.cargo/config.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | tail -35[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run tests single-threaded
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/driver_diff.rs (target/debug/deps/driver_diff-3e7d37c0b9c42ab8)
+
+running 18 tests
+test alphabetic_matches ... ok
+test alphanumeric_matches ... ok
+test blank_matches ... ok
+test capture_harness_actually_captures ... ok
+test control_matches ... ok
+test digit_matches ... ok
+test driver_output_identical_for_every_char ... ok
+test graphical_matches ... ok
+test hexadecimal_matches ... ok
+test interleaved_calls_do_not_interfere ... ok
+test lowercase_matches ... ok
+test printing_matches ... ok
+test punctuation_matches ... ok
+test repeated_calls_are_stable ... ok
+test space_matches ... ok
+test to_lower_matches ... ok
+test to_upper_matches ... ok
+test uppercase_matches ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+     Running tests/symbols.rs (target/debug/deps/symbols-fee1c17bd3843629)
+
+running 2 tests
+test c_symbols_are_dlsym_resolvable_in_rust_so ... ok
+test rust_exports_every_c_symbol ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+[38;5;244m - Completed in 0.873s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak
+declare -a MUTS=(
+  's/const IS_PUNCT: c_int = 0x0004;/const IS_PUNCT: c_int = 0x0005;/'
+  's/c + 32/c + 33/'
+  's/c - 32/c - 31/'
+  's/0x20..=0x7e/0x20..=0x7d/'
+  's/if b < 0x20 || b == 0x7f/if b < 0x20/'
+  's/b.is_ascii_hexdigit()/b.is_ascii_digit()/'
+  's/alphanumeric: %d/alphanumeric: %i/'
+  's/if !(0..=127).contains(&c)/if !(-128..=127).contains(\&c)/'
+)
+for m in "${MUTS[@]}"; do
+  cp /tmp/lib.rs.bak src/lib.rs
+  sed -i "$m" src/lib.rs
+  if ! diff -q src/lib.rs /tmp/lib.rs.bak >/dev/null; then
+    r=$(timeout 600 cargo test 2>&1 | grep -cE "^test result: FAILED")
+    echo "mutation [$m] -> failing suites: $r"
+  else
+    echo "mutation [$m] -> NO-OP (pattern did not match)"
+  fi
+done
+cp /tmp/lib.rs.bak src/lib.rs
+echo "=== restored, final ==="; timeout 600 cargo test 2>&1 | grep -E "^test result"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation sweep to validate test sensitivity
+
+mutation [s/const IS_PUNCT: c_int = 0x0004;/const IS_PUNCT: c_int = 0x0005;/] -> failing suites: 1
+mutation [s/c + 32/c + 33/] -> failing suites: 1
+mutation [s/c - 32/c - 31/] -> failing suites: 1
+mutation [s/0x20..=0x7e/0x20..=0x7d/] -> failing suites: 1
+mutation [s/if b < 0x20 || b == 0x7f/if b < 0x20/] -> failing suites: 1
+mutation [s/b.is_ascii_hexdigit()/b.is_ascii_digit()/] -> failing suites: 1
+mutation [s/alphanumeric: %d/alphanumeric: %i/] -> failing suites: 0
+mutation [s/if !(0..=127).contains(&c)/if !(-128..=127).contains(\&c)/] -> failing suites: 0
+=== restored, final ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+[38;5;244m - Completed in 8.540s[0m
+
+[?25l[0m[38;5;141m> [0m6 of 8 mutations detected; the two that weren't are genuinely semantics-preserving ([38;5;10m%d[0m→[38;5;10m%i[0m is identical printf behavior, and widening the guard to [38;5;10m-128..=127[0m still yields mask 0 for negative inputs). Now the symbol comparison and the release profile.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-fFbGl8
+echo "=== C .so: nm -D --defined-only ==="; nm -D --defined-only c_src/build/libdriver.so
+echo "=== Rust .so: nm -D --defined-only (non-mangled) ==="; nm -D --defined-only translation/target/debug/libdriver.so | grep -vE " _ZN| _RN|__rust|rust_" 
+echo "=== C undefined (imports) ==="; nm -D --undefined-only c_src/build/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols
+
+=== C .so: nm -D --defined-only ===
+0000000000001149 T driver
+=== Rust .so: nm -D --defined-only (non-mangled) ===
+00000000000126f0 T driver
+=== C undefined (imports) ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U __ctype_b_loc@GLIBC_2.3
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U printf@GLIBC_2.2.5
+                 U setlocale@GLIBC_2.2.5
+                 U tolower@GLIBC_2.2.5
+                 U toupper@GLIBC_2.2.5
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity confirmed: the C [38;5;10m.so[0m exports exactly [38;5;10mdriver[0m, and so does the Rust [38;5;10m.so[0m. Now verifying the release profile (which enables [38;5;10mpanic = "abort"[0m).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --no-default-features 2>&1 | tail -12 && echo "=== release nm ===" && nm -D --defined-only target/release/libdriver.so | grep -vE " _ZN| _RN|__rust|rust_"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run tests in release profile
+
+test uppercase_matches ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+
+     Running tests/symbols.rs (target/release/deps/symbols-8d0e5a1f9e4baf86)
+
+running 2 tests
+test c_symbols_are_dlsym_resolvable_in_rust_so ... ok
+test rust_exports_every_c_symbol ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+=== release nm ===
+0000000000011800 T driver
+[38;5;244m - Completed in 1.448s[0m
+
+[?25l[0m[38;5;141m> [0mAll green in both profiles. Let me add a test for [38;5;10mdriver()[0m's observable side effect on global locale state, plus the automation script for feature enumeration.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/locale.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add locale side-effect tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! `driver()` mutates process-global locale state via `setlocale(LC_ALL, "C")`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! That is an externally observable effect of the call, so it is compared too:
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! output equality alone would not catch a translation that dropped the
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `setlocale` call, because the Rust classification tables are hard-coded to
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! the "C" locale and would print the same lines either way.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, CStr, CString};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m const LC_ALL: c_int = 6; // glibc
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m struct Locale {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     _lib: Library,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     setlocale: unsafe extern "C" fn(c_int, *const c_char) -> *mut c_char,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m impl Locale {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m             let lib = Library::new("libc.so.6").expect("dlopen libc");
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m             let s: Symbol<unsafe extern "C" fn(c_int, *const c_char) -> *mut c_char> =
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m                 lib.get(b"setlocale\0").unwrap();
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             let setlocale = *s;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             Locale { _lib: lib, setlocale }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     /// Current `LC_ALL` setting, or `None` if libc reports failure.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     fn query(&self) -> Option<String> {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             let p = (self.setlocale)(LC_ALL, std::ptr::null());
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             if p.is_null() {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m                 None
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m                 Some(CStr::from_ptr(p).to_string_lossy().into_owned())
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     /// Try to set `LC_ALL`; returns whether libc accepted it.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     fn set(&self, name: &str) -> bool {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         let c = CString::new(name).unwrap();
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         unsafe { !(self.setlocale)(LC_ALL, c.as_ptr()).is_null() }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// After the call, `LC_ALL` must read back the same for both libraries.
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m fn locale_state_after_call_matches() {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let loc = Locale::new();
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     let c_lib = DriverLib::open(&c_library_path(), "C");
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let rust_lib = DriverLib::open(&rust_library_path(), "Rust");
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     // Start from a locale that is *not* "C" where the platform provides one, so
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     // that a missing `setlocale` in the translation would be visible.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let seeded = ["C.UTF-8", "en_US.UTF-8", "POSIX"]
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         .find(|n| loc.set(n))
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         .copied();
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     let before = loc.query();
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let _ = c_lib.driver_output(b'a' as c_char);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let after_c = loc.query();
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     if let Some(n) = seeded {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         assert!(loc.set(n), "failed to re-seed locale {n}");
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     let _ = rust_lib.driver_output(b'a' as c_char);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     let after_rust = loc.query();
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         after_c, after_rust,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         "LC_ALL differs after the call (seeded from {seeded:?}, was {before:?})"
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         after_c.as_deref(),
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         Some("C"),
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         "expected driver() to leave LC_ALL as \"C\""
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// Output must not depend on the locale that was active before the call, since
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// `driver()` forces the "C" locale itself.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m fn output_independent_of_incoming_locale() {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     let loc = Locale::new();
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let c_lib = DriverLib::open(&c_library_path(), "C");
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let rust_lib = DriverLib::open(&rust_library_path(), "Rust");
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     for seed in ["C", "C.UTF-8", "en_US.UTF-8", "POSIX"] {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         if !loc.set(seed) {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             continue; // locale not generated on this host
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         for c in all_char_values() {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             loc.set(seed);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m             let expected = c_lib.driver_output(c);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m             loc.set(seed);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             let actual = rust_lib.driver_output(c);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 show(&expected),
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 show(&actual),
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                 "mismatch for char {c} with incoming locale {seed}"
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/tests/locale.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/verify.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Automation script for all feature combinations
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m # Verify the Rust translation against the C ground truth for every build-time
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m # configuration.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #   ./verify.sh
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m # Steps:
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #   1. enumerate every valid feature combination declared in Cargo.toml
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #   2. `cargo check` each combination
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #   3. build the C shared library
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m #   4. `cargo test` each combination, in both dev and release profiles
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m root="$(dirname "$here")"
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m timeout_s=600
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m rc=0
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m # --- 1. enumerate feature combinations -------------------------------------
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m # Read the [features] table, dropping "default" (covered by the default build)
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m # and any `dep:`/optional-dependency implicit entries.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m mapfile -t features < <(
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m   awk '
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     /^\[features\]/ { inf = 1; next }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     /^\[/           { inf = 0 }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     inf && /^[A-Za-z_][A-Za-z0-9_-]*[[:space:]]*=/ {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m       sub(/[[:space:]]*=.*/, "", $0); print $0
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m   ' "$here/Cargo.toml" | grep -vx default
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m combos=()
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m n=${#features[@]}
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m if [ "$n" -eq 0 ]; then
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m   echo "Cargo.toml declares no [features]; the only configuration is the default build."
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m   combos=("")
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m   # Every subset of the feature set (2^n), including the empty one.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m   for ((mask = 0; mask < (1 << n); mask++)); do
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     combo=""
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     for ((i = 0; i < n; i++)); do
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m       if (((mask >> i) & 1)); then
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         combo="${combo:+$combo,}${features[i]}"
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m       fi
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     combos+=("$combo")
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m echo "Feature combinations to verify: ${#combos[@]}"
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m for c in "${combos[@]}"; do echo "  - ${c:-<none>}"; done
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m # --- 2. cargo check every combination --------------------------------------
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m echo "=== cargo check ==="
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m for c in "${combos[@]}"; do
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m   args=(--no-default-features)
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m   [ -n "$c" ] && args+=(--features "$c")
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m   if timeout "$timeout_s" cargo check --manifest-path "$here/Cargo.toml" "${args[@]}" \
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m       >/tmp/check.log 2>&1; then
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     echo "  OK    features=${c:-<none>}"
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     echo "  FAIL  features=${c:-<none>}"
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     tail -n 30 /tmp/check.log
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     rc=1
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m # --- 3. build the C shared library -----------------------------------------
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m echo "=== build C shared library ==="
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m (
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m   mkdir -p "$root/c_src/build" &&
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     cd "$root/c_src/build" &&
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/tmp/cmake.log 2>&1 &&
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     cmake --build . >>/tmp/cmake.log 2>&1
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ) || {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m   echo "  FAIL: see /tmp/cmake.log"
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m   tail -n 30 /tmp/cmake.log
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m   exit 1
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m echo "  OK    $root/c_src/build/libdriver.so"
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m # --- 4. cargo test every combination, both profiles ------------------------
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m echo "=== cargo test ==="
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m for profile in dev release; do
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m   for c in "${combos[@]}"; do
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     args=(--no-default-features)
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     [ "$profile" = release ] && args+=(--release)
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     [ -n "$c" ] && args+=(--features "$c")
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     if timeout "$timeout_s" cargo test --manifest-path "$here/Cargo.toml" "${args[@]}" \
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         >/tmp/test.log 2>&1; then
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m       echo "  OK    profile=$profile features=${c:-<none>}  ($(grep -cE '^test .* ok$' /tmp/test.log) tests)"
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m       echo "  FAIL  profile=$profile features=${c:-<none>}"
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m       sed -n '/^failures:/,$p' /tmp/test.log | head -n 60
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m       rc=1
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m if [ "$rc" -eq 0 ]; then
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m   echo "ALL CONFIGURATIONS MATCH THE C IMPLEMENTATION"
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m   echo "FAILURES PRESENT"
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m exit "$rc"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-fFbGl8/translation/verify.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x verify.sh && timeout 600 ./verify.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full verification script
+
+Cargo.toml declares no [features]; the only configuration is the default build.
+Feature combinations to verify: 1
+  - <none>
+
+=== cargo check ===
+  OK    features=<none>
+
+=== build C shared library ===
+  OK    /local/home/scheschb/.harvest/work/harvest-work-fFbGl8/c_src/build/libdriver.so
+
+=== cargo test ===
+  OK    profile=dev features=<none>  (22 tests)
+  OK    profile=release features=<none>  (22 tests)
+
+ALL CONFIGURATIONS MATCH THE C IMPLEMENTATION
+[38;5;244m - Completed in 2.695s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && locale -a 2>/dev/null | grep -iE "^(C.utf|en_US.utf|POSIX)" | head
+echo "=== mutation: drop setlocale ==="
+cp src/lib.rs /tmp/lib.rs.bak
+sed -i 's|^        setlocale(LC_ALL, c"C".as_ptr());|        // removed|' src/lib.rs
+grep -n "removed" src/lib.rs
+timeout 600 cargo test 2>&1 | grep -E "^test .*(FAILED)|^test result"
+cp /tmp/lib.rs.bak src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check available locales and validate locale test sensitivity
+
+C.utf8
+POSIX
+en_US.utf8
+=== mutation: drop setlocale ===
+196:        // removed
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+test locale_state_after_call_matches ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+[38;5;244m - Completed in 1.160s[0m
+
+[?25l[0m[38;5;141m> [0mThe locale test correctly catches a dropped [38;5;10msetlocale[0m. Broadening the locale name list since this host uses [38;5;10mC.utf8[0m-style names.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'EOF'
+import re
+p='tests/locale.rs'
+s=open(p).read()
+s=s.replace('let seeded = ["C.UTF-8", "en_US.UTF-8", "POSIX"]',
+            'let seeded = NON_C_LOCALES')
+s=s.replace('for seed in ["C", "C.UTF-8", "en_US.UTF-8", "POSIX"] {',
+            'for seed in std::iter::once(&"C").chain(NON_C_LOCALES.iter()).copied() {')
+s=s.replace('const LC_ALL: c_int = 6; // glibc',
+ '''const LC_ALL: c_int = 6; // glibc
+
+/// Locale names to try seeding with, spelled both the way glibc's `locale -a`
+/// prints them and the canonical way. Whichever the host actually has is used;
+/// the rest are skipped.
+const NON_C_LOCALES: &[&str] = &[
+    "C.UTF-8", "C.utf8", "en_US.UTF-8", "en_US.utf8", "POSIX",
+];''')
+open(p,'w').write(s)
+EOF
+grep -n "NON_C_LOCALES" tests/locale.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Broaden locale seed names
+
+19:const NON_C_LOCALES: &[&str] = &[
+67:    let seeded = NON_C_LOCALES
+101:    for seed in std::iter::once(&"C").chain(NON_C_LOCALES.iter()).copied() {
+[38;5;244m - Completed in 0.24s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./verify.sh 2>&1 | tail -20
+echo "=== confirm locale mutation still caught after edit ==="
+cp src/lib.rs /tmp/lib.rs.bak && sed -i 's|^        setlocale(LC_ALL, c"C".as_ptr());|        // removed|' src/lib.rs
+timeout 600 cargo test --test locale 2>&1 | grep -E "^test result|FAILED"
+cp /tmp/lib.rs.bak src/lib.rs && diff -q src/lib.rs /tmp/lib.rs.bak && echo restored[0m[38;5;244m (using tool: shell)[0m
+Purpose: Full verification and re-validate locale sensitivity
+
+Cargo.toml declares no [features]; the only configuration is the default build.
+Feature combinations to verify: 1
+  - <none>
+
+=== cargo check ===
+  OK    features=<none>
+
+=== build C shared library ===
+  OK    /local/home/scheschb/.harvest/work/harvest-work-fFbGl8/c_src/build/libdriver.so
+
+=== cargo test ===
+  OK    profile=dev features=<none>  (22 tests)
+  OK    profile=release features=<none>  (22 tests)
+
+ALL CONFIGURATIONS MATCH THE C IMPLEMENTATION
+=== confirm locale mutation still caught after edit ===
+test locale_state_after_call_matches ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+restored
+[38;5;244m - Completed in 3.783s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --no-run 2>&1 | grep -E "^warning" | sort | uniq -c[0m[38;5;244m (using tool: shell)[0m
+Purpose: List remaining warnings
+
+      1 warning: `driver` (test "driver_diff") generated 1 warning
+      1 warning: `driver` (test "locale") generated 1 warning (1 duplicate)
+      1 warning: `driver` (test "symbols") generated 7 warnings
+      1 warning: field `name` is never read
+      1 warning: function `all_char_values` is never used
+      1 warning: function `capture_stdout` is never used
+      1 warning: function `libc` is never used
+      1 warning: function `show` is never used
+      1 warning: methods `name` and `has_symbol` are never used
+      1 warning: methods `name`, `driver_fn`, and `driver_output` are never used
+      1 warning: struct `Libc` is never constructed
+[38;5;244m - Completed in 0.105s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Silence per-binary dead_code warnings
+
+[49m[39m  1,  1[0m:[39m[49m //! Shared harness for differential testing of the C and Rust `driver` shared
+[0m[49m[39m  2,  2[0m:[39m[49m //! libraries.
+[0m[49m[39m  3,  3[0m:[39m[49m //!
+[0m[49m[39m  4,  4[0m:[39m[49m //! Both libraries are loaded with `libloading` and invoked purely through their
+[0m[49m[39m  5,  5[0m:[39m[49m //! exported C symbols, so the Rust `#[no_mangle]` wrappers are exercised the
+[0m[49m[39m  6,  6[0m:[39m[49m //! same way an external caller would exercise them.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // This module is compiled into each integration-test binary, and each of them
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m // uses only part of it.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --no-run 2>&1 | grep -cE "^warning"; echo "---"; timeout 600 ./verify.sh 2>&1 | tail -8
+echo "=== c_src untouched? ==="; cd .. && git status --porcelain c_src 2>/dev/null || (echo "(no git) diff-check:"; ls -la c_src/src c_src/include)[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification and confirm c_src untouched
+
+0
+---
+=== build C shared library ===
+  OK    /local/home/scheschb/.harvest/work/harvest-work-fFbGl8/c_src/build/libdriver.so
+
+=== cargo test ===
+  OK    profile=dev features=<none>  (22 tests)
+  OK    profile=release features=<none>  (22 tests)
+
+ALL CONFIGURATIONS MATCH THE C IMPLEMENTATION
+=== c_src untouched? ===
+(no git) diff-check:
+c_src/include:
+total 4
+drwxr-xr-x. 2 scheschb amazon   30 Aug 28 13:37 .
+drwxr-xr-x. 5 scheschb amazon   87 Aug 28 13:38 ..
+-rw-r--r--. 1 scheschb amazon 1213 Aug 28 13:37 driver.h
+
+c_src/src:
+total 4
+drwxr-xr-x. 2 scheschb amazon   30 Aug 28 13:37 .
+drwxr-xr-x. 5 scheschb amazon   87 Aug 28 13:38 ..
+-rw-r--r--. 1 scheschb amazon 1887 Aug 28 13:37 driver.c
+[38;5;244m - Completed in 3.197s[0m
+
+[?25l[0m[38;5;141m> [0mThe Rust translation matches the C ground truth exactly. 22 tests pass in both dev and release profiles, warning-free.[0m[0m
+[0m[0m
+[1mConfigurations (step 1):[22m [38;5;10mtranslation/Cargo.toml[0m has no [38;5;10m[features][0m section and [38;5;10mc_src/CMakeLists.txt[0m has no options or conditional compilation, so there is exactly one valid configuration — the default build. [38;5;10mverify.sh[0m enumerates features generically (all 2^n subsets) and correctly reports one combination; it also covers both cargo profiles, since [38;5;10m[profile.release][0m sets [38;5;10mpanic = "abort"[0m.[0m[0m
+[0m[0m
+[1mAPI surface:[22m [38;5;10mdriver.h[0m declares only [38;5;10mvoid driver(char)[0m. [38;5;10mnm -D --defined-only[0m on the C [38;5;10m.so[0m shows exactly one exported symbol, [38;5;10mdriver[0m; the Rust [38;5;10m.so[0m exports the same name, and [38;5;10mdlsym[0m resolves it. The C [38;5;10m.so[0m's imports ([38;5;10m__ctype_b_loc[0m, [38;5;10mtolower[0m, [38;5;10mtoupper[0m, [38;5;10mprintf[0m, [38;5;10msetlocale[0m) confirm that [38;5;10misalnum[0m and friends expand to glibc's table macros — which return the raw mask bits, not 0/1. The Rust translation reproduces those masks, and the captured output confirms it ([38;5;10malphabetic: 1024[0m, [38;5;10mspace: 8192[0m, [38;5;10mpunctuation: 4[0m, etc.).[0m[0m
+[0m[0m
+[1mTests written[22m ([38;5;10mtranslation/tests/[0m, all through [38;5;10mlibloading[0m on both [38;5;10m.so[0m files):[0m[0m
+- [38;5;10mdriver_diff.rs[0m — 14 per-field tests isolating one [38;5;10m<ctype.h>[0m operation each across all 256 [38;5;10mchar[0m values, then whole-output byte comparison, output-shape sanity, repeat stability, and interleaved-call interference.[0m[0m
+- [38;5;10mlocale.rs[0m — compares the global [38;5;10mLC_ALL[0m state [38;5;10mdriver()[0m leaves behind, and re-runs the full sweep under each locale the host provides.[0m[0m
+- [38;5;10msymbols.rs[0m — [38;5;10mnm -D[0m export parity plus [38;5;10mdlsym[0m resolvability.[0m[0m
+[0m[0m
+[1mTwo harness defects found and fixed.[22m Both initially made the suite pass vacuously:[0m[0m
+[0m[0m
+1. [38;5;10mcargo test[0m does not emit the [38;5;10mcdylib[0m artifact for a [38;5;10mcrate-type = ["cdylib"][0m package, so the tests silently loaded a stale [38;5;10mlibdriver.so[0m from an earlier [38;5;10mcargo build[0m. I proved this by mutating [38;5;10mIS_PUNCT[0m and watching the tests still pass. The harness now builds the library itself with the matching profile and asserts the artifact is newer than [38;5;10msrc/lib.rs[0m.[0m[0m
+2. Redirecting fd 1 to capture the libraries' [38;5;10mprintf[0m output raced with libtest's own progress writes, leaking [38;5;10mok[0m into captured bytes. [38;5;10mtranslation/.cargo/config.toml[0m now sets [38;5;10mRUST_TEST_THREADS = "1"[0m.[0m[0m
+[0m[0m
+[1mSensitivity check:[22m I ran eight mutations against the Rust source. Six were caught (class-bit values, [38;5;10mtolower[0m/[38;5;10mtoupper[0m offsets, printable range, control range, hex-digit predicate) plus a seventh for the dropped [38;5;10msetlocale[0m. The two not caught are genuinely equivalent, not blind spots: [38;5;10m%d[0m→[38;5;10m%i[0m is identical [38;5;10mprintf[0m behavior, and widening the guard from [38;5;10m0..=127[0m to [38;5;10m-128..=127[0m still yields mask 0 for negative inputs because every [38;5;10mis_ascii_*[0m predicate is false for bytes ≥ 0x80.[0m[0m
+[0m[0m
+Nothing in [38;5;10mc_src/[0m was modified; the only additions there are the untracked [38;5;10mbuild/[0m directory from CMake.[0m[0m
+[38;5;8m
+ ▸ Credits: 14.90 • Time: 6m 48s
+
+[0m[1G[0m[0m[?25h

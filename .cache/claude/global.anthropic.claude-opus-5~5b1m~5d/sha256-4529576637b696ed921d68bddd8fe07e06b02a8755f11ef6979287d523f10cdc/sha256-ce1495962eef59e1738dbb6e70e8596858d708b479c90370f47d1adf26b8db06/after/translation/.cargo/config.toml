@@ -1,0 +1,11 @@
+# The library under test writes to stdout via C `printf`, and the differential
+# harness captures it by redirecting file descriptor 1 with `dup2`. That
+# redirection is PROCESS-global, so a concurrently-running test thread (or
+# libtest's own "test foo ... ok" progress output) would land inside the
+# capture file and be mistaken for library output.
+#
+# Forcing a single test thread makes the capture window exclusive. The harness
+# also asserts this variable is set, so the tests fail loudly rather than
+# silently producing contaminated comparisons.
+[env]
+RUST_TEST_THREADS = "1"

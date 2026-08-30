@@ -1,0 +1,630 @@
+[38;5;9mError[38;5;11m: no agent with name kiro_plain found. Falling back to user specified default
+[0m[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by reading the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+
+./c_src/CMakeLists.txt
+./c_src/src/main.c
+./.claude/settings.json
+---
+     25 c_src/CMakeLists.txt
+      0 c_src/src
+     25 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1704 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-NxHvCl/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-NxHvCl/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSimple program, but the semantics that matter are bitfield truncation and glibc's [38;5;10mscanf[0m conversion behavior. Writing the crate:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original copyright notice from the C source:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m use std::io::{self, Read, Write};
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m mod scanf;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m use scanf::Scanner;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// Mirrors the C bit-field struct:
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m ///     unsigned int x : 2;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m ///     unsigned int y : 3;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m ///     bool b : 1;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m ///     int z;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// } foo_t;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// The narrow bit-field widths are emulated by masking on assignment, which is
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// what the C compiler does when storing into the bit-field members.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m struct Foo {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     x: u32,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     y: u32,
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     b: bool,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     z: i32,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m impl Foo {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     /// Equivalent of `foo_t foo = {.x = x, .y = y, .b = b, .z = z};`
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     fn new(x: u32, y: u32, b: bool, z: i32) -> Self {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         Foo {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             x: x & 0b11,       // unsigned int x : 2
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             y: y & 0b111,      // unsigned int y : 3
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             b,                 // bool b : 1  (already 0/1)
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             z,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// `printf("%u %u %d %d\n", foo->x, foo->y, foo->b, foo->z);`
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m fn print_foo(out: &mut impl Write, foo: &Foo) {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let _ = write!(
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         out,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         "{} {} {} {}\n",
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         foo.x,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         foo.y,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         if foo.b { 1 } else { 0 },
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         foo.z
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m fn driver(out: &mut impl Write, x: u32, y: u32, b: bool, z: i32) {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     let foo = Foo::new(x, y, b, z);
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     print_foo(out, &foo);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     let stdin = io::stdin();
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     let mut scanner = Scanner::new(stdin.lock());
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     // Same initial values as the C code; a failed/EOF conversion leaves the
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     // variable untouched, exactly as scanf() does.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     let mut x: u32 = 0;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     let mut y: u32 = 0;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let mut b: i32 = 0;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let mut z: i32 = 0;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     // scanf("%u", &x);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     if let Some(v) = scanner.scan_u32() {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         x = v;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     // scanf("%u", &y);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     if let Some(v) = scanner.scan_u32() {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         y = v;
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     // scanf("%d", &b);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     if let Some(v) = scanner.scan_i32() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         b = v;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     // scanf("%d", &z);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     if let Some(v) = scanner.scan_i32() {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         z = v;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let stdout = io::stdout();
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     driver(&mut out, x, y, b != 0, z); // driver(x, y, !!b, z)
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m // Keep `Read` in scope usage explicit for the scanner module.
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m #[allow(dead_code)]
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m fn _assert_read<R: Read>(_r: R) {}
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation/src/scanf.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Byte-level emulation of the C library's `scanf("%u", ...)` / `scanf("%d", ...)`
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! numeric conversions, as implemented by glibc on a 64-bit LP64 target.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Behaviour reproduced here:
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!   * leading whitespace (including newlines) is skipped, so a conversion can
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!     span lines,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!   * an optional `+`/`-` sign is accepted, even for `%u`,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!   * at least one decimal digit is required, otherwise the conversion fails
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //!     (matching failure) and the offending characters are pushed back,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!   * the digit string is converted with `strtoul`/`strtol` semantics: on
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //!     overflow the value saturates to `ULONG_MAX` / `LONG_MAX` / `LONG_MIN`
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!     (64-bit) and is then truncated to the 32-bit destination type,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //!   * a negative value for `%u` wraps modulo 2^64 before truncation,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //!   * on failure or EOF the caller's variable is left untouched.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::io::{BufReader, Read};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m pub struct Scanner<R: Read> {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     reader: BufReader<R>,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     /// Characters pushed back into the stream, most recent last.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     pushback: Vec<u8>,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     /// Sticky end-of-file / error flag, like the FILE stream's EOF indicator.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     eof: bool,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m impl<R: Read> Scanner<R> {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     pub fn new(inner: R) -> Self {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         Scanner {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m             reader: BufReader::new(inner),
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m             pushback: Vec::new(),
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m             eof: false,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     fn next_byte(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         if let Some(b) = self.pushback.pop() {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             return Some(b);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         if self.eof {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         let mut buf = [0u8; 1];
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         match self.reader.read(&mut buf) {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             Ok(0) => {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m                 self.eof = true;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 None
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             Ok(_) => Some(buf[0]),
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m             Err(_) => {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m                 self.eof = true;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                 None
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     fn unread(&mut self, b: u8) {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         self.pushback.push(b);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     /// `isspace()` for the C locale.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     fn is_space(b: u8) -> bool {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     /// Skips leading whitespace. Returns `false` if end-of-input was reached
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     /// first (an input failure for the conversion).
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     fn skip_whitespace(&mut self) -> bool {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             match self.next_byte() {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m                 Some(b) if Self::is_space(b) => continue,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m                 Some(b) => {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m                     self.unread(b);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m                     return true;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m                 None => return false,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     /// Reads `[+-]?[0-9]+`. Returns `(negative, magnitude, overflowed)`.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     fn scan_decimal(&mut self) -> Option<(bool, u128, bool)> {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         if !self.skip_whitespace() {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         // Characters consumed after the whitespace, so they can be pushed back
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         // if the conversion turns out to be a matching failure.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let mut consumed: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         let mut negative = false;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         match self.next_byte() {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             Some(b @ b'+') | Some(b @ b'-') => {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m                 negative = b == b'-';
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m                 consumed.push(b);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             Some(b) => self.unread(b),
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             None => return None,
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         // Guard so the accumulator can never overflow u128; anything past
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         // 2^64 already saturates for both %u and %d.
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         const LIMIT: u128 = 1u128 << 96;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         let mut magnitude: u128 = 0;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         let mut overflowed = false;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         let mut digits = 0usize;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             match self.next_byte() {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m                 Some(b) if b.is_ascii_digit() => {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                     digits += 1;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                     consumed.push(b);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                     if !overflowed {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m                         magnitude = magnitude * 10 + u128::from(b - b'0');
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                         if magnitude >= LIMIT {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                             overflowed = true;
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                         }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                 Some(b) => {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                     self.unread(b);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m                 None => break,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         if digits == 0 {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             // Matching failure: put back what was read past the whitespace.
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             while let Some(b) = consumed.pop() {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                 self.unread(b);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         Some((negative, magnitude, overflowed))
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     /// `scanf("%u", &dest)` for an `unsigned int` destination.
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     pub fn scan_u32(&mut self) -> Option<u32> {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         let (negative, magnitude, overflowed) = self.scan_decimal()?;
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         let value: u64 = if overflowed || magnitude > u128::from(u64::MAX) {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             // strtoul() saturates to ULONG_MAX on overflow, sign included.
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             u64::MAX
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             let m = magnitude as u64;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             if negative {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m                 m.wrapping_neg()
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m                 m
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         Some(value as u32)
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     /// `scanf("%d", &dest)` for an `int` destination.
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     pub fn scan_i32(&mut self) -> Option<i32> {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         let (negative, magnitude, overflowed) = self.scan_decimal()?;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         let value: i64 = if negative {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             let limit = u128::from(i64::MAX) + 1; // 2^63
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             if overflowed || magnitude > limit {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                 i64::MIN
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m             } else if magnitude == limit {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 i64::MIN
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m                 -(magnitude as i64)
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         } else if overflowed || magnitude > u128::from(i64::MAX as u64) {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             i64::MAX
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m             magnitude as i64
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         Some(value as i32)
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation/src/scanf.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation)
+error[E0277]: the trait bound `u128: From<i64>` is not satisfied
+   --> src/scanf.rs:163:25
+    |
+163 |             let limit = u128::from(i64::MAX) + 1; // 2^63
+    |                         ^^^^ the trait `From<i64>` is not implemented for `u128`
+    |
+    = help: `u128` implements trait `From<T>`:
+              From<Ipv6Addr>
+              From<bool>
+              From<char>
+              From<std::ascii::Char>
+              From<u16>
+              From<u32>
+              From<u64>
+              From<u8>
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `driver` (bin "driver") due to 1 previous error
+[38;5;244m - Completed in 0.104s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/scanf.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 163     [0m:[38;5;9m[49m             let limit = u128::from(i64::MAX) + 1; // 2^63
+[0m[49m[38;5;9m- 164     [0m:[38;5;9m[49m             if overflowed || magnitude > limit {
+[0m[49m[38;5;9m- 165     [0m:[38;5;9m[49m                 i64::MIN
+[0m[49m[38;5;9m- 166     [0m:[38;5;9m[49m             } else if magnitude == limit {
+[0m[49m[38;5;10m+      163[0m:[38;5;10m[49m             let limit = u128::from(i64::MAX as u64) + 1; // 2^63
+[0m[49m[38;5;10m+      164[0m:[38;5;10m[49m             if overflowed || magnitude >= limit {
+[0m[49m[39m  167, 165[0m:[39m[49m                 i64::MIN
+[0m[49m[39m  168, 166[0m:[39m[49m             } else {
+[0m[K
+Updating: [38;5;141mtranslation/src/scanf.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.176s[0m
+
+[?25l[0m[38;5;141m> [0mNow I'll build the C reference and diff outputs across edge cases.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O2 -o /tmp/cref/driver c_src/src/main.c 2>&1 | tail -5 && echo built[0m[38;5;244m (using tool: shell)[0m
+
+built
+[38;5;244m - Completed in 0.43s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver; R=translation/target/release/driver
+fail=0
+run() {
+  desc="$1"; shift
+  ci=$(printf '%s' "$1" | $C 2>/dev/null | od -c | head -5)
+  ri=$(printf '%s' "$1" | $R 2>/dev/null | od -c | head -5)
+  if [ "$ci" = "$ri" ]; then echo "OK   [$desc]"; else echo "DIFF [$desc]"; echo " C: $ci"; echo " R: $ri"; fail=1; fi
+}
+run "basic" "1 2 3 4"
+run "newlines" "1
+2
+3
+4"
+run "mixed ws" "  7	
+ 8   1
+ -5 "
+run "truncation" "5 9 0 -100"
+run "no input" ""
+run "partial" "1 2"
+run "trailing junk" "1 2 3 4 5 6"
+run "junk first" "abc 1 2 3"
+run "junk mid" "1 x 2 3"
+run "neg for %u" "-1 -2 1 7"
+run "plus signs" "+3 +6 +1 +9"
+run "u overflow" "99999999999999999999 4294967296 1 2"
+run "i overflow" "1 1 99999999999999999999 99999999999999999999"
+run "i neg overflow" "1 1 -99999999999999999999 -99999999999999999999"
+run "int min/max" "0 0 2147483647 -2147483648"
+run "wraparound" "4294967295 4294967295 4294967296 4294967295"
+run "sign only" "- 1 2 3"
+run "leading zeros" "0000004 0000000009 007 -0000012"
+run "tabs only" "	 
+ "
+run "b nonzero" "3 7 42 -42"
+run "b negative" "3 7 -42 5"
+run "exact 2^63" "1 1 -9223372036854775808 9223372036854775807"
+run "beyond 2^63" "1 1 -9223372036854775809 9223372036854775808"
+run "crlf" "1
+2
+3
+4"
+run "long digits" "1 1 1 000000000000000000000000000000005"
+exit $fail[0m[38;5;244m (using tool: shell)[0m
+
+OK   [basic]
+OK   [newlines]
+OK   [mixed ws]
+OK   [truncation]
+OK   [no input]
+OK   [partial]
+OK   [trailing junk]
+OK   [junk first]
+OK   [junk mid]
+OK   [neg for %u]
+OK   [plus signs]
+OK   [u overflow]
+OK   [i overflow]
+OK   [i neg overflow]
+OK   [int min/max]
+OK   [wraparound]
+DIFF [sign only]
+ C: 0000000   0       1       1       3  \n
+0000010
+ R: 0000000   0       0       0       0  \n
+0000010
+OK   [leading zeros]
+OK   [tabs only]
+OK   [b nonzero]
+OK   [b negative]
+OK   [exact 2^63]
+OK   [beyond 2^63]
+OK   [crlf]
+OK   [long digits]
+[38;5;244m - Completed in 0.86s[0m
+
+[?25l[0m[38;5;141m> [0mglibc pushes back only one character on a matching failure, so a consumed sign is discarded. Fixing:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/scanf.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  128, 128[0m:[39m[49m         if digits == 0 {
+[0m[49m[38;5;9m- 129     [0m:[38;5;9m[49m             // Matching failure: put back what was read past the whitespace.
+[0m[49m[38;5;9m- 130     [0m:[38;5;9m[49m             while let Some(b) = consumed.pop() {
+[0m[49m[38;5;9m- 131     [0m:[38;5;9m[49m                 self.unread(b);
+[0m[49m[38;5;9m- 132     [0m:[38;5;9m[49m             }
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m             // Matching failure. glibc only pushes back the single offending
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m             // character (already done in the loop above); an accepted sign
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m             // character is consumed and lost.
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m             consumed.clear();
+[0m[49m[39m  133, 133[0m:[39m[49m             return None;
+[0m[49m[39m  134, 134[0m:[39m[49m         }
+[0m[K
+Updating: [38;5;141mtranslation/src/scanf.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 - <<'EOF'
+import re
+p='src/scanf.rs'
+s=open(p).read()
+s=s.replace("""        // Characters consumed after the whitespace, so they can be pushed back
+        // if the conversion turns out to be a matching failure.
+        let mut consumed: Vec<u8> = Vec::new();
+
+        let mut negative = false;
+        match self.next_byte() {
+            Some(b @ b'+') | Some(b @ b'-') => {
+                negative = b == b'-';
+                consumed.push(b);
+            }
+""","""        let mut negative = false;
+        match self.next_byte() {
+            Some(b @ b'+') | Some(b @ b'-') => {
+                negative = b == b'-';
+            }
+""")
+s=s.replace("""                    digits += 1;
+                    consumed.push(b);
+""","""                    digits += 1;
+""")
+s=s.replace("""            // character (already done in the loop above); an accepted sign
+            // character is consumed and lost.
+            consumed.clear();
+            return None;""","""            // character (already done in the loop above); an accepted sign
+            // character is consumed and lost.
+            return None;""")
+open(p,'w').write(s)
+EOF
+cargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation)
+    Finished `release` profile [optimized] target(s) in 0.15s
+[38;5;244m - Completed in 0.192s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver; R=translation/target/release/driver
+fail=0
+run() {
+  ci=$(printf '%s' "$2" | $C 2>/dev/null | od -c); ri=$(printf '%s' "$2" | $R 2>/dev/null | od -c)
+  if [ "$ci" = "$ri" ]; then echo "OK   [$1]"; else echo "DIFF [$1]"; echo " C: $ci"; echo " R: $ri"; fail=1; fi
+}
+run "sign only" "- 1 2 3"
+run "sign junk" "-x 1 2 3"
+run "plus junk" "+z 5 6 7"
+run "sign eof" "-"
+run "double sign" "--5 1 2 3"
+run "dot" ". 1 2 3"
+run "basic" "1 2 3 4"
+run "neg for %u" "-1 -2 1 7"
+run "trunc" "5 9 0 -100"
+run "empty" ""
+run "u overflow" "99999999999999999999 4294967296 1 2"
+run "leading zeros" "0000004 0000000009 007 -0000012"
+run "hexish" "0x10 0x3 1 2"
+run "sign then nl" "-
+5 6 7"
+run "big z" "1 1 1 2147483648"
+run "all max" "4294967295 4294967295 -1 -1"
+# random fuzz
+for i in $(seq 300); do
+  t=$(python3 -c "
+import random
+def tok():
+    r=random.random()
+    if r<0.55: return str(random.randint(-2**34,2**34))
+    if r<0.7: return random.choice(['+','-'])+str(random.randint(0,10**random.randint(1,22)))
+    if r<0.8: return random.choice(['x','-','+','.','','0x5','abc','--3'])
+    return str(random.randint(0,7))
+sep=lambda: random.choice([' ','\n','\t','  ','\n\n',' \t '])
+print(sep().join(tok() for _ in range(random.randint(0,6))),end='')
+")
+  ci=$(printf '%s' "$t" | $C 2>/dev/null | od -c); ri=$(printf '%s' "$t" | $R 2>/dev/null | od -c)
+  [ "$ci" = "$ri" ] || { echo "FUZZ DIFF input=<$t>"; echo " C: $ci"; echo " R: $ri"; fail=1; }
+done
+echo "fuzz done"; exit $fail[0m[38;5;244m (using tool: shell)[0m
+
+OK   [sign only]
+OK   [sign junk]
+OK   [plus junk]
+OK   [sign eof]
+OK   [double sign]
+OK   [dot]
+OK   [basic]
+OK   [neg for %u]
+OK   [trunc]
+OK   [empty]
+OK   [u overflow]
+OK   [leading zeros]
+OK   [hexish]
+OK   [sign then nl]
+OK   [big z]
+OK   [all max]
+fuzz done
+[38;5;244m - Completed in 5.325s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 - <<'EOF'
+p='src/main.rs'
+s=open(p).read()
+s=s.replace("""
+// Keep `Read` in scope usage explicit for the scanner module.
+#[allow(dead_code)]
+fn _assert_read<R: Read>(_r: R) {}
+""","")
+s=s.replace("use std::io::{self, Read, Write};","use std::io::{self, Write};")
+open(p,'w').write(s)
+EOF
+touch src/*.rs && cargo build --release 2>&1 | tail -20 && rm -rf /tmp/cref[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-NxHvCl/translation)
+    Finished `release` profile [optimized] target(s) in 0.15s
+[38;5;244m - Completed in 0.189s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean with no warnings, and output matches the C binary byte-for-byte on every case I tested (including 300 randomized fuzz inputs).[0m[0m
+[0m[0m
+The program itself is tiny — read four numbers with [38;5;10mscanf[0m, stuff them into a bit-field struct, print them — so nearly all the fidelity work is in reproducing library behavior:[0m[0m
+[0m[0m
+- [38;5;10mtranslation/src/main.rs[0m mirrors the C structure ([38;5;10mFoo[0m/[38;5;10mprint_foo[0m/[38;5;10mdriver[0m/[38;5;10mmain[0m). Bit-field widths are emulated by masking on construction ([38;5;10mx & 0b11[0m, [38;5;10my & 0b111[0m), which is what the C compiler does on store, so [38;5;10m5 9[0m prints as [38;5;10m1 1[0m. [38;5;10mb[0m keeps the C [38;5;10m!!b[0m coercion, and a failed conversion leaves the variable at its initial [38;5;10m0[0m, matching [38;5;10mscanf[0m semantics (the return values are ignored in the C, so failures are silent).[0m[0m
+- [38;5;10mtranslation/src/scanf.rs[0m is a byte-level [38;5;10m%u[0m/[38;5;10m%d[0m scanner: skips whitespace across newlines, accepts an optional sign even for [38;5;10m%u[0m, and converts with glibc's [38;5;10mstrtoul[0m/[38;5;10mstrtol[0m saturation at the 64-bit boundary before truncating to 32 bits. That's what makes [38;5;10m-1[0m print as [38;5;10m4294967295[0m-derived [38;5;10m3[0m, and [38;5;10m99999999999999999999[0m for [38;5;10m%d[0m print as [38;5;10m-1[0m.[0m[0m
+[0m[0m
+One non-obvious detail worth flagging: on a matching failure glibc pushes back only the single offending character, so a sign that was already consumed is lost. Input [38;5;10m- 1 2 3[0m therefore prints [38;5;10m0 1 1 3[0m in C — the first conversion fails and the [38;5;10m-[0m is discarded rather than re-read. My first version pushed back both characters and produced [38;5;10m0 0 0 0[0m; the scanner now discards the sign to match.[0m[0m
+[38;5;8m
+ ▸ Credits: 5.72 • Time: 2m 52s
+
+[0m[1G[0m[0m[?25h

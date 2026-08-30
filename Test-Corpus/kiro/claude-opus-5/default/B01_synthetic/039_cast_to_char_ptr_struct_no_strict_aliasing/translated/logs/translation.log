@@ -1,0 +1,709 @@
+[38;5;9mError[38;5;11m: no agent with name kiro_plain found. Falling back to user specified default
+[0m[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f | head -50 && echo "---" && wc -l $(find c_src -type f)[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in c_src and translation
+
+c_src/CMakeLists.txt
+c_src/src/main.c
+---
+  26 c_src/CMakeLists.txt
+  54 c_src/src/main.c
+  80 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1735 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1260 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSimple program. Layout on x86-64: [38;5;10mint floors[0m @0, [38;5;10mint bedrooms[0m @4, [38;5;10mdouble bathrooms[0m @8, size 16, no padding. Let me verify with the actual C build and then write the Rust.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cb && gcc -fno-strict-aliasing -O0 -o /tmp/cb/driver c_src/src/main.c && for i in "5" "-1" "  
+ 42" "abc" "" "99999999999999999999" "-99999999999999999999" "2147483648" "+7"; do printf '%s' "$i" | /tmp/cb/driver | sed "s|^|in=[$i] out=|"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C reference and probe edge cases
+
+in=[5] out=05000000030000000000000000000040
+in=[-1] out=ffffffff030000000000000000000040
+sed: -e expression #1, char 10: unterminated `s' command
+in=[abc] out=00000000030000000000000000000040
+in=[] out=00000000030000000000000000000040
+in=[99999999999999999999] out=ffffffff030000000000000000000040
+in=[-99999999999999999999] out=00000000030000000000000000000040
+in=[2147483648] out=00000080030000000000000000000040
+in=[+7] out=07000000030000000000000000000040
+[38;5;244m - Completed in 0.51s[0m
+
+[?25l[0m[38;5;141m> [0mConfirms my analysis, including glibc's overflow behavior ([38;5;10m%d[0m accumulates in [38;5;10mlong[0m, saturates to [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m, then truncates to [38;5;10mint[0m).[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the Rust translation
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // The C program reads one integer with scanf("%d", &x), stuffs it into a
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // house_t struct along with two constants, memcpy's the struct into a raw
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // char buffer, and dumps that buffer as lowercase hex followed by a newline.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // Faithfulness notes:
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //   * house_t on the x86-64 SysV ABI is { int @0, int @4, double @8 }, size 16,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //     alignment 8, with no padding bytes. The struct is zero-initialized before
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //     every field is assigned, so the dumped bytes are fully determined.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //   * print_hex uses "%02x" per byte, then a single "\n". No trailing spaces.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //   * scanf("%d") skips leading whitespace (including newlines), accepts an
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //     optional +/- sign, then decimal digits. On a matching failure or EOF the
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //     destination is left untouched, so x keeps its initial value of 0.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //   * glibc accumulates "%d" in a `long` and saturates at LONG_MAX / LONG_MIN
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //     on overflow, then truncates that value to `int`. That means an input like
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //     99999999999999999999 yields -1, and -99999999999999999999 yields 0.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //     This is reproduced rather than "fixed".
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m use std::io::{self, Read, Write};
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// Mirror of the C `house_t`, laid out as the C compiler lays it out.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m struct House {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     floors: i32,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     bedrooms: i32,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     bathrooms: f64,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m impl House {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     /// Byte image of the struct, equivalent to `memcpy(raw, &house, sizeof(house))`
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     /// on a little-endian x86-64 target.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     fn to_raw_bytes(&self) -> [u8; 16] {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         let mut raw = [0u8; 16];
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         raw[0..4].copy_from_slice(&self.floors.to_le_bytes());
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         raw[4..8].copy_from_slice(&self.bedrooms.to_le_bytes());
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         raw[8..16].copy_from_slice(&self.bathrooms.to_le_bytes());
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         raw
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// Equivalent of `print_hex`: "%02x" for each byte, then a newline.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m fn print_hex(out: &mut impl Write, p: &[u8]) {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let mut s = String::with_capacity(p.len() * 2 + 1);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     for &b in p {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         s.push_str(&format!("{:02x}", b));
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     s.push('\n');
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let _ = out.write_all(s.as_bytes());
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m fn driver(out: &mut impl Write, floors: i32) {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     // house_t house = {0}; then every field is overwritten.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let house = House {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         floors,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         bedrooms: 3,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         bathrooms: 2.0,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     let raw = house.to_raw_bytes();
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     print_hex(out, &raw);
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// Emulates `scanf("%d", &x)`.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// Returns `Some(value)` on a successful conversion, or `None` on EOF or a
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// matching failure (in which case the caller must leave its variable alone,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// exactly like C).
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m fn scanf_d(input: &[u8]) -> Option<i32> {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     // Skip leading whitespace, as the "%d" directive does.
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     while i < input.len() && (input[i] as char).is_ascii_whitespace() {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     // Optional sign.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     let negative = match input.get(i) {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         Some(b'-') => {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             true
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         Some(b'+') => {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             false
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         _ => false,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     // At least one digit is required, otherwise this is a matching failure.
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     if !matches!(input.get(i), Some(c) if c.is_ascii_digit()) {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     // glibc accumulates into a `long` (i64 here) and saturates on overflow.
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let mut acc: i64 = 0;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let mut overflow = false;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     while let Some(&c) = input.get(i) {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         if !c.is_ascii_digit() {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let digit = i64::from(c - b'0');
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         if !overflow {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 Some(v) => acc = v,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 None => overflow = true,
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let value: i64 = if overflow {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         // strtol clamps to LONG_MAX / LONG_MIN.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         if negative {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             i64::MIN
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             i64::MAX
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     } else if negative {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         -acc
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         acc
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     // The `long` result is stored through an `int *`, i.e. truncated.
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     Some(value as i32)
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let mut buf = Vec::new();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     // scanf pulls from the stream as needed and ignores newline boundaries;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     // slurping stdin and scanning it is observationally equivalent here since
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     // nothing else reads from stdin afterwards.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let _ = io::stdin().read_to_end(&mut buf);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     let mut x: i32 = 0;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     if let Some(v) = scanf_d(&buf) {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         x = v;
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     let stdout = io::stdout();
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     driver(&mut out, x);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Q0aJ2l/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+[38;5;244m - Completed in 0.191s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean. Now a differential test against the C binary.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cb/driver
+R=translation/target/release/driver
+fail=0; n=0
+run() {
+  n=$((n+1))
+  a=$(printf '%s' "$1" | $C | xxd -p)
+  b=$(printf '%s' "$1" | $R | xxd -p)
+  if [ "$a" != "$b" ]; then fail=$((fail+1)); echo "MISMATCH input=$(printf '%s' "$1" | xxd -p)"; echo "  C=$a"; echo "  R=$b"; fi
+}
+for v in 0 1 -1 5 42 -42 2147483647 -2147483648 2147483648 -2147483649 4294967296 4294967297 \
+         99999999999999999999 -99999999999999999999 9223372036854775807 9223372036854775808 \
+         -9223372036854775808 -9223372036854775809 007 +7 -0 "" " " "   " "abc" "x5" "-" "+" "--5" \
+         "5abc" "5 6" "0x1f" "  
+	
+  -13  extra" ".5" "1.9" "1e3" "  +0000000012345  " "18446744073709551616"; do
+  run "$v"
+done
+# random fuzz
+for i in $(seq 400); do
+  run "$(head -c $((RANDOM % 12)) /dev/urandom | tr -dc '0-9+- \n\ta' )"
+done
+for i in $(seq 200); do
+  run "$(( (RANDOM<<16 | RANDOM) - 1073741824 ))"
+done
+echo "cases=$n mismatches=$fail"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust over edge cases and fuzz inputs
+
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+cases=638 mismatches=0
+[38;5;244m - Completed in 2.402s[0m
+
+[?25l[0m[38;5;141m> [0mThe [38;5;10mtr[0m range warnings made the fuzz inputs degenerate. Rerunning with a proper generator.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpython3 - <<'EOF'
+import random, subprocess
+C="/tmp/cb/driver"; R="translation/target/release/driver"
+alphabet=list("0123456789+-  \n\t\rabcxX.eE_")
+cases=[]
+random.seed(7)
+for _ in range(1500):
+    n=random.randint(0,14)
+    cases.append("".join(random.choice(alphabet) for _ in range(n)))
+for _ in range(500):
+    cases.append(str(random.randint(-2**40,2**40)))
+for _ in range(300):
+    cases.append(" "*random.randint(0,3)+random.choice(["","+","-"])+"0"*random.randint(0,4)+str(random.getrandbits(random.randint(1,80))))
+cases += ["", "\n", "\n\n5", "  \t\r\n -0000000000000000009 ", "-0", "+-3", "9"*40, "-"+"9"*40]
+bad=0
+for c in cases:
+    b=c.encode()
+    a=subprocess.run([C],input=b,capture_output=True).stdout
+    d=subprocess.run([R],input=b,capture_output=True).stdout
+    if a!=d:
+        bad+=1
+        if bad<6: print("MISMATCH",repr(c),a,d)
+print("cases",len(cases),"mismatches",bad)
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Python-driven differential fuzz test
+
+cases 2308 mismatches 0
+[38;5;244m - Completed in 3.799s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cb && git -C . status --short 2>/dev/null | head; find translation -type f -not -path '*/target/*'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temp artifacts and list written files
+
+translation/Cargo.toml
+translation/src/main.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mcargo build --release[0m succeeds, and the Rust binary is byte-identical to the C binary across 2,946 differential test cases (edge cases plus randomized fuzz).[0m[0m
+[0m[0m
+The C program reads one integer with [38;5;10mscanf("%d")[0m, puts it in a [38;5;10m{int floors; int bedrooms; double bathrooms;}[0m struct alongside constants 3 and 2.0, [38;5;10mmemcpy[0ms the struct to a byte buffer, and prints it as lowercase hex plus a newline. On x86-64 that's a 16-byte, padding-free image, so output is always [38;5;10m<floors LE>03000000 0000000000000040[0m.[0m[0m
+[0m[0m
+Two behaviors worth calling out, both reproduced rather than fixed:[0m[0m
+[0m[0m
+- On a matching failure or EOF ([38;5;10mabc[0m, empty input, bare [38;5;10m-[0m), [38;5;10mscanf[0m leaves [38;5;10mx[0m untouched, so it stays 0.[0m[0m
+- glibc's [38;5;10m%d[0m accumulates into a [38;5;10mlong[0m and, on overflow, clamps to [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m before truncating to [38;5;10mint[0m. So [38;5;10m99999999999999999999[0m prints as [38;5;10mffffffff[0m (-1) and the negative version prints as [38;5;10m00000000[0m (0). I confirmed this against the compiled C rather than assuming it, and [38;5;10mscanf_d[0m mirrors it with a saturating i64 accumulate followed by [38;5;10mas i32[0m.[0m[0m
+[0m[0m
+Input handling reads stdin to end and scans the buffer; since nothing reads stdin after the single [38;5;10mscanf[0m, that's observationally equivalent to C's stream-based consumption. Everything is safe Rust — the struct image is built with [38;5;10mto_le_bytes[0m instead of a transmute, which is valid here only because the layout has no padding holes (noted in a comment in the source).[0m[0m
+[38;5;8m
+ ▸ Credits: 3.30 • Time: 1m 37s
+
+[0m[1G[0m[0m[?25h

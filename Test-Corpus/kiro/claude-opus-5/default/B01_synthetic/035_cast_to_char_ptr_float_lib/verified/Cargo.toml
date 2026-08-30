@@ -1,0 +1,26 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+
+# `harness = false`: the differential tests redirect file descriptor 1 to
+# capture what the shared libraries print. libtest's own progress output also
+# goes to fd 1 from other threads, which would contaminate the captures, so
+# this test provides its own single-threaded `main`.
+[[test]]
+name = "driver_ffi"
+path = "tests/driver_ffi.rs"
+harness = false
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

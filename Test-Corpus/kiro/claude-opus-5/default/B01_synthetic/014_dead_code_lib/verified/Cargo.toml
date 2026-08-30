@@ -1,0 +1,26 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The differential tests redirect the process's file descriptor 1 to capture
+# what each shared library prints. libtest writes its own progress lines to
+# stdout from parallel test threads, which would land inside those captures, so
+# this target supplies its own sequential runner instead.
+[[test]]
+name = "driver_ffi"
+path = "tests/driver_ffi.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

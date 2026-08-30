@@ -1,0 +1,574 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt[0m [38;5;244m(7 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2705 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-sdT0yt/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-sdT0yt/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow writing the Rust translation.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translated executable
+
+[49m[38;5;10m+    1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+    2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+    3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+    4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+    5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+    7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+    8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate main.c to Rust preserving fgets/atof semantics and x86 double→int cast behavior
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original C code: Copyright 2025 MIT Lincoln Laboratory (MIT license, see c_src).
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // The original program demonstrates a divide-by-zero defect (CWE-369). The
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // faulty behavior is reproduced here verbatim: `bad()` divides by a value read
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // from stdin without checking it for zero, and the resulting infinite /
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // out-of-range double is converted to `int`. On x86-64 that conversion is
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // implemented by `cvttsd2si`, which yields the "integer indefinite" value
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // 0x80000000 (i32::MIN) for NaN, infinities and out-of-range values. That is
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // what `c_double_to_int` reproduces below, so the output stays byte-identical.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::io::{self, BufRead, Read, Write};
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m const CHAR_ARRAY_SIZE: usize = 20;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // Output helpers (printf("%s\n") / printf("%d\n"))
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m fn print_line(out: &mut dyn Write, line: &str) {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     // The C version skips printing when the pointer is NULL; every call site
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     // passes a string literal, so the message is always printed.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     let _ = write!(out, "{}\n", line);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m fn print_int_line(out: &mut dyn Write, int_number: i32) {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     let _ = write!(out, "{}\n", int_number);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m // stdin: fgets() semantics
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// Reads at most `size - 1` bytes, stopping after a newline (which is kept in
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// the returned buffer). Returns `None` when no byte could be read (EOF or
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// error), matching `fgets()` returning NULL. Unlike `scanf`, this never reads
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// past the terminating newline.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn fgets(input: &mut dyn BufRead, size: usize) -> Option<Vec<u8>> {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     if size <= 1 {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     let mut buf: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let mut byte = [0u8; 1];
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     while buf.len() < size - 1 {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         match input.read(&mut byte) {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             Ok(0) => break, // EOF
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             Ok(_) => {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 buf.push(byte[0]);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m                 if byte[0] == b'\n' {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             Err(_) => return None, // fgets() reports NULL on a read error
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     if buf.is_empty() {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         None
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         Some(buf)
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m // atof() / strtod() semantics
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m fn is_c_space(b: u8) -> bool {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m fn hex_val(b: u8) -> Option<u32> {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     match b {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         b'0'..=b'9' => Some((b - b'0') as u32),
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         b'a'..=b'f' => Some((b - b'a') as u32 + 10),
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         b'A'..=b'F' => Some((b - b'A') as u32 + 10),
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         _ => None,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m fn matches_ci(s: &[u8], at: usize, word: &[u8]) -> bool {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     if s.len() < at + word.len() {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     s[at..at + word.len()]
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         .zip(word.iter())
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         .all(|(a, b)| a.to_ascii_lowercase() == *b)
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// `atof(buf)`: the C string ends at the first NUL byte that `fgets` stored (or
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// at the end of the data it read), and the value of the longest parseable
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m /// prefix is returned. Unparseable input yields 0.0.
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m fn c_atof(buf: &[u8]) -> f64 {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let s = match buf.iter().position(|&b| b == 0) {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         Some(i) => &buf[..i],
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         None => buf,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     c_strtod(s)
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m fn c_strtod(s: &[u8]) -> f64 {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     while i < s.len() && is_c_space(s[i]) {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     let mut neg = false;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         neg = s[i] == b'-';
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     // "infinity" / "inf" / "nan[(chars)]", case insensitive.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     if matches_ci(s, i, b"infinity") || matches_ci(s, i, b"inf") {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         return if neg {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             f64::NEG_INFINITY
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             f64::INFINITY
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     if matches_ci(s, i, b"nan") {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         return if neg { -f64::NAN } else { f64::NAN };
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     // Hexadecimal floating point: 0x1.8p3
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     if i + 1 < s.len() && s[i] == b'0' && (s[i + 1] == b'x' || s[i + 1] == b'X') {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         match parse_hex_float(&s[i + 2..]) {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             Some(v) => return if neg { -v } else { v },
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             // No hex digits after the prefix: only the leading "0" converts.
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             None => return if neg { -0.0 } else { 0.0 },
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     // Decimal form: digits with an optional point and an optional exponent.
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     let start = i;
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     let mut digits = 0usize;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     while i < s.len() && s[i].is_ascii_digit() {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         digits += 1;
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     if i < s.len() && s[i] == b'.' {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         while i < s.len() && s[i].is_ascii_digit() {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             digits += 1;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     if digits == 0 {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let mut end = i;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     if i < s.len() && (s[i] == b'e' || s[i] == b'E') {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         let mut j = i + 1;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         if j < s.len() && (s[j] == b'+' || s[j] == b'-') {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             j += 1;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         if j < s.len() && s[j].is_ascii_digit() {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m             while j < s.len() && s[j].is_ascii_digit() {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             end = j;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     // The accepted prefix is plain ASCII and uses a grammar that Rust's
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     // correctly-rounded parser accepts, so rounding matches strtod().
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     let text = match std::str::from_utf8(&s[start..end]) {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         Ok(t) => t,
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         Err(_) => return 0.0,
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let v: f64 = text.parse().unwrap_or(0.0);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     if neg {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         -v
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         v
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m /// Parses the part after `0x`. Returns `None` if there is no hex digit.
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m fn parse_hex_float(s: &[u8]) -> Option<f64> {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     let mut mantissa: u128 = 0;
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     let mut dropped_shift: i64 = 0;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     let mut sticky = false;
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     let mut n_digits = 0usize;
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let mut frac_digits: i64 = 0;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let mut seen_point = false;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     while i < s.len() {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         if let Some(d) = hex_val(s[i]) {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m             n_digits += 1;
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m             if seen_point {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m                 frac_digits += 1;
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m             if mantissa < (1u128 << 124) {
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m                 mantissa = mantissa * 16 + d as u128;
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m                 dropped_shift += 4;
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m                 if d != 0 {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m                     sticky = true;
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         } else if s[i] == b'.' && !seen_point {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             seen_point = true;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     if n_digits == 0 {
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     let mut p_exp: i64 = 0;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     if i < s.len() && (s[i] == b'p' || s[i] == b'P') {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         let mut j = i + 1;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         let mut p_neg = false;
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         if j < s.len() && (s[j] == b'+' || s[j] == b'-') {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m             p_neg = s[j] == b'-';
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m             j += 1;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         if j < s.len() && s[j].is_ascii_digit() {
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m             let mut val: i64 = 0;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m             while j < s.len() && s[j].is_ascii_digit() {
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m                 if val < 1_000_000 {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m                     val = val * 10 + (s[j] - b'0') as i64;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             p_exp = if p_neg { -val } else { val };
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     let exp2 = p_exp - 4 * frac_digits + dropped_shift;
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     Some(scale_to_f64(mantissa, sticky, exp2))
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m /// Rounds `mantissa * 2^exp2` (plus a non-zero tail when `sticky`) to the
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m /// nearest f64, ties to even.
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m fn scale_to_f64(mantissa: u128, sticky: bool, exp2: i64) -> f64 {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     if mantissa == 0 {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     let high_bit = 127 - mantissa.leading_zeros() as i64;
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     let normalized_exp = high_bit + exp2;
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     let mut q = normalized_exp - 52;
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     if q < -1074 {
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         q = -1074; // subnormal range
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     let shift = q - exp2;
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     let mut n: u128 = if shift <= 0 {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         let sh = (-shift) as u32;
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         if sh >= 128 {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             return f64::INFINITY;
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         mantissa << sh
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     } else if shift >= 128 {
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         let sh = shift as u32;
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         let kept = mantissa >> sh;
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m         let rem = mantissa & ((1u128 << sh) - 1);
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m         let half = 1u128 << (sh - 1);
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         if rem > half || (rem == half && (sticky || (kept & 1) == 1)) {
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m             kept + 1
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m             kept
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     if n == 0 {
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     if n >= (1u128 << 53) {
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         n >>= 1;
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m         q += 1;
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     if q == -1074 && n < (1u128 << 52) {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         return f64::from_bits(n as u64); // subnormal
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     let biased = q + 52 + 1023;
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     if biased >= 2047 {
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         return f64::INFINITY;
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     if biased <= 0 {
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m     let bits = ((biased as u64) << 52) | ((n as u64) - (1u64 << 52));
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     f64::from_bits(bits)
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m // (int) cast of a double, as x86-64 cvttsd2si performs it
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m fn c_double_to_int(v: f64) -> i32 {
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     let t = v.trunc();
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     if t.is_nan() || t < -2147483648.0 || t > 2147483647.0 {
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m         i32::MIN
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m         t as i32
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m // Translated program
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m fn bad(input: &mut dyn BufRead, out: &mut dyn Write) {
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     let mut data: f32 = 0.0;
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         match fgets(input, CHAR_ARRAY_SIZE) {
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m             Some(input_buffer) => {
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m                 data = c_atof(&input_buffer) as f32;
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m             None => {
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m                 print_line(out, "fgets() failed.");
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m         // No zero check: this is the defect being demonstrated.
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m         let result = c_double_to_int(100.0f64 / data as f64);
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m         print_int_line(out, result);
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m fn good_g2b(out: &mut dyn Write) {
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     let data: f32 = 2.0;
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m         let result = c_double_to_int(100.0f64 / data as f64);
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m         print_int_line(out, result);
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m fn good_b2g(input: &mut dyn BufRead, out: &mut dyn Write) {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     let mut data: f32 = 0.0;
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m         match fgets(input, CHAR_ARRAY_SIZE) {
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m             Some(input_buffer) => {
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m                 data = c_atof(&input_buffer) as f32;
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m             None => {
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m                 print_line(out, "fgets() failed.");
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m     if (data as f64).abs() > 0.000001 {
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m         let result = c_double_to_int(100.0f64 / data as f64);
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m         print_int_line(out, result);
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m         print_line(out, "This would result in a divide by zero");
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m fn good(input: &mut dyn BufRead, out: &mut dyn Write) {
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m     good_g2b(out);
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m     good_b2g(input, out);
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m     let stdin = io::stdin();
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m     let mut input = stdin.lock();
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m     let stdout = io::stdout();
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m     let mut out = io::BufWriter::new(stdout.lock());
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m     print_line(&mut out, "Calling good()...");
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m     good(&mut input, &mut out);
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m     print_line(&mut out, "Finished good()");
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m     print_line(&mut out, "Calling bad()...");
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m     bad(&mut input, &mut out);
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m     print_line(&mut out, "Finished bad()");
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -n 30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust translation in release mode
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/translation)
+warning: unused import: `Read`
+  --> src/main.rs:13:30
+   |
+13 | use std::io::{self, BufRead, Read, Write};
+   |                              ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `driver` (bin "driver") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.27s
+[38;5;244m - Completed in 0.292s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Drop unused import
+
+[49m[38;5;9m- 13    [0m:[38;5;9m[49m use std::io::{self, BufRead, Read, Write};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::io::{self, BufRead, Write};
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow I'll build the C reference in a temp dir and diff outputs across a range of inputs.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -n 5 && mkdir -p /tmp/cref && gcc -o /tmp/cref/driver ../c_src/src/main.c -lm && echo C_OK[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild Rust and compile the C reference
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-sdT0yt/translation)
+    Finished `release` profile [optimized] target(s) in 0.24s
+C_OK
+[38;5;244m - Completed in 0.310s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver
+R=./target/release/driver
+fail=0
+run() {
+  desc="$1"; shift
+  printf '%b' "$1" > /tmp/in.bin
+  "$C" < /tmp/in.bin > /tmp/out.c 2>&1; rcC=$?
+  "$R" < /tmp/in.bin > /tmp/out.r 2>&1; rcR=$?
+  if ! cmp -s /tmp/out.c /tmp/out.r || [ "$rcC" != "$rcR" ]; then
+    fail=1
+    echo "=== MISMATCH: $desc (rc $rcC vs $rcR)"
+    diff /tmp/out.c /tmp/out.r | head -20
+  fi
+}
+run "empty" ""
+run "zero" "0\n"
+run "zero-nonl" "0"
+run "5" "5\n5\n"
+run "two lines" "4\n0\n"
+run "neg" "-8\n-8\n"
+run "0.0" "0.0\n0.0\n"
+run "-0" "-0\n-0\n"
+run "abc" "abc\nabc\n"
+run "spaces" "   7.5  \n   7.5  \n"
+run "tiny" "0.0000001\n0.0000001\n"
+run "tiny2" "0.000002\n0.000002\n"
+run "huge" "1e30\n1e30\n"
+run "huge2" "1e-30\n1e-30\n"
+run "inf" "inf\ninf\n"
+run "nan" "nan\nnan\n"
+run "hex" "0x1.8p1\n0x1.8p1\n"
+run "hexnodig" "0xz\n0xz\n"
+run "long line >19" "3.0000000000000000001234\n7\n"
+run "long line2" "12345678901234567890123\nabc\n"
+run "plus" "+3\n+3\n"
+run "exp" "1e2\n2E1\n"
+run "dot" ".5\n.5\n"
+run "trail" "5.\n5.\n"
+run "1e400" "1e400\n1e400\n"
+run "-1e400" "-1e400\n-1e400\n"
+run "3e9" "3e-9\n0.00000005\n"
+run "crlf" "5\r\n5\r\n"
+run "tab" "\t6\t\n\t6\t\n"
+run "only nl" "\n\n"
+run "big int" "2\n0.00000000000000000001\n"
+run "3.3" "3.3\n3.3\n"
+run "-3.3" "-3.3\n-3.3\n"
+run "infinity" "infinity\nINFINITY\n"
+run "0x0" "0x0\n0x0\n"
+run "hexbig" "0x1p1000\n0x1p1000\n"
+run "hexsub" "0x1p-1074\n0x1p-1074\n"
+run "1e-46" "1e-46\n1e-46\n"
+run "1e-45" "1e-45\n1e-45\n"
+run "underflow f32" "1e-50\n1e-50\n"
+run "0.000001" "0.000001\n0.000001\n"
+run "0.0000010001" "0.0000010001\n0.0000010001\n"
+[ $fail -eq 0 ] && echo "ALL MATCH"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Differential test Rust vs C across many stdin inputs
+
+ALL MATCH
+[38;5;244m - Completed in 0.125s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver; R=./target/release/driver; fail=0
+for i in $(seq 1 400); do
+  python3 -c "
+import random,sys,struct
+random.seed($i)
+def tok():
+    k=random.randrange(10)
+    if k==0: return random.choice(['','abc','0x','nan','inf','-inf',' ','.','-','+e5','0x1p','--3'])
+    if k==1: return repr(random.uniform(-1e-6,1e-6))
+    if k==2: return repr(random.uniform(-1e9,1e9))
+    if k==3: return '%dE%d'%(random.randrange(-10**6,10**6),random.randrange(-60,60))
+    if k==4: return '0x%x.%xp%d'%(random.randrange(0,1<<40),random.randrange(0,1<<20),random.randrange(-80,80))
+    if k==5: return '0'*random.randrange(0,5)+str(random.randrange(0,10**random.randrange(1,25)))
+    if k==6: return ' '*random.randrange(0,3)+random.choice(['-','+',''])+str(random.random())
+    if k==7: return str(random.randrange(-5,5))
+    if k==8: return '.'+str(random.randrange(0,10**8))
+    return struct.pack('B',random.randrange(1,256)).decode('latin1')
+sys.stdout.buffer.write((tok()+'\n'+tok()+'\n').encode('latin1'))
+" > /tmp/f.bin
+  "$C" < /tmp/f.bin > /tmp/o.c 2>&1
+  "$R" < /tmp/f.bin > /tmp/o.r 2>&1
+  if ! cmp -s /tmp/o.c /tmp/o.r; then fail=1; echo "MISMATCH seed $i"; cat -A /tmp/f.bin | head -3; diff /tmp/o.c /tmp/o.r|head; fi
+done
+[ $fail -eq 0 ] && echo "FUZZ ALL MATCH"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Randomized differential fuzzing of C vs Rust
+
+FUZZ ALL MATCH
+[38;5;244m - Completed in 6.785s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -f /tmp/in.bin /tmp/f.bin /tmp/o.c /tmp/o.r /tmp/out.c /tmp/out.r; rm -rf /tmp/cref; ls[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temporary test artifacts
+
+Cargo.lock
+Cargo.toml
+src
+target
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mThe translation is complete and builds clean with [38;5;10mcargo build --release[0m (no warnings). Verified byte-identical against a gcc build of [38;5;10mc_src/src/main.c[0m on ~40 hand-picked inputs plus 400 randomized fuzz cases (including empty stdin, unparseable text, hex floats, inf/nan, subnormals, [38;5;10m>19[0m-byte lines, and CRLF).[0m[0m
+[0m[0m
+Structure in [38;5;10mtranslation/src/main.rs[0m mirrors the C one-for-one ([38;5;10mprint_line[0m, [38;5;10mprint_int_line[0m, [38;5;10mbad[0m, [38;5;10mgood_g2b[0m, [38;5;10mgood_b2g[0m, [38;5;10mgood[0m, [38;5;10mmain[0m), so the divide-by-zero defect is preserved rather than fixed. Three pieces of C semantics needed explicit emulation:[0m[0m
+[0m[0m
+- [38;5;10mfgets[0m — reads at most 19 bytes and stops [3mafter[23m a newline, returning [38;5;10mNone[0m only when zero bytes were read. Implemented as byte-at-a-time reads over a single shared [38;5;10mStdinLock[0m, so [38;5;10mgood_b2g[0m's read and [38;5;10mbad[0m's read consume the input in the same order and never overrun the line boundary.[0m[0m
+- [38;5;10matof[0m — a [38;5;10mstrtod[0m front-end that skips C whitespace, accepts a sign, [38;5;10minf[0m/[38;5;10minfinity[0m/[38;5;10mnan[0m, hex floats, and decimal-with-exponent, truncates at the first NUL, and yields [38;5;10m0.0[0m when nothing converts. The accepted decimal prefix is handed to Rust's correctly-rounded [38;5;10mf64[0m parser so rounding matches glibc; hex floats go through a manual round-to-nearest-even path.[0m[0m
+- [38;5;10m(int)(100.0 / data)[0m — casting infinity or NaN to [38;5;10mint[0m is undefined in C, and on x86-64 [38;5;10mcvttsd2si[0m produces [38;5;10m0x80000000[0m. Rust's [38;5;10mas i32[0m saturates instead, so [38;5;10mc_double_to_int[0m reproduces the hardware result, which is what makes the divide-by-zero case print [38;5;10m-2147483648[0m.[0m[0m
+[0m[0m
+Note that this hardware-indefinite value is the one place where output depends on the original program's undefined behavior; it matches the gcc/x86-64 build used for comparison, and would differ on a target whose float-to-int conversion saturates or on a build that constant-folds the division.[0m[0m
+[38;5;8m
+ ▸ Credits: 7.02 • Time: 3m 57s
+
+[0m[1G[0m[0m[?25h

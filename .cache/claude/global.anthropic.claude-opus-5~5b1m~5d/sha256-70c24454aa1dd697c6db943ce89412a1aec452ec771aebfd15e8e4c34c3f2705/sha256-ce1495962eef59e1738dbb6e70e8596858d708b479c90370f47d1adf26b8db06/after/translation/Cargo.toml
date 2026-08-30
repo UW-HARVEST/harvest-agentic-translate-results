@@ -1,0 +1,30 @@
+[package]
+name = "staticalias"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "StaticAlias"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+# The C library is compiled without any sanity instrumentation, so it faults
+# (SIGSEGV) when a caller passes a bad `int *`. Rust's `debug-assertions` add
+# language-UB checks that turn the very same input into a panic/abort (SIGABRT)
+# instead, which is a behavioural difference from the C for identical input.
+# Disabling them *for this library only* makes the produced `.so` behave the same
+# in every profile; the test code keeps its own debug assertions.
+[profile.dev.package.staticalias]
+debug-assertions = false
+
+[profile.test.package.staticalias]
+debug-assertions = false
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[workspace]

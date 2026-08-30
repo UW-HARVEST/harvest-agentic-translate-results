@@ -1,0 +1,2412 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -50 && echo "--- translation ---" && find translation -type f -not -path '*/target/*' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
+
+total 48
+drwxr-xr-x.   5 scheschb amazon    69 Aug 30 08:08 .
+drwxr-xr-x. 457 scheschb amazon 32768 Aug 30 08:08 ..
+drwxr-xr-x.   2 scheschb amazon    27 Aug 30 08:08 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Aug 30 08:08 c_src
+drwxr-xr-x.   3 scheschb amazon    53 Aug 30 08:08 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/long.h
+c_src/src/long.c
+--- translation ---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt && echo "=== Cargo.toml ===" && cat translation/Cargo.toml && echo "=== sizes ===" && wc -l c_src/include/long.h c_src/src/long.c translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read build configs and file sizes
+
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(long)
+add_library(long SHARED
+    src/long.c)
+
+target_include_directories(long PUBLIC include)
+target_include_directories(long PRIVATE src)
+
+install(TARGETS long
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=== Cargo.toml ===
+[package]
+name = "long"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "long"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+
+[workspace]
+=== sizes ===
+  29 c_src/include/long.h
+  68 c_src/src/long.c
+ 104 translation/src/lib.rs
+ 201 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/include/long.h && echo "=== long.c ===" && cat c_src/src/long.c && echo "=== lib.rs ===" && cat translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C header, C source, and Rust lib
+
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef ECHO_H_
+#define ECHO_H_
+
+void long_exec(unsigned int seed);
+
+#endif //ECHO_H_
+=== long.c ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "long.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#define ARRAY_SIZE (256 * 1024) // 1MB assuming sizeof(int) = 4
+#define ITERATIONS 2000
+
+// Global array
+int array[ARRAY_SIZE];
+
+// Perform expensive arithmetic on each element
+void perform_expensive_operations() {
+    for (size_t i = 0; i < ARRAY_SIZE; i++) {
+        int x = array[i];
+        for (int j = 0; j < 100; j++) {
+            x = x * 3 + 7;
+            x = x ^ (x >> 3);
+            x = x - (x << 1);
+            x = x / 2 + x % 7;
+        }
+        array[i] = x;
+    }
+}
+
+void long_exec(unsigned int seed) {
+    srand(seed);
+
+    for (size_t i = 0; i < ARRAY_SIZE; i++) {
+        array[i] = rand();
+    }
+
+    for (int i = 0; i < ITERATIONS; i++) {
+        perform_expensive_operations();
+    }
+
+    int xor_result = 0;
+    for (size_t i = 0; i < ARRAY_SIZE; i++) {
+        xor_result ^= array[i];
+    }
+
+    printf("%d\n", xor_result);
+    return;
+}
+
+=== lib.rs ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+//! Rust translation of `c_src/src/long.c`.
+//!
+//! Fidelity notes:
+//! * `rand()` / `srand()` are taken from the platform C library rather than
+//!   reimplemented, so the pseudo-random stream (and therefore the final XOR
+//!   value) is bit-for-bit identical to the original program.
+//! * The inner arithmetic in `perform_expensive_operations` overflows signed
+//!   `int` constantly. C compilers in practice emit plain two's-complement
+//!   wrapping instructions for this, so the wrapping operators are used here to
+//!   reproduce the observed behaviour exactly (including the arithmetic right
+//!   shift of negative values and truncating-toward-zero `/` and `%`).
+//! * Output goes through the C library's `printf` so buffering and flushing
+//!   match the original translation unit byte for byte.
+
+use std::ffi::{c_char, c_int, c_uint};
+
+/// `#define ARRAY_SIZE (256 * 1024)` — 1MB assuming sizeof(int) == 4.
+const ARRAY_SIZE: usize = 256 * 1024;
+
+/// `#define ITERATIONS 2000`
+const ITERATIONS: c_int = 2000;
+
+unsafe extern "C" {
+    fn srand(seed: c_uint);
+    fn rand() -> c_int;
+    fn printf(format: *const c_char, ...) -> c_int;
+}
+
+// Global array (zero initialised, lives in .bss just like the C original).
+#[unsafe(export_name = "array")]
+pub static mut ARRAY: [c_int; ARRAY_SIZE] = [0; ARRAY_SIZE];
+
+/// Borrow the global array as a slice so the hot loops can be written in safe
+/// Rust. Taking the address of the `static mut` avoids creating overlapping
+/// references at any point.
+#[inline]
+fn array_mut() -> &'static mut [c_int; ARRAY_SIZE] {
+    unsafe { &mut *std::ptr::addr_of_mut!(ARRAY) }
+}
+
+/// Perform expensive arithmetic on each element.
+#[unsafe(no_mangle)]
+pub extern "C" fn perform_expensive_operations() {
+    let array = array_mut();
+    for i in 0..ARRAY_SIZE {
+        let mut x: c_int = array[i];
+        for _j in 0..100 {
+            x = x.wrapping_mul(3).wrapping_add(7);
+            x ^= x >> 3;
+            x = x.wrapping_sub(x.wrapping_shl(1));
+            x = x / 2 + x % 7;
+        }
+        array[i] = x;
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn long_exec(seed: c_uint) {
+    unsafe { srand(seed) };
+
+    {
+        let array = array_mut();
+        for i in 0..ARRAY_SIZE {
+            array[i] = unsafe { rand() };
+        }
+    }
+
+    for _i in 0..ITERATIONS {
+        perform_expensive_operations();
+    }
+
+    let mut xor_result: c_int = 0;
+    {
+        let array = array_mut();
+        for i in 0..ARRAY_SIZE {
+            xor_result ^= array[i];
+        }
+    }
+
+    unsafe { printf(c"%d\n".as_ptr(), xor_result) };
+}
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, single-configuration project (no [38;5;10m[features][0m in Cargo.toml, no options in CMakeLists). Let me check the toolchain and build both sides.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; cd translation && timeout 300 cargo check 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain and cargo check
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+    Checking long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+[38;5;244m - Completed in 0.123s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null && cmake --build . 2>&1 | tail -5 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/long.dir/src/long.c.o
+[100%] Linking C shared library liblong.so
+[100%] Built target long
+-rwxr-xr-x. 1 scheschb amazon 15960 Aug 30 08:08 liblong.so
+[38;5;244m - Completed in 0.440s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo build --release 2>&1 | tail -5 && echo "=== C symbols ===" && nm -D --defined-only ../c_src/build/liblong.so && echo "=== Rust symbols ===" && nm -D --defined-only target/release/liblong.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib and compare exported symbols
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.09s
+=== C symbols ===
+0000000000004060 B array
+00000000000011f4 T long_exec
+0000000000001139 T perform_expensive_operations
+=== Rust symbols ===
+000000000004e6dc B array
+0000000000011970 T long_exec
+0000000000011ae0 T perform_expensive_operations
+[38;5;244m - Completed in 0.137s[0m
+
+[?25l[0m[38;5;141m> [0mAll three C symbols are exported by the Rust .so. Now let me check symbol sizes and add the dev-dependency.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mnm -DS --defined-only c_src/build/liblong.so | grep array; nm -DS --defined-only translation/target/release/liblong.so | grep array; echo "1MB = $((1024*1024)) = 0x$(printf %x $((1024*1024)))"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare array symbol sizes
+
+0000000000004060 0000000000100000 B array
+000000000004e6dc 0000000000100000 B array
+1MB = 1048576 = 0x100000
+[38;5;244m - Completed in 0.30s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mSymbol<*mut T>[0m derefs to the symbol address in libloading, so I can reach the [38;5;10marray[0m global directly. Let me add the dep and first measure how expensive the hot loop is.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     10[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[39m  10, 13[0m:[39m[49m [profile.release]
+[0m[49m[39m  11, 14[0m:[39m[49m opt-level = 3
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mreadelf -d c_src/build/liblong.so | head -8; echo "---"; readelf -d translation/target/release/liblong.so | head -8[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check SONAME collision risk between the two .so files
+
+
+Dynamic section at offset 0x2df0 contains 25 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x000000000000000e (SONAME)             Library soname: [liblong.so]
+ 0x000000000000000c (INIT)               0x1000
+ 0x000000000000000d (FINI)               0x12a4
+ 0x0000000000000019 (INIT_ARRAY)         0x3dd8
+---
+
+Dynamic section at offset 0x4a3c0 contains 28 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [ld-linux-x86-64.so.2]
+ 0x000000000000001e (FLAGS)              BIND_NOW
+ 0x000000006ffffffb (FLAGS_1)            Flags: NOW
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared test harness that dlopens both libraries
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared harness for the differential C-vs-Rust tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Both implementations are loaded as shared objects through `libloading` and
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! driven exclusively through their exported symbols, so the `#[no_mangle]` /
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! `#[export_name]` wrappers are part of what is under test.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::ffi::{c_int, c_uint, c_void};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// `#define ARRAY_SIZE (256 * 1024)` from `c_src/src/long.c`.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m pub const ARRAY_SIZE: usize = 256 * 1024;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// One of the two implementations, loaded from disk.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m pub struct Impl {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     /// Kept alive for as long as the symbols are used.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     _lib: Library,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     name: &'static str,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     array: *mut c_int,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     perform_expensive_operations: unsafe extern "C" fn(),
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     long_exec: unsafe extern "C" fn(c_uint),
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     fflush: unsafe extern "C" fn(*mut c_void) -> c_int,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m impl Impl {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     fn load(name: &'static str, path: &Path) -> Impl {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         let lib = unsafe { Library::new(path) }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("failed to dlopen {} ({}): {e}", path.display(), name));
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         // For data symbols `Symbol<*mut T>` dereferences to the address of the
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         // symbol itself, which is the base of the `array` global.
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         let array: *mut c_int = unsafe {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             let sym: Symbol<*mut c_int> = lib
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m                 .get(b"array\0")
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("{name}: missing `array` symbol: {e}"));
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             *sym
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         assert!(!array.is_null(), "{name}: `array` resolved to NULL");
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         let perform_expensive_operations = unsafe {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             let sym: Symbol<unsafe extern "C" fn()> = lib
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m                 .get(b"perform_expensive_operations\0")
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("{name}: missing `perform_expensive_operations`: {e}"));
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             *sym
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         let long_exec = unsafe {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             let sym: Symbol<unsafe extern "C" fn(c_uint)> = lib
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                 .get(b"long_exec\0")
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("{name}: missing `long_exec`: {e}"));
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             *sym
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         // `fflush` comes from the libc that the object under test is linked
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         // against, so the C `printf` buffer can be drained deterministically.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         let fflush = unsafe {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             let sym: Symbol<unsafe extern "C" fn(*mut c_void) -> c_int> = lib
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m                 .get(b"fflush\0")
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("{name}: could not resolve `fflush`: {e}"));
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             *sym
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         Impl {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             _lib: lib,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             name,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             array,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             perform_expensive_operations,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             long_exec,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             fflush,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     pub fn name(&self) -> &'static str {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         self.name
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     /// Overwrite the whole global array.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     pub fn write_array(&self, values: &[c_int]) {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         assert_eq!(values.len(), ARRAY_SIZE);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         unsafe { std::ptr::copy_nonoverlapping(values.as_ptr(), self.array, ARRAY_SIZE) };
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     /// Snapshot the whole global array.
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     pub fn read_array(&self) -> Vec<c_int> {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let mut out = vec![0; ARRAY_SIZE];
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         unsafe { std::ptr::copy_nonoverlapping(self.array, out.as_mut_ptr(), ARRAY_SIZE) };
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         out
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     /// Raw bytes of the global array, for byte-for-byte comparison.
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     pub fn read_array_bytes(&self) -> Vec<u8> {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         let mut out = vec![0u8; ARRAY_SIZE * std::mem::size_of::<c_int>()];
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         unsafe { std::ptr::copy_nonoverlapping(self.array.cast::<u8>(), out.as_mut_ptr(), out.len()) };
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         out
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     pub fn perform_expensive_operations(&self) {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         unsafe { (self.perform_expensive_operations)() };
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     pub fn long_exec(&self, seed: c_uint) {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         unsafe { (self.long_exec)(seed) };
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     pub fn flush_all(&self) {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         unsafe { (self.fflush)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m fn target_dir() -> PathBuf {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     // .../target/<profile>/deps/<test binary>
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     let deps = exe.parent().expect("deps dir");
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     deps.parent().expect("profile dir").to_path_buf()
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     let candidate = target_dir().join("liblong.so");
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         candidate.exists(),
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         "rust cdylib not found at {} — run `cargo build` for the same profile",
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         candidate.display()
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     candidate
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     let root = manifest.parent().expect("workspace root");
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let candidate = root.join("c_src").join("build").join("liblong.so");
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         candidate.exists(),
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         "C shared library not found at {} — build it with cmake first",
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         candidate.display()
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     candidate
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m /// The two implementations are copied to distinct file names first. The C
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m /// object carries `SONAME = liblong.so` while the Rust one carries none, so
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m /// they would not actually alias, but copying keeps the loader unambiguous.
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m pub fn load_both() -> (Impl, Impl) {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     let staging = target_dir().join("difftest-libs");
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     std::fs::create_dir_all(&staging).expect("create staging dir");
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     let c_dst = staging.join("liblong_c_impl.so");
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     let rust_dst = staging.join("liblong_rust_impl.so");
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     copy_if_changed(&c_so_path(), &c_dst);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     copy_if_changed(&rust_so_path(), &rust_dst);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     let c = Impl::load("C", &c_dst);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     let rust = Impl::load("Rust", &rust_dst);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     assert_ne!(
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         c.array, rust.array,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         "the two libraries resolved to the same `array` — they were not loaded independently"
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     (c, rust)
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m fn copy_if_changed(src: &Path, dst: &Path) {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     let need = match (std::fs::metadata(src), std::fs::metadata(dst)) {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         (Ok(s), Ok(d)) => s.len() != d.len() || s.modified().ok() > d.modified().ok(),
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         _ => true,
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     if need {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         // Remove first: overwriting a file that is already mapped would be bad.
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         let _ = std::fs::remove_file(dst);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         std::fs::copy(src, dst).unwrap_or_else(|e| {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             panic!("copy {} -> {}: {e}", src.display(), dst.display())
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m /// Deterministic generator used to build test payloads. This is *not* meant to
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m /// mimic `rand()`; it only has to produce the same bytes for both libraries.
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m pub struct SplitMix64(pub u64);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m impl SplitMix64 {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         let mut z = self.0;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         z ^ (z >> 31)
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     pub fn next_i32(&mut self) -> c_int {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         self.next_u64() as u32 as c_int
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m /// Report the first differing element, with context, instead of dumping 1MB.
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m pub fn assert_arrays_equal(context: &str, c: &[c_int], rust: &[c_int]) {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     assert_eq!(c.len(), rust.len(), "{context}: length mismatch");
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     if c == rust {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     let idx = c
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         .zip(rust.iter())
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         .position(|(a, b)| a != b)
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         .expect("slices differ");
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     let diffs = c.iter().zip(rust.iter()).filter(|(a, b)| a != b).count();
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         "{context}: {diffs} of {} elements differ; first at index {idx}: C = {} (0x{:08x}), Rust = {} (0x{:08x})",
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         c.len(),
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         c[idx],
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         c[idx] as u32,
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         rust[idx],
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         rust[idx] as u32
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/perform_expensive_operations.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add differential tests for perform_expensive_operations
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests for the lowest-level exported function,
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `perform_expensive_operations`, which is a pure map over the `array` global.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use common::{assert_arrays_equal, load_both, SplitMix64, ARRAY_SIZE};
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m /// Fill a full-size payload by cycling `seeds`.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m fn tile(seeds: &[c_int]) -> Vec<c_int> {
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     (0..ARRAY_SIZE).map(|i| seeds[i % seeds.len()]).collect()
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// Run one payload through both libraries and compare the resulting arrays
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m /// element-wise and byte-for-byte.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m fn check_payload(label: &str, payload: &[c_int]) {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     let (c, rust) = load_both();
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     c.write_array(payload);
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     rust.write_array(payload);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     c.perform_expensive_operations();
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     rust.perform_expensive_operations();
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     assert_arrays_equal(label, &c.read_array(), &rust.read_array());
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         c.read_array_bytes(),
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         rust.read_array_bytes(),
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         "{label}: raw bytes of `array` differ"
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m fn zeros() {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     // 0 is a fixed point of the transform in C (0*3+7 = 7, ... ) — not
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     // actually a fixed point, but it is the .bss initial state, so it is the
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     // single most important input to get right.
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     let payload = vec![0 as c_int; ARRAY_SIZE];
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     check_payload("all zeros", &payload);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     // Sanity: the call must actually mutate something, otherwise a pair of
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     // no-op stubs would pass every test in this file.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     let (c, rust) = load_both();
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     c.write_array(&payload);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     c.perform_expensive_operations();
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     assert_ne!(
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         c.read_array(),
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         payload,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         "C `perform_expensive_operations` left the array untouched"
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     rust.write_array(&payload);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     rust.perform_expensive_operations();
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     assert_ne!(
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         rust.read_array(),
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         payload,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         "Rust `perform_expensive_operations` left the array untouched"
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m fn boundary_values() {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let seeds: Vec<c_int> = vec![
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         0,
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         -1,
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         2,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         -2,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         3,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         -3,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         6,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         -6,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         7,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         -7,
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         8,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         -8,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         i32::MAX,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         i32::MIN,
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         i32::MAX - 1,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         i32::MIN + 1,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         i32::MAX / 2,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         i32::MIN / 2,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         i32::MAX / 3,
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         i32::MIN / 3,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         1 << 30,
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         -(1 << 30),
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         1 << 29,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         0x5555_5555u32 as c_int,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         0xAAAA_AAAAu32 as c_int,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         0x7FFF_FFFFu32 as c_int,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         0x8000_0000u32 as c_int,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         0xFFFF_FFF9u32 as c_int,
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         0x0000_0007,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         715_827_882,  // (INT_MAX + 1) / 3
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         -715_827_882,
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         1_431_655_765, // 0x55555555
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     check_payload("boundary values", &tile(&seeds));
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// Values that sit right at the edges of signed division/modulo behaviour:
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// every residue class mod 7 and mod 2, both signs, plus near-overflow
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// magnitudes for `x * 3 + 7` and `x - (x << 1)`.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m fn division_and_modulo_edges() {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let mut seeds: Vec<c_int> = Vec::new();
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     for r in -7i32..=7 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         seeds.push(r);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         seeds.push(i32::MAX - r.unsigned_abs() as i32);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         seeds.push(i32::MIN + r.unsigned_abs() as i32);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     // Multiples and near-multiples of 7 spread across the range.
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     for k in 0..32 {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         let base = ((1u32 << k) as i32).wrapping_mul(7);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         seeds.push(base);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         seeds.push(base.wrapping_add(1));
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         seeds.push(base.wrapping_sub(1));
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         seeds.push(base.wrapping_neg());
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     check_payload("division / modulo edges", &tile(&seeds));
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// A stride sweep over the whole 32-bit domain: one distinct input per array
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// slot, spaced by a large odd step so the samples wrap around the full range.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m fn full_range_stride_sweep() {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     const STEP: u32 = 16_381 * 997; // odd, so it generates a long cycle
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     let payload: Vec<c_int> = (0..ARRAY_SIZE)
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         .map(|i| (i as u32).wrapping_mul(STEP).wrapping_add(0x1234_5678) as c_int)
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     check_payload("full-range stride sweep", &payload);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m fn pseudo_random_payloads() {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     for seed in [0u64, 1, 0xDEAD_BEEF, u64::MAX] {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         let mut rng = SplitMix64(seed);
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         let payload: Vec<c_int> = (0..ARRAY_SIZE).map(|_| rng.next_i32()).collect();
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         check_payload(&format!("random payload seed={seed:#x}"), &payload);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m /// The C code applies the transform 2000 times in a row inside `long_exec`.
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m /// Applying it repeatedly here confirms the state carried between calls (the
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m /// contents of the global array) stays in lockstep, which is what makes the
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m /// full `long_exec` run reproducible.
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m fn repeated_application_stays_in_lockstep() {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     let (c, rust) = load_both();
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     let mut rng = SplitMix64(0xA5A5_5A5A);
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     let payload: Vec<c_int> = (0..ARRAY_SIZE).map(|_| rng.next_i32()).collect();
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     c.write_array(&payload);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     rust.write_array(&payload);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     for round in 1..=12 {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         c.perform_expensive_operations();
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         rust.perform_expensive_operations();
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         assert_arrays_equal(
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m             &format!("after {round} applications"),
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m             &c.read_array(),
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             &rust.read_array(),
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m /// The XOR reduction at the tail of `long_exec` is only correct if the arrays
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m /// agree; check the reduction itself over an already-transformed array so a
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m /// failure here points at the accumulator rather than the transform.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m fn xor_reduction_matches() {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let (c, rust) = load_both();
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     let mut rng = SplitMix64(7);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let payload: Vec<c_int> = (0..ARRAY_SIZE).map(|_| rng.next_i32()).collect();
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     c.write_array(&payload);
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     rust.write_array(&payload);
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     c.perform_expensive_operations();
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     rust.perform_expensive_operations();
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     let fold = |v: &[c_int]| v.iter().fold(0 as c_int, |acc, &x| acc ^ x);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         fold(&c.read_array()),
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         fold(&rust.read_array()),
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         "XOR reduction over the transformed array differs"
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/perform_expensive_operations.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test perform_expensive_operations 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run perform_expensive_operations differential tests in release
+
+---- xor_reduction_matches stdout ----
+
+thread 'xor_reduction_matches' (2295005) panicked at tests/perform_expensive_operations.rs:180:5:
+assertion `left == right` failed: XOR reduction over the transformed array differs
+  left: 9661021
+ right: 122986068
+
+---- division_and_modulo_edges stdout ----
+
+thread 'division_and_modulo_edges' (2295001) panicked at tests/common/mod.rs:207:5:
+division / modulo edges: 130102 of 262144 elements differ; first at index 0: C = -921518594 (0xc912bdfe), Rust = -848097943 (0xcd730d69)
+
+---- boundary_values stdout ----
+
+thread 'boundary_values' (2295000) panicked at tests/common/mod.rs:207:5:
+boundary values: 130102 of 262144 elements differ; first at index 0: C = -921518594 (0xc912bdfe), Rust = -848097943 (0xcd730d69)
+
+---- full_range_stride_sweep stdout ----
+
+thread 'full_range_stride_sweep' (2295002) panicked at tests/common/mod.rs:207:5:
+full-range stride sweep: 130102 of 262144 elements differ; first at index 0: C = -921518594 (0xc912bdfe), Rust = -848097943 (0xcd730d69)
+
+---- zeros stdout ----
+
+thread 'zeros' (2295006) panicked at tests/common/mod.rs:207:5:
+all zeros: 130102 of 262144 elements differ; first at index 0: C = -921518594 (0xc912bdfe), Rust = -848097943 (0xcd730d69)
+
+
+failures:
+    boundary_values
+    division_and_modulo_edges
+    full_range_stride_sweep
+    pseudo_random_payloads
+    repeated_application_stays_in_lockstep
+    xor_reduction_matches
+    zeros
+
+test result: FAILED. 0 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+error: test failed, to rerun pass `--test perform_expensive_operations`
+[38;5;244m - Completed in 0.905s[0m
+
+[?25l[0m[38;5;141m> [0mAll tests share one process, so parallel test threads were racing on the same dlopen'd [38;5;10marray[0m global. Let me serialize access behind a global lock.[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Rename load_both to load_both_uncached
+
+[49m[38;5;9m- 145     [0m:[38;5;9m[49m pub fn load_both() -> (Impl, Impl) {
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m fn load_both_uncached() -> (Impl, Impl) {
+[0m[49m[39m  146, 146[0m:[39m[49m     let staging = target_dir().join("difftest-libs");
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add mutex-guarded accessor for loaded libraries
+
+[49m[39m  160, 160[0m:[39m[49m     (c, rust)
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      163[0m:[38;5;10m[49m // `Impl` holds raw pointers into the loaded objects. They are only ever touched
+[0m[49m[38;5;10m+      164[0m:[38;5;10m[49m // while the process-wide lock below is held, one thread at a time.
+[0m[49m[38;5;10m+      165[0m:[38;5;10m[49m unsafe impl Send for Impl {}
+[0m[49m[38;5;10m+      166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      167[0m:[38;5;10m[49m static LIBS: OnceLock<Mutex<(Impl, Impl)>> = OnceLock::new();
+[0m[49m[38;5;10m+      168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      169[0m:[38;5;10m[49m /// Both libraries live in one address space and each exposes a *single* mutable
+[0m[49m[38;5;10m+      170[0m:[38;5;10m[49m /// `array` global, so `cargo test`'s parallel threads must not touch them
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m /// concurrently. Every test acquires this lock for its whole body.
+[0m[49m[38;5;10m+      172[0m:[38;5;10m[49m pub fn load_both() -> MutexGuard<'static, (Impl, Impl)> {
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m     LIBS.get_or_init(|| Mutex::new(load_both_uncached()))
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m         .lock()
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m         .unwrap_or_else(|poisoned| poisoned.into_inner())
+[0m[49m[39m  161, 176[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Import sync primitives
+
+[49m[38;5;9m- 10    [0m:[38;5;9m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::sync::{Mutex, MutexGuard, OnceLock};
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/perform_expensive_operations.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Use mutex guard in check_payload and zeros test
+
+[49m[39m  16, 16[0m:[39m[49m fn check_payload(label: &str, payload: &[c_int]) {
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m     let (c, rust) = load_both();
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[39m  18, 19[0m:[39m[49m 
+[0m[49m[39m  19, 20[0m:[39m[49m     c.write_array(payload);
+[0m[49m[39m  20, 21[0m:[39m[49m     rust.write_array(payload);
+[0m[49m[39m  21, 22[0m:[39m[49m 
+[0m[49m[39m  22, 23[0m:[39m[49m     c.perform_expensive_operations();
+[0m[49m[39m  23, 24[0m:[39m[49m     rust.perform_expensive_operations();
+[0m[49m[39m  24, 25[0m:[39m[49m 
+[0m[49m[39m  25, 26[0m:[39m[49m     assert_arrays_equal(label, &c.read_array(), &rust.read_array());
+[0m[49m[39m  26, 27[0m:[39m[49m     assert_eq!(
+[0m[49m[39m  27, 28[0m:[39m[49m         c.read_array_bytes(),
+[0m[49m[39m  28, 29[0m:[39m[49m         rust.read_array_bytes(),
+[0m[49m[39m  29, 30[0m:[39m[49m         "{label}: raw bytes of `array` differ"
+[0m[49m[39m  30, 31[0m:[39m[49m     );
+[0m[49m[39m  31, 32[0m:[39m[49m }
+[0m[49m[39m  32, 33[0m:[39m[49m 
+[0m[49m[39m  33, 34[0m:[39m[49m #[test]
+[0m[49m[39m  34, 35[0m:[39m[49m fn zeros() {
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m     // 0 is a fixed point of the transform in C (0*3+7 = 7, ... ) — not
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m     // actually a fixed point, but it is the .bss initial state, so it is the
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m     // single most important input to get right.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     // Zero is the `.bss` initial state of `array`, so it is the single most
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     // important input to get right.
+[0m[49m[39m  38, 38[0m:[39m[49m     let payload = vec![0 as c_int; ARRAY_SIZE];
+[0m[49m[39m  39, 39[0m:[39m[49m     check_payload("all zeros", &payload);
+[0m[49m[39m  40, 40[0m:[39m[49m 
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m     // Sanity: the call must actually mutate something, otherwise a pair of
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     // Sanity: the call must actually mutate the array, otherwise a pair of
+[0m[49m[39m  42, 42[0m:[39m[49m     // no-op stubs would pass every test in this file.
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m     let (c, rust) = load_both();
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m     c.write_array(&payload);
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m     c.perform_expensive_operations();
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m     assert_ne!(
+[0m[49m[38;5;9m- 47    [0m:[38;5;9m[49m         c.read_array(),
+[0m[49m[38;5;9m- 48    [0m:[38;5;9m[49m         payload,
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m         "C `perform_expensive_operations` left the array untouched"
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m     );
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m     rust.write_array(&payload);
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m     rust.perform_expensive_operations();
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m     assert_ne!(
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m         rust.read_array(),
+[0m[49m[38;5;9m- 55    [0m:[38;5;9m[49m         payload,
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m         "Rust `perform_expensive_operations` left the array untouched"
+[0m[49m[38;5;9m- 57    [0m:[38;5;9m[49m     );
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     for imp in [c, rust] {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         imp.write_array(&payload);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         imp.perform_expensive_operations();
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         assert_ne!(
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m             imp.read_array(),
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             payload,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             "{} `perform_expensive_operations` left the array untouched",
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             imp.name()
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     }
+[0m[49m[39m  58, 55[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/perform_expensive_operations.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'EOF'
+import re,io
+p='tests/perform_expensive_operations.rs'
+s=open(p).read()
+s=s.replace("""fn repeated_application_stays_in_lockstep() {
+    let (c, rust) = load_both();
+""","""fn repeated_application_stays_in_lockstep() {
+    let guard = load_both();
+    let (c, rust) = &*guard;
+""")
+s=s.replace("""fn xor_reduction_matches() {
+    let (c, rust) = load_both();
+""","""fn xor_reduction_matches() {
+    let guard = load_both();
+    let (c, rust) = &*guard;
+""")
+open(p,'w').write(s)
+EOF
+grep -n "load_both" tests/perform_expensive_operations.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Update remaining load_both call sites
+
+6:use common::{assert_arrays_equal, load_both, SplitMix64, ARRAY_SIZE};
+17:    let guard = load_both();
+43:    let guard = load_both();
+145:    let guard = load_both();
+169:    let guard = load_both();
+[38;5;244m - Completed in 0.23s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test perform_expensive_operations 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run serialized differential tests
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.32s
+     Running tests/perform_expensive_operations.rs (target/release/deps/perform_expensive_operations-3253dbcc0af34806)
+
+running 7 tests
+test repeated_application_stays_in_lockstep ... ok
+test xor_reduction_matches ... ok
+test zeros ... ok
+test full_range_stride_sweep ... ok
+test division_and_modulo_edges ... ok
+test boundary_values ... ok
+test pseudo_random_payloads ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.61s
+
+[38;5;244m - Completed in 8.958s[0m
+
+[?25l[0m[38;5;141m> [0mNow let me measure the cost of a single [38;5;10mperform_expensive_operations[0m call per implementation, since [38;5;10mlong_exec[0m runs it 2000 times.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/timing_probe.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add timing probe test
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Timing probe: `long_exec` calls `perform_expensive_operations` 2000 times,
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! so this reports the projected cost of a full `long_exec` run per side.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Ignored by default; run with `--ignored --nocapture`.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m use common::load_both;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m use std::time::Instant;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #[ignore]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m fn probe_cost_of_one_pass() {
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     for imp in [c, rust] {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m         // Warm the pages, then time three passes.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m         imp.perform_expensive_operations();
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         let start = Instant::now();
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m         const PASSES: u32 = 3;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         for _ in 0..PASSES {
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m             imp.perform_expensive_operations();
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         let per_pass = start.elapsed() / PASSES;
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         println!(
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m             "{:>4}: {:?} per pass  =>  projected long_exec (2000 passes): {:?}",
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m             imp.name(),
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m             per_pass,
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m             per_pass * 2000
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/timing_probe.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test timing_probe -- --ignored --nocapture 2>&1 | tail -12[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run timing probe
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.25s
+     Running tests/timing_probe.rs (target/release/deps/timing_probe-c02a83272790f5a1)
+
+running 1 test
+   C: 234.210091ms per pass  =>  projected long_exec (2000 passes): 468.420182s
+Rust: 155.51997ms per pass  =>  projected long_exec (2000 passes): 311.03994s
+test probe_cost_of_one_pass ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+
+[38;5;244m - Completed in 1.832s[0m
+
+[?25l[0m[38;5;141m> [0mC's full [38;5;10mlong_exec[0m projects to ~470s and Rust's to ~310s — together they exceed a single 600s command, so I'll capture each side in its own invocation. First, the stdout-capture plumbing.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add stdout capture around long_exec
+
+[49m[39m  109, 109[0m:[39m[49m     pub fn flush_all(&self) {
+[0m[49m[39m  110, 110[0m:[39m[49m         unsafe { (self.fflush)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m     /// Run `long_exec` with file descriptor 1 redirected into a temporary file
+[0m[49m[38;5;10m+      114[0m:[38;5;10m[49m     /// and return everything the library printed. This is what makes the
+[0m[49m[38;5;10m+      115[0m:[38;5;10m[49m     /// `printf("%d\n", ...)` at the tail of `long_exec` observable.
+[0m[49m[38;5;10m+      116[0m:[38;5;10m[49m     pub fn capture_long_exec(&self, seed: c_uint) -> Vec<u8> {
+[0m[49m[38;5;10m+      117[0m:[38;5;10m[49m         let tmp = target_dir().join(format!("difftest-stdout-{}-{seed}.bin", self.name));
+[0m[49m[38;5;10m+      118[0m:[38;5;10m[49m         let bytes = {
+[0m[49m[38;5;10m+      119[0m:[38;5;10m[49m             let file = std::fs::File::create(&tmp).expect("create capture file");
+[0m[49m[38;5;10m+      120[0m:[38;5;10m[49m             let fd = file.as_raw_fd();
+[0m[49m[38;5;10m+      121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      122[0m:[38;5;10m[49m             // Drain anything already buffered on either side before swapping fd 1.
+[0m[49m[38;5;10m+      123[0m:[38;5;10m[49m             std::io::stdout().flush().ok();
+[0m[49m[38;5;10m+      124[0m:[38;5;10m[49m             self.flush_all();
+[0m[49m[38;5;10m+      125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      126[0m:[38;5;10m[49m             let saved = unsafe { (self.dup)(1) };
+[0m[49m[38;5;10m+      127[0m:[38;5;10m[49m             assert!(saved >= 0, "dup(1) failed");
+[0m[49m[38;5;10m+      128[0m:[38;5;10m[49m             assert!(unsafe { (self.dup2)(fd, 1) } >= 0, "dup2 onto stdout failed");
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m             self.long_exec(seed);
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m             self.flush_all();
+[0m[49m[38;5;10m+      133[0m:[38;5;10m[49m             assert!(unsafe { (self.dup2)(saved, 1) } >= 0, "restoring stdout failed");
+[0m[49m[38;5;10m+      134[0m:[38;5;10m[49m             unsafe { (self.close)(saved) };
+[0m[49m[38;5;10m+      135[0m:[38;5;10m[49m             drop(file);
+[0m[49m[38;5;10m+      136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      137[0m:[38;5;10m[49m             std::fs::read(&tmp).expect("read capture file")
+[0m[49m[38;5;10m+      138[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+      139[0m:[38;5;10m[49m         let _ = std::fs::remove_file(&tmp);
+[0m[49m[38;5;10m+      140[0m:[38;5;10m[49m         bytes
+[0m[49m[39m  111, 141[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'PY'
+p='tests/common/mod.rs'
+s=open(p).read()
+
+s=s.replace(
+"""use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};""",
+"""use std::io::Write;
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};""")
+
+s=s.replace(
+"""    fflush: unsafe extern "C" fn(*mut c_void) -> c_int,
+}""",
+"""    fflush: unsafe extern "C" fn(*mut c_void) -> c_int,
+    dup: unsafe extern "C" fn(c_int) -> c_int,
+    dup2: unsafe extern "C" fn(c_int, c_int) -> c_int,
+    close: unsafe extern "C" fn(c_int) -> c_int,
+}""")
+
+s=s.replace(
+"""        Impl {
+            _lib: lib,
+            name,
+            array,
+            perform_expensive_operations,
+            long_exec,
+            fflush,
+        }
+    }""",
+"""        let dup = unsafe {
+            let sym: Symbol<unsafe extern "C" fn(c_int) -> c_int> = lib
+                .get(b"dup\\0")
+                .unwrap_or_else(|e| panic!("{name}: could not resolve `dup`: {e}"));
+            *sym
+        };
+        let dup2 = unsafe {
+            let sym: Symbol<unsafe extern "C" fn(c_int, c_int) -> c_int> = lib
+                .get(b"dup2\\0")
+                .unwrap_or_else(|e| panic!("{name}: could not resolve `dup2`: {e}"));
+            *sym
+        };
+        let close = unsafe {
+            let sym: Symbol<unsafe extern "C" fn(c_int) -> c_int> = lib
+                .get(b"close\\0")
+                .unwrap_or_else(|e| panic!("{name}: could not resolve `close`: {e}"));
+            *sym
+        };
+
+        Impl {
+            _lib: lib,
+            name,
+            array,
+            perform_expensive_operations,
+            long_exec,
+            fflush,
+            dup,
+            dup2,
+            close,
+        }
+    }""")
+open(p,'w').write(s)
+PY
+timeout 300 cargo check --release --tests 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Wire up dup/dup2/close symbols and typecheck
+
+    Checking cfg-if v1.0.4
+    Checking libloading v0.8.9
+    Checking long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+[38;5;244m - Completed in 0.202s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/long_exec.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add split-invocation differential test for long_exec
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential test for the top-level exported function `long_exec`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! A full `long_exec` run is ~470 s for the (unoptimised) C library and ~310 s
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! for the Rust one, so the two sides cannot be exercised inside a single
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! bounded command. Each side is therefore captured by its own `#[ignore]`d
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! test that persists its observable results to disk, and a third test compares
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! the two recordings. `./run_long_exec_difftest.sh` drives all three.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! Observable results captured per side:
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!   * every byte written to file descriptor 1 (the `printf("%d\n", ...)`)
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //!   * the final contents of the exported `array` global (1 MiB)
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use common::{assert_arrays_equal, load_both, ARRAY_SIZE};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// Seed passed to `long_exec`; overridable so the script can sweep seeds.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m fn seed() -> u32 {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     std::env::var("DIFFTEST_SEED")
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         .ok()
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         .map(|s| s.parse().expect("DIFFTEST_SEED must be a u32"))
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         .unwrap_or(42)
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m fn results_dir() -> PathBuf {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         .join("target")
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         .join("difftest-results");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     std::fs::create_dir_all(&dir).expect("create results dir");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     dir
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m fn stdout_path(side: &str, seed: u32) -> PathBuf {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     results_dir().join(format!("long_exec-{side}-{seed}.stdout"))
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn array_path(side: &str, seed: u32) -> PathBuf {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     results_dir().join(format!("long_exec-{side}-{seed}.array"))
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// Record one side's observable behaviour. `pick` selects which of the two
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// loaded libraries to drive, so only one full run happens per invocation.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m fn record(side: &str) {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let seed = seed();
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let imp = match side {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         "C" => c,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         "Rust" => rust,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         other => panic!("unknown side {other}"),
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     // `long_exec` starts by overwriting the whole array from `rand()`, so the
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     // incoming state does not matter; scribble on it anyway to prove that.
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     imp.write_array(&vec![-1 as c_int; ARRAY_SIZE]);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     let out = imp.capture_long_exec(seed);
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let final_array = imp.read_array_bytes();
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     std::fs::write(stdout_path(side, seed), &out).expect("write stdout recording");
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     std::fs::write(array_path(side, seed), &final_array).expect("write array recording");
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     eprintln!(
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         "{side}: seed={seed} stdout={:?} final array {} bytes",
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         String::from_utf8_lossy(&out),
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         final_array.len()
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         !out.is_empty(),
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         "{side}: long_exec printed nothing — capture plumbing is broken"
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m #[ignore = "full-scale run, ~470 s; driven by run_long_exec_difftest.sh"]
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m fn record_c() {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     record("C");
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m #[ignore = "full-scale run, ~310 s; driven by run_long_exec_difftest.sh"]
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m fn record_rust() {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     record("Rust");
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m #[ignore = "compares recordings produced by record_c and record_rust"]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m fn compare_recordings() {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let seed = seed();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     let read = |path: PathBuf| {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         std::fs::read(&path).unwrap_or_else(|e| {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             panic!(
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m                 "missing recording {} ({e}) — run record_c and record_rust first",
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m                 path.display()
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             )
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let c_out = read(stdout_path("C", seed));
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     let rust_out = read(stdout_path("Rust", seed));
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         c_out,
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         rust_out,
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         "seed={seed}: stdout differs\n  C    = {:?}\n  Rust = {:?}",
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         String::from_utf8_lossy(&c_out),
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         String::from_utf8_lossy(&rust_out)
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     let c_arr = read(array_path("C", seed));
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     let rust_arr = read(array_path("Rust", seed));
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let as_ints = |b: &[u8]| -> Vec<c_int> {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         b.chunks_exact(4)
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             .map(|c| i32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             .collect()
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     assert_arrays_equal(
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         &format!("seed={seed}: final `array` after long_exec"),
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         &as_ints(&c_arr),
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         &as_ints(&rust_arr),
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     eprintln!(
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         "seed={seed}: long_exec matches — stdout {:?}, 1 MiB array identical",
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         String::from_utf8_lossy(&c_out)
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/long_exec.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the exported-symbol comparison as a test, plus the driver script.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/exported_symbols.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add exported symbol parity test
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Step 8: every dynamic symbol the C shared object exports must also be
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! exported by the Rust shared object, under the exact same name.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use std::collections::BTreeMap;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::process::Command;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #[derive(Debug, PartialEq, Eq)]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m struct Sym {
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     /// nm type letter, e.g. `T` for text, `B` for .bss object.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     kind: char,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     /// Symbol size in bytes as reported by `nm -S`.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     size: u64,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m fn dynamic_symbols(so: &Path) -> BTreeMap<String, Sym> {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     let out = Command::new("nm")
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         .args(["-D", "-S", "--defined-only", "--format=posix"])
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         .arg(so)
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         .expect("run nm");
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         out.status.success(),
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         "nm failed on {}: {}",
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         so.display(),
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let mut map = BTreeMap::new();
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     for line in String::from_utf8_lossy(&out.stdout).lines() {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         // posix format: "name type value size"
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         let mut f = line.split_whitespace();
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         let (Some(name), Some(kind)) = (f.next(), f.next()) else {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         let _value = f.next();
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         let size = f
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             .next()
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             .and_then(|s| u64::from_str_radix(s, 16).ok())
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             .unwrap_or(0);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         map.insert(
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             name.to_string(),
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             Sym {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 kind: kind.chars().next().unwrap(),
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m                 size,
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             },
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     assert!(!map.is_empty(), "no symbols parsed from {}", so.display());
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     map
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m fn workspace_root() -> PathBuf {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         .expect("workspace root")
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m fn rust_so() -> PathBuf {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     exe.parent()
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         .and_then(Path::parent)
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         .expect("profile dir")
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         .join("liblong.so")
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m fn rust_so_exports_every_c_symbol() {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     let c = dynamic_symbols(&workspace_root().join("c_src/build/liblong.so"));
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     let rust = dynamic_symbols(&rust_so());
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     // The C translation unit exports exactly these three; assert that up front
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     // so this test notices if the C side ever grows a new public symbol.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     for expected in ["array", "long_exec", "perform_expensive_operations"] {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             c.contains_key(expected),
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             "C library unexpectedly does not export `{expected}`"
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     let missing: Vec<&String> = c.keys().filter(|k| !rust.contains_key(*k)).collect();
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         missing.is_empty(),
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         "Rust .so is missing symbols exported by the C .so: {missing:?}\n\
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m          C exports: {:?}",
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         c.keys().collect::<Vec<_>>()
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     for (name, c_sym) in &c {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         let rust_sym = &rust[name];
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             c_sym.kind, rust_sym.kind,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             "`{name}`: nm type differs (C = {}, Rust = {})",
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             c_sym.kind, rust_sym.kind
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         // Data objects must have the same footprint; function sizes legitimately
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         // differ between compilers, so only objects are size-checked.
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         if c_sym.kind.eq_ignore_ascii_case(&'b') || c_sym.kind.eq_ignore_ascii_case(&'d') {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m                 c_sym.size, rust_sym.size,
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 "`{name}`: object size differs (C = {} bytes, Rust = {} bytes)",
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 c_sym.size, rust_sym.size
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// The exported `array` must be reachable and 1 MiB in both, and writes through
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// the symbol must be visible to the exported functions. `zeros` in the
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m /// `perform_expensive_operations` suite covers the second half; this pins the
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m /// size relationship that `ARRAY_SIZE` encodes.
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m fn array_symbol_is_one_mebibyte() {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let c = dynamic_symbols(&workspace_root().join("c_src/build/liblong.so"));
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     assert_eq!(c["array"].size, (common::ARRAY_SIZE * 4) as u64);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let rust = dynamic_symbols(&rust_so());
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     assert_eq!(rust["array"].size, (common::ARRAY_SIZE * 4) as u64);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/exported_symbols.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test exported_symbols 2>&1 | tail -25[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run exported symbol parity test
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.33s
+     Running tests/exported_symbols.rs (target/release/deps/exported_symbols-872340544611b1a6)
+
+running 2 tests
+test array_symbol_is_one_mebibyte ... ok
+test rust_so_exports_every_c_symbol ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+[38;5;244m - Completed in 0.389s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rm -rf target/debug/liblong.so && timeout 600 cargo test 2>&1 | tail -30 && ls -la target/debug/liblong.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full test suite in debug profile
+
+
+     Running tests/exported_symbols.rs (target/debug/deps/exported_symbols-2a290ab5a89188cd)
+
+running 2 tests
+test rust_so_exports_every_c_symbol ... FAILED
+test array_symbol_is_one_mebibyte ... FAILED
+
+failures:
+
+---- rust_so_exports_every_c_symbol stdout ----
+
+thread 'rust_so_exports_every_c_symbol' (2388707) panicked at tests/exported_symbols.rs:24:5:
+nm failed on /local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/target/debug/liblong.so: nm: '/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/target/debug/liblong.so': No such file
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- array_symbol_is_one_mebibyte stdout ----
+
+thread 'array_symbol_is_one_mebibyte' (2388706) panicked at tests/exported_symbols.rs:24:5:
+nm failed on /local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/target/debug/liblong.so: nm: '/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/target/debug/liblong.so': No such file
+
+
+
+failures:
+    array_symbol_is_one_mebibyte
+    rust_so_exports_every_c_symbol
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test exported_symbols`
+ls: cannot access 'target/debug/liblong.so': No such file or directory
+[38;5;244m - Completed in 0.454s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mcargo test[0m doesn't produce the cdylib artifact on its own. Let me expose the path helpers with an actionable error and add driver scripts that build first.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'PY'
+p='tests/common/mod.rs'
+s=open(p).read()
+s=s.replace("fn target_dir() -> PathBuf {","pub fn target_dir() -> PathBuf {")
+s=s.replace("fn rust_so_path() -> PathBuf {","pub fn rust_so_path() -> PathBuf {")
+s=s.replace("fn c_so_path() -> PathBuf {","pub fn c_so_path() -> PathBuf {")
+s=s.replace(
+'''        "rust cdylib not found at {} — run `cargo build` for the same profile",''',
+'''        "rust cdylib not found at {}\\n\\
+         `cargo test` does not build the cdylib artifact by itself; run \\
+         ./run_difftests.sh (or `cargo build` with the same profile) first",''')
+s=s.replace(
+'''        "C shared library not found at {} — build it with cmake first",''',
+'''        "C shared library not found at {}\\n\\
+         build it with: cd c_src && mkdir -p build && cd build && \\
+         cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",''')
+open(p,'w').write(s)
+
+p='tests/exported_symbols.rs'
+s=open(p).read()
+s=s.replace('''fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn rust_so() -> PathBuf {
+    let exe = std::env::current_exe().expect("current_exe");
+    exe.parent()
+        .and_then(Path::parent)
+        .expect("profile dir")
+        .join("liblong.so")
+}
+''','')
+s=s.replace('use std::path::{Path, PathBuf};\nuse std::process::Command;','use std::path::Path;\nuse std::process::Command;')
+s=s.replace('&workspace_root().join("c_src/build/liblong.so")','&common::c_so_path()')
+s=s.replace('&rust_so()','&common::rust_so_path()')
+open(p,'w').write(s)
+PY
+grep -n "c_so_path\|rust_so_path\|PathBuf" tests/exported_symbols.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Route symbol test through shared path helpers
+
+58:    let c = dynamic_symbols(&common::c_so_path());
+59:    let rust = dynamic_symbols(&common::rust_so_path());
+103:    let c = dynamic_symbols(&common::c_so_path());
+105:    let rust = dynamic_symbols(&common::rust_so_path());
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/run_difftests.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Add driver script that builds both libraries then runs tests
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Build the C reference library and the Rust cdylib, then run the fast
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # differential test suite.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m # `cargo test` alone is not enough: this package's only lib target is a
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m # `cdylib`, and cargo does not emit that artifact when it builds integration
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m # tests, so the .so has to be produced explicitly first.
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m # Usage: ./run_difftests.sh [--debug] [extra cargo test args...]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m set -euo pipefail
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m root="$(dirname "$here")"
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m profile_args=(--release)
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m profile_dir=release
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m if [[ "${1:-}" == "--debug" ]]; then
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     profile_args=()
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     profile_dir=debug
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     shift
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m echo "== building C reference library =="
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m mkdir -p "$root/c_src/build"
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m (
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     cd "$root/c_src/build"
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     cmake --build .
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m echo "== building Rust cdylib ($profile_dir) =="
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m cd "$here"
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m cargo build "${profile_args[@]}"
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m test -f "target/$profile_dir/liblong.so"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m echo "== running differential tests ($profile_dir) =="
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m cargo test "${profile_args[@]}" "$@"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/run_difftests.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x run_difftests.sh && timeout 600 ./run_difftests.sh 2>&1 | tail -35[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full fast suite in release via driver script
+
+running 2 tests
+test rust_so_exports_every_c_symbol ... ok
+test array_symbol_is_one_mebibyte ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/long_exec.rs (target/release/deps/long_exec-2bc21a184184f1eb)
+
+running 3 tests
+test compare_recordings ... ignored, compares recordings produced by record_c and record_rust
+test record_c ... ignored, full-scale run, ~470 s; driven by run_long_exec_difftest.sh
+test record_rust ... ignored, full-scale run, ~310 s; driven by run_long_exec_difftest.sh
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/perform_expensive_operations.rs (target/release/deps/perform_expensive_operations-3253dbcc0af34806)
+
+running 7 tests
+test repeated_application_stays_in_lockstep ... ok
+test xor_reduction_matches ... ok
+test zeros ... ok
+test boundary_values ... ok
+test division_and_modulo_edges ... ok
+test full_range_stride_sweep ... ok
+test pseudo_random_payloads ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.61s
+
+     Running tests/timing_probe.rs (target/release/deps/timing_probe-c02a83272790f5a1)
+
+running 1 test
+test probe_cost_of_one_pass ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[38;5;244m - Completed in 9.110s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/run_long_exec_difftest.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Add long_exec full-scale differential driver script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Full-scale differential run of `long_exec`.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # One `long_exec` call is ~470 s against the (unoptimised) C library and ~310 s
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m # against the Rust one, so the two sides are recorded by separate cargo
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m # invocations and compared afterwards. Each invocation stays well under a
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m # 600 s budget.
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m # Usage: ./run_long_exec_difftest.sh [seed ...]     (default seed: 42)
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m set -euo pipefail
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m cd "$here"
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m "$here/run_difftests.sh" --release-build-only >/dev/null 2>&1 || true
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m # Make sure both libraries exist before spending minutes on a run.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m root="$(dirname "$here")"
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m mkdir -p "$root/c_src/build"
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m ( cd "$root/c_src/build" && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null && cmake --build . >/dev/null )
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m cargo build --release >/dev/null
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m seeds=("$@")
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m if [[ ${#seeds[@]} -eq 0 ]]; then
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     seeds=(42)
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m for seed in "${seeds[@]}"; do
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     echo "=== seed $seed: recording C (~470 s) ==="
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     DIFFTEST_SEED="$seed" timeout 600 cargo test --release --test long_exec \
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         -- --ignored --exact --nocapture record_c
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     echo "=== seed $seed: recording Rust (~310 s) ==="
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     DIFFTEST_SEED="$seed" timeout 600 cargo test --release --test long_exec \
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         -- --ignored --exact --nocapture record_rust
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     echo "=== seed $seed: comparing ==="
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     DIFFTEST_SEED="$seed" timeout 600 cargo test --release --test long_exec \
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         -- --ignored --exact --nocapture compare_recordings
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m echo "long_exec differential run complete for seeds: ${seeds[*]}"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/run_long_exec_difftest.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && sed -i '/--release-build-only/,+1d' run_long_exec_difftest.sh && chmod +x run_long_exec_difftest.sh && sed -n '1,25p' run_long_exec_difftest.sh[0m[38;5;244m (using tool: shell)[0m
+Purpose: Remove bogus line from script
+
+#!/usr/bin/env bash
+# Full-scale differential run of `long_exec`.
+#
+# One `long_exec` call is ~470 s against the (unoptimised) C library and ~310 s
+# against the Rust one, so the two sides are recorded by separate cargo
+# invocations and compared afterwards. Each invocation stays well under a
+# 600 s budget.
+#
+# Usage: ./run_long_exec_difftest.sh [seed ...]     (default seed: 42)
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$here"
+
+# Make sure both libraries exist before spending minutes on a run.
+root="$(dirname "$here")"
+mkdir -p "$root/c_src/build"
+( cd "$root/c_src/build" && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null && cmake --build . >/dev/null )
+cargo build --release >/dev/null
+
+seeds=("$@")
+if [[ ${#seeds[@]} -eq 0 ]]; then
+    seeds=(42)
+fi
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mStarting the C-side full run (~470s), which is the ground-truth recording.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && DIFFTEST_SEED=42 timeout 590 cargo test --release --test long_exec -- --ignored --exact --nocapture record_c 2>&1 | tail -12[0m[38;5;244m (using tool: shell)[0m
+Purpose: Record C long_exec output for seed 42
+
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running tests/long_exec.rs (target/release/deps/long_exec-2bc21a184184f1eb)
+
+running 1 test
+C: seed=42 stdout="test record_c has been running for over 60 seconds\n430392287\n" final array 1048576 bytes
+test record_c ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 473.22s
+
+[38;5;244m - Completed in 473.259s[0m
+
+[?25l[0m[38;5;141m> [0mThe libtest "still running" progress message landed in the fd-1 capture. I'll normalize that harness chatter out at comparison time rather than discard the 473s recording.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add harness-noise filter helper
+
+[49m[38;5;10m+      272[0m:[38;5;10m[49m /// libtest writes its own "test <name> has been running for over 60 seconds"
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m /// progress notices to file descriptor 1, which the capture in
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m /// `Impl::capture_long_exec` unavoidably picks up because `printf` writes there
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m /// too. Those notices are timing dependent, so they are removed before the two
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m /// recordings are compared; everything the library itself printed is kept
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m /// byte-for-byte.
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m pub fn strip_harness_noise(bytes: &[u8]) -> Vec<u8> {
+[0m[49m[38;5;10m+      279[0m:[38;5;10m[49m     const NOISE: &[u8] = b"has been running for over";
+[0m[49m[38;5;10m+      280[0m:[38;5;10m[49m     let mut out = Vec::with_capacity(bytes.len());
+[0m[49m[38;5;10m+      281[0m:[38;5;10m[49m     for line in bytes.split_inclusive(|&b| b == b'\n') {
+[0m[49m[38;5;10m+      282[0m:[38;5;10m[49m         if line.windows(NOISE.len()).any(|w| w == NOISE) {
+[0m[49m[38;5;10m+      283[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+      284[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      285[0m:[38;5;10m[49m         out.extend_from_slice(line);
+[0m[49m[38;5;10m+      286[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      287[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+      288[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      289[0m:[38;5;10m[49m 
+[0m[49m[39m  272, 290[0m:[39m[49m /// Report the first differing element, with context, instead of dumping 1MB.
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'PY'
+p='tests/long_exec.rs'
+s=open(p).read()
+s=s.replace("use common::{assert_arrays_equal, load_both, ARRAY_SIZE};",
+            "use common::{assert_arrays_equal, load_both, strip_harness_noise, ARRAY_SIZE};")
+s=s.replace('''    eprintln!(
+        "{side}: seed={seed} stdout={:?} final array {} bytes",
+        String::from_utf8_lossy(&out),
+        final_array.len()
+    );
+    assert!(
+        !out.is_empty(),
+        "{side}: long_exec printed nothing — capture plumbing is broken"
+    );''','''    let printed = strip_harness_noise(&out);
+    eprintln!(
+        "{side}: seed={seed} printed={:?} final array {} bytes",
+        String::from_utf8_lossy(&printed),
+        final_array.len()
+    );
+    assert!(
+        !printed.is_empty(),
+        "{side}: long_exec printed nothing — capture plumbing is broken"
+    );''')
+s=s.replace('''    let c_out = read(stdout_path("C", seed));
+    let rust_out = read(stdout_path("Rust", seed));''','''    let c_out = strip_harness_noise(&read(stdout_path("C", seed)));
+    let rust_out = strip_harness_noise(&read(stdout_path("Rust", seed)));''')
+s=s.replace('''    assert_eq!(
+        c_out,
+        rust_out,''','''    assert!(
+        !c_out.is_empty(),
+        "seed={seed}: the C recording contains no program output"
+    );
+    assert_eq!(
+        c_out,
+        rust_out,''')
+open(p,'w').write(s)
+PY
+timeout 300 cargo check --release --tests 2>&1 | tail -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Apply noise filter in long_exec test and typecheck
+
+    Checking long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+[38;5;244m - Completed in 0.143s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Rust-side full run (~310s).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && DIFFTEST_SEED=42 timeout 590 cargo test --release --test long_exec -- --ignored --exact --nocapture record_rust 2>&1 | tail -12[0m[38;5;244m (using tool: shell)[0m
+Purpose: Record Rust long_exec output for seed 42
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.34s
+     Running tests/long_exec.rs (target/release/deps/long_exec-2bc21a184184f1eb)
+
+running 1 test
+Rust: seed=42 printed="430392287\n" final array 1048576 bytes
+test record_rust ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 313.59s
+
+[38;5;244m - Completed in 313.956s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && DIFFTEST_SEED=42 timeout 590 cargo test --release --test long_exec -- --ignored --exact --nocapture compare_recordings 2>&1 | tail -10[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare C and Rust long_exec recordings
+
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running tests/long_exec.rs (target/release/deps/long_exec-2bc21a184184f1eb)
+
+running 1 test
+seed=42: long_exec matches — stdout "430392287\n", 1 MiB array identical
+test compare_recordings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+[38;5;244m - Completed in 0.49s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mlong_exec[0m matches end-to-end. Now let me broaden domain coverage of the transform and verify the debug profile (where overflow checks are live — a panic inside an [38;5;10mextern "C"[0m function would abort).[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mFailed to validate tool parameters: The provided path must exist in order to replace or insert contents into it
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/perform_expensive_operations.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add wide domain sweep and exhaustive extreme window tests
+
+[49m[38;5;10m+      164[0m:[38;5;10m[49m /// Broad coverage of the 32-bit input domain: many batches, each a different
+[0m[49m[38;5;10m+      165[0m:[38;5;10m[49m /// strided slice of the range, so roughly 8.4 million distinct inputs are run
+[0m[49m[38;5;10m+      166[0m:[38;5;10m[49m /// through all 100 rounds of the transform on both sides.
+[0m[49m[38;5;10m+      167[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      168[0m:[38;5;10m[49m fn wide_domain_sweep() {
+[0m[49m[38;5;10m+      169[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+      170[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      172[0m:[38;5;10m[49m     const BATCHES: u32 = 32;
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m     // Odd stride, coprime with 2^32, so each batch walks the whole range rather
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m     // than clustering in one region.
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m     const STEP: u32 = 0x9E37_79B9;
+[0m[49m[38;5;10m+      176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      177[0m:[38;5;10m[49m     for batch in 0..BATCHES {
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m         let base = batch.wrapping_mul(0x0100_0001);
+[0m[49m[38;5;10m+      179[0m:[38;5;10m[49m         let payload: Vec<c_int> = (0..ARRAY_SIZE)
+[0m[49m[38;5;10m+      180[0m:[38;5;10m[49m             .map(|i| base.wrapping_add((i as u32).wrapping_mul(STEP)) as c_int)
+[0m[49m[38;5;10m+      181[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+      182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      183[0m:[38;5;10m[49m         c.write_array(&payload);
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m         rust.write_array(&payload);
+[0m[49m[38;5;10m+      185[0m:[38;5;10m[49m         c.perform_expensive_operations();
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m         rust.perform_expensive_operations();
+[0m[49m[38;5;10m+      187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      188[0m:[38;5;10m[49m         assert_arrays_equal(
+[0m[49m[38;5;10m+      189[0m:[38;5;10m[49m             &format!("wide domain sweep batch {batch} (base {base:#010x})"),
+[0m[49m[38;5;10m+      190[0m:[38;5;10m[49m             &c.read_array(),
+[0m[49m[38;5;10m+      191[0m:[38;5;10m[49m             &rust.read_array(),
+[0m[49m[38;5;10m+      192[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      193[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      194[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      196[0m:[38;5;10m[49m /// Exhaustive coverage of three contiguous windows of the domain: the 262144
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m /// values at `INT_MIN`, the 262144 values straddling zero, and the 262144
+[0m[49m[38;5;10m+      198[0m:[38;5;10m[49m /// values at `INT_MAX` — where the wrapping multiply, the negate and the
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m /// truncating division are most extreme.
+[0m[49m[38;5;10m+      200[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m fn exhaustive_extreme_windows() {
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m     let windows: [(&str, i32); 3] = [
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m         ("at INT_MIN", i32::MIN),
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m         ("straddling zero", -(ARRAY_SIZE as i32) / 2),
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m         ("at INT_MAX", i32::MAX - ARRAY_SIZE as i32 + 1),
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m     for (label, start) in windows {
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m         let payload: Vec<c_int> = (0..ARRAY_SIZE)
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m             .map(|i| start.wrapping_add(i as i32))
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m         c.write_array(&payload);
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m         rust.write_array(&payload);
+[0m[49m[38;5;10m+      217[0m:[38;5;10m[49m         c.perform_expensive_operations();
+[0m[49m[38;5;10m+      218[0m:[38;5;10m[49m         rust.perform_expensive_operations();
+[0m[49m[38;5;10m+      219[0m:[38;5;10m[49m         assert_arrays_equal(
+[0m[49m[38;5;10m+      220[0m:[38;5;10m[49m             &format!("exhaustive window: {label}"),
+[0m[49m[38;5;10m+      221[0m:[38;5;10m[49m             &c.read_array(),
+[0m[49m[38;5;10m+      222[0m:[38;5;10m[49m             &rust.read_array(),
+[0m[49m[38;5;10m+      223[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      224[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      225[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m 
+[0m[49m[39m  164, 227[0m:[39m[49m /// The XOR reduction at the tail of `long_exec` is only correct if the arrays
+[0m[K
+Updating: [38;5;141mtranslation/tests/perform_expensive_operations.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test perform_expensive_operations 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run expanded transform coverage in release
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.36s
+     Running tests/perform_expensive_operations.rs (target/release/deps/perform_expensive_operations-3253dbcc0af34806)
+
+running 9 tests
+test exhaustive_extreme_windows ... ok
+test repeated_application_stays_in_lockstep ... ok
+test wide_domain_sweep ... ok
+test xor_reduction_matches ... ok
+test full_range_stride_sweep ... ok
+test zeros ... ok
+test division_and_modulo_edges ... ok
+test boundary_values ... ok
+test pseudo_random_payloads ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.32s
+
+[38;5;244m - Completed in 22.711s[0m
+
+[?25l[0m[38;5;141m> [0mNow the debug profile, where Rust's overflow checks are active.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./run_difftests.sh --debug 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full fast suite in debug profile with overflow checks
+
+
+running 3 tests
+test compare_recordings ... ignored, compares recordings produced by record_c and record_rust
+test record_c ... ignored, full-scale run, ~470 s; driven by run_long_exec_difftest.sh
+test record_rust ... ignored, full-scale run, ~310 s; driven by run_long_exec_difftest.sh
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/perform_expensive_operations.rs (target/debug/deps/perform_expensive_operations-bdb3199349c6d976)
+
+running 9 tests
+test exhaustive_extreme_windows ... ok
+test repeated_application_stays_in_lockstep ... ok
+test boundary_values ... ok
+test xor_reduction_matches ... ok
+test division_and_modulo_edges ... ok
+test zeros ... ok
+test full_range_stride_sweep ... ok
+test wide_domain_sweep ... ok
+test pseudo_random_payloads ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.62s
+
+     Running tests/timing_probe.rs (target/debug/deps/timing_probe-3118753f28484a62)
+
+running 1 test
+test probe_cost_of_one_pass ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[38;5;244m - Completed in 31.87s[0m
+
+[?25l[0m[38;5;141m> [0mDebug profile passes with overflow checks active. Now a second end-to-end seed to rule out any seed-independence in the Rust path (high-bit seed, two invocations).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && DIFFTEST_SEED=4294967295 timeout 590 cargo test --release --test long_exec -- --ignored --exact --nocapture record_c 2>&1 | tail -6[0m[38;5;244m (using tool: shell)[0m
+Purpose: Record C long_exec for seed 4294967295
+
+running 1 test
+C: seed=4294967295 printed="494145113\n" final array 1048576 bytes
+test record_c ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 477.72s
+
+[38;5;244m - Completed in 477.753s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && DIFFTEST_SEED=4294967295 timeout 590 cargo test --release --test long_exec -- --ignored --exact --nocapture record_rust 2>&1 | tail -6[0m[38;5;244m (using tool: shell)[0m
+Purpose: Record Rust long_exec for seed 4294967295
+
+running 1 test
+Rust: seed=4294967295 printed="494145113\n" final array 1048576 bytes
+test record_rust ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 317.34s
+
+[38;5;244m - Completed in 317.387s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && DIFFTEST_SEED=4294967295 timeout 590 cargo test --release --test long_exec -- --ignored --exact --nocapture compare_recordings 2>&1 | tail -6 && echo "=== recordings on disk ===" && ls -la target/difftest-results/ && md5sum target/difftest-results/*.array[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare recordings for seed 4294967295
+
+running 1 test
+seed=4294967295: long_exec matches — stdout "494145113\n", 1 MiB array identical
+test compare_recordings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+=== recordings on disk ===
+total 4128
+drwxr-xr-x. 2 scheschb amazon   16384 Aug 30 08:44 .
+drwxr-xr-x. 6 scheschb amazon     141 Aug 30 08:23 ..
+-rw-r--r--. 1 scheschb amazon 1048576 Aug 30 08:23 long_exec-C-42.array
+-rw-r--r--. 1 scheschb amazon      61 Aug 30 08:23 long_exec-C-42.stdout
+-rw-r--r--. 1 scheschb amazon 1048576 Aug 30 08:39 long_exec-C-4294967295.array
+-rw-r--r--. 1 scheschb amazon      61 Aug 30 08:39 long_exec-C-4294967295.stdout
+-rw-r--r--. 1 scheschb amazon 1048576 Aug 30 08:29 long_exec-Rust-42.array
+-rw-r--r--. 1 scheschb amazon      64 Aug 30 08:29 long_exec-Rust-42.stdout
+-rw-r--r--. 1 scheschb amazon 1048576 Aug 30 08:44 long_exec-Rust-4294967295.array
+-rw-r--r--. 1 scheschb amazon      64 Aug 30 08:44 long_exec-Rust-4294967295.stdout
+ec82f177a2bc4971999ad5b30cb16916  target/difftest-results/long_exec-C-42.array
+69f644f5375a82025eaeecbd4f145762  target/difftest-results/long_exec-C-4294967295.array
+ec82f177a2bc4971999ad5b30cb16916  target/difftest-results/long_exec-Rust-42.array
+69f644f5375a82025eaeecbd4f145762  target/difftest-results/long_exec-Rust-4294967295.array
+[38;5;244m - Completed in 0.59s[0m
+
+[?25l[0m[38;5;141m> [0mBoth seeds match byte-for-byte, and the two seeds yield different arrays — confirming the seed is genuinely used. Now the feature-combination enumeration (step 1–2), automated as the task asks.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/check_all_features.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Add script enumerating and checking all feature combinations
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Enumerate every valid build-time configuration and `cargo check` each one.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # Findings for this crate:
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #   * translation/Cargo.toml declares no `[features]` table at all, so there are
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #     no optional features and no default feature set.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #   * c_src/CMakeLists.txt declares no `option()`/`add_definitions` and the C
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #     source has no `#ifdef`s, so the C library likewise has a single
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m #     configuration.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m # The powerset of features is therefore just the empty set, which means exactly
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m # one configuration. The loop below still derives that from Cargo.toml rather
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m # than hard-coding it, so it keeps working if features are ever added.
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m set -euo pipefail
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m # Feature names from `cargo metadata` (empty here).
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m features=$(cargo metadata --no-deps --format-version 1 \
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)["packages"][0]["features"].keys()))')
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m mapfile -t names < <(printf '%s\n' "$features" | sed '/^$/d' | sort)
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m echo "declared features: ${names[*]:-<none>}"
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m # Build the powerset of feature names.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m combos=("")
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m for name in "${names[@]:-}"; do
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     [[ -z "$name" ]] && continue
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     for existing in "${combos[@]}"; do
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         if [[ -z "$existing" ]]; then
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m             combos+=("$name")
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         else
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m             combos+=("$existing,$name")
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         fi
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m status=0
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m for combo in "${combos[@]}"; do
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     label="${combo:-<no features>}"
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     echo "== cargo check --no-default-features --features '$combo'  ($label) =="
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     if ! cargo check --no-default-features --features "$combo" --all-targets; then
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         echo "FAILED: $label"
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         status=1
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m # The default feature set is a distinct configuration whenever `default` exists;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m # check it unconditionally so it is never skipped.
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m echo "== cargo check (default features) =="
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m cargo check --all-targets || status=1
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m exit "$status"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/check_all_features.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x check_all_features.sh && timeout 600 ./check_all_features.sh 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run feature combination check script
+
+declared features: <none>
+== cargo check --no-default-features --features ''  (<no features>) ==
+    Checking cfg-if v1.0.4
+    Checking libloading v0.8.9
+    Checking long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+== cargo check (default features) ==
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+[38;5;244m - Completed in 0.260s[0m
+
+[?25l[0m[38;5;141m> [0mExactly one configuration. Let me confirm there are no other build-time knobs, then check whether the C ground truth is stable across optimization levels (signed overflow is UB in C, so an optimized C build could in principle differ).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2tLYcm && grep -rn "ifdef\|ifndef\|#if \|option(\|add_definitions\|add_compile" c_src/ | grep -v ECHO_H_ ; echo "--- no other knobs above ---"
+for opt in O0 O1 O2 O3 Os Ofast; do
+  d=/tmp/copt-$opt
+  rm -rf $d; cmake -S c_src -B $d -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_C_FLAGS="-$opt" >/dev/null 2>&1
+  cmake --build $d >/dev/null 2>&1 && echo "built -$opt" || echo "FAILED -$opt"
+done; ls /tmp/copt-*/liblong.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check for build knobs and build C at several optimization levels out-of-tree
+
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:1:#ifdef __cplusplus
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:5:#if defined(__18CXX)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:8:#if defined(__CLASSIC_C__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:14:#if !defined(__has_include)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:24:#if defined(__INTEL_COMPILER) || defined(__ICC)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:72:#if defined(_MSC_VER)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:75:#if defined(__GNUC__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:82:#if __INTEL_LLVM_COMPILER < 1000000L
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:91:#if defined(_MSC_VER)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:96:#if defined(__GNUC__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:101:#if defined(__GNUC_MINOR__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:104:#if defined(__GNUC_PATCHLEVEL__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:258:# ifdef __GHS_VERSION_NUMBER
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:275:#if __ARMCC_VERSION >= 1000000
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:354:#if defined(__VISUALDSPVERSION__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:404:#ifdef SIMULATE_ID
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:408:#ifdef __QNXNTO__
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:412:#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:420:#if defined(__linux) || defined(__linux__) || defined(linux)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:533:#if defined(_WIN32) && defined(_MSC_VER)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:678:#ifdef COMPILER_VERSION
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:687:# ifdef COMPILER_VERSION_MINOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:689:#  ifdef COMPILER_VERSION_PATCH
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:691:#   ifdef COMPILER_VERSION_TWEAK
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:700:#ifdef COMPILER_VERSION_INTERNAL
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:711:#ifdef SIMULATE_VERSION_MAJOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:716:# ifdef SIMULATE_VERSION_MINOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:718:#  ifdef SIMULATE_VERSION_PATCH
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:720:#   ifdef SIMULATE_VERSION_TWEAK
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:737:#if !defined(__STDC__) && !defined(__clang__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:759:#if (defined(__clang__) || defined(__GNUC__) || defined(__xlC__) ||           \
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:770:#ifdef ID_VOID_MAIN
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:783:#ifdef COMPILER_VERSION_MAJOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:786:#ifdef COMPILER_VERSION_INTERNAL
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:789:#ifdef SIMULATE_ID
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:792:#ifdef SIMULATE_VERSION_MAJOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdC/CMakeCCompilerId.c:795:#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:4:#ifndef __cplusplus
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:8:#if !defined(__has_include)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:18:#if defined(__COMO__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:72:#if defined(_MSC_VER)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:75:#if defined(__GNUC__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:82:#if __INTEL_LLVM_COMPILER < 1000000L
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:91:#if defined(_MSC_VER)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:96:#if defined(__GNUC__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:101:#if defined(__GNUC_MINOR__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:104:#if defined(__GNUC_PATCHLEVEL__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:258:# ifdef __GHS_VERSION_NUMBER
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:269:#if __ARMCC_VERSION >= 1000000
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:352:#if defined(__VISUALDSPVERSION__)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:389:#ifdef SIMULATE_ID
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:393:#ifdef __QNXNTO__
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:397:#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:405:#if defined(__linux) || defined(__linux__) || defined(linux)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:518:#if defined(_WIN32) && defined(_MSC_VER)
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:663:#ifdef COMPILER_VERSION
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:672:# ifdef COMPILER_VERSION_MINOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:674:#  ifdef COMPILER_VERSION_PATCH
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:676:#   ifdef COMPILER_VERSION_TWEAK
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:685:#ifdef COMPILER_VERSION_INTERNAL
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:696:#ifdef SIMULATE_VERSION_MAJOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:701:# ifdef SIMULATE_VERSION_MINOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:703:#  ifdef SIMULATE_VERSION_PATCH
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:705:#   ifdef SIMULATE_VERSION_TWEAK
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:722:#if defined(__INTEL_COMPILER) && defined(_MSVC_LANG) && _MSVC_LANG < 201403L
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:739:#if CXX_STD > 202002L
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:756:#if (defined(__clang__) || defined(__GNUC__) || defined(__xlC__) ||           \
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:772:#ifdef COMPILER_VERSION_MAJOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:775:#ifdef COMPILER_VERSION_INTERNAL
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:778:#ifdef SIMULATE_ID
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:781:#ifdef SIMULATE_VERSION_MAJOR
+c_src/build/CMakeFiles/3.22.2/CompilerIdCXX/CMakeCXXCompilerId.cpp:784:#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
+--- no other knobs above ---
+built -O0
+built -O1
+built -O2
+built -O3
+built -Os
+built -Ofast
+/tmp/copt-O0/liblong.so
+/tmp/copt-O1/liblong.so
+/tmp/copt-O2/liblong.so
+/tmp/copt-O3/liblong.so
+/tmp/copt-Ofast/liblong.so
+/tmp/copt-Os/liblong.so
+[38;5;244m - Completed in 2.546s[0m
+
+[?25l[0m[38;5;141m> [0mCMake's own compiler-probe files account for all the [38;5;10m#ifdef[0ms; [38;5;10mlong.c[0m/[38;5;10mlong.h[0m have none. Since the C build has no [38;5;10m-O[0m flag by default and signed overflow is UB in C, let me verify the ground truth is stable across optimization levels.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/c_optimization_levels.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add test comparing C across optimization levels
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! `perform_expensive_operations` relies on signed integer overflow, which is
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! undefined behaviour in C, so the C compiler is in principle free to produce
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! different results at different optimisation levels. `c_src/CMakeLists.txt`
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! sets no `CMAKE_BUILD_TYPE`, so the ground-truth library is built with no
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! `-O` flag at all.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! This test rebuilds the C library out-of-tree (nothing under `c_src/` is
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! touched) at several optimisation levels and checks that they all agree with
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! each other *and* with the Rust translation. If a level ever disagrees, the
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! failure message names it, so the divergence is attributed to the C build
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //! rather than to the translation.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m use common::{assert_arrays_equal, load_both, SplitMix64, ARRAY_SIZE};
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m use std::process::Command;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m const LEVELS: [&str; 6] = ["-O0", "-O1", "-O2", "-O3", "-Os", "-Ofast"];
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m fn build_variant(level: &str) -> Option<PathBuf> {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         .expect("workspace root")
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         .to_path_buf();
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     let out = common::target_dir()
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         .join("c-opt-variants")
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         .join(level.trim_start_matches('-'));
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     let configure = Command::new("cmake")
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         .arg("-S")
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         .arg(root.join("c_src"))
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         .arg("-B")
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         .arg(&out)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m         .arg("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         .arg(format!("-DCMAKE_C_FLAGS={level}"))
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         .output();
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     match configure {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         Ok(o) if o.status.success() => {}
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         Ok(_) | Err(_) => return None,
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     let build = Command::new("cmake").arg("--build").arg(&out).output();
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     match build {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         Ok(o) if o.status.success() => {}
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         Ok(_) | Err(_) => return None,
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     let so = out.join("liblong.so");
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     so.exists().then_some(so)
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m fn c_results_are_stable_across_optimisation_levels() {
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     // Reference result: the checked-in C build, driven through the shared
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     // harness so the comparison path is identical to the other suites.
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     let mut rng = SplitMix64(0xC0FF_EE00_1234);
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     let payload: Vec<c_int> = (0..ARRAY_SIZE).map(|_| rng.next_i32()).collect();
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     let guard = load_both();
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     let (c, rust) = &*guard;
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     c.write_array(&payload);
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     c.perform_expensive_operations();
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     let reference = c.read_array();
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     rust.write_array(&payload);
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     rust.perform_expensive_operations();
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     assert_arrays_equal(
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         "default C build vs Rust",
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         &reference,
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         &rust.read_array(),
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     let mut checked = Vec::new();
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     for level in LEVELS {
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         let Some(so) = build_variant(level) else {
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m             eprintln!("skipping {level}: could not build variant");
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         let variant = common::load_extra(level, &so);
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m         variant.write_array(&payload);
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m         variant.perform_expensive_operations();
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m         assert_arrays_equal(
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m             &format!("C built with {level} vs default C build"),
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m             &reference,
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m             &variant.read_array(),
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m         checked.push(level);
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m         !checked.is_empty(),
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m         "no optimisation variants could be built, so nothing was verified"
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m     eprintln!("C output identical across: default (no -O) and {checked:?}");
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation/tests/c_optimization_levels.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Expose loader for additional library variants
+
+[49m[38;5;10m+      225[0m:[38;5;10m[49m /// Load an additional implementation from an arbitrary path, for comparing
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m /// alternative builds of the same source. The caller must already hold the lock
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m /// returned by [`load_both`], since all of these objects share one `stdout` and
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m /// each has its own mutable `array`.
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m pub fn load_extra(name: &'static str, path: &Path) -> Impl {
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m     Impl::load(name, path)
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m 
+[0m[49m[39m  225, 233[0m:[39m[49m // `Impl` holds raw pointers into the loaded objects. They are only ever touched
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test c_optimization_levels -- --nocapture 2>&1 | tail -25[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run C optimization level stability test
+
+   Compiling long v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2tLYcm/translation)
+    Finished `release` profile [optimized] target(s) in 0.30s
+     Running tests/c_optimization_levels.rs (target/release/deps/c_optimization_levels-a97f7fe8aa50ed7c)
+
+running 1 test
+C output identical across: default (no -O) and ["-O0", "-O1", "-O2", "-O3", "-Os", "-Ofast"]
+test c_results_are_stable_across_optimisation_levels ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.12s
+
+[38;5;244m - Completed in 5.441s[0m
+
+[?25l[0m[38;5;141m> [0mC is bit-identical across all optimization levels, and Rust matches — so the wrapping-arithmetic choices are robust, not an artifact of the unoptimized default build. Final full runs in both profiles.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./run_difftests.sh 2>&1 | grep -E "^(test |running|test result|==)" | tail -45[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final full fast suite in release
+
+== building C reference library ==
+== building Rust cdylib (release) ==
+== running differential tests (release) ==
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 1 test
+test c_results_are_stable_across_optimisation_levels ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.97s
+running 2 tests
+test array_symbol_is_one_mebibyte ... ok
+test rust_so_exports_every_c_symbol ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 3 tests
+test compare_recordings ... ignored, compares recordings produced by record_c and record_rust
+test record_c ... ignored, full-scale run, ~470 s; driven by run_long_exec_difftest.sh
+test record_rust ... ignored, full-scale run, ~310 s; driven by run_long_exec_difftest.sh
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 9 tests
+test exhaustive_extreme_windows ... ok
+test repeated_application_stays_in_lockstep ... ok
+test wide_domain_sweep ... ok
+test xor_reduction_matches ... ok
+test zeros ... ok
+test full_range_stride_sweep ... ok
+test division_and_modulo_edges ... ok
+test boundary_values ... ok
+test pseudo_random_payloads ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.27s
+running 1 test
+test probe_cost_of_one_pass ... ignored
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 24.787s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./run_difftests.sh --debug 2>&1 | grep -E "^(test |test result|==)" | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final full fast suite in debug
+
+== building C reference library ==
+== building Rust cdylib (debug) ==
+== running differential tests (debug) ==
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test c_results_are_stable_across_optimisation_levels ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.24s
+test array_symbol_is_one_mebibyte ... ok
+test rust_so_exports_every_c_symbol ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test compare_recordings ... ignored, compares recordings produced by record_c and record_rust
+test record_c ... ignored, full-scale run, ~470 s; driven by run_long_exec_difftest.sh
+test record_rust ... ignored, full-scale run, ~310 s; driven by run_long_exec_difftest.sh
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test exhaustive_extreme_windows ... ok
+test wide_domain_sweep ... ok
+test repeated_application_stays_in_lockstep ... ok
+test xor_reduction_matches ... ok
+test zeros ... ok
+test full_range_stride_sweep ... ok
+test division_and_modulo_edges ... ok
+test boundary_values ... ok
+test pseudo_random_payloads ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.02s
+test probe_cost_of_one_pass ... ignored
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 35.703s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2tLYcm && git status --short 2>/dev/null | grep -v '^?? c_src/build' | head -20; echo "--- c_src sources unmodified check ---"; git diff --stat -- c_src/src c_src/include c_src/CMakeLists.txt 2>/dev/null || echo "(no git repo)"; echo "--- files added ---"; ls translation translation/tests[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src sources untouched and list added files
+
+--- c_src sources unmodified check ---
+--- files added ---
+translation:
+Cargo.lock
+Cargo.toml
+check_all_features.sh
+run_difftests.sh
+run_long_exec_difftest.sh
+src
+target
+tests
+
+translation/tests:
+c_optimization_levels.rs
+common
+exported_symbols.rs
+long_exec.rs
+perform_expensive_operations.rs
+timing_probe.rs
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete — everything matches. No changes were needed to [38;5;10mtranslation/src/lib.rs[0m; the translation was already correct.[0m[0m
+[0m[0m
+[38;5;252m[1m## Configurations[0m[0m
+[0m[0m
+There is exactly one. [38;5;10mtranslation/Cargo.toml[0m has no [38;5;10m[features][0m table, [38;5;10mc_src/CMakeLists.txt[0m declares no [38;5;10moption()[0m/[38;5;10madd_definitions[0m, and [38;5;10mlong.c[0m/[38;5;10mlong.h[0m contain no [38;5;10m#ifdef[0m beyond the include guard. [38;5;10mcheck_all_features.sh[0m derives the powerset from [38;5;10mcargo metadata[0m rather than hard-coding it, and confirms the single empty combination plus the default set both [38;5;10mcargo check --all-targets[0m clean. No [38;5;10m#[cfg(feature = "...")][0m gating was required.[0m[0m
+[0m[0m
+[38;5;252m[1m## Symbol parity[0m[0m
+[0m[0m
+The C .so exports [38;5;10marray[0m, [38;5;10mlong_exec[0m, [38;5;10mperform_expensive_operations[0m. The Rust .so exports all three with matching [38;5;10mnm[0m type letters, and [38;5;10marray[0m is 0x100000 bytes on both sides. Enforced by [38;5;10mtests/exported_symbols.rs[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Differential results[0m[0m
+[0m[0m
+All tests load [3mboth[23m .so files via [38;5;10mlibloading[0m and drive them only through exported symbols.[0m[0m
+[0m[0m
+- [38;5;10mperform_expensive_operations[0m — ~10.5M distinct 32-bit inputs (a 32-batch strided sweep of the full range, a second stride sweep, three [3mexhaustive[23m contiguous 262144-value windows at [38;5;10mINT_MIN[0m, zero and [38;5;10mINT_MAX[0m, four pseudo-random batches, and hand-picked edge tiles), each carried through all 100 rounds. Byte-identical every time, in both the release and debug Rust profiles.[0m[0m
+- Repeated application stays in lockstep over 12 successive passes, which is what makes the 2000-pass loop reproducible.[0m[0m
+- [38;5;10mlong_exec[0m — full-scale end-to-end for two seeds: [38;5;10m42[0m → [38;5;10m430392287[0m, [38;5;10m4294967295[0m → [38;5;10m494145113[0m. Identical stdout bytes and identical 1 MiB final [38;5;10marray[0m (md5 match) for both. The two seeds produce different arrays, so the seed is genuinely threaded through.[0m[0m
+[0m[0m
+Two things worth flagging. First, a full [38;5;10mlong_exec[0m run is ~470s against the C library and ~310s against Rust, so they cannot share one bounded command; [38;5;10mtests/long_exec.rs[0m records each side in its own [38;5;10m#[ignore][0md invocation and compares the persisted recordings, driven by [38;5;10mrun_long_exec_difftest.sh[0m. Second, the transform relies on signed overflow, which is UB in C, and the CMake build sets no [38;5;10m-O[0m flag — so [38;5;10mtests/c_optimization_levels.rs[0m rebuilds the C library out-of-tree at [38;5;10m-O0[0m through [38;5;10m-Ofast[0m and confirms all levels agree with each other and with Rust. The wrapping-arithmetic translation is therefore not tied to the unoptimized default build.[0m[0m
+[0m[0m
+[38;5;10mcargo test[0m alone does not emit the cdylib artifact for this package, so use [38;5;10m./run_difftests.sh [--debug][0m, which builds both libraries first. One caveat on the harness itself: both libraries are dlopen'd into a single process and each has one mutable [38;5;10marray[0m global, so all tests serialize behind a process-wide mutex — parallel test threads corrupted each other's data before I added it.[0m[0m
+[0m[0m
+Not exhaustively covered: the full 2^32 input domain (~0.24% sampled, though the highest-risk regions are exhaustive) and [38;5;10mlong_exec[0m seeds beyond the two above, each of which costs ~13 minutes.[0m[0m
+[38;5;8m
+ ▸ Credits: 27.59 • Time: 39m 8s
+
+[0m[1G[0m[0m[?25h

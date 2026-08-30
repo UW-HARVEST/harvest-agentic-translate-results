@@ -1,0 +1,8 @@
+$HARVEST_WORKDIR/tgt/sha2_128s_robust/release/deps/phase_b_wots_fors-084ac91a10fb2004.d: tests/phase_b_wots_fors.rs tests/common/mod.rs
+
+$HARVEST_WORKDIR/tgt/sha2_128s_robust/release/deps/phase_b_wots_fors-084ac91a10fb2004: tests/phase_b_wots_fors.rs tests/common/mod.rs
+
+tests/phase_b_wots_fors.rs:
+tests/common/mod.rs:
+
+# env-dep:CARGO_MANIFEST_DIR=$HARVEST_WORKDIR/translation

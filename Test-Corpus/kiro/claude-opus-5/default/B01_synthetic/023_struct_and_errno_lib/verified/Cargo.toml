@@ -1,0 +1,40 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The FFI comparison tests capture the process-wide C `stdout` by redirecting
+# file descriptor 1. libtest's own progress output goes to the same descriptor
+# from other threads, so these targets use a hand-rolled sequential runner
+# instead of the default harness.
+[[test]]
+name = "run_ffi"
+path = "tests/run_ffi.rs"
+harness = false
+
+[[test]]
+name = "driver_ffi"
+path = "tests/driver_ffi.rs"
+harness = false
+
+[[test]]
+name = "fuzz_ffi"
+path = "tests/fuzz_ffi.rs"
+harness = false
+
+[[test]]
+name = "symbols"
+path = "tests/symbols.rs"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

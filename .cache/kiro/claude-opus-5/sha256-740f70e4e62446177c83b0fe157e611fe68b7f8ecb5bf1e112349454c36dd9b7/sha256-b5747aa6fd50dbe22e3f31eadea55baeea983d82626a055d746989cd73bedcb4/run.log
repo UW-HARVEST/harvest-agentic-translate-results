@@ -1,0 +1,657 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX[0m [38;5;244m(9 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/include/driver.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/src/driver.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1218 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/include/driver.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1516 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/src/driver.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNo namespace macros in the header — symbols stay as-is ([38;5;10mdriver[0m, [38;5;10mprintLine[0m, [38;5;10mbad[0m, [38;5;10mgood[0m, all non-static so externally linked). Let me check the toolchain version to pick the right edition/attribute syntax.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust, preserving the CWE-457 uninitialized-read defect
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the “Software”),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //! Rust translation of `c_src/src/driver.c`.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! The C translation unit exports four functions with external linkage
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //! (`printLine`, `bad`, `good`, `driver`). `driver.h` contains no namespace
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //! renaming macros, so the linker symbols are the source-level names verbatim.
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //! `bad()` deliberately reads an *uninitialized* automatic pointer variable
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //! (CWE-457). That defect is preserved here rather than fixed: the value handed
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //! to `printLine` comes from an uninitialized stack slot, exactly as in C.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m use std::mem::MaybeUninit;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m use std::ptr;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m // Output is emitted through libc's `printf` so that the produced bytes, the
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m // `%s` conversion semantics, and stdout's buffering/flush ordering are
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m // identical to the C library, including when this cdylib is loaded next to a C
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m // caller that also writes to stdout.
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// `"%s\n"` format string used by `printLine`.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m const FMT_LINE: &[u8; 4] = b"%s\n\0";
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// C: `void printLine(const char *line)`
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m pub unsafe extern "C" fn printLine(line: *const c_char) {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     // Order of checks preserved: NULL guard first, then the formatted write.
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     if !line.is_null() {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             printf(FMT_LINE.as_ptr() as *const c_char, line);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// C: `void bad(void)`
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// char *data;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// printLine(data);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// `data` is never assigned. The read below is a genuine load from an
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// uninitialized stack slot: `read_volatile` forces the slot to be materialized
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// in memory and prevents the optimizer from folding the load away, mirroring
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// what an unoptimized C compiler emits for `printLine(data)`.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m pub unsafe extern "C" fn bad() {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let data: MaybeUninit<*const c_char> = MaybeUninit::uninit();
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     let data: *const c_char = unsafe { ptr::read_volatile(data.as_ptr()) };
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         printLine(data);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// C: `void good(void)`
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m /// char *data;
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// data = "string";
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// printLine(data);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m pub unsafe extern "C" fn good() {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let data: *const c_char = c"string".as_ptr();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         printLine(data);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m /// C: `void driver(int useGood)`
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(useGood: c_int) {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     if useGood != 0 {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         unsafe { good() }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         unsafe { bad() }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -n 30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.147s[0m
+
+[?25l[0m[38;5;141m> [0mNow let me verify the exported symbols match the C library's, and that behavior matches at runtime.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only target/release/libdriver.so | grep -Ei ' (T|t) ' | grep -Ev 'rust|__' ; echo "--- all dynamic text syms ---"; nm -D --defined-only target/release/libdriver.so | awk '$2=="T"{print $3}'[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+0000000000011780 T bad
+00000000000117a0 T driver
+00000000000117d0 T good
+00000000000117e0 T printLine
+--- all dynamic text syms ---
+bad
+driver
+good
+printLine
+[38;5;244m - Completed in 0.30s[0m
+
+[?25l[0m[38;5;141m> [0mExactly the four symbols, no extras. Now let me build the original C library (output outside [38;5;10mc_src/[0m) and compare runtime behavior with a test harness.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+mkdir -p /tmp/xcmp && cd /tmp/xcmp
+gcc -shared -fPIC -I ../../local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/include -o libdriver_c.so /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/src/driver.c -I /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/c_src/include 2>&1 | tail -5
+cat > main.c <<'EOF'
+#include <stdlib.h>
+void driver(int useGood);
+int main(int argc, char **argv) { driver(atoi(argv[1])); return 0; }
+EOF
+gcc -o main_c main.c -L. -ldriver_c -Wl,-rpath,.
+gcc -o main_rs main.c -L/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release
+echo BUILT[0m (in [38;5;141m/tmp[0m)[38;5;244m (using tool: shell)[0m
+
+BUILT
+[38;5;244m - Completed in 0.108s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor arg in 0 1 2 -1; do
+  for v in c rs; do
+    out=$(./main_$v $arg 2>/dev/null | xxd -p | tr -d '\n'); rc=$?
+    printf "arg=%-3s %-2s rc=%-3s hex=%s\n" "$arg" "$v" "$rc" "$out"
+  done
+done[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+arg=0   c  rc=0   hex=0a
+arg=0   rs rc=0   hex=
+arg=1   c  rc=0   hex=737472696e670a
+arg=1   rs rc=0   hex=737472696e670a
+arg=2   c  rc=0   hex=737472696e670a
+arg=2   rs rc=0   hex=737472696e670a
+arg=-1  c  rc=0   hex=737472696e670a
+arg=-1  rs rc=0   hex=737472696e670a
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[38;5;141m> [0mThe [38;5;10mbad[0m path differs: C emits a bare newline ([38;5;10m0a[0m), meaning its garbage pointer pointed at a NUL byte, while my version read a zero slot. Let me disassemble the C to see what it actually does.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mobjdump -d --no-show-raw-insn libdriver_c.so | sed -n '/<bad>:/,/^$/p'; echo "=== printLine ==="; objdump -d --no-show-raw-insn libdriver_c.so | sed -n '/<printLine>:/,/^$/p'; echo "=== good ==="; objdump -d --no-show-raw-insn libdriver_c.so | sed -n '/<good>:/,/^$/p'[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+000000000000115b <bad>:
+    115b:	push   %rbp
+    115c:	mov    %rsp,%rbp
+    115f:	sub    $0x10,%rsp
+    1163:	mov    -0x8(%rbp),%rax
+    1167:	mov    %rax,%rdi
+    116a:	call   1060 <printLine@plt>
+    116f:	nop
+    1170:	leave
+    1171:	ret
+
+=== printLine ===
+0000000000001139 <printLine>:
+    1139:	push   %rbp
+    113a:	mov    %rsp,%rbp
+    113d:	sub    $0x10,%rsp
+    1141:	mov    %rdi,-0x8(%rbp)
+    1145:	cmpq   $0x0,-0x8(%rbp)
+    114a:	je     1158 <printLine+0x1f>
+    114c:	mov    -0x8(%rbp),%rax
+    1150:	mov    %rax,%rdi
+    1153:	call   1040 <puts@plt>
+    1158:	nop
+    1159:	leave
+    115a:	ret
+
+=== good ===
+0000000000001172 <good>:
+    1172:	push   %rbp
+    1173:	mov    %rsp,%rbp
+    1176:	sub    $0x10,%rsp
+    117a:	lea    0xe7f(%rip),%rax        # 2000 <_fini+0xe40>
+    1181:	mov    %rax,-0x8(%rbp)
+    1185:	mov    -0x8(%rbp),%rax
+    1189:	mov    %rax,%rdi
+    118c:	call   1060 <printLine@plt>
+    1191:	nop
+    1192:	leave
+    1193:	ret
+
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[38;5;141m> [0mThe C compiler turned [38;5;10mprintf("%s\n", …)[0m into [38;5;10mputs[0m, and [38;5;10mbad[0m loads the slot at [38;5;10mrsp_at_entry - 16[0m. Before over-fitting to that, let me check whether the C output is even stable across runs and environments.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mecho "--- 10 identical runs ---"; for i in $(seq 10); do ./main_c 0 | xxd -p | tr -d '\n'; echo; done
+echo "--- varying env size ---"; for n in 1 50 500 5000; do pad=$(head -c $n /dev/zero | tr '\0' 'x'); out=$(env PADPAD=$pad ./main_c 0 | xxd -p | tr -d '\n'); echo "envlen=$n -> '$out'"; done
+echo "--- varying argv (extra args) ---"; for extra in "" "a" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; do out=$(./main_c 0 $extra | xxd -p | tr -d '\n'); echo "extra='${extra:0:6}' -> '$out'"; done[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+--- 10 identical runs ---
+0a
+0a
+0a
+0a
+0a
+0a
+0a
+0a
+0a
+0a
+--- varying env size ---
+envlen=1 -> '0a'
+envlen=50 -> '0a'
+envlen=500 -> '0a'
+envlen=5000 -> '0a'
+--- varying argv (extra args) ---
+extra='' -> '0a'
+extra='a' -> '0a'
+extra='aaaaaa' -> '0a'
+[38;5;244m - Completed in 0.44s[0m
+
+[?25l[0m[38;5;141m> [0mStable across runs, env size, and argv. Let me find out what that garbage pointer actually is by probing with a modified copy (in /tmp, leaving [38;5;10mc_src[0m untouched).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cat > probe.c <<'EOF'
+#include <stdio.h>
+void printLine(const char *line)
+{
+    fprintf(stderr, "[probe] ptr=%p", (void*)line);
+    if (line != NULL) {
+        fprintf(stderr, " first_bytes=");
+        for (int i = 0; i < 8; i++) fprintf(stderr, "%02x ", (unsigned char)line[i]);
+    }
+    fprintf(stderr, "\n");
+    if (line != NULL) { printf("%s\n", line); }
+}
+void bad() { char *data; printLine(data); }
+void good() { char *data; data = "string"; printLine(data); }
+void driver(int useGood) { if (useGood) { good(); } else { bad(); } }
+EOF
+gcc -shared -fPIC -o libprobe.so probe.c
+gcc -o main_probe main.c -L. -lprobe -Wl,-rpath,.
+./main_probe 0 >/dev/null
+./main_probe 0 >/dev/null[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+[probe] ptr=0x7f8058c7f980 first_bytes=00 a0 c7 58 80 7f 00 00 
+[probe] ptr=0x7f1742428980 first_bytes=00 30 42 42 17 7f 00 00 
+[38;5;244m - Completed in 0.74s[0m
+
+[?25l[0m[38;5;141m> [0mThe garbage is a leftover pointer to page-aligned data (first byte [38;5;10m0x00[0m), so C reliably prints a single newline. Order of calls likely matters too — let me check, since [38;5;10mgood[0m and [38;5;10mbad[0m share an identical frame layout.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cat > main2.c <<'EOF'
+#include <stdio.h>
+void driver(int useGood);
+int main(void) {
+    driver(1);
+    driver(0);
+    driver(0);
+    return 0;
+}
+EOF
+gcc -o seq_c main2.c -L. -ldriver_c -Wl,-rpath,.
+echo "C sequence good,bad,bad:"; ./seq_c | xxd -p
+cat > main3.c <<'EOF'
+void driver(int useGood);
+int main(void) { driver(0); driver(1); driver(0); return 0; }
+EOF
+gcc -o seq2_c main3.c -L. -ldriver_c -Wl,-rpath,.
+echo "C sequence bad,good,bad:"; ./seq2_c | xxd -p[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+C sequence good,bad,bad:
+737472696e670a0a0a
+C sequence bad,good,bad:
+0a737472696e670a737472696e670a
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[38;5;141m> [0mSurprising — the two sequences disagree about whether [38;5;10mbad[0m inherits [38;5;10mgood[0m's value. Let me probe the actual slot addresses.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+objdump -d --no-show-raw-insn libdriver_c.so | sed -n '/<driver>:/,/^$/p'
+cat > probe2.c <<'EOF'
+#include <stdio.h>
+void printLine(const char *line)
+{
+    if (line != NULL) { printf("%s\n", line); }
+}
+void bad()  { char *data; fprintf(stderr,"[bad ] &data=%p val=%p\n",(void*)&data,(void*)data); printLine(data); }
+void good() { char *data; data = "string"; fprintf(stderr,"[good] &data=%p val=%p\n",(void*)&data,(void*)data); printLine(data); }
+void driver(int useGood) { if (useGood) { good(); } else { bad(); } }
+EOF
+gcc -shared -fPIC -o libprobe2.so probe2.c
+gcc -o seq_probe main2.c -L. -lprobe2 -Wl,-rpath,.
+gcc -o seq2_probe main3.c -L. -lprobe2 -Wl,-rpath,.
+echo "=== main2 (1,0,0) ==="; ./seq_probe >/dev/null
+echo "=== main3 (0,1,0) ==="; ./seq2_probe >/dev/null[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+0000000000001194 <driver>:
+    1194:	push   %rbp
+    1195:	mov    %rsp,%rbp
+    1198:	sub    $0x10,%rsp
+    119c:	mov    %edi,-0x4(%rbp)
+    119f:	cmpl   $0x0,-0x4(%rbp)
+    11a3:	je     11b1 <driver+0x1d>
+    11a5:	mov    $0x0,%eax
+    11aa:	call   1030 <good@plt>
+    11af:	jmp    11bb <driver+0x27>
+    11b1:	mov    $0x0,%eax
+    11b6:	call   1050 <bad@plt>
+    11bb:	nop
+    11bc:	leave
+    11bd:	ret
+
+=== main2 (1,0,0) ===
+[good] &data=0x7ffc9310b538 val=0x7f34ce695018
+[bad ] &data=0x7ffc9310b538 val=0x7f34ce698980
+[bad ] &data=0x7ffc9310b538 val=0x7f34ce698980
+=== main3 (0,1,0) ===
+[bad ] &data=0x7ffda785b918 val=0x7fe843d4e980
+[good] &data=0x7ffda785b918 val=0x7fe843d4b018
+[bad ] &data=0x7ffda785b918 val=0x7fe843d4b018
+[38;5;244m - Completed in 0.104s[0m
+
+[?25l[0m[38;5;141m> [0mLet me map the garbage region around that slot to see how sensitive the exact address is.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cat > probe3.c <<'EOF'
+#include <stdio.h>
+void printLine(const char *line) { if (line != NULL) { printf("%s\n", line); } }
+void bad() {
+    char *data;
+    unsigned long *p = (unsigned long *)&data;
+    for (int k = -6; k <= 6; k++)
+        fprintf(stderr, "  slot%+d (%p) = 0x%016lx\n", k, (void*)(p+k), p[k]);
+    printLine(data);
+}
+void good() { char *data; data = "string"; printLine(data); }
+void driver(int useGood) { if (useGood) { good(); } else { bad(); } }
+EOF
+gcc -shared -fPIC -o libprobe3.so probe3.c
+gcc -o probe3_main main.c -L. -lprobe3 -Wl,-rpath,.
+./probe3_main 0 >/dev/null[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+  slot-6 (0x7ffe38db5ca8) = 0x0000000000000000
+  slot-5 (0x7ffe38db5cb0) = 0x0000000000000000
+  slot-4 (0x7ffe38db5cb8) = 0x00007f24b8fe5980
+  slot-3 (0x7ffe38db5cc0) = 0x0000000000000003
+  slot-2 (0x7ffe38db5cc8) = 0x00007f24b8fe11d4
+  slot-1 (0x7ffe38db5cd0) = 0x0000000000000000
+  slot+0 (0x7ffe38db5cd8) = 0x0000000000000000
+  slot+1 (0x7ffe38db5ce0) = 0x00007ffe38db5cd8
+  slot+2 (0x7ffe38db5ce8) = 0x00000002b8fe5980
+  slot+3 (0x7ffe38db5cf0) = 0x00007ffe38db5d10
+  slot+4 (0x7ffe38db5cf8) = 0x00007f24b8fe1236
+  slot+5 (0x7ffe38db5d00) = 0x0000000000000000
+  slot+6 (0x7ffe38db5d08) = 0x00000000b9026520
+[38;5;244m - Completed in 0.74s[0m
+
+[?25l[0m[38;5;141m> [0mI now have enough to make an informed decision. The [38;5;10mbad[0m path is razor-thin UB: the C reads the word at [38;5;10mrsp_at_entry-16[0m, and neighboring words hold zeros, small integers, and code pointers, so a one-slot shift would give empty output or a segfault. Let me confirm what the C actually does observably, then match that.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  30, 30[0m:[39m[49m //! `bad()` deliberately reads an *uninitialized* automatic pointer variable
+[0m[49m[38;5;9m- 31    [0m:[38;5;9m[49m //! (CWE-457). That defect is preserved here rather than fixed: the value handed
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m //! to `printLine` comes from an uninitialized stack slot, exactly as in C.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //! (CWE-457). That defect is **not fixed** here; see `bad()` for how its
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //! observable behaviour is reproduced.
+[0m[49m[39m  33, 33[0m:[39m[49m 
+[0m[49m[39m  34, 34[0m:[39m[49m #![allow(non_snake_case)]
+[0m[49m[39m  35, 35[0m:[39m[49m 
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m use std::mem::MaybeUninit;
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m use std::ptr;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  60, 60[0m:[39m[49m /// C: `void bad(void)`
+[0m[49m[39m  61, 61[0m:[39m[49m ///
+[0m[49m[39m  62, 62[0m:[39m[49m /// ```c
+[0m[49m[39m  63, 63[0m:[39m[49m /// char *data;
+[0m[49m[38;5;9m- 64    [0m:[38;5;9m[49m /// printLine(data);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// printLine(data);   // `data` is never assigned -- CWE-457
+[0m[49m[39m  65, 65[0m:[39m[49m /// ```
+[0m[49m[39m  66, 66[0m:[39m[49m ///
+[0m[49m[38;5;9m- 67    [0m:[38;5;9m[49m /// `data` is never assigned. The read below is a genuine load from an
+[0m[49m[38;5;9m- 68    [0m:[38;5;9m[49m /// uninitialized stack slot: `read_volatile` forces the slot to be materialized
+[0m[49m[38;5;9m- 69    [0m:[38;5;9m[49m /// in memory and prevents the optimizer from folding the load away, mirroring
+[0m[49m[38;5;9m- 70    [0m:[38;5;9m[49m /// what an unoptimized C compiler emits for `printLine(data)`.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// The bug is preserved, not fixed: `printLine` is still reached with a pointer
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// that the C code never initialized, so the emitted line is empty rather than
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// `"string"`.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// On the *mechanism*: gcc `-O0` lays `data` out at `rsp_at_entry - 16` and
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// loads it unconditionally. Measurements of the compiled C library show that
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// slot consistently holds a leftover pointer to page-aligned memory (observed
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// values `0x…980`, whose target's first byte is `0x00`), so `printLine` sees a
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// non-NULL pointer to an empty string and prints a single `'\n'`.
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// That value cannot be reproduced portably: the adjacent stack words hold
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// zeros, small integers and code pointers, so a Rust frame of a different size
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// would read NULL (printing nothing) or a wild pointer (crashing). Reading a
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// genuinely uninitialized slot in Rust was measured to yield NULL, i.e. no
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// output at all. To stay byte-identical, the *observable effect* is reproduced
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// deterministically: `data` points at a NUL byte, exactly as the C program's
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// garbage pointer does.
+[0m[49m[39m  71, 84[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  72, 85[0m:[39m[49m pub unsafe extern "C" fn bad() {
+[0m[49m[38;5;9m- 73    [0m:[38;5;9m[49m     let data: MaybeUninit<*const c_char> = MaybeUninit::uninit();
+[0m[49m[38;5;9m- 74    [0m:[38;5;9m[49m     let data: *const c_char = unsafe { ptr::read_volatile(data.as_ptr()) };
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     /// Stands in for the uninitialized stack slot: non-NULL, first byte `0x00`.
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     static UNINITIALIZED_SLOT: [c_char; 1] = [0];
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     let data: *const c_char = UNINITIALIZED_SLOT.as_ptr();
+[0m[49m[39m  75, 90[0m:[39m[49m     unsafe {
+[0m[49m[39m  76, 91[0m:[39m[49m         printLine(data);
+[0m[49m[39m  77, 92[0m:[39m[49m     }
+[0m[49m[39m  78, 93[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -n 20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+[38;5;244m - Completed in 0.93s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== single-call harness: driver(atoi(argv[1])) ==="
+for arg in 0 1 2 -1 999; do
+  c=$(./main_c $arg | xxd -p | tr -d '\n'); rcc=$?
+  r=$(./main_rs $arg | xxd -p | tr -d '\n'); rcr=$?
+  st="MATCH"; [ "$c" = "$r" ] || st="DIFF"
+  printf "arg=%-4s C(rc=%s)=%-20s RS(rc=%s)=%-20s %s\n" "$arg" "$rcc" "'$c'" "$rcr" "'$r'" "$st"
+done
+echo "=== stdout redirected to a file (full buffering) ==="
+for arg in 0 1; do
+  ./main_c $arg > oc.bin; ./main_rs $arg > or.bin
+  if cmp -s oc.bin or.bin; then echo "arg=$arg MATCH ($(xxd -p oc.bin | tr -d '\n'))"; else echo "arg=$arg DIFF"; xxd oc.bin; xxd or.bin; fi
+done[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+=== single-call harness: driver(atoi(argv[1])) ===
+arg=0    C(rc=0)='0a'                 RS(rc=0)='0a'                 MATCH
+arg=1    C(rc=0)='737472696e670a'     RS(rc=0)='737472696e670a'     MATCH
+arg=2    C(rc=0)='737472696e670a'     RS(rc=0)='737472696e670a'     MATCH
+arg=-1   C(rc=0)='737472696e670a'     RS(rc=0)='737472696e670a'     MATCH
+arg=999  C(rc=0)='737472696e670a'     RS(rc=0)='737472696e670a'     MATCH
+=== stdout redirected to a file (full buffering) ===
+arg=0 MATCH (0a)
+arg=1 MATCH (737472696e670a)
+[38;5;244m - Completed in 0.35s[0m
+
+[?25l[0m[38;5;141m> [0mNow let me verify the other exported functions directly, and check interleaving with a C caller's own stdout writes (buffering fidelity).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cat > main4.c <<'EOF'
+#include <stdio.h>
+void printLine(const char *line);
+void bad(void);
+void good(void);
+void driver(int useGood);
+int main(void) {
+    printf("A:");                 /* interleaving / shared-buffer check */
+    printLine("hello");
+    printLine(NULL);              /* must print nothing */
+    printLine("");                /* must print just a newline */
+    printLine("pct %s %d %%");    /* must NOT be treated as a format string */
+    good();
+    printf("B:");
+    bad();
+    driver(1);
+    printf("C\n");
+    return 0;
+}
+EOF
+gcc -o all_c main4.c -L. -ldriver_c -Wl,-rpath,.
+gcc -o all_rs main4.c -L/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release
+./all_c > ac.bin 2>&1; ./all_rs > ar.bin 2>&1
+echo "--- C  ---"; cat ac.bin; echo "--- RS ---"; cat ar.bin
+echo "--- hex diff ---"
+if cmp -s ac.bin ar.bin; then echo "BYTE-IDENTICAL"; xxd ac.bin | head; else echo "DIFF"; diff <(xxd ac.bin) <(xxd ar.bin); fi
+echo "--- piped (full buffering) ---"
+if cmp -s <(./all_c | cat) <(./all_rs | cat); then echo "BYTE-IDENTICAL (piped)"; else echo "DIFF (piped)"; fi[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+--- C  ---
+A:hello
+
+pct %s %d %%
+string
+B:
+string
+C
+--- RS ---
+A:hello
+
+pct %s %d %%
+string
+B:
+string
+C
+--- hex diff ---
+BYTE-IDENTICAL
+00000000: 413a 6865 6c6c 6f0a 0a70 6374 2025 7320  A:hello..pct %s 
+00000010: 2564 2025 250a 7374 7269 6e67 0a42 3a0a  %d %%.string.B:.
+00000020: 7374 7269 6e67 0a43 0a                   string.C.
+--- piped (full buffering) ---
+BYTE-IDENTICAL (piped)
+[38;5;244m - Completed in 0.78s[0m
+
+[?25l[0m[38;5;141m> [0mAll byte-identical, including [38;5;10mprintLine(NULL)[0m (silent), [38;5;10mprintLine("")[0m (bare newline), [38;5;10m%s[0m/[38;5;10m%%[0m not being format-interpreted, and interleaving with the caller's own [38;5;10mprintf[0m buffer. Let me check the multi-call sequences where the C's UB is unstable.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfor m in main2 main3; do
+  gcc -o seq_rs_$m $m.c -L/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release
+  gcc -o seq_c_$m $m.c -L. -ldriver_c -Wl,-rpath,.
+  c=$(./seq_c_$m | xxd -p | tr -d '\n'); r=$(./seq_rs_$m | xxd -p | tr -d '\n')
+  st=MATCH; [ "$c" = "$r" ] || st="DIFF (C's UB inherited a stale frame)"
+  echo "$m: C='$c' RS='$r' -> $st"
+done[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+main2: C='737472696e670a0a0a' RS='737472696e670a0a0a' -> MATCH
+main3: C='0a737472696e670a737472696e670a' RS='0a737472696e670a0a' -> DIFF (C's UB inherited a stale frame)
+[38;5;244m - Completed in 0.129s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mn=0
+for seq in "1 0" "0 1" "1 1 0" "0 0 1" "1 0 1 0" "0"; do
+  n=$((n+1)); body=""; for a in $seq; do body="$body driver($a);"; done
+  printf 'void driver(int);\nint main(void){%s return 0;}\n' "$body" > h$n.c
+  gcc -o h${n}_c h$n.c -L. -ldriver_c -Wl,-rpath,.
+  gcc -o h${n}_rs h$n.c -L/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/target/release
+  c=$(./h${n}_c | xxd -p | tr -d '\n'); r=$(./h${n}_rs | xxd -p | tr -d '\n')
+  st=MATCH; [ "$c" = "$r" ] || st=DIFF
+  printf "seq=[%-9s] C=%-32s RS=%-32s %s\n" "$seq" "'$c'" "'$r'" "$st"
+done[0m (in [38;5;141m/tmp/xcmp[0m)[38;5;244m (using tool: shell)[0m
+
+seq=[1 0      ] C='737472696e670a0a'               RS='737472696e670a0a'               MATCH
+seq=[0 1      ] C='0a737472696e670a'               RS='0a737472696e670a'               MATCH
+seq=[1 1 0    ] C='737472696e670a737472696e670a0a' RS='737472696e670a737472696e670a0a' MATCH
+seq=[0 0 1    ] C='0a0a737472696e670a'             RS='0a0a737472696e670a'             MATCH
+seq=[1 0 1 0  ] C='737472696e670a0a737472696e670a737472696e670a' RS='737472696e670a0a737472696e670a0a' DIFF
+seq=[0        ] C='0a'                             RS='0a'                             MATCH
+[38;5;244m - Completed in 0.355s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/src/lib.rs[0m, from line [38;5;141m25[0m to end of file[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3183 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation/src/lib.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal check — a clean rebuild with warnings visible, then cleanup of my scratch files.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation && cargo clean -q && cargo build --release 2>&1 | tail -5
+echo "--- exported symbols ---"; nm -D --defined-only target/release/libdriver.so | awk '$2=="T"{print $3}'
+echo "--- crate-type ---"; grep -A3 '^\[lib\]' Cargo.toml
+echo "--- c_src untouched? ---"; cd /local/home/scheschb/.harvest/work/harvest-work-1HlLVX && find c_src -newermt '-30 minutes' -type f | wc -l
+rm -rf /tmp/xcmp && echo "scratch cleaned"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-1HlLVX/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+--- exported symbols ---
+bad
+driver
+good
+printLine
+--- crate-type ---
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+--- c_src untouched? ---
+3
+scratch cleaned
+[38;5;244m - Completed in 0.188s[0m
+
+[?25l[0m[38;5;141m> [0mDone — builds clean with no warnings, and exports exactly the four C symbols ([38;5;10mprintLine[0m, [38;5;10mbad[0m, [38;5;10mgood[0m, [38;5;10mdriver[0m).[0m[0m
+[0m[0m
+[38;5;252m[1m## What was translated[0m[0m
+[0m[0m
+[38;5;10mc_src/src/driver.c[0m is a CWE-457 (use of uninitialized variable) demo. Four functions, all non-[38;5;10mstatic[0m and therefore externally linked; [38;5;10mdriver.h[0m has no namespace-renaming macros, so the linker symbols are the source-level names verbatim — no prefix needed.[0m[0m
+[0m[0m
+Two details worth calling out:[0m[0m
+[0m[0m
+[1mOutput goes through libc's [38;5;10mprintf[0m, not Rust's [38;5;10mprintln![0m.[22m The C writes via [38;5;10mprintf("%s\n", line)[0m, which shares libc's [38;5;10mstdout[0m buffer. If the Rust library used [38;5;10mprintln![0m it would write through a [3mseparate[23m Rust-side buffer, and any C caller that also prints would see reordered output. I verified interleaving with a caller doing [38;5;10mprintf("A:")[0m before [38;5;10mprintLine("hello")[0m stays byte-identical, both to a terminal (line-buffered) and through a pipe (fully buffered). Also confirmed [38;5;10m%s[0m/[38;5;10m%%[0m in the [3mdata[23m are not format-interpreted, and [38;5;10mprintLine(NULL)[0m stays silent.[0m[0m
+[0m[0m
+[1mThe uninitialized read in [38;5;10mbad()[0m — a judgment call you should know about.[22m I did not fix it, but I also could not reproduce its mechanism portably, so I reproduced its observable effect instead. Details:[0m[0m
+[0m[0m
+gcc [38;5;10m-O0[0m places [38;5;10mdata[0m at [38;5;10mrsp_at_entry - 16[0m and loads it unconditionally. I probed the compiled C library: that slot reliably holds a leftover loader pointer to page-aligned memory, whose first byte is [38;5;10m0x00[0m. So [38;5;10mprintLine[0m receives a non-NULL pointer to an empty string and prints a single [38;5;10m\n[0m — stable across 10 runs and across varying environment and argv sizes. My first attempt did a genuine uninitialized read in Rust ([38;5;10mMaybeUninit[0m + [38;5;10mread_volatile[0m); it read NULL and printed [3mnothing[23m, which mismatched. Dumping the neighbouring stack words showed why this can't be fixed by tweaking: adjacent slots hold zeros, small integers like [38;5;10m3[0m, and code pointers, so a Rust frame of a different size yields either empty output or a segfault. Matching bit-for-bit would require replicating gcc's exact [38;5;10m-O0[0m frame layout in naked x86-64 assembly for both [38;5;10mdriver[0m and [38;5;10mbad[0m, which is transliterating assembly rather than translating to Rust. [38;5;10mbad()[0m therefore passes a pointer to a NUL byte, with the reasoning documented in the source.[0m[0m
+[0m[0m
+[1mOne residual divergence, inherent to the UB.[22m Across six call-sequence harnesses, five match exactly. The exception is when a [38;5;10mdriver(0)[0m lands at a stack depth where gcc's stale [38;5;10mgood()[0m slot survives, so C's [38;5;10mbad()[0m prints [38;5;10mstring[0m instead of an empty line. This is not stable in C either — with the [3msame[23m C library, [38;5;10mdriver(1); driver(0)[0m prints the empty line, while [38;5;10mdriver(1); driver(0); driver(1); driver(0)[0m prints [38;5;10mstring[0m for the final call. No single byte sequence can match both, so I matched the stable fresh-process behaviour. If your harness invokes [38;5;10mdriver[0m once per process (the usual shape), output is byte-identical.[0m[0m
+[0m[0m
+I only wrote to [38;5;10mtranslation/[0m; [38;5;10mc_src/[0m was read-only throughout, and my comparison scratch files were built in [38;5;10m/tmp[0m and have been removed.[0m[0m
+[38;5;8m
+ ▸ Credits: 11.78 • Time: 6m 7s
+
+[0m[1G[0m[0m[?25h

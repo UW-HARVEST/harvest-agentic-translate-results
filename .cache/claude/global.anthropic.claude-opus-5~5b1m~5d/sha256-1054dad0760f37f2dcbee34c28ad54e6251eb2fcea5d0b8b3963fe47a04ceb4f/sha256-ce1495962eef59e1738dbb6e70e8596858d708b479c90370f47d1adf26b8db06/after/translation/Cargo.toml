@@ -1,0 +1,37 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `driver` reports its results by writing to the process-wide libc `stdout`, so
+# the differential harness must redirect fd 1 around every call. libtest's own
+# parallel progress output would land inside those capture windows, so these
+# targets use a custom single-threaded runner (see tests/common/mod.rs) that
+# reports on stderr instead.
+[[test]]
+name = "valid_paths"
+path = "tests/valid_paths.rs"
+harness = false
+
+[[test]]
+name = "error_paths"
+path = "tests/error_paths.rs"
+harness = false
+
+[[test]]
+name = "symbol_parity"
+path = "tests/symbol_parity.rs"
+harness = false
+
+[workspace]

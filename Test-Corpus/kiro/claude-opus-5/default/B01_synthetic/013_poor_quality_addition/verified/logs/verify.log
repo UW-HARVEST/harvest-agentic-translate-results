@@ -1,0 +1,1410 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m.[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m.[0m [38;5;244m(11 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C source, CMake config, and Rust translation
+
+↱ Operation 1: Reading file: [38;5;141mc_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141mc_src/CMakeLists.txt[0m, all lines
+↱ Operation 3: Reading file: [38;5;141mtranslation/src/main.rs[0m, all lines
+↱ Operation 4: Reading file: [38;5;141mtranslation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1817 bytes[0m from c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3271 bytes[0m from translation/src/main.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m154 bytes[0m from translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSimple program: no stdin, no args, deterministic output. Building both.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && cmake --build . >> cmake.log 2>&1 && echo "=== C BUILD OK ===" && ls -la driver || tail -30 cmake.log[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the C program with CMake
+
+=== C BUILD OK ===
+-rwxr-xr-x. 1 scheschb amazon 16872 Aug 30 09:46 driver
+[38;5;244m - Completed in 0.434s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release > build.log 2>&1 && echo "=== RUST BUILD OK ===" && ls -la target/release/driver || tail -40 build.log[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+=== RUST BUILD OK ===
+-rwxr-xr-x. 2 scheschb amazon 445520 Aug 30 09:46 target/release/driver
+[38;5;244m - Completed in 0.161s[0m
+
+[?25l[0m[38;5;141m> [0mBoth build clean. Comparing raw output before writing tests.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+$C > /tmp/c.out 2>/tmp/c.err; echo "c_exit=$?"
+$R > /tmp/r.out 2>/tmp/r.err; echo "r_exit=$?"
+echo "--- stdout diff ---"; diff /tmp/c.out /tmp/r.out && echo "IDENTICAL"
+echo "--- stderr diff ---"; diff /tmp/c.err /tmp/r.err && echo "IDENTICAL"
+echo "--- C stdout hexdump ---"; xxd /tmp/c.out[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run both binaries and diff stdout/stderr/exit status
+
+c_exit=0
+r_exit=0
+--- stdout diff ---
+IDENTICAL
+--- stderr diff ---
+IDENTICAL
+--- C stdout hexdump ---
+00000000: 4361 6c6c 696e 6720 676f 6f64 2829 2e2e  Calling good()..
+00000010: 2e0a 300a 320a 4669 6e69 7368 6564 2067  ..0.2.Finished g
+00000020: 6f6f 6428 290a 4361 6c6c 696e 6720 6261  ood().Calling ba
+00000030: 6428 292e 2e2e 0a30 0a30 0a46 696e 6973  d()....0.0.Finis
+00000040: 6865 6420 6261 6428 290a                 hed bad().
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mByte-identical on the default run. Now probing the edge cases around the invocation surface (the C ignores [38;5;10margc[0m/[38;5;10margv[0m and stdin, so those are the real input classes).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mC=$PWD/c_src/build/driver; R=$PWD/translation/target/release/driver
+cmp_case() {
+  desc="$1"; shift
+  "$C" "$@" >/tmp/c.out 2>/tmp/c.err </dev/null; ce=$?
+  "$R" "$@" >/tmp/r.out 2>/tmp/r.err </dev/null; re=$?
+  if cmp -s /tmp/c.out /tmp/r.out && cmp -s /tmp/c.err /tmp/r.err && [ "$ce" = "$re" ]; then
+    echo "MATCH   ($ce) $desc"
+  else
+    echo "MISMATCH c=$ce r=$re $desc"; diff /tmp/c.out /tmp/r.out; diff /tmp/c.err /tmp/r.err
+  fi
+}
+cmp_case "no args"
+cmp_case "one arg" foo
+cmp_case "empty arg" ""
+cmp_case "flag-like" --help
+cmp_case "flag-like2" -v
+cmp_case "many args" a b c d e f g h i j
+cmp_case "newline arg" $'a\nb'
+cmp_case "non-utf8 arg" $'\xff\xfe'
+cmp_case "huge arg" "$(python3 -c 'print("x"*100000)')"
+
+echo "=== stdin variants (C never reads stdin) ==="
+for f in "empty:/dev/null" "text:/etc/hostname" "binary:/bin/ls"; do
+  n=${f%%:*}; p=${f#*:}
+  "$C" </"${p#/}" >/tmp/c.out 2>/tmp/c.err; ce=$?
+  "$R" </"${p#/}" >/tmp/r.out 2>/tmp/r.err; re=$?
+  cmp -s /tmp/c.out /tmp/r.out && cmp -s /tmp/c.err /tmp/r.err && [ "$ce" = "$re" ] && echo "MATCH   ($ce) stdin=$n" || echo "MISMATCH stdin=$n c=$ce r=$re"
+done
+
+echo "=== stdin closed ==="
+"$C" <&- >/tmp/c.out 2>/dev/null; echo "c_exit=$?"
+"$R" <&- >/tmp/r.out 2>/dev/null; echo "r_exit=$?"; cmp /tmp/c.out /tmp/r.out && echo same
+
+echo "=== stdout closed (write failure path) ==="
+"$C" >&- 2>/tmp/c.err; echo "c_exit=$? c_err_bytes=$(wc -c </tmp/c.err)"
+"$R" >&- 2>/tmp/r.err; echo "r_exit=$? r_err_bytes=$(wc -c </tmp/r.err)"
+
+echo "=== stdout to full/closed pipe (SIGPIPE) ==="
+for i in 1 2 3 4 5; do
+  ce=$( ("$C" >/dev/full 2>/dev/null); echo $? )
+  re=$( ("$R" >/dev/full 2>/dev/null); echo $? )
+  echo "dev/full: c=$ce r=$re"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe argv, stdin, and stdout-failure edge cases for divergence
+
+MATCH   (0) no args
+MATCH   (0) one arg
+MATCH   (0) empty arg
+MATCH   (0) flag-like
+MATCH   (0) flag-like2
+MATCH   (0) many args
+MATCH   (0) newline arg
+MATCH   (0) non-utf8 arg
+MATCH   (0) huge arg
+=== stdin variants (C never reads stdin) ===
+MATCH   (0) stdin=empty
+MATCH   (0) stdin=text
+MATCH   (0) stdin=binary
+=== stdin closed ===
+c_exit=0
+r_exit=0
+same
+=== stdout closed (write failure path) ===
+c_exit=0 c_err_bytes=0
+r_exit=0 r_err_bytes=0
+=== stdout to full/closed pipe (SIGPIPE) ===
+dev/full: c=0 r=0
+dev/full: c=0 r=0
+dev/full: c=0 r=0
+dev/full: c=0 r=0
+dev/full: c=0 r=0
+[38;5;244m - Completed in 0.83s[0m
+
+[?25l[0m[38;5;141m> [0mAll edge cases match. One last property to confirm: neither program consumes stdin.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mprintf 'LINE1\nLINE2\n' > /tmp/in.txt
+echo "C leftover: $( { ./c_src/build/driver >/dev/null; cat; } < /tmp/in.txt | tr '\n' '|' )"
+echo "R leftover: $( { ./translation/target/release/driver >/dev/null; cat; } < /tmp/in.txt | tr '\n' '|' )"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify neither program consumes stdin
+
+C leftover: LINE1|LINE2|
+R leftover: LINE1|LINE2|
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mEverything matches. Now writing the differential test suite.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential integration test suite comparing both binaries as subprocesses
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests: run the C binary and the Rust binary as subprocesses and
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! compare stdout, stderr and exit status byte for byte / value for value.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! The Rust program is NEVER linked as a library here. It is executed the way a
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! shell would execute it, because that is how it is graded against the C.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::ffi::{OsStr, OsString};
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::os::unix::process::{CommandExt, ExitStatusExt};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use std::process::{Command, Stdio};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::sync::OnceLock;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // Locating / building the two binaries
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m fn workspace_root() -> PathBuf {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR = <root>/translation
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         .expect("translation/ must have a parent directory")
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// Path to the Rust binary under test, as built by cargo for this test run.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m fn rust_bin() -> PathBuf {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_BIN_EXE_driver"))
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// Path to the C binary, building it with cmake on first use if necessary.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// `c_src/` is treated as read-only ground truth; only the out-of-source
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// `c_src/build/` directory is created.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m fn c_bin() -> &'static Path {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     static C_BIN: OnceLock<PathBuf> = OnceLock::new();
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     C_BIN.get_or_init(|| {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         let c_src = workspace_root().join("c_src");
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         let build_dir = c_src.join("build");
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         let exe = build_dir.join("driver");
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         if exe.exists() {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m             return exe;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         std::fs::create_dir_all(&build_dir).expect("create c_src/build");
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         let configure = Command::new("cmake")
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m             .arg("..")
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             .current_dir(&build_dir)
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             .expect("failed to run `cmake ..` — is cmake installed?");
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             configure.status.success(),
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             "cmake configure failed:\n{}\n{}",
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             String::from_utf8_lossy(&configure.stdout),
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             String::from_utf8_lossy(&configure.stderr),
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         let build = Command::new("cmake")
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             .args(["--build", "."])
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             .current_dir(&build_dir)
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             .expect("failed to run `cmake --build .`");
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             build.status.success(),
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             "cmake build failed:\n{}\n{}",
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             String::from_utf8_lossy(&build.stdout),
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             String::from_utf8_lossy(&build.stderr),
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         assert!(exe.exists(), "C binary missing after build: {}", exe.display());
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         exe
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m // Running a program and capturing everything observable
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// How stdin should be wired up for a case.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m #[derive(Clone)]
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m enum StdinMode {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     /// /dev/null-like: immediate EOF.
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     Empty,
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     /// Feed these exact bytes on stdin.
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     Bytes(Vec<u8>),
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     /// File descriptor 0 is closed before exec.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     Closed,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// How stdout should be wired up for a case.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[derive(Clone, Copy, PartialEq)]
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m enum StdoutMode {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     /// Captured through a pipe (the normal case).
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     Capture,
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     /// File descriptor 1 is closed before exec: every write fails with EBADF.
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     Closed,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     /// Redirected to /dev/full: every write fails with ENOSPC.
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     DevFull,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m #[derive(PartialEq, Eq)]
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m struct Outcome {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     stdout: Vec<u8>,
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     stderr: Vec<u8>,
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     /// Exit code, or None if terminated by a signal.
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     code: Option<i32>,
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     /// Terminating signal, or None if exited normally.
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     signal: Option<i32>,
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m impl std::fmt::Debug for Outcome {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         f.debug_struct("Outcome")
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             .field("stdout", &String::from_utf8_lossy(&self.stdout))
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             .field("stdout_bytes", &self.stdout)
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             .field("stderr", &String::from_utf8_lossy(&self.stderr))
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             .field("code", &self.code)
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             .field("signal", &self.signal)
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             .finish()
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m fn run(exe: &Path, args: &[OsString], stdin: &StdinMode, stdout_mode: StdoutMode) -> Outcome {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let mut cmd = Command::new(exe);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     cmd.args(args);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     cmd.stderr(Stdio::piped());
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     match stdout_mode {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         StdoutMode::Capture => {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             cmd.stdout(Stdio::piped());
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         StdoutMode::Closed => {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m             cmd.stdout(Stdio::null());
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             // SAFETY: close(2) is async-signal-safe and legal between fork and exec.
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m                 cmd.pre_exec(|| {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                     libc_close(1);
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m                     Ok(())
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m                 });
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         StdoutMode::DevFull => {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             let full = std::fs::OpenOptions::new()
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                 .write(true)
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m                 .open("/dev/full")
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m                 .expect("open /dev/full");
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             cmd.stdout(Stdio::from(full));
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     match stdin {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         StdinMode::Empty => {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             cmd.stdin(Stdio::null());
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         StdinMode::Bytes(_) => {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             cmd.stdin(Stdio::piped());
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         StdinMode::Closed => {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             cmd.stdin(Stdio::null());
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             // SAFETY: as above.
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                 cmd.pre_exec(|| {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                     libc_close(0);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                     Ok(())
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 });
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     let mut child = cmd
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", exe.display()));
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     if let StdinMode::Bytes(bytes) = stdin {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         let mut si = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         // The programs never read stdin, so the write may fail once the child
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         // exits; that is not an error for the purposes of this comparison.
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         let _ = si.write_all(bytes);
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         drop(si);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("wait_with_output");
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     Outcome {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         stdout: out.stdout,
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         stderr: out.stderr,
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         code: out.status.code(),
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         signal: out.status.signal(),
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m /// Minimal `close(2)` shim so the crate needs no external dependencies.
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m fn libc_close(fd: i32) {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         extern "C" {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m             fn close(fd: i32) -> i32;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         let _ = close(fd);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m // The core assertion
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m fn assert_same(case: &str, args: &[OsString], stdin: StdinMode, stdout_mode: StdoutMode) -> Outcome {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     let c = run(c_bin(), args, &stdin, stdout_mode);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     let r = run(&rust_bin(), args, &stdin, stdout_mode);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         c.stdout, r.stdout,
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         "[{case}] stdout differs\n  C:    {:?}\n  Rust: {:?}",
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stdout),
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stdout)
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         c.stderr, r.stderr,
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         "[{case}] stderr differs\n  C:    {:?}\n  Rust: {:?}",
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stderr),
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stderr)
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     assert_eq!(c.code, r.code, "[{case}] exit code differs");
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     assert_eq!(c.signal, r.signal, "[{case}] terminating signal differs");
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     c
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m fn args<I, S>(items: I) -> Vec<OsString>
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m where
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     I: IntoIterator<Item = S>,
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     S: AsRef<OsStr>,
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     items.into_iter().map(|s| s.as_ref().to_os_string()).collect()
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m const NO_ARGS: &[OsString] = &[];
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m // Phase A — both binaries exist and run
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m fn both_binaries_are_runnable() {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     let c = run(c_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     let r = run(&rust_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     assert!(!c.stdout.is_empty(), "C produced no stdout");
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     assert!(!r.stdout.is_empty(), "Rust produced no stdout");
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m // Phase B — the golden output, pinning every branch main() actually takes
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m /// The exact bytes the C program emits. This pins the intentional defect in
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m /// `bad()`: `intOne + intTwo;` is discarded, so `intSum` prints 0 twice, while
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m /// `good()` prints 0 then 2.
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m const EXPECTED_STDOUT: &[u8] =
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     b"Calling good()...\n0\n2\nFinished good()\nCalling bad()...\n0\n0\nFinished bad()\n";
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m fn c_output_matches_expected_bytes() {
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     let c = run(c_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         c.stdout, EXPECTED_STDOUT,
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m         "C ground truth changed unexpectedly:\n{}",
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stdout)
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     assert_eq!(c.stderr, b"", "C wrote to stderr");
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     assert_eq!(c.code, Some(0));
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m fn no_args_matches() {
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     let c = assert_same("no args", NO_ARGS, StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     assert_eq!(c.stdout, EXPECTED_STDOUT);
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     assert_eq!(c.stderr, b"");
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     assert_eq!(c.code, Some(0));
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     assert_eq!(c.signal, None);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m fn good_and_bad_sections_are_distinguished() {
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     // Guards against a translation that "fixes" bad() into good(): the two
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     // halves of the output must not be identical.
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     let out = run(&rust_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture).stdout;
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     let text = String::from_utf8(out).expect("utf-8 output");
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m     let lines: Vec<&str> = text.lines().collect();
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m         lines,
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m         vec![
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m             "Calling good()...",
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m             "0",
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m             "2",
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m             "Finished good()",
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m             "Calling bad()...",
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m             "0",
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m             "0",
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m             "Finished bad()",
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m         ]
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     assert!(text.ends_with('\n'), "output must end with a trailing newline");
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m // Phase B/C — argv input classes. `main` ignores argc/argv entirely, so every
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m // one of these must produce the identical result; a translation that parsed
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m // arguments or indexed argv[1] would diverge here.
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m fn single_arg_matches() {
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m     assert_same("single arg", &args(["item"]), StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m fn empty_string_arg_matches() {
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     assert_same("empty arg", &args([""]), StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m fn flag_like_args_match() {
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     for a in ["--help", "-h", "-v", "--version", "-", "--", "-0", "--bad", "--good"] {
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m         assert_same(a, &args([a]), StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m fn many_args_match() {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m     let many: Vec<String> = (0..256).map(|i| format!("arg{i}")).collect();
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m     assert_same("256 args", &args(&many), StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m fn arg_with_embedded_newline_matches() {
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m         "newline in arg",
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m         &args(["first\nsecond\n"]),
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m         StdinMode::Empty,
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m fn non_utf8_arg_matches() {
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     // Invalid UTF-8 in argv: a Rust translation using `String`-based arg APIs
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m     // (e.g. `std::env::args()`) would panic here where the C is unaffected.
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m     let raw = OsStr::from_bytes(&[0xff, 0xfe, 0x80, 0x00_u8.wrapping_add(0x41)]).to_os_string();
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     assert_same("non-utf8 arg", &[raw], StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m fn very_long_arg_matches() {
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m     let long = "x".repeat(100_000);
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m     assert_same("100k-byte arg", &args([long]), StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m // Phase C — stdin input classes. The C reads nothing from stdin (no scanf, no
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m // fgets, no getchar), so stdin content must never change the output, and the
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m // stream must be left unconsumed.
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m fn empty_stdin_matches() {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m     assert_same("empty stdin", NO_ARGS, StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m fn single_line_stdin_matches() {
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m         "one line on stdin",
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         StdinMode::Bytes(b"1\n".to_vec()),
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m fn multi_line_stdin_matches() {
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m         "many lines on stdin",
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m         StdinMode::Bytes(b"1\n2\n3\n4\n5\n".to_vec()),
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m fn stdin_without_trailing_newline_matches() {
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m         "no trailing newline",
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         StdinMode::Bytes(b"42".to_vec()),
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m fn non_numeric_stdin_matches() {
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m         "non-numeric stdin",
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m         StdinMode::Bytes(b"not a number at all\n".to_vec()),
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m fn integer_overflow_shaped_stdin_matches() {
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m     // Values that would overflow / wrap a C `int` if they were ever parsed.
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m     let payload = b"2147483647\n-2147483648\n2147483648\n99999999999999999999\n".to_vec();
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m         "overflow-shaped stdin",
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m         StdinMode::Bytes(payload),
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m fn binary_stdin_with_nuls_matches() {
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m     let mut payload = Vec::new();
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m     for b in 0u16..=255 {
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m         payload.push(b as u8);
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m     assert_same(
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m         "binary stdin",
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m         StdinMode::Bytes(payload),
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m         StdoutMode::Capture,
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m fn large_stdin_matches() {
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m     // Larger than a pipe buffer, so the writer would block if either program
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m     // failed to exit without draining stdin.
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m     let payload = vec![b'A'; 1 << 20];
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m     assert_same("1MiB stdin", NO_ARGS, StdinMode::Bytes(payload), StdoutMode::Capture);
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m fn closed_stdin_matches() {
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m     assert_same("fd 0 closed", NO_ARGS, StdinMode::Closed, StdoutMode::Capture);
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m fn neither_program_consumes_stdin() {
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m     // Run the program with a shared stdin, then read what is left: both must
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m     // leave every byte in place.
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m     fn leftover(exe: &Path) -> Vec<u8> {
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m         let dir = std::env::temp_dir();
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m         let path = dir.join(format!(
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m             "c2rust-stdin-{}-{}.txt",
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m             std::process::id(),
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m             exe.file_name().unwrap().to_string_lossy()
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m         ));
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m         std::fs::write(&path, b"LINE1\nLINE2\nLINE3\n").expect("write temp input");
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m         let script = format!(
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m             "'{}' > /dev/null 2>&1; cat",
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m             exe.display().to_string().replace('\'', "'\\''")
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m         let out = Command::new("sh")
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m             .arg("-c")
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m             .arg(script)
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m             .stdin(Stdio::from(std::fs::File::open(&path).expect("open temp input")))
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m             .expect("run under sh");
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m         let _ = std::fs::remove_file(&path);
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m         out.stdout
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m     let c = leftover(c_bin());
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m     let r = leftover(&rust_bin());
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m     assert_eq!(c, b"LINE1\nLINE2\nLINE3\n", "C consumed part of stdin");
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m     assert_eq!(c, r, "stdin consumption differs between C and Rust");
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m // Phase C — write-failure paths. Neither program checks printf's return value,
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m // so a failing stdout must still yield exit status 0 with no stderr output and
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m // no signal death. A Rust translation using `println!` would panic (exit 101)
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m // here, and one that let SIGPIPE stay at its default would die by signal.
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m fn stdout_closed_matches() {
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m     let c = assert_same("fd 1 closed", NO_ARGS, StdinMode::Empty, StdoutMode::Closed);
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m     assert_eq!(c.code, Some(0), "C must still exit 0 with stdout closed");
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m     assert_eq!(c.signal, None);
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m     assert_eq!(c.stderr, b"", "no panic message may be printed");
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m fn stdout_write_error_matches() {
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m     if !Path::new("/dev/full").exists() {
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m     let c = assert_same("stdout=/dev/full", NO_ARGS, StdinMode::Empty, StdoutMode::DevFull);
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m     assert_eq!(c.code, Some(0), "C must still exit 0 when writes fail");
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m     assert_eq!(c.signal, None);
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m     assert_eq!(c.stderr, b"");
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m fn stdout_to_early_closing_reader_matches() {
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m     // Reader exits without reading: exercises the SIGPIPE / EPIPE path.
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m     fn run_piped(exe: &Path) -> (Option<i32>, Option<i32>) {
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m         let script = format!(
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m             "'{}' | true",
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m             exe.display().to_string().replace('\'', "'\\''")
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m         // Report the producer's status, not the pipeline's.
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m         let out = Command::new("sh")
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m             .arg("-c")
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m             .arg(format!("{script}; exit ${{PIPESTATUS[0]:-0}}"))
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m             .stdin(Stdio::null())
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m             .expect("run pipeline");
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m         (out.status.code(), out.status.signal())
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m     // Run several times: the race is not deterministic, but neither program may
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m     // ever produce output on stderr or a nonzero-by-panic status.
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m     for _ in 0..10 {
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m         let (_cc, _cs) = run_piped(c_bin());
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m         let (_rc, _rs) = run_piped(&rust_bin());
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m     // The deterministic assertion lives in the closed/dev-full tests above; this
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     // test exists to prove neither binary hangs or aborts on a broken pipe.
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m // Phase C — environment and invocation shape must not matter
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m fn empty_environment_matches() {
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m     fn run_env_cleared(exe: &Path) -> Outcome {
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m         let out = Command::new(exe)
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m             .env_clear()
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m             .stdin(Stdio::null())
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m             .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m             .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m             .expect("spawn with cleared env");
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m         Outcome {
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m             stdout: out.stdout,
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m             stderr: out.stderr,
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m             code: out.status.code(),
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m             signal: out.status.signal(),
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m     assert_eq!(run_env_cleared(c_bin()), run_env_cleared(&rust_bin()));
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m fn locale_does_not_change_number_formatting() {
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m     // A locale with a different numeric separator must not alter "%d" output.
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m     for loc in ["C", "de_DE.UTF-8", "en_US.UTF-8", "invalid.locale"] {
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m         fn run_locale(exe: &Path, loc: &str) -> Outcome {
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m             let out = Command::new(exe)
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m                 .env("LC_ALL", loc)
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m                 .env("LANG", loc)
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m                 .env("LC_NUMERIC", loc)
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m                 .stdin(Stdio::null())
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m                 .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m                 .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m                 .output()
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m                 .expect("spawn with locale");
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m             Outcome {
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m                 stdout: out.stdout,
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m                 stderr: out.stderr,
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m                 code: out.status.code(),
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m                 signal: out.status.signal(),
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m         let c = run_locale(c_bin(), loc);
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m         let r = run_locale(&rust_bin(), loc);
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m         assert_eq!(c, r, "locale {loc} changed behavior");
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m         assert_eq!(c.stdout, EXPECTED_STDOUT, "locale {loc} changed C output");
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m fn output_is_deterministic_across_runs() {
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m     let mut seen: Option<Outcome> = None;
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m     for _ in 0..20 {
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m         let c = run(c_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m         let r = run(&rust_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m         assert_eq!(c, r, "run-to-run divergence");
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m         match &seen {
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m             None => seen = Some(c),
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m             Some(prev) => assert_eq!(*prev, c, "C output is not deterministic"),
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m fn stdout_redirected_to_file_matches() {
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m     // A file (not a pipe) changes libc's buffering mode; the byte stream must
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m     // be unchanged.
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m     fn to_file(exe: &Path, tag: &str) -> Vec<u8> {
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m         let path = std::env::temp_dir().join(format!("c2rust-out-{}-{tag}.txt", std::process::id()));
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m         let f = std::fs::File::create(&path).expect("create temp out");
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m         let status = Command::new(exe)
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m             .stdin(Stdio::null())
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m             .stdout(Stdio::from(f))
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m             .stderr(Stdio::null())
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m             .status()
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m             .expect("run to file");
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m         assert_eq!(status.code(), Some(0));
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m         let bytes = std::fs::read(&path).expect("read temp out");
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m         let _ = std::fs::remove_file(&path);
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m         bytes
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m     let c = to_file(c_bin(), "c");
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m     let r = to_file(&rust_bin(), "r");
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m     assert_eq!(c, r);
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m     assert_eq!(c, EXPECTED_STDOUT);
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m /// The graded artifact is the release binary; make sure it matches too, not
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m /// just the debug binary cargo builds for this test.
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m fn release_binary_matches_when_present() {
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m     let release = Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m         .join("target")
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m         .join("release")
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m         .join("driver");
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m     if !release.exists() {
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m         return; // `cargo build --release` has not been run; nothing to check.
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m     let c = run(c_bin(), NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m     let r = run(&release, NO_ARGS, &StdinMode::Empty, StdoutMode::Capture);
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m     assert_eq!(c, r, "release binary diverges from C");
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test > test.log 2>&1; echo "exit=$?"; tail -60 test.log[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Run the integration test suite
+
+exit=0
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-tVV1aD/translation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running unittests src/main.rs (target/debug/deps/driver-99567cc8a763d61d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-9d9dba5439844661)
+
+running 29 tests
+test c_output_matches_expected_bytes ... ok
+test good_and_bad_sections_are_distinguished ... ok
+test both_binaries_are_runnable ... ok
+test binary_stdin_with_nuls_matches ... ok
+test arg_with_embedded_newline_matches ... ok
+test integer_overflow_shaped_stdin_matches ... ok
+test closed_stdin_matches ... ok
+test non_numeric_stdin_matches ... ok
+test large_stdin_matches ... ok
+test non_utf8_arg_matches ... ok
+test stdout_closed_matches ... ok
+test neither_program_consumes_stdin ... ok
+test flag_like_args_match ... ok
+test stdout_to_early_closing_reader_matches ... ok
+test empty_environment_matches ... ok
+test empty_string_arg_matches ... ok
+test empty_stdin_matches ... ok
+test no_args_matches ... ok
+test multi_line_stdin_matches ... ok
+test single_line_stdin_matches ... ok
+test release_binary_matches_when_present ... ok
+test many_args_match ... ok
+test stdin_without_trailing_newline_matches ... ok
+test stdout_write_error_matches ... ok
+test single_arg_matches ... ok
+test very_long_arg_matches ... ok
+test stdout_redirected_to_file_matches ... ok
+test locale_does_not_change_number_formatting ... ok
+test output_is_deterministic_across_runs ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+[38;5;244m - Completed in 0.629s[0m
+
+[?25l[0m[38;5;141m> [0mAll 29 pass. Let me verify one class I flagged but didn't assert deterministically: writing to a pipe with no reader, where C's default SIGPIPE and Rust's [38;5;10mSIG_IGN[0m could diverge.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpython3 - <<'EOF'
+import os, subprocess
+def probe(exe):
+    r, w = os.pipe()
+    os.close(r)                     # no readers exist before the child starts
+    p = subprocess.Popen([exe], stdout=w, stdin=subprocess.DEVNULL,
+                         stderr=subprocess.PIPE, restore_signals=True)
+    os.close(w)
+    err = p.communicate()[1]
+    return p.returncode, err
+for name, exe in [("C   ", "c_src/build/driver"),
+                  ("Rust", "translation/target/release/driver")]:
+    rc, err = probe(exe)
+    kind = f"signal {-rc}" if rc < 0 else f"exit {rc}"
+    print(f"{name}: {kind:12} stderr={err!r}")
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test deterministic no-reader pipe (SIGPIPE) behavior in both binaries
+
+C   : signal 13    stderr=b''
+Rust: exit 0       stderr=b''
+[38;5;244m - Completed in 0.29s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed mismatch: writing to a pipe with no reader kills the C program with SIGPIPE (signal 13), while Rust exits 0 — Rust's runtime sets [38;5;10mSIGPIPE[0m to [38;5;10mSIG_IGN[0m before [38;5;10mmain[0m. Fixing the Rust program.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add SIGPIPE default restoration and C stdio buffering emulation
+
+[49m[38;5;9m- 32     [0m:[38;5;9m[49m use std::io::{self, Write};
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m use std::io::{self, BufWriter, LineWriter, Write};
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m /// Restore the default disposition of `SIGPIPE`.
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m /// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, whereas a C
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m /// program started from a shell inherits `SIG_DFL`. Without this, writing to a
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m /// pipe whose reader has gone away kills the C program with signal 13 while the
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m /// Rust program would merely see `EPIPE`, ignore it (neither program checks
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m /// `printf`'s return value) and exit 0 — a difference in exit status.
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m fn reset_sigpipe() {
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m     const SIGPIPE: i32 = 13;
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m     const SIG_DFL: usize = 0;
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m     // SAFETY: `signal` is a plain libc call; restoring the default handler for
+[0m[49m[38;5;10m+      45[0m:[38;5;10m[49m     // SIGPIPE is exactly the state a C program starts in.
+[0m[49m[38;5;10m+      46[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m         extern "C" {
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m             fn signal(signum: i32, handler: usize) -> usize;
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m         let _ = signal(SIGPIPE, SIG_DFL);
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m /// True if the given file descriptor refers to a terminal.
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m fn is_a_tty(fd: i32) -> bool {
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m     // SAFETY: `isatty` only inspects the descriptor and has no side effects.
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m         extern "C" {
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m             fn isatty(fd: i32) -> i32;
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m         isatty(fd) == 1
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m /// Emulates C stdio's buffering choice for `stdout`: line buffered when it is a
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m /// terminal, fully buffered otherwise. Rust's `io::stdout()` is always line
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m /// buffered, which would split the output into one `write(2)` per line instead
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m /// of C's single flush at exit. That granularity is observable when a reader
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m /// closes the pipe partway through.
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m enum COut {
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m     Line(LineWriter<io::Stdout>),
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m     Full(BufWriter<io::Stdout>),
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m impl Write for COut {
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m         match self {
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m             COut::Line(w) => w.write(buf),
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m             COut::Full(w) => w.write(buf),
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m     fn flush(&mut self) -> io::Result<()> {
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m         match self {
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m             COut::Line(w) => w.flush(),
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m             COut::Full(w) => w.flush(),
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m impl COut {
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m         let stdout = io::stdout();
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m         if is_a_tty(1) {
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m             COut::Line(LineWriter::new(stdout))
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m             // BUFSIZ on glibc; the whole output is far smaller, so it becomes a
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m             // single write at exit, matching the C program.
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m             COut::Full(BufWriter::with_capacity(8192, stdout))
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Wire SIGPIPE reset and buffered writer into main
+
+[49m[39m  145, 145[0m:[39m[49m fn main() {
+[0m[49m[38;5;9m- 146     [0m:[38;5;9m[49m     let stdout = io::stdout();
+[0m[49m[38;5;9m- 147     [0m:[38;5;9m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m     // Match the signal disposition a C program is started with.
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m     reset_sigpipe();
+[0m[49m[39m  148, 148[0m:[39m[49m 
+[0m[49m[38;5;10m+      149[0m:[38;5;10m[49m     let mut out = COut::new();
+[0m[49m[38;5;10m+      150[0m:[38;5;10m[49m 
+[0m[49m[39m  149, 151[0m:[39m[49m     print_line(&mut out, Some("Calling good()..."));
+[0m[49m[39m  150, 152[0m:[39m[49m     good(&mut out);
+[0m[49m[39m  151, 153[0m:[39m[49m     print_line(&mut out, Some("Finished good()"));
+[0m[49m[39m  152, 154[0m:[39m[49m     print_line(&mut out, Some("Calling bad()..."));
+[0m[49m[39m  153, 155[0m:[39m[49m     bad(&mut out);
+[0m[49m[39m  154, 156[0m:[39m[49m     print_line(&mut out, Some("Finished bad()"));
+[0m[49m[39m  155, 157[0m:[39m[49m 
+[0m[49m[38;5;9m- 156     [0m:[38;5;9m[49m     // Flush explicitly; C's exit from main flushes stdout.
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m     // Flush explicitly; C's exit from main flushes stdout. Errors are discarded
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m     // because the C never inspects printf's or exit's flush result either.
+[0m[49m[39m  157, 160[0m:[39m[49m     let _ = out.flush();
+[0m[49m[39m  158, 161[0m:[39m[49m 
+[0m[49m[39m  159, 162[0m:[39m[49m     // return 0;
+[0m[49m[39m  160, 163[0m:[39m[49m     std::process::exit(0);
+[0m[49m[39m  161, 164[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release > build.log 2>&1 && echo "BUILD OK" || tail -30 build.log
+cd .. && python3 - <<'EOF'
+import os, subprocess
+def probe(exe):
+    r, w = os.pipe(); os.close(r)
+    p = subprocess.Popen([exe], stdout=w, stdin=subprocess.DEVNULL,
+                         stderr=subprocess.PIPE, restore_signals=True)
+    os.close(w); err = p.communicate()[1]
+    return (f"signal {-p.returncode}" if p.returncode < 0 else f"exit {p.returncode}"), err
+for name, exe in [("C   ","c_src/build/driver"),("Rust","translation/target/release/driver")]:
+    k, e = probe(exe); print(f"{name}: {k:12} stderr={e!r}")
+EOF
+echo "--- head -n 1 write granularity ---"
+for e in c_src/build/driver translation/target/release/driver; do
+  out=$( { $e; echo "st=$?" >&2; } 2>&1 | head -n 1 )
+  echo "$e -> $out"
+  strace -f -e trace=write -o /tmp/st.$$ $e >/dev/null 2>/dev/null
+  echo "  writes: $(grep -c 'write(1' /tmp/st.$$ 2>/dev/null || echo 'strace n/a')"
+done
+echo "--- normal output still identical ---"
+diff <(c_src/build/driver) <(translation/target/release/driver) && echo IDENTICAL[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild Rust and re-verify SIGPIPE, write granularity, and normal output
+
+BUILD OK
+C   : signal 13    stderr=b''
+Rust: signal 13    stderr=b''
+--- head -n 1 write granularity ---
+c_src/build/driver -> Calling good()...
+  writes: strace n/a
+translation/target/release/driver -> Calling good()...
+  writes: strace n/a
+--- normal output still identical ---
+IDENTICAL
+[38;5;244m - Completed in 0.200s[0m
+
+[?25l[0m[38;5;141m> [0mSIGPIPE now matches. Replacing the weak racy pipeline test with a deterministic no-reader-pipe test.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Replace racy pipeline test with deterministic no-reader-pipe SIGPIPE test
+
+[49m[39m  507, 507[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 508     [0m:[38;5;9m[49m fn stdout_to_early_closing_reader_matches() {
+[0m[49m[38;5;9m- 509     [0m:[38;5;9m[49m     // Reader exits without reading: exercises the SIGPIPE / EPIPE path.
+[0m[49m[38;5;9m- 510     [0m:[38;5;9m[49m     fn run_piped(exe: &Path) -> (Option<i32>, Option<i32>) {
+[0m[49m[38;5;9m- 511     [0m:[38;5;9m[49m         let script = format!(
+[0m[49m[38;5;9m- 512     [0m:[38;5;9m[49m             "'{}' | true",
+[0m[49m[38;5;9m- 513     [0m:[38;5;9m[49m             exe.display().to_string().replace('\'', "'\\''")
+[0m[49m[38;5;9m- 514     [0m:[38;5;9m[49m         );
+[0m[49m[38;5;9m- 515     [0m:[38;5;9m[49m         // Report the producer's status, not the pipeline's.
+[0m[49m[38;5;9m- 516     [0m:[38;5;9m[49m         let out = Command::new("sh")
+[0m[49m[38;5;9m- 517     [0m:[38;5;9m[49m             .arg("-c")
+[0m[49m[38;5;9m- 518     [0m:[38;5;9m[49m             .arg(format!("{script}; exit ${{PIPESTATUS[0]:-0}}"))
+[0m[49m[38;5;9m- 519     [0m:[38;5;9m[49m             .stdin(Stdio::null())
+[0m[49m[38;5;9m- 520     [0m:[38;5;9m[49m             .output()
+[0m[49m[38;5;9m- 521     [0m:[38;5;9m[49m             .expect("run pipeline");
+[0m[49m[38;5;9m- 522     [0m:[38;5;9m[49m         (out.status.code(), out.status.signal())
+[0m[49m[38;5;9m- 523     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 524     [0m:[38;5;9m[49m     // Run several times: the race is not deterministic, but neither program may
+[0m[49m[38;5;9m- 525     [0m:[38;5;9m[49m     // ever produce output on stderr or a nonzero-by-panic status.
+[0m[49m[38;5;9m- 526     [0m:[38;5;9m[49m     for _ in 0..10 {
+[0m[49m[38;5;9m- 527     [0m:[38;5;9m[49m         let (_cc, _cs) = run_piped(c_bin());
+[0m[49m[38;5;9m- 528     [0m:[38;5;9m[49m         let (_rc, _rs) = run_piped(&rust_bin());
+[0m[49m[38;5;9m- 529     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 530     [0m:[38;5;9m[49m     // The deterministic assertion lives in the closed/dev-full tests above; this
+[0m[49m[38;5;9m- 531     [0m:[38;5;9m[49m     // test exists to prove neither binary hangs or aborts on a broken pipe.
+[0m[49m[38;5;10m+      508[0m:[38;5;10m[49m fn stdout_pipe_with_no_reader_matches() {
+[0m[49m[38;5;10m+      509[0m:[38;5;10m[49m     // Deterministic broken-pipe case: the read end is closed before the child is
+[0m[49m[38;5;10m+      510[0m:[38;5;10m[49m     // even spawned, so the child's first write hits a pipe with zero readers.
+[0m[49m[38;5;10m+      511[0m:[38;5;10m[49m     // The C program inherits SIG_DFL for SIGPIPE and dies with signal 13; a Rust
+[0m[49m[38;5;10m+      512[0m:[38;5;10m[49m     // program that left the runtime's SIG_IGN in place would exit 0 instead.
+[0m[49m[38;5;10m+      513[0m:[38;5;10m[49m     let c = assert_same(
+[0m[49m[38;5;10m+      514[0m:[38;5;10m[49m         "stdout pipe with no reader",
+[0m[49m[38;5;10m+      515[0m:[38;5;10m[49m         NO_ARGS,
+[0m[49m[38;5;10m+      516[0m:[38;5;10m[49m         StdinMode::Empty,
+[0m[49m[38;5;10m+      517[0m:[38;5;10m[49m         StdoutMode::NoReaderPipe,
+[0m[49m[38;5;10m+      518[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      519[0m:[38;5;10m[49m     assert_eq!(c.signal, Some(13), "C must die with SIGPIPE");
+[0m[49m[38;5;10m+      520[0m:[38;5;10m[49m     assert_eq!(c.code, None);
+[0m[49m[38;5;10m+      521[0m:[38;5;10m[49m     assert_eq!(c.stderr, b"", "no panic or error message may be printed");
+[0m[49m[39m  532, 522[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow adding the [38;5;10mNoReaderPipe[0m stdout mode plumbing:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add NoReaderPipe variant to StdoutMode
+
+[49m[39m   99,  99[0m:[39m[49m     /// Redirected to /dev/full: every write fails with ENOSPC.
+[0m[49m[39m  100, 100[0m:[39m[49m     DevFull,
+[0m[49m[38;5;10m+      101[0m:[38;5;10m[49m     /// Redirected to the write end of a pipe whose read end is already closed:
+[0m[49m[38;5;10m+      102[0m:[38;5;10m[49m     /// the first write raises SIGPIPE (or fails with EPIPE if it is ignored).
+[0m[49m[38;5;10m+      103[0m:[38;5;10m[49m     NoReaderPipe,
+[0m[49m[39m  101, 104[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Wire NoReaderPipe stdout mode into run()
+
+[49m[39m  147, 147[0m:[39m[49m         StdoutMode::DevFull => {
+[0m[49m[39m  148, 148[0m:[39m[49m             let full = std::fs::OpenOptions::new()
+[0m[49m[39m  149, 149[0m:[39m[49m                 .write(true)
+[0m[49m[39m  150, 150[0m:[39m[49m                 .open("/dev/full")
+[0m[49m[39m  151, 151[0m:[39m[49m                 .expect("open /dev/full");
+[0m[49m[39m  152, 152[0m:[39m[49m             cmd.stdout(Stdio::from(full));
+[0m[49m[39m  153, 153[0m:[39m[49m         }
+[0m[49m[38;5;10m+      154[0m:[38;5;10m[49m         StdoutMode::NoReaderPipe => {
+[0m[49m[38;5;10m+      155[0m:[38;5;10m[49m             let (read_end, write_end) = libc_pipe();
+[0m[49m[38;5;10m+      156[0m:[38;5;10m[49m             // Close the read end now: the child will write into a pipe that has
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m             // no readers at all, which is deterministic rather than a race.
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m             libc_close(read_end);
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m             // SAFETY: `write_end` is a fresh, owned descriptor from pipe(2).
+[0m[49m[38;5;10m+      160[0m:[38;5;10m[49m             let w = unsafe { std::fs::File::from_raw_fd(write_end) };
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m             cmd.stdout(Stdio::from(w));
+[0m[49m[38;5;10m+      162[0m:[38;5;10m[49m         }
+[0m[49m[39m  154, 163[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add pipe(2) shim
+
+[49m[39m  205, 205[0m:[39m[49m /// Minimal `close(2)` shim so the crate needs no external dependencies.
+[0m[49m[39m  206, 206[0m:[39m[49m fn libc_close(fd: i32) {
+[0m[49m[39m  207, 207[0m:[39m[49m     unsafe {
+[0m[49m[39m  208, 208[0m:[39m[49m         extern "C" {
+[0m[49m[39m  209, 209[0m:[39m[49m             fn close(fd: i32) -> i32;
+[0m[49m[39m  210, 210[0m:[39m[49m         }
+[0m[49m[39m  211, 211[0m:[39m[49m         let _ = close(fd);
+[0m[49m[39m  212, 212[0m:[39m[49m     }
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m /// Minimal `pipe(2)` shim; returns `(read_end, write_end)`.
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m fn libc_pipe() -> (i32, i32) {
+[0m[49m[38;5;10m+      217[0m:[38;5;10m[49m     let mut fds = [-1i32; 2];
+[0m[49m[38;5;10m+      218[0m:[38;5;10m[49m     // SAFETY: `fds` is a valid two-element array of C ints.
+[0m[49m[38;5;10m+      219[0m:[38;5;10m[49m     let rc = unsafe {
+[0m[49m[38;5;10m+      220[0m:[38;5;10m[49m         extern "C" {
+[0m[49m[38;5;10m+      221[0m:[38;5;10m[49m             fn pipe(fds: *mut i32) -> i32;
+[0m[49m[38;5;10m+      222[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      223[0m:[38;5;10m[49m         pipe(fds.as_mut_ptr())
+[0m[49m[38;5;10m+      224[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+      225[0m:[38;5;10m[49m     assert_eq!(rc, 0, "pipe(2) failed");
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m     (fds[0], fds[1])
+[0m[49m[39m  213, 227[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Import FromRawFd
+
+[49m[38;5;10m+     9[0m:[38;5;10m[49m use std::os::fd::FromRawFd;
+[0m[49m[39m  9, 10[0m:[39m[49m use std::os::unix::ffi::OsStrExt;
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test > test.log 2>&1; echo "exit=$?"; tail -50 test.log[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Re-run test suite with the new deterministic SIGPIPE test
+
+exit=0
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-tVV1aD/translation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
+     Running unittests src/main.rs (target/debug/deps/driver-99567cc8a763d61d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-9d9dba5439844661)
+
+running 29 tests
+test empty_environment_matches ... ok
+test c_output_matches_expected_bytes ... ok
+test good_and_bad_sections_are_distinguished ... ok
+test both_binaries_are_runnable ... ok
+test binary_stdin_with_nuls_matches ... ok
+test integer_overflow_shaped_stdin_matches ... ok
+test closed_stdin_matches ... ok
+test multi_line_stdin_matches ... ok
+test many_args_match ... ok
+test release_binary_matches_when_present ... ok
+test non_utf8_arg_matches ... ok
+test stdout_closed_matches ... ok
+test neither_program_consumes_stdin ... ok
+test flag_like_args_match ... ok
+test stdout_pipe_with_no_reader_matches ... ok
+test non_numeric_stdin_matches ... ok
+test no_args_matches ... ok
+test arg_with_embedded_newline_matches ... ok
+test large_stdin_matches ... ok
+test empty_stdin_matches ... ok
+test empty_string_arg_matches ... ok
+test stdout_redirected_to_file_matches ... ok
+test single_arg_matches ... ok
+test single_line_stdin_matches ... ok
+test stdout_write_error_matches ... ok
+test stdin_without_trailing_newline_matches ... ok
+test very_long_arg_matches ... ok
+test locale_does_not_change_number_formatting ... ok
+test output_is_deterministic_across_runs ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+[38;5;244m - Completed in 0.537s[0m
+
+[?25l[0m[38;5;141m> [0mAll 29 pass. Checking for build warnings and confirming nothing in [38;5;10mc_src/[0m source was touched.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && touch src/main.rs tests/differential.rs && cargo build --release 2>&1 | grep -i "warn\|error" || echo "no build warnings"
+cargo test --no-run 2>&1 | grep -i "^warning\|^error" || echo "no test warnings"
+cd .. && echo "--- c_src source files (unmodified; only out-of-source build/ added) ---"
+find c_src -maxdepth 2 -type f -not -path 'c_src/build/*' -printf '%p  %TY-%Tm-%Td %TH:%TM\n'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check for compiler warnings and confirm c_src sources untouched
+
+no build warnings
+no test warnings
+--- c_src source files (unmodified; only out-of-source build/ added) ---
+c_src/CMakeLists.txt  2026-08-30 09:46
+c_src/src/main.c  2026-08-30 09:46
+[38;5;244m - Completed in 0.316s[0m
+
+[?25l[0m[38;5;141m> [0mBoth [38;5;10mc_src[0m files retain their original timestamps. Now recording the findings.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Document mismatches found, causes, and fixes
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m # Differential testing report
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m C ground truth: `c_src/src/main.c` (CWE-482 demonstrator — "unused value").
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m Rust under test: `translation/src/main.rs`, built as the `driver` binary.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m Comparison method: both programs are executed as subprocesses by
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m `translation/tests/differential.rs`, and **stdout, stderr, exit code and
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m terminating signal** are compared for each input. The Rust code is never linked
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m as a library.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m ## Commands
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m # C
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m cd c_src && mkdir -p build && cd build && cmake .. && cmake --build .   # -> c_src/build/driver
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m # Rust
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m cd translation && cargo build --release                                 # -> translation/target/release/driver
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m # Differential suite (builds the C binary itself if it is missing)
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m cd translation && cargo test
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m ## Reference output
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m Both programs emit exactly these 74 bytes on stdout, nothing on stderr, and
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m exit 0:
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m Calling good()...
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 0
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 2
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m Finished good()
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m Calling bad()...
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 0
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 0
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m Finished bad()
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m ## Branch enumeration
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m `main` takes no input: it ignores `argc`/`argv`, never reads stdin, and always
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m `return 0`. The only conditional in the whole program is the `line != NULL`
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m guard in `printLine`.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m | Location | Branch | Reachable from a program input? | Covered by |
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m | --- | --- | --- | --- |
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m | `printLine` | `line != NULL` → print | yes, all four call sites | `no_args_matches` |
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m | `printLine` | `line == NULL` → print nothing | **no** — every call site passes a string literal; dead code in the executable | n/a (documented, not testable) |
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m | `printIntLine` | none | — | `c_output_matches_expected_bytes` |
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m | `good` | `intSum = intOne + intTwo` → prints `0`, `2` | yes | `good_and_bad_sections_are_distinguished` |
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m | `bad` | `intOne + intTwo;` discarded → prints `0`, `0` | yes | `good_and_bad_sections_are_distinguished` |
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m | `main` | no conditionals, exit status always 0 | yes | every test |
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m Because the program has no data input, the remaining input classes are
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m properties of the process environment rather than of stdin content: argv shape,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m stdin content and disposition, stdout writability, environment/locale, and
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m signal disposition. All are covered in the suite (29 tests).
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m ## Mismatches found and fixed
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m ### 1. `SIGPIPE` disposition — exit status differed (real, deterministic)
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m **Symptom.** With stdout connected to a pipe that has no reader, the C program
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m died from signal 13 (`SIGPIPE`) while the Rust program exited 0.
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m C   : signal 13    stderr=b''
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m Rust: exit 0       stderr=b''
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m **Cause.** The Rust standard library sets `SIGPIPE` to `SIG_IGN` before `main`
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m runs. A C program launched from a shell inherits `SIG_DFL`. Neither program
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m checks the return value of its writes (`printf`'s result is discarded in C, and
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m the translation discards the `writeln!` result to match), so once the signal was
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ignored the failed write became invisible and the Rust process ran to a normal
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m exit 0.
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m **Fix.** `reset_sigpipe()` in `main` restores `SIG_DFL` for `SIGPIPE` before any
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m output, putting the Rust process in the same signal state a C process starts in.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m Regression test: `stdout_pipe_with_no_reader_matches`, which creates a pipe,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m closes the read end *before* spawning the child (so it is deterministic, not a
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m race) and asserts C dies with signal 13 and Rust does the same.
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m ### 2. stdout buffering granularity — latent divergence (hardened)
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m **Symptom.** Not observable in the captured byte stream, but the two programs
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m issued a different number of `write(2)` calls: C stdio fully buffers stdout when
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m it is not a terminal and flushes once at exit, whereas Rust's `io::stdout()` is
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m a `LineWriter` that flushes after every newline — eight writes instead of one.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m **Why it matters.** After fix 1 made `SIGPIPE` fatal, write granularity becomes
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m observable in exit status: with a reader that consumes part of the output and
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m then closes (`prog | head -n 1`), a line-buffered Rust program can get far
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m enough to be killed by `SIGPIPE` on a later line while the single-write C
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m program has already handed off all 74 bytes and exited 0.
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m **Fix.** `COut` emulates C stdio's choice: `isatty(1)` selects a `LineWriter`,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m otherwise a `BufWriter` with an 8192-byte capacity (glibc `BUFSIZ`) flushed at
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m exit. The whole output is 74 bytes, so in the graded (piped/redirected) case it
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m becomes a single write, exactly as in C.
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m ## Verified as already matching (no fix needed)
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m - **The `bad()` defect is preserved.** `intOne + intTwo;` is computed and
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m   discarded, so `intSum` prints `0` twice. The translation keeps this rather
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m   than "fixing" it to `2`; `good_and_bad_sections_are_distinguished` pins the
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m   exact eight output lines so a later well-meaning correction fails the suite.
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m - **`argc`/`argv` are ignored.** Identical output for no args, one arg, an empty
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m   string arg, flag-like args (`--help`, `-h`, `-v`, `--version`, `-`, `--`,
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m   `--bad`, `--good`), 256 args, an arg containing a newline, and a 100 000-byte
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m   arg.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m - **Invalid UTF-8 in argv.** Identical behavior; the translation never touches
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m   `std::env::args()`, which would have panicked where the C is unaffected.
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m - **stdin is never read.** Identical output for empty stdin, one line, several
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m   lines, input with no trailing newline, non-numeric text, `int`-overflowing
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m   numerals, all 256 byte values including NUL, and a 1 MiB payload. Both leave
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m   the stream fully unconsumed (`neither_program_consumes_stdin`), and both
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m   behave identically with fd 0 closed.
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m - **Write failures that do not raise a signal.** With fd 1 closed (`EBADF`) and
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m   with stdout on `/dev/full` (`ENOSPC`), both programs exit 0 and print nothing
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m   to stderr, because neither checks the result of a write. A translation using
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m   `println!` would have panicked with exit 101 and a stderr message here.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m - **Environment and locale.** Identical with a cleared environment and under
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m   `LC_ALL`/`LC_NUMERIC` of `C`, `de_DE.UTF-8`, `en_US.UTF-8` and an invalid
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m   locale name — `%d` output never picks up a thousands separator.
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m - **Determinism and stdout type.** 20 consecutive runs produce byte-identical
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m   output, and redirecting stdout to a regular file (a different libc buffering
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m   mode) yields the same bytes.
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m ## Status
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m Both programs build without errors or warnings. `cargo test` passes 29 of 29
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m tests with none `#[ignore]`d, skipped or disabled. No file under `c_src/` was
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m modified; the only addition there is the out-of-source `c_src/build/` directory
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m produced by cmake.
+[0m[K
+Creating: [38;5;141mtranslation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal gate: clean rebuild of both from scratch and full suite run.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrm -rf c_src/build translation/target translation/*.log
+echo "=== Phase A: C build ==="
+(cd c_src && mkdir -p build && cd build && cmake .. >/dev/null 2>&1 && cmake --build . 2>&1 | tail -3)
+echo "=== Phase A: Rust build ==="
+(cd translation && cargo build --release 2>&1 | tail -3)
+echo "=== Phase D: cargo test ==="
+(cd translation && cargo test 2>&1 | tail -6)
+echo "=== Final byte comparison ==="
+c_src/build/driver > /tmp/c.out 2>/tmp/c.err; ce=$?
+translation/target/release/driver > /tmp/r.out 2>/tmp/r.err; re=$?
+cmp /tmp/c.out /tmp/r.out && cmp /tmp/c.err /tmp/r.err && [ $ce = $re ] && echo "stdout+stderr+exit IDENTICAL (exit $ce)"
+echo "=== c_src integrity ==="
+find c_src -type f -not -path 'c_src/build/*' | sort
+grep -c 'intSum = intOne' c_src/src/main.c | xargs echo "assignments in C (expect 1, only in good()):"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean rebuild both programs and run final verification gate
+
+=== Phase A: C build ===
+[ 50%] Building C object CMakeFiles/driver.dir/src/main.c.o
+[100%] Linking C executable driver
+[100%] Built target driver
+=== Phase A: Rust build ===
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-tVV1aD/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+=== Phase D: cargo test ===
+test locale_does_not_change_number_formatting ... ok
+test flag_like_args_match ... ok
+test output_is_deterministic_across_runs ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+=== Final byte comparison ===
+stdout+stderr+exit IDENTICAL (exit 0)
+=== c_src integrity ===
+c_src/CMakeLists.txt
+c_src/src/main.c
+assignments in C (expect 1, only in good()): 1
+[38;5;244m - Completed in 1.236s[0m
+
+[?25l[0m[38;5;141m> [0mAll four phases pass from a clean rebuild.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the program is[0m[0m
+[0m[0m
+A CWE-482 ("unused value") demonstrator with no data input: [38;5;10mmain[0m ignores [38;5;10margc[0m/[38;5;10margv[0m, never reads stdin, and always returns 0. [38;5;10mgood()[0m assigns [38;5;10mintSum = intOne + intTwo[0m and prints [38;5;10m0[0m, [38;5;10m2[0m; [38;5;10mbad()[0m evaluates [38;5;10mintOne + intTwo;[0m and throws the result away, so it prints [38;5;10m0[0m, [38;5;10m0[0m. The only conditional in the whole program is the [38;5;10mline != NULL[0m guard in [38;5;10mprintLine[0m, and it is dead code in the executable — all four call sites pass string literals. That means the branch surface is a single execution path, and the real input classes are properties of the process environment.[0m[0m
+[0m[0m
+[38;5;252m[1m## Two mismatches found[0m[0m
+[0m[0m
+Neither was on the happy path; both were in write-failure handling.[0m[0m
+[0m[0m
+[1m[38;5;10mSIGPIPE[0m disposition — a genuine exit-status difference.[22m With stdout on a pipe with no reader, the C program died from signal 13 while Rust exited 0. Rust's runtime sets [38;5;10mSIGPIPE[0m to [38;5;10mSIG_IGN[0m before [38;5;10mmain[0m; a C program inherits [38;5;10mSIG_DFL[0m. Since neither program checks its write results, the ignored signal made the failure invisible to Rust. Fixed by restoring [38;5;10mSIG_DFL[0m in [38;5;10mmain[0m. The regression test closes the pipe's read end [3mbefore[23m spawning the child, so it asserts deterministically rather than racing.[0m[0m
+[0m[0m
+[1mstdout buffering granularity.[22m C stdio fully buffers a non-terminal stdout and flushes once at exit; Rust's [38;5;10mio::stdout()[0m is a [38;5;10mLineWriter[0m issuing eight writes. Invisible in captured bytes on its own, but once [38;5;10mSIGPIPE[0m became fatal it turned into an exit-status divergence for readers that consume part of the output and close ([38;5;10mprog | head -n 1[0m). The translation now mirrors libc: [38;5;10misatty(1)[0m picks a [38;5;10mLineWriter[0m, otherwise a [38;5;10mBufWriter[0m at [38;5;10mBUFSIZ[0m.[0m[0m
+[0m[0m
+Details are in [38;5;10mtranslation/ERRORS.md[0m, including the branch table and the classes that already matched — argv shape (including invalid UTF-8, which would have panicked a [38;5;10mstd::env::args()[0m-based translation), stdin content and disposition (never read, left unconsumed), [38;5;10mEBADF[0m/[38;5;10mENOSPC[0m write failures that must still exit 0, and locale, which must not put a separator in [38;5;10m%d[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Gate status[0m[0m
+[0m[0m
+29 tests, all passing, none [38;5;10m#[ignore][0md; both binaries build without warnings; stdout, stderr, exit code and terminating signal compared for every case. [38;5;10mc_src/[0m sources are untouched — the only addition is the out-of-source [38;5;10mc_src/build/[0m directory cmake needs. One test also re-checks the release binary, since [38;5;10mcargo test[0m otherwise exercises only the debug build.[0m[0m
+[38;5;8m
+ ▸ Credits: 12.09 • Time: 6m 7s
+
+[0m[1G[0m[0m[?25h

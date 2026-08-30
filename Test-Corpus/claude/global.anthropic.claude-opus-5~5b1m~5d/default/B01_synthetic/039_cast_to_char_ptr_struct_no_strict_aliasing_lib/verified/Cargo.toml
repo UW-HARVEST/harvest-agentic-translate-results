@@ -1,0 +1,31 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# Both differential suites capture stdout by redirecting fd 1, which is a
+# process-global operation. libtest's default harness writes its own progress
+# output from other threads and would interleave into the capture, so these
+# targets run their cases sequentially through their own `main`.
+[[test]]
+name = "phase_b_configs"
+path = "tests/phase_b_configs.rs"
+harness = false
+
+[[test]]
+name = "phase_c_errors"
+path = "tests/phase_c_errors.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

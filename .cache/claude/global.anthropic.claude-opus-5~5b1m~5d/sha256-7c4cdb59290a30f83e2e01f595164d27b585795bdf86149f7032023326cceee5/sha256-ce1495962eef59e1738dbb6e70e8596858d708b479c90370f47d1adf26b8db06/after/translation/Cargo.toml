@@ -1,0 +1,26 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `driver`'s only observable effect is bytes on stdout, so the tests hijack fd 1
+# around each call. libtest's parallel threads and its own progress writes to
+# fd 1 corrupt such captures, so this target runs its rows sequentially with its
+# own main() and reports on stderr. See tests/differential.rs for details.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

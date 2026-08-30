@@ -1,0 +1,1186 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m.[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m.[0m [38;5;244m(13 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m./c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m./c_src/CMakeLists.txt[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m./translation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2474 bytes[0m from ./c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1202 bytes[0m from ./c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m170 bytes[0m from ./translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m./translation/src/main.rs[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m./translation/src/glibc_rand.rs[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m./translation/src/cstrtoul.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m10958 bytes[0m from ./translation/src/main.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2944 bytes[0m from ./translation/src/glibc_rand.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2388 bytes[0m from ./translation/src/cstrtoul.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE= > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1; tail -5 /tmp/cmake.log; ls -la[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+
+-- Generating done
+-- Build files have been written to: /local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/c_src/build
+[ 50%] Building C object CMakeFiles/driver.dir/src/main.c.o
+[100%] Linking C executable driver
+[100%] Built target driver
+total 64
+drwxr-xr-x. 3 scheschb amazon   103 Aug 30 08:34 .
+drwxr-xr-x. 4 scheschb amazon    52 Aug 30 08:34 ..
+-rw-r--r--. 1 scheschb amazon 13995 Aug 30 08:34 CMakeCache.txt
+drwxr-xr-x. 5 scheschb amazon 16384 Aug 30 08:34 CMakeFiles
+-rw-r--r--. 1 scheschb amazon  5326 Aug 30 08:34 Makefile
+-rw-r--r--. 1 scheschb amazon  1696 Aug 30 08:34 cmake_install.cmake
+-rwxr-xr-x. 1 scheschb amazon 17048 Aug 30 08:34 driver
+[38;5;244m - Completed in 0.441s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnohup bash -c '{ time ./c_src/build/driver 42 > /tmp/c_42.out 2>/tmp/c_42.err ; echo "exit=$?"; } 2>/tmp/c_42.time' > /dev/null 2>&1 &
+echo started; nproc[0m[38;5;244m (using tool: shell)[0m
+
+started
+48
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/translation)
+    Finished `release` profile [optimized] target(s) in 0.33s
+[38;5;244m - Completed in 0.349s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mtime ./translation/target/release/driver 42[0m[38;5;244m (using tool: shell)[0m
+
+430392287
+
+real	0m8.820s
+user	5m51.839s
+sys	0m0.110s
+[38;5;244m - Completed in 8.823s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/bench.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#define ARRAY_SIZE (256*1024)
+#define ITERATIONS 20
+int array[ARRAY_SIZE];
+void perform_expensive_operations() {
+    for (size_t i = 0; i < ARRAY_SIZE; i++) {
+        int x = array[i];
+        for (int j = 0; j < 100; j++) {
+            x = x * 3 + 7;
+            x = x ^ (x >> 3);
+            x = x - (x << 1);
+            x = x / 2 + x % 7;
+        }
+        array[i] = x;
+    }
+}
+int main(){ srand(42); for(size_t i=0;i<ARRAY_SIZE;i++) array[i]=rand();
+ for(int i=0;i<ITERATIONS;i++) perform_expensive_operations();
+ int r=0; for(size_t i=0;i<ARRAY_SIZE;i++) r^=array[i]; printf("%d\n", r); return 0; }
+EOF
+cc -o /tmp/bench /tmp/bench.c && time /tmp/bench[0m[38;5;244m (using tool: shell)[0m
+
+197634898
+
+real	0m4.691s
+user	0m4.690s
+sys	0m0.000s
+[38;5;244m - Completed in 4.733s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/randref.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+int main(int argc,char**argv){
+  unsigned seeds[]={0,1,42,12345,2147483647u,2147483648u,4294967295u,3000000000u};
+  for(int s=0;s<8;s++){ srand(seeds[s]); printf("seed %u:",seeds[s]);
+    for(int i=0;i<8;i++) printf(" %d", rand());
+    for(int i=0;i<1000;i++) rand();
+    printf(" |");
+    for(int i=0;i<4;i++) printf(" %d", rand());
+    printf("\n"); }
+  return 0;
+}
+EOF
+cc -O2 -o /tmp/randref /tmp/randref.c && /tmp/randref[0m[38;5;244m (using tool: shell)[0m
+
+seed 0: 1804289383 846930886 1681692777 1714636915 1957747793 424238335 719885386 1649760492 | 1489001354 953691761 507578762 1402492972
+seed 1: 1804289383 846930886 1681692777 1714636915 1957747793 424238335 719885386 1649760492 | 1489001354 953691761 507578762 1402492972
+seed 42: 71876166 708592740 1483128881 907283241 442951012 537146758 1366999021 1854614940 | 953844426 1600182443 1245716983 93014782
+seed 12345: 383100999 858300821 357768173 455528251 133005921 116285904 591987137 102557902 | 73389321 102937240 294230873 642804576
+seed 2147483647: 1065668062 2142264300 1066566375 1064012770 2141034222 1065509725 2135810236 2139491828 | 1738459046 1700097590 1518965010 217494216
+seed 2147483648: 1336741213 1210407648 1447044896 337392383 82502902 538660432 1313908778 370221063 | 1932232815 1100906073 2127327884 1278847013
+seed 4294967295: 254925627 1205188300 366127624 1401405153 76053476 1604170158 1302235366 362229243 | 1523208214 653520015 1498809246 1496341229
+seed 3000000000: 2058147116 854483408 922419988 286396165 2068523933 1172167191 573677598 1899216469 | 241592599 270862027 1380345186 1385378635
+[38;5;244m - Completed in 0.52s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/strref.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
+int main(int argc,char**argv){
+  for(int i=1;i<argc;i++){
+    errno=0; char*end; unsigned long v=strtoul(argv[i],&end,10);
+    int accepted = !(*end!='\0' || errno!=0 || v>UINT_MAX);
+    printf("%-28s val=%lu endoff=%ld errno=%d accepted=%d seed=%u\n",
+      argv[i], v, (long)(end-argv[i]), errno, accepted, (unsigned)v);
+  }
+  return 0;
+}
+EOF
+cc -O2 -o /tmp/strref /tmp/strref.c && /tmp/strref "" " " "abc" "12abc" "-1" "-0" "+7" " 42" "4294967296" "4294967295" "99999999999999999999999999" "0x10" "42 " "1.5" "  +0000000042" "18446744073709551615" "18446744073709551616" "-18446744073709551615" "-4294967296" "+-1" "--1" $'\t\n42' "0000000000000000000000042" "0" "007" "2147483648" "+" "-"[0m[38;5;244m (using tool: shell)[0m
+
+                             val=0 endoff=0 errno=0 accepted=1 seed=0
+                             val=0 endoff=0 errno=0 accepted=0 seed=0
+abc                          val=0 endoff=0 errno=0 accepted=0 seed=0
+12abc                        val=12 endoff=2 errno=0 accepted=0 seed=12
+-1                           val=18446744073709551615 endoff=2 errno=0 accepted=0 seed=4294967295
+-0                           val=0 endoff=2 errno=0 accepted=1 seed=0
++7                           val=7 endoff=2 errno=0 accepted=1 seed=7
+ 42                          val=42 endoff=3 errno=0 accepted=1 seed=42
+4294967296                   val=4294967296 endoff=10 errno=0 accepted=0 seed=0
+4294967295                   val=4294967295 endoff=10 errno=0 accepted=1 seed=4294967295
+99999999999999999999999999   val=18446744073709551615 endoff=26 errno=34 accepted=0 seed=4294967295
+0x10                         val=0 endoff=1 errno=0 accepted=0 seed=0
+42                           val=42 endoff=2 errno=0 accepted=0 seed=42
+1.5                          val=1 endoff=1 errno=0 accepted=0 seed=1
+  +0000000042                val=42 endoff=13 errno=0 accepted=1 seed=42
+18446744073709551615         val=18446744073709551615 endoff=20 errno=0 accepted=0 seed=4294967295
+18446744073709551616         val=18446744073709551615 endoff=20 errno=34 accepted=0 seed=4294967295
+-18446744073709551615        val=1 endoff=21 errno=0 accepted=1 seed=1
+-4294967296                  val=18446744069414584320 endoff=11 errno=0 accepted=0 seed=0
++-1                          val=0 endoff=0 errno=0 accepted=0 seed=0
+--1                          val=0 endoff=0 errno=0 accepted=0 seed=0
+	
+42                         val=42 endoff=4 errno=0 accepted=1 seed=42
+0000000000000000000000042    val=42 endoff=25 errno=0 accepted=1 seed=42
+0                            val=0 endoff=1 errno=0 accepted=1 seed=0
+007                          val=7 endoff=3 errno=0 accepted=1 seed=7
+2147483648                   val=2147483648 endoff=10 errno=0 accepted=1 seed=2147483648
++                            val=0 endoff=0 errno=0 accepted=0 seed=0
+-                            val=0 endoff=0 errno=0 accepted=0 seed=0
+[38;5;244m - Completed in 0.51s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat /tmp/c_42.time 2>/dev/null; cat /tmp/c_42.out 2>/dev/null; ps -o etimes=,time=,cmd= -C driver 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
+
+   4512 00:00:00 /local/home/scheschb/.harvest/work/harvest-work-NgdwFc/c_src/build/driver
+    104 00:01:44 ./c_src/build/driver 42
+[38;5;244m - Completed in 0.61s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m./translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add differential integration tests comparing the C and Rust binaries
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests: run the original C executable and the Rust executable as
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! subprocesses with identical argument vectors and require byte-identical
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! stdout, byte-identical stderr and the same exit status.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! The Rust code is never linked as a library here -- both programs are driven
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! exactly the way a shell would drive them, because that is how the
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! translation is graded.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! Note on `argv[0]`: the C program prints `argv[0]` in its usage message, and
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! the two executables live at different paths.  Every invocation therefore
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! sets `argv[0]` explicitly (via `CommandExt::arg0`) to the same string for
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //! both programs, so a difference in output can only come from a difference in
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //! behaviour.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::ffi::{OsStr, OsString};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::os::unix::ffi::OsStringExt;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::os::unix::process::CommandExt;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m use std::process::{Command, Output};
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// The `argv[0]` handed to both programs.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m const ARGV0: &str = "driver";
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// Path of the executable built from `c_src/`.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m fn c_binary() -> PathBuf {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     path.pop(); // -> working directory root
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     path.push("c_src");
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     path.push("build");
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     path.push("driver");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         path.is_file(),
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         "the C executable is missing at {}.\n\
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m          Build it first:\n  cd c_src && mkdir -p build && cd build && cmake .. && cmake --build .",
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         path.display()
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     path
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// Path of the executable built from `translation/`.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m fn rust_binary() -> PathBuf {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_BIN_EXE_driver"))
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m fn run(program: &PathBuf, args: &[OsString]) -> Output {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     Command::new(program)
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         .arg0(OsStr::new(ARGV0))
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         .args(args)
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         .env_clear()
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to run {}: {e}", program.display()))
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m fn show(bytes: &[u8]) -> String {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     String::from_utf8_lossy(bytes).into_owned()
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// Run both programs with `args` and assert stdout, stderr and exit status all
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// match byte for byte.  Returns the (identical) stdout for further checks.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m fn assert_same(args: &[OsString]) -> Vec<u8> {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     let c = run(&c_binary(), args);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let r = run(&rust_binary(), args);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     let pretty: Vec<String> = args.iter().map(|a| format!("{a:?}")).collect();
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     let label = format!("argv = [{ARGV0:?}, {}]", pretty.join(", "));
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         r.status.code(),
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         "{label}: exit status differs (C {:?} vs Rust {:?})\n\
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m          C stdout: {:?}\nRust stdout: {:?}\nC stderr: {:?}\nRust stderr: {:?}",
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         r.status.code(),
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         show(&c.stdout),
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         show(&r.stdout),
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         show(&c.stderr),
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         show(&r.stderr),
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         c.stdout,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         r.stdout,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         "{label}: stdout differs\nC:    {:?}\nRust: {:?}",
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         show(&c.stdout),
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         show(&r.stdout),
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         c.stderr,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         r.stderr,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         "{label}: stderr differs\nC:    {:?}\nRust: {:?}",
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         show(&c.stderr),
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         show(&r.stderr),
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     c.stdout
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m fn osargs(args: &[&str]) -> Vec<OsString> {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     args.iter().map(OsString::from).collect()
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// Convenience wrapper for the common "exactly one argument" case.
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m fn assert_same_seed(arg: &str) -> Vec<u8> {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     assert_same(&osargs(&[arg]))
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m // argc validation:  if (argc != 2) -> usage on stderr, exit 1
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m fn no_arguments_prints_usage() {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     let out = assert_same(&[]);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     assert!(out.is_empty(), "usage path must not write to stdout");
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     // Pin the exact text/exit status so a regression cannot make both
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     // programs wrong in the same way.
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let c = run(&c_binary(), &[]);
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     assert_eq!(c.stderr, b"Usage: driver <seed>\n");
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     assert_eq!(c.status.code(), Some(1));
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m fn two_arguments_prints_usage() {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     assert_same(&osargs(&["42", "43"]));
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m fn many_arguments_prints_usage() {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     assert_same(&osargs(&["1", "2", "3", "4", "5"]));
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m fn empty_extra_argument_still_counts() {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     // argc == 3 even though the second argument is empty.
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     assert_same(&osargs(&["42", ""]));
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m // Seed validation:  *endptr != '\0' || errno != 0 || temp_seed > UINT_MAX
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m fn rejects_non_numeric_seeds() {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     // No conversion performed at all: endptr == nptr.
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     for arg in ["abc", " ", "\t", "+", "-", "+-1", "--1", "x", "  "] {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         let out = assert_same_seed(arg);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         assert!(out.is_empty(), "{arg:?} must not print to stdout");
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m fn rejects_trailing_garbage() {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     // Partial conversion: endptr stops before the end of the string.
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     for arg in ["12abc", "42 ", "1.5", "0x10", "7\n", "1,000", "42\t", "9-9"] {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         assert_same_seed(arg);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m fn rejects_negative_seeds() {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     // strtoul() negates modulo 2^64, so these become huge values that fail the
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     // `> UINT_MAX` check rather than the endptr check.
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     for arg in ["-1", "-42", "-4294967295", "-4294967296", "-2147483648"] {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         assert_same_seed(arg);
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m fn rejects_values_above_uint_max() {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     for arg in [
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         "4294967296",
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         "4294967297",
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         "5000000000",
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         "18446744073709551614",
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         "18446744073709551615", // ULONG_MAX: converts fine, no ERANGE
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         assert_same_seed(arg);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m fn rejects_erange_overflow() {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     // Overflow of unsigned long: strtoul sets ERANGE and returns ULONG_MAX.
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     for arg in [
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         "18446744073709551616",
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         "99999999999999999999999999",
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         "-18446744073709551616",
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         "-99999999999999999999999999",
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         assert_same_seed(arg);
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m fn rejects_very_long_digit_string() {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     let arg = "9".repeat(4096);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     assert_same_seed(&arg);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m fn error_message_echoes_raw_bytes() {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     // The C program prints the argument with %s, so invalid UTF-8 must be
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     // reproduced verbatim.
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     let cases: Vec<Vec<u8>> = vec![
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         vec![0xff, 0xfe],
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         vec![b'4', b'2', 0x80],
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         vec![0xc3],
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         vec![0xf0, 0x9f, 0x92, 0xa9],
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     for bytes in cases {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         assert_same(&[OsString::from_vec(bytes)]);
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m // Accepted seeds.  These run the full 2000 x 100 x 256Ki arithmetic kernel in
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m // both programs, so each one takes a while -- that is inherent to the C code.
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m fn accepts_zero_seed() {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     // srand(0): glibc substitutes 1 for a zero seed.
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     let out = assert_same_seed("0");
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     assert!(out.ends_with(b"\n"));
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m fn accepts_empty_string_as_zero_seed() {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     // Quirk of the C code: strtoul("") performs no conversion, leaves endptr
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     // pointing at the terminating NUL and does not touch errno, so `*endptr ==
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     // '\0'` holds and the empty string is accepted as seed 0.
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     let empty = assert_same_seed("");
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     let zero = assert_same_seed("0");
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     assert_eq!(empty, zero, "empty seed must behave like seed 0");
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m fn accepts_leading_whitespace_and_plus_and_zero_padding() {
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     let padded = assert_same_seed("  +0000000042");
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     let plain = assert_same_seed("42");
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     assert_eq!(padded, plain);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m fn accepts_uint_max_seed() {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     assert_same_seed("4294967295");
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m fn accepts_seed_above_int_max() {
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     // 2147483648 > INT_MAX but <= UINT_MAX: exercises the unsigned cast.
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     assert_same_seed("2147483648");
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m fn accepts_negative_zero_seed() {
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     let neg = assert_same_seed("-0");
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     let pos = assert_same_seed("0");
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     assert_eq!(neg, pos);
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m fn accepts_negative_wraparound_seed() {
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     // strtoul("-18446744073709551615") == 1, which passes every check.
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     assert_same_seed("-18446744073709551615");
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m./translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      220[0m:[38;5;10m[49m /// Each accepted seed is exercised by exactly one test with exactly one
+[0m[49m[38;5;10m+      221[0m:[38;5;10m[49m /// invocation per program, to keep the (unavoidably long) runtime down.
+[0m[49m[38;5;10m+      222[0m:[38;5;10m[49m /// `expected` pins the value the C program produces, so the tests also catch a
+[0m[49m[38;5;10m+      223[0m:[38;5;10m[49m /// regression that would break both programs in the same way.
+[0m[49m[38;5;10m+      224[0m:[38;5;10m[49m fn assert_accepted(arg: &str, expected: &str) {
+[0m[49m[38;5;10m+      225[0m:[38;5;10m[49m     let out = assert_same_seed(arg);
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m         String::from_utf8_lossy(&out),
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m         expected,
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m         "stdout for seed argument {arg:?}"
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m /// srand(0): glibc substitutes 1 for a zero seed, so seeds 0 and 1 agree.
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m const XOR_SEED_0: &str = "PLACEHOLDER_0\n";
+[0m[49m[38;5;10m+      235[0m:[38;5;10m[49m const XOR_SEED_42: &str = "PLACEHOLDER_42\n";
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m const XOR_SEED_UINT_MAX: &str = "PLACEHOLDER_UINT_MAX\n";
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m const XOR_SEED_2147483648: &str = "PLACEHOLDER_2147483648\n";
+[0m[49m[38;5;10m+      238[0m:[38;5;10m[49m 
+[0m[49m[39m  220, 239[0m:[39m[49m #[test]
+[0m[49m[39m  221, 240[0m:[39m[49m fn accepts_zero_seed() {
+[0m[49m[38;5;9m- 222     [0m:[38;5;9m[49m     // srand(0): glibc substitutes 1 for a zero seed.
+[0m[49m[38;5;9m- 223     [0m:[38;5;9m[49m     let out = assert_same_seed("0");
+[0m[49m[38;5;9m- 224     [0m:[38;5;9m[49m     assert!(out.ends_with(b"\n"));
+[0m[49m[38;5;10m+      241[0m:[38;5;10m[49m     assert_accepted("0", XOR_SEED_0);
+[0m[49m[39m  225, 242[0m:[39m[49m }
+[0m[49m[39m  226, 243[0m:[39m[49m 
+[0m[49m[39m  227, 244[0m:[39m[49m #[test]
+[0m[49m[39m  228, 245[0m:[39m[49m fn accepts_empty_string_as_zero_seed() {
+[0m[49m[39m  229, 246[0m:[39m[49m     // Quirk of the C code: strtoul("") performs no conversion, leaves endptr
+[0m[49m[38;5;9m- 230     [0m:[38;5;9m[49m     // pointing at the terminating NUL and does not touch errno, so `*endptr ==
+[0m[49m[38;5;9m- 231     [0m:[38;5;9m[49m     // '\0'` holds and the empty string is accepted as seed 0.
+[0m[49m[38;5;9m- 232     [0m:[38;5;9m[49m     let empty = assert_same_seed("");
+[0m[49m[38;5;9m- 233     [0m:[38;5;9m[49m     let zero = assert_same_seed("0");
+[0m[49m[38;5;9m- 234     [0m:[38;5;9m[49m     assert_eq!(empty, zero, "empty seed must behave like seed 0");
+[0m[49m[38;5;10m+      247[0m:[38;5;10m[49m     // pointing at the start of the string (which is the terminating NUL) and
+[0m[49m[38;5;10m+      248[0m:[38;5;10m[49m     // does not touch errno, so `*endptr == '\0'` holds and the empty string is
+[0m[49m[38;5;10m+      249[0m:[38;5;10m[49m     // accepted as seed 0.
+[0m[49m[38;5;10m+      250[0m:[38;5;10m[49m     assert_accepted("", XOR_SEED_0);
+[0m[49m[38;5;10m+      251[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      253[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      254[0m:[38;5;10m[49m fn accepts_negative_zero_seed() {
+[0m[49m[38;5;10m+      255[0m:[38;5;10m[49m     assert_accepted("-0", XOR_SEED_0);
+[0m[49m[39m  235, 256[0m:[39m[49m }
+[0m[49m[39m  236, 257[0m:[39m[49m 
+[0m[49m[39m  237, 258[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 238     [0m:[38;5;9m[49m fn accepts_leading_whitespace_and_plus_and_zero_padding() {
+[0m[49m[38;5;9m- 239     [0m:[38;5;9m[49m     let padded = assert_same_seed("  +0000000042");
+[0m[49m[38;5;9m- 240     [0m:[38;5;9m[49m     let plain = assert_same_seed("42");
+[0m[49m[38;5;9m- 241     [0m:[38;5;9m[49m     assert_eq!(padded, plain);
+[0m[49m[38;5;10m+      259[0m:[38;5;10m[49m fn accepts_negative_wraparound_seed() {
+[0m[49m[38;5;10m+      260[0m:[38;5;10m[49m     // strtoul("-18446744073709551615") == 1 (negation modulo 2^64), which
+[0m[49m[38;5;10m+      261[0m:[38;5;10m[49m     // passes every check -- and srand(1) is what srand(0) does too.
+[0m[49m[38;5;10m+      262[0m:[38;5;10m[49m     assert_accepted("-18446744073709551615", XOR_SEED_0);
+[0m[49m[39m  242, 263[0m:[39m[49m }
+[0m[49m[39m  243, 264[0m:[39m[49m 
+[0m[49m[39m  244, 265[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 245     [0m:[38;5;9m[49m fn accepts_uint_max_seed() {
+[0m[49m[38;5;9m- 246     [0m:[38;5;9m[49m     assert_same_seed("4294967295");
+[0m[49m[38;5;10m+      266[0m:[38;5;10m[49m fn accepts_plain_seed() {
+[0m[49m[38;5;10m+      267[0m:[38;5;10m[49m     assert_accepted("42", XOR_SEED_42);
+[0m[49m[39m  247, 268[0m:[39m[49m }
+[0m[49m[39m  248, 269[0m:[39m[49m 
+[0m[49m[39m  249, 270[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 250     [0m:[38;5;9m[49m fn accepts_seed_above_int_max() {
+[0m[49m[38;5;9m- 251     [0m:[38;5;9m[49m     // 2147483648 > INT_MAX but <= UINT_MAX: exercises the unsigned cast.
+[0m[49m[38;5;9m- 252     [0m:[38;5;9m[49m     assert_same_seed("2147483648");
+[0m[49m[38;5;10m+      271[0m:[38;5;10m[49m fn accepts_leading_whitespace_plus_and_zero_padding() {
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m     assert_accepted("  +0000000042", XOR_SEED_42);
+[0m[49m[39m  253, 273[0m:[39m[49m }
+[0m[49m[39m  254, 274[0m:[39m[49m 
+[0m[49m[39m  255, 275[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 256     [0m:[38;5;9m[49m fn accepts_negative_zero_seed() {
+[0m[49m[38;5;9m- 257     [0m:[38;5;9m[49m     let neg = assert_same_seed("-0");
+[0m[49m[38;5;9m- 258     [0m:[38;5;9m[49m     let pos = assert_same_seed("0");
+[0m[49m[38;5;9m- 259     [0m:[38;5;9m[49m     assert_eq!(neg, pos);
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m fn accepts_uint_max_seed() {
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m     assert_accepted("4294967295", XOR_SEED_UINT_MAX);
+[0m[49m[39m  260, 278[0m:[39m[49m }
+[0m[49m[39m  261, 279[0m:[39m[49m 
+[0m[49m[39m  262, 280[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 263     [0m:[38;5;9m[49m fn accepts_negative_wraparound_seed() {
+[0m[49m[38;5;9m- 264     [0m:[38;5;9m[49m     // strtoul("-18446744073709551615") == 1, which passes every check.
+[0m[49m[38;5;9m- 265     [0m:[38;5;9m[49m     assert_same_seed("-18446744073709551615");
+[0m[49m[38;5;10m+      281[0m:[38;5;10m[49m fn accepts_seed_above_int_max() {
+[0m[49m[38;5;10m+      282[0m:[38;5;10m[49m     // 2147483648 > INT_MAX but <= UINT_MAX: exercises the unsigned cast.
+[0m[49m[38;5;10m+      283[0m:[38;5;10m[49m     assert_accepted("2147483648", XOR_SEED_2147483648);
+[0m[49m[39m  266, 284[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat /tmp/c_42.time; echo "---out---"; cat /tmp/c_42.out[0m[38;5;244m (using tool: shell)[0m
+
+---out---
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 0 4294967295 2147483648; do nohup ./c_src/build/driver $s > /tmp/c_$s.out 2>/tmp/c_$s.err & done; sleep 1; ps -o etimes=,cmd= -C driver | head[0m[38;5;244m (using tool: shell)[0m
+
+   4596 /local/home/scheschb/.harvest/work/harvest-work-NgdwFc/c_src/build/driver
+    188 ./c_src/build/driver 42
+      1 ./c_src/build/driver 0
+      1 ./c_src/build/driver 4294967295
+      1 ./c_src/build/driver 2147483648
+[38;5;244m - Completed in 1.59s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/kern.c <<'EOF'
+#include <stdio.h>
+#include <limits.h>
+int main(void){
+  int starts[] = {1804289383, INT_MIN, INT_MAX, 0, -1, 1, 7, -7, 2, -2, 1000000007, -1000000007};
+  for (unsigned s=0; s<sizeof(starts)/sizeof(starts[0]); s++){
+    int x = starts[s];
+    printf("start %d:", x);
+    for (int i=0;i<24;i++){
+      x = x * 3 + 7;
+      x = x ^ (x >> 3);
+      x = x - (x << 1);
+      x = x / 2 + x % 7;
+      printf(" %d", x);
+    }
+    printf("\n");
+  }
+  return 0;
+}
+EOF
+cc -o /tmp/kern /tmp/kern.c && /tmp/kern[0m[38;5;244m (using tool: shell)[0m
+
+start 1804289383: -628815138 -1061118560 -621081090 -829917089 -863314434 -881476770 -924224053 -687208098 -987688919 -591899471 -846655728 -851715145 -899870884 -712697330 -944722945 -788013638 -1052423437 -635113091 -1070696313 -609026651 -817755125 -809463897 -827641239 -817943255
+start -2147483648: -939524099 -780140547 -1031274497 -666206213 -1021462535 -540606855 -912208404 -733942397 -967657669 -743673993 -976417747 -765845523 -1022872091 -538827461 -908677420 -723142284 -951289085 -799862685 -1064504203 -617153384 -835204541 -872012421 -877141822 -933341959
+start 2147483647: -939524102 -780140555 -1031274514 -666009623 -1023064097 -538384043 -908522953 -723336896 -952018399 -800999383 -1064224461 -616755054 -834726857 -871714206 -877791974 -934572640 -704610051 -958454100 -789015882 -1046103959 -641173049 -1048125568 -637732526 -1042553670
+start 0: -3 -1 -6 -9 -11 -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451
+start -1: -6 -9 -11 -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451 -32720 -43074
+start 1: -9 -11 -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451 -32720 -43074 -58325
+start 7: -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451 -32720 -43074 -58325 -98062 -162119
+start -7: -11 -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451 -32720 -43074 -58325 -98062
+start 2: -11 -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451 -32720 -43074 -58325 -98062
+start -2: -1 -6 -9 -11 -18 -22 -35 -58 -92 -150 -203 -270 -424 -567 -811 -1073 -1678 -2285 -3319 -4357 -6835 -11530 -19451 -32720
+start 1000000007: -574958323 -889927784 -912444939 -732345262 -961891382 -792726532 -1044123715 -653351792 -1025984513 -550352517 -923927549 -684221769 -982058263 -758396785 -1001888071 -580979039 -898613197 -710765660 -947758809 -774632716 -1038733951 -658861266 -1035282262 -656297383
+start -1000000007: -574958316 -889927771 -912444952 -732345223 -961891571 -792726792 -1044124157 -653351341 -1025984176 -550352708 -923926720 -684220740 -982057955 -758396270 -1001888293 -580979671 -898605963 -710777834 -947774688 -774589861 -1038674691 -658951316 -1035433092 -654396192
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Optimize dev/test profiles so cargo test finishes in reasonable time
+
+[49m[39m  10, 10[0m:[39m[49m [profile.release]
+[0m[49m[39m  11, 11[0m:[39m[49m opt-level = 3
+[0m[49m[39m  12, 12[0m:[39m[49m codegen-units = 1
+[0m[49m[39m  13, 13[0m:[39m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m # The C program performs 2000 * 100 * 256Ki arithmetic steps per run.  The
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m # differential tests in tests/ execute the binary built with the dev/test
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m # profile, so it is optimised too -- otherwise `cargo test` would take hours.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m [profile.dev]
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m opt-level = 3
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m [profile.test]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m opt-level = 3
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[39m  14, 23[0m:[39m[49m [workspace]
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build 2>&1 | tail -3 && time ./target/debug/driver 42[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/translation)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.25s
+430392287
+
+real	0m10.674s
+user	5m51.721s
+sys	0m0.120s
+[38;5;244m - Completed in 10.940s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Restore default SIGPIPE disposition to match the C program
+
+[49m[39m  103, 103[0m:[39m[49m fn main() -> ExitCode {
+[0m[49m[38;5;10m+      104[0m:[38;5;10m[49m     // The C program is an ordinary C process, so SIGPIPE is left at its default
+[0m[49m[38;5;10m+      105[0m:[38;5;10m[49m     // (terminate) disposition.  The Rust runtime ignores SIGPIPE before `main`
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m     // runs, which would make the two programs disagree if stdout were a closed
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m     // pipe, so restore the C behaviour.
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m         // SIGPIPE == 13, SIG_DFL == 0 on Linux.
+[0m[49m[38;5;10m+      110[0m:[38;5;10m[49m         signal(13, 0);
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m 
+[0m[49m[39m  104, 113[0m:[39m[49m     let args: Vec<OsString> = std::env::args_os().collect();
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  45, 45[0m:[39m[49m /// `UINT_MAX` on the reference platform.
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m const UINT_MAX: u64 = u32::MAX as u64;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m const UINT_MAX: u64 = u32::MAX as u64;
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     /// libc `signal()`; used only to restore the default SIGPIPE disposition.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     fn signal(signum: i32, handler: usize) -> usize;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow extend the kernel unit test with the C-verified trajectories:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  280, 280[0m:[39m[49m         // i32::MIN start, exercising the extreme wrap-around cases.
+[0m[49m[39m  281, 281[0m:[39m[49m         let expected_min: [i32; 6] = [
+[0m[49m[39m  282, 282[0m:[39m[49m             -939524099, -780140547, -1031274497, -666206213, -1021462535, -540606855,
+[0m[49m[39m  283, 283[0m:[39m[49m         ];
+[0m[49m[39m  284, 284[0m:[39m[49m         let mut y = i32::MIN;
+[0m[49m[39m  285, 285[0m:[39m[49m         for (i, &want) in expected_min.iter().enumerate() {
+[0m[49m[39m  286, 286[0m:[39m[49m             y = expensive_step(y);
+[0m[49m[39m  287, 287[0m:[39m[49m             assert_eq!(y, want, "min step {i}");
+[0m[49m[39m  288, 288[0m:[39m[49m         }
+[0m[49m[38;5;10m+      289[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      290[0m:[38;5;10m[49m         // Further trajectories captured from the C kernel compiled as-is
+[0m[49m[38;5;10m+      291[0m:[38;5;10m[49m         // (`cc -O0`), covering INT_MAX, small magnitudes and both signs.
+[0m[49m[38;5;10m+      292[0m:[38;5;10m[49m         let more: &[(i32, [i32; 8])] = &[
+[0m[49m[38;5;10m+      293[0m:[38;5;10m[49m             (
+[0m[49m[38;5;10m+      294[0m:[38;5;10m[49m                 i32::MAX,
+[0m[49m[38;5;10m+      295[0m:[38;5;10m[49m                 [
+[0m[49m[38;5;10m+      296[0m:[38;5;10m[49m                     -939524102, -780140555, -1031274514, -666009623, -1023064097, -538384043,
+[0m[49m[38;5;10m+      297[0m:[38;5;10m[49m                     -908522953, -723336896,
+[0m[49m[38;5;10m+      298[0m:[38;5;10m[49m                 ],
+[0m[49m[38;5;10m+      299[0m:[38;5;10m[49m             ),
+[0m[49m[38;5;10m+      300[0m:[38;5;10m[49m             (0, [-3, -1, -6, -9, -11, -18, -22, -35]),
+[0m[49m[38;5;10m+      301[0m:[38;5;10m[49m             (-1, [-6, -9, -11, -18, -22, -35, -58, -92]),
+[0m[49m[38;5;10m+      302[0m:[38;5;10m[49m             (1, [-9, -11, -18, -22, -35, -58, -92, -150]),
+[0m[49m[38;5;10m+      303[0m:[38;5;10m[49m             (7, [-18, -22, -35, -58, -92, -150, -203, -270]),
+[0m[49m[38;5;10m+      304[0m:[38;5;10m[49m             (-7, [-11, -18, -22, -35, -58, -92, -150, -203]),
+[0m[49m[38;5;10m+      305[0m:[38;5;10m[49m             (2, [-11, -18, -22, -35, -58, -92, -150, -203]),
+[0m[49m[38;5;10m+      306[0m:[38;5;10m[49m             (-2, [-1, -6, -9, -11, -18, -22, -35, -58]),
+[0m[49m[38;5;10m+      307[0m:[38;5;10m[49m             (
+[0m[49m[38;5;10m+      308[0m:[38;5;10m[49m                 1000000007,
+[0m[49m[38;5;10m+      309[0m:[38;5;10m[49m                 [
+[0m[49m[38;5;10m+      310[0m:[38;5;10m[49m                     -574958323, -889927784, -912444939, -732345262, -961891382, -792726532,
+[0m[49m[38;5;10m+      311[0m:[38;5;10m[49m                     -1044123715, -653351792,
+[0m[49m[38;5;10m+      312[0m:[38;5;10m[49m                 ],
+[0m[49m[38;5;10m+      313[0m:[38;5;10m[49m             ),
+[0m[49m[38;5;10m+      314[0m:[38;5;10m[49m             (
+[0m[49m[38;5;10m+      315[0m:[38;5;10m[49m                 -1000000007,
+[0m[49m[38;5;10m+      316[0m:[38;5;10m[49m                 [
+[0m[49m[38;5;10m+      317[0m:[38;5;10m[49m                     -574958316, -889927771, -912444952, -732345223, -961891571, -792726792,
+[0m[49m[38;5;10m+      318[0m:[38;5;10m[49m                     -1044124157, -653351341,
+[0m[49m[38;5;10m+      319[0m:[38;5;10m[49m                 ],
+[0m[49m[38;5;10m+      320[0m:[38;5;10m[49m             ),
+[0m[49m[38;5;10m+      321[0m:[38;5;10m[49m         ];
+[0m[49m[38;5;10m+      322[0m:[38;5;10m[49m         for &(start, ref want) in more {
+[0m[49m[38;5;10m+      323[0m:[38;5;10m[49m             let mut z = start;
+[0m[49m[38;5;10m+      324[0m:[38;5;10m[49m             for (i, &expected) in want.iter().enumerate() {
+[0m[49m[38;5;10m+      325[0m:[38;5;10m[49m                 z = expensive_step(z);
+[0m[49m[38;5;10m+      326[0m:[38;5;10m[49m                 assert_eq!(z, expected, "start {start}, step {i}");
+[0m[49m[38;5;10m+      327[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      328[0m:[38;5;10m[49m         }
+[0m[49m[39m  289, 329[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -5; cargo test --release --bins 2>&1 | tail -15[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/translation)
+    Finished `release` profile [optimized] target(s) in 0.30s
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+     Running unittests src/main.rs (target/release/deps/driver-1dd7f778c56d4429)
+
+running 3 tests
+test tests::matches_c_kernel_trajectory ... ok
+test tests::matches_glibc_rand_stream ... ok
+test tests::strtoul_edge_cases ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[38;5;244m - Completed in 0.522s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --test differential -- --skip accepts 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/translation)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.45s
+     Running tests/differential.rs (target/debug/deps/differential-cf41c3a7ad65b9d3)
+
+running 11 tests
+test many_arguments_prints_usage ... ok
+test empty_extra_argument_still_counts ... ok
+test two_arguments_prints_usage ... ok
+test rejects_very_long_digit_string ... ok
+test no_arguments_prints_usage ... ok
+test error_message_echoes_raw_bytes ... ok
+test rejects_erange_overflow ... ok
+test rejects_negative_seeds ... ok
+test rejects_values_above_uint_max ... ok
+test rejects_trailing_garbage ... ok
+test rejects_non_numeric_seeds ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.01s
+
+[38;5;244m - Completed in 0.490s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141m/tmp/strref $'\t\n\v\f\r +0000000042' $'\v42' $'\f42' $'\r42' $'\n42'[0m[38;5;244m (using tool: shell)[0m
+
+	
+ +0000000042            val=42 endoff=17 errno=0 accepted=1 seed=42
+42                          val=42 endoff=3 errno=0 accepted=1 seed=42
+42                          val=42 endoff=3 errno=0 accepted=1 seed=42
+42                          val=42 endoff=3 errno=0 accepted=1 seed=42
+
+42                          val=42 endoff=3 errno=0 accepted=1 seed=42
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  270, 270[0m:[39m[49m #[test]
+[0m[49m[39m  271, 271[0m:[39m[49m fn accepts_leading_whitespace_plus_and_zero_padding() {
+[0m[49m[38;5;9m- 272     [0m:[38;5;9m[49m     assert_accepted("  +0000000042", XOR_SEED_42);
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m     // Every character isspace() accepts in the C locale, then '+', then zero
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m     // padding: strtoul() skips all of it and yields 42.
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m     assert_accepted("\t\n\x0b\x0c\r +0000000042", XOR_SEED_42);
+[0m[49m[39m  273, 275[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  142, 142[0m:[39m[49m #[test]
+[0m[49m[39m  143, 143[0m:[39m[49m fn rejects_non_numeric_seeds() {
+[0m[49m[39m  144, 144[0m:[39m[49m     // No conversion performed at all: endptr == nptr.
+[0m[49m[38;5;9m- 145     [0m:[38;5;9m[49m     for arg in ["abc", " ", "\t", "+", "-", "+-1", "--1", "x", "  "] {
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m     for arg in [
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m         "abc", " ", "\t", "\n", "\r", "\x0b", "\x0c", "+", "-", "+-1", "--1", "x", "  ", " +",
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m         "+ 1", "- 1",
+[0m[49m[38;5;10m+      148[0m:[38;5;10m[49m     ] {
+[0m[49m[39m  146, 149[0m:[39m[49m         let out = assert_same_seed(arg);
+[0m[49m[39m  147, 150[0m:[39m[49m         assert!(out.is_empty(), "{arg:?} must not print to stdout");
+[0m[49m[39m  148, 151[0m:[39m[49m     }
+[0m[49m[39m  149, 152[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  154, 154[0m:[39m[49m #[test]
+[0m[49m[39m  155, 155[0m:[39m[49m fn rejects_trailing_garbage() {
+[0m[49m[39m  156, 156[0m:[39m[49m     // Partial conversion: endptr stops before the end of the string.
+[0m[49m[38;5;9m- 157     [0m:[38;5;9m[49m     for arg in ["12abc", "42 ", "1.5", "0x10", "7\n", "1,000", "42\t", "9-9"] {
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m     for arg in [
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m         "12abc", "42 ", "1.5", "0x10", "7\n", "1,000", "42\t", "9-9", "\x0b42x", "0b1", "1e3",
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m         "42\0",
+[0m[49m[38;5;10m+      160[0m:[38;5;10m[49m     ] {
+[0m[49m[39m  158, 161[0m:[39m[49m         assert_same_seed(arg);
+[0m[49m[39m  159, 162[0m:[39m[49m     }
+[0m[49m[39m  160, 163[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      157[0m:[38;5;10m[49m     // NOTE: an argument containing an embedded NUL is impossible -- execve()
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m     // cannot pass one -- so there is nothing to compare for that case.
+[0m[49m[39m  157, 159[0m:[39m[49m     for arg in [
+[0m[49m[39m  158, 160[0m:[39m[49m         "12abc", "42 ", "1.5", "0x10", "7\n", "1,000", "42\t", "9-9", "\x0b42x", "0b1", "1e3",
+[0m[49m[38;5;9m- 159     [0m:[38;5;9m[49m         "42\0",
+[0m[49m[39m  160, 161[0m:[39m[49m     ] {
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --test differential -- --skip accepts 2>&1 | tail -20; echo "=== C runs ==="; for f in /tmp/c_*.out; do echo "$f: $(cat $f)"; done; ps -o etimes=,cmd= -C driver | head[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Vbxm4T/translation)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.40s
+     Running tests/differential.rs (target/debug/deps/differential-cf41c3a7ad65b9d3)
+
+running 11 tests
+test empty_extra_argument_still_counts ... ok
+test many_arguments_prints_usage ... ok
+test two_arguments_prints_usage ... ok
+test rejects_very_long_digit_string ... ok
+test no_arguments_prints_usage ... ok
+test error_message_echoes_raw_bytes ... ok
+test rejects_erange_overflow ... ok
+test rejects_negative_seeds ... ok
+test rejects_values_above_uint_max ... ok
+test rejects_trailing_garbage ... ok
+test rejects_non_numeric_seeds ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.02s
+
+=== C runs ===
+/tmp/c_0.out: 
+/tmp/c_2147483648.out: 
+/tmp/c_42.out: 
+/tmp/c_4294967295.out: 
+   4728 /local/home/scheschb/.harvest/work/harvest-work-NgdwFc/c_src/build/driver
+    320 ./c_src/build/driver 42
+    133 ./c_src/build/driver 0
+    133 ./c_src/build/driver 4294967295
+    133 ./c_src/build/driver 2147483648
+[38;5;244m - Completed in 0.506s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 0 4294967295 2147483648 "" "-0" "-18446744073709551615"; do printf '%-24s -> %s\n' "[$s]" "$(./target/release/driver "$s")"; done[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+[0]                      -> 42032659
+[4294967295]             -> 494145113
+[2147483648]             -> 269448949
+[]                       -> 42032659
+[-0]                     -> 42032659
+[-18446744073709551615]  -> 42032659
+[38;5;244m - Completed in 61.470s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msleep 240; for f in /tmp/c_*.out; do echo "$f: $(cat $f)"; done; ps -o etimes=,cmd= -C driver|head[0m[38;5;244m (using tool: shell)[0m
+
+/tmp/c_0.out: 
+/tmp/c_2147483648.out: 
+/tmp/c_42.out: 430392287
+/tmp/c_4294967295.out: 
+   5051 /local/home/scheschb/.harvest/work/harvest-work-NgdwFc/c_src/build/driver
+    456 ./c_src/build/driver 0
+    456 ./c_src/build/driver 4294967295
+    456 ./c_src/build/driver 2147483648
+[38;5;244m - Completed in 240.62s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msleep 60; for f in /tmp/c_*.out; do echo "$f: $(cat $f)"; done; wc -c /tmp/c_*.err[0m[38;5;244m (using tool: shell)[0m
+
+/tmp/c_0.out: 42032659
+/tmp/c_2147483648.out: 269448949
+/tmp/c_42.out: 430392287
+/tmp/c_4294967295.out: 494145113
+0 /tmp/c_0.err
+0 /tmp/c_2147483648.err
+0 /tmp/c_42.err
+0 /tmp/c_4294967295.err
+0 total
+[38;5;244m - Completed in 60.12s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      240[0m:[38;5;10m[49m /// Values produced by the C executable (`c_src/build/driver <seed>`).
+[0m[49m[39m  240, 241[0m:[39m[49m /// srand(0): glibc substitutes 1 for a zero seed, so seeds 0 and 1 agree.
+[0m[49m[38;5;9m- 241     [0m:[38;5;9m[49m const XOR_SEED_0: &str = "PLACEHOLDER_0\n";
+[0m[49m[38;5;9m- 242     [0m:[38;5;9m[49m const XOR_SEED_42: &str = "PLACEHOLDER_42\n";
+[0m[49m[38;5;9m- 243     [0m:[38;5;9m[49m const XOR_SEED_UINT_MAX: &str = "PLACEHOLDER_UINT_MAX\n";
+[0m[49m[38;5;9m- 244     [0m:[38;5;9m[49m const XOR_SEED_2147483648: &str = "PLACEHOLDER_2147483648\n";
+[0m[49m[38;5;10m+      242[0m:[38;5;10m[49m const XOR_SEED_0: &str = "42032659\n";
+[0m[49m[38;5;10m+      243[0m:[38;5;10m[49m const XOR_SEED_42: &str = "430392287\n";
+[0m[49m[38;5;10m+      244[0m:[38;5;10m[49m const XOR_SEED_UINT_MAX: &str = "494145113\n";
+[0m[49m[38;5;10m+      245[0m:[38;5;10m[49m const XOR_SEED_2147483648: &str = "269448949\n";
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnohup bash -c 'cd translation && { time cargo test 2>&1; } > /tmp/cargo_test.log 2>&1' >/dev/null 2>&1 & sleep 20; tail -5 /tmp/cargo_test.log; ps -o etimes=,cmd= -C driver | head -12[0m[38;5;244m (using tool: shell)[0m
+
+test rejects_erange_overflow ... ok
+test rejects_negative_seeds ... ok
+test rejects_values_above_uint_max ... ok
+test rejects_trailing_garbage ... ok
+test rejects_non_numeric_seeds ... ok
+   5150 /local/home/scheschb/.harvest/work/harvest-work-NgdwFc/c_src/build/driver
+     19 driver
+     19 driver . ... +0000000042
+     19 driver -18446744073709551615
+     19 driver -0
+     19 driver 42
+     19 driver 2147483648
+     19 driver 4294967295
+     19 driver 0
+[38;5;244m - Completed in 20.60s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m./translation/tests/differential.rs[0m, from line [38;5;141m1[0m to [38;5;141m60[0m[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2141 bytes[0m from ./translation/tests/differential.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m./translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Document verification method, enumerated input classes and mismatches found
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m # Verification log: `c_src/src/main.c` vs. the Rust translation
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m Method: both programs are built and then executed as subprocesses with the same
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m argument vector (including the same `argv[0]`, see below); stdout, stderr and
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m the exit status are compared byte for byte. The tests live in
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m `tests/differential.rs`; supporting unit tests for the `rand()`, `strtoul()` and
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m arithmetic-kernel replicas live in `src/main.rs`.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m Reference commands:
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m cd c_src && mkdir -p build && cd build && cmake .. && cmake --build .   # -> c_src/build/driver
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m cd translation && cargo build --release                                 # -> translation/target/release/driver
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m Runtime warning: an accepted seed makes both programs perform
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m `2000 * 100 * 256Ki` arithmetic steps. The C build has no optimisation flags
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m (`CMakeLists.txt` sets none), so one accepted-seed run of the C program takes
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m roughly 7-8 minutes on the test machine. `cargo test` runs the eight
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m accepted-seed cases in parallel, so the whole suite takes about that long.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m ## Input classes enumerated from the C source
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m Every branch in `main()` and the inputs that reach it:
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m | Class | Example arguments | C behaviour |
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m | --- | --- | --- |
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m | `argc != 2` | *(none)*, `42 43`, `1 2 3 4 5`, `42 ""` | `Usage: <argv0> <seed>` on stderr, exit 1 |
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m | `strtoul` performs no conversion, `*endptr != 0` | `abc`, `" "`, `\t`, `\n`, `\r`, `\v`, `\f`, `+`, `-`, `+-1`, `--1`, `x` | `Invalid seed: '<arg>'` on stderr, exit 1 |
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m | partial conversion, `*endptr != 0` | `12abc`, `"42 "`, `1.5`, `0x10`, `0b1`, `1e3`, `7\n`, `1,000`, `9-9`, `\v42x` | same error, exit 1 |
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m | negated value, `> UINT_MAX` | `-1`, `-42`, `-4294967295`, `-4294967296`, `-2147483648` | same error, exit 1 |
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m | converts cleanly but `> UINT_MAX` | `4294967296`, `4294967297`, `5000000000`, `18446744073709551614`, `18446744073709551615` | same error, exit 1 |
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m | `errno == ERANGE` | `18446744073709551616`, `99999999999999999999999999`, `-18446744073709551616`, `-99999…`, 4096 nines | same error, exit 1 |
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m | argument is not valid UTF-8 | `\xff\xfe`, `42\x80`, `\xc3`, `\xf0\x9f\x92\xa9` | `%s` echoes the raw bytes, exit 1 |
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m | accepted, seed 0 | `0`, `""` (!), `-0`, `-18446744073709551615` | prints `42032659`, exit 0 |
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m | accepted, ordinary seed | `42`, `"\t\n\v\f\r +0000000042"` | prints `430392287`, exit 0 |
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m | accepted, `> INT_MAX` | `2147483648` | prints `269448949`, exit 0 |
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m | accepted, `== UINT_MAX` | `4294967295` | prints `494145113`, exit 0 |
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m Quirks of the C that are deliberately reproduced, not fixed:
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m * **The empty string is a valid seed.** `strtoul("", &endptr, 10)` performs no
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m   conversion, so it returns 0, leaves `errno` alone and sets `endptr == nptr`
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m   — which points at the terminating NUL. `*endptr != '\0'` is therefore false
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m   and the program runs with seed 0.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m * **`-0` and `-18446744073709551615` are valid seeds.** `strtoul` negates modulo
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m   2^64, so the first yields 0 and the second yields 1; both pass the
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m   `> UINT_MAX` test. (`-1`, by contrast, becomes `ULONG_MAX` and is rejected.)
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m * **`srand(0)` behaves like `srand(1)`** — glibc substitutes 1 for a zero seed,
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m   so the four seed-0-ish inputs and seed 1 all print the same number.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m * **Signed overflow, `x << 1` on a negative value and `x >> 3` on a negative
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m   value** are UB/implementation-defined in C; gcc realises them as
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m   two's-complement wrap-around and an arithmetic shift, and the Rust uses
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m   `wrapping_*` plus a signed `>>` to match.
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m * An argument containing an embedded NUL is not a reachable case: `execve()`
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m   cannot deliver one.
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m ## Mismatches found
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m ### 1. `argv[0]` in the usage message (test-harness defect, not a translation bug)
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m `fprintf(stderr, "Usage: %s <seed>\n", argv[0])` echoes `argv[0]`, and the two
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m executables sit at different paths (`c_src/build/driver` vs
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m `translation/target/*/driver`). A naive harness that spawns each binary by path
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m reports a stderr mismatch on every `argc != 2` input even though both programs
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m behave identically. Fixed in the harness, not in the program: every invocation
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m sets `argv[0]` explicitly to `"driver"` for both processes via
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m `std::os::unix::process::CommandExt::arg0`.
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ### 2. SIGPIPE disposition differed (fixed in `src/main.rs`)
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m Found by inspection rather than by a failing test. The Rust runtime sets
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m `SIGPIPE` to `SIG_IGN` before `main` runs, whereas a C program inherits the
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m default `SIG_DFL`. With stdout connected to a closed pipe the C program dies
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m from `SIGPIPE` (shell status 141) while the Rust program would ignore the
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m signal, drop the failed `write` and exit 0. `main()` now restores
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m `signal(SIGPIPE, SIG_DFL)` as its first action. This is not covered by the
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m differential tests because a captured-output harness always keeps the pipe open,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m so the divergence is unreachable from the test suite — it is fixed for fidelity.
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m ### 3. No output mismatches
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m Beyond the two items above, every enumerated input already produced identical
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m stdout, stderr and exit status. Specifically confirmed against the real C
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m implementation:
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m * the glibc `rand()` replica (`src/glibc_rand.rs`) reproduces
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m   `srand()`/`rand()` for seeds 0, 1, 42, 12345, 2147483647, 2147483648,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m   3000000000 and 4294967295, at draws 0-7 and 1008-1011 (checked against a
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m   program calling glibc directly);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m * the arithmetic kernel (`expensive_step`) reproduces the C step function for
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m   the starts 1804289383, `INT_MIN`, `INT_MAX`, 0, ±1, ±2, ±7 and ±1000000007
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m   over 8-24 steps (checked against the same C code compiled on its own);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m * `strtoul` acceptance/rejection and the resulting seed match glibc for all 28
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m   probe strings listed above.
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m ### Non-differences worth recording
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m * **Threading.** The Rust spreads the per-element transformation over several
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m   threads. Each array element evolves independently in the C
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m   (`perform_expensive_operations` reads and writes only `array[i]`), and the
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m   final reduction is an XOR, so the result cannot depend on the order; the
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m   observed outputs confirm it.
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m * **`%d` vs `{}`.** Both print an `i32` in decimal with no padding, so the
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m   formatting agrees for negative results too, even though no tested seed
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m   produced one (after the kernel every element observed had its sign bit set,
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m   and `ARRAY_SIZE` is even, so the XOR comes out non-negative).
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m * **Zero-initialised global array.** The C array lives in BSS but every slot is
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m   overwritten by `rand()` before it is read, so the Rust `vec![0; …]` is
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m   equivalent.
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m * **`[profile.dev] opt-level = 3`** was added to `Cargo.toml`. `cargo test`
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m   drives the dev-profile binary, and an unoptimised build of this workload would
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m   make the suite take hours. It changes no observable behaviour: the dev and
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m   release binaries print the same values, and the dev profile keeps
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m   `overflow-checks` on, which passing tests show never fire.
+[0m[K
+Creating: [38;5;141m./translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msleep 420; tail -30 /tmp/cargo_test.log; ps -o etimes=,cmd= -C driver|head[0m[38;5;244m (using tool: shell)[0m
+
+
+running 3 tests
+test tests::matches_c_kernel_trajectory ... ok
+test tests::matches_glibc_rand_stream ... ok
+test tests::strtoul_edge_cases ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-cf41c3a7ad65b9d3)
+
+running 19 tests
+test empty_extra_argument_still_counts ... ok
+test many_arguments_prints_usage ... ok
+test rejects_very_long_digit_string ... ok
+test two_arguments_prints_usage ... ok
+test no_arguments_prints_usage ... ok
+test error_message_echoes_raw_bytes ... ok
+test rejects_erange_overflow ... ok
+test rejects_negative_seeds ... ok
+test rejects_values_above_uint_max ... ok
+test rejects_trailing_garbage ... ok
+test rejects_non_numeric_seeds ... ok
+test accepts_empty_string_as_zero_seed has been running for over 60 seconds
+test accepts_leading_whitespace_plus_and_zero_padding has been running for over 60 seconds
+test accepts_negative_wraparound_seed has been running for over 60 seconds
+test accepts_negative_zero_seed has been running for over 60 seconds
+test accepts_plain_seed has been running for over 60 seconds
+test accepts_seed_above_int_max has been running for over 60 seconds
+test accepts_uint_max_seed has been running for over 60 seconds
+test accepts_zero_seed has been running for over 60 seconds
+   5630 /local/home/scheschb/.harvest/work/harvest-work-NgdwFc/c_src/build/driver
+     29 driver 4294967295
+     29 driver 2147483648
+     29 driver
+     29 driver . ... +0000000042
+     29 driver 0
+     29 driver -18446744073709551615
+     29 driver -0
+     28 driver 42
+[38;5;244m - Completed in 420.353s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msleep 180; tail -18 /tmp/cargo_test.log[0m[38;5;244m (using tool: shell)[0m
+
+test accepts_seed_above_int_max has been running for over 60 seconds
+test accepts_uint_max_seed has been running for over 60 seconds
+test accepts_zero_seed has been running for over 60 seconds
+test accepts_zero_seed ... ok
+test accepts_uint_max_seed ... ok
+test accepts_negative_zero_seed ... ok
+test accepts_empty_string_as_zero_seed ... ok
+test accepts_negative_wraparound_seed ... ok
+test accepts_seed_above_int_max ... ok
+test accepts_plain_seed ... ok
+test accepts_leading_whitespace_plus_and_zero_padding ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 530.02s
+
+
+real	8m50.430s
+user	109m42.005s
+sys	0m0.979s
+[38;5;244m - Completed in 180.36s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mgit status --porcelain 2>/dev/null | head -20; echo "--- c_src tracked files ---"; ls -la c_src c_src/src; md5sum c_src/src/main.c c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+--- c_src tracked files ---
+c_src:
+total 4
+drwxr-xr-x. 4 scheschb amazon   52 Aug 30 08:34 .
+drwxr-xr-x. 5 scheschb amazon   69 Aug 30 08:33 ..
+-rw-r--r--. 1 scheschb amazon 1203 Aug 30 08:33 CMakeLists.txt
+drwxr-xr-x. 3 scheschb amazon  103 Aug 30 08:34 build
+drwxr-xr-x. 2 scheschb amazon   20 Aug 30 08:33 src
+
+c_src/src:
+total 4
+drwxr-xr-x. 2 scheschb amazon   20 Aug 30 08:33 .
+drwxr-xr-x. 4 scheschb amazon   52 Aug 30 08:34 ..
+-rw-r--r--. 1 scheschb amazon 2475 Aug 30 08:33 main.c
+1576f919a34851575486df8ca64e338b  c_src/src/main.c
+bf4d45e183526109a0d85f28046f7fe6  c_src/CMakeLists.txt
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mgrep -rn "ignore\]" translation/src translation/tests || echo "no #[ignore]"; cd translation && cargo build --release 2>&1 | tail -2; ls -l target/release/driver ../c_src/build/driver; rm -f /tmp/bench* /tmp/randref* /tmp/strref* /tmp/kern* /tmp/c_*.out /tmp/c_*.err /tmp/c_42.time /tmp/cmake.log[0m[38;5;244m (using tool: shell)[0m
+
+no #[ignore]
+    Finished `release` profile [optimized] target(s) in 0.01s
+-rwxr-xr-x. 1 scheschb amazon  17048 Aug 30 08:34 ../c_src/build/driver
+-rwxr-xr-x. 2 scheschb amazon 503032 Aug 30 08:39 target/release/driver
+[38;5;244m - Completed in 0.36s[0m
+
+[?25l[0m[38;5;141m> [0mAll four phases are complete; the suite is green.[0m[0m
+[0m[0m
+[38;5;252m[1m## What was verified[0m[0m
+[0m[0m
+Both programs build ([38;5;10mc_src/build/driver[0m via cmake, [38;5;10mtranslation/target/release/driver[0m via cargo — the Rust crate compiled with no errors from the start). [38;5;10mtranslation/tests/differential.rs[0m spawns both executables as subprocesses and compares stdout, stderr and exit status for 19 input classes read off the C source. Final run: 22 tests (3 unit + 19 differential), 0 failed, 0 ignored, 8m50s wall — an accepted seed costs the unoptimized C build ~7.5 minutes for its 2000 × 100 × 256Ki arithmetic steps.[0m[0m
+[0m[0m
+Coverage: [38;5;10margc != 2[0m (0, 3 and 5 arguments), all four ways [38;5;10mstrtoul[0m validation rejects (no conversion, trailing garbage, negation past [38;5;10mUINT_MAX[0m, [38;5;10mERANGE[0m), non-UTF-8 argument bytes echoed through [38;5;10m%s[0m, and eight accepted seeds including the boundary cases [38;5;10m4294967295[0m, [38;5;10m2147483648[0m, and the three quirky acceptances: [38;5;10m""[0m, [38;5;10m-0[0m and [38;5;10m-18446744073709551615[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Two issues found[0m[0m
+[0m[0m
+The usage message prints [38;5;10margv[0][0m, and the two binaries live at different paths, so a path-based harness reports a stderr mismatch on every [38;5;10margc != 2[0m input while both programs are in fact identical. The harness sets [38;5;10margv[0][0m to [38;5;10m"driver"[0m for both processes via [38;5;10mCommandExt::arg0[0m — fixed in the test, not the program.[0m[0m
+[0m[0m
+The Rust runtime installs [38;5;10mSIG_IGN[0m for SIGPIPE before [38;5;10mmain[0m, so with stdout on a closed pipe the C program would die from the signal while the Rust program exited 0. [38;5;10mmain[0m now restores [38;5;10mSIG_DFL[0m first thing. This came from reading the code, not from a failing test — a capture-output harness always keeps the pipe open.[0m[0m
+[0m[0m
+No output mismatches remained beyond those. The pre-existing glibc [38;5;10mrand()[0m, [38;5;10mstrtoul[0m and arithmetic-kernel replicas each matched reference values I generated by calling the real C implementations, and I cross-checked the kernel's UB-dependent steps (signed overflow, [38;5;10mx << 1[0m and [38;5;10mx >> 3[0m on negatives) against [38;5;10mcc -O0[0m for twelve starting values including [38;5;10mINT_MIN[0m and [38;5;10mINT_MAX[0m.[0m[0m
+[0m[0m
+[38;5;10mtranslation/ERRORS.md[0m records the enumerated input classes with the C's expected output, both mismatches, and the non-differences I ruled out (the threaded reduction, [38;5;10m%d[0m vs [38;5;10m{}[0m, the BSS array, and the [38;5;10m[profile.dev] opt-level = 3[0m I added so [38;5;10mcargo test[0m doesn't take hours). Nothing in [38;5;10mc_src/[0m was modified — only the prescribed [38;5;10mbuild/[0m directory was added.[0m[0m
+[38;5;8m
+ ▸ Credits: 19.57 • Time: 24m 54s
+
+[0m[1G[0m[0m[?25h

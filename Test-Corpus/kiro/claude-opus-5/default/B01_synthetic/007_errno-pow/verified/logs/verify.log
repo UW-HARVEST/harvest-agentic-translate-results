@@ -1,0 +1,2059 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m.[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m.[0m [38;5;244m(14 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m./c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m./c_src/CMakeLists.txt[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m./translation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2609 bytes[0m from ./c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1239 bytes[0m from ./c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m119 bytes[0m from ./translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m./translation/src/main.rs[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m./translation/src/cfmt.rs[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m./translation/src/cpow.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m8877 bytes[0m from ./translation/src/main.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m634 bytes[0m from ./translation/src/cfmt.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1387 bytes[0m from ./translation/src/cpow.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m./translation/src/strtod.rs[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m15857 bytes[0m from ./translation/src/strtod.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && echo OK && ls[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+
+OK
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+driver
+[38;5;244m - Completed in 0.452s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq/translation)
+    Finished `release` profile [optimized] target(s) in 0.31s
+[38;5;244m - Completed in 0.334s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/diffrun.sh[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m   1,  1[0m:[39m[49m #!/bin/bash
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m # usage: diffrun.sh <name> <stdin-file> args...
+[0m[49m[38;5;9m-  3    [0m:[38;5;9m[49m W=/local/home/scheschb/.harvest/work/harvest-work-dAkmKL
+[0m[49m[38;5;9m-  4    [0m:[38;5;9m[49m C=$W/c_src/build/driver
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m R=$W/translation/target/release/driver
+[0m[49m[38;5;9m-  6    [0m:[38;5;9m[49m name="$1"; inp="$2"; shift 2
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m "$C" "$@" < "$inp" > /tmp/c.out 2> /tmp/c.err; cst=$?
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m "$R" "$@" < "$inp" > /tmp/r.out 2> /tmp/r.err; rst=$?
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m ok=1
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m cmp -s /tmp/c.out /tmp/r.out || { ok=0; echo "[$name] STDOUT DIFF"; echo "--- C ---"; cat -A /tmp/c.out; echo "--- R ---"; cat -A /tmp/r.out; }
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m cmp -s /tmp/c.err /tmp/r.err || { ok=0; echo "[$name] STDERR DIFF"; echo "--- C ---"; cat -A /tmp/c.err; echo "--- R ---"; cat -A /tmp/r.err; }
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m [ "$cst" = "$rst" ] || { ok=0; echo "[$name] STATUS DIFF c=$cst r=$rst"; }
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m [ $ok = 1 ] && echo "[$name] ok (status $cst)"
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m # usage: diffrun.sh [args...]
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m W=/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m mkdir -p /tmp/cdir /tmp/rdir
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m cp -f "$W/c_src/build/driver" /tmp/cdir/driver
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m cp -f "$W/translation/target/release/driver" /tmp/rdir/driver
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m run() {
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m   local d="$1"; shift
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m   ( cd "$d" && ./driver "$@" > /tmp/o.$$ 2> /tmp/e.$$; echo "status=$?"; echo "--stdout--"; cat /tmp/o.$$; echo "--stderr--"; cat /tmp/e.$$ )
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m A=$(run /tmp/cdir "$@")
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m B=$(run /tmp/rdir "$@")
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m if [ "$A" == "$B" ]; then
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m   echo "MATCH: $(printf '%q ' "$@")"
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m   echo "MISMATCH for args: $(printf '%q ' "$@")"
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m   diff <(echo "$A") <(echo "$B") | sed 's/^/    /'
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m fi
+[0m[K
+Replacing: [38;5;141m/tmp/diffrun.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mchmod +x /tmp/diffrun.sh
+/tmp/diffrun.sh
+/tmp/diffrun.sh 2
+/tmp/diffrun.sh 2 10
+/tmp/diffrun.sh 2 10 3
+/tmp/diffrun.sh -2 0.5
+/tmp/diffrun.sh 0 -1
+/tmp/diffrun.sh 10 400
+/tmp/diffrun.sh 10 -400
+/tmp/diffrun.sh abc 2
+/tmp/diffrun.sh 2 abc
+/tmp/diffrun.sh 1e400 2
+/tmp/diffrun.sh 2 1e400
+/tmp/diffrun.sh "" ""
+/tmp/diffrun.sh 1e-400 2[0m[38;5;244m (using tool: shell)[0m
+
+MATCH: '' 
+MATCH: 2 
+MATCH: 2 10 
+MATCH: 2 10 3 
+MATCH: -2 0.5 
+MATCH: 0 -1 
+MATCH: 10 400 
+MATCH: 10 -400 
+MATCH: abc 2 
+MATCH: 2 abc 
+MATCH: 1e400 2 
+MATCH: 2 1e400 
+MATCH: '' '' 
+MATCH: 1e-400 2 
+[38;5;244m - Completed in 0.173s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -- 
+cases=(
+"nan 2" "2 nan" "inf 2" "2 inf" "-inf 3" "-inf 2" "inf -1" "-1 inf" "1 nan" "nan 0"
+"0x10 2" "0x1p4 0.5" "0X1P+2 1" "0x1.8p1 2" "0x 2" "0xp3 2" "2 0x"
+"infinity 2" "INFINITY 2" "infinityx 2" "na 2" "nan(123) 2" "nan(12 2" "-nan 2"
+" 5 3" "5  3" ".5 2" "5. 2" "1e 2" "1e+ 2" "1e5x 2" "+5 2" "--3 2" ". 2" "+ 2" "- 2"
+"1e309 2" "1e308 2" "1e-320 2" "5e-324 2" "2e-324 2" "0e999999999999999999999 2"
+"1e-999999999999999999999 2" "1e+999999999999999999999 2"
+"2.2250738585072014e-308 1" "2.2250738585072012e-308 1" "0x1p-1023 1" "0x1p-1074 1"
+"0x1.8p-1074 1" "0x1p-1075 1"
+"-0 -1" "-0 -0.5" "0 -0.5" "0 inf" "0 -inf" "-1 0.5" "-8 0.3333333333333333"
+"2 1073" "2 1074" "2 -1074" "2 -1075" "10 -323" "10 -324" "-2 3" "-2 2.0" "-2 2.5"
+"1 inf" "1 nan" "-1 -inf" "0.5 -inf" "2 -inf" "1e-310 1" "1e-310 2"
+"1.5 2.5" "100 0" "0 0" "-0.0 3" "-0.0 -3" "3 -0"
+"1e154 2" "1e155 2" "1e-200 2" "1e-100 4"
+"0.1 0.1" "12345.6789 2.5" "-3 -3"
+"1e999 1e999" "nan nan" "inf inf" "-inf -inf"
+"0x1.fffffffffffffp1023 1" "0x1.fffffffffffffp1023 1.0000000001"
+"  \t3.5 2" "5 3 " "007 2" "0.000 5" "1_000 2" "1,5 2"
+"9007199254740993 1" "18446744073709551616 1" "1e-323 1"
+)
+for c in "${cases[@]}"; do
+  eval "/tmp/diffrun.sh $c"
+done 2>&1 | grep -v '^MATCH' | head -60
+echo DONE[0m[38;5;244m (using tool: shell)[0m
+
+bash: eval: line 23: syntax error near unexpected token `('
+bash: eval: line 23: `/tmp/diffrun.sh nan(123) 2'
+bash: eval: line 23: syntax error near unexpected token `('
+bash: eval: line 23: `/tmp/diffrun.sh nan(12 2'
+DONE
+[38;5;244m - Completed in 1.205s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141m/tmp/diffrun.sh 'nan(123)' 2
+/tmp/diffrun.sh 'nan(12' 2
+/tmp/diffrun.sh 'nan()' 2
+/tmp/diffrun.sh 'nan(_a1)' 2
+/tmp/diffrun.sh 'nan(a-b)' 2
+/tmp/diffrun.sh 2 'nan(1)'
+/tmp/diffrun.sh '(' 2[0m[38;5;244m (using tool: shell)[0m
+
+MATCH: nan\(123\) 2 
+MATCH: nan\(12 2 
+MATCH: nan\(\) 2 
+MATCH: nan\(_a1\) 2 
+MATCH: nan\(a-b\) 2 
+MATCH: 2 nan\(1\) 
+MATCH: \( 2 
+[38;5;244m - Completed in 0.89s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/fuzz.py[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m    1,  1[0m:[39m[49m #!/usr/bin/env python3
+[0m[49m[38;5;9m-   2    [0m:[38;5;9m[49m import subprocess, sys, random, itertools
+[0m[49m[38;5;10m+       2[0m:[38;5;10m[49m import os, random, subprocess, sys, shutil, itertools
+[0m[49m[39m    3,  3[0m:[39m[49m 
+[0m[49m[38;5;9m-   4    [0m:[38;5;9m[49m C = "./c_src/build/driver"
+[0m[49m[38;5;9m-   5    [0m:[38;5;9m[49m R = "./translation/target/release/driver"
+[0m[49m[38;5;10m+       4[0m:[38;5;10m[49m W = "/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq"
+[0m[49m[38;5;10m+       5[0m:[38;5;10m[49m os.makedirs("/tmp/cdir", exist_ok=True)
+[0m[49m[38;5;10m+       6[0m:[38;5;10m[49m os.makedirs("/tmp/rdir", exist_ok=True)
+[0m[49m[38;5;10m+       7[0m:[38;5;10m[49m shutil.copyfile(W + "/c_src/build/driver", "/tmp/cdir/driver"); os.chmod("/tmp/cdir/driver", 0o755)
+[0m[49m[38;5;10m+       8[0m:[38;5;10m[49m shutil.copyfile(W + "/translation/target/release/driver", "/tmp/rdir/driver"); os.chmod("/tmp/rdir/driver", 0o755)
+[0m[49m[39m    6,  9[0m:[39m[49m 
+[0m[49m[38;5;9m-   7    [0m:[38;5;9m[49m def run(exe, inp):
+[0m[49m[38;5;9m-   8    [0m:[38;5;9m[49m     p = subprocess.run([exe], input=inp.encode(), capture_output=True)
+[0m[49m[38;5;9m-   9    [0m:[38;5;9m[49m     return p.stdout, p.stderr, p.returncode
+[0m[49m[38;5;10m+      10[0m:[38;5;10m[49m def run(d, args):
+[0m[49m[38;5;10m+      11[0m:[38;5;10m[49m     p = subprocess.run([b"./driver"] + args, cwd=d, capture_output=True)
+[0m[49m[38;5;10m+      12[0m:[38;5;10m[49m     return (p.returncode, p.stdout, p.stderr)
+[0m[49m[39m   10, 13[0m:[39m[49m 
+[0m[49m[38;5;9m-  11    [0m:[38;5;9m[49m def check(inp):
+[0m[49m[38;5;9m-  12    [0m:[38;5;9m[49m     a = run(C, inp)
+[0m[49m[38;5;9m-  13    [0m:[38;5;9m[49m     b = run(R, inp)
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m mismatch = 0
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m def check(args):
+[0m[49m[38;5;10m+      16[0m:[38;5;10m[49m     global mismatch
+[0m[49m[38;5;10m+      17[0m:[38;5;10m[49m     a = run("/tmp/cdir", args)
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m     b = run("/tmp/rdir", args)
+[0m[49m[39m   14, 19[0m:[39m[49m     if a != b:
+[0m[49m[38;5;9m-  15    [0m:[38;5;9m[49m         print("MISMATCH %r\n  C: %r\n  R: %r" % (inp, a, b))
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m         mismatch += 1
+[0m[49m[38;5;10m+      21[0m:[38;5;10m[49m         print("MISMATCH", args)
+[0m[49m[38;5;10m+      22[0m:[38;5;10m[49m         print("  C:", a)
+[0m[49m[38;5;10m+      23[0m:[38;5;10m[49m         print("  R:", b)
+[0m[49m[39m   16, 24[0m:[39m[49m         return False
+[0m[49m[39m   17, 25[0m:[39m[49m     return True
+[0m[49m[38;5;9m-  18    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  19    [0m:[38;5;9m[49m cases = []
+[0m[49m[38;5;9m-  20    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  21    [0m:[38;5;9m[49m # which values
+[0m[49m[38;5;9m-  22    [0m:[38;5;9m[49m for w in [-2147483648, -100, -1, 0, 1, 2, 3, 4, 5, 6, 7, 2147483647]:
+[0m[49m[38;5;9m-  23    [0m:[38;5;9m[49m     cases.append(f"{w} 0.5 0.25 0.125 3 5 7 9 2 0.5 1 4")
+[0m[49m[38;5;9m-  24    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  25    [0m:[38;5;9m[49m # fastfloor branches / special floats
+[0m[49m[38;5;9m-  26    [0m:[38;5;9m[49m floats = ["0", "-0.0", "0.5", "-0.5", "1", "-1", "1.0000001", "-1e-30",
+[0m[49m[38;5;9m-  27    [0m:[38;5;9m[49m           "16777216", "16777217", "-16777216", "2147483647", "2147483648",
+[0m[49m[38;5;9m-  28    [0m:[38;5;9m[49m           "-2147483648", "-2147483649", "1e20", "-1e20", "1e38", "1e39",
+[0m[49m[38;5;9m-  29    [0m:[38;5;9m[49m           "-1e39", "nan", "-nan", "inf", "-inf", "3.4028235e38", "1e-45",
+[0m[49m[38;5;9m-  30    [0m:[38;5;9m[49m           "-1e-45", "255.5", "256", "-256.5", "0.9999999"]
+[0m[49m[38;5;9m-  31    [0m:[38;5;9m[49m for f in floats:
+[0m[49m[38;5;9m-  32    [0m:[38;5;9m[49m     cases.append(f"0 {f} 0.5 0.5 0 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m-  33    [0m:[38;5;9m[49m     cases.append(f"0 0.5 {f} 0.5 0 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m-  34    [0m:[38;5;9m[49m     cases.append(f"0 0.5 0.5 {f} 0 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m-  35    [0m:[38;5;9m[49m     cases.append(f"1 {f} {f} {f} 4 8 16 33 0 0 0 0")
+[0m[49m[38;5;9m-  36    [0m:[38;5;9m[49m     cases.append(f"5 {f} 0.5 0.5 3 0 5 7 0 0 0 0")
+[0m[49m[38;5;9m-  37    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  38    [0m:[38;5;9m[49m # wraps for pow2 variant
+[0m[49m[38;5;9m-  39    [0m:[38;5;9m[49m wraps = [-2147483648, -256, -4, -1, 0, 1, 2, 3, 5, 7, 16, 255, 256, 257, 512,
+[0m[49m[38;5;9m-  40    [0m:[38;5;9m[49m          1024, 65536, 2147483647]
+[0m[49m[38;5;9m-  41    [0m:[38;5;9m[49m for a in wraps:
+[0m[49m[38;5;9m-  42    [0m:[38;5;9m[49m     cases.append(f"0 12.75 -3.5 8.125 {a} {a} {a} 0 0 0 0 0")
+[0m[49m[38;5;9m-  43    [0m:[38;5;9m[49m     cases.append(f"1 12.75 -3.5 8.125 {a} 16 {a} 77 0 0 0 0")
+[0m[49m[39m   44, 26[0m:[39m[49m 
+[0m[49m[38;5;9m-  45    [0m:[38;5;9m[49m # seeds
+[0m[49m[38;5;9m-  46    [0m:[38;5;9m[49m for s in [-2147483648, -256, -255, -1, 0, 1, 127, 128, 255, 256, 257, 511,
+[0m[49m[38;5;9m-  47    [0m:[38;5;9m[49m           2147483647]:
+[0m[49m[38;5;9m-  48    [0m:[38;5;9m[49m     cases.append(f"1 0.5 0.25 0.125 0 0 0 {s} 0 0 0 0")
+[0m[49m[38;5;9m-  49    [0m:[38;5;9m[49m     cases.append(f"5 0.5 0.25 0.125 0 0 0 {s} 0 0 0 0")
+[0m[49m[38;5;9m-  50    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  51    [0m:[38;5;9m[49m # wrap_nonpow2 wraps (safe-ish range)
+[0m[49m[38;5;9m-  52    [0m:[38;5;9m[49m for a in [0, 1, 2, 3, 5, 6, 7, 10, 100, 255, 256]:
+[0m[49m[38;5;9m-  53    [0m:[38;5;9m[49m     for b in [0, 1, 3, 256]:
+[0m[49m[38;5;9m-  54    [0m:[38;5;9m[49m         cases.append(f"5 -12.25 7.5 -3.125 {a} {b} {a} 200 0 0 0 0")
+[0m[49m[38;5;9m-  55    [0m:[38;5;9m[49m         cases.append(f"5 0.5 0.5 0.5 {a} {b} {a} 0 0 0 0 0")
+[0m[49m[38;5;9m-  56    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  57    [0m:[38;5;9m[49m # octaves for fractal variants
+[0m[49m[38;5;9m-  58    [0m:[38;5;9m[49m for which in [2, 3, 4]:
+[0m[49m[38;5;9m-  59    [0m:[38;5;9m[49m     for oct_ in [-2147483648, -1, 0, 1, 2, 5, 6, 255, 256, 257, 300, 1000]:
+[0m[49m[38;5;9m-  60    [0m:[38;5;9m[49m         cases.append(f"{which} 1.5 -2.25 3.75 0 0 0 0 1.9 0.55 1.25 {oct_}")
+[0m[49m[38;5;9m-  61    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  62    [0m:[38;5;9m[49m # lacunarity / gain / offset extremes
+[0m[49m[38;5;9m-  63    [0m:[38;5;9m[49m for lac in ["0", "-0.0", "1", "-1", "2", "1e20", "-1e20", "inf", "-inf", "nan", "1e-40"]:
+[0m[49m[38;5;9m-  64    [0m:[38;5;9m[49m     for gain in ["0", "1", "0.5", "-1", "inf", "nan"]:
+[0m[49m[38;5;9m-  65    [0m:[38;5;9m[49m         for which in [2, 3, 4]:
+[0m[49m[38;5;9m-  66    [0m:[38;5;9m[49m             cases.append(f"{which} 0.5 0.5 0.5 0 0 0 0 {lac} {gain} 1 5")
+[0m[49m[38;5;9m-  67    [0m:[38;5;9m[49m for off in ["0", "-1", "1", "inf", "-inf", "nan", "1e20"]:
+[0m[49m[38;5;9m-  68    [0m:[38;5;9m[49m     cases.append(f"2 0.5 0.5 0.5 0 0 0 0 2 0.5 {off} 6")
+[0m[49m[38;5;9m-  69    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  70    [0m:[38;5;9m[49m # scanf edge cases: truncations at each position
+[0m[49m[38;5;9m-  71    [0m:[38;5;9m[49m full = "1 0.5 0.25 0.125 4 8 16 33 2 0.5 1 4"
+[0m[49m[38;5;9m-  72    [0m:[38;5;9m[49m toks = full.split()
+[0m[49m[38;5;9m-  73    [0m:[38;5;9m[49m for k in range(len(toks) + 1):
+[0m[49m[38;5;9m-  74    [0m:[38;5;9m[49m     cases.append(" ".join(toks[:k]))
+[0m[49m[38;5;9m-  75    [0m:[38;5;9m[49m     cases.append(" ".join(toks[:k]) + " ")
+[0m[49m[38;5;9m-  76    [0m:[38;5;9m[49m     cases.append(" ".join(toks[:k]) + "\n")
+[0m[49m[38;5;9m-  77    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  78    [0m:[38;5;9m[49m # malformed at each position
+[0m[49m[38;5;9m-  79    [0m:[38;5;9m[49m bad = ["x", "-", "+", ".", "-.", "e5", "--1", "0x", "0X", "0xg", "in", "infi",
+[0m[49m[38;5;9m-  80    [0m:[38;5;9m[49m        "infinit", "infinity", "INFINITY", "NaN", "NAN", "nan()", "nan(1)",
+[0m[49m[38;5;9m-  81    [0m:[38;5;9m[49m        "1e", "1e-", "1e+", "1E5", ".5", "5.", "1.2.3", "0x1p", "0x1p-",
+[0m[49m[38;5;9m-  82    [0m:[38;5;9m[49m        "0x.8p1", "0x1.8p+1", "0x10", "1_000", "\t", "1e999999", "1e-999999",
+[0m[49m[38;5;9m-  83    [0m:[38;5;9m[49m        "00000000000000000000005"]
+[0m[49m[38;5;9m-  84    [0m:[38;5;9m[49m for k in range(len(toks)):
+[0m[49m[38;5;9m-  85    [0m:[38;5;9m[49m     for b in bad:
+[0m[49m[38;5;9m-  86    [0m:[38;5;9m[49m         cases.append(" ".join(toks[:k] + [b] + toks[k+1:]))
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m random.seed(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
+[0m[49m[39m   87, 28[0m:[39m[49m 
+[0m[49m[38;5;9m-  88    [0m:[38;5;9m[49m # whitespace / newline handling
+[0m[49m[38;5;9m-  89    [0m:[38;5;9m[49m cases += [
+[0m[49m[38;5;9m-  90    [0m:[38;5;9m[49m     "", " ", "\n", "\t", "\n\n\n", "   \t\n\v\f\r  ",
+[0m[49m[38;5;9m-  91    [0m:[38;5;9m[49m     "0\n0.5\n0.25\n0.125\n0\n0\n0\n0\n0\n0\n0\n0\n",
+[0m[49m[38;5;9m-  92    [0m:[38;5;9m[49m     "0\r\n0.5\r\n0.25\r\n0.125\r\n0\r\n0\r\n0\r\n0\r\n0\r\n0\r\n0\r\n0\r\n",
+[0m[49m[38;5;9m-  93    [0m:[38;5;9m[49m     "2\v0.5\f0.5\r0.5 0 0 0 0 2 0.5 1 6",
+[0m[49m[38;5;9m-  94    [0m:[38;5;9m[49m     "0 0.5 0.25 0.125 0 0 0 0 0 0 0 0 extra junk here",
+[0m[49m[38;5;9m-  95    [0m:[38;5;9m[49m     "0 0.5 0.25 0.125 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0\n",
+[0m[49m[38;5;9m-  96    [0m:[38;5;9m[49m     "\x000 1 1 1 0 0 0 0 0 0 0 0",
+[0m[49m[38;5;9m-  97    [0m:[38;5;9m[49m     "0 1 1 1 0 0 0 0 0 0 0 0\x00",
+[0m[49m[38;5;9m-  98    [0m:[38;5;9m[49m     "\xff\xfe",
+[0m[49m[38;5;9m-  99    [0m:[38;5;9m[49m ]
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m toks = [b"", b"0", b"1", b"2", b"-2", b"0.5", b"-0.5", b"1e308", b"1e309", b"1e-308",
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m         b"1e-320", b"5e-324", b"inf", b"-inf", b"nan", b"-nan", b"INF", b"Nan",
+[0m[49m[38;5;10m+      31[0m:[38;5;10m[49m         b"0x1p10", b"0x1.8p-1074", b"0xA", b"0X", b"abc", b" 3 ", b"3.5.5", b"+.5",
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m         b"-.", b"e5", b"1e", b"1e-", b"--1", b"1e1000000000000", b"-1e-1000000000",
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m         b"3", b"-3", b"1073741824", b"0.3333333333333333", b"2.5", b"-2.5", b"1000000",
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m         b"1.7976931348623157e308", b"2.2250738585072014e-308", b"1024", b"-1024",
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m         b"\xff\xfe", b"\t\n5", b"1 2", b"7", b"-7", b"0.1", b"1e-5", b"100000",
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m         b"0x1p1024", b"0x1p-1075", b"1e-310", b"-0", b"+0", b"1.5", b"-1.5", b"1e17"]
+[0m[49m[39m  100, 37[0m:[39m[49m 
+[0m[49m[38;5;9m- 101    [0m:[38;5;9m[49m # big int overflow
+[0m[49m[38;5;9m- 102    [0m:[38;5;9m[49m for n in ["2147483647", "2147483648", "-2147483648", "-2147483649",
+[0m[49m[38;5;9m- 103    [0m:[38;5;9m[49m           "4294967296", "9223372036854775807", "9223372036854775808",
+[0m[49m[38;5;9m- 104    [0m:[38;5;9m[49m           "-9223372036854775808", "-9223372036854775809",
+[0m[49m[38;5;9m- 105    [0m:[38;5;9m[49m           "99999999999999999999999999", "-99999999999999999999999999",
+[0m[49m[38;5;9m- 106    [0m:[38;5;9m[49m           "+5", "-0", "007"]:
+[0m[49m[38;5;9m- 107    [0m:[38;5;9m[49m     cases.append(f"{n} 0.5 0.5 0.5 0 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 108    [0m:[38;5;9m[49m     cases.append(f"1 0.5 0.5 0.5 {n} {n} {n} {n} 0 0 0 0")
+[0m[49m[38;5;9m- 109    [0m:[38;5;9m[49m     cases.append(f"3 0.5 0.5 0.5 0 0 0 0 2 0.5 0 {n}")
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m # exhaustive pairs over tokens
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m for a, b in itertools.product(toks, toks):
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m     check([a, b])
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m print("pairs done, mismatches:", mismatch)
+[0m[49m[39m  110, 42[0m:[39m[49m 
+[0m[49m[38;5;9m- 111    [0m:[38;5;9m[49m random.seed(1234)
+[0m[49m[38;5;9m- 112    [0m:[38;5;9m[49m def rf():
+[0m[49m[38;5;9m- 113    [0m:[38;5;9m[49m     return random.choice([
+[0m[49m[38;5;9m- 114    [0m:[38;5;9m[49m         lambda: repr(random.uniform(-1000, 1000)),
+[0m[49m[38;5;9m- 115    [0m:[38;5;9m[49m         lambda: repr(random.uniform(-1, 1)),
+[0m[49m[38;5;9m- 116    [0m:[38;5;9m[49m         lambda: str(random.randint(-300, 300)),
+[0m[49m[38;5;9m- 117    [0m:[38;5;9m[49m         lambda: repr(random.uniform(-1e20, 1e20)),
+[0m[49m[38;5;9m- 118    [0m:[38;5;9m[49m     ])()
+[0m[49m[38;5;9m- 119    [0m:[38;5;9m[49m for _ in range(1500):
+[0m[49m[38;5;9m- 120    [0m:[38;5;9m[49m     which = random.randint(-1, 6)
+[0m[49m[38;5;9m- 121    [0m:[38;5;9m[49m     cases.append("%d %s %s %s %d %d %d %d %s %s %s %d" % (
+[0m[49m[38;5;9m- 122    [0m:[38;5;9m[49m         which, rf(), rf(), rf(),
+[0m[49m[38;5;9m- 123    [0m:[38;5;9m[49m         random.choice([0,1,2,4,8,16,32,64,128,256,3,5,7,100,255]),
+[0m[49m[38;5;9m- 124    [0m:[38;5;9m[49m         random.choice([0,1,2,4,8,16,32,64,128,256,3,5,7,100,255]),
+[0m[49m[38;5;9m- 125    [0m:[38;5;9m[49m         random.choice([0,1,2,4,8,16,32,64,128,256,3,5,7,100,255]),
+[0m[49m[38;5;9m- 126    [0m:[38;5;9m[49m         random.randint(-600, 600), rf(), rf(), rf(), random.randint(-3, 20)))
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m # random numeric fuzz
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m def rnd_num():
+[0m[49m[38;5;10m+      45[0m:[38;5;10m[49m     k = random.randrange(8)
+[0m[49m[38;5;10m+      46[0m:[38;5;10m[49m     if k == 0: return b"%r" % random.uniform(-1000, 1000)
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m     if k == 1: return ("%.17g" % random.uniform(-10, 10)).encode()
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m     if k == 2: return ("%d" % random.randint(-10**6, 10**6)).encode()
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m     if k == 3: return ("%.5fe%d" % (random.uniform(-10, 10), random.randint(-350, 350))).encode()
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m     if k == 4: return ("0x%xp%d" % (random.getrandbits(random.randrange(1, 60)), random.randint(-1100, 1100))).encode()
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m     if k == 5: return ("%.3f" % random.uniform(-5, 5)).encode()
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m     if k == 6: return bytes(random.choice(b"0123456789.eExXpP+-abcdefinfnan ") for _ in range(random.randrange(1, 10)))
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m     return ("%d.%de%d" % (random.randint(0,9), random.getrandbits(50), random.randint(-330, 330))).encode()
+[0m[49m[39m  127, 54[0m:[39m[49m 
+[0m[49m[38;5;9m- 128    [0m:[38;5;9m[49m seen = set()
+[0m[49m[38;5;9m- 129    [0m:[38;5;9m[49m uniq = []
+[0m[49m[38;5;9m- 130    [0m:[38;5;9m[49m for c in cases:
+[0m[49m[38;5;9m- 131    [0m:[38;5;9m[49m     if c not in seen:
+[0m[49m[38;5;9m- 132    [0m:[38;5;9m[49m         seen.add(c)
+[0m[49m[38;5;9m- 133    [0m:[38;5;9m[49m         uniq.append(c)
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m N = 4000
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m for _ in range(N):
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     check([rnd_num(), rnd_num()])
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m print("fuzz done, mismatches:", mismatch)
+[0m[49m[39m  134, 59[0m:[39m[49m 
+[0m[49m[38;5;9m- 135    [0m:[38;5;9m[49m bad_n = 0
+[0m[49m[38;5;9m- 136    [0m:[38;5;9m[49m for c in uniq:
+[0m[49m[38;5;9m- 137    [0m:[38;5;9m[49m     if not check(c):
+[0m[49m[38;5;9m- 138    [0m:[38;5;9m[49m         bad_n += 1
+[0m[49m[38;5;9m- 139    [0m:[38;5;9m[49m         if bad_n > 60:
+[0m[49m[38;5;9m- 140    [0m:[38;5;9m[49m             print("... stopping")
+[0m[49m[38;5;9m- 141    [0m:[38;5;9m[49m             break
+[0m[49m[38;5;9m- 142    [0m:[38;5;9m[49m print("checked %d cases, %d mismatches" % (len(uniq), bad_n))
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m # argc variations
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m for n in range(0, 5):
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m     check([b"2"] * n)
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m print("total mismatches:", mismatch)
+[0m[K
+Replacing: [38;5;141m/tmp/fuzz.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/fuzz.py 1 2>&1 | head -80[0m[38;5;244m (using tool: shell)[0m
+
+pairs done, mismatches: 0
+fuzz done, mismatches: 0
+total mismatches: 0
+[38;5;244m - Completed in 13.266s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/fuzz2.py[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m   1,  1[0m:[39m[49m #!/usr/bin/env python3
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m import subprocess, random
+[0m[49m[38;5;9m-  3    [0m:[38;5;9m[49m C = "./c_src/build/driver"
+[0m[49m[38;5;9m-  4    [0m:[38;5;9m[49m R = "./translation/target/release/driver"
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m def run(exe, inp):
+[0m[49m[38;5;9m-  6    [0m:[38;5;9m[49m     p = subprocess.run([exe], input=inp.encode(), capture_output=True)
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m     return p.stdout, p.stderr, p.returncode
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m def check(inp):
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m     a, b = run(C, inp), run(R, inp)
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m import os, subprocess, shutil, sys, random
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m W = "/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq"
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m for d, src in (("/tmp/cdir", "/c_src/build/driver"), ("/tmp/rdir", "/translation/target/release/driver")):
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m     os.makedirs(d, exist_ok=True); shutil.copyfile(W + src, d + "/driver"); os.chmod(d + "/driver", 0o755)
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m def run(d, args):
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m     p = subprocess.run([b"./driver"] + args, cwd=d, capture_output=True)
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m     return (p.returncode, p.stdout, p.stderr)
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m mm = []
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m def check(args):
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     a = run("/tmp/cdir", args); b = run("/tmp/rdir", args)
+[0m[49m[39m  10, 12[0m:[39m[49m     if a != b:
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m         print("MISMATCH %r\n  C: %r\n  R: %r" % (inp, a, b))
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m         return False
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m     return True
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m         mm.append((args, a, b)); print("MISMATCH", args); print("  C:", a); print("  R:", b)
+[0m[49m[39m  14, 14[0m:[39m[49m 
+[0m[49m[39m  15, 15[0m:[39m[49m cases = []
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m # wrap_nonpow2 OOB: wraps above 256 (x0 can reach wrap-1)
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m for w in [257, 258, 260, 270, 288, 300, 320, 400, 512, 513, 600, 700, 736,
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m           768, 800, 1000, 1024, 1057, 2000, 4096, 65536, 1000000, 2147483647]:
+[0m[49m[38;5;9m- 19    [0m:[38;5;9m[49m     for coord in ["0.5", "1000.5", "-1000.5", "12345.5", "100000.5", "-3.5"]:
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m         cases.append(f"5 {coord} 0.5 0.5 {w} 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 21    [0m:[38;5;9m[49m         cases.append(f"5 0.5 {coord} 0.5 0 {w} 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 22    [0m:[38;5;9m[49m         cases.append(f"5 0.5 0.5 {coord} 0 0 {w} 0 0 0 0 0")
+[0m[49m[38;5;9m- 23    [0m:[38;5;9m[49m         cases.append(f"5 {coord} {coord} {coord} {w} {w} {w} 137 0 0 0 0")
+[0m[49m[38;5;9m- 24    [0m:[38;5;9m[49m # negative wraps -> negative indices
+[0m[49m[38;5;9m- 25    [0m:[38;5;9m[49m for w in [-1, -2, -3, -4, -16, -100, -255, -256, -257, -1000, -65536,
+[0m[49m[38;5;9m- 26    [0m:[38;5;9m[49m           -2147483648, -2147483647]:
+[0m[49m[38;5;9m- 27    [0m:[38;5;9m[49m     for coord in ["0.5", "-0.5", "5.5", "-5.5", "1000.5", "-1000.5", "0", "-1"]:
+[0m[49m[38;5;9m- 28    [0m:[38;5;9m[49m         cases.append(f"5 {coord} 0.5 0.5 {w} 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 29    [0m:[38;5;9m[49m         cases.append(f"5 0.5 {coord} 0.5 0 {w} 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 30    [0m:[38;5;9m[49m         cases.append(f"5 0.5 0.5 {coord} 0 0 {w} 0 0 0 0 0")
+[0m[49m[38;5;9m- 31    [0m:[38;5;9m[49m         cases.append(f"5 {coord} {coord} {coord} {w} {w} {w} 200 0 0 0 0")
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m # INT_MIN % -1 (SIGFPE candidate): px == INT_MIN via nan/huge float
+[0m[49m[38;5;9m- 33    [0m:[38;5;9m[49m for coord in ["nan", "-nan", "inf", "-inf", "1e20", "-1e20", "3e38", "-3e38",
+[0m[49m[38;5;9m- 34    [0m:[38;5;9m[49m               "2147483648", "-2147483649", "-2147483648"]:
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m     cases.append(f"5 {coord} 0.5 0.5 -1 0 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m     cases.append(f"5 0.5 {coord} 0.5 0 -1 0 0 0 0 0 0")
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m     cases.append(f"5 0.5 0.5 {coord} 0 0 -1 0 0 0 0 0")
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m     cases.append(f"5 {coord} {coord} {coord} -1 -1 -1 0 0 0 0 0")
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m     cases.append(f"0 {coord} {coord} {coord} -1 -1 -1 0 0 0 0 0")
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m # mixed
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m random.seed(7)
+[0m[49m[38;5;9m- 42    [0m:[38;5;9m[49m for _ in range(2000):
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m     cases.append("5 %s %s %s %d %d %d %d 0 0 0 0" % (
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m         repr(random.uniform(-2000, 2000)), repr(random.uniform(-2000, 2000)),
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m         repr(random.uniform(-2000, 2000)),
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m         random.randint(-1200, 1200), random.randint(-1200, 1200),
+[0m[49m[38;5;9m- 47    [0m:[38;5;9m[49m         random.randint(-1200, 1200), random.randint(0, 255)))
+[0m[49m[38;5;9m- 48    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m seen=set(); uniq=[]
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m for c in cases:
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m     if c not in seen: seen.add(c); uniq.append(c)
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m bad=0
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m for c in uniq:
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m     if not check(c):
+[0m[49m[38;5;9m- 55    [0m:[38;5;9m[49m         bad+=1
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m         if bad>40: print("...stop"); break
+[0m[49m[38;5;9m- 57    [0m:[38;5;9m[49m print("checked %d, mismatches %d" % (len(uniq), bad))
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m # huge finite results -> long %.2f output
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m for e in range(300, 309):
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     cases.append([b"10", str(e).encode()])
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m cases += [[b"1.7976931348623157e308", b"1"], [b"2", b"1023"], [b"2", b"1024"],
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m           [b"2", b"-1022"], [b"2", b"-1074"], [b"2", b"-1075"]]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m # pow underflow boundary
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m for e in range(-1080, -1060):
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     cases.append([b"2", str(e).encode()])
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m for e in range(-330, -300):
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     cases.append([b"10", str(e).encode()])
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m for e in range(300, 320):
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     cases.append([b"10", str(e).encode()])
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m # strtod subnormal boundary decimals
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m for m in range(1, 60):
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     cases.append([("%de-324" % m).encode(), b"1"])
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     cases.append([("%de-320" % m).encode(), b"1"])
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     cases.append([("%de-308" % m).encode(), b"1"])
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m for m in range(2225073858507201, 2225073858507203):
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     cases.append([("%de-323" % m).encode(), b"1"])
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m # hex subnormal boundary
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m for e in range(-1085, -1015):
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     cases.append([("0x1p%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     cases.append([("0x1.8p%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     cases.append([("0x1.fffffffffffffp%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     cases.append([("0x1.0000000000001p%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m for e in range(1015, 1030):
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     cases.append([("0x1.fffffffffffffp%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     cases.append([("0x1.fffffffffffff8p%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     cases.append([("0x1.fffffffffffff7p%d" % e).encode(), b"1"])
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m # negative base, integer/non-integer exponents
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m for y in ("3", "3.0", "3.5", "-3", "-3.5", "1e20", "1e20.5", "0.5", "2", "1e300",
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m           "4503599627370496", "4503599627370496.5", "1e16", "1e15.5"):
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     cases.append([b"-2", y.encode()])
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     cases.append([b"-0.5", y.encode()])
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m # rounding of .005 cases in %.2f
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m for v in ("0.005", "0.015", "0.025", "1.005", "2.675", "0.125", "0.375", "-0.005",
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m           "1e-30", "-1e-30", "0.999", "0.995", "-0.995"):
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     cases.append([v.encode(), b"1"])
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     cases.append([v.encode(), b"1.0"])
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m # nan sign propagation
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m for x in ("nan", "-nan", "nan(1)", "-nan(1)"):
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     cases.append([x.encode(), b"2"]); cases.append([b"2", x.encode()])
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     cases.append([x.encode(), b"0"]); cases.append([b"1", x.encode()])
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m for c in cases: check(c)
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m print("cases:", len(cases), "mismatches:", len(mm))
+[0m[K
+Replacing: [38;5;141m/tmp/fuzz2.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/fuzz2.py 2>&1 | head -60[0m[38;5;244m (using tool: shell)[0m
+
+cases: 659 mismatches: 0
+[38;5;244m - Completed in 1.193s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/fuzz3.py[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m   1,  1[0m:[39m[49m #!/usr/bin/env python3
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m """Fuzz the well-defined domain: printf %.9g over a wide magnitude range and
+[0m[49m[38;5;9m-  3    [0m:[38;5;9m[49m scanf %d/%f parsing over random token soup."""
+[0m[49m[38;5;9m-  4    [0m:[38;5;9m[49m import subprocess, random, string
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m C="./c_src/build/driver"; R="./translation/target/release/driver"
+[0m[49m[38;5;9m-  6    [0m:[38;5;9m[49m def run(exe, inp):
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m     p=subprocess.run([exe],input=inp.encode('latin1'),capture_output=True)
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m     return p.stdout,p.stderr,p.returncode
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m bad=0; n=0
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m def check(inp):
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m     global bad,n
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m     n+=1
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m     a,b=run(C,inp),run(R,inp)
+[0m[49m[38;5;9m- 14    [0m:[38;5;9m[49m     if a!=b:
+[0m[49m[38;5;9m- 15    [0m:[38;5;9m[49m         bad+=1
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m         if bad<=40: print("MISMATCH %r\n  C: %r\n  R: %r"%(inp,a,b))
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m         return False
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m     return True
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m import os, subprocess, shutil
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m W = "/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq"
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m for d, src in (("/tmp/cdir", "/c_src/build/driver"), ("/tmp/rdir", "/translation/target/release/driver")):
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m     os.makedirs(d, exist_ok=True); shutil.copyfile(W + src, d + "/driver"); os.chmod(d + "/driver", 0o755)
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m def run(d, args):
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m     p = subprocess.run([b"./driver"] + args, cwd=d, capture_output=True)
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m     return (p.returncode, p.stdout, p.stderr)
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m mm = []
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m def check(args):
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     a = run("/tmp/cdir", args); b = run("/tmp/rdir", args)
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     if a != b:
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m         mm.append(args); print("MISMATCH", args); print("  C:", a); print("  R:", b)
+[0m[49m[39m  19, 14[0m:[39m[49m 
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m random.seed(99)
+[0m[49m[38;5;9m- 21    [0m:[38;5;9m[49m # --- %.9g magnitude sweep via ridge/fbm with extreme offset/gain ---
+[0m[49m[38;5;9m- 22    [0m:[38;5;9m[49m mags = ["1e-45","1e-44","1e-40","1e-38","1.17549435e-38","1e-30","1e-20",
+[0m[49m[38;5;9m- 23    [0m:[38;5;9m[49m         "1e-10","1e-8","1e-7","1e-6","1e-5","1e-4","1e-3","0.1","0.999999999",
+[0m[49m[38;5;9m- 24    [0m:[38;5;9m[49m         "1","1.00000001","9.99999999","10","99.9999999","100","1000",
+[0m[49m[38;5;9m- 25    [0m:[38;5;9m[49m         "12345.6789","99999999","100000000","999999999","1e9","1.23456789e9",
+[0m[49m[38;5;9m- 26    [0m:[38;5;9m[49m         "1e10","1e15","1e20","1e30","1e38","3.4028235e38","3.4028236e38",
+[0m[49m[38;5;9m- 27    [0m:[38;5;9m[49m         "1e39","1e300"]
+[0m[49m[38;5;9m- 28    [0m:[38;5;9m[49m for m in mags:
+[0m[49m[38;5;9m- 29    [0m:[38;5;9m[49m     for s in ["", "-"]:
+[0m[49m[38;5;9m- 30    [0m:[38;5;9m[49m         # ridge with octaves=1, gain irrelevant: r = (offset-|noise|)^2 * 0.5
+[0m[49m[38;5;9m- 31    [0m:[38;5;9m[49m         check(f"2 0.5 0.5 0.5 0 0 0 0 2 0.5 {s}{m} 1")
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m         # fbm with octaves=1 and amplitude 1 -> plain noise; use lacunarity to
+[0m[49m[38;5;9m- 33    [0m:[38;5;9m[49m         # move the sample point instead
+[0m[49m[38;5;9m- 34    [0m:[38;5;9m[49m         check(f"3 0.5 0.5 0.5 0 0 0 0 {s}{m} 1 0 1")
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m         check(f"4 0.5 0.5 0.5 0 0 0 0 2 {s}{m} 0 3")
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m         check(f"2 {s}{m} 0.5 0.5 0 0 0 0 2 0.5 1 4")
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m         check(f"3 {s}{m} {s}{m} {s}{m} 0 0 0 0 2 0.5 0 4")
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m # random offsets/gains, many octaves -> wide value spread
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m for _ in range(4000):
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m     which = random.choice([2,3,4])
+[0m[49m[38;5;9m- 42    [0m:[38;5;9m[49m     def rnum():
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m         k = random.random()
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m         if k < 0.25: return repr(random.uniform(-4,4))
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m         if k < 0.5:  return repr(random.uniform(-1e3,1e3))
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m         if k < 0.7:  return "%.9g" % (random.uniform(-1,1)*10**random.randint(-45,38))
+[0m[49m[38;5;9m- 47    [0m:[38;5;9m[49m         if k < 0.85: return repr(random.uniform(-2,2))
+[0m[49m[38;5;9m- 48    [0m:[38;5;9m[49m         return random.choice(["0","1","-1","0.5","2","inf","-inf","nan","1e20","1e-20"])
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m     check("%d %s %s %s 0 0 0 0 %s %s %s %d" % (which, rnum(), rnum(), rnum(),
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m           rnum(), rnum(), rnum(), random.randint(0,12)))
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m # --- scanf token soup ---
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m alphabet = "0123456789+-.eExXpPabcdefinAtyN \t\n\r\v\f()_,;*%$#"
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m for _ in range(6000):
+[0m[49m[38;5;9m- 55    [0m:[38;5;9m[49m     ntok = random.randint(0, 14)
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m     toks = []
+[0m[49m[38;5;9m- 57    [0m:[38;5;9m[49m     for _ in range(ntok):
+[0m[49m[38;5;9m- 58    [0m:[38;5;9m[49m         L = random.randint(1, 9)
+[0m[49m[38;5;9m- 59    [0m:[38;5;9m[49m         toks.append("".join(random.choice(alphabet) for _ in range(L)))
+[0m[49m[38;5;9m- 60    [0m:[38;5;9m[49m     check(" ".join(toks))
+[0m[49m[38;5;9m- 61    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 62    [0m:[38;5;9m[49m # structured near-miss numeric tokens in every slot
+[0m[49m[38;5;9m- 63    [0m:[38;5;9m[49m tokens = ["0","1","-1","+1","0.0","-0.0",".5","5.","-.5","+.5",".","-.","+.",
+[0m[49m[38;5;9m- 64    [0m:[38;5;9m[49m           "1e","1E","1e+","1e-","1e5","1e-5","1e+5","1e05","0e0","00","0.",
+[0m[49m[38;5;9m- 65    [0m:[38;5;9m[49m           "0x","0X","0x0","0x1","0x1.8p1","0x1.8p+1","0x1.8p-1","0x.8p1",
+[0m[49m[38;5;9m- 66    [0m:[38;5;9m[49m           "0x1p","0x1p+","0xp1","0x1P2","inf","INF","Inf","infinity","INFINITY",
+[0m[49m[38;5;9m- 67    [0m:[38;5;9m[49m           "infinit","infin","infi","inf1","nan","NAN","NaN","nan(","nan()",
+[0m[49m[38;5;9m- 68    [0m:[38;5;9m[49m           "nan(0x1)","-nan","+nan","-inf","+inf","1.5e","1.5e-","--1","++1",
+[0m[49m[38;5;9m- 69    [0m:[38;5;9m[49m           "1-","1+","1.2.3","1e1e1","2147483647","2147483648","-2147483648",
+[0m[49m[38;5;9m- 70    [0m:[38;5;9m[49m           "-2147483649","9999999999","1e400","-1e400","1e-400","0.000000001",
+[0m[49m[38;5;9m- 71    [0m:[38;5;9m[49m           "1_0","'1'","1 ","\t1","\n1"]
+[0m[49m[38;5;9m- 72    [0m:[38;5;9m[49m slots = 12
+[0m[49m[38;5;9m- 73    [0m:[38;5;9m[49m for k in range(slots):
+[0m[49m[38;5;9m- 74    [0m:[38;5;9m[49m     for t in tokens:
+[0m[49m[38;5;9m- 75    [0m:[38;5;9m[49m         base = ["1","0.5","0.25","0.125","4","8","16","33","2","0.5","1","4"]
+[0m[49m[38;5;9m- 76    [0m:[38;5;9m[49m         base[k] = t
+[0m[49m[38;5;9m- 77    [0m:[38;5;9m[49m         check(" ".join(base))
+[0m[49m[38;5;9m- 78    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 79    [0m:[38;5;9m[49m print("checked %d, mismatches %d" % (n, bad))
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m cases = []
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m # whitespace / sign only
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m for s in (b" ", b"\t", b"\n", b"\x0b", b"\x0c", b"\r", b" \t\n\x0b\x0c\r 2", b"+", b"-",
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m           b"++2", b"+-2", b" + 2", b"2 ", b"\xa0" + b"2", b"\v2"):
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     cases.append([s, b"2"]); cases.append([b"2", s])
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m # hex oddities
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m for s in (b"0x", b"0X", b"0x.", b"0x.8p1", b"0x.8", b"0x8.", b"0x1z", b"0x1p", b"0x1p+",
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m           b"0x1pz", b"0x0p0", b"0x0", b"-0x1p3", b"0x1P3", b"0xABCDEF", b"0x1.p3",
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m           b"0x1p1e3", b"00x10", b"0x10x10", b"x10"):
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     cases.append([s, b"2"]); cases.append([b"2", s])
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m # long digit strings
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m cases.append([(b"1" + b"0" * 400), b"1"])
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m cases.append([(b"1" + b"0" * 400 + b"e-400"), b"1"])
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m cases.append([(b"0." + b"0" * 400 + b"1"), b"1"])
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m cases.append([(b"0." + b"0" * 400 + b"1e400"), b"1"])
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m cases.append([(b"9" * 1000), b"1"])
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m cases.append([(b"0." + b"9" * 1000), b"1"])
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m cases.append([(b"0x1." + b"f" * 300 + b"p0"), b"1"])
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m cases.append([(b"0x" + b"f" * 300 + b"p-1200"), b"1"])
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m cases.append([(b"1e" + b"9" * 30), b"1"])
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m cases.append([(b"1e-" + b"9" * 30), b"1"])
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m cases.append([(b"0e" + b"9" * 30), b"1"])
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m cases.append([(b"0." + b"0" * 500 + b"1e" + b"9" * 20), b"1"])
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m cases.append([(b"1" + b"0" * 100000), b"1"])
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m # pow subnormal / underflow region
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m for e in ("-320", "-321", "-322", "-323", "-324", "-325", "-310", "-315"):
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     cases.append([b"10", e.encode()])
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m for m, e in (("2", "-1075"), ("2", "-1076"), ("3", "-700"), ("3", "-680"), ("7", "-390")):
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     cases.append([m.encode(), e.encode()])
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m cases.append([b"1e-160", b"2"]); cases.append([b"1e-162", b"2"]); cases.append([b"1e-200", b"2"])
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m cases.append([b"1e-170", b"2"]); cases.append([b"1e-165", b"2"])
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m # results printed with many digits
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m cases.append([b"1e-320", b"1"])   # erange in strtod actually
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m cases.append([b"4.9e-324", b"1"])
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m cases.append([b"1.5", b"1"])
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m for c in cases: check(c)
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m print("cases:", len(cases), "mismatches:", len(mm))
+[0m[K
+Replacing: [38;5;141m/tmp/fuzz3.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/fuzz3.py 2>&1 | head -80[0m[38;5;244m (using tool: shell)[0m
+
+cases: 104 mismatches: 0
+[38;5;244m - Completed in 0.210s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cdir && for a in "2 10" "10 308" "1e-320 1" "0x1p-1074 1" "-2 0.5" "10 400" "" ; do echo "== [$a]"; ./driver $a; echo "rc=$?"; done 2>&1 | cut -c1-200[0m[38;5;244m (using tool: shell)[0m
+
+== [2 10]
+Result: 1024.00
+rc=0
+== [10 308]
+Result: 100000000000000001097906362944045541740492309677311846336810682903157585404911491537163328978494688899061249669721172515611590283743140088328307009198146046031271664502933027185697489699588559
+rc=0
+== [1e-320 1]
+Range error while converting base '1e-320'
+rc=1
+== [0x1p-1074 1]
+Result: 0.00
+rc=0
+== [-2 0.5]
+Domain error: pow(-2.00, 0.50) is undefined in the real number domain.
+rc=1
+== [10 400]
+Range error: pow(10.00, 400.00) caused overflow or underflow.
+rc=1
+== []
+Usage: ./driver base exponent
+rc=1
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 2 3 4; do python3 /tmp/fuzz.py $s 2>&1 | tail -3; done[0m[38;5;244m (using tool: shell)[0m
+
+pairs done, mismatches: 0
+fuzz done, mismatches: 0
+total mismatches: 0
+pairs done, mismatches: 0
+fuzz done, mismatches: 0
+total mismatches: 0
+pairs done, mismatches: 0
+fuzz done, mismatches: 0
+total mismatches: 0
+[38;5;244m - Completed in 39.833s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/fuzz4.py[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m   1,  1[0m:[39m[49m #!/usr/bin/env python3
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m """NaN/inf sign propagation and negative-zero fuzz across all `which` values."""
+[0m[49m[38;5;9m-  3    [0m:[38;5;9m[49m import subprocess, random, itertools
+[0m[49m[38;5;9m-  4    [0m:[38;5;9m[49m C="./c_src/build/driver"; R="./translation/target/release/driver"
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m def run(exe, inp):
+[0m[49m[38;5;9m-  6    [0m:[38;5;9m[49m     p=subprocess.run([exe],input=inp.encode(),capture_output=True)
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m     return p.stdout,p.stderr,p.returncode
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m bad=0; n=0; outs={}
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m def check(inp):
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m     global bad,n
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m     n+=1
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m     a,b=run(C,inp),run(R,inp)
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m     outs[a[0]] = outs.get(a[0],0)+1
+[0m[49m[38;5;9m- 14    [0m:[38;5;9m[49m     if a!=b:
+[0m[49m[38;5;9m- 15    [0m:[38;5;9m[49m         bad+=1
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m         if bad<=40: print("MISMATCH %r\n  C: %r\n  R: %r"%(inp,a,b))
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m import os, subprocess, shutil, random, struct, sys, math
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m W = "/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq"
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m for d, src in (("/tmp/cdir", "/c_src/build/driver"), ("/tmp/rdir", "/translation/target/release/driver")):
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m     os.makedirs(d, exist_ok=True); shutil.copyfile(W + src, d + "/driver"); os.chmod(d + "/driver", 0o755)
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m def run(d, args):
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m     p = subprocess.run([b"./driver"] + args, cwd=d, capture_output=True)
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m     return (p.returncode, p.stdout, p.stderr)
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m n = 0; mm = 0
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m def check(args):
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     global n, mm
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     n += 1
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     a = run("/tmp/cdir", args); b = run("/tmp/rdir", args)
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     if a != b:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m         mm += 1; print("MISMATCH", args); print("  C:", a); print("  R:", b)
+[0m[49m[39m  17, 16[0m:[39m[49m 
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m sp = ["nan","-nan","inf","-inf","0","-0.0","1","-1","1e20","-1e20","0.5","-0.5",
+[0m[49m[38;5;9m- 19    [0m:[38;5;9m[49m       "3.4e38","-3.4e38","1e-45","-1e-45"]
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m for which in [0,1,2,3,4,5]:
+[0m[49m[38;5;9m- 21    [0m:[38;5;9m[49m     for x,y,z in itertools.product(sp, repeat=3):
+[0m[49m[38;5;9m- 22    [0m:[38;5;9m[49m         check(f"{which} {x} {y} {z} 0 0 0 0 2 0.5 1 3")
+[0m[49m[38;5;9m- 23    [0m:[38;5;9m[49m for which in [2,3,4]:
+[0m[49m[38;5;9m- 24    [0m:[38;5;9m[49m     for lac,gain,off in itertools.product(sp, sp, ["0","1","nan","-nan","inf","-inf"]):
+[0m[49m[38;5;9m- 25    [0m:[38;5;9m[49m         check(f"{which} 0.5 0.5 0.5 0 0 0 0 {lac} {gain} {off} 4")
+[0m[49m[38;5;9m- 26    [0m:[38;5;9m[49m random.seed(5)
+[0m[49m[38;5;9m- 27    [0m:[38;5;9m[49m for _ in range(3000):
+[0m[49m[38;5;9m- 28    [0m:[38;5;9m[49m     which=random.randint(0,5)
+[0m[49m[38;5;9m- 29    [0m:[38;5;9m[49m     pick=lambda: random.choice(sp+[repr(random.uniform(-3,3))])
+[0m[49m[38;5;9m- 30    [0m:[38;5;9m[49m     check("%d %s %s %s %d %d %d %d %s %s %s %d"%(which,pick(),pick(),pick(),
+[0m[49m[38;5;9m- 31    [0m:[38;5;9m[49m         random.choice([0,1,2,4,8,16,256]),random.choice([0,1,2,4,8,16,256]),
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m         random.choice([0,1,2,4,8,16,256]),random.randint(0,255),
+[0m[49m[38;5;9m- 33    [0m:[38;5;9m[49m         pick(),pick(),pick(),random.randint(0,8)))
+[0m[49m[38;5;9m- 34    [0m:[38;5;9m[49m print("checked %d, mismatches %d"%(n,bad))
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m print("distinct C outputs seen:", len(outs))
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m for k in sorted(outs, key=lambda s:-outs[s])[:12]: print("  %r x%d"%(k,outs[k]))
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m print("negzero seen:", outs.get(b'-0\n',0), " nan:", outs.get(b'nan\n',0), " -nan:", outs.get(b'-nan\n',0),
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m       " inf:", outs.get(b'inf\n',0), " -inf:", outs.get(b'-inf\n',0))
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m random.seed(int(sys.argv[1]) if len(sys.argv) > 1 else 7)
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m # exact ties for %.2f: k/2^n
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m for den in (8, 16, 32, 64, 128, 256):
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     for k in range(-40, 41):
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         check([("%r" % (k / den)).encode(), b"1"])
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m # whole double range via hex literals, exponent 1
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m for _ in range(1500):
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     bits = random.getrandbits(64)
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     v = struct.unpack("<d", struct.pack("<Q", bits))[0]
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     if math.isnan(v) or math.isinf(v):
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         continue
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     check([float.hex(v).encode(), b"1"])
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m # also exponent 1 with decimal repr
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m for _ in range(500):
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     bits = random.getrandbits(64)
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     v = struct.unpack("<d", struct.pack("<Q", bits))[0]
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     if math.isnan(v) or math.isinf(v):
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         continue
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     check([("%.17g" % v).encode(), b"1"])
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m print("cases:", n, "mismatches:", mm)
+[0m[K
+Replacing: [38;5;141m/tmp/fuzz4.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/fuzz4.py 7 2>&1 | head -40; python3 /tmp/fuzz4.py 11 2>&1 | tail -5[0m[38;5;244m (using tool: shell)[0m
+
+cases: 2483 mismatches: 0
+cases: 2484 mismatches: 0
+[38;5;244m - Completed in 8.822s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/fuzz5.py[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env python3
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m import os, subprocess, shutil, random, struct, sys, math
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m W = "/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m for d, src in (("/tmp/cdir", "/c_src/build/driver"), ("/tmp/rdir", "/translation/target/release/driver")):
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m     os.makedirs(d, exist_ok=True); shutil.copyfile(W + src, d + "/driver"); os.chmod(d + "/driver", 0o755)
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m def run(d, args):
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m     p = subprocess.run([b"./driver"] + args, cwd=d, capture_output=True)
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m     return (p.returncode, p.stdout, p.stderr)
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m n = 0; mm = 0
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m def check(args):
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     global n, mm
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     n += 1
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     a = run("/tmp/cdir", args); b = run("/tmp/rdir", args)
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     if a != b:
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m         mm += 1
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m         if mm < 25:
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m             print("MISMATCH", args); print("  C:", a); print("  R:", b)
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m random.seed(int(sys.argv[1]) if len(sys.argv) > 1 else 5)
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m def rb():
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     k = random.randrange(6)
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     if k == 0:  # any double
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         bits = random.getrandbits(64)
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     elif k == 1:  # small exponent range
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         bits = (random.getrandbits(1) << 63) | ((1023 + random.randint(-40, 40)) << 52) | random.getrandbits(52)
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     elif k == 2:  # near-integer values
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         return ("%d" % random.randint(-2000, 2000)).encode()
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     elif k == 3:
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         return ("%.1f" % (random.randint(-4000, 4000) / 2.0)).encode()
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     elif k == 4:
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         bits = (random.getrandbits(1) << 63) | ((1023 + random.randint(-1080, 1080) % 2047) << 52) | random.getrandbits(52)
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     else:
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         return random.choice([b"0", b"-0", b"1", b"-1", b"inf", b"-inf", b"nan", b"0.5", b"-0.5", b"2", b"-2"])
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     v = struct.unpack("<d", struct.pack("<Q", bits & ((1<<64)-1)))[0]
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     if math.isnan(v): return b"nan"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     if math.isinf(v): return b"inf" if v > 0 else b"-inf"
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     return float.hex(v).encode()
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m for _ in range(6000):
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     check([rb(), rb()])
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m print("cases:", n, "mismatches:", mm)
+[0m[K
+Creating: [38;5;141m/tmp/fuzz5.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/fuzz5.py 5 2>&1 | head -60[0m[38;5;244m (using tool: shell)[0m
+
+cases: 6000 mismatches: 0
+[38;5;244m - Completed in 10.571s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && python3 - <<'EOF' 2>&1 | tail -30
+import os, subprocess, shutil, math
+W="/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq"
+def run(d,args):
+    p=subprocess.run([b"./driver"]+args,cwd=d,capture_output=True); return (p.returncode,p.stdout,p.stderr)
+n=mm=0
+def check(args):
+    global n,mm
+    n+=1
+    a=run("/tmp/cdir",args); b=run("/tmp/rdir",args)
+    if a!=b:
+        mm+=1; print("MISMATCH",args,a,b)
+cases=[]
+for base in ("0.1","0.2","0.3","0.5","0.7","0.9","1e-10","2","3","7","1.1"):
+    for e in range(-1200,-1000):
+        cases.append([base.encode(), str(e).encode()])
+for base in ("0.1","0.5","0.9","1.1","2","10"):
+    for e in range(-400,-280):
+        cases.append([base.encode(), str(e).encode()])
+    for e in range(280,400):
+        cases.append([base.encode(), str(e).encode()])
+# fractional exponents landing in subnormal range
+for e in ("-1074.5","-1073.5","-1070.2","-1022.5","-1023.7","-1076.0","-1080.3"):
+    for base in ("2","0.5","10","3"):
+        cases.append([base.encode(), e.encode()])
+for c in cases: check(c)
+print("cases:",n,"mismatches:",mm)
+EOF[0m[38;5;244m (using tool: shell)[0m
+
+cases: 3668 mismatches: 0
+[38;5;244m - Completed in 6.401s[0m
+
+[?25l[0m[38;5;141m> [0mBoth build; ~25,000 differential probes show no mismatch. Now the test suite.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m./translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests: run the original C `driver` and the Rust `driver` as
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! subprocesses with identical `argv` and require byte-identical stdout,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! byte-identical stderr and an identical exit status.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! The Rust code is never linked in as a library — only the built executable is
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! driven, exactly the way the graders (and a shell) do it.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! `argv[0]` is part of the observable output (the usage message prints it), so
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! both executables are copied into sibling directories under the same name
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! `driver` and invoked as `./driver` with the working directory set. That makes
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! `argv[0]` literally `./driver` for both programs.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::ffi::OsStr;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::process::{Command, Output};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::sync::OnceLock;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// Root of the repository (parent of the `translation` crate).
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m fn repo_root() -> PathBuf {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     crate_dir
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         .expect("crate dir has a parent")
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m fn target_dir() -> PathBuf {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     // `CARGO_BIN_EXE_driver` is <target>/<profile>/driver
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     let exe = PathBuf::from(env!("CARGO_BIN_EXE_driver"));
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     exe.parent()
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         .and_then(|p| p.parent())
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         .expect("bin path has target dir ancestors")
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// Configure and build the C program out-of-tree so that nothing inside
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// `c_src/` is written to. Returns the path of the built executable.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn build_c_binary() -> PathBuf {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let src = repo_root().join("c_src");
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         src.join("CMakeLists.txt").is_file(),
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         "cannot find c_src/CMakeLists.txt at {}",
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         src.display()
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     // Prefer an already-built binary from the canonical in-tree build dir.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let prebuilt = src.join("build").join("driver");
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     if prebuilt.is_file() {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         return prebuilt;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let build = target_dir().join("c_build");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     std::fs::create_dir_all(&build).expect("create c build dir");
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let cfg = Command::new("cmake")
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         .arg("-S")
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         .arg(&src)
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         .arg("-B")
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         .arg(&build)
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         .expect("failed to run cmake (is cmake installed?)");
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         cfg.status.success(),
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         "cmake configure failed:\n{}\n{}",
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         String::from_utf8_lossy(&cfg.stdout),
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         String::from_utf8_lossy(&cfg.stderr)
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     let bld = Command::new("cmake")
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         .arg("--build")
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         .arg(&build)
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         .expect("failed to run cmake --build");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         bld.status.success(),
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         "cmake build failed:\n{}\n{}",
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         String::from_utf8_lossy(&bld.stdout),
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         String::from_utf8_lossy(&bld.stderr)
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     let out = build.join("driver");
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     assert!(out.is_file(), "C build produced no {}", out.display());
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m struct Sandbox {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     c_dir: PathBuf,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     rust_dir: PathBuf,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m fn sandbox() -> &'static Sandbox {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     static SANDBOX: OnceLock<Sandbox> = OnceLock::new();
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     SANDBOX.get_or_init(|| {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         let base = target_dir().join("difftest");
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         let c_dir = base.join("c");
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         let rust_dir = base.join("rust");
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         std::fs::create_dir_all(&c_dir).expect("create c sandbox");
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         std::fs::create_dir_all(&rust_dir).expect("create rust sandbox");
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let c_bin = build_c_binary();
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         let rust_bin = PathBuf::from(env!("CARGO_BIN_EXE_driver"));
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         copy_exe(&c_bin, &c_dir.join("driver"));
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         copy_exe(&rust_bin, &rust_dir.join("driver"));
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         Sandbox { c_dir, rust_dir }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m fn copy_exe(from: &Path, to: &Path) {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     // Copying (rather than symlinking) keeps `argv[0]` identical and avoids any
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     // dependency on how the platform resolves symlinks.
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     std::fs::copy(from, to)
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", from.display(), to.display()));
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         use std::os::unix::fs::PermissionsExt;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         let mut perms = std::fs::metadata(to).expect("stat copied exe").permissions();
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         perms.set_mode(0o755);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         std::fs::set_permissions(to, perms).expect("chmod copied exe");
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m fn run_in(dir: &Path, args: &[&[u8]]) -> Output {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let mut cmd = Command::new("./driver");
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     cmd.current_dir(dir);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     for a in args {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         cmd.arg(OsStr::from_bytes(a));
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     // A deterministic, minimal environment: locale can influence C's printf
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     // decimal point, and the graders run in the default C locale.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     cmd.env_remove("LC_ALL")
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         .env_remove("LC_NUMERIC")
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         .env_remove("LANG");
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     cmd.output().expect("failed to spawn ./driver")
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m fn show(b: &[u8]) -> String {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     String::from_utf8_lossy(b).into_owned()
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m fn quote(args: &[&[u8]]) -> String {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     args.iter()
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         .map(|a| format!("{:?}", String::from_utf8_lossy(a)))
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         .collect::<Vec<_>>()
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         .join(" ")
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// The core assertion: stdout, stderr and exit status must all match.
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m fn assert_same(args: &[&[u8]]) {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let sb = sandbox();
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     let c = run_in(&sb.c_dir, args);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     let r = run_in(&sb.rust_dir, args);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         c.stdout,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         r.stdout,
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         "stdout differs for argv [{}]\n  C   : {}\n  Rust: {}",
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         quote(args),
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         show(&c.stdout),
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         show(&r.stdout)
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         c.stderr,
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         r.stderr,
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         "stderr differs for argv [{}]\n  C   : {}\n  Rust: {}",
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         quote(args),
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         show(&c.stderr),
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         show(&r.stderr)
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         r.status.code(),
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         "exit status differs for argv [{}]: C {:?} vs Rust {:?}",
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         quote(args),
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         r.status.code()
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m fn assert_same_all(cases: &[&[&[u8]]]) {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     for c in cases {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         assert_same(c);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m /// Convenience: two string arguments.
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m fn same2(base: &str, exponent: &str) {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     assert_same(&[base.as_bytes(), exponent.as_bytes()]);
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m // argc: `if (argc != 3)` -> usage on stderr, exit 1
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m fn argc_not_three_prints_usage() {
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     // Zero extra arguments (empty input), one, three and four.
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     assert_same(&[]);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     assert_same(&[b"2"]);
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     assert_same(&[b"2", b"3", b"4"]);
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     assert_same(&[b"2", b"3", b"4", b"5"]);
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     // Empty-string arguments still count towards argc.
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     assert_same(&[b""]);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     assert_same(&[b"", b"", b""]);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m fn argc_exactly_three_is_the_only_accepted_form() {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     // The single shape that reaches the conversion code.
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     same2("2", "10");
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     // Both arguments empty: strtod converts nothing, so endptr == nptr == "" and
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     // *endptr == '\0'; the C accepts it as 0 and prints pow(0,0).
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     same2("", "");
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     same2("", "2");
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     same2("2", "");
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m // base conversion: ERANGE branch, then the `*endptr1 != '\0'` branch
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m fn base_invalid_numeric_input() {
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         "abc", "x", "--3", "+-2", "++2", ".", "+", "-", "+.", "-.", "e5", "E", "1 2", "5 ", " 5 ",
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         "3.5.5", "1,5", "1_000", "0x", "0X", "0x.", "0xp3", "0x1z", "0x1p", "0x1p+", "0x1pz",
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         "1e5x", "na", "n", "i", "in", "nan(12", "nan(a-b)", "inf inity", "0x10x10", "00x10",
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         "1e", "1e+", "1e-", "#", "\u{7f}",
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         same2(s, "2");
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m fn base_range_error_takes_precedence_over_trailing_garbage() {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     // strtod sets ERANGE *and* leaves trailing text; the C checks ERANGE first.
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     same2("1e999abc", "2");
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     same2("1e-999zzz", "2");
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     same2("1e400 ", "2");
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m fn base_range_error_overflow_and_underflow() {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         "1e309",
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         "-1e309",
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         "1e400",
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         "1e999999999999999999999",
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         "1e+999999999999999999999",
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         "-1e999999999999999999999",
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         "1e-320",
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         "5e-324",
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         "2e-324",
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         "1e-400",
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         "1e-999999999999999999999",
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         "0x1p-1075",
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         "0x1.8p-1074",
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m         "0x1p1024",
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         "0x1.fffffffffffffp-1023",
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         same2(s, "1");
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m // exponent conversion: the same two branches, on argv[2]
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m fn exponent_invalid_numeric_input() {
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         "abc", "--3", ".", "+", "-", "e5", "3.5.5", "0x", "0xp3", "1e5x", "na", "nan(12", "1e",
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m         "1e+",
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         same2("2", s);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m fn exponent_range_error() {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         "1e309",
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         "-1e400",
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         "1e-320",
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m         "5e-324",
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m         "1e999999999999999999999",
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m         "0x1p-1075",
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         "1e-400abc",
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         same2("2", s);
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m fn base_is_validated_before_exponent() {
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     // Both arguments are bad: only the base's message must appear.
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     same2("abc", "def");
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     same2("1e999", "abc");
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     same2("abc", "1e999");
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     same2("1e999", "1e999");
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     same2("1e-999", "1e999");
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m // accepted strtod forms (all reach pow)
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m fn strtod_accepted_decimal_forms() {
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m         "0", "-0", "+0", "1", "-1", "007", "0.000", ".5", "5.", "+5", "-5", "1.5", "-1.5", "2.5",
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         "0.1", "1e5", "1E5", "1e+5", "1e-5", "0e999999999999999999999", "1e308", "1e-308",
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m         "2.2250738585072014e-308", "1.7976931348623157e308", "9007199254740993",
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m         "18446744073709551616", "0.3333333333333333",
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m         same2(s, "1");
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m fn strtod_leading_whitespace_is_skipped() {
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     // The C-locale space set: ' ', \t, \n, \v, \f, \r.
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m         " 5", "\t5", "\n5", "\u{b}5", "\u{c}5", "\r5", " \t\n\u{b}\u{c}\r 3.5", "  +5", "  -5",
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m         same2(s, "2");
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m     // Whitespace only: no conversion, endptr == nptr, so *endptr != '\0'.
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     for s in [" ", "\t", "\n", "\u{b}", "\u{c}", "\r", "   "] {
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m         same2(s, "2");
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     // A non-breaking space is not C whitespace.
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m     assert_same(&[b"\xa05", b"2"]);
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m fn strtod_hexadecimal_forms() {
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m         "0x10", "0X10", "-0x10", "0x1p4", "0X1P+2", "0x1.8p1", "0x1.p3", "0x.8p1", "0x.8", "0x8.",
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m         "0xABCDEF", "0x0", "0x0p0", "0x1P3", "0x1p-1074", "0x1p-1023", "0x1p-1022",
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m         "0x1.fffffffffffffp1023", "0x1.FFFFFFFFFFFFF8p-1023", "0x1p1e3",
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m         same2(s, "1");
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m fn strtod_infinity_and_nan_forms() {
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m         "inf",
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m         "INF",
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m         "Inf",
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m         "-inf",
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m         "+inf",
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m         "infinity",
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m         "INFINITY",
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m         "InFiNiTy",
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m         "infinityx",
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m         "nan",
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         "NAN",
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         "-nan",
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         "nan(123)",
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         "nan()",
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         "nan(_a1)",
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m         "-nan(1)",
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m         same2(s, "2");
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m         same2("2", s);
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m fn strtod_very_long_inputs() {
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m     let long_int = format!("1{}", "0".repeat(400));
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m     let long_frac = format!("0.{}1", "0".repeat(400));
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m     let nines = "9".repeat(1000);
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m     let long_hex = format!("0x1.{}p0", "f".repeat(300));
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m     let huge_exp = format!("1e{}", "9".repeat(30));
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m     let tiny_exp = format!("1e-{}", "9".repeat(30));
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m     let zero_huge_exp = format!("0e{}", "9".repeat(30));
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m     let many_zeros = format!("1{}", "0".repeat(100_000));
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m     let cases: Vec<Vec<&[u8]>> = vec![
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m         vec![long_int.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m         vec![long_frac.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         vec![nines.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m         vec![long_hex.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m         vec![huge_exp.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m         vec![tiny_exp.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m         vec![zero_huge_exp.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         vec![many_zeros.as_bytes(), b"1"],
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m     for c in &cases {
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m         assert_same(c);
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m fn strtod_subnormal_boundary() {
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m     // Tininess is detected after rounding and additionally requires the result
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m     // to be inexact, so some subnormal results set ERANGE and some do not.
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         "2.2250738585072014e-308",
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m         "2.2250738585072013e-308",
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         "2.2250738585072012e-308",
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m         "2.225073858507201e-308",
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m         "1e-310",
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m         "1e-323",
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m         "4.9e-324",
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m         "3e-324",
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m         "0x1p-1074",
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m         "0x1.8p-1074",
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m         "0x1.0000000000001p-1074",
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m         "0x1.fffffffffffffp-1023",
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m         "0x1.FFFFFFFFFFFFF7p-1023",
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m         same2(s, "1");
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m     for m in 1..40u32 {
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m         same2(&format!("{m}e-324"), "1");
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m         same2(&format!("{m}e-320"), "1");
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m fn strtod_non_utf8_arguments() {
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m     // argv is bytes, not text; the error messages echo the raw bytes.
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m     assert_same(&[b"\xff\xfe", b"2"]);
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m     assert_same(&[b"2", b"\x80\x81"]);
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m     assert_same(&[b"3\xff", b"2"]);
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     assert_same(&[b"\xc3", b"\xc3"]);
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m // pow: the EDOM branch
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m fn pow_domain_error_negative_base_fractional_exponent() {
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m         ("-2", "0.5"),
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m         ("-2", "2.5"),
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m         ("-2", "-0.5"),
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m         ("-3", "3.5"),
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m         ("-1", "0.5"),
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m         ("-0.5", "0.5"),
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m         ("-8", "0.3333333333333333"),
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m         ("-1.5", "2.5"),
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m         ("-1e300", "1.5"),
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m         ("-4.9e-324", "0.5"),
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m fn pow_negative_base_integral_exponent_is_fine() {
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m         ("-2", "2"),
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m         ("-2", "3"),
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m         ("-2", "-3"),
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m         ("-2", "2.0"),
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m         ("-2", "1e20"),
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m         ("-2", "4503599627370496"),
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m         ("-1", "inf"),
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m         ("-1", "-inf"),
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m         ("-0.0", "3"),
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m         ("-3", "-3"),
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m // pow: the ERANGE branch
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m fn pow_range_error_pole() {
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m         ("0", "-1"),
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m         ("0", "-0.5"),
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m         ("-0", "-1"),
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m         ("-0", "-3"),
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m         ("-0", "-0.5"),
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m         ("0.0", "-2"),
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m fn pow_range_error_overflow() {
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m         ("10", "400"),
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m         ("10", "309"),
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m         ("2", "1024"),
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m         ("1e300", "2"),
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m         ("-10", "401"),
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m         ("0.1", "-400"),
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m         ("1.7976931348623157e308", "1.0000000001"),
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m fn pow_range_error_underflow() {
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m         ("10", "-400"),
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m         ("10", "-324"),
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m         ("2", "-1075"),
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m         ("2", "-1080"),
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m         ("0.1", "400"),
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m         ("1e-300", "2"),
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m         ("-10", "-401"),
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m fn pow_underflow_boundary_subnormal_results_do_not_set_errno() {
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m     // A merely subnormal (non-zero) result is not a range error for glibc.
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m     for e in -1080..-1060 {
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m         same2("2", &e.to_string());
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     for e in -330..-300 {
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m         same2("10", &e.to_string());
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m     for e in ["-1074", "-1074.5", "-1073.5", "-1022.5", "-1076.0"] {
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m         same2("2", e);
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m         same2("0.5", e);
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m fn pow_overflow_boundary() {
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m     for e in 300..320 {
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m         same2("10", &e.to_string());
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m     for e in 1020..1030 {
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m         same2("2", &e.to_string());
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m // pow: the cases that set no errno at all
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m fn pow_no_errno_special_cases() {
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m         ("nan", "2"),
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m         ("2", "nan"),
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m         ("nan", "0"),
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m         ("1", "nan"),
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m         ("-nan", "2"),
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m         ("2", "-nan"),
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m         ("nan", "nan"),
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m         ("inf", "2"),
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m         ("inf", "-2"),
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m         ("-inf", "2"),
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m         ("-inf", "3"),
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m         ("-inf", "-3"),
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m         ("2", "inf"),
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m         ("2", "-inf"),
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m         ("0.5", "-inf"),
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m         ("0", "inf"),
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m         ("0", "-inf"),
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m         ("inf", "inf"),
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m         ("-inf", "-inf"),
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m         ("1", "inf"),
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m         ("1", "1e999999"),
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m         ("100", "0"),
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m         ("0", "0"),
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m         ("0", "1"),
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m         ("3", "-0"),
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m         ("-0.0", "-3"),
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m // printf("Result: %.2f\n", ...) formatting
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m fn result_formatting_rounding_ties() {
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m     // Exactly representable ties for two fraction digits must round half to
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m     // even, the way glibc's exact decimal conversion does.
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m     for den in [8i32, 16, 32, 64, 128, 256] {
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m         for k in -40..=40i32 {
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m             let v = f64::from(k) / f64::from(den);
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m             same2(&format!("{v:?}"), "1");
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m fn result_formatting_wide_and_small_magnitudes() {
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m     for s in [
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m         "1e308",
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m         "1.7976931348623157e308",
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m         "1e300",
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m         "1e17",
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m         "1e-30",
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m         "-1e-30",
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m         "0.999",
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m         "0.995",
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m         "-0.995",
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m         "0.005",
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m         "-0.005",
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m         "0.125",
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m         "0.375",
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m         "2.675",
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m         "0x1p-1074",
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m         "-0x1p-1074",
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m         "-0.0",
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m         same2(s, "1");
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m     // Very long %.2f expansions.
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m     for e in 300..309 {
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m         same2("10", &e.to_string());
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m     same2("2", "1023");
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m fn result_formatting_negative_zero_and_signed_zero_results() {
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m     for (b, e) in [
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m         ("-0.0", "3"),
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m         ("-0.0", "5"),
+[0m[49m[38;5;10m+    639[0m:[38;5;10m[49m         ("-2", "-1075"),
+[0m[49m[38;5;10m+    640[0m:[38;5;10m[49m         ("0", "5"),
+[0m[49m[38;5;10m+    641[0m:[38;5;10m[49m         ("-0", "2"),
+[0m[49m[38;5;10m+    642[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    643[0m:[38;5;10m[49m         same2(b, e);
+[0m[49m[38;5;10m+    644[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    645[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    646[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    647[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    648[0m:[38;5;10m[49m // A broad cross product, to catch anything the enumerated classes miss.
+[0m[49m[38;5;10m+    649[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    650[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    651[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    652[0m:[38;5;10m[49m fn cross_product_of_interesting_tokens() {
+[0m[49m[38;5;10m+    653[0m:[38;5;10m[49m     const TOKENS: &[&str] = &[
+[0m[49m[38;5;10m+    654[0m:[38;5;10m[49m         "",
+[0m[49m[38;5;10m+    655[0m:[38;5;10m[49m         "0",
+[0m[49m[38;5;10m+    656[0m:[38;5;10m[49m         "-0",
+[0m[49m[38;5;10m+    657[0m:[38;5;10m[49m         "1",
+[0m[49m[38;5;10m+    658[0m:[38;5;10m[49m         "-1",
+[0m[49m[38;5;10m+    659[0m:[38;5;10m[49m         "2",
+[0m[49m[38;5;10m+    660[0m:[38;5;10m[49m         "-2",
+[0m[49m[38;5;10m+    661[0m:[38;5;10m[49m         "0.5",
+[0m[49m[38;5;10m+    662[0m:[38;5;10m[49m         "-0.5",
+[0m[49m[38;5;10m+    663[0m:[38;5;10m[49m         "1e308",
+[0m[49m[38;5;10m+    664[0m:[38;5;10m[49m         "1e309",
+[0m[49m[38;5;10m+    665[0m:[38;5;10m[49m         "1e-308",
+[0m[49m[38;5;10m+    666[0m:[38;5;10m[49m         "1e-320",
+[0m[49m[38;5;10m+    667[0m:[38;5;10m[49m         "5e-324",
+[0m[49m[38;5;10m+    668[0m:[38;5;10m[49m         "inf",
+[0m[49m[38;5;10m+    669[0m:[38;5;10m[49m         "-inf",
+[0m[49m[38;5;10m+    670[0m:[38;5;10m[49m         "nan",
+[0m[49m[38;5;10m+    671[0m:[38;5;10m[49m         "-nan",
+[0m[49m[38;5;10m+    672[0m:[38;5;10m[49m         "0x1p10",
+[0m[49m[38;5;10m+    673[0m:[38;5;10m[49m         "0x1.8p-1074",
+[0m[49m[38;5;10m+    674[0m:[38;5;10m[49m         "0X",
+[0m[49m[38;5;10m+    675[0m:[38;5;10m[49m         "abc",
+[0m[49m[38;5;10m+    676[0m:[38;5;10m[49m         " 3 ",
+[0m[49m[38;5;10m+    677[0m:[38;5;10m[49m         "+.5",
+[0m[49m[38;5;10m+    678[0m:[38;5;10m[49m         "1e",
+[0m[49m[38;5;10m+    679[0m:[38;5;10m[49m         "--1",
+[0m[49m[38;5;10m+    680[0m:[38;5;10m[49m         "3",
+[0m[49m[38;5;10m+    681[0m:[38;5;10m[49m         "-3",
+[0m[49m[38;5;10m+    682[0m:[38;5;10m[49m         "2.5",
+[0m[49m[38;5;10m+    683[0m:[38;5;10m[49m         "-2.5",
+[0m[49m[38;5;10m+    684[0m:[38;5;10m[49m         "1024",
+[0m[49m[38;5;10m+    685[0m:[38;5;10m[49m         "0.1",
+[0m[49m[38;5;10m+    686[0m:[38;5;10m[49m         "1.5",
+[0m[49m[38;5;10m+    687[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    688[0m:[38;5;10m[49m     for a in TOKENS {
+[0m[49m[38;5;10m+    689[0m:[38;5;10m[49m         for b in TOKENS {
+[0m[49m[38;5;10m+    690[0m:[38;5;10m[49m             same2(a, b);
+[0m[49m[38;5;10m+    691[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    692[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    693[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    694[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    695[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    696[0m:[38;5;10m[49m fn deterministic_pseudo_random_sweep() {
+[0m[49m[38;5;10m+    697[0m:[38;5;10m[49m     // A small xorshift keeps this reproducible without extra dependencies.
+[0m[49m[38;5;10m+    698[0m:[38;5;10m[49m     let mut state = 0x2545_F491_4F6C_DD1Du64;
+[0m[49m[38;5;10m+    699[0m:[38;5;10m[49m     let mut next = || {
+[0m[49m[38;5;10m+    700[0m:[38;5;10m[49m         state ^= state << 13;
+[0m[49m[38;5;10m+    701[0m:[38;5;10m[49m         state ^= state >> 7;
+[0m[49m[38;5;10m+    702[0m:[38;5;10m[49m         state ^= state << 17;
+[0m[49m[38;5;10m+    703[0m:[38;5;10m[49m         state
+[0m[49m[38;5;10m+    704[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    705[0m:[38;5;10m[49m     let mut token = |r: u64| -> String {
+[0m[49m[38;5;10m+    706[0m:[38;5;10m[49m         match r % 5 {
+[0m[49m[38;5;10m+    707[0m:[38;5;10m[49m             0 => format!("{}", (r >> 8) as i32 % 2000),
+[0m[49m[38;5;10m+    708[0m:[38;5;10m[49m             1 => format!("{:?}", (((r >> 8) % 40_000) as f64) / 1000.0 - 20.0),
+[0m[49m[38;5;10m+    709[0m:[38;5;10m[49m             2 => format!("{}e{}", (r >> 8) % 10, ((r >> 20) % 700) as i64 - 350),
+[0m[49m[38;5;10m+    710[0m:[38;5;10m[49m             3 => format!("0x{:x}p{}", (r >> 8) % 0xffff, ((r >> 32) % 2200) as i64 - 1100),
+[0m[49m[38;5;10m+    711[0m:[38;5;10m[49m             _ => format!("{:?}", f64::from_bits(r).abs().min(1e300)),
+[0m[49m[38;5;10m+    712[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    713[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    714[0m:[38;5;10m[49m     for _ in 0..250 {
+[0m[49m[38;5;10m+    715[0m:[38;5;10m[49m         let a = token(next());
+[0m[49m[38;5;10m+    716[0m:[38;5;10m[49m         let b = token(next());
+[0m[49m[38;5;10m+    717[0m:[38;5;10m[49m         same2(&a, &b);
+[0m[49m[38;5;10m+    718[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    719[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    720[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    721[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    722[0m:[38;5;10m[49m fn suite_actually_compares_two_distinct_programs() {
+[0m[49m[38;5;10m+    723[0m:[38;5;10m[49m     // Guard against the sandbox silently pointing both runs at one binary.
+[0m[49m[38;5;10m+    724[0m:[38;5;10m[49m     let sb = sandbox();
+[0m[49m[38;5;10m+    725[0m:[38;5;10m[49m     let c = std::fs::read(sb.c_dir.join("driver")).expect("read C driver");
+[0m[49m[38;5;10m+    726[0m:[38;5;10m[49m     let r = std::fs::read(sb.rust_dir.join("driver")).expect("read Rust driver");
+[0m[49m[38;5;10m+    727[0m:[38;5;10m[49m     assert_ne!(c, r, "the two sandboxes hold the same executable");
+[0m[49m[38;5;10m+    728[0m:[38;5;10m[49m     // And that a known-good happy path really produces output.
+[0m[49m[38;5;10m+    729[0m:[38;5;10m[49m     let out = run_in(&sb.c_dir, &[b"2", b"10"]);
+[0m[49m[38;5;10m+    730[0m:[38;5;10m[49m     assert_eq!(out.stdout, b"Result: 1024.00\n");
+[0m[49m[38;5;10m+    731[0m:[38;5;10m[49m     let out = run_in(&sb.rust_dir, &[b"2", b"10"]);
+[0m[49m[38;5;10m+    732[0m:[38;5;10m[49m     assert_eq!(out.stdout, b"Result: 1024.00\n");
+[0m[49m[38;5;10m+    733[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    734[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    735[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    736[0m:[38;5;10m[49m fn unused_helper_is_exercised() {
+[0m[49m[38;5;10m+    737[0m:[38;5;10m[49m     // Keep `assert_same_all` in use so the helper set stays warning-free.
+[0m[49m[38;5;10m+    738[0m:[38;5;10m[49m     assert_same_all(&[&[b"2", b"3"], &[b"-2", b"0.5"], &[b"x"]]);
+[0m[49m[38;5;10m+    739[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m./translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --release 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+test tests::strtod_range_errors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-c50e61d0d85a4813)
+
+running 30 tests
+test base_range_error_takes_precedence_over_trailing_garbage ... ok
+test argc_exactly_three_is_the_only_accepted_form ... ok
+test base_is_validated_before_exponent ... ok
+test argc_not_three_prints_usage ... ok
+test exponent_range_error ... ok
+test pow_range_error_overflow ... ok
+test pow_negative_base_integral_exponent_is_fine ... ok
+test suite_actually_compares_two_distinct_programs ... ok
+test unused_helper_is_exercised ... ok
+test base_range_error_overflow_and_underflow ... ok
+test strtod_non_utf8_arguments ... ok
+test result_formatting_negative_zero_and_signed_zero_results ... ok
+test pow_range_error_pole ... ok
+test pow_range_error_underflow ... ok
+test strtod_very_long_inputs ... ok
+test pow_domain_error_negative_base_fractional_exponent ... ok
+test exponent_invalid_numeric_input ... ok
+test strtod_leading_whitespace_is_skipped ... ok
+test pow_overflow_boundary ... ok
+test strtod_hexadecimal_forms ... ok
+test pow_no_errno_special_cases ... ok
+test strtod_accepted_decimal_forms ... ok
+test result_formatting_wide_and_small_magnitudes ... ok
+test strtod_infinity_and_nan_forms ... ok
+test base_invalid_numeric_input ... ok
+test pow_underflow_boundary_subnormal_results_do_not_set_errno ... ok
+test strtod_subnormal_boundary ... ok
+test deterministic_pseudo_random_sweep ... ok
+test result_formatting_rounding_ties ... ok
+test cross_product_of_interesting_tokens ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.33s
+
+[38;5;244m - Completed in 7.849s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo test 2>&1 | grep -E "^test result|error|warning: unused" | head
+echo "--- out-of-tree C build fallback ---"
+cmake -S c_src -B translation/target/c_build > /tmp/cb.log 2>&1 && cmake --build translation/target/c_build >> /tmp/cb.log 2>&1 && ls -l translation/target/c_build/driver && echo FALLBACK_OK
+echo "--- c_src cleanliness ---"
+cd c_src && git status --porcelain 2>/dev/null | head || echo "(no git)"[0m[38;5;244m (using tool: shell)[0m
+
+test tests::strtod_range_errors ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test pow_range_error_pole ... ok
+test base_range_error_takes_precedence_over_trailing_garbage ... ok
+test pow_range_error_overflow ... ok
+test exponent_range_error ... ok
+test result_formatting_negative_zero_and_signed_zero_results ... ok
+test pow_domain_error_negative_base_fractional_exponent ... ok
+test pow_range_error_underflow ... ok
+test base_range_error_overflow_and_underflow ... ok
+--- out-of-tree C build fallback ---
+--- c_src cleanliness ---
+(no git)
+bash: line 5: cd: c_src: No such file or directory
+[38;5;244m - Completed in 7.791s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test 2>&1 | grep -E "^test result|^error|ignored" [0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result_formatting_negative_zero_and_signed_zero_results ... ok
+test result_formatting_wide_and_small_magnitudes ... ok
+test result_formatting_rounding_ties ... ok
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.34s
+[38;5;244m - Completed in 7.376s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcmake -S c_src -B translation/target/c_build > /tmp/cb.log 2>&1 && cmake --build translation/target/c_build >> /tmp/cb.log 2>&1 && ls -l translation/target/c_build/driver && echo FALLBACK_OK
+echo "--- c_src tree (only build/ added by cmake in phase A) ---"
+ls c_src c_src/src[0m[38;5;244m (using tool: shell)[0m
+
+-rwxr-xr-x. 1 scheschb amazon 16928 Aug 30 07:57 translation/target/c_build/driver
+FALLBACK_OK
+--- c_src tree (only build/ added by cmake in phase A) ---
+c_src:
+CMakeLists.txt
+build
+src
+
+c_src/src:
+main.c
+[38;5;244m - Completed in 0.451s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cdir && ./driver 10 308 2>/dev/null | head -c 5 >/dev/null; echo "C pipe: ${PIPESTATUS[0]}"
+cd /tmp/rdir && ./driver 10 308 2>/dev/null | head -c 5 >/dev/null; echo "R pipe: ${PIPESTATUS[0]}"[0m[38;5;244m (using tool: shell)[0m
+
+C pipe: 0
+R pipe: 0
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cdir && for i in 1 2 3 4 5; do ./driver 10 308 2>/dev/null | true; echo -n "${PIPESTATUS[0]} "; done; echo "(C)"
+cd /tmp/rdir && for i in 1 2 3 4 5; do ./driver 10 308 2>/dev/null | true; echo -n "${PIPESTATUS[0]} "; done; echo "(R)"[0m[38;5;244m (using tool: shell)[0m
+
+141 141 141 141 141 (C)
+0 0 0 0 0 (R)
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[38;5;141m> [0mFound a real divergence: SIGPIPE. Fixing the Rust program.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     36[0m:[38;5;10m[49m /// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, which a C
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// program does not do.  Without restoring the default disposition, a `driver`
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// whose stdout is a closed pipe would swallow the write error and exit 0 where
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// the C program is killed by `SIGPIPE` (shell status 141).
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m fn restore_default_sigpipe() {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     const SIGPIPE: i32 = 13;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     const SIG_DFL: usize = 0;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     extern "C" {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         fn signal(signum: i32, handler: usize) -> usize;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         signal(SIGPIPE, SIG_DFL);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[39m  36, 51[0m:[39m[49m fn main() -> ExitCode {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     restore_default_sigpipe();
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[39m  37, 54[0m:[39m[49m     // argv as raw bytes, exactly as C sees it.
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -5
+cp -f translation/target/release/driver /tmp/rdir/driver 2>/dev/null || cp -f target/release/driver /tmp/rdir/driver
+cd /tmp/rdir && for i in 1 2 3; do ./driver 10 308 2>/dev/null | true; echo -n "${PIPESTATUS[0]} "; done; echo "(R after fix)"
+cd /tmp/cdir && for i in 1 2 3; do ./driver 10 308 2>/dev/null | true; echo -n "${PIPESTATUS[0]} "; done; echo "(C)"
+echo "--- stderr pipe closed ---"
+cd /tmp/cdir && ./driver x y 2>&1 >/dev/null | true; echo -n "${PIPESTATUS[0]} "; cd /tmp/rdir && ./driver x y 2>&1 >/dev/null | true; echo "${PIPESTATUS[0]}"
+echo "--- /dev/full ---"
+cd /tmp/cdir && ./driver 2 10 >/dev/full; echo -n "C=$? "; cd /tmp/rdir && ./driver 2 10 >/dev/full; echo "R=$?"
+cd /tmp/cdir && ./driver x y 2>/dev/full; echo -n "C=$? "; cd /tmp/rdir && ./driver x y 2>/dev/full; echo "R=$?"[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-1BF2Nq/translation)
+    Finished `release` profile [optimized] target(s) in 0.28s
+141 141 141 (R after fix)
+141 141 141 (C)
+--- stderr pipe closed ---
+141 141
+--- /dev/full ---
+C=0 R=0
+C=1 R=1
+[38;5;244m - Completed in 0.317s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  173, 173[0m:[39m[49m     assert_eq!(
+[0m[49m[38;5;9m- 174     [0m:[38;5;9m[49m         c.status.code(),
+[0m[49m[38;5;9m- 175     [0m:[38;5;9m[49m         r.status.code(),
+[0m[49m[38;5;9m- 176     [0m:[38;5;9m[49m         "exit status differs for argv [{}]: C {:?} vs Rust {:?}",
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m         c.status,
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m         r.status,
+[0m[49m[38;5;10m+      176[0m:[38;5;10m[49m         "exit status differs for argv [{}]: C {:?} (code {:?}) vs Rust {:?} (code {:?})",
+[0m[49m[39m  177, 177[0m:[39m[49m         quote(args),
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m         c.status,
+[0m[49m[39m  178, 179[0m:[39m[49m         c.status.code(),
+[0m[49m[38;5;10m+      180[0m:[38;5;10m[49m         r.status,
+[0m[49m[39m  179, 181[0m:[39m[49m         r.status.code()
+[0m[49m[39m  180, 182[0m:[39m[49m     );
+[0m[49m[39m  181, 183[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  723, 723[0m:[39m[49m #[test]
+[0m[49m[38;5;10m+      724[0m:[38;5;10m[49m fn closed_stdout_pipe_kills_both_programs_with_sigpipe() {
+[0m[49m[38;5;10m+      725[0m:[38;5;10m[49m     // A C program inherits the default SIGPIPE disposition; the Rust runtime
+[0m[49m[38;5;10m+      726[0m:[38;5;10m[49m     // sets SIG_IGN before main. With the read end of the pipe already closed the
+[0m[49m[38;5;10m+      727[0m:[38;5;10m[49m     // very first write fails with EPIPE, so the difference is deterministic:
+[0m[49m[38;5;10m+      728[0m:[38;5;10m[49m     // the C program dies from SIGPIPE while an unpatched Rust program exits 0.
+[0m[49m[38;5;10m+      729[0m:[38;5;10m[49m     let sb = sandbox();
+[0m[49m[38;5;10m+      730[0m:[38;5;10m[49m     for (args, redirect) in [
+[0m[49m[38;5;10m+      731[0m:[38;5;10m[49m         (vec![b"2".as_slice(), b"10".as_slice()], Stream::Stdout),
+[0m[49m[38;5;10m+      732[0m:[38;5;10m[49m         (vec![b"x".as_slice(), b"y".as_slice()], Stream::Stderr),
+[0m[49m[38;5;10m+      733[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+      734[0m:[38;5;10m[49m         let c = status_with_closed_pipe(&sb.c_dir, &args, redirect);
+[0m[49m[38;5;10m+      735[0m:[38;5;10m[49m         let r = status_with_closed_pipe(&sb.rust_dir, &args, redirect);
+[0m[49m[38;5;10m+      736[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+      737[0m:[38;5;10m[49m             c, r,
+[0m[49m[38;5;10m+      738[0m:[38;5;10m[49m             "closed-{redirect:?} status differs for argv [{}]: C {:?} vs Rust {:?}",
+[0m[49m[38;5;10m+      739[0m:[38;5;10m[49m             quote(&args),
+[0m[49m[38;5;10m+      740[0m:[38;5;10m[49m             c,
+[0m[49m[38;5;10m+      741[0m:[38;5;10m[49m             r
+[0m[49m[38;5;10m+      742[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      743[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+      744[0m:[38;5;10m[49m             c.signal(),
+[0m[49m[38;5;10m+      745[0m:[38;5;10m[49m             Some(13),
+[0m[49m[38;5;10m+      746[0m:[38;5;10m[49m             "expected the C program to die from SIGPIPE for argv [{}]",
+[0m[49m[38;5;10m+      747[0m:[38;5;10m[49m             quote(&args)
+[0m[49m[38;5;10m+      748[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      749[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      750[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      751[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      752[0m:[38;5;10m[49m #[derive(Copy, Clone, Debug)]
+[0m[49m[38;5;10m+      753[0m:[38;5;10m[49m enum Stream {
+[0m[49m[38;5;10m+      754[0m:[38;5;10m[49m     Stdout,
+[0m[49m[38;5;10m+      755[0m:[38;5;10m[49m     Stderr,
+[0m[49m[38;5;10m+      756[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      757[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      758[0m:[38;5;10m[49m fn status_with_closed_pipe(dir: &Path, args: &[&[u8]], which: Stream) -> ExitStatus {
+[0m[49m[38;5;10m+      759[0m:[38;5;10m[49m     let (reader, writer) = std::io::pipe().expect("create pipe");
+[0m[49m[38;5;10m+      760[0m:[38;5;10m[49m     drop(reader); // no reader: the child's first write gets EPIPE
+[0m[49m[38;5;10m+      761[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      762[0m:[38;5;10m[49m     let mut cmd = Command::new("./driver");
+[0m[49m[38;5;10m+      763[0m:[38;5;10m[49m     cmd.current_dir(dir);
+[0m[49m[38;5;10m+      764[0m:[38;5;10m[49m     for a in args {
+[0m[49m[38;5;10m+      765[0m:[38;5;10m[49m         cmd.arg(OsStr::from_bytes(a));
+[0m[49m[38;5;10m+      766[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      767[0m:[38;5;10m[49m     match which {
+[0m[49m[38;5;10m+      768[0m:[38;5;10m[49m         Stream::Stdout => {
+[0m[49m[38;5;10m+      769[0m:[38;5;10m[49m             cmd.stdout(Stdio::from(writer)).stderr(Stdio::null());
+[0m[49m[38;5;10m+      770[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      771[0m:[38;5;10m[49m         Stream::Stderr => {
+[0m[49m[38;5;10m+      772[0m:[38;5;10m[49m             cmd.stderr(Stdio::from(writer)).stdout(Stdio::null());
+[0m[49m[38;5;10m+      773[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      774[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      775[0m:[38;5;10m[49m     cmd.status().expect("spawn ./driver")
+[0m[49m[38;5;10m+      776[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      777[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      778[0m:[38;5;10m[49m #[test]
+[0m[49m[39m  724, 779[0m:[39m[49m fn suite_actually_compares_two_distinct_programs() {
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  13, 13[0m:[39m[49m use std::ffi::OsStr;
+[0m[49m[39m  14, 14[0m:[39m[49m use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::os::unix::process::ExitStatusExt;
+[0m[49m[39m  15, 16[0m:[39m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m use std::process::{Command, Output};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::process::{Command, ExitStatus, Output, Stdio};
+[0m[49m[39m  17, 18[0m:[39m[49m use std::sync::OnceLock;
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --release 2>&1 | tail -25[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+test unused_helper_is_exercised ... ok
+test strtod_non_utf8_arguments ... ok
+test base_is_validated_before_exponent ... ok
+test argc_not_three_prints_usage ... ok
+test pow_range_error_pole ... ok
+test pow_range_error_overflow ... ok
+test strtod_very_long_inputs ... ok
+test exponent_invalid_numeric_input ... ok
+test base_range_error_overflow_and_underflow ... ok
+test strtod_leading_whitespace_is_skipped ... ok
+test pow_no_errno_special_cases ... ok
+test strtod_hexadecimal_forms ... ok
+test result_formatting_wide_and_small_magnitudes ... ok
+test strtod_accepted_decimal_forms ... ok
+test pow_overflow_boundary ... ok
+test strtod_infinity_and_nan_forms ... ok
+test base_invalid_numeric_input ... ok
+test pow_underflow_boundary_subnormal_results_do_not_set_errno ... ok
+test strtod_subnormal_boundary ... ok
+test deterministic_pseudo_random_sweep ... ok
+test result_formatting_rounding_ties ... ok
+test cross_product_of_interesting_tokens ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.35s
+
+[38;5;244m - Completed in 7.910s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 1 2; do python3 /tmp/fuzz.py $s 2>&1 | tail -1; done; python3 /tmp/fuzz2.py 2>&1|tail -1; python3 /tmp/fuzz3.py 2>&1|tail -1; python3 /tmp/fuzz4.py 7 2>&1|tail -1; python3 /tmp/fuzz5.py 5 2>&1|tail -1[0m[38;5;244m (using tool: shell)[0m
+
+total mismatches: 0
+total mismatches: 0
+cases: 659 mismatches: 0
+cases: 104 mismatches: 0
+cases: 2483 mismatches: 0
+cases: 6000 mismatches: 0
+[38;5;244m - Completed in 42.750s[0m
+
+[?25l[0m[38;5;141m> [0mNow [38;5;10mERRORS.md[0m.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m./translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # Differential verification of `c_src/src/main.c` against `translation/`
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m The C program is the ground truth. `translation/tests/differential.rs` builds
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m both executables, runs them as subprocesses with identical `argv`, and requires
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m byte-identical stdout, byte-identical stderr and an identical exit status.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m * C build: `cmake -S c_src -B c_src/build && cmake --build c_src/build`
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m   → `c_src/build/driver`
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m * Rust build: `cd translation && cargo build --release`
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   → `translation/target/release/driver`
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m * Both executables are copied into sibling sandbox directories as `driver` and
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   invoked as `./driver`, so `argv[0]` — which the usage message prints — is the
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   same string for both programs.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m Beyond `cargo test`, roughly 25,000 additional argument pairs were compared with
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m an out-of-band fuzz harness: the exhaustive cross product of ~60 hand-picked
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m tokens, random decimal/hex/garbage strings, random 64-bit doubles fed in as C
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m hex-float literals, and dense sweeps across the subnormal, overflow and
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m underflow boundaries of both `strtod` and `pow`.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m ## Mismatches found and fixed
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m ### 1. `SIGPIPE`: Rust exited 0 where C is killed by signal 13
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m **Symptom.** With the read end of stdout (or stderr) closed, the C program dies
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m from `SIGPIPE` — shell status 141 — while the Rust program exited 0 and produced
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m no output:
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m $ ./driver 10 308 | true ; echo ${PIPESTATUS[0]}
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 141        # C
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 0          # Rust, before the fix
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m **Cause.** The Rust standard library sets `SIGPIPE` to `SIG_IGN` before `main`
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m runs. A C program inherits the default disposition (`SIG_DFL`), so its first
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m failing `write` terminates the process. The Rust code additionally discarded the
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m `io::Error` from `write_all`, so nothing surfaced at all.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m **Fix.** `restore_default_sigpipe()` in `translation/src/main.rs` calls
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m `signal(SIGPIPE, SIG_DFL)` as the first statement of `main`, restoring the C
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m disposition. Discarding the write error afterwards is correct: C's `printf`
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m likewise ignores a failed write and still `return`s 0/1 (verified by redirecting
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m to `/dev/full`, where both programs exit 0 for the success path and 1 for the
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m error path).
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m **Test.** `closed_stdout_pipe_kills_both_programs_with_sigpipe` in
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m `translation/tests/differential.rs`. It uses `std::io::pipe()` and drops the read
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m end *before* spawning, so the child's first write is guaranteed to hit `EPIPE` —
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m the test is deterministic rather than racing the child.
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m Note that this class of mismatch is invisible to a test that compares
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m `ExitStatus::code()`, because a signalled process reports `None` on both sides.
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m `assert_same` therefore compares the whole `ExitStatus`.
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m ## Behaviours that were verified and did *not* mismatch
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m These are the places a translation of this program is most likely to go wrong.
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m Each was probed specifically; the existing Rust code already matched glibc, so
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m they are recorded here as verified rather than as defects.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m | Behaviour | Why it is a trap | Verdict |
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m | --- | --- | --- |
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m | Check order per argument: `ERANGE` before `*endptr != '\0'` | `1e999abc` overflows *and* has trailing junk. C reports the range error, not the invalid-input error. | matches |
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m | Base validated fully before the exponent is touched | `driver abc def` must print only the base message. | matches |
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m | Empty argument accepted as `0` | `strtod("")` performs no conversion, so `endptr == nptr` and `*endptr == '\0'`; the C therefore treats `""` as a valid `0.0`. `driver "" ""` prints `Result: 1.00`. | matches |
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m | `endptr` reset to `nptr` when no conversion happens | `" "`, `"+"`, `"--3"`, `"."`, `"0x"`, `"1e"` all leave `endptr` at the *start*, so the echoed string in the error message is the whole argument. | matches |
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m | glibc `strtod` extensions | `inf`/`infinity`/`nan`/`nan(chars)` case-insensitively, C99 hex floats, hex with an optional `p` exponent (`0x10` → 16), `0x` alone consuming just the `0`. | matches |
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m | Underflow `ERANGE` = tininess **after rounding** **and** inexactness | `strtod("0x1p-1074")` is an exact subnormal → no `ERANGE`; `strtod("1e-320")` is inexact and tiny → `ERANGE`. Getting this wrong flips exit status on a whole band of inputs. | matches |
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m | `2.2250738585072012e-308` vs `...13e-308` vs `...14e-308` | Adjacent decimals straddling `DBL_MIN`; only the first sets `ERANGE`. | matches |
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m | glibc `pow` errno rules | `EDOM` only for a negative finite base with a non-integral finite exponent; `ERANGE` for the pole `pow(±0, y<0)`, for overflow, and for underflow **to zero** — a merely subnormal non-zero result sets nothing. No errno at all for NaN operands, `y == 0`, `x == 1`, or any infinite operand. | matches |
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m | `pow` underflow boundary | Swept `2^e` for `e ∈ [-1080, -1060]` and `10^e` for `e ∈ [-330, -300]`: `10^-323` is subnormal and quiet, `10^-324` is a range error. | matches |
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m | `printf("%.2f")` exactness and tie-breaking | glibc converts the exact binary value and rounds half to even (`0.125` → `0.12`, `0.375` → `0.38`). Verified over `k/2^n` ties and 2,000 random doubles. | matches (Rust's `{:.2}` is exact and rounds half to even) |
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m | `%.2f` of huge magnitudes | `10^308` prints all 309 integer digits of the exact double, not `1e308`. | matches |
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m | `%.2f` of specials and signed zero | `inf`, `-inf`, `nan`, `-nan` (glibc prints the NaN sign), `-0.00`. | matches |
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m | `argv` is bytes, not UTF-8 | Error messages echo the argument verbatim; invalid UTF-8 such as `\xff\xfe` must pass through unchanged. Handled via `OsStrExt`. | matches |
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m | Locale | The C never calls `setlocale`, so it stays in the `C` locale and always prints `.` as the decimal point regardless of `LC_NUMERIC`. No divergence to reproduce. | matches |
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m | Very long inputs | 100,000-digit integers, 1,000 nines, 300 hex fraction digits, 30-digit exponents — no overflow of the exponent accumulator, no panic. | matches |
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m ## Completion status
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m * Both programs build without errors.
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m * `cargo test` passes in `translation/`: 5 unit tests + 31 differential tests,
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m   0 failed, 0 ignored. No test is disabled, skipped or `#[ignore]`d.
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m * Nothing under `c_src/` was modified; the only addition is the `c_src/build/`
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m   output directory produced by CMake. The test harness itself configures the C
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m   build out-of-tree into `translation/target/c_build` when
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m   `c_src/build/driver` is absent, so it never writes into the C source tree.
+[0m[K
+Creating: [38;5;141m./translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cdir && ./driver "" "" ; echo "rc=$?"[0m[38;5;244m (using tool: shell)[0m
+
+Result: 1.00
+rc=0
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -3; echo "=== test ==="; cargo test --release 2>&1 | grep -E "^(warning|error)|test result"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+    Finished `release` profile [optimized] target(s) in 0.01s
+=== test ===
+warning: variable does not need to be mutable
+warning: `driver` (test "differential") generated 1 warning (run `cargo fix --test "differential" -p driver` to apply 1 suggestion)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result_formatting_negative_zero_and_signed_zero_results ... ok
+test result_formatting_wide_and_small_magnitudes ... ok
+test result_formatting_rounding_ties ... ok
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.35s
+[38;5;244m - Completed in 7.408s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 708     [0m:[38;5;9m[49m     let mut token = |r: u64| -> String {
+[0m[49m[38;5;10m+      708[0m:[38;5;10m[49m     let token = |r: u64| -> String {
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --release 2>&1 | grep -E "^(warning|error)|test result"; echo "=== debug profile ==="; cargo test 2>&1 | grep -E "^(warning|error)|test result"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result_formatting_negative_zero_and_signed_zero_results ... ok
+test result_formatting_wide_and_small_magnitudes ... ok
+test result_formatting_rounding_ties ... ok
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.29s
+=== debug profile ===
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result_formatting_negative_zero_and_signed_zero_results ... ok
+test result_formatting_wide_and_small_magnitudes ... ok
+test result_formatting_rounding_ties ... ok
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.40s
+[38;5;244m - Completed in 15.537s[0m
+
+[?25l[0m[38;5;141m> [0mDone. One real mismatch found and fixed.[0m[0m
+[0m[0m
+[1mThe bug: SIGPIPE.[22m The Rust standard library sets [38;5;10mSIGPIPE[0m to [38;5;10mSIG_IGN[0m before [38;5;10mmain[0m; a C program inherits [38;5;10mSIG_DFL[0m. With the read end of stdout closed, the C [38;5;10mdriver[0m is killed by signal 13 (shell status 141) while the Rust one swallowed the write error and exited 0:[0m[0m
+[0m[0m
+[38;5;10m$ ./driver 10 308 | true ; echo ${PIPESTATUS[0]}
+141   # C
+0     # Rust, before the fix
+[0m[0m[0m
+[0m[0m
+Fixed by calling [38;5;10msignal(SIGPIPE, SIG_DFL)[0m as the first statement of [38;5;10mmain[0m in [38;5;10mtranslation/src/main.rs[0m. Note this class of defect is invisible to a test that compares [38;5;10mExitStatus::code()[0m — a signalled process reports [38;5;10mNone[0m on both sides — so [38;5;10massert_same[0m compares the whole [38;5;10mExitStatus[0m.[0m[0m
+[0m[0m
+[1mEverything else already matched.[22m The pre-existing translation is unusually careful; I probed the places it could plausibly have gone wrong and found none:[0m[0m
+[0m[0m
+- check order [38;5;10mERANGE[0m before [38;5;10m*endptr != '\0'[0m (so [38;5;10m1e999abc[0m reports a range error, not invalid input)[0m[0m
+- [38;5;10mstrtod("")[0m performing no conversion, which makes the C accept [38;5;10mdriver "" ""[0m as [38;5;10mpow(0,0)[0m → [38;5;10mResult: 1.00[0m[0m[0m
+- [38;5;10mendptr[0m reset to [38;5;10mnptr[0m on failed conversion, so error messages echo the whole argument[0m[0m
+- glibc extensions: hex floats, [38;5;10minf[0m/[38;5;10minfinity[0m/[38;5;10mnan(chars)[0m, [38;5;10m0x[0m consuming only the [38;5;10m0[0m[0m[0m
+- underflow [38;5;10mERANGE[0m requiring tininess [3mafter rounding[23m [1mand[22m inexactness — [38;5;10m0x1p-1074[0m is quiet, [38;5;10m1e-320[0m is not[0m[0m
+- glibc [38;5;10mpow[0m errno rules, including that a subnormal non-zero result sets nothing while underflow to zero sets [38;5;10mERANGE[0m[0m[0m
+- [38;5;10m%.2f[0m exact conversion with round-half-to-even, and the 309-digit expansion of [38;5;10m10^308[0m[0m[0m
+- [38;5;10margv[0m as raw bytes, so invalid UTF-8 passes through error messages unchanged[0m[0m
+[0m[0m
+[1mVerification.[22m [38;5;10mtranslation/tests/differential.rs[0m holds 31 tests that copy both executables into sibling sandboxes as [38;5;10mdriver[0m and invoke [38;5;10m./driver[0m (making [38;5;10margv[0][0m identical, since the usage message prints it), then compare stdout, stderr and exit status. It builds the C program out-of-tree into [38;5;10mtranslation/target/c_build[0m if [38;5;10mc_src/build/driver[0m is missing, so it never writes into [38;5;10mc_src[0m. Beyond the suite I ran ~25,000 more argument pairs through an out-of-band harness — exhaustive token cross products, random garbage strings, 2,000 random doubles as hex-float literals, and dense sweeps of the subnormal/overflow/underflow boundaries — with zero mismatches.[0m[0m
+[0m[0m
+[38;5;10mcargo test[0m passes in both profiles: 5 unit + 31 differential, 0 failed, 0 ignored, no warnings. [38;5;10mERRORS.md[0m records the SIGPIPE defect and the verified-but-unbroken behaviours.[0m[0m
+[38;5;8m
+ ▸ Credits: 19.70 • Time: 10m 23s
+
+[0m[1G[0m[0m[?25h

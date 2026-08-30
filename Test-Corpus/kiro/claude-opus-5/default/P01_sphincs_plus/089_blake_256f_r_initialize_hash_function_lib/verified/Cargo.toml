@@ -1,0 +1,60 @@
+[package]
+name = "sphincsplus"
+version = "0.1.0"
+edition = "2024"
+description = "Rust translation of the SPHINCS+ C reference implementation"
+license = "CC0-1.0"
+
+[lib]
+name = "blake"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pure-Rust AES-256-ECB, used by the NIST AES-CTR-DRBG in rng.rs.
+aes = "=0.8.4"
+
+[features]
+default = ["blake", "robust", "256f"]
+
+# ---------------------------------------------------------------------------
+# CMake cache variable HASH_BACKEND -> one feature per accepted value.
+# ---------------------------------------------------------------------------
+haraka = []
+sha2 = []
+shake = []
+blake = []
+
+# ---------------------------------------------------------------------------
+# CMake cache variable THASH -> one feature per accepted value.
+# ---------------------------------------------------------------------------
+robust = []
+simple = []
+
+# ---------------------------------------------------------------------------
+# CMake cache variable SECPAR -> one feature per accepted value.
+# ---------------------------------------------------------------------------
+"128s" = []
+"128f" = []
+"192s" = []
+"192f" = []
+"256s" = []
+"256f" = []
+
+# ---------------------------------------------------------------------------
+# Selects the `randombytes.c` (/dev/urandom) implementation instead of the
+# deterministic `rng.c` DRBG for the exported `randombytes` symbol.  The C
+# build ships both in two separate shared libraries (sphincs_core and
+# sphincs_core_det); a single Rust cdylib can only export one, so the choice
+# is made here.  The `driver` binary always uses the deterministic DRBG, just
+# like the CMake `driver` target which links sphincs_core_det.
+# ---------------------------------------------------------------------------
+urandom = []
+
+[profile.release]
+opt-level = 3
+
+[workspace]
+
+[dev-dependencies]
+libloading = "0.8"

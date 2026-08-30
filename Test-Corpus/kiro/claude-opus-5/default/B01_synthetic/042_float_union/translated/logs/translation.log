@@ -1,0 +1,2841 @@
+[38;5;9mError[38;5;11m: no agent with name kiro_plain found. Falling back to user specified default
+[0m[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && ls -la[0m[38;5;244m (using tool: shell)[0m
+
+./c_src/CMakeLists.txt
+./c_src/src/main.c
+./.claude/settings.json
+---
+total 48
+drwxr-xr-x.   5 scheschb amazon    69 Aug 28 15:02 .
+drwxr-xr-x. 700 scheschb amazon 32768 Aug 28 15:02 ..
+drwxr-xr-x.   2 scheschb amazon    27 Aug 28 15:02 .claude
+drwxr-xr-x.   3 scheschb amazon    39 Aug 28 15:02 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Aug 28 15:02 translation
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1424 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && mkdir -p cref && gcc -O0 -o cref/driver /local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/c_src/src/main.c 2>&1 | tail -5 && echo OK && gcc --version | head -1[0m[38;5;244m (using tool: shell)[0m
+
+OK
+gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for v in "3.14" "0" "-0" "1" "0.5" "1e300" "1e-320" "4.9e-324" "inf" "-inf" "nan" "0x1p3" "  \n 2.5" "abc" "" "1e" "123456789012345678901234567890" "2.00005" "0.00005" "0.00015" "-2.5" "1.5e-5" "17.0625" "1e-310"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done[0m[38;5;244m (using tool: shell)[0m
+
+IN[3.14] => 40091eb851eb851f 0x1.91eb851eb851fp+1 3.1400
+IN[0] => 0 0x0p+0 0.0000
+IN[-0] => 8000000000000000 -0x0p+0 -0.0000
+IN[1] => 3ff0000000000000 0x1p+0 1.0000
+IN[0.5] => 3fe0000000000000 0x1p-1 0.5000
+IN[1e300] => 7e37e43c8800759c 0x1.7e43c8800759cp+996 1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160.0000
+IN[1e-320] => 7e8 0x0.00000000007e8p-1022 0.0000
+IN[4.9e-324] => 1 0x0.0000000000001p-1022 0.0000
+IN[inf] => 7ff0000000000000 inf inf
+IN[-inf] => fff0000000000000 -inf -inf
+IN[nan] => 7ff8000000000000 nan nan
+IN[0x1p3] => 4020000000000000 0x1p+3 8.0000
+IN[  
+ 2.5] => 0 0x0p+0 0.0000
+IN[abc] => 0 0x0p+0 0.0000
+IN[] => 0 0x0p+0 0.0000
+IN[1e] => 3ff0000000000000 0x1p+0 1.0000
+IN[123456789012345678901234567890] => 45f8ee90ff6c373e 0x1.8ee90ff6c373ep+96 123456789012345677877719597056.0000
+IN[2.00005] => 4000001a36e2eb1c 0x1.0001a36e2eb1cp+1 2.0000
+IN[0.00005] => 3f0a36e2eb1c432d 0x1.a36e2eb1c432dp-15 0.0001
+IN[0.00015] => 3f23a92a30553261 0x1.3a92a30553261p-13 0.0001
+IN[-2.5] => c004000000000000 -0x1.4p+1 -2.5000
+IN[1.5e-5] => 3eef75104d551d69 0x1.f75104d551d69p-17 0.0000
+IN[17.0625] => 4031100000000000 0x1.11p+4 17.0625
+IN[1e-310] => 12688b70e62b 0x0.012688b70e62bp-1022 0.0000
+[38;5;244m - Completed in 0.35s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && tests=("0.15625" "0.21875" "-0.15625" "2.5e-5" "3.0517578125e-05" "1e308" "1.7976931348623157e308" "5e-324" "9007199254740993" "0.1" "-nan" "nan(123)" "infinity" "INF" "NaN" "+5" ".5" "5." "0X1.8P+1" "1d5" "e5" "-.5e-2" "1_0"); do printf '%s' "${tests[$i]}" >/dev/null; done; for v in "0.15625" "0.21875" "-0.15625" "2.5e-5" "3.0517578125e-05" "1e308" "1.7976931348623157e308" "5e-324" "9007199254740993" "0.1" "-nan" "nan(123)" "infinity" "INF" "NaN" "+5" ".5" "5." "0X1.8P+1" "1d5" "e5" "-.5e-2"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done; printf '   \n\t\n  42.5xyz' | ./driver | sed 's|^|WS => |'; printf -- '--5' | ./driver | sed 's|^|DBLNEG => |'[0m[38;5;244m (using tool: shell)[0m
+
+bash: -c: line 1: syntax error near unexpected token `do'
+bash: -c: line 1: `cd /tmp/cref && tests=("0.15625" "0.21875" "-0.15625" "2.5e-5" "3.0517578125e-05" "1e308" "1.7976931348623157e308" "5e-324" "9007199254740993" "0.1" "-nan" "nan(123)" "infinity" "INF" "NaN" "+5" ".5" "5." "0X1.8P+1" "1d5" "e5" "-.5e-2" "1_0"); do printf '%s' "${tests[$i]}" >/dev/null; done; for v in "0.15625" "0.21875" "-0.15625" "2.5e-5" "3.0517578125e-05" "1e308" "1.7976931348623157e308" "5e-324" "9007199254740993" "0.1" "-nan" "nan(123)" "infinity" "INF" "NaN" "+5" ".5" "5." "0X1.8P+1" "1d5" "e5" "-.5e-2"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done; printf '   \n\t\n  42.5xyz' | ./driver | sed 's|^|WS => |'; printf -- '--5' | ./driver | sed 's|^|DBLNEG => |''
+[38;5;244m - Completed in 0.3s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for v in "0.15625" "0.21875" "-0.15625" "2.5e-5" "1e308" "1.7976931348623157e308" "5e-324" "9007199254740993" "0.1" "-nan" "nan(123)" "infinity" "INF" "NaN" "+5" ".5" "5." "0X1.8P+1" "1d5" "e5" "-.5e-2"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done; printf '   \n\t\n  42.5xyz' | ./driver | sed 's|^|WS => |'; printf -- '--5' | ./driver | sed 's|^|DBLNEG => |'[0m[38;5;244m (using tool: shell)[0m
+
+IN[0.15625] => 3fc4000000000000 0x1.4p-3 0.1562
+IN[0.21875] => 3fcc000000000000 0x1.cp-3 0.2188
+IN[-0.15625] => bfc4000000000000 -0x1.4p-3 -0.1562
+IN[2.5e-5] => 3efa36e2eb1c432d 0x1.a36e2eb1c432dp-16 0.0000
+IN[1e308] => 7fe1ccf385ebc8a0 0x1.1ccf385ebc8ap+1023 100000000000000001097906362944045541740492309677311846336810682903157585404911491537163328978494688899061249669721172515611590283743140088328307009198146046031271664502933027185697489699588559043338384466165001178426897626212945177628091195786707458122783970171784415105291802893207873272974885715430223118336.0000
+IN[1.7976931348623157e308] => 7fefffffffffffff 0x1.fffffffffffffp+1023 179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.0000
+IN[5e-324] => 1 0x0.0000000000001p-1022 0.0000
+IN[9007199254740993] => 4340000000000000 0x1p+53 9007199254740992.0000
+IN[0.1] => 3fb999999999999a 0x1.999999999999ap-4 0.1000
+IN[-nan] => fff8000000000000 -nan -nan
+IN[nan(123)] => 7ff8000000000000 nan nan
+IN[infinity] => 7ff0000000000000 inf inf
+IN[INF] => 7ff0000000000000 inf inf
+IN[NaN] => 7ff8000000000000 nan nan
+IN[+5] => 4014000000000000 0x1.4p+2 5.0000
+IN[.5] => 3fe0000000000000 0x1p-1 0.5000
+IN[5.] => 4014000000000000 0x1.4p+2 5.0000
+IN[0X1.8P+1] => 4008000000000000 0x1.8p+1 3.0000
+IN[1d5] => 3ff0000000000000 0x1p+0 1.0000
+IN[e5] => 0 0x0p+0 0.0000
+IN[-.5e-2] => bf747ae147ae147b -0x1.47ae147ae147bp-8 -0.0050
+WS => 4045400000000000 0x1.54p+5 42.5000
+DBLNEG => 0 0x0p+0 0.0000
+[38;5;244m - Completed in 0.35s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for v in "0x" "0xp3" "0x.p3" "0x1p" "0x1p+" "1e+" "1e-" "." "+" "-" "in" "na" "nan()" "nan(1" "0x.8" "0x8." "1E5" "00123" "0.0e99999999999999999999" "1e99999999999999999999" "1e-99999999999999999999" "1000000000000000000000000000000000000000e-400"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done[0m[38;5;244m (using tool: shell)[0m
+
+IN[0x] => 0 0x0p+0 0.0000
+IN[0xp3] => 0 0x0p+0 0.0000
+IN[0x.p3] => 0 0x0p+0 0.0000
+IN[0x1p] => 3ff0000000000000 0x1p+0 1.0000
+IN[0x1p+] => 3ff0000000000000 0x1p+0 1.0000
+IN[1e+] => 3ff0000000000000 0x1p+0 1.0000
+IN[1e-] => 3ff0000000000000 0x1p+0 1.0000
+IN[.] => 0 0x0p+0 0.0000
+IN[+] => 0 0x0p+0 0.0000
+IN[-] => 0 0x0p+0 0.0000
+IN[in] => 0 0x0p+0 0.0000
+IN[na] => 0 0x0p+0 0.0000
+IN[nan()] => 7ff8000000000000 nan nan
+IN[nan(1] => 7ff8000000000000 nan nan
+IN[0x.8] => 3fe0000000000000 0x1p-1 0.5000
+IN[0x8.] => 4020000000000000 0x1p+3 8.0000
+IN[1E5] => 40f86a0000000000 0x1.86ap+16 100000.0000
+IN[00123] => 405ec00000000000 0x1.ecp+6 123.0000
+IN[0.0e99999999999999999999] => 0 0x0p+0 0.0000
+IN[1e99999999999999999999] => 7ff0000000000000 inf inf
+IN[1e-99999999999999999999] => 0 0x0p+0 0.0000
+IN[1000000000000000000000000000000000000000e-400] => 0 0x0p+0 0.0000
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[38;5;141m> [0mNow I'll write the Rust translation.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for v in "-0x" "-0xz" "-0x.z" "0x1p2000" "-0x1p-2000" "0x1.fffffffffffff8p+1023" "0x1p-1075" "0x1p-1074" "0x1.8p-1075" "-0.0" "0x0p0" "-0x0p0" "0x10000000000000801p0"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done[0m[38;5;244m (using tool: shell)[0m
+
+IN[-0x] => 0 0x0p+0 0.0000
+IN[-0xz] => 0 0x0p+0 0.0000
+IN[-0x.z] => 8000000000000000 -0x0p+0 -0.0000
+IN[0x1p2000] => 7ff0000000000000 inf inf
+IN[-0x1p-2000] => 8000000000000000 -0x0p+0 -0.0000
+IN[0x1.fffffffffffff8p+1023] => 7ff0000000000000 inf inf
+IN[0x1p-1075] => 0 0x0p+0 0.0000
+IN[0x1p-1074] => 1 0x0.0000000000001p-1022 0.0000
+IN[0x1.8p-1075] => 1 0x0.0000000000001p-1022 0.0000
+IN[-0.0] => 8000000000000000 -0x0p+0 -0.0000
+IN[0x0p0] => 0 0x0p+0 0.0000
+IN[-0x0p0] => 8000000000000000 -0x0p+0 -0.0000
+IN[0x10000000000000801p0] => 43f0000000000001 0x1.0000000000001p+64 18446744073709555712.0000
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for v in "-0xp3" "-0x." "-0x.p3" "-0x.5" "-0x5" "-0x." "-0X" "-0x_" "-." "-.z" "-e5" "- 5" "-0" "-00x" "-0.z"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done[0m[38;5;244m (using tool: shell)[0m
+
+IN[-0xp3] => 0 0x0p+0 0.0000
+IN[-0x.] => 8000000000000000 -0x0p+0 -0.0000
+IN[-0x.p3] => 8000000000000000 -0x0p+0 -0.0000
+IN[-0x.5] => bfd4000000000000 -0x1.4p-2 -0.3125
+IN[-0x5] => c014000000000000 -0x1.4p+2 -5.0000
+IN[-0x.] => 8000000000000000 -0x0p+0 -0.0000
+IN[-0X] => 0 0x0p+0 0.0000
+IN[-0x_] => 0 0x0p+0 0.0000
+IN[-.] => 0 0x0p+0 0.0000
+IN[-.z] => 0 0x0p+0 0.0000
+IN[-e5] => 0 0x0p+0 0.0000
+IN[- 5] => 0 0x0p+0 0.0000
+IN[-0] => 8000000000000000 -0x0p+0 -0.0000
+IN[-00x] => 8000000000000000 -0x0p+0 -0.0000
+IN[-0.z] => 8000000000000000 -0x0p+0 -0.0000
+[38;5;244m - Completed in 0.23s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for v in "infi" "infin" "infinit" "infinityx" "nanx" "nan(x)" "nan(" "InFiNiTy" "-infi" "NAN(0x33)" "nan(abc" "nan(a b)"; do printf '%s' "$v" | ./driver | sed "s|^|IN[$v] => |"; done[0m[38;5;244m (using tool: shell)[0m
+
+IN[infi] => 0 0x0p+0 0.0000
+IN[infin] => 0 0x0p+0 0.0000
+IN[infinit] => 0 0x0p+0 0.0000
+IN[infinityx] => 7ff0000000000000 inf inf
+IN[nanx] => 7ff8000000000000 nan nan
+IN[nan(x)] => 7ff8000000000000 nan nan
+IN[nan(] => 7ff8000000000000 nan nan
+IN[InFiNiTy] => 7ff0000000000000 inf inf
+IN[-infi] => 0 0x0p+0 0.0000
+IN[NAN(0x33)] => 7ff8000000000000 nan nan
+IN[nan(abc] => 7ff8000000000000 nan nan
+IN[nan(a b)] => 7ff8000000000000 nan nan
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original C:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //     typedef union { uint64_t x; double f; } raw_double_t;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //     void driver(double f) {
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //         raw_double_t u = {.f = f};
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //         printf("%llx %a %.4f\n", u.x, f, f);
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //     }
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //     int main() { double f = 0.0f; scanf("%lf", &f); driver(f); return 0; }
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // The translation reproduces glibc's behaviour for `scanf("%lf", ...)`,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // `%llx`, `%a` and `%.4f` byte for byte, including the quirks of the
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // scanf float scanner (e.g. a bare "0x" prefix is a matching failure, while
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // "0x." parses as zero, and a partially spelled "infinity" fails).
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // scanf("%lf") emulation
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m fn is_c_space(c: u8) -> bool {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m fn hex_val(c: u8) -> Option<u32> {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     match c {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         b'0'..=b'9' => Some((c - b'0') as u32),
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         b'a'..=b'f' => Some((c - b'a') as u32 + 10),
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         b'A'..=b'F' => Some((c - b'A') as u32 + 10),
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         _ => None,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// Length of the longest case-insensitive prefix of `word` found at `pos`.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m fn ci_prefix_len(input: &[u8], pos: usize, word: &[u8]) -> usize {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     let mut n = 0;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     while n < word.len() && pos + n < input.len() {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         let a = input[pos + n] | 0x20;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         if a != word[n] {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         n += 1;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     n
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m fn signed(neg: bool, v: f64) -> f64 {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     if neg {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         -v
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         v
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m fn quiet_nan(neg: bool) -> f64 {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     let bits: u64 = 0x7ff8_0000_0000_0000 | if neg { 1u64 << 63 } else { 0 };
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     f64::from_bits(bits)
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// Emulates one `%lf` conversion.  `None` means the conversion failed (input
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// or matching failure), in which case the C code leaves its variable at 0.0.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m fn scan_double(input: &[u8]) -> Option<f64> {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     let len = input.len();
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     // %lf skips leading white space, newlines included.
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     while i < len && is_c_space(input[i]) {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     if i >= len {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         return None; // input failure (EOF)
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let mut neg = false;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     if input[i] == b'+' || input[i] == b'-' {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         neg = input[i] == b'-';
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     // "inf" / "infinity": glibc commits to the long spelling once a 4th
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     // matching character shows up, so "infi".."infinit" are failures.
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let n = ci_prefix_len(input, i, b"infinity");
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     if n >= 8 {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         return Some(signed(neg, f64::INFINITY));
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     if n == 3 {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         return Some(signed(neg, f64::INFINITY));
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     if n > 3 {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     // "nan", optionally followed by a parenthesised char sequence, which
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     // glibc ignores; the result is always the default quiet NaN.
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     if ci_prefix_len(input, i, b"nan") == 3 {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         return Some(quiet_nan(neg));
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     // Hexadecimal form: 0x / 0X prefix.
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     if input[i] == b'0' && i + 1 < len && (input[i + 1] | 0x20) == b'x' {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         return scan_hex(input, i + 2, neg);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     scan_decimal(input, i, neg)
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m fn scan_hex(input: &[u8], mut j: usize, neg: bool) -> Option<f64> {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     let len = input.len();
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let mut digits: Vec<u32> = Vec::new();
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let mut frac_digits: i64 = 0;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     let mut seen_dot = false;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     let mut any_digit = false;
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     while j < len {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         let c = input[j];
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         if c == b'.' && !seen_dot {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             seen_dot = true;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             j += 1;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         match hex_val(c) {
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             Some(v) => {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m                 digits.push(v);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                 if seen_dot {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m                     frac_digits += 1;
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m                 any_digit = true;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     if !any_digit {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         if seen_dot {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             // glibc hands e.g. "-0x." to strtod, which converts the leading
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             // "0" and stops at 'x' => signed zero, conversion succeeds.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m             return Some(signed(neg, 0.0));
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         // Nothing but the "0x" prefix: matching failure.
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     // Optional binary exponent; ignored when no digits follow it.
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     let mut pexp: i64 = 0;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     if j < len && (input[j] | 0x20) == b'p' {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         let mut k = j + 1;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let mut eneg = false;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         if k < len && (input[k] == b'+' || input[k] == b'-') {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m             eneg = input[k] == b'-';
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             k += 1;
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         if k < len && input[k].is_ascii_digit() {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             let mut v: i64 = 0;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             while k < len && input[k].is_ascii_digit() {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                 if v < 1 << 40 {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                     v = v * 10 + (input[k] - b'0') as i64;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m                 k += 1;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             pexp = if eneg { -v } else { v };
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     // value = mantissa * 16^(-frac_digits) * 2^pexp
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let mut m: u128 = 0;
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     let mut sticky = false;
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     let mut taken = 0;
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     let mut extra_exp: i64 = 0;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let mut started = false;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     for d in digits {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         if !started {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m             if d == 0 {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m                 continue;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m             started = true;
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         if taken < 30 {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m             m = (m << 4) | d as u128;
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m             taken += 1;
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m             if d != 0 {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m                 sticky = true;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             extra_exp += 4;
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     if !started {
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         return Some(signed(neg, 0.0));
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     let e2 = pexp
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         .saturating_sub(frac_digits.saturating_mul(4))
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         .saturating_add(extra_exp);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     Some(signed(neg, compose_f64(m, sticky, e2)))
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m /// Rounds `m * 2^e2` (plus a non-zero tail when `sticky`) to the nearest
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m /// double, ties to even, matching strtod.
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m fn compose_f64(mut m: u128, mut sticky: bool, mut e2: i64) -> f64 {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     if m == 0 {
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     let mut bl = (128 - m.leading_zeros()) as i64;
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     if bl > 64 {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         let sh = (bl - 64) as u32;
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         if m & ((1u128 << sh) - 1) != 0 {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             sticky = true;
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         m >>= sh;
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         e2 = e2.saturating_add(sh as i64);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         bl = (128 - m.leading_zeros()) as i64;
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     let e = e2.saturating_add(bl - 1); // value == 1.f * 2^e
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     if e > 1023 {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         return f64::INFINITY;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     if e < -1080 {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     // Target position of the least significant retained bit.
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     let mut target = std::cmp::max(-1074i64, e - 52);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     let shift = target - e2;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     if shift > 0 {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         let sh = shift as u32;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         let rem = m & ((1u128 << sh) - 1);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         let half = 1u128 << (sh - 1);
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         m >>= sh;
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         let round_up = rem > half || (rem == half && (sticky || (m & 1) == 1));
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         if round_up {
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m             m += 1;
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     } else if shift < 0 {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         m <<= (-shift) as u32;
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     if m == 0 {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         return 0.0;
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     let bl2 = (128 - m.leading_zeros()) as i64;
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     let e_final = target + bl2 - 1;
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     if e_final > 1023 {
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         return f64::INFINITY;
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     if e_final < -1022 {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         // Subnormal: target == -1074, so m is the raw mantissa.
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         return f64::from_bits(m as u64);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     let sh = 53 - bl2;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     if sh > 0 {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         m <<= sh as u32;
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         target -= sh;
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     } else if sh < 0 {
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         m >>= (-sh) as u32;
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         target += -sh;
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     let _ = target;
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     let bits = (((e_final + 1023) as u64) << 52) | ((m as u64) & 0x000f_ffff_ffff_ffff);
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     f64::from_bits(bits)
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m fn scan_decimal(input: &[u8], i: usize, neg: bool) -> Option<f64> {
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     let len = input.len();
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     let mut j = i;
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     let mut any_digit = false;
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m     let mut seen_dot = false;
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     while j < len {
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         let c = input[j];
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         if c.is_ascii_digit() {
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m             any_digit = true;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m             j += 1;
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m         } else if c == b'.' && !seen_dot {
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m             seen_dot = true;
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m             j += 1;
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     if !any_digit {
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         return None; // matching failure
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     let mantissa_end = j;
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     let mut end = j;
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     if j < len && (input[j] | 0x20) == b'e' {
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         let mut k = j + 1;
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m         if k < len && (input[k] == b'+' || input[k] == b'-') {
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m             k += 1;
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m         if k < len && input[k].is_ascii_digit() {
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m             while k < len && input[k].is_ascii_digit() {
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m                 k += 1;
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m             end = k;
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     // Normalise the token into a form Rust's parser accepts ("5." => "5.0",
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     // ".5" => "0.5"), then rely on its correctly rounded conversion.
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     let mut tok = String::new();
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m     if neg {
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m         tok.push('-');
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     let mant = &input[i..mantissa_end];
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     if mant.first() == Some(&b'.') {
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m         tok.push('0');
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     tok.push_str(std::str::from_utf8(mant).unwrap());
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     if mant.last() == Some(&b'.') {
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         tok.push('0');
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     if end > mantissa_end {
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m         tok.push_str(std::str::from_utf8(&input[mantissa_end..end]).unwrap());
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m     match tok.parse::<f64>() {
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m         Ok(v) => Some(v),
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m         Err(_) => None,
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m // printf formatting
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m /// glibc's "%a".
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m fn format_hex_float(f: f64) -> String {
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m     let bits = f.to_bits();
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m     let sign = (bits >> 63) != 0;
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     let exp_field = ((bits >> 52) & 0x7ff) as i64;
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m     let mantissa = bits & 0x000f_ffff_ffff_ffff;
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     let mut out = String::new();
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m     if sign {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m         out.push('-');
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m     if exp_field == 0x7ff {
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m         out.push_str(if mantissa == 0 { "inf" } else { "nan" });
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m         return out;
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     let leading = if exp_field == 0 { '0' } else { '1' };
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m     let exponent: i64 = if exp_field == 0 {
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m         if mantissa == 0 {
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m             0
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m             -1022
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m         exp_field - 1023
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m     out.push_str("0x");
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m     out.push(leading);
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m     let digits = format!("{:013x}", mantissa);
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m     let trimmed = digits.trim_end_matches('0');
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m     if !trimmed.is_empty() {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         out.push('.');
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         out.push_str(trimmed);
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m     out.push('p');
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m     if exponent < 0 {
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m         out.push('-');
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         out.push('+');
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m     out.push_str(&exponent.unsigned_abs().to_string());
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m /// glibc's "%.4f".
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m fn format_fixed4(f: f64) -> String {
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m     let bits = f.to_bits();
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m     let sign = (bits >> 63) != 0;
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m     if f.is_nan() {
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m         return if sign {
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m             "-nan".to_string()
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m             "nan".to_string()
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m     if f.is_infinite() {
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m         return if sign {
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m             "-inf".to_string()
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m             "inf".to_string()
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m     format!("{:.4}", f)
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m fn driver(f: f64, out: &mut impl Write) {
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m     // The union reinterprets the double's bits; "%llx" prints them unpadded.
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m     let x = f.to_bits();
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m     let _ = write!(
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m         out,
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         "{:x} {} {}\n",
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m         x,
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         format_hex_float(f),
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m         format_fixed4(f)
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m     let mut input = Vec::new();
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m     let _ = std::io::stdin().read_to_end(&mut input);
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m     let mut f: f64 = 0.0;
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m     if let Some(v) = scan_double(&input) {
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m         f = v;
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m     let mut lock = stdout.lock();
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m     driver(f, &mut lock);
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m     let _ = lock.flush();
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation)
+    Finished `release` profile [optimized] target(s) in 0.29s
+[38;5;244m - Completed in 0.314s[0m
+
+[?25l[0m[38;5;141m> [0mNow a differential test against the C binary.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cref/diff.sh[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m C=/tmp/cref/driver
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m R=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation/target/release/driver
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m fail=0; n=0
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m while IFS= read -r line; do
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m   n=$((n+1))
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m   a=$(printf '%s' "$line" | $C)
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m   b=$(printf '%s' "$line" | $R)
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   if [ "$a" != "$b" ]; then
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     fail=$((fail+1))
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     printf 'MISMATCH input=<%s>\n  C: %s\n  R: %s\n' "$line" "$a" "$b"
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m echo "tested=$n mismatches=$fail"
+[0m[K
+Creating: [38;5;141m/tmp/cref/diff.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && chmod +x diff.sh && python3 - > cases.txt <<'EOF'
+import random, struct
+cases = ["3.14","0","-0","1","0.5","1e300","1e-320","4.9e-324","inf","-inf","nan","0x1p3","abc","","1e","1e+","1e-",".","+","-","in","na","nan()","nan(1","0x","0xp3","0x.p3","0x1p","0x1p+","-0x","-0xz","-0x.z","-0xp3","-0x.","-0x.p3","-0x.5","-0x5","-0X","-0x_","-.","-.z","-e5","- 5","-00x","-0.z","infi","infin","infinit","infinityx","nanx","nan(x)","nan(","InFiNiTy","-infi","NAN(0x33)","nan(abc","nan(a b)","0.15625","0.21875","-0.15625","1e308","1.7976931348623157e308","5e-324","9007199254740993","0.1","-nan","infinity","INF","NaN","+5",".5","5.","0X1.8P+1","1d5","e5","-.5e-2","0x1p2000","-0x1p-2000","0x1.fffffffffffff8p+1023","0x1p-1075","0x1p-1074","0x1.8p-1075","-0.0","0x0p0","-0x0p0","0x10000000000000801p0","1e99999999999999999999","1e-99999999999999999999","0.0e99999999999999999999","1000000000000000000000000000000000000000e-400","   \n\t\n  42.5xyz","\n\n\n7.5","\t-3.25e2","1.2.3","1e5e6","00123","1E5","0x8.","0x.8","1_0","--5"]
+random.seed(7)
+for _ in range(400):
+    b = random.getrandbits(64)
+    d = struct.unpack('<d', struct.pack('<Q', b))[0]
+    cases.append(repr(d))
+    cases.append(float.hex(d) if d==d and abs(d)!=float('inf') else 'inf')
+for _ in range(300):
+    d = random.uniform(-1e6, 1e6)
+    cases.append(repr(d))
+    cases.append("%.20e" % d)
+for _ in range(200):
+    e = random.randint(-330, 310)
+    m = random.randint(1, 10**random.randint(1,20))
+    cases.append("%de%d" % (m, e))
+    cases.append("0x%xp%d" % (random.getrandbits(random.randint(1,70)), random.randint(-1100, 1100)))
+for s in ["0.00005","0.00015","2.00005","0.000050000000000000001","0.062499999999999999","0.0625","1.00005","1.00015","123.45675","123.45685","0.5e-4","2.5e-5","1.0000499999999999"]:
+    cases.append(s)
+print("\n".join(c.replace("\\n","\n") if False else c for c in cases))
+EOF
+wc -l cases.txt && ./diff.sh < cases.txt | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+1919 cases.txt
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+
+thread 'main' (3554657) panicked at src/main.rs:101:8:
+index out of bounds: the len is 1 but the index is 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+
+thread 'main' (3554707) panicked at src/main.rs:101:8:
+index out of bounds: the len is 1 but the index is 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+./diff.sh: line 7: /tmp/cref/driver: No such file or directory
+  C: 
+  R: 3f0a36e2eb1c432d 0x1.a36e2eb1c432dp-15 0.0001
+MISMATCH input=<0.062499999999999999>
+  C: 
+  R: 3fb0000000000000 0x1p-4 0.0625
+MISMATCH input=<0.0625>
+  C: 
+  R: 3fb0000000000000 0x1p-4 0.0625
+MISMATCH input=<1.00005>
+  C: 
+  R: 3ff000346dc5d639 0x1.000346dc5d639p+0 1.0001
+MISMATCH input=<1.00015>
+  C: 
+  R: 3ff0009d495182aa 0x1.0009d495182aap+0 1.0002
+MISMATCH input=<123.45675>
+  C: 
+  R: 405edd3b645a1cac 0x1.edd3b645a1cacp+6 123.4567
+MISMATCH input=<123.45685>
+  C: 
+  R: 405edd3d07c84b5e 0x1.edd3d07c84b5ep+6 123.4569
+MISMATCH input=<0.5e-4>
+  C: 
+  R: 3f0a36e2eb1c432d 0x1.a36e2eb1c432dp-15 0.0001
+MISMATCH input=<2.5e-5>
+  C: 
+  R: 3efa36e2eb1c432d 0x1.a36e2eb1c432dp-16 0.0000
+MISMATCH input=<1.0000499999999999>
+  C: 
+  R: 3ff000346dc5d638 0x1.000346dc5d638p+0 1.0000
+tested=1919 mismatches=1917
+[38;5;244m - Completed in 4.819s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/cref/ | head; file /tmp/cref/driver 2>&1[0m[38;5;244m (using tool: shell)[0m
+
+total 44
+drwxr-xr-x.   2 scheschb amazon     80 Aug 28 15:07 .
+drwxrwxrwt. 587 root     root   185060 Aug 28 15:07 ..
+-rw-r--r--.   1 scheschb amazon  39831 Aug 28 15:07 cases.txt
+-rwxr-xr-x.   1 scheschb amazon    403 Aug 28 15:07 diff.sh
+/tmp/cref/driver: cannot open `/tmp/cref/driver' (No such file or directory)
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ
+mkdir -p $W/.verify
+gcc -O2 -o $W/.verify/cdriver $W/c_src/src/main.c
+python3 - > $W/.verify/cases.txt <<'EOF'
+import random, struct
+cases = ["3.14","0","-0","1","0.5","1e300","1e-320","4.9e-324","inf","-inf","nan","0x1p3","abc","","1e","1e+","1e-",".","+","-","in","na","nan()","nan(1","0x","0xp3","0x.p3","0x1p","0x1p+","-0x","-0xz","-0x.z","-0xp3","-0x.","-0x.p3","-0x.5","-0x5","-0X","-0x_","-.","-.z","-e5","- 5","-00x","-0.z","infi","infin","infinit","infinityx","nanx","nan(x)","nan(","InFiNiTy","-infi","NAN(0x33)","nan(abc","nan(a b)","0.15625","0.21875","-0.15625","1e308","1.7976931348623157e308","5e-324","9007199254740993","0.1","-nan","infinity","INF","NaN","+5",".5","5.","0X1.8P+1","1d5","e5","-.5e-2","0x1p2000","-0x1p-2000","0x1.fffffffffffff8p+1023","0x1p-1075","0x1p-1074","0x1.8p-1075","-0.0","0x0p0","-0x0p0","0x10000000000000801p0","1e99999999999999999999","1e-99999999999999999999","0.0e99999999999999999999","1000000000000000000000000000000000000000e-400","1.2.3","1e5e6","00123","1E5","0x8.","0x.8","1_0","--5","0.00005","0.00015","2.00005","0.000050000000000000001","0.062499999999999999","0.0625","1.00005","1.00015","123.45675","123.45685","0.5e-4","2.5e-5","1.0000499999999999","0x1.fffffffffffffffffp0","0x0.0000000000000001p-1000","0x1p-1076","0x2p-1075","0x3p-1075","0x1.0000000000000801p+70"]
+random.seed(7)
+for _ in range(500):
+    b = random.getrandbits(64)
+    d = struct.unpack('<d', struct.pack('<Q', b))[0]
+    cases.append(repr(d))
+    if d == d and abs(d) != float('inf'):
+        cases.append(float.hex(d))
+for _ in range(300):
+    d = random.uniform(-1e6, 1e6)
+    cases.append(repr(d)); cases.append("%.20e" % d)
+for _ in range(400):
+    e = random.randint(-340, 315)
+    m = random.randint(1, 10**random.randint(1,25))
+    cases.append("%de%d" % (m, e))
+    cases.append("0x%xp%d" % (random.getrandbits(random.randint(1,80)), random.randint(-1120, 1120)))
+for _ in range(200):
+    # random near-tie decimals for %.4f
+    k = random.randint(0, 10**7)
+    cases.append("%d.%04d5" % (k, random.randint(0,9999)))
+    cases.append("0.%04d5" % random.randint(0,9999))
+print("\n".join(cases))
+EOF
+wc -l < $W/.verify/cases.txt[0m[38;5;244m (using tool: shell)[0m
+
+2917
+[38;5;244m - Completed in 0.59s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ
+C=$W/.verify/cdriver
+R=$W/translation/target/release/driver
+fail=0; n=0
+while IFS= read -r line; do
+  n=$((n+1))
+  a=$(printf '%s' "$line" | $C)
+  b=$(printf '%s' "$line" | $R)
+  if [ "$a" != "$b" ]; then
+    fail=$((fail+1))
+    if [ $fail -le 15 ]; then printf 'MISMATCH input=<%s>\n  C: %s\n  R: %s\n' "$line" "$a" "$b"; fi
+  fi
+done < $W/.verify/cases.txt
+echo "tested=$n mismatches=$fail"[0m[38;5;244m (using tool: shell)[0m
+
+
+thread 'main' (3572087) panicked at src/main.rs:101:8:
+index out of bounds: the len is 1 but the index is 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+MISMATCH input=<+>
+  C: 0 0x0p+0 0.0000
+  R: 
+
+thread 'main' (3572145) panicked at src/main.rs:101:8:
+index out of bounds: the len is 1 but the index is 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+MISMATCH input=<->
+  C: 0 0x0p+0 0.0000
+  R: 
+tested=2917 mismatches=2
+[38;5;244m - Completed in 8.614s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  100, 100[0m:[39m[49m     // Hexadecimal form: 0x / 0X prefix.
+[0m[49m[38;5;9m- 101     [0m:[38;5;9m[49m     if input[i] == b'0' && i + 1 < len && (input[i + 1] | 0x20) == b'x' {
+[0m[49m[38;5;10m+      101[0m:[38;5;10m[49m     if i < len && input[i] == b'0' && i + 1 < len && (input[i + 1] | 0x20) == b'x' {
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ
+cd $W/translation && cargo build --release 2>&1 | tail -3
+C=$W/.verify/cdriver; R=$W/translation/target/release/driver
+fail=0; n=0
+while IFS= read -r line; do
+  n=$((n+1)); a=$(printf '%s' "$line" | $C); b=$(printf '%s' "$line" | $R)
+  if [ "$a" != "$b" ]; then fail=$((fail+1)); if [ $fail -le 15 ]; then printf 'MISMATCH <%s>\n  C: %s\n  R: %s\n' "$line" "$a" "$b"; fi; fi
+done < $W/.verify/cases.txt
+echo "tested=$n mismatches=$fail"[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ/translation)
+    Finished `release` profile [optimized] target(s) in 0.26s
+tested=2917 mismatches=0
+[38;5;244m - Completed in 8.361s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ
+python3 - "$W" <<'EOF'
+import random, subprocess, struct, sys, os
+W=sys.argv[1]
+C=W+"/.verify/cdriver"; R=W+"/translation/target/release/driver"
+random.seed(99)
+cases=[]
+ws=[b" ",b"\t",b"\n",b"\v",b"\f",b"\r"]
+for _ in range(400):
+    pre=b"".join(random.choice(ws) for _ in range(random.randint(0,5)))
+    num=random.choice([b"3.5",b"-7e-3",b"0x2.8p2",b"inf",b"nan",b"1234567890.12345",b"0.0001",b"-0",b"5e-324"])
+    post=random.choice([b"",b"\n",b" junk",b"\n2.5",b"xyz",b"e",b"p3",b"."])
+    cases.append(pre+num+post)
+alphabet=b"0123456789+-.eExXpPabcdfinNAF_ \t\n"
+for _ in range(1500):
+    cases.append(bytes(random.choice(alphabet) for _ in range(random.randint(0,14))))
+for _ in range(300):
+    cases.append(bytes(random.getrandbits(8) for _ in range(random.randint(0,12))))
+for _ in range(200):
+    d=random.randint(1,300)
+    cases.append(("%d.%s" % (random.randint(0,10**5), "".join(random.choice("0123456789") for _ in range(d)))).encode())
+for _ in range(200):
+    b=random.getrandbits(64); f=struct.unpack('<d',struct.pack('<Q',b))[0]
+    cases.append(("%.30e"%f).encode() if f==f and abs(f)!=float('inf') else b"inf")
+bad=0
+for c in cases:
+    a=subprocess.run([C],input=c,capture_output=True).stdout
+    b=subprocess.run([R],input=c,capture_output=True).stdout
+    if a!=b:
+        bad+=1
+        if bad<=15: print("MISMATCH", repr(c), "\n  C:",a, "\n  R:",b)
+print("tested",len(cases),"mismatches",bad)
+EOF[0m[38;5;244m (using tool: shell)[0m
+
+tested 2600 mismatches 0
+[38;5;244m - Completed in 4.319s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ
+python3 - "$W" <<'EOF'
+import random, subprocess, sys
+W=sys.argv[1]; C=W+"/.verify/cdriver"; R=W+"/translation/target/release/driver"
+random.seed(5)
+cases=[]
+for _ in range(1200):
+    nd=random.randint(1,40)
+    mant="".join(random.choice("0123456789abcdef") for _ in range(nd))
+    if random.random()<0.5:
+        p=random.randint(0,nd); mant=mant[:p]+"."+mant[p:]
+    e=random.choice([random.randint(-1130,-1000), random.randint(1000,1100), random.randint(-80,80), random.randint(-1100,1100)])
+    s=random.choice(["","-","+"])
+    cases.append(("%s0x%sp%+d"%(s,mant,e)).encode())
+# subnormal boundary ties
+for k in range(1,40):
+    cases.append(("0x%xp-1075"%k).encode())
+    cases.append(("0x1.%sp-1022"%("f"*13)).encode())
+    cases.append(("0x1.fffffffffffff%xp+1023"%k).encode())
+bad=0
+for c in cases:
+    a=subprocess.run([C],input=c,capture_output=True).stdout
+    b=subprocess.run([R],input=c,capture_output=True).stdout
+    if a!=b:
+        bad+=1
+        if bad<=10: print("MISMATCH",repr(c),"\n  C:",a,"\n  R:",b)
+print("tested",len(cases),"mismatches",bad)
+EOF[0m[38;5;244m (using tool: shell)[0m
+
+tested 1317 mismatches 0
+[38;5;244m - Completed in 2.249s[0m
+
+[?25l[0m[38;5;141m> [0mCleaning up the scratch verification directory.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-sAaYjQ
+rm -rf $W/.verify
+cd $W/translation && cargo build --release 2>&1 | tail -3
+printf '3.14' | ./target/release/driver
+printf '' | ./target/release/driver
+ls $W[0m[38;5;244m (using tool: shell)[0m
+
+    Finished `release` profile [optimized] target(s) in 0.01s
+40091eb851eb851f 0x1.91eb851eb851fp+1 3.1400
+0 0x0p+0 0.0000
+c_src
+translation
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[38;5;141m> [0mThe translation is in [38;5;10mtranslation/[0m (Cargo.toml + src/main.rs), builds clean with [38;5;10mcargo build --release[0m, and matches the C binary byte-for-byte on ~6,800 differential test inputs (including random binary garbage), with [38;5;10mc_src/[0m untouched.[0m[0m
+[0m[0m
+The C program is tiny but almost all of its behavior lives in libc, so the work was reproducing glibc precisely:[0m[0m
+[0m[0m
+- [38;5;10m%llx[0m → [38;5;10m{:x}[0m of [38;5;10mf64::to_bits()[0m (the union reinterpretation).[0m[0m
+- [38;5;10m%a[0m → hand-written: [38;5;10m0x1.<13 hex digits, trailing zeros stripped>p±exp[0m, leading digit [38;5;10m0[0m and forced exponent [38;5;10m-1022[0m for subnormals, [38;5;10m0x0p+0[0m for zero, and [38;5;10minf[0m/[38;5;10mnan[0m with sign for non-finites.[0m[0m
+- [38;5;10m%.4f[0m → Rust's [38;5;10m{:.4}[0m (same exact-value round-half-to-even, verified on ties like [38;5;10m0.15625[0m → [38;5;10m0.1562[0m and on full 309-digit expansions of [38;5;10m1e308[0m), except non-finites, where C prints [38;5;10minf[0m/[38;5;10m-inf[0m/[38;5;10mnan[0m/[38;5;10m-nan[0m rather than Rust's [38;5;10mNaN[0m.[0m[0m
+- [38;5;10mscanf("%lf")[0m → a byte scanner over all of stdin (a single conversion, so buffering is unobservable) that skips whitespace across newlines and, on failure, leaves the value at [38;5;10m0.0[0m as the C does. Its glibc quirks are reproduced deliberately, not fixed: a partially spelled [38;5;10minfi[0m…[38;5;10minfinit[0m is a [3mfailure[23m (while [38;5;10minf[0m and [38;5;10minfinity[0m succeed), [38;5;10mnan(anything[0m  succeeds as the default quiet NaN with the payload ignored, a bare [38;5;10m-0x[0m fails and yields [38;5;10m+0[0m while [38;5;10m-0x.[0m succeeds and yields [38;5;10m-0.0[0m, and a dangling exponent ([38;5;10m1e[0m, [38;5;10m0x1p+[0m) is dropped rather than rejected.[0m[0m
+[0m[0m
+Hex-float input needed its own correctly-rounded parser (Rust's [38;5;10mparse[0m doesn't accept hex floats): mantissa digits accumulate into a [38;5;10mu128[0m with a sticky bit, then round half-to-even at the right binary position, handling subnormals, the subnormal/normal boundary, and overflow to [38;5;10minf[0m. Decimal input delegates to Rust's [38;5;10mparse::<f64>()[0m, which is correctly rounded like [38;5;10mstrtod[0m, after normalizing forms like [38;5;10m5.[0m and [38;5;10m.5[0m.[0m[0m
+[38;5;8m
+ ▸ Credits: 15.36 • Time: 7m 8s
+
+[0m[1G[0m[0m[?25h

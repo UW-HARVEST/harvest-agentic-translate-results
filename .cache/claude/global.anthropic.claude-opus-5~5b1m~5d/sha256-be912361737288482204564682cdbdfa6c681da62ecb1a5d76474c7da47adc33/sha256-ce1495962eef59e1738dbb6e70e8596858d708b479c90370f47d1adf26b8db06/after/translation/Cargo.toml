@@ -1,0 +1,28 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+# This crate is a faithful translation of a deliberately-UB C program
+# (CWE-457, plus unchecked pointer dereferences). rustc's UB-checks panic on
+# null/misaligned derefs, and a panic inside an `extern "C"` function aborts the
+# process -- so with debug-assertions on, the library dies with SIGABRT where the
+# C reads the pointer or dies with SIGSEGV. Turning them off keeps the dev
+# profile behaviourally identical to the C and to the release build.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"

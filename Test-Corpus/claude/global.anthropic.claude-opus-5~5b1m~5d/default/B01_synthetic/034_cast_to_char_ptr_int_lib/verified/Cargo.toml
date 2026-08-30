@@ -1,0 +1,28 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `driver`'s only observable effect is what it writes to fd 1, so the tests must
+# redirect fd 1 to capture it. That is a process-global mutation, and libtest's
+# own "test ... ok" progress lines are written to the real fd 1 from the main
+# thread -- under the default thread pool they land inside a capture window and
+# corrupt it. Owning `main` removes every concurrent writer, so plain
+# `cargo test` (no --test-threads=1 needed) is correct and deterministic.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

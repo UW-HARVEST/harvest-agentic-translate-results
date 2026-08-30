@@ -1,0 +1,21 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+# `rlib` is present only so that `cargo test` treats the library as a
+# dependency of the integration tests and therefore rebuilds the `cdylib`
+# artifact the tests dlopen. The tests never link against the rlib: they load
+# `libdriver.so` through `libloading` and call the exported C symbols.
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

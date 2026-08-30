@@ -1,0 +1,33 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The differential tests redirect file descriptor 1 to capture what the two
+# shared libraries `printf`. libtest's own progress output goes to the same fd
+# from other threads, which would corrupt the captured bytes, so these targets
+# use a custom sequential runner instead of libtest.
+[[test]]
+name = "valid_paths"
+harness = false
+
+[[test]]
+name = "error_paths"
+harness = false
+
+[[test]]
+name = "symbols"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

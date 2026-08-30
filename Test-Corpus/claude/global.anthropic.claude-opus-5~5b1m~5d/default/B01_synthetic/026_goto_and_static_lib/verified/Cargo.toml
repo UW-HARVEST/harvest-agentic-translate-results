@@ -1,0 +1,29 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+# The differential tests redirect the process-global stdout file descriptor to
+# capture what the C / Rust `.so`s print, so they MUST run sequentially and
+# must be the only writers of fd 1. A custom (non-libtest) harness guarantees
+# both; `autotests = false` stops cargo from also picking up the module files
+# under `tests/parts/` as extra test targets.
+autotests = false
+
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,973 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -50 && echo "--- translation ---" && find translation -type f -not -path '*/target/*' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory contents
+
+total 48
+drwxr-xr-x.   5 scheschb amazon    69 Aug 30 10:46 .
+drwxr-xr-x. 502 scheschb amazon 32768 Aug 30 10:46 ..
+drwxr-xr-x.   2 scheschb amazon    35 Aug 30 10:46 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Aug 30 10:46 c_src
+drwxr-xr-x.   3 scheschb amazon    69 Aug 30 10:46 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/simplestruct.h
+c_src/src/simplestruct.c
+--- translation ---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== CMakeLists.txt ===" && cat c_src/CMakeLists.txt && echo "=== include/simplestruct.h ===" && cat c_src/include/simplestruct.h && echo "=== Cargo.toml ===" && cat translation/Cargo.toml && echo "=== wc ===" && wc -l c_src/src/simplestruct.c translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read build files and headers
+
+=== CMakeLists.txt ===
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(SimpleList)
+add_library(SimpleList SHARED
+    src/simplestruct.c)
+
+target_include_directories(SimpleList PUBLIC include)
+target_include_directories(SimpleList PRIVATE src)
+
+install(TARGETS SimpleList
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=== include/simplestruct.h ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef SIMPLESTRUCT_H_
+#define SIMPLESTRUCT_H_
+
+struct ListNode {
+    int value;
+    struct ListNode* next;
+};
+
+int smallestValue (struct ListNode *date);
+
+#endif //SIMPLESTRUCT_H_=== Cargo.toml ===
+[package]
+name = "simplelist"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "SimpleList"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+=== wc ===
+  37 c_src/src/simplestruct.c
+  53 translation/src/lib.rs
+  90 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== C ===" && cat -A c_src/src/simplestruct.c | sed 's/\$$//' | tail -20; echo; echo "=== C plain ==="; sed -n '24,40p' c_src/src/simplestruct.c; echo "=== RUST ==="; cat translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C source and Rust translation
+
+=== C ===
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "simplestruct.h"
+
+int smallestValue (struct ListNode *head) {
+    if (head) {
+        int smallest = head->value;
+        while (head->next) {
+            head = head->next;
+            if (head->value < smallest) {
+                smallest = head->value;
+            }
+        }
+        return smallest;
+    }
+    else return -1; 
+}
+=== C plain ===
+#include "simplestruct.h"
+
+int smallestValue (struct ListNode *head) {
+    if (head) {
+        int smallest = head->value;
+        while (head->next) {
+            head = head->next;
+            if (head->value < smallest) {
+                smallest = head->value;
+            }
+        }
+        return smallest;
+    }
+    else return -1; 
+}=== RUST ===
+// Rust translation of c_src/src/simplestruct.c
+//
+// Original work: Copyright 2025 MIT Lincoln Laboratory (MIT license, see c_src).
+//
+// Behavior is reproduced exactly, including returning -1 for a NULL list head.
+
+// The crate and the exported function keep the original C names so the
+// linker symbol matches; that trips Rust's naming lints.
+#![allow(non_snake_case)]
+
+use std::ffi::c_int;
+
+/// Mirrors `struct ListNode` from `include/simplestruct.h`.
+///
+/// `#[repr(C)]` guarantees the same layout (and therefore the same field
+/// offsets) as the C definition, so callers built against the C header can
+/// pass pointers to this type interchangeably.
+#[repr(C)]
+pub struct ListNode {
+    pub value: c_int,
+    pub next: *mut ListNode,
+}
+
+/// Returns the smallest `value` in the linked list starting at `head`,
+/// or `-1` when `head` is NULL.
+///
+/// # Safety
+///
+/// `head` must either be NULL or point to a valid, NULL-terminated
+/// `ListNode` chain that stays alive for the duration of the call. This
+/// matches the contract of the original C function.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn smallestValue(head: *mut ListNode) -> c_int {
+    // The C code branches on the pointer first; only a non-NULL head is
+    // dereferenced.
+    if head.is_null() {
+        return -1;
+    }
+
+    // Past the NULL check the traversal is expressed with safe references,
+    // re-borrowing through the raw `next` pointer only at each hop.
+    let mut node: &ListNode = unsafe { &*head };
+    let mut smallest = node.value;
+
+    while !node.next.is_null() {
+        node = unsafe { &*node.next };
+        if node.value < smallest {
+            smallest = node.value;
+        }
+    }
+
+    smallest
+}
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[38;5;141m> [0mNo [38;5;10m[features][0m in Cargo.toml, so there's exactly one configuration to verify. Building both sides now.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null && cmake --build . 2>&1 | tail -5 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/SimpleList.dir/src/simplestruct.c.o
+[100%] Linking C shared library libSimpleList.so
+[100%] Built target SimpleList
+-rwxr-xr-x. 1 scheschb amazon 15680 Aug 30 10:47 libSimpleList.so
+[38;5;244m - Completed in 0.426s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rustc --version && cargo --version && timeout 600 cargo check --no-default-features 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain and cargo check
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+    Checking simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+[38;5;244m - Completed in 0.130s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     10[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[39m  10, 13[0m:[39m[49m [profile.release]
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared test harness loading both .so files
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared harness: locates and loads the C and Rust shared libraries and
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! exposes a uniform way to call `smallestValue` through the FFI boundary.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Both implementations are always exercised via `libloading`, i.e. through
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! their exported dynamic symbols, never by calling Rust code directly.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// `struct ListNode` exactly as declared in `c_src/include/simplestruct.h`.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// Defined locally (rather than imported from the crate) so the tests act as
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// an independent external caller compiled against the C header.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m pub struct ListNode {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     pub value: i32,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     pub next: *mut ListNode,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// `int smallestValue(struct ListNode *)`
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m pub type SmallestValueFn = unsafe extern "C" fn(*mut ListNode) -> i32;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// Repository root (the directory holding both `c_src/` and `translation/`).
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m pub fn repo_root() -> PathBuf {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR is <root>/translation
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         .expect("translation/ must have a parent directory")
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// Path to the C shared library produced by the CMake build.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m pub fn c_library_path() -> PathBuf {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     let path = repo_root().join("c_src/build/libSimpleList.so");
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         path.exists(),
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         "C shared library not found at {}\nBuild it with:\n  cd c_src && mkdir -p build && cd build && \
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m          cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         path.display()
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     path
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// Path to the Rust `cdylib`. Prefers the profile the tests were built with,
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// but accepts whichever of debug/release is present.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m pub fn rust_library_path() -> PathBuf {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let target = repo_root().join("translation/target");
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     // Ordered by preference: the profile matching this test binary first.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let preferred = if cfg!(debug_assertions) {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         ["debug", "release"]
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         ["release", "debug"]
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let mut tried = Vec::new();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     for profile in preferred {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         let path = target.join(profile).join("libSimpleList.so");
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         if path.exists() {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             return path;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         tried.push(path);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         "Rust shared library not found. Looked in:{}\nBuild it with: cd translation && cargo build",
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         tried
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             .map(|p| format!("\n  {}", p.display()))
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             .collect::<String>()
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// A loaded implementation of the API under test.
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m pub struct Impl {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     /// Kept alive so the loaded symbols stay valid.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     _lib: Library,
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     smallest_value: SmallestValueFn,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     name: &'static str,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m impl Impl {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     fn load(path: &Path, name: &'static str) -> Self {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         // SAFETY: loading a shared library runs its initialisers; both
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         // libraries here are plain leaf libraries built from this repo.
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         let lib = unsafe { Library::new(path) }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("failed to load {} ({}): {e}", name, path.display()));
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let smallest_value = unsafe {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             let sym: Symbol<SmallestValueFn> = lib
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 .get(b"smallestValue\0")
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("{name} does not export smallestValue: {e}"));
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             *sym
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         Self {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             _lib: lib,
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             smallest_value,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             name,
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     pub fn name(&self) -> &'static str {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         self.name
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     /// Calls `smallestValue` through the library's exported symbol.
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     /// # Safety
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     /// `head` must be NULL or point to a valid NULL-terminated `ListNode`
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     /// chain, per the C contract.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     pub unsafe fn smallest_value(&self, head: *mut ListNode) -> i32 {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         unsafe { (self.smallest_value)(head) }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// The C and Rust implementations, both loaded dynamically.
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m pub struct Pair {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     pub c: Impl,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     pub rust: Impl,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m pub fn load_pair() -> Pair {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     Pair {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         c: Impl::load(&c_library_path(), "C libSimpleList.so"),
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         rust: Impl::load(&rust_library_path(), "Rust libSimpleList.so"),
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m /// Owns the storage backing a linked list so raw pointers stay valid.
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m pub struct ListStorage {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     nodes: Vec<Box<ListNode>>,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m impl ListStorage {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     /// Builds a NULL-terminated chain from `values`. An empty slice yields a
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     /// NULL head.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     pub fn new(values: &[i32]) -> Self {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         let mut nodes: Vec<Box<ListNode>> = values
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             .map(|&value| {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                 Box::new(ListNode {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m                     value,
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m                     next: std::ptr::null_mut(),
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                 })
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             })
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         for i in (1..nodes.len()).rev() {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m             let next: *mut ListNode = &mut *nodes[i];
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             nodes[i - 1].next = next;
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         Self { nodes }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     /// Head pointer for the chain, or NULL when empty.
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     pub fn head(&mut self) -> *mut ListNode {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         match self.nodes.first_mut() {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             Some(node) => &mut **node,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             None => std::ptr::null_mut(),
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m /// Runs both implementations over `values` and asserts the results are
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m /// bit-identical.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m pub fn assert_same(pair: &Pair, values: &[i32]) -> i32 {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     // Each implementation gets a freshly built list so neither can observe
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     // mutations made by the other.
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     let mut c_storage = ListStorage::new(values);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let mut rust_storage = ListStorage::new(values);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     let c_result = unsafe { pair.c.smallest_value(c_storage.head()) };
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     let rust_result = unsafe { pair.rust.smallest_value(rust_storage.head()) };
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         c_result.to_ne_bytes(),
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         rust_result.to_ne_bytes(),
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         "mismatch for input {values:?}: {} returned {c_result}, {} returned {rust_result}",
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         pair.c.name(),
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         pair.rust.name()
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     c_result
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test suite for smallestValue
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests for `smallestValue`, the sole public entry point of
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `include/simplestruct.h`.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Every call goes through the exported dynamic symbol of the C `.so` and of
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! the Rust `cdylib`, so the `#[no_mangle]` wrapper is under test too.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use common::{ListStorage, assert_same, load_pair};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// Deterministic xorshift PRNG so fuzz cases are reproducible.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m struct Rng(u64);
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         Self(seed | 1)
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         x ^= x << 13;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         x ^= x >> 7;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         x ^= x << 17;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         x
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     fn next_i32(&mut self) -> i32 {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         self.next_u64() as u32 as i32
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     /// Value in `0..n`.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     fn below(&mut self, n: u64) -> u64 {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         self.next_u64() % n
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn both_libraries_export_smallest_value() {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     // Loading succeeds only if both .so files expose the symbol.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     assert_eq!(pair.c.name(), "C libSimpleList.so");
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     assert_eq!(pair.rust.name(), "Rust libSimpleList.so");
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m fn null_head_returns_minus_one() {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let mut empty = ListStorage::new(&[]);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     assert!(empty.head().is_null());
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &[]), -1);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m fn single_node_returns_its_value() {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     for value in [
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         0,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         -1, // collides with the NULL sentinel on purpose
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         42,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         -42,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         i32::MIN,
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         i32::MAX,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         i32::MIN + 1,
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         i32::MAX - 1,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         assert_eq!(assert_same(&pair, &[value]), value, "single node {value}");
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m fn minimum_at_each_position() {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let len = 8;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     for min_index in 0..len {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         let values: Vec<i32> = (0..len)
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             .map(|i| if i == min_index { -1000 } else { i as i32 })
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         assert_eq!(assert_same(&pair, &values), -1000, "min at {min_index}");
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m fn ordered_and_reversed_sequences() {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let ascending: Vec<i32> = (0..64).collect();
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     let descending: Vec<i32> = (0..64).rev().collect();
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &ascending), 0);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &descending), 0);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let neg_ascending: Vec<i32> = (-64..0).collect();
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     let neg_descending: Vec<i32> = (-64..0).rev().collect();
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &neg_ascending), -64);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &neg_descending), -64);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m fn duplicates_and_uniform_lists() {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     assert_same(&pair, &[7, 7, 7, 7]);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     assert_same(&pair, &[0, 0, 0]);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     assert_same(&pair, &[-5, -5, 3, -5]);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     assert_same(&pair, &[i32::MIN, i32::MIN]);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     assert_same(&pair, &[i32::MAX, i32::MAX, i32::MAX]);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m fn extreme_values_mixed() {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     // Cases that would break a naive translation using unsigned comparison
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     // or saturating/wrapping arithmetic.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &[i32::MAX, i32::MIN]), i32::MIN);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &[i32::MIN, i32::MAX]), i32::MIN);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &[0, i32::MIN, 0]), i32::MIN);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         assert_same(&pair, &[-1, i32::MIN + 1, i32::MAX]),
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         i32::MIN + 1
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &[i32::MAX, 0, i32::MAX]), 0);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m fn lengths_one_through_sixtyfour() {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC0FFEE);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     for len in 1..=64 {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         let values: Vec<i32> = (0..len).map(|_| rng.next_i32() % 1000).collect();
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         let expected = *values.iter().min().unwrap();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         assert_eq!(assert_same(&pair, &values), expected, "len {len}");
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m fn long_list() {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     let mut values: Vec<i32> = (0..100_000).map(|i| 100_000 - i).collect();
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     values[73_421] = -999_999;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     assert_eq!(assert_same(&pair, &values), -999_999);
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m fn fuzz_full_i32_range() {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     let mut rng = Rng::new(0x5EED_1234_ABCD);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     for _ in 0..2_000 {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         let len = rng.below(24) as usize; // includes 0 -> NULL head
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let values: Vec<i32> = (0..len)
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             .map(|_| match rng.below(4) {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m                 // Bias towards boundary values, otherwise full range.
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m                 0 => [i32::MIN, i32::MAX, 0, -1, 1][rng.below(5) as usize],
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m                 _ => rng.next_i32(),
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m             })
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         let expected = values.iter().min().copied().unwrap_or(-1);
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         assert_eq!(assert_same(&pair, &values), expected, "fuzz {values:?}");
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m fn caller_list_is_not_mutated() {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     // The C function only reads; make sure the Rust version does too.
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     let pair = load_pair();
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     let values: Vec<i32> = vec![9, -3, 12, 0, 7];
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     for imp in [&pair.c, &pair.rust] {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         let mut storage = ListStorage::new(&values);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         let head = storage.head();
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         let result = unsafe { imp.smallest_value(head) };
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         assert_eq!(result, -3, "{}", imp.name());
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         // Walk the chain afterwards and confirm it is unchanged.
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         let mut seen = Vec::new();
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         let mut cur = head;
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         while !cur.is_null() {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m                 seen.push((*cur).value);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m                 cur = (*cur).next;
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         assert_eq!(seen, values, "{} mutated the list", imp.name());
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build 2>&1 | tail -5 && ls target/debug/*.so && timeout 600 cargo test 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build cdylib and run differential tests
+
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+   Compiling simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+target/debug/libSimpleList.so
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.35s
+     Running unittests src/lib.rs (target/debug/deps/SimpleList-9e6a2f946884cef8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-3f12786596f53c71)
+
+running 11 tests
+test both_libraries_export_smallest_value ... ok
+test duplicates_and_uniform_lists ... ok
+test caller_list_is_not_mutated ... ok
+test null_head_returns_minus_one ... ok
+test extreme_values_mixed ... ok
+test minimum_at_each_position ... ok
+test single_node_returns_its_value ... ok
+test ordered_and_reversed_sequences ... ok
+test lengths_one_through_sixtyfour ... ok
+test fuzz_full_i32_range ... ok
+test long_list ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[38;5;244m - Completed in 0.530s[0m
+
+[?25l[0m[38;5;141m> [0mAll 11 differential tests pass. Now the symbol export comparison.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -3
+cd /local/home/scheschb/.harvest/work/harvest-work-LO99PZ
+extract() { nm -D --defined-only "$1" | awk '$2 ~ /^[TtWwDdBbRrVv]$/ {print $3}' | sort -u; }
+extract c_src/build/libSimpleList.so > /tmp/c_syms.txt
+extract translation/target/release/libSimpleList.so > /tmp/rs_syms.txt
+echo "=== C exported symbols ==="; cat /tmp/c_syms.txt
+echo "=== MISSING in Rust (exported by C, not by Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt
+echo "=== extra in Rust (informational) ==="; comm -13 /tmp/c_syms.txt /tmp/rs_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported dynamic symbols between C and Rust .so
+
+   Compiling simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+=== C exported symbols ===
+smallestValue
+=== MISSING in Rust (exported by C, not by Rust) ===
+=== extra in Rust (informational) ===
+[38;5;244m - Completed in 0.121s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-LO99PZ
+echo "=== raw nm -D C ==="; nm -D c_src/build/libSimpleList.so
+echo "=== raw nm -D Rust (release) ==="; nm -D translation/target/release/libSimpleList.so
+echo "=== raw nm -D Rust (debug) ==="; nm -D translation/target/debug/libSimpleList.so | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Show raw dynamic symbol tables
+
+=== raw nm -D C ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+00000000000010f9 T smallestValue
+=== raw nm -D Rust (release) ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+00000000000116a0 T smallestValue
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+=== raw nm -D Rust (debug) ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_RaiseException@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mOnly [38;5;10msmallestValue[0m is defined-and-exported on both sides; everything else is undefined imports. Let me add an override so I can also test the release artifact, and script the (single) configuration matrix.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Allow overriding which Rust .so the tests load
+
+[49m[39m  45, 45[0m:[39m[49m /// Path to the Rust `cdylib`. Prefers the profile the tests were built with,
+[0m[49m[39m  46, 46[0m:[39m[49m /// but accepts whichever of debug/release is present.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// Set `SIMPLELIST_RUST_SO` to test a specific artifact instead.
+[0m[49m[39m  47, 49[0m:[39m[49m pub fn rust_library_path() -> PathBuf {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     if let Some(explicit) = std::env::var_os("SIMPLELIST_RUST_SO") {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         let path = PathBuf::from(explicit);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             path.exists(),
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             "SIMPLELIST_RUST_SO points at a missing file: {}",
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             path.display()
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         return path;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[39m  48, 60[0m:[39m[49m     let target = repo_root().join("translation/target");
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/verify.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Add automation script for full verification matrix
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m # Verify the Rust translation against the C ground truth for every build-time
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m # feature combination declared in translation/Cargo.toml.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m # Usage: ./verify.sh
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m C_SO="$ROOT/c_src/build/libSimpleList.so"
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m TIMEOUT=600
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m fail=0
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m step() { printf '\n=== %s ===\n' "$*"; }
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m run()  { timeout "$TIMEOUT" "$@"; }
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m # 1. Enumerate feature combinations from Cargo.toml.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m step "Feature enumeration"
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m mapfile -t FEATURES < <(
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   awk '
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     /^\[features\]/ { inside = 1; next }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     /^\[/           { inside = 0 }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     inside && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m       split($0, a, "="); gsub(/[[:space:]]/, "", a[1]); print a[1]
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m   ' "$ROOT/translation/Cargo.toml"
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m # "default" is not an independently selectable feature.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m SELECTABLE=()
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m for f in "${FEATURES[@]:-}"; do
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m   [[ -n "$f" && "$f" != "default" ]] && SELECTABLE+=("$f")
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m if ((${#SELECTABLE[@]} == 0)); then
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m   echo "No selectable features declared -> exactly one configuration."
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m   COMBOS=("")
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m   echo "Selectable features: ${SELECTABLE[*]}"
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m   COMBOS=()
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m   n=${#SELECTABLE[@]}
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m   for ((mask = 0; mask < (1 << n); mask++)); do
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     combo=()
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     for ((i = 0; i < n; i++)); do
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m       (((mask >> i) & 1)) && combo+=("${SELECTABLE[i]}")
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     COMBOS+=("$(IFS=,; echo "${combo[*]}")")
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m printf 'Combination count: %d\n' "${#COMBOS[@]}"
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m # 2. Build the C shared library (ground truth).
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m step "Build C shared library"
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m ( cd "$ROOT/c_src" && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m   && run cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m   && run cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m echo "built: $C_SO"
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m # 3-5. Per combination: check, build, symbol diff, differential tests.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m c_syms="$(mktemp)"
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m nm -D --defined-only "$C_SO" | awk '$2 ~ /^[TtWwDdBbRrVv]$/ {print $3}' | sort -u > "$c_syms"
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m for combo in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m   label="${combo:-<no features>}"
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m   feat_args=(--no-default-features)
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m   [[ -n "$combo" ]] && feat_args+=(--features "$combo")
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m   step "Combination: $label"
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m   ( cd "$ROOT/translation" && run cargo check "${feat_args[@]}" ) \
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     || { echo "cargo check FAILED for $label"; fail=1; continue; }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m   for profile in debug release; do
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     build_args=("${feat_args[@]}")
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     [[ "$profile" == release ]] && build_args+=(--release)
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     ( cd "$ROOT/translation" && run cargo build "${build_args[@]}" ) >/dev/null \
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m       || { echo "cargo build ($profile) FAILED for $label"; fail=1; continue; }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     rust_so="$ROOT/translation/target/$profile/libSimpleList.so"
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     # Symbol parity: every symbol the C .so defines must be defined here too.
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     missing="$(comm -23 "$c_syms" \
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m       <(nm -D --defined-only "$rust_so" | awk '$2 ~ /^[TtWwDdBbRrVv]$/ {print $3}' | sort -u))"
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     if [[ -n "$missing" ]]; then
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m       echo "MISSING EXPORTS ($profile, $label):"; echo "$missing"; fail=1
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m       echo "symbol parity OK ($profile)"
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     # Differential tests against the C .so, loading this exact artifact.
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     ( cd "$ROOT/translation" \
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m       && SIMPLELIST_RUST_SO="$rust_so" run cargo test "${feat_args[@]}" -- --test-threads=4 ) \
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m       >/tmp/verify_test_$profile.log 2>&1
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     if (($? == 0)); then
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m       echo "tests OK ($profile vs C): $(grep -c '^test .* ok$' /tmp/verify_test_$profile.log) cases"
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m       echo "TESTS FAILED ($profile, $label):"; tail -40 /tmp/verify_test_$profile.log; fail=1
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m step "Result"
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m if ((fail == 0)); then
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m   echo "PASS: all ${#COMBOS[@]} configuration(s) match the C implementation."
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m   echo "FAIL: see errors above."
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m exit "$fail"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-LO99PZ/verify.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-LO99PZ && chmod +x verify.sh && timeout 600 ./verify.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full verification matrix
+
+
+=== Feature enumeration ===
+No selectable features declared -> exactly one configuration.
+Combination count: 1
+
+=== Build C shared library ===
+built: /local/home/scheschb/.harvest/work/harvest-work-LO99PZ/c_src/build/libSimpleList.so
+
+=== Combination: <no features> ===
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+symbol parity OK (debug)
+tests OK (debug vs C): 11 cases
+    Finished `release` profile [optimized] target(s) in 0.01s
+symbol parity OK (release)
+tests OK (release vs C): 11 cases
+
+=== Result ===
+PASS: all 1 configuration(s) match the C implementation.
+[38;5;244m - Completed in 0.454s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -f /tmp/verify_test_*.log /tmp/c_syms.txt /tmp/rs_syms.txt && cd /local/home/scheschb/.harvest/work/harvest-work-LO99PZ && git status --short 2>/dev/null | head -20; echo "---"; find translation -type f -not -path '*/target/*'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean temp files and show final state
+
+---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+translation/tests/common/mod.rs
+translation/tests/differential.rs
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete — the translation matches the C ground truth, and no changes to [38;5;10mtranslation/src/lib.rs[0m were needed.[0m[0m
+[0m[0m
+[1mConfigurations:[22m [38;5;10mtranslation/Cargo.toml[0m declares no [38;5;10m[features][0m section and [38;5;10mc_src/CMakeLists.txt[0m has no conditional compilation, so there is exactly one valid configuration ([38;5;10m--no-default-features[0m). I built and tested it in both debug and release profiles rather than just one.[0m[0m
+[0m[0m
+[1mAPI surface:[22m [38;5;10minclude/simplestruct.h[0m exposes a single function, [38;5;10mint smallestValue(struct ListNode *)[0m, plus the [38;5;10mListNode[0m struct — no call hierarchy to work up through.[0m[0m
+[0m[0m
+[1mWhat I added:[22m[0m[0m
+- [38;5;10mtranslation/tests/common/mod.rs[0m — harness that loads both [38;5;10mc_src/build/libSimpleList.so[0m and [38;5;10mtranslation/target/*/libSimpleList.so[0m via [38;5;10mlibloading[0m and resolves [38;5;10msmallestValue[0m from each. It redeclares [38;5;10mListNode[0m locally so the tests behave as an independent external caller, and builds a separate owned list per implementation so neither can observe the other's effects. [38;5;10mSIMPLELIST_RUST_SO[0m overrides which artifact is loaded.[0m[0m
+- [38;5;10mtranslation/tests/differential.rs[0m — 11 tests: NULL head, single node (including value [38;5;10m-1[0m, which collides with the NULL sentinel), minimum at every position, ascending/descending runs, duplicates, [38;5;10mi32::MIN[0m/[38;5;10mi32::MAX[0m mixes that would expose unsigned or wrapping comparison bugs, all lengths 1–64, a 100k-node list, 2000 fuzz cases over the full [38;5;10mi32[0m range with boundary-value bias, and a check that neither side mutates the caller's list. Results are compared via [38;5;10mto_ne_bytes()[0m for byte-level equality.[0m[0m
+- [38;5;10mverify.sh[0m — enumerates feature combinations from [38;5;10mCargo.toml[0m, builds the C library, then per combination runs [38;5;10mcargo check[0m, builds debug and release, diffs symbols, and runs the differential suite against each artifact.[0m[0m
+[0m[0m
+[1mSymbol parity:[22m the C [38;5;10m.so[0m defines exactly one dynamic symbol, [38;5;10msmallestValue[0m ([38;5;10mT[0m); the Rust [38;5;10mcdylib[0m defines the same one. Everything else in [38;5;10mnm -D[0m output on both sides is undefined imports ([38;5;10mU[0m) or weak-undefined stubs ([38;5;10m_ITM_*[0m, [38;5;10m__gmon_start__[0m, [38;5;10m__cxa_finalize[0m), which are not exports. No missing exports, no preprocessor-generated symbols to account for.[0m[0m
+[0m[0m
+[38;5;10m./verify.sh[0m reports PASS for the single configuration across both profiles.[0m[0m
+[38;5;8m
+ ▸ Credits: 6.79 • Time: 2m 51s
+
+[0m[1G[0m[0m[?25h
