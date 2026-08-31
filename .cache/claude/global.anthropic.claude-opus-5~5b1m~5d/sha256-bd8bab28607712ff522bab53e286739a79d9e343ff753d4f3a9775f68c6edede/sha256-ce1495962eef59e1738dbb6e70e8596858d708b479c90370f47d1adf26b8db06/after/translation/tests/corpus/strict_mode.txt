@@ -1,0 +1,161 @@
+# Strict-mode-dependent branches (CONFIGS.md section B; every `J->strict` /
+# `F->strict` test in the C source). The harness runs each line with flags=0 and
+# with flags=JS_STRICT, so almost every line below is deliberately written to
+# produce a DIFFERENT observable value in the two modes.
+#
+# HARNESS FORMAT: one snippet per line; `\n` -> newline, `\t` -> tab.
+
+# --- js_setvar: assignment to an undeclared variable (jsrun.c:1132) ---
+(function(){try{ undeclaredA=1; return 'ok:'+undeclaredA }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ undeclaredB=undeclaredB2=1; return 'ok' }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ for (undeclaredC in {k:1}) ; return 'ok:'+undeclaredC }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ for (undeclX=0; undeclX<1; undeclX++) ; return 'ok:'+undeclX }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ undeclY=1, undeclZ=2; return 'ok' }catch(e){ return e.name+': '+e.message }})()
+
+# --- js_setvar: assignment to a read-only global binding (jsrun.c:1124-1128) ---
+(function(){try{ NaN=1; return 'ok:'+String(NaN) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ Infinity=1; return 'ok:'+String(Infinity) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ undefined=1; return 'ok:'+String(undefined) }catch(e){ return e.name+': '+e.message }})()
+
+# --- js_delvar via eval (jsrun.c:1143-1147 + the compile-time guard) ---
+(function(){var dx=1; try{ return 'ok:'+String(eval('delete dx')) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(eval('var dy=1; delete dy')) }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsR_setproperty: accessor with only a getter (jsrun.c:771-773) ---
+(function(){var o={get a(){return 1}}; try{ o.a=2; return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.create({get a(){return 1}}); try{ o.a=2; return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){var o={}; Object.defineProperty(o,'g',{get:function(){return 7}}); try{ o.g=8; return 'ok:'+o.g }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsR_setproperty: write to a JS_READONLY data property (jsrun.c:774-775, 790-800) ---
+(function(){var o={}; Object.defineProperty(o,'a',{value:1}); try{ o.a=2; return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.freeze({a:1}); try{ o.a=2; return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){var p={}; Object.defineProperty(p,'a',{value:1}); var o=Object.create(p); try{ o.a=2; return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ Math.PI=1; return 'ok:'+(Math.PI>3) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ Number.MAX_VALUE=1; return 'ok' }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsR_setproperty: read-only built-in slots reached through a primitive /
+#     regexp receiver (jsrun.c:790-800). NOTE the "transient object" branch at
+#     jsrun.c:780-785 is unreachable from JS because jsV_toobject rewrites the
+#     stack slot to JS_TOBJECT before `transient` is computed (jsrun.c:1788-1791).
+(function(){var r=/x/; try{ r.source='y'; return 'ok:'+r.source }catch(e){ return e.name+': '+e.message }})()
+(function(){var r=/x/g; try{ r.global=false; return 'ok:'+r.global }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ 'ab'.length=9; return 'ok' }catch(e){ return e.name+': '+e.message }})()
+(function(){var s='abc'; try{ s.length=9; return 'ok:'+s.length }catch(e){ return e.name+': '+e.message }})()
+(function(){var s='abc'; try{ s[0]='z'; return 'ok:'+s }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsR_defproperty: value over a JS_READONLY property (jsrun.c:850-855) ---
+(function(){var o={}; Object.defineProperty(o,'a',{value:1}); try{ Object.defineProperty(o,'a',{value:2}); return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.freeze({a:1}); try{ Object.defineProperty(o,'a',{value:2}); return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsR_defproperty: accessor over a JS_DONTCONF property (jsrun.c:856-867) ---
+(function(){var o=Object.freeze({a:1}); try{ Object.defineProperty(o,'a',{get:function(){return 9}}); return 'ok:'+o.a }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.seal({a:1}); try{ Object.defineProperty(o,'a',{set:function(v){}}); return 'ok' }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsR_delproperty: DONTCONF properties and built-in slots (jsrun.c:883-922) ---
+(function(){var o=Object.seal({a:1}); try{ return 'ok:'+String(delete o.a) }catch(e){ return e.name+': '+e.message }})()
+(function(){var o={}; Object.defineProperty(o,'a',{value:1}); try{ return 'ok:'+String(delete o.a) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(delete [].length) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(delete 'ab'[0]) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(delete 'ab'.length) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(delete /x/.lastIndex) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(delete /x/.source) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return 'ok:'+String(delete /x/.global) }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.freeze({a:1}); try{ return 'ok:'+String(delete o.a) }catch(e){ return e.name+': '+e.message }})()
+
+# --- jsV_setproperty: adding to a non-extensible object (jsproperty.c:225-230) ---
+(function(){var o=Object.preventExtensions({}); try{ o.a=1; return 'ok:'+String(o.a) }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.seal({a:1}); try{ o.b=2; return 'ok:'+String(o.b) }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.freeze({}); try{ o.n=1; return 'ok:'+String(o.n) }catch(e){ return e.name+': '+e.message }})()
+(function(){var a=Object.preventExtensions([1]); try{ a[1]=2; return 'ok:'+a.length }catch(e){ return e.name+': '+e.message }})()
+
+# --- OP_THIS coercion of a non-coercible this (jsrun.c:1651-1660) ---
+(function(){function f(){ return typeof this } return f()})()
+(function(){function f(){ return this===undefined?'undefined':'global' } return f()})()
+(function(){function f(){ return typeof this } return f.call(undefined)})()
+(function(){function f(){ return this===null?'null':(this===undefined?'undefined':'global') } return f.call(null)})()
+(function(){function f(){ return typeof this } return f.apply()})()
+(function(){function f(){ return typeof this } return [1].map(f)[0]})()
+(function(){function f(){ try{ return 'ok:'+typeof this.Math }catch(e){ return e.name } } return f()})()
+
+# --- arguments.callee is not defined in strict mode (jsrun.c:1203-1217) ---
+(function(){return (function(){ return typeof arguments.callee })()})()
+(function(){return (function(){ return 'callee' in arguments ? 'yes':'no' })()})()
+(function(){return (function(){ return Object.getOwnPropertyNames(arguments).sort().join(',') })(1)})()
+(function(){return (function(){ return String(Object.getOwnPropertyDescriptor(arguments,'callee')) })()})()
+
+# --- jsV_toprimitive on an object with no callable toString/valueOf (jsvalue.c:143) ---
+(function(){var o=Object.create(null); try{ return ''+o }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.create(null); try{ return String(o+1) }catch(e){ return e.name+': '+e.message }})()
+(function(){var o={toString:null,valueOf:null}; try{ return ''+o }catch(e){ return e.name+': '+e.message }})()
+(function(){var o=Object.create(null); try{ return String(o<1) }catch(e){ return e.name+': '+e.message }})()
+
+# --- checkfutureword: strict-mode future reserved words (jscompile.c:35-46) ---
+(function(){var yield=1; return 'ok:'+yield})()
+(function(){var implements=1; return 'ok:'+implements})()
+(function(){var interface=1; return 'ok:'+interface})()
+(function(){var let=1; return 'ok:'+let})()
+(function(){var package=1; return 'ok:'+package})()
+(function(){var private=1; return 'ok:'+private})()
+(function(){var protected=1; return 'ok:'+protected})()
+(function(){var public=1; return 'ok:'+public})()
+(function(){var static=1; return 'ok:'+static})()
+(function(){function yield(){return 1} return 'ok:'+yield()})()
+(function(){ return 'ok:'+typeof let })()
+(function(){ return 'ok:'+(function static(){ return 1 })() })()
+
+# --- addlocal: 'arguments' / 'eval' redefinition, duplicate formals (jscompile.c:112-131) ---
+(function(){function f(){ var arguments; return 1 } return 'ok:'+f()})()
+(function(){function f(arguments){ return arguments } return 'ok:'+f(3)})()
+(function(){function f(eval){ return 1 } return 'ok:'+f()})()
+(function(){function f(a,a){ return a } return 'ok:'+f(1,2)})()
+(function(){function f(a,b,a){ return a } return 'ok:'+f(1,2,3)})()
+
+# --- emitlocal: assigning to 'arguments' / 'eval' (jscompile.c:202-207) ---
+(function(){function f(){ arguments=1; return arguments } return 'ok:'+f()})()
+(function(){function f(){ arguments++; return arguments } return 'ok:'+f()})()
+
+# --- cobject/checkdup: duplicate property in an object literal (jscompile.c:339-340) ---
+(function(){var o={a:1,a:2}; return 'ok:'+o.a})()
+(function(){var o={1:1,1.0:2}; return 'ok:'+o[1]})()
+(function(){var o={'x':1,x:2}; return 'ok:'+o.x})()
+(function(){var o={a:1,b:2,a:3}; return 'ok:'+o.a})()
+
+# --- cdelete: delete on an unqualified name (jscompile.c:506-508) ---
+(function(){var dz=1; return 'ok:'+String(delete dz)})()
+(function(){return 'ok:'+String(delete nosuchname1)})()
+
+# --- ctrycatch / ctrycatchfinally: catch parameter named arguments/eval ---
+(function(){try{ throw 1 }catch(arguments){ return 'ok:'+arguments }})()
+(function(){try{ throw 1 }catch(eval){ return 'ok:'+eval }})()
+(function(){try{ throw 1 }catch(arguments){ return 'ok:'+arguments }finally{ }})()
+(function(){try{ throw 1 }catch(eval){ return 'ok:'+eval }finally{ }})()
+(function(){try{ throw 1 }catch(yield){ return 'ok:'+yield }})()
+(function(){try{ throw 1 }catch(yield){ return 'ok:'+yield }finally{ }})()
+
+# --- STM_WITH: 'with' is a SyntaxError in strict mode (jscompile.c:1263-1273) ---
+(function(){with ({a:1}) { return 'ok:'+a } })()
+(function(){var o={x:2}; with (o) { x=3 } return 'ok:'+o.x})()
+(function(){with (Math) { return 'ok:'+String(floor(1.5)) } })()
+
+# --- js_loadeval: eval scope and strictness (jsstate.c:122-124, jsrun.c:1237-1264) ---
+(function(){ try{ return 'ok:'+String(eval('var yield=1; yield')) }catch(e){ return e.name }})()
+(function(){ try{ return 'ok:'+String(eval('with({a:1}){a}')) }catch(e){ return e.name }})()
+(function(){ try{ return 'ok:'+String(eval('({a:1,a:2}).a')) }catch(e){ return e.name }})()
+(function(){ try{ eval('undeclaredF=1'); return 'ok' }catch(e){ return e.name+': '+e.message }})()
+(function(){ return eval('(function(){ return typeof this })()')})()
+
+# --- 'use strict' directive forms (jscompile.c:1382-1385) ---
+'use strict';\n(function(){try{ undeclaredG=1; return 'ok' }catch(e){ return e.name }})()
+(function(){ 'use strict'; try{ undeclaredH=1; return 'ok' }catch(e){ return e.name }})()+'/'+(function(){ try{ undeclaredI=1; return 'ok' }catch(e){ return e.name }})()
+(function(){ 'use strict'; function g(){ try{ undeclaredJ=1; return 'ok' }catch(e){ return e.name } } return g()})()
+(function(){ 1; 'use strict'; try{ undeclaredK=1; return 'ok' }catch(e){ return e.name }})()
+(function(){ var q=1; 'use strict'; try{ undeclaredL=1; return 'ok' }catch(e){ return e.name }})()
+(function(){ 'not strict'; try{ undeclaredM=1; return 'ok' }catch(e){ return e.name }})()
+(function(){ "use strict"; return typeof this})()
+(function(){ 'use strict'; return (function(){ return typeof this })()})()
+(function(){ 'use strict'; try{ with({}){} ; return 'ok' }catch(e){ return e.name }})()
+
+# --- strict flag is per-function and restored on return/throw (jsrun.c:1594-1595, 2092-2094) ---
+(function(){ function strictf(){ 'use strict'; undeclaredN=1 } try{ strictf() }catch(e){ }; try{ undeclaredO=1; return 'ok' }catch(e){ return e.name }})()
+(function(){ function strictf(){ 'use strict'; return typeof this } var a=strictf(); function loosef(){ return typeof this } return a+'/'+loosef()})()
+(function(){ function sf(){ 'use strict'; try{ NaN=1 }catch(e){ return e.name } return 'ok' } var r=sf(); try{ NaN=2 }catch(e){ return r+'/'+e.name }; return r+'/ok'})()

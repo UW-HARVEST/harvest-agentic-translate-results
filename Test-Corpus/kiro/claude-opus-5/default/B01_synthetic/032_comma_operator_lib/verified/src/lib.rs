@@ -26,46 +26,28 @@
 use std::ffi::{c_char, c_int};
 
 unsafe extern "C" {
-    /// C standard library `printf`. Used directly (rather than Rust's own
-    /// `std::io::stdout`) so that output ordering and buffering match the
-    /// original C library byte-for-byte, including when a C caller
-    /// interleaves its own `stdio` writes.
-    fn printf(fmt: *const c_char, ...) -> c_int;
+    /// The platform `printf`. Calling it (rather than Rust's `println!`) keeps
+    /// stdout buffering semantics and interleaving with a C caller's own
+    /// output identical to the original library.
+    fn printf(format: *const c_char, ...) -> c_int;
 }
 
-/// `"%d %d\n"` as a NUL-terminated C string literal.
-static FMT: [c_char; 8] = [
-    b'%' as c_char,
-    b'd' as c_char,
-    b' ' as c_char,
-    b'%' as c_char,
-    b'd' as c_char,
-    b'\n' as c_char,
-    0,
-    0,
-];
+/// Format string equivalent to the C literal `"%d %d\n"` (NUL-terminated).
+const FMT: &[u8; 7] = b"%d %d\n\0";
 
-/// Translation of:
+/// void driver(int x);
 ///
-/// ```c
-/// void driver(int x) {
-///     for (int i = 0, j = 0; i < x; i++, j += 2) {
-///         printf("%d %d\n", i, j);
-///     }
-/// }
-/// ```
+/// for (int i = 0, j = 0; i < x; i++, j += 2) printf("%d %d\n", i, j);
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
     let mut i: c_int = 0;
     let mut j: c_int = 0;
-
     while i < x {
         unsafe {
-            printf(FMT.as_ptr(), i, j);
+            printf(FMT.as_ptr() as *const c_char, i, j);
         }
-
-        // `i++, j += 2` — wrapping to mirror what the C compiler emits on
-        // overflow instead of panicking in debug builds.
+        // `i++, j += 2` — wrapping mirrors the machine behaviour of the C code
+        // without introducing a panic that the original would not have.
         i = i.wrapping_add(1);
         j = j.wrapping_add(2);
     }

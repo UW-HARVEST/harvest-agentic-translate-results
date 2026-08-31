@@ -1,0 +1,353 @@
+# Object / Object.prototype / Function.prototype / global functions.
+# Derived from jsobject.c, jsfunction.c and jsbuiltin.c.
+#
+# HARNESS FORMAT: one snippet per line; `\n` -> newline, `\t` -> tab.
+
+# --- Object called as a function and with new (jsobject.c jsB_Object / jsB_new_Object) ---
+typeof Object()
+Object().toString()
+Object(undefined).toString()
+Object(null).toString()
+typeof new Object()
+Object.prototype.toString.call(Object(5))
+Object(5) instanceof Number
+Object('s') instanceof String
+Object(true) instanceof Boolean
+(function(){var o={a:1}; return Object(o)===o})()
+(function(){var a=[1]; return Object(a)===a})()
+new Object(7).valueOf()
+new Object('ab').length
+Object.prototype.toString.call(new Object([1,2]))
+typeof Object.prototype
+Object.length
+Object.name
+
+# --- Object.prototype.toString over every js_Class in Op_toString ---
+Object.prototype.toString.call(undefined)
+Object.prototype.toString.call(null)
+Object.prototype.toString.call({})
+Object.prototype.toString.call([])
+Object.prototype.toString.call(function(){})
+Object.prototype.toString.call(Object.prototype.toString)
+Object.prototype.toString.call(new Error('e'))
+Object.prototype.toString.call(new Boolean(true))
+Object.prototype.toString.call(new Number(1))
+Object.prototype.toString.call(new String('s'))
+Object.prototype.toString.call(/x/)
+Object.prototype.toString.call(Math)
+Object.prototype.toString.call(JSON)
+Object.prototype.toString.call(new Date(0))
+(function(){return Object.prototype.toString.call(arguments)})()
+Object.prototype.toString.call(5)
+Object.prototype.toString.call('s')
+Object.prototype.toString.call(true)
+
+# --- Object.prototype.toLocaleString is literally Op_toString (jsobject.c:540) ---
+({}).toLocaleString()
+[1,2].toLocaleString()
+Object.prototype.toLocaleString===Object.prototype.toString
+(5).toLocaleString!==Object.prototype.toLocaleString
+
+# --- Object.prototype.valueOf / hasOwnProperty / isPrototypeOf / propertyIsEnumerable ---
+({a:1}).valueOf().a
+(function(){var o={}; return o.valueOf()===o})()
+({a:1}).hasOwnProperty('a')
+({a:1}).hasOwnProperty('b')
+({}).hasOwnProperty('toString')
+[1,2,3].hasOwnProperty('1')
+[1,2,3].hasOwnProperty('3')
+[1,2,3].hasOwnProperty('length')
+new String('abc').hasOwnProperty('0')
+new String('abc').hasOwnProperty('3')
+Object.prototype.hasOwnProperty.call('abc','1')
+Object.prototype.hasOwnProperty.call(5,'x')
+(function(){var o={}; Object.defineProperty(o,'h',{value:1}); return o.hasOwnProperty('h')})()
+Object.prototype.isPrototypeOf.call(Object.prototype,{})
+Object.prototype.isPrototypeOf.call(Array.prototype,[])
+Object.prototype.isPrototypeOf.call(Array.prototype,{})
+Object.prototype.isPrototypeOf.call(Object.prototype,5)
+(function(){var p={}; var c=Object.create(p); return [p.isPrototypeOf(c), c.isPrototypeOf(p)].join(',')})()
+(function(){var o={}; return o.isPrototypeOf(o)})()
+({a:1}).propertyIsEnumerable('a')
+({}).propertyIsEnumerable('toString')
+Object.prototype.propertyIsEnumerable.call(Object.prototype,'toString')
+(function(){var o={}; Object.defineProperty(o,'x',{value:1,enumerable:true}); return o.propertyIsEnumerable('x')})()
+(function(){var o={}; Object.defineProperty(o,'x',{value:1}); return o.propertyIsEnumerable('x')})()
+
+# --- Object.keys / getOwnPropertyNames (jsobject.c O_keys / O_getOwnPropertyNames) ---
+Object.keys({}).length
+Object.keys({a:1,b:2}).sort().join(',')
+Object.keys([10,20,30]).join(',')
+Object.keys([]).join(',')
+Object.keys(new String('ab')).join(',')
+Object.keys(Object.create(null)).length
+Object.keys(Object.create({inherited:1})).length
+(function(){var o={a:1}; Object.defineProperty(o,'hidden',{value:2}); return Object.keys(o).join(',')})()
+Object.getOwnPropertyNames({}).length
+Object.getOwnPropertyNames({a:1,b:2}).sort().join(',')
+Object.getOwnPropertyNames([7,8]).join(',')
+Object.getOwnPropertyNames([]).join(',')
+Object.getOwnPropertyNames(new String('ab')).join(',')
+Object.getOwnPropertyNames(/ab/).join(',')
+(function(){var o={}; Object.defineProperty(o,'hidden',{value:2}); return Object.getOwnPropertyNames(o).join(',')})()
+Object.getOwnPropertyNames(Object.create(null)).length
+
+# --- Object.getPrototypeOf ---
+Object.getPrototypeOf({})===Object.prototype
+Object.getPrototypeOf([])===Array.prototype
+Object.getPrototypeOf(Object.create(null))
+Object.getPrototypeOf(Object.prototype)
+Object.getPrototypeOf(function(){})===Function.prototype
+(function(){try{ return String(Object.getPrototypeOf(5)) }catch(e){ return e.name+': '+e.message }})()
+
+# --- Object.create ---
+typeof Object.create(null)
+Object.create(null).toString===undefined
+(function(){var p={m:function(){return 'p'}}; return Object.create(p).m()})()
+(function(){var o=Object.create(null,{a:{value:1,enumerable:true}}); return o.a})()
+(function(){var o=Object.create(Object.prototype,{a:{value:1,enumerable:true},b:{value:2}}); return [o.a,o.b,Object.keys(o).join('')].join('|')})()
+(function(){var o=Object.create({}, undefined); return typeof o})()
+(function(){try{ return String(Object.create(5)) }catch(e){ return e.name+': '+e.message }})()
+
+# --- Object.defineProperty / defineProperties (jsobject.c ToPropertyDescriptor) ---
+(function(){var o={}; Object.defineProperty(o,'a',{value:1}); return o.a})()
+(function(){var o={}; Object.defineProperty(o,'a',{value:1}); return Object.keys(o).length})()
+(function(){var o={}; Object.defineProperty(o,'a',{value:1,enumerable:true,writable:true,configurable:true}); return Object.getOwnPropertyDescriptor(o,'a').writable})()
+(function(){var o={}; Object.defineProperty(o,'a',{value:1,writable:true}); o.a=2; return o.a})()
+(function(){var o={}; Object.defineProperty(o,'a',{get:function(){return 9}}); return o.a})()
+(function(){var o={}; Object.defineProperty(o,'a',{set:function(v){this.b=v}}); o.a=3; return [o.b, o.a===undefined].join(',')})()
+(function(){var o={}; Object.defineProperty(o,'a',{get:function(){return this.z}, set:function(v){this.z=v*2}}); o.a=4; return o.a})()
+(function(){var o={}; return Object.defineProperty(o,'a',{value:1})===o})()
+(function(){var o={}; Object.defineProperty(o,'0',{value:'zero',enumerable:true}); return o[0]})()
+(function(){var o={}; Object.defineProperties(o,{a:{value:1,enumerable:true},b:{value:2,enumerable:true}}); return Object.keys(o).sort().join(',')})()
+(function(){var o={}; return Object.defineProperties(o,{})===o})()
+(function(){var o={}; try{ Object.defineProperty(o,'a',{value:1,get:function(){return 1}}); return 'ok' }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ Object.defineProperty(5,'a',{value:1}); return 'ok' }catch(e){ return e.name+': '+e.message }})()
+(function(){var o={}; try{ Object.defineProperty(o,'a',1); return 'ok' }catch(e){ return e.name+': '+e.message }})()
+
+# --- Object.getOwnPropertyDescriptor (walks the prototype chain in this build) ---
+(function(){var d=Object.getOwnPropertyDescriptor({a:1},'a'); return [d.value,d.writable,d.enumerable,d.configurable].join(',')})()
+Object.getOwnPropertyDescriptor({},'nosuch')
+(function(){var d=Object.getOwnPropertyDescriptor({},'toString'); return d===undefined?'undefined':[typeof d.value,d.enumerable].join(',')})()
+(function(){var o={get a(){return 1}}; var d=Object.getOwnPropertyDescriptor(o,'a'); return [typeof d.get, typeof d.set, d.enumerable].join(',')})()
+(function(){var o={set a(v){}}; var d=Object.getOwnPropertyDescriptor(o,'a'); return [typeof d.get, typeof d.set].join(',')})()
+Object.getOwnPropertyDescriptor([1,2],'0')
+(function(){var d=Object.getOwnPropertyDescriptor([1,2],'length'); return typeof d})()
+
+# --- seal / freeze / preventExtensions and their predicates ---
+Object.isExtensible({})
+Object.isExtensible([])
+Object.isExtensible(Object.preventExtensions({}))
+(function(){var o={}; return Object.preventExtensions(o)===o})()
+(function(){var o=Object.preventExtensions({a:1}); return [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)].join(',')})()
+Object.isSealed({})
+Object.isSealed(Object.preventExtensions({}))
+Object.isSealed(Object.seal({a:1}))
+Object.isFrozen({})
+Object.isFrozen(Object.preventExtensions({}))
+Object.isFrozen(Object.seal({a:1}))
+Object.isFrozen(Object.freeze({a:1}))
+Object.isSealed(Object.freeze({a:1}))
+(function(){var o=Object.seal({a:1}); o.a=2; return o.a})()
+(function(){var o=Object.seal({a:1}); try{ return String(delete o.a) }catch(e){ return e.name }})()
+(function(){var o=Object.freeze({a:1}); try{ o.a=2 }catch(e){ return e.name }; return o.a})()
+(function(){var o=Object.preventExtensions({}); try{ o.n=1 }catch(e){ return e.name }; return String(o.n)})()
+(function(){var o=Object.freeze([1,2]); return [o.length, Object.isFrozen(o)].join(',')})()
+(function(){var o={a:1}; return Object.freeze(o)===o})()
+(function(){var o={a:1}; return Object.seal(o)===o})()
+
+# --- Function.prototype.toString (jsfunction.c Fp_toString) ---
+(function(){}).toString()
+(function(a,b){ return a+b }).toString()
+(function named(x){}).toString()
+Object.prototype.toString.toString()
+parseInt.toString()
+Function.prototype.toString()
+Function.prototype.toString.call(Math.max)
+(function(){function f(a){} return f.toString()})()
+(function(){try{ return Function.prototype.toString.call({}) }catch(e){ return e.name+': '+e.message }})()
+(function(){var b=(function(a,b){}).bind(null); return b.toString()})()
+
+# --- Function.prototype.apply ---
+(function(){function f(){ return arguments.length } return f.apply(null)})()
+(function(){function f(){ return arguments.length } return f.apply(null,null)})()
+(function(){function f(){ return arguments.length } return f.apply(null,undefined)})()
+(function(){function f(){ return arguments.length } return f.apply(null,[])})()
+(function(){function f(a){ return a } return f.apply(null,[7])})()
+(function(){function f(a,b,c){ return [a,b,c].join('-') } return f.apply(null,[1,2,3])})()
+(function(){function f(a,b){ return a+'/'+b } return f.apply(null,{length:2,0:'x',1:'y'})})()
+(function(){function f(){ return arguments.length } return f.apply(null,{length:0})})()
+(function(){function f(){ return arguments.length } return f.apply(null,{length:-3})})()
+(function(){function f(){ return arguments.length } return f.apply(null,'ab')})()
+(function(){function f(){ return this.v } return f.apply({v:'ap'})})()
+Math.max.apply(null,[1,5,3])
+Array.prototype.join.apply([1,2,3],['+'])
+(function(){try{ return String(Function.prototype.apply.call({},null)) }catch(e){ return e.name+': '+e.message }})()
+
+# --- Function.prototype.call ---
+(function(){function f(){ return arguments.length } return f.call()})()
+(function(){function f(){ return arguments.length } return f.call(null)})()
+(function(){function f(a){ return a } return f.call(null,'c')})()
+(function(){function f(a,b,c){ return [a,b,c].join('-') } return f.call(null,1,2,3)})()
+(function(){function f(){ return this.v } return f.call({v:'cl'})})()
+(function(){return Object.prototype.hasOwnProperty.call({q:1},'q')})()
+(function(){try{ return String(Function.prototype.call.call({})) }catch(e){ return e.name+': '+e.message }})()
+
+# --- Function.prototype.bind: length, this, partial args, constructors ---
+(function(){function f(a,b,c){} return f.bind(null).length})()
+(function(){function f(a,b,c){} return f.bind(null,1).length})()
+(function(){function f(a,b,c){} return f.bind(null,1,2,3,4).length})()
+(function(){function f(){} return f.bind(null).length})()
+(function(){function f(){ return this.v } return f.bind({v:'bound'})()})()
+(function(){function f(a,b){ return a+'/'+b } return f.bind(null,'x')('y')})()
+(function(){function f(){ return arguments.length } return f.bind(null,1,2)(3,4)})()
+(function(){function f(){ return Array.prototype.join.call(arguments,',') } return f.bind(null,1,2)(3)})()
+(function(){function C(a){ this.a=a } var B=C.bind(null,5); var o=new B(); return o.a})()
+(function(){function C(a){ this.a=a } var B=C.bind(null); var o=new B(7); return [o.a, o instanceof C].join(',')})()
+(function(){function f(){ return this.v } var g=f.bind({v:1}).bind({v:2}); return g()})()
+(function(){function f(){} return typeof f.bind(null)})()
+(function(){function f(){} var b=f.bind(null); return b.hasOwnProperty('prototype')})()
+(function(){try{ return String(Function.prototype.bind.call({})) }catch(e){ return e.name+': '+e.message }})()
+
+# --- Function constructor ---
+typeof Function
+Function('return 1')()
+Function('a','b','return a+b')(2,3)
+Function('a','return a*2')(4)
+Function()()
+Function('')()
+Function('a','').length
+Function('return this')()===undefined?'undefined-this':'object-this'
+(function(){var f=Function('x','return x+1'); return f.toString()})()
+
+# --- eval ---
+eval('1+1')
+eval('"str"')
+eval('typeof Math')
+eval('var evq=41; evq+1')
+(function(){ eval('var loc=5'); return loc})()
+eval('(function(){return 3})()')
+eval(5)
+eval(null)
+eval('')
+(function(){var x=1; return eval('x+1')})()
+eval('[1,2].join("|")')
+(function(){try{ return String(eval('(')) }catch(e){ return e.name }})()
+
+# --- parseInt (jsbuiltin.c jsB_parseInt: radix 0/2..36, 0x prefix, signs, blanks) ---
+parseInt('123')
+parseInt('123',10)
+parseInt('123',0)
+parseInt('0x1f')
+parseInt('0X1f')
+parseInt('0x1f',16)
+parseInt('1f',16)
+parseInt('0x1f',10)
+parseInt('11',2)
+parseInt('102',2)
+parseInt('777',8)
+parseInt('19',8)
+parseInt('z',36)
+parseInt('zz',36)
+parseInt('Z',36)
+parseInt('10',36)
+parseInt('10',1)
+parseInt('10',37)
+parseInt('10',-1)
+parseInt('10',2.9)
+parseInt('  \t 42  ')
+parseInt('-42')
+parseInt('+42')
+parseInt('-0x10')
+parseInt('')
+parseInt('abc')
+parseInt('12abc')
+parseInt('1.9')
+parseInt('.5')
+parseInt('-')
+parseInt(15.99)
+parseInt('0x')
+parseInt(' 0x10 ')
+parseInt('99999999999999999999999')
+parseInt(null)
+parseInt(undefined)
+parseInt('Infinity')
+
+# --- parseFloat (jsbuiltin.c jsB_parseFloat) ---
+parseFloat('1.5')
+parseFloat('  1.5e3  ')
+parseFloat('-1.5')
+parseFloat('+1.5')
+parseFloat('.5')
+parseFloat('1.')
+parseFloat('1e')
+parseFloat('Infinity')
+parseFloat('-Infinity')
+parseFloat('+Infinity')
+parseFloat('Infinityfoo')
+parseFloat('')
+parseFloat('abc')
+parseFloat('0x10')
+parseFloat('1.2.3')
+parseFloat('-')
+parseFloat('1e999')
+parseFloat('1e-999')
+parseFloat(1.25)
+
+# --- isNaN / isFinite ---
+isNaN(NaN)
+isNaN(1)
+isNaN('abc')
+isNaN('1')
+isNaN(undefined)
+isNaN(null)
+isNaN()
+isFinite(1)
+isFinite(Infinity)
+isFinite(-Infinity)
+isFinite(NaN)
+isFinite('1')
+isFinite(null)
+isFinite()
+
+# --- encodeURI / encodeURIComponent (byte-wise Encode in jsbuiltin.c) ---
+encodeURI('abcXYZ019')
+encodeURI("-_.!~*'()")
+encodeURI(';/?:@&=+$,#')
+encodeURI('a b')
+encodeURIComponent(';/?:@&=+$,#')
+encodeURIComponent('a b')
+encodeURIComponent('%')
+encodeURI('%')
+encodeURIComponent('é')
+encodeURIComponent('€')
+encodeURIComponent('😀')
+encodeURI('é')
+encodeURIComponent('')
+encodeURIComponent(String.fromCharCode(10))
+encodeURIComponent(1.5)
+encodeURIComponent(null)
+encodeURIComponent('a'+String.fromCharCode(0)+'b')
+
+# --- decodeURI / decodeURIComponent ---
+decodeURI('abc')
+decodeURI('a%20b')
+decodeURIComponent('a%20b')
+decodeURI('%3B%2F%3F%3A%40%26%3D%2B%24%2C%23')
+decodeURIComponent('%3B%2F%3F%3A%40%26%3D%2B%24%2C%23')
+decodeURIComponent('%C3%A9')
+decodeURIComponent('%E2%82%AC')
+decodeURIComponent('%F0%9F%98%80')
+decodeURIComponent('%f0%9f%98%80')
+decodeURIComponent('')
+decodeURIComponent(encodeURIComponent('a b/c?d'))
+decodeURI(encodeURI('a b/c?d'))
+(function(){try{ return decodeURIComponent('%') }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return decodeURIComponent('%2') }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return decodeURIComponent('%zz') }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return decodeURI('%GG') }catch(e){ return e.name+': '+e.message }})()
+
+# --- escape / unescape are NOT provided by this build ---
+typeof escape
+typeof unescape
+typeof Function('return typeof escape')()

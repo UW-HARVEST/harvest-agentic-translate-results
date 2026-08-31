@@ -1,57 +1,58 @@
 // Rust translation of c_src/src/driver.c
 //
-// Original C:
-//     static void print_hex(unsigned char *p, int len) {
-//         for (int i = 0; i < len; i++) {
-//             printf("%02x", p[i]);
-//         }
-//         printf("\n");
-//     }
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-//     void driver(float x) {
-//         print_hex((unsigned char *)&x, sizeof(x));
-//     }
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
 //
-// The output is the raw in-memory byte representation of the float argument,
-// printed as lowercase, zero-padded, two-digit hex, followed by a newline.
-// We call the platform's C `printf` directly so that stdout buffering and
-// formatting behavior are identical to the original library.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int, c_uchar, c_uint};
+use std::ffi::c_char;
+use std::ffi::c_int;
+use std::ffi::c_uchar;
 
-unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
+extern "C" {
+    // Use the C library's printf so that output ordering/buffering matches
+    // the original C implementation exactly (same stdout FILE stream).
+    fn printf(format: *const c_char, ...) -> c_int;
 }
 
-/// Format string `"%02x"` as a NUL-terminated C string.
-const FMT_HEX: &[u8; 5] = b"%02x\0";
-/// Format string `"\n"` as a NUL-terminated C string.
-const FMT_NL: &[u8; 2] = b"\n\0";
-
-/// Equivalent of the C file-local `print_hex`.
+/// Mirrors the C `static void print_hex(unsigned char *p, int len)`.
 ///
 /// # Safety
-/// `p` must point to at least `len` readable bytes when `len > 0`.
+/// `p` must point to at least `len` readable bytes.
 unsafe fn print_hex(p: *const c_uchar, len: c_int) {
     let mut i: c_int = 0;
     while i < len {
-        // SAFETY: caller guarantees `p[0..len]` is readable.
-        let byte = unsafe { *p.offset(i as isize) };
-        unsafe {
-            printf(FMT_HEX.as_ptr() as *const c_char, byte as c_uint);
-        }
+        // "%02x" with an `unsigned char` argument, which is promoted to `int`.
+        printf(b"%02x\0".as_ptr() as *const c_char, *p.offset(i as isize) as c_int);
         i += 1;
     }
-    unsafe {
-        printf(FMT_NL.as_ptr() as *const c_char);
-    }
+    printf(b"\n\0".as_ptr() as *const c_char);
 }
 
+/// void driver(float x);
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: f32) {
-    // `sizeof(float)` bytes of the value's object representation.
-    let bytes: [u8; std::mem::size_of::<f32>()] = x.to_ne_bytes();
+    // print_hex((unsigned char *)&x, sizeof(x));
+    let bytes = x.to_ne_bytes();
     unsafe {
-        print_hex(bytes.as_ptr() as *const c_uchar, bytes.len() as c_int);
+        print_hex(bytes.as_ptr() as *const c_uchar, core::mem::size_of::<f32>() as c_int);
     }
 }

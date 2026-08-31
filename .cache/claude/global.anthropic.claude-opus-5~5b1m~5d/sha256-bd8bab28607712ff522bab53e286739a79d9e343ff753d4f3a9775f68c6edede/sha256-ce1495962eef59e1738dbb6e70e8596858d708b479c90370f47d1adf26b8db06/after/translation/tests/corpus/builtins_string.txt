@@ -1,0 +1,366 @@
+# String and String.prototype, derived from jsstring.c (+ utf.c case tables).
+#
+# HARNESS FORMAT: one snippet per line; `\n` -> newline, `\t` -> tab.
+# A literal newline character must be produced with String.fromCharCode(10).
+
+# --- String as a function and with new (jsB_String / jsB_new_String) ---
+String()
+String('')
+String('abc')
+String(5)
+String(true)
+String(null)
+String(undefined)
+String(NaN)
+String([1,2])
+String({})
+typeof String()
+typeof new String('a')
+new String('abc').length
+new String().length
+new String('abc').toString()
+new String('abc').valueOf()
+new String('abc')+''
+new String('abc')==='abc'
+new String('abc')=='abc'
+Object.prototype.toString.call(new String('a'))
+String.length
+String.name
+String.prototype.length
+new String(5).valueOf()
+new String('abc')[1]
+new String('abc')[3]===undefined
+
+# --- String.fromCharCode (S_fromCharCode uses js_touint32 + runetochar) ---
+String.fromCharCode()
+String.fromCharCode().length
+String.fromCharCode(65)
+String.fromCharCode(65,66,67)
+String.fromCharCode(0).length
+String.fromCharCode(0).charCodeAt(0)
+String.fromCharCode(0x41,0x42).length
+String.fromCharCode(233)
+String.fromCharCode(0x20AC)
+String.fromCharCode(0x20AC).length
+String.fromCharCode(65.9)
+String.fromCharCode(-1).charCodeAt(0)
+String.fromCharCode(0x10FFFF).length
+String.fromCharCode(0x110000).charCodeAt(0)
+String.fromCharCode(0x10000).length
+String.fromCharCode(0xD83D,0xDE00).length
+String.fromCharCode('65')
+String.fromCharCode(NaN).charCodeAt(0)
+String.fromCharCode(Infinity).charCodeAt(0)
+String.fromCharCode(4294967296).charCodeAt(0)
+String.fromCharCode(10).charCodeAt(0)
+String.fromCharCode(9,32,10,13).length
+
+# --- length, charAt, charCodeAt (js_runeat, js_utflen) ---
+''.length
+'a'.length
+'abc'.length
+'é'.length
+'€'.length
+'😀'.length
+'a😀b'.length
+'abc'.charAt(0)
+'abc'.charAt(2)
+'abc'.charAt(3)
+'abc'.charAt(-1)
+'abc'.charAt()
+'abc'.charAt(1.7)
+'abc'.charAt(NaN)
+'abc'.charAt(Infinity)
+'abc'.charAt(-Infinity)
+'abc'.charAt('1')
+''.charAt(0)
+'é€'.charAt(1)
+'😀'.charAt(0).length
+'😀'.charAt(1).length
+'a😀'.charAt(1).charCodeAt(0)
+'abc'.charCodeAt(0)
+'abc'.charCodeAt(2)
+'abc'.charCodeAt(3)
+'abc'.charCodeAt(-1)
+'abc'.charCodeAt()
+'abc'.charCodeAt(1.7)
+'abc'.charCodeAt(NaN)
+''.charCodeAt(0)
+'é'.charCodeAt(0)
+'€'.charCodeAt(0)
+'😀'.charCodeAt(0)
+'😀'.charCodeAt(1)
+'😀'.charCodeAt(2)
+'a😀b'.charCodeAt(3)
+String.prototype.charAt.call(5,0)
+String.prototype.charCodeAt.call(true,0)
+
+# --- concat (note: zero-argument concat returns undefined in this build) ---
+String(''.concat())
+String('ab'.concat())
+'ab'.concat('cd')
+'ab'.concat('cd','ef')
+'ab'.concat(1,true,null,undefined)
+''.concat('x')
+'ab'.concat([1,2])
+'é'.concat('€').length
+String.prototype.concat.call(5,'x')
+
+# --- indexOf / lastIndexOf (rune indices; note ''.indexOf('') is -1 here) ---
+'abcabc'.indexOf('b')
+'abcabc'.indexOf('b',2)
+'abcabc'.indexOf('b',5)
+'abcabc'.indexOf('z')
+'abc'.indexOf('')
+''.indexOf('')
+''.indexOf('a')
+'abc'.indexOf('abc')
+'abc'.indexOf('abcd')
+'abc'.indexOf('b',-5)
+'abc'.indexOf('b',1.9)
+'abc'.indexOf('b',NaN)
+'abc'.indexOf()
+'undefined'.indexOf()
+'aéb'.indexOf('b')
+'a😀b'.indexOf('b')
+'abc'.indexOf('B')
+'abcabc'.lastIndexOf('b')
+'abcabc'.lastIndexOf('b',2)
+'abcabc'.lastIndexOf('b',0)
+'abcabc'.lastIndexOf('z')
+'abc'.lastIndexOf('')
+''.lastIndexOf('')
+'abc'.lastIndexOf('b',-1)
+'abc'.lastIndexOf()
+'undefined'.lastIndexOf()
+'aéb'.lastIndexOf('b')
+String.prototype.indexOf.call(1234,'3')
+
+# --- localeCompare (strcmp based) ---
+'a'.localeCompare('a')
+''.localeCompare('')
+'a'.localeCompare('b')<0
+'b'.localeCompare('a')>0
+'a'.localeCompare('ab')<0
+'abc'.localeCompare('abd')<0
+'Z'.localeCompare('a')<0
+String.prototype.localeCompare.call(5,'5')
+
+# --- slice ---
+'abcde'.slice()
+'abcde'.slice(1)
+'abcde'.slice(1,3)
+'abcde'.slice(-2)
+'abcde'.slice(-2,-1)
+'abcde'.slice(-99)
+'abcde'.slice(99)
+'abcde'.slice(3,1)
+'abcde'.slice(0,-99)
+'abcde'.slice(1.9,3.9)
+'abcde'.slice(NaN,2)
+'abcde'.slice(undefined,2)
+'abcde'.slice(0,undefined)
+'abcde'.slice(Infinity)
+'abcde'.slice(-Infinity)
+'abcde'.slice('1','3')
+''.slice(0,1)
+'aébé'.slice(1,3)
+'a😀b'.slice(1,3)
+'a😀b'.slice(1,2).length
+'a😀b'.slice(2,3).length
+'a😀b'.slice(2,3).charCodeAt(0)
+'a😀b'.slice(1,2).charCodeAt(0)
+String.prototype.slice.call(12345,1,3)
+
+# --- substring ---
+'abcde'.substring()
+'abcde'.substring(1)
+'abcde'.substring(1,3)
+'abcde'.substring(3,1)
+'abcde'.substring(-2)
+'abcde'.substring(-2,-1)
+'abcde'.substring(99)
+'abcde'.substring(0,99)
+'abcde'.substring(1.9,3.9)
+'abcde'.substring(NaN,2)
+'abcde'.substring(undefined,2)
+'abcde'.substring(2,2)
+''.substring(0,1)
+'aébé'.substring(1,3)
+'a😀b'.substring(1,3)
+String.prototype.substring.call(12345,1,3)
+
+# --- substr is NOT provided by this build ---
+typeof ''.substr
+'substr' in String.prototype
+
+# --- toLowerCase / toUpperCase / toLocale* (utf.c full + simple case tables) ---
+'ABC'.toLowerCase()
+'abc'.toUpperCase()
+''.toLowerCase()
+''.toUpperCase()
+'aBcD123'.toLowerCase()
+'aBcD123'.toUpperCase()
+'ÀÉÎÕÜ'.toLowerCase()
+'àéîõü'.toUpperCase()
+'ß'.toUpperCase()
+'ß'.toUpperCase().length
+'ß'.toLowerCase()
+'ẞ'.toLowerCase()
+'ẞ'.toUpperCase()
+'İ'.toLowerCase().length
+'İ'.toLowerCase().charCodeAt(0)
+'İ'.toLowerCase().charCodeAt(1)
+'İ'.toUpperCase()
+'ı'.toUpperCase()
+'ı'.toLowerCase().charCodeAt(0)
+'ﬀ'.toUpperCase()
+'ﬀ'.toUpperCase().length
+'ﬗ'.toUpperCase().length
+'ΐ'.toUpperCase().length
+'ßİ'.toUpperCase()
+'ȿ'.toUpperCase().charCodeAt(0)
+'Ā'.toLowerCase().charCodeAt(0)
+'ā'.toLowerCase().charCodeAt(0)
+'×'.toLowerCase().charCodeAt(0)
+'ſ'.toUpperCase().charCodeAt(0)
+'ΣΟΦΟΣ'.toLowerCase()
+'σοφος'.toUpperCase()
+'𐐀'.toLowerCase().length
+'𐐨'.toUpperCase().length
+'𐐀'.toLowerCase().charCodeAt(1)
+'abc'.toLocaleLowerCase()
+'ABC'.toLocaleLowerCase()
+'abc'.toLocaleUpperCase()
+'ß'.toLocaleUpperCase()
+String.prototype.toUpperCase===String.prototype.toLocaleUpperCase
+String.prototype.toUpperCase.call(5)
+String.prototype.toLowerCase.call(true)
+
+# --- trim (istrim is byte-wise: U+00A0 and U+FEFF are NOT trimmed) ---
+'  abc  '.trim()
+'abc'.trim()
+''.trim()
+'   '.trim()
+'\tabc\t'.trim()
+('\t'+String.fromCharCode(10,13)+' abc ').trim()
+(String.fromCharCode(11,12)+'abc').trim()
+(' abc ').trim()
+(' abc ').trim().length
+('﻿abc').trim().length
+'a b'.trim()
+'  a  b  '.trim()
+String.prototype.trim.call(5)
+
+# --- search ---
+'abcabc'.search(/b/)
+'abcabc'.search(/z/)
+'abcabc'.search('c')
+'abcabc'.search()
+'aéb'.search(/b/)
+'abc'.search(/^a/)
+'abc'.search(/$/)
+''.search(/a/)
+''.search(/(?:)/)
+'abc'.search(/B/i)
+
+# --- match with and without the g flag ---
+String('abcabc'.match(/b/))
+'abcabc'.match(/b/).length
+'abcabc'.match(/b/).index
+'abcabc'.match(/b/).input
+'abcabc'.match(/(a)(b)/).join('|')
+String('abcabc'.match(/z/))
+'abcabc'.match(/b/g).join(',')
+'abcabc'.match(/[abc]/g).length
+String('abcabc'.match(/z/g))
+'aaa'.match(/a*/g).join('|')
+'abc'.match(/x*/g).join('|')
+'abc'.match(/x*/g).length
+'abcabc'.match('b').index
+String('abc'.match())
+'abc'.match(/B/i).index
+'a1b2'.match(/[0-9]/g).join('')
+'aéb'.match(/b/).index
+
+# --- replace with a string pattern (Sp_replace_string) ---
+'abcabc'.replace('b','X')
+'abcabc'.replace('z','X')
+'abc'.replace('','X')
+'abc'.replace('abc','')
+'abcabc'.replace('b','$$')
+'abcabc'.replace('b','[$&]')
+'abcabc'.replace('b','[$`]')
+"abcabc".replace('b',"[$']")
+'abcabc'.replace('b','$1')
+'abcabc'.replace('b','$')
+'abcabc'.replace('b','$z')
+'abcabc'.replace('b',function(m,o,s){return '<'+m+o+s.length+'>'})
+'abc'.replace('b',5)
+'abc'.replace(1,'X')
+'a1c'.replace(1,'X')
+
+# --- replace with a regexp pattern (Sp_replace_regexp) ---
+'abcabc'.replace(/b/,'X')
+'abcabc'.replace(/b/g,'X')
+'abcabc'.replace(/z/,'X')
+'abcabc'.replace(/z/g,'X')
+'abcabc'.replace(/(b)/,'[$1]')
+'abcabc'.replace(/(a)(b)/,'$2$1')
+'abcabc'.replace(/b/,'$$')
+'abcabc'.replace(/b/,'$&$&')
+'abcabc'.replace(/b/,'$`')
+"abcabc".replace(/b/,"$'")
+'abcabc'.replace(/b/,'$0')
+'abcabc'.replace(/b/,'$1')
+'abcabc'.replace(/b/,'$9')
+'abcabc'.replace(/b/,'$99')
+'abcabc'.replace(/b/,'$12')
+'abcabc'.replace(/(a)(b)(c)/,'$3$2$1')
+'abcabc'.replace(/b/,'$')
+'abcabc'.replace(/b/,'$x')
+'aaa'.replace(/a*/g,'X')
+'abc'.replace(/x*/g,'-')
+'abc'.replace(/()/g,'-')
+'abcabc'.replace(/b/g,function(m,o,s){return o})
+'abcabc'.replace(/(b)/g,function(m,p1,o,s){return '('+p1+o+')'})
+'abcabc'.replace(/b/,function(){return '$&'})
+'a1b2'.replace(/[0-9]/g,function(m){return '<'+m+'>'})
+'abc'.replace(/B/i,'X')
+('a'+String.fromCharCode(10)+'b').replace(/^b/m,'X')
+'aéb'.replace(/b/,'X')
+
+# --- split: string separator, regexp separator, empty separator, limit ---
+'a,b,c'.split(',').join('|')
+'a,b,c'.split(',').length
+'a,b,c'.split(',',2).join('|')
+'a,b,c'.split(',',0).length
+'a,b,c'.split(',',99).length
+'abc'.split('').join('|')
+'abc'.split('').length
+'aéb'.split('').length
+'a😀b'.split('').length
+''.split('').length
+''.split(',').length
+''.split(',')[0]===''
+'abc'.split('x').join('|')
+'abc'.split('abc').join('|')
+'abc'.split('abc').length
+'a,b,'.split(',').length
+',a'.split(',').join('|')
+'abc'.split().length
+'abc'.split()[0]
+'abc'.split(undefined).length
+'a1b2c'.split(/[0-9]/).join('|')
+'a1b2c'.split(/([0-9])/).join('|')
+'a1b2c'.split(/[0-9]/,2).join('|')
+'abc'.split(/x/).join('|')
+'abc'.split(/(?:)/).join('|')
+''.split(/x/).length
+''.split(/(?:)/).length
+'aaa'.split(/a/).length
+'aaa'.split(/a/).join('|')
+'a,b'.split(/,/).length
+'ab'.split(/b*/).join('|')
+'a1b'.split(1).join('|')
+'a,b,c'.split(',').concat(['z']).join('|')

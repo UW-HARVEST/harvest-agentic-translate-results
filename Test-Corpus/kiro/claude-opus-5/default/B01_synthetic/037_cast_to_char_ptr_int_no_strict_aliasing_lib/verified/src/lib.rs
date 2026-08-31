@@ -1,7 +1,5 @@
 // Rust translation of c_src/src/driver.c
 //
-// Original copyright notice from the C sources:
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -29,34 +27,42 @@ use std::ffi::c_char;
 use std::ffi::c_int;
 
 unsafe extern "C" {
-    // C `printf` from libc, used so that output goes through the very same
-    // stdio stream (and buffering discipline) as the original C library.
-    fn printf(fmt: *const c_char, ...) -> c_int;
+    // Use the C runtime's `printf` so that the output stream, its buffering
+    // mode, and flush-at-exit behavior are byte-for-byte identical to the
+    // original C library (which writes through stdio).
+    #[link_name = "printf"]
+    safe fn c_printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// Equivalent of the C `static void print_hex(unsigned char *p, int len)`.
+/// Mirrors `static void print_hex(unsigned char *p, int len)`.
 ///
 /// Prints each byte as two lowercase hex digits, then a newline.
-fn print_hex(p: &[u8]) {
-    for &b in p {
-        // "%02x" with the byte promoted to `int`, exactly as in C.
-        unsafe {
-            printf(c"%02x".as_ptr(), b as c_int);
-        }
+fn print_hex(p: &[u8], len: c_int) {
+    // Format strings are NUL-terminated byte literals, matching the C source.
+    const FMT_BYTE: &[u8; 5] = b"%02x\0";
+    const FMT_NL: &[u8; 2] = b"\n\0";
+
+    let mut i: c_int = 0;
+    while i < len {
+        c_printf(
+            FMT_BYTE.as_ptr() as *const c_char,
+            // `unsigned char` is promoted to `int` when passed as a variadic
+            // argument, so widen without sign extension.
+            c_int::from(p[i as usize]),
+        );
+        i += 1;
     }
-    unsafe {
-        printf(c"\n".as_ptr());
-    }
+    c_printf(FMT_NL.as_ptr() as *const c_char);
 }
 
-/// void driver(int x);
+/// Mirrors `void driver(int x)`.
 ///
-/// Copies the raw object representation of `x` into a local buffer and prints
-/// it byte by byte in hex (native byte order, matching `memcpy` in the C).
+/// Copies the raw object representation of `x` into a local buffer and dumps
+/// it as hex. The result therefore reflects the host's integer endianness,
+/// exactly as the C `memcpy` does.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
     // char raw[sizeof(x)]; memcpy(raw, &x, sizeof(x));
-    let raw: [u8; size_of::<c_int>()] = x.to_ne_bytes();
-    // print_hex((unsigned char *)raw, sizeof(raw));
-    print_hex(&raw);
+    let raw: [u8; core::mem::size_of::<c_int>()] = x.to_ne_bytes();
+    print_hex(&raw, raw.len() as c_int);
 }

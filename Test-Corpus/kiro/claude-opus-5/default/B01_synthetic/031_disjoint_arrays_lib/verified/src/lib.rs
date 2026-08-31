@@ -23,20 +23,18 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int};
+use std::ffi::{CStr, c_char, c_int};
 
-// Use the C runtime's printf so that output ordering/buffering matches the
-// original library exactly when it is loaded into a C program.
+// `driver.h` declares only `void driver(const char *in);` and contains no
+// namespace/renaming macros, so the linker symbols are the plain source-level
+// names. `fma_array` and `call_fma` are non-static in the C translation unit,
+// so they are exported from the shared library too and are kept exported here.
 unsafe extern "C" {
     fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// `out[i] = mul1[i] * mul2[i] + add[i]` for `i` in `0..len`.
-///
-/// The C original declares `out` as `int *restrict`; Rust has no equivalent
-/// qualifier, so the pointers are simply treated as non-aliasing by contract.
-/// Signed overflow is undefined in C; gcc/clang wrap in practice, so wrapping
-/// arithmetic is used here.
+/// C: `void fma_array(int *restrict out, const int *mul1, const int *mul2,
+///                   const int *add, int len)`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fma_array(
     out: *mut c_int,
@@ -48,130 +46,70 @@ pub unsafe extern "C" fn fma_array(
     let mut i: c_int = 0;
     while i < len {
         let idx = i as isize;
-        unsafe {
-            let v = (*mul1.offset(idx))
+        // Signed overflow is UB in C; on the usual targets it wraps, so wrap here.
+        let v = unsafe {
+            (*mul1.offset(idx))
                 .wrapping_mul(*mul2.offset(idx))
-                .wrapping_add(*add.offset(idx));
-            *out.offset(idx) = v;
-        }
+                .wrapping_add(*add.offset(idx))
+        };
+        unsafe { *out.offset(idx) = v };
         i += 1;
     }
 }
 
-/// Builds `ones`/`zeros` vectors and runs `fma_array`, returning the last
-/// element of the result (which, given the operands, is `data[len - 1]`).
-///
-/// A `len` below zero is undefined behaviour in the C original (negative VLA
-/// size); here it is treated the same as an empty input.
+/// C: `int call_fma(const int *data, int len)`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn call_fma(data: *const c_int, len: c_int) -> c_int {
     if len == 0 {
         return 0;
     }
+    // A negative `len` makes the C VLA declarations and the `out[len-1]` read
+    // undefined behaviour; there is no observable behaviour to reproduce.
     if len < 0 {
-        // UB in C (`int out[len]` with negative length). Avoid an allocation
-        // panic across the FFI boundary.
         return 0;
     }
 
     let n = len as usize;
+    // C leaves these VLAs uninitialized; every element that is later read is
+    // written before use, so zero-filling is equivalent.
     let mut out: Vec<c_int> = vec![0; n];
-    let ones: Vec<c_int> = vec![1; n];
-    let zeros: Vec<c_int> = vec![0; n];
+    let mut ones: Vec<c_int> = vec![0; n];
+    let mut zeros: Vec<c_int> = vec![0; n];
 
-    // `out[0] = 0;` in the C source; the rest of `out` is left uninitialised
-    // there, but every element is overwritten by `fma_array` below.
-
-    unsafe {
-        fma_array(out.as_mut_ptr(), ones.as_ptr(), data, zeros.as_ptr(), len);
+    out[0] = 0;
+    for i in 0..n {
+        ones[i] = 1;
+        zeros[i] = 0;
     }
 
+    unsafe {
+        fma_array(
+            out.as_mut_ptr(),
+            ones.as_ptr(),
+            data,
+            zeros.as_ptr(),
+            len,
+        );
+    }
     out[n - 1]
 }
 
-/// True for the characters `isspace()` accepts in the C locale.
-fn is_c_space(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
-}
-
-/// Emulates a single `sscanf(s, "%d%zn", &value, &nb)`.
-///
-/// Returns `Some((value, nb))` on a successful conversion, where `nb` is the
-/// number of bytes consumed (leading whitespace and sign included), or `None`
-/// on a matching failure / input failure.
-///
-/// Overflow follows glibc: the digits are converted as a `long` (64-bit here)
-/// which saturates at `LONG_MIN`/`LONG_MAX`, and the result is then truncated
-/// on assignment to `int`.
-fn scan_int(s: &[u8]) -> Option<(c_int, usize)> {
-    let mut pos = 0usize;
-
-    while pos < s.len() && is_c_space(s[pos]) {
-        pos += 1;
-    }
-
-    let negative = match s.get(pos) {
-        Some(b'-') => {
-            pos += 1;
-            true
-        }
-        Some(b'+') => {
-            pos += 1;
-            false
-        }
-        _ => false,
-    };
-
-    let digits_start = pos;
-    let mut acc: i128 = 0;
-    let mut saturated = false;
-    while pos < s.len() && s[pos].is_ascii_digit() {
-        if !saturated {
-            acc = acc * 10 + i128::from(s[pos] - b'0');
-            if acc > i128::from(u64::MAX) {
-                saturated = true;
-            }
-        }
-        pos += 1;
-    }
-
-    if pos == digits_start {
-        // No digits: matching failure (or input failure at end of string).
-        return None;
-    }
-
-    let as_long: i64 = if negative {
-        let neg = -acc;
-        if neg < i128::from(i64::MIN) {
-            i64::MIN
-        } else {
-            neg as i64
-        }
-    } else if acc > i128::from(i64::MAX) {
-        i64::MAX
-    } else {
-        acc as i64
-    };
-
-    Some((as_long as c_int, pos))
-}
-
-/// Parses up to 100 decimal integers out of `in_`, then prints the last one
-/// (or `0` when nothing parsed) followed by a newline.
+/// C: `void driver(const char *in)`
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn driver(in_: *const c_char) {
-    // `data` is uninitialised in the C original; only the first `i` entries are
-    // ever read, so zero-filling is equivalent.
+pub unsafe extern "C" fn driver(input: *const c_char) {
+    // sscanf reads up to the terminating NUL, so snapshot the whole string once
+    // and then walk it with an offset (the C code advances `in` by `%zn`).
+    let s = unsafe { CStr::from_ptr(input) }.to_bytes();
+
     let mut data: [c_int; 100] = [0; 100];
-
-    let mut rest: &[u8] = unsafe { c_str_bytes(in_) };
-
+    let mut pos: usize = 0;
     let mut i: usize = 0;
     while i < 100 {
-        match scan_int(rest) {
+        // `sscanf(in, "%d%zn", &data[i], &nb) != 1` -> break
+        match scan_d(&s[pos..]) {
             Some((value, nb)) => {
                 data[i] = value;
-                rest = &rest[nb..];
+                pos += nb;
             }
             None => break,
         }
@@ -184,13 +122,67 @@ pub unsafe extern "C" fn driver(in_: *const c_char) {
     }
 }
 
-/// Borrows the NUL-terminated string at `p` as a byte slice.
-unsafe fn c_str_bytes(p: *const c_char) -> &'static [u8] {
-    let mut len = 0usize;
-    unsafe {
-        while *p.add(len) != 0 {
-            len += 1;
-        }
-        std::slice::from_raw_parts(p as *const u8, len)
+/// `isspace()` in the C locale.
+fn is_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// One `%d` conversion as performed by glibc's `sscanf`.
+///
+/// Returns `Some((converted_value, chars_consumed))` on success (the character
+/// count matches what `%zn` would store, i.e. it includes the skipped leading
+/// whitespace and the optional sign), or `None` for an input/matching failure.
+///
+/// glibc converts the collected digit string with `strtol`, which saturates at
+/// `LONG_MAX`/`LONG_MIN`, and then assigns that `long` to the `int *` argument,
+/// truncating it. That saturate-then-truncate behaviour is reproduced here.
+fn scan_d(s: &[u8]) -> Option<(c_int, usize)> {
+    let mut p: usize = 0;
+    while p < s.len() && is_space(s[p]) {
+        p += 1;
     }
+
+    let negative = if p < s.len() && (s[p] == b'+' || s[p] == b'-') {
+        let neg = s[p] == b'-';
+        p += 1;
+        neg
+    } else {
+        false
+    };
+
+    let digits_start = p;
+    let mut magnitude: u64 = 0;
+    let mut saturated = false;
+    while p < s.len() && s[p].is_ascii_digit() {
+        if !saturated {
+            match magnitude
+                .checked_mul(10)
+                .and_then(|v| v.checked_add((s[p] - b'0') as u64))
+            {
+                Some(v) => magnitude = v,
+                None => saturated = true,
+            }
+        }
+        p += 1;
+    }
+
+    if p == digits_start {
+        // No digits: matching failure (or input failure at end of string).
+        return None;
+    }
+
+    let as_long: i64 = if negative {
+        const MIN_MAGNITUDE: u64 = 1u64 << 63; // |LONG_MIN|
+        if saturated || magnitude > MIN_MAGNITUDE {
+            i64::MIN
+        } else {
+            (magnitude as i64).wrapping_neg()
+        }
+    } else if saturated || magnitude > i64::MAX as u64 {
+        i64::MAX
+    } else {
+        magnitude as i64
+    };
+
+    Some((as_long as c_int, p))
 }

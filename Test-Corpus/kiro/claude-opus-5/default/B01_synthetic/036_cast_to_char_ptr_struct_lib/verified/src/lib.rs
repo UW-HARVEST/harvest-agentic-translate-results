@@ -1,65 +1,61 @@
 // Rust translation of c_src/src/driver.c
 //
-// Original: Copyright 2025 MIT Lincoln Laboratory (MIT-style license, see c_src).
-//
-// The C code dumps the raw in-memory representation of a `house_t` struct as
-// lowercase hex. To be byte-identical we must reproduce the C ABI layout
-// (`#[repr(C)]`), the zero-initialization of `= {0}` (which in practice also
-// clears padding bytes), and the exact `printf("%02x")` / trailing newline
-// output.
+// The C library exposes a single function, `driver`, which fills in a
+// `house_t` struct and then dumps the struct's raw bytes as lowercase hex.
+// Output must be byte-identical, so the struct layout (`#[repr(C)]`) and the
+// use of C `stdio` (for identical buffering behaviour) are both preserved.
 
-use std::ffi::c_int;
-use std::io::Write;
-use std::mem::MaybeUninit;
+use std::ffi::{c_char, c_double, c_int, c_uchar};
 
-/// typedef struct { int floors; int bedrooms; double bathrooms; } house_t;
+unsafe extern "C" {
+    // Variadic C `printf` from libc; used instead of Rust's `print!` so that
+    // stream buffering and flushing behave exactly as in the original.
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
+
+/// Mirrors the anonymous struct typedef'd as `house_t` in driver.c.
+///
+/// On the target ABI this is 16 bytes: `floors` at offset 0, `bedrooms` at
+/// offset 4, and `bathrooms` (8-byte aligned) at offset 8.
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct HouseT {
     floors: c_int,
     bedrooms: c_int,
-    bathrooms: f64,
+    bathrooms: c_double,
 }
 
-/// static void print_hex(unsigned char *p, int len)
-fn print_hex(p: &[u8], len: c_int) {
-    // Build the output in one buffer so the write to stdout is atomic-ish and
-    // the bytes emitted match printf's exactly.
-    let mut out = Vec::with_capacity(len as usize * 2 + 1);
+/// `static void print_hex(unsigned char *p, int len)`
+///
+/// Kept as a private helper (it has internal linkage in C, so it is not part
+/// of the exported ABI).
+fn print_hex(p: *const c_uchar, len: c_int) {
     let mut i: c_int = 0;
     while i < len {
-        // printf("%02x", p[i]);
-        let _ = write!(out, "{:02x}", p[i as usize]);
+        // "%02x" promotes the unsigned char argument to int.
+        let byte = unsafe { *p.offset(i as isize) };
+        unsafe {
+            printf(c"%02x".as_ptr(), byte as c_int);
+        }
         i += 1;
     }
-    // printf("\n");
-    out.push(b'\n');
-
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    let _ = lock.write_all(&out);
-    let _ = lock.flush();
+    unsafe {
+        printf(c"\n".as_ptr());
+    }
 }
 
-/// void driver(int floors)
+/// `void driver(int floors)`
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(floors: c_int) {
-    // house_t house = {0};  -- zero every byte, padding included.
-    let mut house: MaybeUninit<HouseT> = MaybeUninit::zeroed();
+    // `house_t house = {0};` zero-initialises every byte, including any
+    // padding, before the individual fields are assigned.
+    let mut house: HouseT = unsafe { std::mem::zeroed() };
+    house.floors = floors;
+    house.bedrooms = 3;
+    house.bathrooms = 2.;
 
-    // Write the fields through the pointer so padding stays zeroed.
-    let ptr = house.as_mut_ptr();
-    unsafe {
-        (*ptr).floors = floors; // house.floors = floors;
-        (*ptr).bedrooms = 3; // house.bedrooms = 3;
-        (*ptr).bathrooms = 2.0; // house.bathrooms = 2.;
-    }
-
-    // print_hex((unsigned char *)&house, sizeof(house));
-    let bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(
-            house.as_ptr() as *const u8,
-            std::mem::size_of::<HouseT>(),
-        )
-    };
-    print_hex(bytes, std::mem::size_of::<HouseT>() as c_int);
+    print_hex(
+        (&raw const house) as *const HouseT as *const c_uchar,
+        std::mem::size_of::<HouseT>() as c_int,
+    );
 }

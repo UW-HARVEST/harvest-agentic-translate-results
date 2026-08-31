@@ -1,0 +1,231 @@
+# Phase C error corpus -- lexer rejections (jslex.c).
+# ERRORS.md section 12, rows 251-276. Every snippet MUST error in the C build in
+# at least one of flags=0 / flags=JS_STRICT. No try/catch here on purpose.
+#
+# NOTE ON ESCAPES: the harness rewrites backslash+n -> newline and backslash+t ->
+# tab BEFORE compiling. So `'a\nb'` below is a string literal containing a RAW
+# newline (which is what row 258 needs), and a line ending in a lone backslash is
+# a backslash at EOF (row 256). Sequences that must survive as two characters are
+# built with String.fromCharCode instead.
+
+# --- row 251: jsY_unescape -- "unexpected escape sequence" (identifiers) ---
+var \x41 = 1
+var \u041 = 1
+var \uZZZZ = 1
+var \u00 = 1
+var a\u12 = 1
+var \q = 1
+var o = {}; o.\x41
+var o = {}; o.\u12g4
+
+# --- row 252: lexhex -- "malformed hexadecimal number" ---
+0x
+0X
+var a = 0x
+var a = 0X
+0x.5
+var a = 0xg
+0x + 1
+var a = 0X;
+
+# --- row 253: lexnumber -- "number with leading zero" (legacy octal) ---
+010
+00
+08
+09
+var a = 0123
+0777 + 1
+var a = [01]
+01.5
+
+# --- row 254: lexnumber -- "missing exponent" ---
+1e
+1E
+1e+
+1e-
+1.5e
+0.1E+
+var a = 12e
+var a = .5e-
+1e+ + 1
+
+# --- row 255: lexnumber -- "number with letter suffix" ---
+123abc
+1_0
+1$
+3.14foo
+1e5x
+var a = 5n
+var a = 1if
+# lexhex returns TK_NUMBER before the letter-suffix check, so a hex literal with a
+# trailing letter falls through to the parser's "expected ';'" instead (row 279).
+0x1g
+0xFFq
+var a = 1.2.3
+
+# --- row 256: lexescape -- "unterminated escape sequence" (backslash at EOF) ---
+'abc\
+"abc\
+var s = 'x\
+var s = "\
+
+# --- row 257: lexescape -> lexstring -- "malformed escape sequence" ---
+'\xZZ'
+'\x1'
+'\xg0'
+"\x"
+'\uZZZZ'
+'\u12'
+'\u123'
+"\u"
+'\u0g00'
+"\ud80z"
+
+# --- row 258: lexstring -- "string not terminated" (EOF or raw newline) ---
+'abc
+"abc
+'
+"
+var s = 'x
+'a\nb'
+"a\nb"
+var s = "line1\nline2"
+['abc
+
+# --- row 259: jsY_expect -- "expected '%c'" (reachable via JSON keywords) ---
+JSON.parse('tru')
+JSON.parse('fals')
+JSON.parse('nul')
+JSON.parse('nuXl')
+JSON.parse('trXe')
+JSON.parse('falze')
+JSON.parse('t')
+JSON.parse('n')
+JSON.parse('f')
+
+# --- row 260: lexregexp -- "regular expression not terminated" (EOF/newline) ---
+/abc
+var r = /abc
+x = /abc[a-z
+var r = /a\nb/
+var r = /abc\nx
+/[abc
+var r = /(a|b
+if (/x
+
+# --- row 261: lexregexp -- backslash then EOF/newline inside the body ---
+var r = /a\
+/abc\
+var r = /a\\nx
+var r = /[a\\nb]/
+
+# --- row 262: lexregexp -- "illegal flag in regular expression: %c" ---
+/a/y
+/abc/gz
+/a/G
+/a/I
+/a/M
+var r = /x/gimx
+/a/u
+/a/s
+
+# --- row 263: lexregexp -- "duplicated flag in regular expression" ---
+/a/gg
+/a/ii
+/a/mm
+/a/gimg
+/a/gig
+var r = /x/mim
+
+# --- row 264: lexcomment -- "multi-line comment not terminated" ---
+/* unterminated
+var a = 1; /* x
+/*/
+/*
+/** *
+var a = 1 /* comment \n still open
+
+# --- row 265: jsY_lexx -- "unexpected character: '%c'" (printable ASCII) ---
+# (a bare `#` cannot be a snippet -- the harness would read it as a comment line)
+@
+a # b
+var a = @1
+`
+var a = `x`
+1 @ 2
+;;;@
+var a = 1 \ 2
+if (a) { # }
+
+# --- row 266: jsY_lexx -- "unexpected character: \\u%04X" (non-ASCII / control) ---
+var a = «1»
+«
+¡
+±
+eval(String.fromCharCode(1))
+eval(String.fromCharCode(7))
+eval(String.fromCharCode(0xFFFD))
+eval(String.fromCharCode(0x00A1))
+eval('var x = ' + String.fromCharCode(0xFFFD))
+
+# --- row 268: lexjsonnumber -- "unexpected non-digit" ---
+JSON.parse('-')
+JSON.parse('-x')
+JSON.parse('-.5')
+JSON.parse('[-]')
+JSON.parse('-e5')
+
+# --- row 269: lexjsonnumber -- "missing digits after decimal point" ---
+JSON.parse('1.')
+JSON.parse('0.')
+JSON.parse('0.e5')
+JSON.parse('-12.')
+JSON.parse('[1.]')
+
+# --- row 270: lexjsonnumber -- "missing digits after exponent indicator" ---
+JSON.parse('1e')
+JSON.parse('1e+')
+JSON.parse('1E-')
+JSON.parse('0E')
+JSON.parse('-1.5e+')
+
+# --- row 271: lexjsonescape -- "invalid escape sequence" ---
+JSON.parse('"\\q"')
+JSON.parse('"\\x41"')
+JSON.parse('"\\a"')
+JSON.parse('"\\v"')
+JSON.parse('"\\0"')
+JSON.parse('"a\\Ub"')
+
+# --- row 273: lexjsonstring -- "unterminated string" ---
+JSON.parse('"abc')
+JSON.parse('"')
+JSON.parse('["abc]')
+JSON.parse('{"a":"b}')
+
+# --- row 274: lexjsonstring -- "invalid control character in string" ---
+JSON.parse('"a\tb"')
+JSON.parse('"a' + String.fromCharCode(9) + 'b"')
+JSON.parse('"' + String.fromCharCode(10) + '"')
+JSON.parse('"' + String.fromCharCode(13) + '"')
+JSON.parse('"x' + String.fromCharCode(31) + '"')
+JSON.parse('"x' + String.fromCharCode(8) + '"')
+
+# --- row 275: jsY_lexjson -- "unexpected character: '%c'" (printable) ---
+JSON.parse('@')
+JSON.parse("'x'")
+JSON.parse('undefined')
+JSON.parse('+1')
+JSON.parse('NaN')
+JSON.parse('Infinity')
+JSON.parse('(1)')
+JSON.parse('#')
+JSON.parse('[1,x]')
+JSON.parse('{a:1}')
+
+# --- row 276: jsY_lexjson -- "unexpected character: \\u%04X" (non-printable) ---
+JSON.parse(String.fromCharCode(1))
+JSON.parse(String.fromCharCode(7))
+JSON.parse(String.fromCharCode(161))
+JSON.parse(String.fromCharCode(0xFFFD))
+JSON.parse('[' + String.fromCharCode(1) + ']')

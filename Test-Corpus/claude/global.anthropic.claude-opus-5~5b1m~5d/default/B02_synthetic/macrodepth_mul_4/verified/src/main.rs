@@ -34,8 +34,8 @@ use core::ffi::c_int;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 
-use mdcore::{helper_call, helper_ptr, use_generated, G_OP};
-use mdmacros::{op_fn, step, INIT_FOR, OP_NAME, REPEAT};
+use mdcore::{helper_call, helper_ptr, use_generated, G_OP, G_OP_NAME};
+use mdmacros::{op_fn, step, INIT_FOR, REPEAT};
 
 /// Whitespace recognized by the C locale `isspace`, as used by `strtol`/`atoi`.
 fn c_isspace(c: u8) -> bool {
@@ -119,11 +119,20 @@ fn main() {
     let x1 = helper_call(a, b);
     let x2 = helper_ptr(a, b);
     let x3 = use_generated(REPEAT);
-    // `int g = G_OP(a, b);` — reads the mutable global function pointer.
-    // SAFETY: single-threaded; `G_OP` still holds its initialiser (`OP_FN(OP)`).
+    // `int g = G_OP(a, b);` — reads the mutable global, exactly like the C.
+    // SAFETY: single-threaded; nothing has written `G_OP` since load time.
     let g = unsafe { G_OP }(a, b);
 
-    println!("op={} call={} acc={} g.call={}", OP_NAME, r_call, acc, g);
+    // `printf("op=%s ...", G_OP_NAME, ...)` — also reads the mutable global.
+    // SAFETY: as above; the pointer refers to a `'static` NUL-terminated literal.
+    let op_name = unsafe { core::ffi::CStr::from_ptr(G_OP_NAME) };
+    println!(
+        "op={} call={} acc={} g.call={}",
+        op_name.to_string_lossy(),
+        r_call,
+        acc,
+        g
+    );
     let summary = r_call
         .wrapping_add(acc)
         .wrapping_add(x1)

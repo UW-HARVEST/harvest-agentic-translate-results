@@ -1,0 +1,10 @@
+# The differential tests redirect fd 1 to capture `printf` output coming from
+# inside the dlopen'ed libraries. That is a process-wide resource, and libtest's
+# own progress lines are written to the real fd 1 from the harness thread, so a
+# parallel test run would interleave harness text into the captures.
+#
+# Forcing one test thread makes libtest print strictly before and after each
+# test function, never during a capture. It also keeps the two copies of the
+# mutable `the_house` state advancing deterministically.
+[env]
+RUST_TEST_THREADS = "1"

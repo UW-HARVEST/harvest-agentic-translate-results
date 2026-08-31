@@ -1,0 +1,460 @@
+# Core language semantics (jslex.c literal forms, jsparse.c/jscompile.c statements,
+# jsrun.c operators + jsvalue.c coercions).
+#
+# HARNESS FORMAT: one snippet per line; `\n` -> newline, `\t` -> tab.
+# Because `\n` is rewritten, a JS "\n" escape cannot appear here; use
+# String.fromCharCode(10) when a newline character is needed.
+
+# --- number literals (jslex.c lexnumber / lexhex, jsvalue.c jsV_numbertostring) ---
+0
+5
+-5
+0.5
+5.25
+.5
+1.
+1e5
+1E5
+1e+5
+1e-5
+0x1F
+0X1f
+0xff
+0xFFFFFFFF
+0x7FFFFFFF
+0x80000000
+1e21
+1e20
+1e-6
+1e-7
+1.5e-7
+1e308
+1e309
+5e-324
+1.7976931348623157e308
+1.2345678901234567
+9007199254740993
+2147483647
+2147483648
+-2147483648
+0.1+0.2
+1/3
+123456789012345678901234567890
+String(1e21)
+String(1e20)
+String(-0)
+1/-0
+String(0.000001)
+String(0.0000001)
+
+# --- string literals and every escape (jslex.c lexstring / lexescape) ---
+'abc'
+"abc"
+'a\'b'
+"a\"b"
+'a\\b'
+'a\bb'.charCodeAt(1)
+'a\fb'.charCodeAt(1)
+'a\rb'.charCodeAt(1)
+'a\vb'.charCodeAt(1)
+'a\0b'.charCodeAt(1)
+'a\0b'.length
+'\x41\x42'
+'\x00'.length
+'AB'
+'€'.charCodeAt(0)
+'😀'.length
+'a\q'
+'a\9'
+# next two lines: `\\n` in the corpus becomes backslash + real newline, i.e. a JS line continuation
+'a\\nb'
+'a\\nb'.length
+'a\tb'.length
+'a\tb'.charCodeAt(1)
+'é'.length
+'é'.length
+'€'.length
+'😀'.length
+'ab' + String.fromCharCode(10) + 'cd'
+('a' + String.fromCharCode(10) + 'b').length
+
+# --- true / false / null / undefined ---
+true
+false
+null
+undefined
+typeof undefined
+typeof null
+typeof true
+typeof 0
+typeof 'a'
+typeof {}
+typeof []
+typeof function(){}
+typeof Math
+typeof nosuchglobalvariable
+
+# --- array literals incl. elisions and trailing commas ---
+[].length
+[1,2,3].length
+[1,,3].length
+[1,,3][1]
+1 in [1,,3]
+[1,2,3,].length
+[,].length
+[,,].length
+[1,[2,[3]]].toString()
+[[1,2],[3,4]].join(';')
+[1,2,3].join()
+
+# --- object literals: identifier, string and numeric keys, getters/setters ---
+({a:1}).a
+({'a b':1})['a b']
+({1:'x'})[1]
+({1:'x'})['1']
+({1.5:'y'})['1.5']
+({0x10:'z'})['16']
+(function(){var o={a:1,b:2}; var r=[]; for (var k in o) r.push(k+'='+o[k]); return r.join(',')})()
+({get a(){return 42}}).a
+(function(){var o={set a(v){this.b=v*2}}; o.a=21; return o.b})()
+(function(){var o={get a(){return this._v}, set a(v){this._v=v+1}}; o.a=1; return o.a})()
+(function(){var o={a:1}; return Object.getOwnPropertyDescriptor(o,'a').enumerable})()
+({}).toString()
+({a:1}).toString()
+
+# --- operator precedence and associativity ---
+2+3*4
+(2+3)*4
+2*3%4
+2-3-4
+2*3/4
+100/10/2
+2+3+'x'
+'x'+2+3
+1<2==true
+1|2^3&4
+~2+3
+-2*-3
++'3'*2
+!0+!1
+1+ +'2'
+3/2
+7%3
+-7%3
+7%-3
+7.5%2
+
+# --- assignment operators ---
+(function(){var a=1; a+=2; return a})()
+(function(){var a=5; a-=2; return a})()
+(function(){var a=5; a*=3; return a})()
+(function(){var a=9; a/=2; return a})()
+(function(){var a=9; a%=4; return a})()
+(function(){var a=1; a<<=4; return a})()
+(function(){var a=-16; a>>=2; return a})()
+(function(){var a=-16; a>>>=2; return a})()
+(function(){var a=12; a&=10; return a})()
+(function(){var a=12; a|=3; return a})()
+(function(){var a=12; a^=10; return a})()
+(function(){var o={n:1}; o.n+=2; return o.n})()
+(function(){var a=[1,2]; a[0]*=5; return a.join(',')})()
+(function(){var a=1,b=2,c; c=a=b=3; return [a,b,c].join(',')})()
+
+# --- comma operator ---
+(1,2,3)
+(function(){var a=0; var b=(a=1,a=a+1,a*10); return b})()
+(function(){var r=[]; for (var i=0,j=9; i<2; i++,j--) r.push(i+':'+j); return r.join(' ')})()
+
+# --- in / instanceof / delete / void / typeof ---
+'a' in {a:1}
+'b' in {a:1}
+'toString' in {}
+0 in [1]
+1 in [1]
+'length' in []
+[] instanceof Array
+[] instanceof Object
+({}) instanceof Array
+(function(){}) instanceof Function
+new String('x') instanceof String
+'x' instanceof String
+(function(){function C(){}; var c=new C(); return c instanceof C})()
+(function(){var o={a:1}; return [delete o.a, o.a===undefined].join(',')})()
+(function(){var o={a:1}; return delete o.nosuch})()
+(function(){var a=[1,2,3]; delete a[1]; return [a.length, 1 in a].join(',')})()
+void 0
+void 'x'
+typeof void 0
+(function(){try{ return String(delete Math.PI) }catch(e){ return e.name }})()
+Math.PI > 3
+
+# --- ternary and short-circuit evaluation order ---
+1?'a':'b'
+0?'a':'b'
+(function(){var s=''; function f(x){s+=x; return x} var r=f(0)&&f(1); return s+'|'+r})()
+(function(){var s=''; function f(x){s+=x; return x} var r=f(1)&&f(2); return s+'|'+r})()
+(function(){var s=''; function f(x){s+=x; return x} var r=f(1)||f(2); return s+'|'+r})()
+(function(){var s=''; function f(x){s+=x; return x} var r=f(0)||f(2); return s+'|'+r})()
+null||'d'
+undefined&&'d'
+''||'e'
+0||''||null||'last'
+1&&2&&3
+
+# --- ++ / -- prefix and postfix on variables, properties, array elements ---
+(function(){var a=1; return [a++, a].join(',')})()
+(function(){var a=1; return [++a, a].join(',')})()
+(function(){var a=1; return [a--, a].join(',')})()
+(function(){var a=1; return [--a, a].join(',')})()
+(function(){var o={n:5}; return [o.n++, o.n].join(',')})()
+(function(){var o={n:5}; return [++o.n, o.n].join(',')})()
+(function(){var a=[7]; return [a[0]++, a[0]].join(',')})()
+(function(){var a=[7]; return [--a[0], a[0]].join(',')})()
+(function(){var a='3'; a++; return [typeof a, a].join(',')})()
+(function(){var a='x'; a++; return String(a)})()
+
+# --- string vs numeric + and ToPrimitive ordering (jsvalue.c js_concat/js_add) ---
+1+2
+'1'+2
+1+'2'
+'1'+'2'
+1+true
+true+true
+null+1
+undefined+1
+[]+[]
+[]+{}
+({})+''
+[1,2]+''
+1+{}
+(function(){var o={valueOf:function(){return 7},toString:function(){return 'S'}}; return o+1})()
+(function(){var o={valueOf:function(){return 7},toString:function(){return 'S'}}; return String(o)})()
+(function(){var o={toString:function(){return 'S'}}; return o+1})()
+(function(){var o={valueOf:function(){return 7}}; return o+'x'})()
+(function(){var log=''; var o={valueOf:function(){log+='v'; return 1},toString:function(){log+='t'; return 'a'}}; o+1; return log})()
+(function(){var log=''; var o={valueOf:function(){log+='v'; return 1},toString:function(){log+='t'; return 'a'}}; ''+o; return log})()
+(function(){var o={valueOf:function(){return {}},toString:function(){return 'fallback'}}; return o+''})()
+Number([])
+Number([5])
+Number([1,2])
+Number({})
+Number('')
+Number('  12  ')
+Number('0x10')
+Number('Infinity')
+Number('-Infinity')
+Number('12abc')
+Number(null)
+Number(undefined)
+Number(true)
+String(null)+String(undefined)
+
+# --- == coercion table and === ---
+1=='1'
+1===1
+1==='1'
+0==false
+0==''
+0==null
+0==undefined
+null==undefined
+null===undefined
+null==0
+undefined==0
+NaN==NaN
+NaN!=NaN
+'a'=='a'
+true==1
+true==2
+false==''
+[]==''
+[]==0
+[0]==false
+[1]==1
+['1']==1
+({})=={}
+(function(){var o={}; return o==o})()
+(function(){var o={valueOf:function(){return 3}}; return o==3})()
+'1'===1
+1!==1
+'abc'<'abd'
+'abc'<'ab'
+'Z'<'a'
+'10'<'9'
+10<9
+'10'<9
+2<=2
+2>=3
+NaN<1
+NaN>=1
+undefined<1
+null<1
+null<=0
+null>=0
+
+# --- bitwise ops at the 2^31 / 2^32 boundaries, >>> vs >> ---
+1<<31
+1<<32
+1<<0
+2147483647|0
+2147483648|0
+4294967295|0
+4294967296|0
+-1>>>0
+-1>>0
+-1>>>28
+2147483648>>>0
+-2147483648>>>0
+4294967295>>>0
+~0
+~-1
+~2147483647
+5&3
+5|3
+5^3
+'12'|0
+'0x10'|0
+1.9|0
+-1.9|0
+NaN|0
+Infinity|0
+-Infinity|0
+1e21|0
+(-1>>>0)===4294967295
+8>>1
+-8>>1
+-8>>>1
+
+# --- statements: if/else, while, do-while, for ---
+(function(){var a=1; if (a) return 'yes'; else return 'no'})()
+(function(){if (0) return 'yes'; else if (1) return 'elseif'; else return 'no'})()
+(function(){var n=0; while (n<5) n++; return n})()
+(function(){var n=0; do { n++ } while (n<3); return n})()
+(function(){var n=0; do { n++ } while (0); return n})()
+(function(){var s=0; for (var i=0;i<5;i++) s+=i; return s})()
+(function(){var s=0; for (var i=0;;i++) { if (i>3) break; s+=i } return s})()
+(function(){var i=0; for (;;) { i++; if (i>2) break } return i})()
+(function(){var s=''; for (var i=0;i<5;i++) { if (i%2) continue; s+=i } return s})()
+
+# --- for-in ---
+(function(){var r=[]; for (var k in {a:1,b:2,c:3}) r.push(k); return r.join(',')})()
+(function(){var r=[]; for (var k in [10,20,30]) r.push(k); return r.join(',')})()
+(function(){var r=[]; for (var k in 'abc') r.push(k); return r.join(',')})()
+(function(){var r=0; for (var k in null) r++; return r})()
+(function(){var r=0; for (var k in undefined) r++; return r})()
+(function(){var o={}; var r=[]; for (var k in o) r.push(k); return r.length})()
+(function(){function P(){}; P.prototype.p=1; var o=new P(); o.own=2; var r=[]; for (var k in o) r.push(k); return r.sort().join(',')})()
+(function(){var o={a:1,b:2}; var r=[]; for (var k in o) { if (k=='a') continue; r.push(k) } return r.join(',')})()
+(function(){var a=[1,2,3]; var s=''; for (a[3] in {x:0}) s+=a[3]; return s})()
+
+# --- switch: fallthrough, default in the middle, no match ---
+(function(){switch (2) { case 1: return 'one'; case 2: return 'two'; default: return 'def' }})()
+(function(){var s=''; switch (1) { case 1: s+='a'; case 2: s+='b'; case 3: s+='c'; break; case 4: s+='d' } return s})()
+(function(){var s=''; switch (9) { case 1: s+='a'; break; default: s+='D'; case 2: s+='b'; break; case 3: s+='c' } return s})()
+(function(){var s=''; switch (3) { case 1: s+='a'; break; default: s+='D'; case 3: s+='c'; break } return s})()
+(function(){switch ('x') { case 1: return 'n'; default: return 'd' }})()
+(function(){switch (0) { case '0': return 'strict-eq-fails'; default: return 'default' }})()
+(function(){var s=''; switch (1) {} return 'empty'})()
+
+# --- break / continue with and without labels ---
+(function(){var s=''; outer: for (var i=0;i<3;i++) { for (var j=0;j<3;j++) { if (j==1) continue outer; s+=''+i+j } } return s})()
+(function(){var s=''; outer: for (var i=0;i<3;i++) { for (var j=0;j<3;j++) { if (i==1) break outer; s+=''+i+j } } return s})()
+(function(){var s=''; blk: { s+='a'; break blk; s+='b' } return s+'c'})()
+(function(){var n=0; lab: while (n<10) { n++; if (n<5) continue lab; break lab } return n})()
+(function(){var s=''; for (var i=0;i<3;i++) { switch(i) { case 1: continue } s+=i } return s})()
+
+# --- try / catch / finally in all combinations, throw ---
+(function(){try { return 'body' } catch(e) { return 'catch' }})()
+(function(){try { throw 1 } catch(e) { return 'caught '+e }})()
+(function(){try { return 'body' } finally { }})()
+(function(){var s=''; try { s+='t' } finally { s+='f' } return s})()
+(function(){var s=''; try { throw 'x' } catch(e) { s+='c'+e } finally { s+='f' } return s})()
+(function(){try { return 'try' } finally { return 'finally' }})()
+(function(){var s=''; try { try { throw 'in' } finally { s+='f1' } } catch(e) { s+='c'+e } return s})()
+(function(){try { throw new Error('boom') } catch(e) { return e.name+': '+e.message }})()
+(function(){try { throw new TypeError('t') } catch(e) { return [e instanceof TypeError, e instanceof Error].join(',') }})()
+(function(){try { null.x } catch(e) { return e.name }})()
+(function(){try { nosuchfn() } catch(e) { return e.name }})()
+(function(){try { throw {code:7} } catch(e) { return e.code }})()
+(function(){var e2; try { throw 'a' } catch(e) { e2=e } return e2})()
+(function(){var s=''; for (var i=0;i<3;i++) { try { if (i==1) continue; s+=i } finally { s+='f' } } return s})()
+(function(){function f(){ try { throw 'x' } catch(e) { return 1 } finally { } } return f()})()
+(function(){try { try { throw 'a' } catch(e) { throw 'b' } } catch(e) { return e }})()
+(function(){var x=1; try { throw 2 } catch(x) { } return x})()
+(function(){try { throw 2 } catch(x) { return typeof x }})()
+
+# --- with (non-strict only; SyntaxError under 'use strict') ---
+(function(){var o={a:5}; with (o) { return a } })()
+(function(){var o={a:5}; var a=1; with (o) { a=9 } return o.a+','+a})()
+(function(){var r; with ({x:1,y:2}) { r=x+y } return r})()
+
+# --- var hoisting, function declaration hoisting, named function expressions ---
+(function(){return typeof v; var v=1})()
+(function(){var r=v; var v=1; return String(r)})()
+(function(){return f(); function f(){ return 'hoisted' }})()
+(function(){var r=typeof g; var g=function(){}; return r})()
+(function(){var f=function named(){ return typeof named }; return f()})()
+(function(){var f=function named(){ return 1 }; return typeof named})()
+(function(){var f=function named(){ return 1 }; return f.name===undefined?'noname':String(f.name)})()
+(function(){function f(){return 1} function f(){return 2} return f()})()
+(function(){var x=1; function inner(){ var x=2; return x } return inner()+','+x})()
+(function(){var x=1; function inner(){ return x } return inner()})()
+(function(){for (var i=0;i<1;i++){ var inloop=5 } return inloop})()
+
+# --- arguments object: aliasing, length, callee ---
+(function(){return (function(){ return arguments.length })(1,2,3)})()
+(function(){return (function(a,b){ return arguments.length })(1)})()
+(function(){return (function(a){ return arguments[0] })(9)})()
+(function(){return (function(a){ arguments[0]=99; return a })(1)})()
+(function(){return (function(a){ a=99; return arguments[0] })(1)})()
+(function(){return (function(){ return typeof arguments })()})()
+(function(){return (function(){ return Object.prototype.toString.call(arguments) })()})()
+(function(){return (function(){ return arguments[5]===undefined })(1)})()
+(function(){return (function(a,b,c){ return [a,b,c].join(',') })(1)})()
+(function(){function f(){ return Array.prototype.join.call(arguments,'-') } return f(1,2,3)})()
+
+# --- this binding in all call forms ---
+(function(){return typeof this})()
+(function(){var o={m:function(){ return this.v }, v:3}; return o.m()})()
+(function(){try{ var o={m:function(){ return this.v }, v:3}; var f=o.m; return String(f()) }catch(e){ return e.name }})()
+(function(){var o={a:{m:function(){return this===o.a}}}; return o.a.m()})()
+(function(){function f(){ return this } return typeof f.call(null)})()
+(function(){function f(){ return this } return f.call(5).valueOf()})()
+(function(){function f(){ return typeof this } return f.call('s')})()
+(function(){function f(){ return this.x } return f.call({x:'called'})})()
+(function(){function f(){ return this.x } return f.apply({x:'applied'})})()
+(function(){var o={v:1, m:function(){ var self=this; return (function(){ return typeof this })() }}; return o.m()})()
+(function(){var a=[1,2,3]; return a.map(function(x){ return x*2 }).join(',')})()
+
+# --- new with and without a returned object; prototype chains ---
+(function(){function C(){ this.a=1 } return new C().a})()
+(function(){function C(){ this.a=1; return 5 } return new C().a})()
+(function(){function C(){ this.a=1; return {b:2} } var o=new C(); return [o.a,o.b].join(',')})()
+(function(){function C(){ this.a=1; return null } return new C().a})()
+(function(){function C(){} C.prototype.m=function(){return 'proto'}; return new C().m()})()
+(function(){function C(){} var o=new C(); return o.constructor===C})()
+(function(){function C(){} return Object.getPrototypeOf(new C())===C.prototype})()
+(function(){function A(){} function B(){} B.prototype=new A(); var b=new B(); return [b instanceof B, b instanceof A].join(',')})()
+(function(){function C(){} C.prototype.x=1; var o=new C(); o.x=2; return [o.x, C.prototype.x, o.hasOwnProperty('x')].join(',')})()
+(function(){function C(a,b){ this.s=a+b } return new C(1,2).s})()
+(function(){function C(){} return typeof new C})()
+new Object().toString()
+(function(){var d=new Number(5); return [typeof d, d+1, d.valueOf()].join(',')})()
+
+# --- automatic semicolon insertion (jslex.c isnlthcontext) ---
+(function(){var a=1\nvar b=2\nreturn a+b})()
+(function(){return\n1})()
+(function(){var a=1; a\n++a; return a})()
+(function(){var x=1\nx = x + 1\nreturn x})()
+(function(){var s=''; do s+='x'; while (0)\nreturn s})()
+(function(){var a=1, b=1; var c=a\n+b; return c})()
+(function(){var n=0; for (var i=0;i<2;i++)\nn++\nreturn n})()
+(function(){throw 'v'}\n)
+(function(){var f = function(){ return 1 }\nreturn f()})()
+
+# --- debugger statement, empty statement, block ---
+(function(){debugger; return 'after-debugger'})()
+(function(){;;; return 'empties'})()
+(function(){ { var b=1 } return b })()
+(function(){if (1); return 'empty-if-body'})()
+(function(){var n=0; while (n<3) { n++; } return n})()

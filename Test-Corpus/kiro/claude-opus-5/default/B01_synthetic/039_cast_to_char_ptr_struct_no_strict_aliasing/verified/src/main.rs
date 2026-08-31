@@ -1,153 +1,207 @@
 // Rust translation of c_src/src/main.c
 //
-// The C program reads one integer with scanf("%d", &x), stuffs it into a
-// house_t struct along with two constants, memcpy's the struct into a raw
-// char buffer, and dumps that buffer as lowercase hex followed by a newline.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// Faithfulness notes:
-//   * house_t on the x86-64 SysV ABI is { int @0, int @4, double @8 }, size 16,
-//     alignment 8, with no padding bytes. The struct is zero-initialized before
-//     every field is assigned, so the dumped bytes are fully determined.
-//   * print_hex uses "%02x" per byte, then a single "\n". No trailing spaces.
-//   * scanf("%d") skips leading whitespace (including newlines), accepts an
-//     optional +/- sign, then decimal digits. On a matching failure or EOF the
-//     destination is left untouched, so x keeps its initial value of 0.
-//   * glibc accumulates "%d" in a `long` and saturates at LONG_MAX / LONG_MIN
-//     on overflow, then truncates that value to `int`. That means an input like
-//     99999999999999999999 yields -1, and -99999999999999999999 yields 0.
-//     This is reproduced rather than "fixed".
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 
-/// Mirror of the C `house_t`, laid out as the C compiler lays it out.
-#[repr(C)]
+/// Mirrors the C `house_t`:
+///
+/// ```c
+/// typedef struct {
+///     int floors;
+///     int bedrooms;
+///     double bathrooms;
+/// } house_t;
+/// ```
+///
+/// On the LP64 little-endian ABI the original program targets, this is 16 bytes
+/// with `floors` at offset 0, `bedrooms` at offset 4, `bathrooms` at offset 8,
+/// and no padding holes.
 struct House {
     floors: i32,
     bedrooms: i32,
     bathrooms: f64,
 }
 
+const HOUSE_SIZE: usize = 16;
+const OFF_FLOORS: usize = 0;
+const OFF_BEDROOMS: usize = 4;
+const OFF_BATHROOMS: usize = 8;
+
 impl House {
-    /// Byte image of the struct, equivalent to `memcpy(raw, &house, sizeof(house))`
-    /// on a little-endian x86-64 target.
-    fn to_raw_bytes(&self) -> [u8; 16] {
-        let mut raw = [0u8; 16];
-        raw[0..4].copy_from_slice(&self.floors.to_le_bytes());
-        raw[4..8].copy_from_slice(&self.bedrooms.to_le_bytes());
-        raw[8..16].copy_from_slice(&self.bathrooms.to_le_bytes());
+    /// `house_t house = {0};` — every byte, padding included, starts as zero.
+    fn zeroed() -> Self {
+        House {
+            floors: 0,
+            bedrooms: 0,
+            bathrooms: 0.0,
+        }
+    }
+
+    /// The object representation of the struct, i.e. what `memcpy(raw, &house,
+    /// sizeof(house))` copies out.
+    fn to_object_repr(&self) -> [u8; HOUSE_SIZE] {
+        let mut raw = [0u8; HOUSE_SIZE];
+        raw[OFF_FLOORS..OFF_FLOORS + 4].copy_from_slice(&self.floors.to_le_bytes());
+        raw[OFF_BEDROOMS..OFF_BEDROOMS + 4].copy_from_slice(&self.bedrooms.to_le_bytes());
+        raw[OFF_BATHROOMS..OFF_BATHROOMS + 8].copy_from_slice(&self.bathrooms.to_le_bytes());
         raw
     }
 }
 
-/// Equivalent of `print_hex`: "%02x" for each byte, then a newline.
-fn print_hex(out: &mut impl Write, p: &[u8]) {
-    let mut s = String::with_capacity(p.len() * 2 + 1);
-    for &b in p {
-        s.push_str(&format!("{:02x}", b));
+/// `static void print_hex(unsigned char *p, int len)`
+fn print_hex(out: &mut impl Write, p: &[u8], len: usize) {
+    for i in 0..len {
+        let _ = write!(out, "{:02x}", p[i]);
     }
-    s.push('\n');
-    let _ = out.write_all(s.as_bytes());
+    let _ = writeln!(out);
 }
 
+/// `void driver(int floors)`
 fn driver(out: &mut impl Write, floors: i32) {
-    // house_t house = {0}; then every field is overwritten.
-    let house = House {
-        floors,
-        bedrooms: 3,
-        bathrooms: 2.0,
-    };
-    let raw = house.to_raw_bytes();
-    print_hex(out, &raw);
+    let mut house = House::zeroed();
+    house.floors = floors;
+    house.bedrooms = 3;
+    house.bathrooms = 2.0;
+
+    // char raw[sizeof(house)]; memcpy(raw, &house, sizeof(house));
+    let raw = house.to_object_repr();
+    print_hex(out, &raw, raw.len());
 }
 
-/// `isspace` for the "C" locale: space, and the control characters
-/// 0x09..=0x0d ('\t', '\n', '\v', '\f', '\r').
-fn is_c_space(b: u8) -> bool {
-    b == b' ' || (0x09..=0x0d).contains(&b)
+/// Byte-at-a-time stdin reader, so parsing consumes exactly the characters that
+/// C's `scanf` would consume (and freely crosses newlines).
+struct StdinBytes {
+    inner: std::io::Stdin,
+    peeked: Option<u8>,
 }
 
-/// Emulates `scanf("%d", &x)`.
-///
-/// Returns `Some(value)` on a successful conversion, or `None` on EOF or a
-/// matching failure (in which case the caller must leave its variable alone,
-/// exactly like C).
-fn scanf_d(input: &[u8]) -> Option<i32> {
-    let mut i = 0usize;
-
-    // Skip leading whitespace, as the "%d" directive does. This must use C's
-    // `isspace` set for the "C" locale, which is space plus 0x09..=0x0d:
-    // '\t', '\n', '\v', '\f', '\r'. Note that Rust's `is_ascii_whitespace`
-    // deliberately excludes the vertical tab, so it cannot be used here.
-    while i < input.len() && is_c_space(input[i]) {
-        i += 1;
+impl StdinBytes {
+    fn new() -> Self {
+        StdinBytes {
+            inner: std::io::stdin(),
+            peeked: None,
+        }
     }
 
-    // Optional sign.
-    let negative = match input.get(i) {
-        Some(b'-') => {
-            i += 1;
-            true
+    fn next_byte(&mut self) -> Option<u8> {
+        if let Some(b) = self.peeked.take() {
+            return Some(b);
         }
-        Some(b'+') => {
-            i += 1;
-            false
+        let mut buf = [0u8; 1];
+        loop {
+            match self.inner.read(&mut buf) {
+                Ok(0) => return None,
+                Ok(_) => return Some(buf[0]),
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => return None,
+            }
         }
-        _ => false,
+    }
+
+    fn unread(&mut self, b: u8) {
+        self.peeked = Some(b);
+    }
+}
+
+fn is_c_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// `scanf("%d", &x)`: returns `Some(value)` on a successful conversion, `None`
+/// on matching failure or EOF (in which case the C code leaves `x` untouched).
+///
+/// Out-of-range input reproduces glibc's behaviour: the value saturates to
+/// `LONG_MAX`/`LONG_MIN` (64-bit `long`) and is then truncated to `int`.
+fn scanf_d(input: &mut StdinBytes) -> Option<i32> {
+    // Leading whitespace is skipped, including across newlines.
+    let mut b = loop {
+        let b = input.next_byte()?;
+        if !is_c_space(b) {
+            break b;
+        }
     };
 
-    // At least one digit is required, otherwise this is a matching failure.
-    if !matches!(input.get(i), Some(c) if c.is_ascii_digit()) {
+    let mut negative = false;
+    if b == b'+' || b == b'-' {
+        negative = b == b'-';
+        match input.next_byte() {
+            Some(nb) => b = nb,
+            None => return None, // sign then EOF: matching failure
+        }
+    }
+
+    if !b.is_ascii_digit() {
+        // Matching failure; the offending character is pushed back.
+        input.unread(b);
         return None;
     }
 
-    // glibc accumulates into a `long` (i64 here) and saturates on overflow.
-    let mut acc: i64 = 0;
-    let mut overflow = false;
-    while let Some(&c) = input.get(i) {
-        if !c.is_ascii_digit() {
-            break;
+    // Accumulate the magnitude, clamping so it stays bounded.
+    const CLAMP: u128 = u64::MAX as u128 + 1;
+    let mut mag: u128 = 0;
+    loop {
+        mag = mag * 10 + u128::from(b - b'0');
+        if mag > CLAMP {
+            mag = CLAMP;
         }
-        let digit = i64::from(c - b'0');
-        if !overflow {
-            match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
-                Some(v) => acc = v,
-                None => overflow = true,
+        match input.next_byte() {
+            Some(nb) if nb.is_ascii_digit() => b = nb,
+            Some(nb) => {
+                input.unread(nb);
+                break;
             }
+            None => break,
         }
-        i += 1;
     }
 
-    let value: i64 = if overflow {
-        // strtol clamps to LONG_MAX / LONG_MIN.
-        if negative {
+    let as_long: i64 = if negative {
+        if mag > (i64::MAX as u128) + 1 {
             i64::MIN
         } else {
-            i64::MAX
+            (-(mag as i128)) as i64
         }
-    } else if negative {
-        -acc
+    } else if mag > i64::MAX as u128 {
+        i64::MAX
     } else {
-        acc
+        mag as i64
     };
 
-    // The `long` result is stored through an `int *`, i.e. truncated.
-    Some(value as i32)
+    // *ARG(int *) = num.l;  /* narrowing conversion */
+    Some(as_long as i32)
 }
 
 fn main() {
-    let mut buf = Vec::new();
-    // scanf pulls from the stream as needed and ignores newline boundaries;
-    // slurping stdin and scanning it is observationally equivalent here since
-    // nothing else reads from stdin afterwards.
-    let _ = io::stdin().read_to_end(&mut buf);
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
 
     let mut x: i32 = 0;
-    if let Some(v) = scanf_d(&buf) {
+    let mut input = StdinBytes::new();
+    if let Some(v) = scanf_d(&mut input) {
         x = v;
     }
-
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
     driver(&mut out, x);
+
     let _ = out.flush();
 }

@@ -69,55 +69,43 @@ fn accum(n: c_int) -> c_int {
 
 /* Global macro uses at file scope (exercises expansion at global init) */
 
-/// `int (*G_OP)(int,int) = OP_FN(OP);` — pointer to the selected op function.
-///
-/// In C this is a *mutable* object with static storage duration: it lands in the
-/// writable `.data` section and an external consumer that `dlopen`s the library
-/// may legally overwrite it. It is therefore modelled as a `static mut` so the
-/// Rust `.so` places it in `.data` too (an immutable Rust `static` holding a
-/// relocated function pointer would be emitted into `.data.rel.ro` and become
-/// read-only after RELRO processing, so storing through the `dlsym` address
-/// would fault where the C library succeeds).
-#[unsafe(no_mangle)]
-pub static mut G_OP: OpFn = OP_FN;
-
-/// The C type of `G_OP`: `int (*)(int, int)`.
+/// The type of the exported `G_OP` global.
 pub type OpFn = extern "C" fn(c_int, c_int) -> c_int;
 
-/// `OP_FN(OP)` — the operation function selected at build time.
-///
-/// Selection priority mirrors the cfg cascade used throughout the crate:
-/// `mul` > `sub` > `add` (with `add` as the default), matching `mdmacros.rs`.
-pub const OP_FN: OpFn = {
-    #[cfg(feature = "mul")]
-    {
-        op_mul
-    }
-    #[cfg(all(feature = "sub", not(feature = "mul")))]
-    {
-        op_sub
-    }
-    #[cfg(all(not(feature = "mul"), not(feature = "sub")))]
-    {
-        op_add
-    }
+/// The function `OP_FN(OP)` names — used wherever the C token-pastes the
+/// identifier `op_<OP>` *directly* (as opposed to reading `G_OP`).
+pub const OP_FN_SELECTED: OpFn = if cfg!(feature = "mul") {
+    op_mul
+} else if cfg!(feature = "sub") {
+    op_sub
+} else {
+    op_add
 };
+
+/// `int (*G_OP)(int,int) = OP_FN(OP);` — pointer to the selected op function.
+///
+/// This is a **non-`const`** global in C, i.e. an ordinary mutable object that
+/// external code may assign to; gcc places it in `.data`. It is therefore
+/// declared `static mut` here (a plain `static` would be emitted into
+/// `.data.rel.ro`, which is mapped read-only after relocation, so a caller
+/// writing through the exported symbol would fault where the C does not).
+#[unsafe(no_mangle)]
+pub static mut G_OP: OpFn = OP_FN_SELECTED;
 
 /// `const char *G_OP_NAME = STR(OP);`
 ///
-/// Like `G_OP`, the *pointer* is mutable in C (only the pointee is `const`), so
-/// it too lives in writable `.data`; `static mut` reproduces that placement.
-#[unsafe(no_mangle)]
-pub static mut G_OP_NAME: *const c_char = G_OP_NAME_CSTR.as_ptr();
-
-/// The NUL-terminated `STR(OP)` literal that `G_OP_NAME` initially points at.
-pub const G_OP_NAME_CSTR: &CStr = if cfg!(feature = "mul") {
+/// `const char *` — the *pointee* is const, the pointer object itself is not, so
+/// like `G_OP` this is a writable global in `.data` and is declared `static mut`.
+const G_OP_NAME_CSTR: &CStr = if cfg!(feature = "mul") {
     c"mul"
 } else if cfg!(feature = "sub") {
     c"sub"
 } else {
     c"add"
 };
+
+#[unsafe(no_mangle)]
+pub static mut G_OP_NAME: *const c_char = G_OP_NAME_CSTR.as_ptr();
 
 /* Helpers provided by md_core.c */
 
@@ -154,14 +142,11 @@ pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
 ///     return r;
 /// }
 /// ```
-///
-/// Note that `fp` is initialised from `OP_FN(OP)` — the *statically selected*
-/// operation — and **not** from the mutable `G_OP` global. The two hold the same
-/// value initially, but a consumer that overwrites `G_OP` must not change what
-/// `helper_ptr` computes, so `OP_FN` is used here.
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
-    let fp: OpFn = OP_FN;
+    // `OP_FN(OP)` names the selected op function *directly* (it does not read
+    // the mutable global `G_OP`), so this must not observe writes to `G_OP`.
+    let fp: OpFn = OP_FN_SELECTED;
     let r = fp(a, b);
     println!("helper.ptr={}", r);
     r

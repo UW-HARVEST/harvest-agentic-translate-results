@@ -1,332 +1,414 @@
-//! Phase C — error-path differential tests, gated on `ERRORS.md`.
+//! Phase C — error/rejection-path differential tests.
 //!
-//! One test (or one clearly-labelled block) per row of `ERRORS.md` rows 1–14.
-//! Rows 15–17 (the writable `.data` globals) live in `globals.rs`, which needs a
-//! process of its own because it mutates process-global state. Rows 18–21 are
-//! process-level and live in `driver_cli.rs`; rows 22–25 are build-time and are
-//! discharged by `check_all_features.sh`.
-//!
-//! Both libraries are reached only through `dlopen`/`dlsym`, so the assertions
-//! cover the `#[no_mangle]` wrappers and the `.data` placement of the globals.
+//! One test per row of `ERRORS.md`, comparing the C `.so` and Rust `.so` through
+//! `libloading` (rows 16-20 compare the two `driver` executables instead, since
+//! the trigger is `main`'s argument handling).
 
 mod common;
 
+use common::*;
 use std::ffi::c_int;
+use std::process::Command;
 
-use common::{load_pair, same, Rng, INIT_FOR, OP_NAME, SEED};
+// ---------------------------------------------------------------------------
+// Rows 1-6: DISPATCH_REP's `default:` arm (the library's only rejection path)
+// ---------------------------------------------------------------------------
 
-/// `ERRORS.md` rows 1–5: the exact boundary values around the `DISPATCH_REP`
-/// `switch`. `n` is an enum-like selector crossing the FFI boundary as a plain
-/// `int`, so every value with no matching `case` is a real input the C handles
-/// via `default: break;` — it must return `INIT_FOR(OP)`, not garbage and not a
-/// panic.
+/// Row 1 — `n == 7`, the first value past `case 6`.
 #[test]
-fn row_1_to_5_use_generated_out_of_range_selectors() {
-    let (c, r) = load_pair();
+fn err_01_use_generated_n_eq_7() {
+    diff_un("use_generated", 7);
+    // And confirm the C really falls through to `INIT`.
+    let (c, _) = pair();
+    let f = c.un("use_generated");
+    // SAFETY: matches `int use_generated(int)`.
+    let (v, out) = capture_stdout(|| unsafe { f(7) });
+    assert_eq!(v, INIT, "C use_generated(7) should return INIT_FOR({OP})");
+    assert_eq!(String::from_utf8_lossy(&out), format!("gen.acc={INIT}\n"));
+}
 
-    // (row, n, description)
-    let cases: &[(u32, c_int, &str)] = &[
-        (1, 7, "one past the last `case 6` (REP7 exists but is not in the switch)"),
-        (2, -1, "one below the first `case 0`"),
-        (3, i32::MIN, "extreme negative"),
-        (4, i32::MAX, "extreme positive"),
-        (5, 8, "first value beyond any defined REPn"),
-    ];
-
-    for &(row, n, why) in cases {
-        // SAFETY: `int use_generated(int)`; `int` accepts every bit pattern.
-        let (cv, rv) = unsafe { ((c.use_generated)(n), (r.use_generated)(n)) };
-        same("use_generated", &format!("{n}"), cv, rv);
-        assert_eq!(
-            cv, INIT_FOR,
-            "ERRORS.md row {row}: use_generated({n}) [{why}] must take `default:` \
-             and return INIT_FOR({OP_NAME}) == {INIT_FOR}, got C={cv}"
-        );
-        assert_eq!(
-            rv, INIT_FOR,
-            "ERRORS.md row {row}: Rust use_generated({n}) [{why}] must return \
-             INIT_FOR({OP_NAME}) == {INIT_FOR}, got {rv}"
-        );
+/// Row 2 — `n > 7`.
+#[test]
+fn err_02_use_generated_n_gt_7() {
+    for n in [8, 9, 10, 100, 1000, 65536, c_int::MAX - 1, c_int::MAX] {
+        diff_un("use_generated", n);
     }
 }
 
-/// `ERRORS.md` row 6: the whole negative half of `int` must take `default:`.
-/// Randomised (fixed seed) rather than a single hand-picked negative, plus the
-/// dense window just below zero where an off-by-one would hide.
+/// Row 3 — `n == -1`, the first value below `case 0`.
 #[test]
-fn row_6_use_generated_all_negative_selectors_rejected() {
-    let (c, r) = load_pair();
-    let mut rng = Rng::new(SEED ^ 0x6666);
-    let mut checked = 0usize;
-
-    for _ in 0..2000 {
-        // Map any u32 into [i32::MIN, -1].
-        let n = (rng.next_i32() as i64).abs().wrapping_neg().wrapping_sub(1) as i32;
-        let n = if n >= 0 { i32::MIN } else { n };
-        assert!(n < 0);
-        check_default_arm(&c, &r, n, 6);
-        checked += 1;
-    }
-    for n in i32::MIN..i32::MIN + 32 {
-        check_default_arm(&c, &r, n, 6);
-        checked += 1;
-    }
-    for n in -64..0 {
-        check_default_arm(&c, &r, n, 6);
-        checked += 1;
-    }
-    assert!(checked >= 2000);
+fn err_03_use_generated_n_neg_1() {
+    diff_un("use_generated", -1);
+    let (c, _) = pair();
+    let f = c.un("use_generated");
+    // SAFETY: matches `int use_generated(int)`.
+    let (v, _out) = capture_stdout(|| unsafe { f(-1) });
+    assert_eq!(v, INIT, "C use_generated(-1) should return INIT_FOR({OP})");
 }
 
-/// `ERRORS.md` row 7: the whole out-of-range positive tail `[7, INT_MAX]` must
-/// take `default:`.
+/// Row 4 — deeply negative `n`.
 #[test]
-fn row_7_use_generated_all_high_selectors_rejected() {
-    let (c, r) = load_pair();
-    let mut rng = Rng::new(SEED ^ 0x7777);
-
-    for _ in 0..2000 {
-        // Map any u32 into [7, i32::MAX].
-        let raw = (rng.next_i32() as u32) % (i32::MAX as u32 - 6);
-        let n = 7i32.wrapping_add(raw as i32);
-        assert!(n >= 7, "n={n}");
-        check_default_arm(&c, &r, n, 7);
-    }
-    for n in 7..128 {
-        check_default_arm(&c, &r, n, 7);
-    }
-    for n in i32::MAX - 32..=i32::MAX {
-        check_default_arm(&c, &r, n, 7);
+fn err_04_use_generated_n_very_negative() {
+    for n in [-2, -3, -100, -65536, c_int::MIN + 1, c_int::MIN] {
+        diff_un("use_generated", n);
     }
 }
 
-#[track_caller]
-fn check_default_arm(c: &common::Api, r: &common::Api, n: c_int, row: u32) {
-    // SAFETY: `int use_generated(int)`.
-    let (cv, rv) = unsafe { ((c.use_generated)(n), (r.use_generated)(n)) };
-    same("use_generated", &format!("{n}"), cv, rv);
+/// Row 5 — the in-range values must NOT be rejected (boundary check both ways).
+#[test]
+fn err_05_use_generated_in_range_not_rejected() {
+    let (c, _) = pair();
+    let f = c.un("use_generated");
+    for n in 0..=6 {
+        diff_un("use_generated", n);
+        // SAFETY: matches `int use_generated(int)`.
+        let (v, _) = capture_stdout(|| unsafe { f(n) });
+        let mut acc = INIT;
+        let mut i: c_int = 0;
+        while i < n {
+            acc = step(acc, i);
+            i += 1;
+        }
+        assert_eq!(v, acc, "C use_generated({n}) unexpected for OP={OP}");
+    }
+}
+
+/// Row 6 — out-of-range "enum-like" `int` fuzzed across the FFI boundary.
+#[test]
+fn err_06_use_generated_ffi_fuzz_all_int() {
+    let (c, r) = pair();
+    let cf = c.un("use_generated");
+    let rf = r.un("use_generated");
+    let mut rng = Rng::new(SEED ^ 0x1234);
+    let mut ns: Vec<c_int> = vec![c_int::MIN, c_int::MIN + 1, c_int::MAX, c_int::MAX - 1, -1, 7];
+    for _ in 0..ITERS {
+        ns.push(rng.next_int());
+    }
+    let (cv, cout) = capture_stdout(|| {
+        // SAFETY: matches `int use_generated(int)`.
+        ns.iter().map(|&n| unsafe { cf(n) }).collect::<Vec<_>>()
+    });
+    let (rv, rout) = capture_stdout(|| {
+        // SAFETY: matches `int use_generated(int)`.
+        ns.iter().map(|&n| unsafe { rf(n) }).collect::<Vec<_>>()
+    });
+    for (i, (&cval, &rval)) in cv.iter().zip(rv.iter()).enumerate() {
+        assert_eq!(cval, rval, "use_generated({}) mismatch", ns[i]);
+    }
     assert_eq!(
-        cv, INIT_FOR,
-        "ERRORS.md row {row}: C use_generated({n}) should hit `default:`"
+        String::from_utf8_lossy(&cout),
+        String::from_utf8_lossy(&rout),
+        "fuzz stdout mismatch"
     );
-    assert_eq!(
-        rv, INIT_FOR,
-        "ERRORS.md row {row}: Rust use_generated({n}) should hit `default:`"
-    );
-}
-
-/// `ERRORS.md` row 8: a 64-bit value whose low 32 bits *are* in range must be
-/// truncated by the ABI **before** the `switch`, so it selects a valid `case`
-/// rather than being rejected. This is the mirror-image trap of rows 1–7: over-
-/// eager range checking in Rust would wrongly reject it.
-#[test]
-fn row_8_use_generated_selector_is_truncated_to_int_by_the_abi() {
-    let (c, r) = load_pair();
-
-    // Call through a signature that passes a 64-bit argument in the same
-    // register the callee reads as a 32-bit `int`, so the high half is ignored
-    // exactly as the C ABI specifies.
-    for low in 0..=6i32 {
-        let wide: i64 = 0x1_0000_0000i64 | (low as i64);
-        // SAFETY: transmuting the resolved `int(*)(int)` to `int(*)(long)` is
-        // deliberate: on x86-64 SysV both pass the argument in `edi`/`rdi`, and
-        // the callee, being a real C `int` function, reads only `edi`. This is
-        // precisely how a mismatched caller would reach the library.
-        let cf: unsafe extern "C" fn(i64) -> c_int =
-            unsafe { std::mem::transmute(c.use_generated) };
-        let rf: unsafe extern "C" fn(i64) -> c_int =
-            unsafe { std::mem::transmute(r.use_generated) };
-        // SAFETY: see above.
-        let (cv, rv) = unsafe { (cf(wide), rf(wide)) };
-        same("use_generated", &format!("0x{wide:x} (truncates to {low})"), cv, rv);
-
-        // And it must equal the properly-typed in-range call, i.e. NOT rejected.
-        // SAFETY: `int use_generated(int)`.
-        let (cn, rn) = unsafe { ((c.use_generated)(low), (r.use_generated)(low)) };
-        assert_eq!(cv, cn, "ERRORS.md row 8: C must truncate 0x{wide:x} to {low}");
-        assert_eq!(rv, rn, "ERRORS.md row 8: Rust must truncate 0x{wide:x} to {low}");
+    // Anything outside 0..=6 must yield INIT in both.
+    for (i, &n) in ns.iter().enumerate() {
+        if !(0..=6).contains(&n) {
+            assert_eq!(cv[i], INIT, "C use_generated({n}) should be INIT");
+            assert_eq!(rv[i], INIT, "Rust use_generated({n}) should be INIT");
+        }
     }
 }
 
-/// `ERRORS.md` rows 9–11: signed-overflow inputs to the three leaf ops.
-///
-/// Signed overflow is UB in C, but the emitted instruction wraps two's
-/// complement; the Rust translation must reproduce the C `.so`'s bits exactly
-/// rather than panicking (note the tests run in the dev profile, where Rust
-/// overflow checks are ON — a non-`wrapping_*` translation would abort here).
-#[test]
-fn rows_9_to_11_leaf_op_overflow() {
-    let (c, r) = load_pair();
+// ---------------------------------------------------------------------------
+// Rows 7-12: unchecked signed overflow (C has no guard; must wrap identically)
+// ---------------------------------------------------------------------------
 
-    let add_cases: &[(c_int, c_int)] = &[
-        (i32::MAX, 1),
-        (1, i32::MAX),
-        (i32::MIN, -1),
-        (-1, i32::MIN),
-        (i32::MAX, i32::MAX),
-        (i32::MIN, i32::MIN),
+/// Row 7 — `op_add` overflow.
+#[test]
+fn err_07_op_add_overflow() {
+    let cases = [
+        (c_int::MAX, 1),
+        (1, c_int::MAX),
+        (c_int::MIN, -1),
+        (-1, c_int::MIN),
+        (c_int::MAX, c_int::MAX),
+        (c_int::MIN, c_int::MIN),
     ];
-    let sub_cases: &[(c_int, c_int)] = &[
-        (i32::MIN, 1),
-        (i32::MAX, -1),
-        (i32::MIN, i32::MAX),
-        (i32::MAX, i32::MIN),
-        (0, i32::MIN),
-        (-1, i32::MAX),
+    for (a, b) in cases {
+        diff_bin("op_add", a, b);
+    }
+}
+
+/// Row 8 — `op_sub` overflow.
+#[test]
+fn err_08_op_sub_overflow() {
+    let cases = [
+        (c_int::MIN, 1),
+        (c_int::MIN, c_int::MAX),
+        (c_int::MAX, c_int::MIN),
+        (0, c_int::MIN),
+        (-1, c_int::MAX),
     ];
-    let mul_cases: &[(c_int, c_int)] = &[
-        (i32::MAX, i32::MAX),
-        (i32::MIN, -1),
-        (-1, i32::MIN),
-        (i32::MIN, i32::MIN),
-        (46341, 46341),
-        (-46341, 46341),
+    for (a, b) in cases {
+        diff_bin("op_sub", a, b);
+    }
+}
+
+/// Row 9 — `op_mul` overflow.
+#[test]
+fn err_09_op_mul_overflow() {
+    let cases = [
+        (c_int::MAX, c_int::MAX),
+        (c_int::MIN, -1),
+        (-1, c_int::MIN),
+        (c_int::MIN, c_int::MIN),
+        (c_int::MIN, 2),
         (65536, 65536),
-        (i32::MAX, 2),
-        (i32::MIN, 2),
+        (c_int::MAX, 2),
     ];
+    for (a, b) in cases {
+        diff_bin("op_mul", a, b);
+    }
+}
 
-    for &(a, b) in add_cases {
-        // SAFETY: `int op_add(int, int)`.
-        let (cv, rv) = unsafe { ((c.op_add)(a, b), (r.op_add)(a, b)) };
-        same("op_add (row 9, overflow)", &format!("{a}, {b}"), cv, rv);
+/// Row 10 — `helper_call`: overflow in the op *and* in `r + acc`.
+#[test]
+fn err_10_helper_call_overflow() {
+    for (a, b) in bounds_grid() {
+        diff_bin("helper_call", a, b);
     }
-    for &(a, b) in sub_cases {
-        // SAFETY: `int op_sub(int, int)`.
-        let (cv, rv) = unsafe { ((c.op_sub)(a, b), (r.op_sub)(a, b)) };
-        same("op_sub (row 10, overflow)", &format!("{a}, {b}"), cv, rv);
+}
+
+/// Row 11 — `helper_ptr`: overflow inside the indirect call.
+#[test]
+fn err_11_helper_ptr_overflow() {
+    for (a, b) in bounds_grid() {
+        diff_bin("helper_ptr", a, b);
     }
-    for &(a, b) in mul_cases {
-        // SAFETY: `int op_mul(int, int)`.
-        let (cv, rv) = unsafe { ((c.op_mul)(a, b), (r.op_mul)(a, b)) };
-        same("op_mul (row 11, overflow)", &format!("{a}, {b}"), cv, rv);
+}
+
+/// Row 12 — accumulator overflow inside the unrolled `STEP_mul` chain.
+///
+/// Only reachable as an actual overflow when `OP=mul`, but the test is valid (and
+/// run) in every configuration: it simply exercises the accumulator chain at
+/// every `n` and asserts C == Rust.
+#[test]
+fn err_12_mul_accumulator_overflow() {
+    for n in 0..=7 {
+        diff_un("use_generated", n);
+    }
+    // `helper_call`'s unrolled chain (fixed at REPEAT) with extreme `a`/`b`.
+    for (a, b) in [
+        (c_int::MAX, c_int::MAX),
+        (c_int::MIN, c_int::MIN),
+        (c_int::MAX, c_int::MIN),
+    ] {
+        diff_bin("helper_call", a, b);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rows 13-15: the writable globals
+// ---------------------------------------------------------------------------
+
+/// Row 13 — `helper_ptr` uses `OP_FN(OP)` directly, so writing `G_OP` must not
+/// change its behaviour. Verified identically for C and Rust.
+#[test]
+fn err_13_g_op_write_does_not_affect_helper_ptr() {
+    let (c, r) = pair();
+
+    let probe = |l: &Loaded| -> (c_int, Vec<u8>) {
+        let hp = l.bin("helper_ptr");
+        // SAFETY: matches `int helper_ptr(int,int)`.
+        capture_stdout(|| unsafe { hp(6, 7) })
+    };
+
+    let before_c = probe(c);
+    let before_r = probe(r);
+    assert_eq!(before_c.0, before_r.0, "helper_ptr baseline return mismatch");
+    assert_eq!(
+        String::from_utf8_lossy(&before_c.1),
+        String::from_utf8_lossy(&before_r.1),
+        "helper_ptr baseline stdout mismatch"
+    );
+
+    // Pick a *different* op to install into G_OP.
+    let victim = if OP == "sub" { "op_mul" } else { "op_sub" };
+    let saved_c = c.g_op();
+    let saved_r = r.g_op();
+    // SAFETY: `G_OP` is a writable global in both objects; the harness holds the
+    // capture lock inside `probe`, and no other thread touches these libraries.
+    unsafe {
+        c.set_g_op(*c.bin(victim));
+        r.set_g_op(*r.bin(victim));
     }
 
-    // Randomised full-range sweep: with uniform 32-bit inputs the multiply
-    // overflows almost always, so this is the broad version of the above.
-    let mut rng = Rng::new(SEED ^ 0x9999);
-    for _ in 0..2000 {
-        let (a, b) = (rng.next_i32(), rng.next_i32());
-        let args = format!("{a}, {b}");
-        // SAFETY: all three are `int f(int, int)`.
+    let after_c = probe(c);
+    let after_r = probe(r);
+
+    // Restore before asserting, so a failure cannot poison other tests.
+    // SAFETY: as above.
+    unsafe {
+        c.set_g_op(saved_c);
+        r.set_g_op(saved_r);
+    }
+
+    assert_eq!(
+        after_c.0, before_c.0,
+        "C helper_ptr changed after writing G_OP — it must use OP_FN(OP) directly"
+    );
+    assert_eq!(
+        after_r.0, after_c.0,
+        "Rust helper_ptr diverges from C after G_OP was overwritten"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&after_c.1),
+        String::from_utf8_lossy(&after_r.1),
+        "helper_ptr stdout diverges after G_OP was overwritten"
+    );
+
+    // The write itself must be observable through G_OP in both.
+    assert_eq!(c.g_op_value(), saved_c as usize, "C G_OP not restored");
+    assert_eq!(r.g_op_value(), saved_r as usize, "Rust G_OP not restored");
+}
+
+/// Row 14 — call through the `G_OP` pointer with overflowing arguments.
+#[test]
+fn err_14_g_op_pointer_overflow() {
+    let (c, r) = pair();
+    for (a, b) in bounds_grid() {
+        diff_g_op(a, b);
+        // and identical to calling op_<OP> directly, in both objects
+        let direct = format!("op_{OP}");
+        let cd = c.bin(&direct);
+        let rd = r.bin(&direct);
+        let cg = c.g_op();
+        let rg = r.g_op();
+        // SAFETY: all four have the signature `int f(int,int)`.
         unsafe {
-            same("op_add (row 9)", &args, (c.op_add)(a, b), (r.op_add)(a, b));
-            same("op_sub (row 10)", &args, (c.op_sub)(a, b), (r.op_sub)(a, b));
-            same("op_mul (row 11)", &args, (c.op_mul)(a, b), (r.op_mul)(a, b));
+            assert_eq!(cd(a, b), cg(a, b), "C: G_OP != {direct} for ({a},{b})");
+            assert_eq!(rd(a, b), rg(a, b), "Rust: G_OP != {direct} for ({a},{b})");
         }
     }
 }
 
-/// `ERRORS.md` rows 12–13: overflow inside `helper_call`'s `return r + acc`,
-/// and the `sub`/`mul` accumulator shapes (negative / factorial).
+/// Row 15 — `G_OP_NAME` is a valid non-NULL C string equal to `STR(OP)`.
 #[test]
-fn rows_12_13_helper_call_sum_overflow() {
-    let (c, r) = load_pair();
+fn err_15_g_op_name_string() {
+    let (c, r) = pair();
+    let cn = c.g_op_name();
+    let rn = r.g_op_name();
+    assert_eq!(cn, rn, "G_OP_NAME bytes differ");
+    assert_eq!(cn.len(), 3, "G_OP_NAME should be 3 bytes + NUL");
+    assert_eq!(String::from_utf8_lossy(&cn), OP);
+}
 
-    // Inputs chosen so that `op(a,b)` lands at or next to INT_MAX / INT_MIN and
-    // the subsequent `+ acc` therefore wraps for any non-zero acc.
-    let cases: &[(c_int, c_int)] = &[
-        (i32::MAX, 0),
-        (0, i32::MAX),
-        (i32::MIN, 0),
-        (0, i32::MIN),
-        (i32::MAX, i32::MAX),
-        (i32::MIN, i32::MIN),
-        (i32::MAX, i32::MIN),
-        (i32::MIN, i32::MAX),
-        (i32::MAX, 1),
-        (i32::MIN, -1),
-        (i32::MAX - 21, 0),  // add/REPEAT=7 acc==21 lands exactly on INT_MAX
-        (i32::MAX - 20, 0),  // ... and one past it
-        (i32::MIN + 21, 0),
-        (i32::MIN + 20, 0),
-        (1, 1),
-        (-1, -1),
-    ];
-    for &(a, b) in cases {
-        // SAFETY: `int helper_call(int, int)`.
-        let (cv, rv) = unsafe { ((c.helper_call)(a, b), (r.helper_call)(a, b)) };
-        same("helper_call (rows 12-13)", &format!("{a}, {b}"), cv, rv);
-    }
+// ---------------------------------------------------------------------------
+// Rows 16-20: `main`'s argument handling (the only explicit error return)
+// ---------------------------------------------------------------------------
 
-    let mut rng = Rng::new(SEED ^ 0xAAAA);
-    for _ in 0..2000 {
-        let (a, b) = (rng.next_i32(), rng.next_i32());
-        // SAFETY: as above.
-        let (cv, rv) = unsafe { ((c.helper_call)(a, b), (r.helper_call)(a, b)) };
-        same("helper_call (rows 12-13)", &format!("{a}, {b}"), cv, rv);
+struct Run {
+    stdout: String,
+    stderr_shape: String,
+    status: Option<i32>,
+}
+
+/// Runs an executable and normalises `stderr` so the (necessarily different)
+/// `argv[0]` path does not cause a false mismatch — the *shape* of the usage
+/// message and the exit status are what the C defines.
+fn run_bin(path: &std::path::Path, args: &[&str]) -> Run {
+    let out = Command::new(path)
+        .args(args)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", path.display()));
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let shape = if stderr.is_empty() {
+        String::new()
+    } else {
+        // "usage: <argv0> A B\n" -> "usage: <ARGV0> A B\n"
+        let mut s = stderr.clone();
+        if let (Some(i), Some(j)) = (s.find("usage: "), s.rfind(" A B\n")) {
+            s.replace_range(i + 7..j, "<ARGV0>");
+        }
+        s
+    };
+    Run {
+        stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+        stderr_shape: shape,
+        status: out.status.code(),
     }
 }
 
-/// `ERRORS.md` row 14: `helper_ptr` has no null-function-pointer path, because
-/// `fp` is initialised from the compile-time constant `OP_FN(OP)`. Overflowing
-/// inputs must still wrap identically.
+fn diff_bin_run(args: &[&str]) {
+    let c = run_bin(&c_bin_path(), args);
+    let r = run_bin(&rust_bin_path(), args);
+    assert_eq!(c.stdout, r.stdout, "driver {args:?}: stdout mismatch");
+    assert_eq!(
+        c.stderr_shape, r.stderr_shape,
+        "driver {args:?}: stderr mismatch"
+    );
+    assert_eq!(c.status, r.status, "driver {args:?}: exit status mismatch");
+}
+
+/// Row 16 — `argc < 3`: no arguments.
 #[test]
-fn row_14_helper_ptr_has_no_null_fp_path_and_wraps() {
-    let (c, r) = load_pair();
-    let cases: &[(c_int, c_int)] = &[
-        (i32::MAX, 1),
-        (i32::MIN, -1),
-        (i32::MAX, i32::MAX),
-        (i32::MIN, i32::MIN),
-        (46341, 46341),
-        (0, 0),
-    ];
-    for &(a, b) in cases {
-        // SAFETY: `int helper_ptr(int, int)`.
-        let (cv, rv) = unsafe { ((c.helper_ptr)(a, b), (r.helper_ptr)(a, b)) };
-        same("helper_ptr (row 14)", &format!("{a}, {b}"), cv, rv);
-    }
-    let mut rng = Rng::new(SEED ^ 0xBBBB);
-    for _ in 0..2000 {
-        let (a, b) = (rng.next_i32(), rng.next_i32());
-        // SAFETY: as above.
-        let (cv, rv) = unsafe { ((c.helper_ptr)(a, b), (r.helper_ptr)(a, b)) };
-        same("helper_ptr (row 14)", &format!("{a}, {b}"), cv, rv);
+fn err_16_main_no_args() {
+    diff_bin_run(&[]);
+    let c = run_bin(&c_bin_path(), &[]);
+    assert_eq!(c.status, Some(2), "C driver with no args must exit 2");
+    assert!(c.stdout.is_empty(), "C driver must print nothing to stdout");
+    assert!(
+        c.stderr_shape.starts_with("usage: "),
+        "C driver must print usage to stderr; got {:?}",
+        c.stderr_shape
+    );
+}
+
+/// Row 17 — `argc < 3`: one argument.
+#[test]
+fn err_17_main_one_arg() {
+    diff_bin_run(&["1"]);
+    let c = run_bin(&c_bin_path(), &["1"]);
+    assert_eq!(c.status, Some(2), "C driver with one arg must exit 2");
+}
+
+/// Row 18 — `argc > 3`: extra args are ignored (no upper-bound check).
+#[test]
+fn err_18_main_extra_args_ignored() {
+    diff_bin_run(&["3", "4", "5"]);
+    diff_bin_run(&["3", "4", "5", "6", "7"]);
+    let three = run_bin(&c_bin_path(), &["3", "4"]);
+    let five = run_bin(&c_bin_path(), &["3", "4", "5", "6", "7"]);
+    assert_eq!(three.stdout, five.stdout, "C must ignore extra argv entries");
+    assert_eq!(five.status, Some(0));
+}
+
+/// Row 19 — un-parsable `atoi` input.
+#[test]
+fn err_19_main_atoi_unparsable() {
+    for args in [
+        ["", ""],
+        ["abc", "def"],
+        ["12abc", "34xyz"],
+        [" 7 ", " -8 "],
+        ["+5", "-0"],
+        ["0x10", "010"],
+        ["007", "-007"],
+        [".5", "5."],
+        ["--3", "++3"],
+        ["\t9", "\n9"],
+        ["2 3", "4,5"],
+        ["1e3", "-1e3"],
+    ] {
+        diff_bin_run(&[args[0], args[1]]);
     }
 }
 
-/// Generic FFI boundary sweep required by Phase C even though it is not an
-/// `ERRORS.md` row: *every* `int` bit pattern is a legal argument to every
-/// exported function (there are no pointer parameters anywhere in the library,
-/// so there is no null-pointer or length argument to abuse). This drives all six
-/// exported functions over an exhaustive set of structurally interesting bit
-/// patterns and asserts total agreement — no function may reject, trap, or
-/// diverge on any of them.
+/// Row 20 — numeric text that overflows `int` / `long`.
 #[test]
-fn every_int_bit_pattern_is_accepted_identically() {
-    let (c, r) = load_pair();
-
-    // Powers of two, their negations and neighbours, plus all-ones patterns:
-    // the bit shapes that expose sign-extension and width mistakes.
-    let mut vals: Vec<c_int> = Vec::new();
-    for bit in 0..32u32 {
-        let v = 1i64 << bit;
-        for cand in [v - 1, v, v + 1, -v - 1, -v, -v + 1] {
-            vals.push(cand as i32);
-        }
-    }
-    vals.extend_from_slice(&[0, -1, i32::MIN, i32::MAX, 0x5555_5555, -0x5555_5556]);
-    vals.sort_unstable();
-    vals.dedup();
-
-    for &n in &vals {
-        // SAFETY: `int use_generated(int)`.
-        let (cv, rv) = unsafe { ((c.use_generated)(n), (r.use_generated)(n)) };
-        same("use_generated", &format!("{n}"), cv, rv);
-    }
-    for &a in &vals {
-        for &b in [0i32, 1, -1, i32::MIN, i32::MAX, a].iter() {
-            let args = format!("{a}, {b}");
-            // SAFETY: all are `int f(int, int)`.
-            unsafe {
-                same("op_add", &args, (c.op_add)(a, b), (r.op_add)(a, b));
-                same("op_sub", &args, (c.op_sub)(a, b), (r.op_sub)(a, b));
-                same("op_mul", &args, (c.op_mul)(a, b), (r.op_mul)(a, b));
-                same("helper_call", &args, (c.helper_call)(a, b), (r.helper_call)(a, b));
-                same("helper_ptr", &args, (c.helper_ptr)(a, b), (r.helper_ptr)(a, b));
-            }
-            same("G_OP", &args, c.call_g_op(a, b), r.call_g_op(a, b));
-        }
+fn err_20_main_atoi_overflow() {
+    for args in [
+        ["2147483647", "-2147483648"],
+        ["2147483648", "-2147483649"],
+        ["4294967296", "-4294967296"],
+        ["9223372036854775807", "-9223372036854775808"],
+        ["9223372036854775808", "-9223372036854775809"],
+        ["99999999999999999999", "-99999999999999999999"],
+        [
+            "1000000000000000000000000000000000",
+            "-1000000000000000000000000000000000",
+        ],
+    ] {
+        diff_bin_run(&[args[0], args[1]]);
     }
 }

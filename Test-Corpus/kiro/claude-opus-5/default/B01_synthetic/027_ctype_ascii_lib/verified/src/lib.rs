@@ -1,9 +1,7 @@
-// Rust translation of c_src/src/driver.c
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
-// and associated documentation files (the "Software"),
+// and associated documentation files (the “Software”),
 // to deal in the Software without restriction,
 // including without limitation the rights to use, copy,
 // modify, merge, publish, distribute, sublicense,
@@ -14,7 +12,7 @@
 // The above copyright notice and this permission notice
 // shall be included in all copies or substantial portions of the Software.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
 // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 // THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
@@ -23,191 +21,175 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+//! Rust translation of `c_src/src/driver.c`.
+//!
+//! The C source calls the `<ctype.h>` classification routines and prints their
+//! results with `%d`. Under glibc those names are *macros*
+//! (`#define isalpha(c) __isctype((c), _ISalpha)`), which expand to
+//! `(*__ctype_b_loc())[(int)(c)] & _ISalpha`. The value printed is therefore the
+//! masked class *bit*, not a normalized `1`. Those bit values are reproduced
+//! here verbatim (see `class_bits`).
+//!
+//! `char` is signed on the platforms targeted by the original CMake project, so
+//! `driver` receives values in `-128..=127`. glibc's ctype tables are indexed
+//! from `-128`, and in the `"C"` locale the entries for negative indices carry
+//! no class bits and map to themselves for case conversion. That behaviour is
+//! reproduced as well.
+
 use std::ffi::{c_char, c_int};
 
-// ---------------------------------------------------------------------------
-// C runtime interop
-//
-// Output is emitted through the C library's `printf` (rather than Rust's
-// `println!`) so that this library shares the caller's stdio stream and
-// buffering exactly as the original C did.  `setlocale` is likewise the real
-// libc call, because the original `driver()` mutates global locale state and a
-// caller may observe that.
-// ---------------------------------------------------------------------------
-extern "C" {
-    fn setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
-    fn printf(format: *const c_char, ...) -> c_int;
-}
+// glibc `enum` from <ctype.h>: _ISbit(b) = b < 8 ? (1 << b) << 8 : (1 << b) >> 8
+const IS_UPPER: u16 = 0x0100; // _ISbit(0)
+const IS_LOWER: u16 = 0x0200; // _ISbit(1)
+const IS_ALPHA: u16 = 0x0400; // _ISbit(2)
+const IS_DIGIT: u16 = 0x0800; // _ISbit(3)
+const IS_XDIGIT: u16 = 0x1000; // _ISbit(4)
+const IS_SPACE: u16 = 0x2000; // _ISbit(5)
+const IS_PRINT: u16 = 0x4000; // _ISbit(6)
+const IS_GRAPH: u16 = 0x8000; // _ISbit(7)
+const IS_BLANK: u16 = 0x0001; // _ISbit(8)
+const IS_CNTRL: u16 = 0x0002; // _ISbit(9)
+const IS_PUNCT: u16 = 0x0004; // _ISbit(10)
+const IS_ALNUM: u16 = 0x0008; // _ISbit(11)
 
-/// `LC_ALL` on glibc / Linux.
-const LC_ALL: c_int = 6;
-
-// ---------------------------------------------------------------------------
-// glibc `<ctype.h>` character-class bits, from `_ISbit(n)`:
-//
-//     _ISbit(n) = n < 8 ? (1 << n) << 8 : (1 << n) >> 8
-//
-// This matters for byte-identical output: glibc's `isalpha()` and friends
-// return the masked table entry, *not* a normalized 0/1.  So `isalpha('a')`
-// yields 1024, and the C program prints "alphabetic: 1024".
-// ---------------------------------------------------------------------------
-const IS_UPPER: c_int = 0x0100; // 256
-const IS_LOWER: c_int = 0x0200; // 512
-const IS_ALPHA: c_int = 0x0400; // 1024
-const IS_DIGIT: c_int = 0x0800; // 2048
-const IS_XDIGIT: c_int = 0x1000; // 4096
-const IS_SPACE: c_int = 0x2000; // 8192
-const IS_PRINT: c_int = 0x4000; // 16384
-const IS_GRAPH: c_int = 0x8000; // 32768
-const IS_BLANK: c_int = 0x0001; // 1
-const IS_CNTRL: c_int = 0x0002; // 2
-const IS_PUNCT: c_int = 0x0004; // 4
-const IS_ALNUM: c_int = 0x0008; // 8
-
-/// The class bits glibc's "C" locale table holds for a character.
-///
-/// glibc indexes its table with the (possibly negative) `int` value of the
-/// argument; the table's negative half (-128..=-1, i.e. what a *signed* `char`
-/// holding a byte >= 0x80 becomes) is all zeroes in the "C" locale, so every
-/// class query for such a byte answers 0.
-fn ctype_class(c: c_int) -> c_int {
-    if !(0..=127).contains(&c) {
-        return 0;
-    }
-    let b = c as u8;
-    let mut m = 0;
+/// The `"C"` locale class bits for a single byte, mirroring glibc's
+/// `__ctype_b` table. Bytes `>= 0x80` (i.e. negative `char` values) carry no
+/// class bits in the `"C"` locale.
+const fn class_bits(b: u8) -> u16 {
+    let mut bits = 0u16;
 
     let upper = b.is_ascii_uppercase();
     let lower = b.is_ascii_lowercase();
     let digit = b.is_ascii_digit();
     let alpha = upper || lower;
-    // Printable: SPACE through '~'.  Graphical is the same minus SPACE.
-    let print = (0x20..=0x7e).contains(&b);
-    let graph = (0x21..=0x7e).contains(&b);
+    let alnum = alpha || digit;
+    // 0x21..=0x7e
+    let graph = b > 0x20 && b < 0x7f;
+    // 0x20..=0x7e
+    let print = b >= 0x20 && b < 0x7f;
+    let space = b == b' ' || (b >= 0x09 && b <= 0x0d);
+    let blank = b == b' ' || b == b'\t';
+    let cntrl = b < 0x20 || b == 0x7f;
 
     if upper {
-        m |= IS_UPPER;
+        bits |= IS_UPPER;
     }
     if lower {
-        m |= IS_LOWER;
+        bits |= IS_LOWER;
     }
     if alpha {
-        m |= IS_ALPHA;
+        bits |= IS_ALPHA;
     }
     if digit {
-        m |= IS_DIGIT;
+        bits |= IS_DIGIT;
     }
-    if b.is_ascii_hexdigit() {
-        m |= IS_XDIGIT;
+    if digit || (b >= b'A' && b <= b'F') || (b >= b'a' && b <= b'f') {
+        bits |= IS_XDIGIT;
     }
-    // Whitespace in the "C" locale: HT, LF, VT, FF, CR and SPACE.
-    if matches!(b, b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' ') {
-        m |= IS_SPACE;
+    if space {
+        bits |= IS_SPACE;
     }
     if print {
-        m |= IS_PRINT;
+        bits |= IS_PRINT;
     }
     if graph {
-        m |= IS_GRAPH;
+        bits |= IS_GRAPH;
     }
-    // Blank in the "C" locale: HT and SPACE.
-    if matches!(b, b'\t' | b' ') {
-        m |= IS_BLANK;
+    if blank {
+        bits |= IS_BLANK;
     }
-    if b < 0x20 || b == 0x7f {
-        m |= IS_CNTRL;
+    if cntrl {
+        bits |= IS_CNTRL;
     }
-    // Punctuation: graphical but neither alphabetic nor numeric.
-    if graph && !alpha && !digit {
-        m |= IS_PUNCT;
+    // punct == graph && !alnum in the "C" locale
+    if graph && !alnum {
+        bits |= IS_PUNCT;
     }
-    if alpha || digit {
-        m |= IS_ALNUM;
+    if alnum {
+        bits |= IS_ALNUM;
     }
-    m
+
+    bits
 }
 
-fn isalnum(c: c_int) -> c_int {
-    ctype_class(c) & IS_ALNUM
-}
-fn isalpha(c: c_int) -> c_int {
-    ctype_class(c) & IS_ALPHA
-}
-fn islower(c: c_int) -> c_int {
-    ctype_class(c) & IS_LOWER
-}
-fn isupper(c: c_int) -> c_int {
-    ctype_class(c) & IS_UPPER
-}
-fn isdigit(c: c_int) -> c_int {
-    ctype_class(c) & IS_DIGIT
-}
-fn isxdigit(c: c_int) -> c_int {
-    ctype_class(c) & IS_XDIGIT
-}
-fn iscntrl(c: c_int) -> c_int {
-    ctype_class(c) & IS_CNTRL
-}
-fn isgraph(c: c_int) -> c_int {
-    ctype_class(c) & IS_GRAPH
-}
-fn isspace(c: c_int) -> c_int {
-    ctype_class(c) & IS_SPACE
-}
-fn isblank(c: c_int) -> c_int {
-    ctype_class(c) & IS_BLANK
-}
-fn isprint(c: c_int) -> c_int {
-    ctype_class(c) & IS_PRINT
-}
-fn ispunct(c: c_int) -> c_int {
-    ctype_class(c) & IS_PUNCT
+/// glibc's `__ctype_b` table restricted to the index range a signed `char`
+/// can produce, laid out by the raw byte value.
+const CTYPE_B: [u16; 256] = {
+    let mut table = [0u16; 256];
+    let mut i = 0usize;
+    while i < 256 {
+        table[i] = class_bits(i as u8);
+        i += 1;
+    }
+    table
+};
+
+/// `(*__ctype_b_loc())[(int) c] & mask`, promoted to `int` as the C macro does.
+fn isctype(c: c_char, mask: u16) -> c_int {
+    c_int::from(CTYPE_B[c as u8 as usize] & mask)
 }
 
-/// "C" locale `tolower`: only 'A'..='Z' map; everything else (including the
-/// negative indices produced by high bytes in a signed `char`) is identity.
-fn tolower(c: c_int) -> c_int {
-    if (b'A' as c_int..=b'Z' as c_int).contains(&c) {
-        c + 32
+/// glibc `tolower` for the `"C"` locale. Entries outside `a-z`/`A-Z` — including
+/// the negative `char` indices — map to themselves.
+fn c_tolower(c: c_char) -> c_int {
+    let b = c as u8;
+    if b.is_ascii_uppercase() {
+        // Value stored in glibc's table for an uppercase ASCII letter.
+        c_int::from(b + 32)
     } else {
-        c
+        // Negative indices map to the corresponding 0x80..=0xff value.
+        c_int::from(b)
     }
 }
 
-/// "C" locale `toupper`; identity outside 'a'..='z'.
-fn toupper(c: c_int) -> c_int {
-    if (b'a' as c_int..=b'z' as c_int).contains(&c) {
-        c - 32
+/// glibc `toupper` for the `"C"` locale.
+fn c_toupper(c: c_char) -> c_int {
+    let b = c as u8;
+    if b.is_ascii_lowercase() {
+        c_int::from(b - 32)
     } else {
-        c
+        c_int::from(b)
     }
 }
 
-/// Translation of `void driver(char c)`.
-///
-/// `c` is a C `char`, which is *signed* on the x86-64 / AArch64 Linux ABIs, so
-/// it is modelled as `i8` and widens to a negative `c_int` for bytes >= 0x80 —
-/// matching the original's integer promotion at each `is*`/`to*` call site.
+// Use the C library directly so that stdout buffering, flushing and
+// interleaving with any caller-side output are bit-for-bit identical to the
+// original. (Rust's own `stdout` buffer would not be flushed when the host
+// program exits, since `main` lives outside this cdylib.)
+unsafe extern "C" {
+    #[link_name = "printf"]
+    unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
+    #[link_name = "setlocale"]
+    unsafe fn c_setlocale(category: c_int, locale: *const c_char) -> *mut c_char;
+}
+
+// <locale.h>, glibc: LC_ALL == 6
+const LC_ALL: c_int = 6;
+
+macro_rules! cstr {
+    ($s:literal) => {
+        concat!($s, "\0").as_ptr() as *const c_char
+    };
+}
+
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(c: c_char) {
-    let c: c_int = c as c_int;
-
+pub unsafe extern "C" fn driver(c: c_char) {
     unsafe {
-        setlocale(LC_ALL, c"C".as_ptr());
+        c_setlocale(LC_ALL, cstr!("C"));
 
-        printf(c"alphanumeric: %d\n".as_ptr(), isalnum(c));
-        printf(c"alphabetic: %d\n".as_ptr(), isalpha(c));
-        printf(c"lowercase: %d\n".as_ptr(), islower(c));
-        printf(c"uppercase: %d\n".as_ptr(), isupper(c));
-        printf(c"digit: %d\n".as_ptr(), isdigit(c));
-        printf(c"hexadecimal: %d\n".as_ptr(), isxdigit(c));
-        printf(c"control: %d\n".as_ptr(), iscntrl(c));
-        printf(c"graphical: %d\n".as_ptr(), isgraph(c));
-        printf(c"space: %d\n".as_ptr(), isspace(c));
-        printf(c"blank: %d\n".as_ptr(), isblank(c));
-        printf(c"printing: %d\n".as_ptr(), isprint(c));
-        printf(c"punctuation: %d\n".as_ptr(), ispunct(c));
-        printf(c"to lower: %c\n".as_ptr(), tolower(c));
-        printf(c"to upper: %c\n".as_ptr(), toupper(c));
+        c_printf(cstr!("alphanumeric: %d\n"), isctype(c, IS_ALNUM));
+        c_printf(cstr!("alphabetic: %d\n"), isctype(c, IS_ALPHA));
+        c_printf(cstr!("lowercase: %d\n"), isctype(c, IS_LOWER));
+        c_printf(cstr!("uppercase: %d\n"), isctype(c, IS_UPPER));
+        c_printf(cstr!("digit: %d\n"), isctype(c, IS_DIGIT));
+        c_printf(cstr!("hexadecimal: %d\n"), isctype(c, IS_XDIGIT));
+        c_printf(cstr!("control: %d\n"), isctype(c, IS_CNTRL));
+        c_printf(cstr!("graphical: %d\n"), isctype(c, IS_GRAPH));
+        c_printf(cstr!("space: %d\n"), isctype(c, IS_SPACE));
+        c_printf(cstr!("blank: %d\n"), isctype(c, IS_BLANK));
+        c_printf(cstr!("printing: %d\n"), isctype(c, IS_PRINT));
+        c_printf(cstr!("punctuation: %d\n"), isctype(c, IS_PUNCT));
+        c_printf(cstr!("to lower: %c\n"), c_tolower(c));
+        c_printf(cstr!("to upper: %c\n"), c_toupper(c));
     }
 }

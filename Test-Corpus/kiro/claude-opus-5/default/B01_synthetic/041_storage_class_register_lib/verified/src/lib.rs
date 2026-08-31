@@ -28,13 +28,15 @@
 use std::ffi::c_char;
 use std::ffi::c_int;
 
-extern "C" {
-    /// libc `printf`. Used instead of Rust's own `stdout` so that output
-    /// interleaving and buffering behaviour match the C library exactly.
-    fn printf(format: *const c_char, ...) -> c_int;
+unsafe extern "C" {
+    /// C standard library `printf`. Used directly so that output goes through
+    /// the same `stdout` `FILE` stream (and therefore the same buffering and
+    /// interleaving behavior) as the original C implementation.
+    #[link_name = "printf"]
+    safe fn c_printf(format: *const c_char, ...) -> c_int;
 }
 
-/// `void driver(int x)`
+/// Translation of:
 ///
 /// ```c
 /// void driver(int x) {
@@ -44,19 +46,12 @@ extern "C" {
 /// }
 /// ```
 ///
-/// `register` is only a storage-class hint in C and has no observable effect,
-/// so it is dropped. The arithmetic uses wrapping semantics, which is what
-/// the C compiler emits in practice for `int` on the target platforms
-/// (signed overflow is UB in C, so any behaviour is permitted; wrapping
-/// reproduces the generated code).
+/// `wrapping_*` arithmetic is used to reproduce the two's-complement wrap-around
+/// that the C code exhibits in practice on overflow (signed overflow is UB in C,
+/// but the emitted code wraps).
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
-    let mut y: c_int = x.wrapping_mul(2);
+    let mut y: c_int = 2i32.wrapping_mul(x);
     y = y.wrapping_add(300);
-
-    // "%d\n\0"
-    const FMT: &[u8] = b"%d\n\0";
-    unsafe {
-        printf(FMT.as_ptr() as *const c_char, y);
-    }
+    c_printf(c"%d\n".as_ptr(), y);
 }

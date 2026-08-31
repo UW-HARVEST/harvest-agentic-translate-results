@@ -1,0 +1,320 @@
+# Phase B valid-path corpus -- JSON.parse and JSON.stringify (c_src/src/json.c
+# plus the JSON lexer in jslex.c). NOTHING HERE MAY THROW.
+#
+# ESCAPE HAZARD: the harness rewrites backslash+n -> newline and backslash+t ->
+# tab, so the two-character sequences `\n` and `\t` cannot be written literally.
+# Where a JSON *escape* of those is needed the backslash is built with
+# String.fromCharCode(92) (aliased to `B` on those lines). Every OTHER JSON
+# escape (`\"` `\\` `\/` `\b` `\f` `\r` `\uHHHH`) is safe to write directly.
+
+# ===========================================================================
+# JSON.parse -- primitive values
+# ===========================================================================
+JSON.parse('null') === null
+JSON.parse('true')
+JSON.parse('false')
+typeof JSON.parse('true')
+typeof JSON.parse('null')
+
+# numbers in every form the JSON lexer accepts
+JSON.parse('0')
+JSON.parse('-0')
+1 / JSON.parse('-0')
+JSON.parse('1')
+JSON.parse('-1')
+JSON.parse('123')
+JSON.parse('-123')
+JSON.parse('0.5')
+JSON.parse('-0.5')
+JSON.parse('1.25')
+JSON.parse('123.456')
+JSON.parse('1e3')
+JSON.parse('1E3')
+JSON.parse('1e+3')
+JSON.parse('1e-3')
+JSON.parse('1E-3')
+JSON.parse('-1.5e2')
+JSON.parse('0e0')
+JSON.parse('1e308')
+JSON.parse('1e-308')
+JSON.parse('9007199254740991')
+JSON.parse('-9007199254740991')
+JSON.parse('1.7976931348623157e308')
+JSON.parse('5e-324')
+typeof JSON.parse('1')
+
+# strings, including every escape (backslash+n / backslash+t assembled)
+JSON.parse('"abc"')
+JSON.parse('""').length
+JSON.parse('"a b"')
+JSON.parse('" "')
+JSON.parse('"\\""')
+JSON.parse('"a\\"b"')
+JSON.parse('"\\\\"').charCodeAt(0)
+JSON.parse('"a\\\\b"').length
+JSON.parse('"\\/"')
+JSON.parse('"a\\/b"')
+JSON.parse('"\\b"').charCodeAt(0)
+JSON.parse('"\\f"').charCodeAt(0)
+JSON.parse('"\\r"').charCodeAt(0)
+var B = String.fromCharCode(92); JSON.parse('"a' + B + 'nb"').charCodeAt(1)
+var B = String.fromCharCode(92); JSON.parse('"a' + B + 'tb"').charCodeAt(1)
+var B = String.fromCharCode(92); JSON.parse('"' + B + 'n' + B + 't' + B + 'r"').length
+JSON.parse('"\\u0041"')
+JSON.parse('"\\u0041\\u0042"')
+JSON.parse('"\\u00e9"').charCodeAt(0)
+JSON.parse('"\\u20ac"').charCodeAt(0)
+JSON.parse('"\\uFFFD"').charCodeAt(0)
+JSON.parse('"\\u0000"').length
+JSON.parse('"\\ud83d\\ude00"').length
+JSON.parse('"\\ud83d\\ude00"').charCodeAt(0)
+JSON.parse('"\\ud83d\\ude00"').charCodeAt(1)
+JSON.parse('"\\ud834\\udd1e"').length
+JSON.parse('"a\\u0041b"')
+JSON.parse('"\\u0041\\u0301"').length
+JSON.parse('"unicode: é €"')
+JSON.parse('"café"').length
+
+# arrays
+JSON.stringify(JSON.parse('[]'))
+JSON.parse('[]').length
+JSON.parse('[1]').join(',')
+JSON.parse('[1,2,3]').join(',')
+JSON.parse('[1,"a",true,false,null]').join('|')
+JSON.parse('[[1,2],[3,4]]').join(';')
+JSON.stringify(JSON.parse('[[[[[1]]]]]'))
+JSON.parse('[[],[]]').length
+JSON.stringify(JSON.parse('[{},[],1,"x",null,true]'))
+JSON.parse('[1,2,3]') instanceof Array
+Object.prototype.toString.call(JSON.parse('[]'))
+
+# objects
+JSON.stringify(JSON.parse('{}'))
+Object.keys(JSON.parse('{}')).length
+JSON.parse('{"a":1}').a
+Object.keys(JSON.parse('{"a":1,"b":2}')).sort().join(',')
+JSON.parse('{"a":{"b":{"c":42}}}').a.b.c
+JSON.stringify(JSON.parse('{"a":[1,2],"b":{"c":null}}'))
+JSON.parse('{"":1}')['']
+JSON.parse('{"a b":1}')['a b']
+JSON.parse('{"\\u0041":1}').A
+JSON.parse('{"a":1,"a":2}').a
+JSON.stringify(JSON.parse('{"x":{"y":{"z":{"w":[1,[2,[3]]]}}}}'))
+JSON.parse('{"a":1}') instanceof Object
+Object.prototype.toString.call(JSON.parse('{}'))
+
+# deep nesting and whitespace variations
+JSON.stringify(JSON.parse(new Array(60).join('[') + '1' + new Array(60).join(']')))
+JSON.parse('  1  ')
+JSON.parse('\t1\t')
+JSON.parse('[ 1 , 2 ]').join(',')
+JSON.parse('{ "a" : 1 , "b" : 2 }').b
+JSON.parse('[\t1,\t2\t]').length
+var N = String.fromCharCode(10); JSON.parse(N + '[1,' + N + '2]' + N).join(',')
+var CR = String.fromCharCode(13); JSON.parse('[1,' + CR + '2]').length
+JSON.parse('[  ]').length
+JSON.parse('{  }') && Object.keys(JSON.parse('{  }')).length
+
+# JSON.parse with a reviver
+JSON.parse('{"a":1}', function (k, v) { return v })['a']
+JSON.parse('{"a":1,"b":2}', function (k, v) { return typeof v === 'number' ? v * 2 : v }).b
+JSON.stringify(JSON.parse('[1,2,3]', function (k, v) { return typeof v === 'number' ? v + 1 : v }))
+JSON.parse('{"a":1,"b":2}', function (k, v) { if (k === 'a') return undefined; return v }).a
+Object.keys(JSON.parse('{"a":1,"b":2}', function (k, v) { if (k === 'a') return undefined; return v })).join(',')
+var ks = []; JSON.parse('{"a":{"b":1}}', function (k, v) { ks.push(k); return v }); ks.join('|')
+JSON.parse('1', function (k, v) { return v })
+JSON.parse('1', function (k, v) { return v * 10 })
+JSON.parse('"x"', function (k, v) { return v + '!' })
+JSON.parse('null', function (k, v) { return v === null ? 'was null' : 'other' })
+var seen = []; JSON.parse('[1,[2]]', function (k, v) { seen.push(k + '=' + JSON.stringify(v)); return v }); seen.join(' ')
+var t = []; JSON.parse('{"a":1}', function (k, v) { t.push(typeof this); return v }); t.join(',')
+JSON.stringify(JSON.parse('{"a":[1,2]}', function (k, v) { return v }))
+
+# ===========================================================================
+# JSON.stringify -- every value type
+# ===========================================================================
+JSON.stringify(null)
+JSON.stringify(true)
+JSON.stringify(false)
+JSON.stringify(0)
+JSON.stringify(-0)
+JSON.stringify(1)
+JSON.stringify(-1)
+JSON.stringify(1.5)
+JSON.stringify(1e21)
+JSON.stringify(1e-7)
+JSON.stringify(-1.5e-10)
+JSON.stringify(1e308)
+JSON.stringify(9007199254740991)
+JSON.stringify('')
+JSON.stringify('abc')
+JSON.stringify('a"b')
+JSON.stringify('a' + String.fromCharCode(92) + 'b')
+JSON.stringify('a' + String.fromCharCode(10) + 'b')
+JSON.stringify('a' + String.fromCharCode(9) + 'b')
+JSON.stringify('a' + String.fromCharCode(13) + 'b')
+JSON.stringify('a' + String.fromCharCode(8) + 'b')
+JSON.stringify('a' + String.fromCharCode(12) + 'b')
+JSON.stringify('a' + String.fromCharCode(0) + 'b')
+JSON.stringify('a' + String.fromCharCode(1) + 'b')
+JSON.stringify('a' + String.fromCharCode(31) + 'b')
+JSON.stringify('café')
+JSON.stringify('€')
+JSON.stringify('a/b')
+
+# undefined, functions and other non-serialisable values
+String(JSON.stringify(undefined))
+String(JSON.stringify(function () {}))
+String(JSON.stringify(Math.max))
+typeof JSON.stringify(undefined)
+JSON.stringify([undefined])
+JSON.stringify([function () {}])
+JSON.stringify({a: undefined})
+JSON.stringify({a: function () {}})
+JSON.stringify({a: 1, b: undefined, c: 2})
+JSON.stringify([1, undefined, 3])
+JSON.stringify({a: undefined, b: function () {}})
+
+# NaN / Infinity / -0
+JSON.stringify(NaN)
+JSON.stringify(Infinity)
+JSON.stringify(-Infinity)
+JSON.stringify([NaN, Infinity, -Infinity])
+JSON.stringify({a: NaN, b: Infinity})
+JSON.stringify(-0)
+JSON.stringify([-0])
+JSON.stringify({a: -0})
+JSON.stringify(0 / 0)
+JSON.stringify(1 / 0)
+
+# Date objects (Date.prototype.toJSON)
+JSON.stringify(new Date(0))
+JSON.stringify(new Date(1))
+JSON.stringify(new Date(1234567890123))
+JSON.stringify(new Date(-1))
+JSON.stringify({d: new Date(0)})
+JSON.stringify([new Date(0), new Date(86400000)])
+JSON.stringify(new Date(NaN))
+JSON.stringify(new Date(8.64e15))
+
+# Number / String / Boolean wrapper objects
+JSON.stringify(new Number(5))
+JSON.stringify(new Number(0))
+JSON.stringify(new String('x'))
+JSON.stringify(new String(''))
+JSON.stringify(new Boolean(true))
+JSON.stringify(new Boolean(false))
+JSON.stringify([new Number(1), new String('a'), new Boolean(true)])
+JSON.stringify({n: new Number(1), s: new String('a')})
+
+# objects with a toJSON method
+JSON.stringify({toJSON: function () { return 42 }})
+JSON.stringify({toJSON: function () { return 'str' }})
+JSON.stringify({toJSON: function () { return [1, 2] }})
+JSON.stringify({toJSON: function () { return {a: 1} }})
+JSON.stringify({toJSON: function () { return null }})
+JSON.stringify({toJSON: function () { return undefined }})
+JSON.stringify({a: {toJSON: function () { return 1 }}})
+JSON.stringify([{toJSON: function () { return 'x' }}])
+JSON.stringify({toJSON: function (k) { return 'key=' + k }})
+var o = {a: 1, toJSON: function () { return this.a }}; JSON.stringify(o)
+
+# nested structures
+JSON.stringify({a: [1, {b: [2, {c: 3}]}]})
+JSON.stringify([[[1, 2], [3]], []])
+JSON.stringify({a: {}, b: [], c: null, d: 0, e: '', f: false})
+JSON.stringify({a: [{}, [], null]})
+JSON.stringify(new Array(30).join('x').split('x').length)
+var o = {}; var p = o; for (var i = 0; i < 20; i++) { p.n = {}; p = p.n } JSON.stringify(o).length
+
+# sparse arrays and array holes
+JSON.stringify([, , ,])
+JSON.stringify(new Array(3))
+JSON.stringify(new Array(0))
+var a = []; a[3] = 1; JSON.stringify(a)
+var a = [1]; a[5] = 2; JSON.stringify(a)
+var a = [1, 2, 3]; delete a[1]; JSON.stringify(a)
+var a = []; a.length = 4; JSON.stringify(a)
+
+# non-enumerable and inherited properties
+var o = {}; Object.defineProperty(o, 'hidden', {value: 1, enumerable: false}); JSON.stringify(o)
+var o = {a: 1}; Object.defineProperty(o, 'hidden', {value: 2, enumerable: false}); JSON.stringify(o)
+var o = Object.create({inherited: 1}); o.own = 2; JSON.stringify(o)
+var o = {}; Object.defineProperty(o, 'shown', {value: 3, enumerable: true}); JSON.stringify(o)
+var o = {}; Object.defineProperty(o, 'g', {get: function () { return 7 }, enumerable: true}); JSON.stringify(o)
+JSON.stringify(Object.create(null))
+
+# ===========================================================================
+# the `replacer` argument -- function form
+# ===========================================================================
+JSON.stringify({a: 1, b: 2}, function (k, v) { return v })
+JSON.stringify({a: 1, b: 2}, function (k, v) { return typeof v === 'number' ? v * 10 : v })
+JSON.stringify({a: 1, b: 2}, function (k, v) { return k === 'a' ? undefined : v })
+JSON.stringify([1, 2, 3], function (k, v) { return typeof v === 'number' ? v + 1 : v })
+JSON.stringify({a: 1}, function (k, v) { return typeof v === 'number' ? String(v) : v })
+var ks = []; JSON.stringify({a: 1, b: {c: 2}}, function (k, v) { ks.push(k); return v }); ks.join('|')
+JSON.stringify(1, function (k, v) { return v })
+JSON.stringify('x', function (k, v) { return v })
+JSON.stringify({a: 1}, function (k, v) { return k === '' ? v : undefined })
+JSON.stringify({a: {b: 1}}, function (k, v) { return k === 'b' ? 99 : v })
+
+# the `replacer` argument -- array form
+JSON.stringify({a: 1, b: 2, c: 3}, ['a'])
+JSON.stringify({a: 1, b: 2, c: 3}, ['a', 'c'])
+JSON.stringify({a: 1, b: 2, c: 3}, [])
+JSON.stringify({a: 1, b: 2, c: 3}, ['c', 'a'])
+JSON.stringify({a: 1, b: 2}, ['a', 'a'])
+JSON.stringify({a: 1, b: 2}, ['zzz'])
+JSON.stringify({a: {b: 1, c: 2}}, ['a', 'b'])
+JSON.stringify([1, 2, 3], ['0'])
+JSON.stringify({a: 1, 2: 'two'}, ['2'])
+JSON.stringify({a: 1, b: 2}, [1, 'a'])
+
+# ===========================================================================
+# the `space` argument
+# ===========================================================================
+JSON.stringify({a: 1}, null, 0)
+JSON.stringify({a: 1}, null, 1)
+JSON.stringify({a: 1}, null, 2)
+JSON.stringify({a: 1}, null, 3)
+JSON.stringify({a: 1}, null, 4)
+JSON.stringify({a: 1}, null, 5)
+JSON.stringify({a: 1}, null, 6)
+JSON.stringify({a: 1}, null, 7)
+JSON.stringify({a: 1}, null, 8)
+JSON.stringify({a: 1}, null, 9)
+JSON.stringify({a: 1}, null, 10)
+JSON.stringify({a: 1}, null, -1)
+JSON.stringify({a: 1}, null, -10)
+JSON.stringify({a: 1}, null, 11)
+JSON.stringify({a: 1}, null, 100)
+JSON.stringify({a: 1}, null, 1.9)
+JSON.stringify({a: 1}, null, NaN)
+JSON.stringify({a: 1}, null, '')
+JSON.stringify({a: 1}, null, '..')
+JSON.stringify({a: 1}, null, '-->')
+JSON.stringify({a: 1}, null, '0123456789')
+JSON.stringify({a: 1}, null, '0123456789ABCDEF')
+JSON.stringify({a: 1}, null, 'a very long indent string indeed')
+JSON.stringify({a: 1, b: [1, 2]}, null, 2)
+JSON.stringify([1, [2, [3]]], null, 2)
+JSON.stringify({a: {b: {c: 1}}}, null, 1)
+JSON.stringify([], null, 2)
+JSON.stringify({}, null, 2)
+JSON.stringify(1, null, 2)
+JSON.stringify({a: 1}, ['a'], 2)
+JSON.stringify({a: 1, b: 2}, function (k, v) { return v }, 4)
+
+# --- round trips ---
+JSON.parse(JSON.stringify({a: 1, b: [1, 2, null], c: 'x'})).b.join(',')
+JSON.stringify(JSON.parse('{"a":[1,{"b":2}]}'))
+JSON.parse(JSON.stringify([1, 'two', true, null])).join('|')
+JSON.stringify(JSON.parse(JSON.stringify({x: {y: [1, 2, 3]}})))
+JSON.parse(JSON.stringify('a' + String.fromCharCode(10) + 'b')).length
+JSON.parse(JSON.stringify(new Date(0)))
+typeof JSON
+Object.prototype.toString.call(JSON)
+typeof JSON.parse
+typeof JSON.stringify
+JSON.stringify.length
+JSON.parse.length

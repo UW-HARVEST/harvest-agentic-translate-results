@@ -1,0 +1,305 @@
+# Array and Array.prototype, derived from jsarray.c.
+#
+# HARNESS FORMAT: one snippet per line; `\n` -> newline, `\t` -> tab.
+
+# --- Array as a function and with new (jsB_new_Array is used for both) ---
+Array().length
+Array(0).length
+Array(1).length
+Array(5).length
+Array(1,2,3).join(',')
+Array(1,2,3).length
+new Array().length
+new Array(0).length
+new Array(1).length
+new Array(5).length
+new Array(5).join('-')
+new Array(1,2,3).join(',')
+new Array('5').length
+new Array('5')[0]
+new Array(true).length
+new Array(null).length
+new Array(undefined).length
+new Array(1.0).length
+Array(3).toString()
+0 in Array(3)
+Array.isArray(Array(3))
+typeof Array(3)[0]
+Array.length
+Array.name
+Array.prototype.length
+Object.prototype.toString.call(Array.prototype)
+
+# --- Array.isArray ---
+Array.isArray([])
+Array.isArray([1,2])
+Array.isArray({})
+Array.isArray('abc')
+Array.isArray(5)
+Array.isArray(null)
+Array.isArray(undefined)
+Array.isArray(Array.prototype)
+Array.isArray(new Array(2))
+(function(){ return Array.isArray(arguments) })()
+Array.isArray({length:0})
+
+# --- toString and join (Ap_toString / Ap_join, incl. cycle detection) ---
+[].toString()
+[1].toString()
+[1,2,3].toString()
+[1,[2,3]].toString()
+[[[1]]].toString()
+[null,undefined,1].toString()
+[,1,].toString()
+String([1,2])
+[1,2,3].join()
+[1,2,3].join('')
+[1,2,3].join('--')
+[1,2,3].join(undefined)
+[1,2,3].join(null)
+[1,2,3].join(0)
+[].join('-')
+[1].join('-')
+[null,1,undefined,2].join('-')
+[,,].join('-')
+[1,,3].join('-')
+[[1,2],[3,4]].join('|')
+(function(){var a=[1,2]; a.push(a); return a.join(',')})()
+(function(){var a=[1]; a[1]=a; return a.toString()})()
+(function(){var o={length:3,0:'a',1:'b',2:'c'}; return Array.prototype.join.call(o,'/')})()
+(function(){var o={length:2}; return Array.prototype.join.call(o,'/')})()
+(function(){var o={}; return Array.prototype.join.call(o,'/')})()
+(function(){var o={length:-1,0:'a'}; return Array.prototype.join.call(o,'/')})()
+Array.prototype.join.call('abc','-')
+(function(){var o={length:2,0:1,1:2,join:function(){return 'custom'}}; return Array.prototype.toString.call(o)})()
+(function(){var o={length:2,0:1,1:2,join:5}; return Array.prototype.toString.call(o)})()
+
+# --- concat ---
+[].concat().length
+[1].concat().join(',')
+[1,2].concat([3,4]).join(',')
+[1].concat(2,3).join(',')
+[1].concat([2,[3]]).join(',')
+[1].concat([2,[3]]).length
+[1,,3].concat([4]).length
+[1,,3].concat([4]).join(',')
+[].concat([],[]).length
+[1].concat('ab').join(',')
+[1].concat(null,undefined).join(',')
+[1].concat(null,undefined).length
+Array.prototype.concat.call(5,6).join(',')
+Array.prototype.concat.call({length:1,0:'x'},1).join(',')
+
+# --- pop / push ---
+(function(){var a=[1,2,3]; return [a.pop(), a.join(','), a.length].join('|')})()
+(function(){var a=[]; return [String(a.pop()), a.length].join('|')})()
+(function(){var a=[1]; a.pop(); return [a.length, a.join(',')].join('|')})()
+(function(){var a=[1,,3]; return [a.pop(), a.length].join('|')})()
+(function(){var a=[1,,3]; a.pop(); return [String(a.pop()), a.length].join('|')})()
+(function(){var a=[1]; return [a.push(2), a.join(',')].join('|')})()
+(function(){var a=[]; return [a.push(), a.length].join('|')})()
+(function(){var a=[]; return [a.push(1,2,3), a.join(',')].join('|')})()
+(function(){var o={length:2,0:'a',1:'b'}; Array.prototype.push.call(o,'c'); return [o.length,o[2]].join('|')})()
+(function(){var o={}; Array.prototype.push.call(o,'c'); return [o.length,o[0]].join('|')})()
+(function(){var o={length:3}; return [String(Array.prototype.pop.call(o)), o.length].join('|')})()
+
+# --- reverse ---
+[].reverse().length
+[1].reverse().join(',')
+[1,2].reverse().join(',')
+[1,2,3].reverse().join(',')
+[1,2,3,4].reverse().join(',')
+(function(){var a=[1,,3]; a.reverse(); return [a.join(','), 1 in a, 0 in a].join('|')})()
+(function(){var a=[,2,,4]; a.reverse(); return [a.join(','), 0 in a, 1 in a, 2 in a, 3 in a].join('|')})()
+(function(){var a=[1,2,3]; return a.reverse()===a})()
+(function(){var o={length:2,0:'a',1:'b'}; Array.prototype.reverse.call(o); return [o[0],o[1]].join(',')})()
+
+# --- shift ---
+(function(){var a=[1,2,3]; return [a.shift(), a.join(','), a.length].join('|')})()
+(function(){var a=[]; return [String(a.shift()), a.length].join('|')})()
+(function(){var a=[1]; return [a.shift(), a.length].join('|')})()
+(function(){var a=[,2,3]; return [String(a.shift()), a.join(','), a.length].join('|')})()
+(function(){var a=[1,,3]; a.shift(); return [a.join(','), 0 in a, 1 in a].join('|')})()
+(function(){var o={length:0}; return [String(Array.prototype.shift.call(o)), o.length].join('|')})()
+
+# --- slice (negative, fractional, out-of-range, missing args) ---
+[1,2,3,4,5].slice().join(',')
+[1,2,3,4,5].slice(1).join(',')
+[1,2,3,4,5].slice(1,3).join(',')
+[1,2,3,4,5].slice(-2).join(',')
+[1,2,3,4,5].slice(-2,-1).join(',')
+[1,2,3,4,5].slice(-99).join(',')
+[1,2,3,4,5].slice(99).length
+[1,2,3,4,5].slice(3,1).length
+[1,2,3,4,5].slice(0,-99).length
+[1,2,3,4,5].slice(1.9,3.9).join(',')
+[1,2,3,4,5].slice(-1.5).join(',')
+[1,2,3,4,5].slice(undefined,2).join(',')
+[1,2,3,4,5].slice(0,undefined).join(',')
+[1,2,3,4,5].slice(NaN,2).join(',')
+[1,2,3,4,5].slice('1','3').join(',')
+[1,2,3].slice(0,Infinity).join(',')
+[1,2,3].slice(-Infinity).join(',')
+(function(){var a=[1,,3]; var b=a.slice(0); return [b.length, 1 in b].join('|')})()
+Array.prototype.slice.call({length:3,0:'a',1:'b',2:'c'},1).join(',')
+Array.prototype.slice.call('abc',1).join(',')
+(function(){var a=[1,2,3]; return a.slice(0)===a})()
+
+# --- sort (heapsort in jsarray.c; default is string comparison) ---
+[].sort().length
+[1].sort().join(',')
+[3,1,2].sort().join(',')
+[1,10,2,20].sort().join(',')
+['b','a','c'].sort().join(',')
+[3,1,2].sort(function(a,b){return a-b}).join(',')
+[3,1,2].sort(function(a,b){return b-a}).join(',')
+[1,10,2,20].sort(function(a,b){return a-b}).join(',')
+[5,4,3,2,1].sort(function(a,b){return a-b}).join(',')
+[1,2,3,4,5].sort(function(a,b){return a-b}).join(',')
+[3,1,2].sort(undefined).join(',')
+[3,1,2].sort(function(){return 0}).join(',')
+[3,1,2].sort(function(){return 1}).join(',')
+[3,1,2].sort(function(){return -1}).join(',')
+[3,1,2].sort(function(){return NaN}).join(',')
+[4,3,2,1].sort(function(a,b){return a<b?1:-1}).join(',')
+(function(){var a=[1,undefined,2]; a.sort(); return [a.join(','), a.length].join('|')})()
+(function(){var a=[1,,2]; a.sort(); return [a.join(','), a.length, 2 in a].join('|')})()
+(function(){var a=[,,1]; a.sort(); return [a.join(','), 0 in a, 2 in a].join('|')})()
+(function(){var a=[3,1,2]; return a.sort()===a})()
+(function(){try{ return [3,1].sort(5).join(',') }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return [3,1].sort(null).join(',') }catch(e){ return e.name+': '+e.message }})()
+(function(){var o={length:3,0:'c',1:'a',2:'b'}; Array.prototype.sort.call(o); return [o[0],o[1],o[2]].join(',')})()
+(function(){var seen=0; [3,1,2].sort(function(a,b){seen++; return a-b}); return seen>0})()
+['10','9','1'].sort().join(',')
+[true,false,true].sort().join(',')
+[-1,-2,3].sort().join(',')
+[0.5,0.25,1].sort().join(',')
+
+# --- splice: add<del, add==del, add>del, negative start, missing deleteCount ---
+(function(){var a=[1,2,3,4,5]; var d=a.splice(1,2); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3,4,5]; var d=a.splice(1,2,'x'); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3,4,5]; var d=a.splice(1,2,'x','y'); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3,4,5]; var d=a.splice(1,2,'x','y','z'); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3,4,5]; var d=a.splice(1,0,'x'); return [d.length, a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(1); return [d.join(','), a.join(','), a.length].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(); return [d.length, a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(0); return [d.join(','), a.length].join('|')})()
+(function(){var a=[1,2,3,4,5]; var d=a.splice(-2); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3,4,5]; var d=a.splice(-2,1); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(-99,1); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(99,1); return [d.length, a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(1,99); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(1,-5); return [d.length, a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(1.7,1.7); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice('1','1'); return [d.join(','), a.join(',')].join('|')})()
+(function(){var a=[1,2,3]; a.splice(1,1); return a.length})()
+(function(){var a=[1,,3,,5]; var d=a.splice(1,2); return [d.length, a.join(','), a.length].join('|')})()
+(function(){var a=[1,2,3]; var d=a.splice(3,0,'t'); return [d.length, a.join(',')].join('|')})()
+(function(){var a=[]; var d=a.splice(0,0,'a','b'); return [d.length, a.join(',')].join('|')})()
+(function(){var o={length:3,0:'a',1:'b',2:'c'}; var d=Array.prototype.splice.call(o,1,1); return [d.join(','), o.length, o[1]].join('|')})()
+
+# --- unshift ---
+(function(){var a=[3]; return [a.unshift(1,2), a.join(',')].join('|')})()
+(function(){var a=[]; return [a.unshift(1), a.join(',')].join('|')})()
+(function(){var a=[1,2]; return [a.unshift(), a.join(','), a.length].join('|')})()
+(function(){var a=[1,,3]; a.unshift(0); return [a.join(','), a.length, 2 in a].join('|')})()
+(function(){var o={length:1,0:'b'}; Array.prototype.unshift.call(o,'a'); return [o.length,o[0],o[1]].join(',')})()
+
+# --- indexOf / lastIndexOf ---
+[1,2,1].indexOf(1)
+[1,2,1].indexOf(1,1)
+[1,2,1].indexOf(1,-1)
+[1,2,1].indexOf(1,-99)
+[1,2,1].indexOf(1,10)
+[1,2,1].indexOf('1')
+[1,2,1].indexOf(3)
+[].indexOf(1)
+[1,2,3].indexOf()
+[undefined].indexOf()
+[1,,3].indexOf(undefined)
+[1,2,3].indexOf(2,1.9)
+[NaN].indexOf(NaN)
+[0].indexOf(-0)
+['a','b'].indexOf('b')
+[1,2,1].lastIndexOf(1)
+[1,2,1].lastIndexOf(1,0)
+[1,2,1].lastIndexOf(1,-2)
+[1,2,1].lastIndexOf(1,10)
+[1,2,1].lastIndexOf(1,-99)
+[].lastIndexOf(1)
+[1,2,3].lastIndexOf()
+[1,,1].lastIndexOf(1)
+Array.prototype.indexOf.call({length:2,0:'a',1:'b'},'b')
+Array.prototype.lastIndexOf.call({length:2,0:'a',1:'b'},'a')
+Array.prototype.indexOf.call('abc','b')
+
+# --- every / some / forEach ---
+[1,2,3].every(function(x){return x>0})
+[1,2,3].every(function(x){return x>1})
+[].every(function(){return false})
+[1,,3].every(function(x){return x!==undefined})
+(function(){var n=0; [1,2,3].every(function(x){n++; return x<2}); return n})()
+[1,2,3].every(function(x,i,a){return a===undefined?false:i<3})
+(function(){return [1].every(function(){return this.ok},{ok:true})})()
+[1,2,3].some(function(x){return x>2})
+[1,2,3].some(function(x){return x>3})
+[].some(function(){return true})
+(function(){var n=0; [1,2,3].some(function(x){n++; return x>1}); return n})()
+(function(){return [1].some(function(){return this.ok},{ok:true})})()
+(function(){var s=''; [1,2,3].forEach(function(x){s+=x}); return s})()
+(function(){var s=''; [1,,3].forEach(function(x){s+=x}); return s})()
+(function(){var s=''; [1,2].forEach(function(x,i,a){s+=i+':'+x+':'+a.length+' '}); return s})()
+(function(){return String([1,2].forEach(function(){}))})()
+(function(){var s=''; [1].forEach(function(){s+=this.t},{t:'T'}); return s})()
+(function(){try{ return String([1].forEach(5)) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return String([1].every()) }catch(e){ return e.name+': '+e.message }})()
+
+# --- map / filter ---
+[1,2,3].map(function(x){return x*2}).join(',')
+[].map(function(x){return x}).length
+(function(){var b=[1,,3].map(function(x){return x*2}); return [b.length, b.join(','), 1 in b].join('|')})()
+[1,2].map(function(x,i,a){return i+'/'+a.length}).join(',')
+(function(){return [1].map(function(){return this.v},{v:9}).join('')})()
+[1,2,3].filter(function(x){return x>1}).join(',')
+[1,2,3].filter(function(){return false}).length
+[1,2,3].filter(function(){return true}).join(',')
+(function(){var b=[1,,3].filter(function(){return true}); return [b.length, b.join(',')].join('|')})()
+(function(){return [1,2].filter(function(x){return this.min<x},{min:1}).join(',')})()
+Array.prototype.map.call({length:2,0:1,1:2},function(x){return x+1}).join(',')
+Array.prototype.filter.call('abc',function(c){return c!=='b'}).join('')
+
+# --- reduce / reduceRight ---
+[1,2,3].reduce(function(a,b){return a+b})
+[1,2,3].reduce(function(a,b){return a+b},10)
+(function(){try{ return String([1].reduce(function(a,b){return a+b})) }catch(e){ return e.name+': '+e.message }})()
+[].reduce(function(a,b){return a+b},5)
+[1,2,3].reduce(function(a,b){return a+''+b})
+[1,,3].reduce(function(a,b){return a+b})
+(function(){try{ return String([,,3].reduce(function(a,b){return a+b})) }catch(e){ return e.name+': '+e.message }})()
+[1,2,3].reduce(function(a,b,i,arr){return a+i},0)
+(function(){try{ return String([].reduce(function(a,b){return a+b})) }catch(e){ return e.name+': '+e.message }})()
+(function(){try{ return String([,,].reduce(function(a,b){return a+b})) }catch(e){ return e.name+': '+e.message }})()
+[1,2,3].reduceRight(function(a,b){return a+''+b})
+[1,2,3].reduceRight(function(a,b){return a-b})
+[1,2,3].reduceRight(function(a,b){return a+b},10)
+(function(){try{ return String([1].reduceRight(function(a,b){return a+b})) }catch(e){ return e.name+': '+e.message }})()
+[].reduceRight(function(a,b){return a+b},5)
+[1,,3].reduceRight(function(a,b){return a+''+b})
+(function(){try{ return String([].reduceRight(function(a,b){return a+b})) }catch(e){ return e.name+': '+e.message }})()
+Array.prototype.reduce.call({length:3,0:1,1:2,2:3},function(a,b){return a+b})
+
+# --- length mutation and the 2^32-1 boundary ---
+(function(){var a=[1,2,3]; a.length=1; return a.join(',')})()
+(function(){var a=[1,2,3]; a.length=5; return [a.length, a.join(','), 3 in a].join('|')})()
+(function(){var a=[]; a[3]='d'; return [a.length, a.join(','), 0 in a].join('|')})()
+(function(){var a=[]; a.length=0; return a.length})()
+(function(){var a=[1,2,3]; a.length=0; return [a.length, a.join(',')].join('|')})()
+(function(){var a=[]; try{ a.length=4294967295; return String(a.length) }catch(e){ return e.name+': '+e.message }})()
+(function(){var a=[]; try{ a.length=4294967296; return String(a.length) }catch(e){ return e.name+': '+e.message }})()
+(function(){var a=[]; a['4294967294']='x'; return a.length})()
+(function(){var a=[]; a['4294967295']='x'; return a.length})()
+(function(){var a=[1]; a[-1]='m'; return [a.length, a[-1]].join('|')})()
+(function(){var a=[1]; a['01']='m'; return [a.length, a['01']].join('|')})()
+(function(){var a=[1,2]; a.length='1'; return a.join(',')})()
+(function(){var a=[1,2,3]; return Object.keys(a).length})()
+(function(){var a=[1,2,3]; a.x='p'; return [a.length, Object.keys(a).sort().join(',')].join('|')})()

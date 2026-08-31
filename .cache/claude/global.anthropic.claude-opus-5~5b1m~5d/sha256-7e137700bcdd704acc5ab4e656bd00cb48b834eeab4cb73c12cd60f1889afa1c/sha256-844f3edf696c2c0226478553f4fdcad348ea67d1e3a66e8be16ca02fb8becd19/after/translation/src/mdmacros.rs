@@ -43,6 +43,9 @@ use crate::mdcore::{op_add, op_mul, op_sub};
 ///
 /// Selection priority mirrors the cfg cascade used throughout this module:
 /// `mul` > `sub` > `add` (with `add` as the default).
+/// (Consumers read the exported `G_OP_NAME` global instead, mirroring the C, so
+/// this constant is informational.)
+#[allow(dead_code)]
 pub const OP_NAME: &str = if cfg!(feature = "mul") {
     "mul"
 } else if cfg!(feature = "sub") {

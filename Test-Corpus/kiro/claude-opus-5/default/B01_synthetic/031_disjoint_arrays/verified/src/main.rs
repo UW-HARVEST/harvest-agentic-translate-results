@@ -1,6 +1,6 @@
 // Rust translation of c_src/src/main.c
 //
-// Original copyright notice from the C source:
+// Original C copyright notice:
 //
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
@@ -25,66 +25,58 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 
-/// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, so a write
-/// to a pipe with no reader would return `EPIPE` instead of killing the
-/// process. The C program keeps the default disposition and dies with signal
-/// 13 in that situation, so restore it to match the observable exit status.
-fn restore_default_sigpipe() {
-    const SIGPIPE: i32 = 13;
-    const SIG_DFL: usize = 0;
-    extern "C" {
-        fn signal(signum: i32, handler: usize) -> usize;
-    }
-    unsafe {
-        signal(SIGPIPE, SIG_DFL);
-    }
-}
-
-/// Byte-oriented reader over stdin with a single byte of pushback, mirroring
-/// the way C's stdio stream is consumed by `scanf`.
-struct Scanner {
-    input: Box<dyn Read>,
+/// Buffered byte reader over stdin with a single-byte pushback slot, mirroring
+/// the behaviour of a C `FILE *` stream as used by `scanf`/`ungetc`.
+struct Stdin {
     buf: Vec<u8>,
     pos: usize,
     eof: bool,
+    pushback: Option<u8>,
+    src: io::Stdin,
 }
 
-impl Scanner {
+impl Stdin {
     fn new() -> Self {
-        Scanner {
-            input: Box::new(std::io::stdin()),
+        Stdin {
             buf: Vec::new(),
             pos: 0,
             eof: false,
+            pushback: None,
+            src: io::stdin(),
         }
     }
 
-    fn next_byte(&mut self) -> Option<u8> {
-        if self.pos < self.buf.len() {
-            let b = self.buf[self.pos];
-            self.pos += 1;
-            return Some(b);
+    /// Equivalent of `getc()`: returns `None` at end of input.
+    fn getc(&mut self) -> Option<u8> {
+        if let Some(c) = self.pushback.take() {
+            return Some(c);
         }
-        if self.eof {
-            return None;
-        }
-        let mut chunk = [0u8; 8192];
         loop {
-            match self.input.read(&mut chunk) {
+            if self.pos < self.buf.len() {
+                let c = self.buf[self.pos];
+                self.pos += 1;
+                return Some(c);
+            }
+            if self.eof {
+                return None;
+            }
+            self.buf.clear();
+            self.pos = 0;
+            self.buf.resize(65536, 0);
+            match self.src.read(&mut self.buf) {
                 Ok(0) => {
-                    self.eof = true;
-                    return None;
-                }
-                Ok(n) => {
                     self.buf.clear();
-                    self.buf.extend_from_slice(&chunk[..n]);
-                    self.pos = 1;
-                    return Some(self.buf[0]);
+                    self.eof = true;
+                    return None;
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Ok(n) => self.buf.truncate(n),
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
+                    self.buf.clear();
+                }
                 Err(_) => {
+                    self.buf.clear();
                     self.eof = true;
                     return None;
                 }
@@ -92,83 +84,99 @@ impl Scanner {
         }
     }
 
-    /// Push the most recently read byte back onto the stream (C's `ungetc`).
-    fn unget(&mut self) {
-        if self.pos > 0 {
-            self.pos -= 1;
-        }
-    }
-
-    /// Equivalent of `scanf("%d", &x)`: returns `Some(value)` when the
-    /// conversion succeeds (scanf returning 1), and `None` on either a
-    /// matching failure (scanf returning 0) or end of input (EOF).
-    fn scan_int(&mut self) -> Option<i32> {
-        // Leading whitespace is skipped, newlines included.
-        let mut c = loop {
-            match self.next_byte() {
-                None => return None,
-                Some(b) => {
-                    if is_space(b) {
-                        continue;
-                    }
-                    break b;
-                }
-            }
-        };
-
-        let mut negative = false;
-        if c == b'+' || c == b'-' {
-            negative = c == b'-';
-            match self.next_byte() {
-                None => return None,
-                Some(b) => c = b,
-            }
-        }
-
-        if !c.is_ascii_digit() {
-            // Matching failure: the offending character stays in the stream.
-            self.unget();
-            return None;
-        }
-
-        // Accumulate the magnitude, saturating the way glibc's strtol-based
-        // conversion does before the result is truncated to `int`.
-        let mut mag: u128 = 0;
-        loop {
-            if mag <= u128::from(u64::MAX) {
-                mag = mag * 10 + u128::from(c - b'0');
-            }
-            match self.next_byte() {
-                None => break,
-                Some(b) => {
-                    if b.is_ascii_digit() {
-                        c = b;
-                    } else {
-                        self.unget();
-                        break;
-                    }
-                }
-            }
-        }
-
-        let wide: i64 = if negative {
-            if mag >= (i64::MAX as u128) + 1 {
-                i64::MIN
-            } else {
-                -(mag as i64)
-            }
-        } else if mag > i64::MAX as u128 {
-            i64::MAX
-        } else {
-            mag as i64
-        };
-
-        Some(wide as i32)
+    /// Equivalent of `ungetc()`.
+    fn ungetc(&mut self, c: u8) {
+        self.pushback = Some(c);
     }
 }
 
-fn is_space(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+/// C `isspace()` for the default locale.
+fn is_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+}
+
+/// Emulates `scanf("%d", &out)`, returning the number of assigned items
+/// (1 on success, 0 on matching failure, -1 (EOF) on input failure), which is
+/// what the C code compares against.
+fn scanf_d(input: &mut Stdin, out: &mut i32) -> i32 {
+    // Leading whitespace is skipped, including across newlines.
+    let mut c = loop {
+        match input.getc() {
+            None => return -1, // EOF before any conversion
+            Some(c) if is_space(c) => continue,
+            Some(c) => break c,
+        }
+    };
+
+    let negative = match c {
+        b'-' => {
+            c = match input.getc() {
+                Some(c) => c,
+                None => return -1,
+            };
+            true
+        }
+        b'+' => {
+            c = match input.getc() {
+                Some(c) => c,
+                None => return -1,
+            };
+            false
+        }
+        _ => false,
+    };
+
+    if !c.is_ascii_digit() {
+        // Matching failure: the offending character stays in the stream.
+        input.ungetc(c);
+        return 0;
+    }
+
+    // glibc converts via strtol (saturating at long bounds) and then assigns
+    // the resulting `long` to an `int`, i.e. truncating to 32 bits.
+    let mut magnitude: u64 = 0;
+    let mut overflow = false;
+    loop {
+        let digit = u64::from(c - b'0');
+        match magnitude
+            .checked_mul(10)
+            .and_then(|m| m.checked_add(digit))
+        {
+            Some(m) => magnitude = m,
+            None => overflow = true,
+        }
+        let cutoff: u64 = if negative {
+            i64::MAX as u64 + 1
+        } else {
+            i64::MAX as u64
+        };
+        if magnitude > cutoff {
+            overflow = true;
+        }
+        match input.getc() {
+            Some(next) if next.is_ascii_digit() => c = next,
+            Some(next) => {
+                input.ungetc(next);
+                break;
+            }
+            None => break,
+        }
+    }
+
+    let as_long: i64 = if overflow {
+        if negative {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
+    } else if negative {
+        (magnitude as i64).wrapping_neg()
+    } else {
+        magnitude as i64
+    };
+
+    *out = as_long as i32;
+    1
 }
 
 fn fma_array(out: &mut [i32], mul1: &[i32], mul2: &[i32], add: &[i32], len: usize) {
@@ -191,30 +199,28 @@ fn call_fma(data: &[i32], len: usize) -> i32 {
         zeros[i] = 0;
     }
 
-    fma_array(&mut out, &ones, &data[..len], &zeros, len);
+    fma_array(&mut out, &ones, data, &zeros, len);
     out[len - 1]
 }
 
 fn main() {
-    restore_default_sigpipe();
-
-    // Matches the C `int data[100];` (indeterminate contents until read).
+    // `int data[100]` is uninitialised in C, but only the first `i` entries
+    // (the ones actually read) are ever consumed.
     let mut data = [0i32; 100];
-    let mut scanner = Scanner::new();
+    let mut input = Stdin::new();
 
-    let mut i: usize = 0;
+    let mut i = 0usize;
     while i < 100 {
-        match scanner.scan_int() {
-            Some(v) => data[i] = v,
-            None => break,
+        if scanf_d(&mut input, &mut data[i]) != 1 {
+            break;
         }
         i += 1;
     }
 
     let result = call_fma(&data, i);
 
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-    let _ = write!(out, "{}\n", result);
-    let _ = out.flush();
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
+    let _ = write!(stdout, "{}\n", result);
+    let _ = stdout.flush();
 }

@@ -1,0 +1,422 @@
+# Phase C error corpus -- built-in library rejections.
+# ERRORS.md sections 15-16 (jsregexp.c, jsstring.c, jsarray.c, jsobject.c,
+# jsnumber.c, jsboolean.c, jsdate.c, jsfunction.c, jsbuiltin.c, json.c, jserror.c),
+# rows 320-445. Every snippet MUST error in the C build. No try/catch.
+#
+# NOT AN ERROR IN THE C BUILD (so deliberately NOT in this file -- they belong in
+# the valid-path corpora):
+#   row 421 Fp_apply with a negative/absent `length`  -> clamped to 0
+#   Fp_apply with a non-array-like (`f.apply(null, 1)`, `f.apply(null, 'ab')`)
+#     -> js_getlength coerces, no throw
+#   String.prototype.replace with a dangling/out-of-range `$` (`'$'`, `'$9'`,
+#     `'$2'` with one group) -> emitted literally, no throw
+#   rows 427/428/429 parseInt/parseFloat failures  -> push NaN
+#   rows 438/439 JSON.stringify `space` out of range / > 10 chars -> clamped
+#   row 343 Ap_join / Ap_toString cycle  -> pushes "" instead of recursing
+#   row 322/323/325 stale lastIndex      -> reset + null/false
+#   row 332 new RegExp('') / new RegExp() -> substituted with "(?:)"
+#   trailing garbage after a complete JSON value (`JSON.parse('1 2')`) -> ignored;
+#     json.c stops after the first value and never checks for EOF
+
+# ===========================================================================
+# row 320: js_newregexp -- SyntaxError "regular expression: %s".
+# One snippet per distinct regexp.c die() message reachable via new RegExp().
+# ===========================================================================
+
+# row 1: hex() -- "invalid escape sequence"
+new RegExp('\\xZZ')
+new RegExp('\\uZZZZ')
+new RegExp('[\\xG1]')
+new RegExp('\\x1Z')
+
+# row 2 / row 22: dec() and parserep() -- "invalid quantifier"
+new RegExp('a{x}')
+new RegExp('a{1,x}')
+new RegExp('a{3,2}')
+new RegExp('a{10,1}')
+
+# rows 3/4/5/6: nextrune() -- "unterminated escape sequence"
+new RegExp('a\\')
+new RegExp('a\\c')
+new RegExp('a\\x1')
+new RegExp('a\\x')
+new RegExp('a\\u12')
+new RegExp('a\\u')
+new RegExp('a\\u123')
+
+# row 7: nextrune() identity escape -- "invalid escape character"
+new RegExp('\\q')
+new RegExp('\\_')
+new RegExp('\\E')
+new RegExp('\\y')
+
+# rows 8/9: lexcount() -- "numeric overflow" (REPINF = 255)
+new RegExp('a{255}')
+new RegExp('a{300}')
+new RegExp('a{1,255}')
+new RegExp('a{1,999}')
+
+# row 10: newcclass() -- "too many character classes" (REG_MAXCLASS = 128)
+new RegExp(new Array(130).join('[a]'))
+
+# row 11: addrange() -- "invalid character class range"
+new RegExp('[z-a]')
+new RegExp('[9-0]')
+new RegExp('[b-a]')
+new RegExp('[\\x41-\\x30]')
+
+# row 12: addrange() -- "too many character class ranges" (REG_MAXSPAN/2 = 32)
+var s = ''; for (var i = 0; i < 40; i++) s += String.fromCharCode(0x100 + i * 2); new RegExp('[' + s + ']')
+
+# row 13: lexclass() -- "unterminated character class"
+new RegExp('[abc')
+new RegExp('[')
+new RegExp('[^abc')
+new RegExp('a[b-')
+
+# row 14: newrep() -- "infinite loop matching the empty string"
+new RegExp('(?:)*')
+new RegExp('(a*)*')
+new RegExp('(?:a?)*')
+new RegExp('()*')
+new RegExp('(?:){2,}')
+new RegExp('(a?)+')
+
+# row 15: parseatom() -- "invalid back-reference"
+new RegExp('\\1')
+new RegExp('(a)\\2')
+new RegExp('\\1(a)')
+new RegExp('(a)(b)\\3')
+
+# row 16: parseatom() -- "too many captures" (REG_MAXSUB = 16)
+new RegExp(new Array(18).join('(a)'))
+
+# rows 17/18/19/20: parseatom() -- "unmatched '('"
+new RegExp('(a')
+new RegExp('((a)')
+new RegExp('(?:a')
+new RegExp('(?=a')
+new RegExp('(?!a')
+new RegExp('(')
+
+# row 21: parseatom() -- "syntax error" (no valid atom at this token)
+new RegExp('*')
+new RegExp('+')
+new RegExp('?')
+new RegExp('{1}')
+new RegExp('|*')
+new RegExp('a|?')
+
+# rows 23/24/26/30: "program too large" / "stack overflow" (REG_MAXPROG, REG_MAXREC)
+new RegExp(new Array(5001).join('(?:') + new Array(5001).join(')'))
+new RegExp('(?:' + new Array(200).join('a') + '){200}')
+new RegExp(new Array(20000).join('a'))
+new RegExp(new Array(9000).join('ab'))
+
+# row 28: js_regcompx -- "unmatched ')'"
+new RegExp('a)')
+new RegExp(')')
+new RegExp('a|)')
+new RegExp('(a))')
+
+# ===========================================================================
+# rows 327-331: jsB_new_RegExp argument / flag validation
+# ===========================================================================
+new RegExp(/a/, 'g')
+new RegExp(/a/g, 'i')
+new RegExp(/a/, '')
+new RegExp(/a/im, 'm')
+new RegExp('a', 'y')
+new RegExp('a', 'x')
+new RegExp('a', 'G')
+new RegExp('a', 'I')
+new RegExp('a', 'M')
+new RegExp('a', 'gim ')
+new RegExp('a', 'gg')
+new RegExp('a', 'ii')
+new RegExp('a', 'mm')
+new RegExp('a', 'gimg')
+
+# ===========================================================================
+# rows 321/324/333: js_regexec returns -1 (REG_MAXREC = 4096) -- "regexec failed"
+# ===========================================================================
+var s = ''; for (var i = 0; i < 5000; i++) s += 'a'; /(a)*b/.exec(s)
+var s = ''; for (var i = 0; i < 5000; i++) s += 'a'; /(a)*b/.test(s)
+var s = ''; for (var i = 0; i < 5000; i++) s += 'a'; s.match(/(a)*b/)
+var s = ''; for (var i = 0; i < 5000; i++) s += 'a'; s.replace(/(a)*b/, 'x')
+var s = ''; for (var i = 0; i < 5000; i++) s += 'a'; s.search(/(a)*b/)
+var s = ''; for (var i = 0; i < 5000; i++) s += 'a'; s.split(/(a)*b/)
+var s = ''; for (var i = 0; i < 6000; i++) s += 'a'; /a*b/.test(s)
+var s = ''; for (var i = 0; i < 6000; i++) s += 'a'; /(a|b)*c/.test(s)
+
+# row 326: js_toregexp -- TypeError "not a regexp"
+RegExp.prototype.exec.call({}, 'x')
+RegExp.prototype.test.call({}, 'x')
+RegExp.prototype.toString.call({})
+RegExp.prototype.exec.call('a', 'x')
+RegExp.prototype.test.call(1, 'x')
+RegExp.prototype.toString.call([])
+RegExp.prototype.exec.call(null, 'x')
+RegExp.prototype.exec.call(undefined, 'x')
+
+# ===========================================================================
+# rows 335/336: String.prototype `this` checks
+# ===========================================================================
+String.prototype.charAt.call(null, 0)
+String.prototype.toUpperCase.call(undefined)
+String.prototype.indexOf.call(null, 'a')
+String.prototype.slice.call(undefined, 0)
+String.prototype.split.call(null, ',')
+String.prototype.replace.call(undefined, 'a', 'b')
+String.prototype.charCodeAt.call(null, 0)
+String.prototype.concat.call(null, 'x')
+String.prototype.toString.call({})
+String.prototype.valueOf.call(1)
+String.prototype.toString.call(1)
+String.prototype.valueOf.call([])
+
+# rows 337/338/342/443: JS_STRLIMIT (1<<28) -- RangeError "invalid string length"
+var s = 'x'; for (var i = 0; i < 28; i++) s = s.concat(s)
+var s = 'x'; for (var i = 0; i < 27; i++) s = s + s; [s, s].join(s)
+
+# ===========================================================================
+# rows 344-357: Array.prototype
+# ===========================================================================
+[1, 2].sort(1)
+[1, 2].sort('x')
+[1, 2].sort({})
+[1, 2].sort(null)
+Array.prototype.toString.call(null)
+Array.prototype.toString.call(undefined)
+[].every(1)
+[].some(1)
+[].forEach(1)
+[].map(1)
+[].filter(1)
+[].reduce(1)
+[].reduceRight(1)
+[].every('x')
+[1].map(null)
+[1].filter({})
+[1].forEach(undefined)
+[1].some([])
+[].reduce(function (a, b) { return a })
+[].reduceRight(function (a, b) { return a })
+new Array(5).reduce(function (a, b) { return a })
+new Array(5).reduceRight(function (a, b) { return a })
+[, , ,].reduce(function (a, b) { return a })
+[, , ,].reduceRight(function (a, b) { return a })
+Array.prototype.join.call(null, ',')
+Array.prototype.join.call(undefined)
+
+# ===========================================================================
+# rows 358-375: Object.* argument type checks -- TypeError "not an object"
+# ===========================================================================
+Object.getPrototypeOf(1)
+Object.getPrototypeOf(null)
+Object.getPrototypeOf(undefined)
+Object.getPrototypeOf('x')
+Object.getOwnPropertyDescriptor(1, 'x')
+Object.getOwnPropertyDescriptor(null, 'x')
+Object.getOwnPropertyNames(1)
+Object.getOwnPropertyNames(null)
+Object.keys(1)
+Object.keys(null)
+Object.keys(undefined)
+Object.preventExtensions(1)
+Object.preventExtensions(null)
+Object.isExtensible(1)
+Object.isExtensible(null)
+Object.seal(1)
+Object.seal('x')
+Object.isSealed(1)
+Object.isSealed(null)
+Object.freeze(1)
+Object.freeze(undefined)
+Object.isFrozen(1)
+Object.isFrozen(null)
+
+# row 368: O_create -- TypeError "not an object or null"
+Object.create(1)
+Object.create('x')
+Object.create(undefined)
+Object.create(true)
+
+# rows 363/364/366/367: O_defineProperty / O_defineProperties targets
+Object.defineProperty(1, 'x', {})
+Object.defineProperty(null, 'x', {})
+Object.defineProperty('x', 'y', {})
+Object.defineProperty({}, 'x', 1)
+Object.defineProperty({}, 'x', null)
+Object.defineProperty({}, 'x', 'v')
+Object.defineProperties({}, 1)
+Object.defineProperties({}, null)
+Object.defineProperties(1, {})
+Object.defineProperties(null, {})
+
+# row 365: O_defineProperties_walk -- a descriptor slot that is not an object
+Object.defineProperties({}, {a: 1})
+Object.defineProperties({}, {a: 'x'})
+Object.defineProperties({}, {a: {value: 1}, b: 2})
+
+# rows 361/362: ToPropertyDescriptor -- "value/writable and get/set attributes are exclusive"
+Object.defineProperty({}, 'x', {value: 1, get: function () {}})
+Object.defineProperty({}, 'x', {value: 1, set: function (v) {}})
+Object.defineProperty({}, 'x', {writable: true, get: function () {}})
+Object.defineProperty({}, 'x', {writable: false, set: function (v) {}})
+Object.defineProperty({}, 'x', {get: function () {}, writable: true})
+Object.defineProperty({}, 'x', {set: function (v) {}, value: 1})
+
+# row 157 (via js_defaccessor): TypeError "not a function"
+Object.defineProperty({}, 'x', {get: 1})
+Object.defineProperty({}, 'x', {set: 1})
+Object.defineProperty({}, 'x', {get: 'f'})
+Object.defineProperty({}, 'x', {set: {}})
+Object.defineProperty({}, 'x', {get: []})
+
+# row 376: Ep_toString -- TypeError "not an object"
+Error.prototype.toString.call(1)
+Error.prototype.toString.call('x')
+Error.prototype.toString.call(null)
+Error.prototype.toString.call(true)
+
+# ===========================================================================
+# rows 380/381: Boolean.prototype -- TypeError "not a boolean"
+# ===========================================================================
+Boolean.prototype.toString.call({})
+Boolean.prototype.valueOf.call(1)
+Boolean.prototype.toString.call('x')
+Boolean.prototype.valueOf.call([])
+
+# ===========================================================================
+# rows 382-393: Number.prototype
+# ===========================================================================
+Number.prototype.valueOf.call('x')
+Number.prototype.toString.call({})
+Number.prototype.toString.call('5')
+Number.prototype.toString.call(true)
+Number.prototype.toFixed.call('x', 2)
+Number.prototype.toExponential.call({}, 2)
+Number.prototype.toPrecision.call([], 2)
+Number.prototype.valueOf.call(undefined)
+Number.prototype.toPrecision.call(null, 2)
+(5).toString(1)
+(5).toString(0)
+(5).toString(37)
+(5).toString(-1)
+(5).toString(NaN)
+(5).toString(1.9)
+(5).toFixed(-1)
+(5).toFixed(21)
+(5).toFixed(100)
+(5).toFixed(-100)
+(5).toExponential(-1)
+(5).toExponential(21)
+(5).toExponential(-5)
+(5).toPrecision(0)
+(5).toPrecision(22)
+(5).toPrecision(-1)
+
+# ===========================================================================
+# rows 395-398: Date.prototype
+# ===========================================================================
+Date.prototype.getTime.call({})
+Date.prototype.getFullYear.call(1)
+Date.prototype.getUTCFullYear.call('x')
+Date.prototype.getMonth.call([])
+Date.prototype.getDay.call({})
+Date.prototype.getTimezoneOffset.call({})
+Date.prototype.toString.call({})
+Date.prototype.toDateString.call({})
+Date.prototype.toTimeString.call({})
+Date.prototype.toUTCString.call({})
+Date.prototype.toISOString.call({})
+Date.prototype.valueOf.call([])
+Date.prototype.setTime.call({}, 0)
+Date.prototype.setFullYear.call('x', 2000)
+Date.prototype.setMonth.call({}, 1)
+Date.prototype.setUTCHours.call(1, 0)
+Date.prototype.setMilliseconds.call(null, 0)
+new Date(NaN).toISOString()
+new Date(8.64e15 + 1).toISOString()
+new Date(-8.64e15 - 1).toISOString()
+new Date('not a date').toISOString()
+new Date(Infinity).toISOString()
+Date.prototype.toJSON.call({toISOString: 1})
+Date.prototype.toJSON.call({})
+Date.prototype.toJSON.call({toISOString: 'x'})
+
+# ===========================================================================
+# rows 419/420/423/424: Function.prototype -- TypeError "not a function"
+# ===========================================================================
+Function.prototype.toString.call({})
+Function.prototype.toString.call(1)
+Function.prototype.toString.call(null)
+Function.prototype.apply.call({}, null, [])
+Function.prototype.apply.call(1, null, [])
+Function.prototype.call.call({}, null)
+Function.prototype.call.call('x', null)
+Function.prototype.bind.call({})
+Function.prototype.bind.call(1, null)
+
+# row 426: jsB_Function -- the assembled source fails to parse
+new Function('1+')
+new Function('var 1x')
+new Function('a', 'b', 'return a+')
+new Function('}')
+Function('{')
+Function('return 1)')
+new Function('a', 'return', 'x')
+new Function('%', 'return 1')
+new Function('return /*')
+
+# ===========================================================================
+# rows 430/431: Decode (decodeURI / decodeURIComponent)
+# ===========================================================================
+decodeURI('%')
+decodeURI('%A')
+decodeURI('a%2')
+decodeURIComponent('%')
+decodeURIComponent('%F')
+decodeURIComponent('%ZZ')
+decodeURI('%GG')
+decodeURI('%zz')
+decodeURIComponent('%E0%A4%A')
+decodeURI('abc%')
+decodeURIComponent('%%20')
+decodeURI('%2G')
+
+# ===========================================================================
+# rows 433/434/435: JSON.parse -- one snippet per distinct json.c message
+# ===========================================================================
+JSON.parse('[1,2')
+JSON.parse('[1 2]')
+JSON.parse('{"a":1')
+JSON.parse('{"a"}')
+JSON.parse('{"a" 1}')
+JSON.parse('{1:2}')
+JSON.parse('{,}')
+JSON.parse('{true:1}')
+JSON.parse('')
+JSON.parse('   ')
+JSON.parse('}')
+JSON.parse(']')
+JSON.parse(':')
+JSON.parse(',')
+JSON.parse('[1,]')
+JSON.parse('{"a":}')
+JSON.parse('{"a":1,}')
+JSON.parse('[[1]')
+JSON.parse('[{]')
+JSON.parse('[}]')
+
+# rows 436/437: fmtobject / fmtarray -- TypeError "cyclic object value"
+var o = {}; o.self = o; JSON.stringify(o)
+var a = []; a.push(a); JSON.stringify(a)
+var a = {b: {}}; a.b.c = a; JSON.stringify(a)
+var a = []; a[3] = a; JSON.stringify(a)
+var o = {a: {b: {}}}; o.a.b.back = o.a; JSON.stringify(o)
+var a = [[]]; a[0].push(a[0]); JSON.stringify(a)
+var o = {}; o.x = [o]; JSON.stringify(o)
+var o = {}; o.self = o; JSON.stringify(o, null, 2)
+var o = {}; o.self = o; JSON.stringify({wrap: o})

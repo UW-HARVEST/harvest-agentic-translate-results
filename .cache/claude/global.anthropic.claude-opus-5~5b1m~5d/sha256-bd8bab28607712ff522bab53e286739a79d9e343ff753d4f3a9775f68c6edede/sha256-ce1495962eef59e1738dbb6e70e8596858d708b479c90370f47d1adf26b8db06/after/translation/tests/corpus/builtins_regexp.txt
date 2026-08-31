@@ -1,0 +1,344 @@
+# Phase B valid-path corpus -- RegExp construction, properties, exec/test and the
+# String.prototype methods that take a regexp, plus one snippet per pattern
+# construct that c_src/src/regexp.c actually implements.
+#
+# NOTHING HERE MAY THROW. The harness compares the stringified RESULT, so each
+# line ends in an expression whose value is informative (JSON.stringify or an
+# explicit String()/typeof where an array would flatten a hole to "").
+# The `typeof m[k]` probes record what THIS engine does for an unmatched optional
+# capture (mujs stores "", not `undefined`) -- the point is that C and Rust agree.
+#
+# NOTE: the harness rewrites backslash+n -> newline, so a pattern that needs a
+# literal backslash-n is built with String.fromCharCode(10) / new RegExp(...).
+
+# --- construction: literal, one-arg, two-arg, from another RegExp ---
+/abc/.source
+new RegExp('abc').source
+new RegExp('abc', 'g').source
+RegExp('abc').source
+RegExp('abc', 'i').source
+new RegExp(/abc/).source
+new RegExp(/abc/gim).source
+String(new RegExp(/abc/gim))
+new RegExp('').source
+new RegExp().source
+String(new RegExp(''))
+new RegExp('(?:)').source
+/(?:)/.source
+new RegExp('a').constructor === RegExp
+typeof /a/
+Object.prototype.toString.call(/a/)
+/a/ instanceof RegExp
+
+# --- all 8 combinations of g/i/m, via the literal form ---
+[/a/.global, /a/.ignoreCase, /a/.multiline].join(',')
+[/a/g.global, /a/g.ignoreCase, /a/g.multiline].join(',')
+[/a/i.global, /a/i.ignoreCase, /a/i.multiline].join(',')
+[/a/m.global, /a/m.ignoreCase, /a/m.multiline].join(',')
+[/a/gi.global, /a/gi.ignoreCase, /a/gi.multiline].join(',')
+[/a/gm.global, /a/gm.ignoreCase, /a/gm.multiline].join(',')
+[/a/im.global, /a/im.ignoreCase, /a/im.multiline].join(',')
+[/a/gim.global, /a/gim.ignoreCase, /a/gim.multiline].join(',')
+
+# --- all 8 combinations of g/i/m, via new RegExp(pattern, flags) ---
+var r = new RegExp('a', ''); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'g'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'i'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'm'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'gi'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'gm'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'im'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+var r = new RegExp('a', 'gim'); [r.source, r.global, r.ignoreCase, r.multiline].join('|')
+new RegExp('a', 'mig').toString()
+new RegExp('a', undefined).toString()
+
+# --- RegExp.prototype.toString ---
+/a/.toString()
+/a/gim.toString()
+/a\/b/.toString()
+/[/]/.toString()
+new RegExp('a/b').toString()
+RegExp.prototype.toString.call(/x/i)
+String(/a+b?/g)
+'' + /q/m
+
+# --- exec: null vs a match array (index, input, length, captures) ---
+/b/.exec('abc') === null
+String(/z/.exec('abc'))
+JSON.stringify(/b/.exec('abc'))
+var m = /b/.exec('abc'); [m[0], m.index, m.input, m.length].join('|')
+var m = /(b)(c)/.exec('abc'); [m[0], m[1], m[2], m.index, m.input, m.length].join('|')
+var m = /(a)|(b)/.exec('a'); [m[0], m[1], typeof m[2], m.index, m.length].join('|')
+var m = /(a)(x)?/.exec('a'); [m[0], m[1], typeof m[2], m.length].join('|')
+var m = /(a)(?:(b)|(c))/.exec('ac'); [m[0], m[1], typeof m[2], m[3], m.length].join('|')
+var m = /(z)?(a)/.exec('a'); [typeof m[1], m[2], m.length].join('|')
+var m = /a/.exec('xxax'); [m[0], m.index, m.input].join('|')
+var m = /^/.exec('abc'); [m[0].length, m.index, m.length].join('|')
+var m = /$/.exec('abc'); [m[0].length, m.index].join('|')
+var m = /()/.exec('abc'); [m[0].length, m[1].length, m.index, m.length].join('|')
+/a/.exec('')
+String(/(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)(m)(n)(o)/.exec('abcdefghijklmno'))
+var m = /(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)(m)(n)(o)/.exec('abcdefghijklmno'); m.length
+var m = /(a+)(b+)?/.exec('aaa'); [m[0], m[1], typeof m[2]].join('|')
+Object.prototype.toString.call(/a/.exec('a'))
+/a/.exec('a') instanceof Array
+
+# --- RegExp.prototype.test ---
+/a/.test('abc')
+/z/.test('abc')
+/a/.test('')
+/^$/.test('')
+/A/i.test('a')
+/A/.test('a')
+/a/g.test('aa')
+RegExp.prototype.test.call(/b/, 'abc')
+/1/.test(1)
+/true/.test(true)
+/undefined/.test(undefined)
+/null/.test(null)
+
+# --- lastIndex bookkeeping: without /g it must stay 0 ---
+var r = /a/; [r.lastIndex, r.exec('aaa') && 1, r.lastIndex].join('|')
+var r = /a/; r.exec('aaa'); r.exec('aaa'); r.lastIndex
+var r = /a/; r.test('aaa'); r.test('aaa'); r.lastIndex
+var r = /a/; r.lastIndex = 2; [r.exec('aaa').index, r.lastIndex].join('|')
+
+# --- lastIndex bookkeeping: with /g it advances and then resets ---
+var r = /a/g; var out = []; out.push(r.lastIndex); out.push(r.exec('aaa')[0]); out.push(r.lastIndex); out.join('|')
+var r = /a/g; var out = []; for (var i = 0; i < 5; i++) { var m = r.exec('aaa'); out.push(m ? m.index : 'null'); out.push(r.lastIndex) } out.join('|')
+var r = /a/g; var out = []; for (var i = 0; i < 5; i++) { out.push(r.test('aa')); out.push(r.lastIndex) } out.join('|')
+var r = /(a)(b)/g; var out = []; var m; while ((m = r.exec('abab')) !== null) out.push(m.index + ':' + m[0] + ':' + r.lastIndex); out.join('|')
+var r = /a*/g; var out = []; for (var i = 0; i < 4; i++) { var m = r.exec('aab'); out.push((m ? m[0].length : 'null') + '@' + r.lastIndex) } out.join('|')
+
+# --- lastIndex set by hand: past the end, negative, fractional ---
+var r = /a/g; r.lastIndex = 100; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = 3; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = 4; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = -1; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = -100; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = 1.5; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = 0.5; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = NaN; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = '2'; [String(r.exec('aaa')), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = 100; [r.test('aaa'), r.lastIndex].join('|')
+var r = /a/g; r.lastIndex = 1; [r.test('aaa'), r.lastIndex].join('|')
+
+# --- the property set itself ---
+var r = /ab+c/gim; [r.source, r.global, r.ignoreCase, r.multiline, r.lastIndex].join('|')
+Object.getOwnPropertyNames(/a/).sort().join(',')
+typeof /a/.lastIndex
+typeof /a/.source
+typeof /a/.global
+'source' in /a/
+'lastIndex' in /a/
+'exec' in /a/
+RegExp.prototype.source
+RegExp.prototype.global
+
+# --- String.prototype.match ---
+'abc'.match(/b/) && 'abc'.match(/b/)[0]
+JSON.stringify('abc'.match(/b/))
+String('abc'.match(/z/))
+'aXbXc'.match(/X/g).join(',')
+'abc'.match(/(a)(b)/).join(',')
+'aaa'.match(/a/g).length
+'abc'.match(/z/g) === null
+'abc'.match('b')[0]
+'a1b2'.match(/\d/g).join(',')
+var m = 'abc'.match(/(b)/); [m[0], m[1], m.index, m.input].join('|')
+'aaa'.match(/a/gi).join(',')
+
+# --- String.prototype.replace ---
+'abc'.replace(/b/, 'X')
+'abc'.replace(/z/, 'X')
+'aXbXc'.replace(/X/g, '-')
+'abc'.replace(/(a)(b)/, '$2$1')
+'abc'.replace(/b/, '$&$&')
+'abc'.replace(/b/, "[$`]")
+'abc'.replace(/b/, "[$']")
+'abc'.replace(/b/, '$$')
+'abc'.replace(/b/, function (m) { return m.toUpperCase() })
+'abc'.replace(/(b)/, function (m, p1, off, s) { return [m, p1, off, s].join(':') })
+'aaa'.replace(/a/g, function (m, off) { return off })
+'abc'.replace('b', 'X')
+'a-b-c'.replace(/-/g, '')
+'abc'.replace(/(a)(x)?(c)?/, function (m, p1, p2, p3) { return [m, p1, typeof p2, typeof p3].join(':') })
+
+# --- String.prototype.search ---
+'abc'.search(/b/)
+'abc'.search(/z/)
+'abc'.search(/a/)
+'abc'.search(/c/)
+'abc'.search('b')
+'aXbXc'.search(/X/g)
+''.search(/a/)
+''.search(/(?:)/)
+
+# --- String.prototype.split with a regexp ---
+'a1b2c'.split(/\d/).join('|')
+'a1b2c'.split(/(\d)/).join('|')
+'abc'.split(/z/).join('|')
+'abc'.split(/(?:)/).join('|')
+'a,b,,c'.split(/,/).join('|')
+'a1b2c'.split(/\d/, 2).join('|')
+'a1b2c'.split(/\d/, 0).length
+'abc'.split(/b/).length
+JSON.stringify('a1b'.split(/(\d)/))
+JSON.stringify('ab'.split(/(z)?/))
+
+# ===========================================================================
+# one snippet per pattern construct in c_src/src/regexp.c
+# ===========================================================================
+
+# P_ANY: '.' (does not match a newline unless /m ... in this engine ANY vs ANYNL)
+/a.c/.test('abc')
+/a.c/.test('a c')
+String(/./.exec('x'))
+/./.test(String.fromCharCode(10))
+new RegExp('a.c').test('a' + String.fromCharCode(10) + 'c')
+
+# character classes, negated classes, ranges
+/[abc]/.test('b')
+/[abc]/.test('d')
+/[^abc]/.test('d')
+/[^abc]/.test('a')
+/[a-z]/.test('q')
+/[a-z]/.test('Q')
+/[A-Za-z0-9_]+/.exec('__ab12__')[0]
+/[0-9]{3}/.exec('x123y')[0]
+/[-a]/.test('-')
+/[a-]/.test('-')
+/[]]/.test(']')
+/[\]]/.test(']')
+/[\d]/.test('5')
+/[\w\s]+/.exec('a b')[0]
+/[^\d]/.exec('a1')[0]
+/[\x41-\x43]/.exec('B')[0]
+/[A-C]/.exec('C')[0]
+
+# anchors and word boundaries: ^ $ \b \B
+/^abc$/.test('abc')
+/^b/.test('abc')
+/c$/.test('abc')
+/^a/m.test('x' + String.fromCharCode(10) + 'abc')
+new RegExp('^a', 'm').test('x' + String.fromCharCode(10) + 'a')
+new RegExp('c$', 'm').test('c' + String.fromCharCode(10) + 'x')
+/\bfoo\b/.test('a foo b')
+/\bfoo\b/.test('afoob')
+/\Boo\B/.test('foobar')
+/\Bfoo/.test('a foo')
+/^$/.test('')
+
+# escape classes: \d \D \w \W \s \S
+/\d+/.exec('ab123cd')[0]
+/\D+/.exec('123abc456')[0]
+/\w+/.exec(' abc_1 ')[0]
+/\W+/.exec('ab..cd')[0]
+/\s+/.exec('a  b')[0].length
+/\S+/.exec('  abc  ')[0]
+/\d\D\w\W\s\S/.test('1a a a1')
+
+# numeric / control escapes: \xHH \uHHHH \cX and the fixed ones
+/\x41/.test('A')
+/\x41\x42/.exec('xABy')[0]
+/A/.test('A')
+/é/.test('é')
+/\cA/.test(String.fromCharCode(1))
+/\cJ/.test(String.fromCharCode(10))
+/\cZ/.test(String.fromCharCode(26))
+# a RAW tab inside the literal (the harness turns backslash+t into a real tab)
+/a	b/.test('a' + String.fromCharCode(9) + 'b')
+# the actual two-character escapes, assembled so the backslash survives
+new RegExp('a' + String.fromCharCode(92) + 'nb').test('a' + String.fromCharCode(10) + 'b')
+new RegExp('a' + String.fromCharCode(92) + 'tb').test('a' + String.fromCharCode(9) + 'b')
+new RegExp('[' + String.fromCharCode(92) + 'n]').test(String.fromCharCode(10))
+new RegExp('a' + String.fromCharCode(10) + 'b').test('a' + String.fromCharCode(10) + 'b')
+new RegExp('a\\rb').test('a' + String.fromCharCode(13) + 'b')
+new RegExp('a\\fb').test('a' + String.fromCharCode(12) + 'b')
+new RegExp('a\\vb').test('a' + String.fromCharCode(11) + 'b')
+/a\.b/.test('a.b')
+/a\.b/.test('axb')
+/\$/.test('$')
+/\*\+\?/.test('*+?')
+/\(\)\[\]\{\}\|/.test('()[]{}|')
+/\0/.test(String.fromCharCode(0))
+
+# back-references
+/(a)\1/.test('aa')
+/(a)\1/.test('ab')
+/(a)(b)\2\1/.exec('abba')[0]
+/(ab)+\1/.exec('ababab')[0]
+new RegExp('(a)(b)(c)\\3\\2\\1').exec('abccba')[0]
+/(A)\1/i.test('aA')
+
+# alternation, capturing and non-capturing groups, nesting
+/a|b/.exec('b')[0]
+/^(a|b)+$/.test('abba')
+/(?:ab)+/.exec('ababx')[0]
+var m = /(?:a)(b)/.exec('ab'); [m[0], m[1], m.length].join('|')
+var m = /((a)(b))/.exec('ab'); [m[0], m[1], m[2], m[3], m.length].join('|')
+/((a|b)(c|d))/.exec('bd')[0]
+/(a(b(c(d))))/.exec('abcd')[4]
+/x|y|z/g.exec('aybz')[0]
+/(|a)/.exec('a')[0].length
+/^(?:a|(b))c$/.exec('bc')[1]
+
+# lookahead: positive (?=...) and negative (?!...)
+/a(?=b)/.test('ab')
+/a(?=b)/.test('ac')
+/a(?=b)/.exec('ab')[0]
+/a(?!b)/.test('ac')
+/a(?!b)/.test('ab')
+/^(?=.*a)(?=.*b).*$/.test('ba')
+/^(?!.*z).*$/.test('abc')
+/(?=(a))a/.exec('a')[1]
+/a(?=(b))/.exec('ab')[1]
+/(?!x)./.exec('xy')[0]
+
+# quantifiers: greedy
+/a*/.exec('aaab')[0]
+/a+/.exec('aaab')[0]
+/a?/.exec('aaab')[0]
+/a{2}/.exec('aaa')[0]
+/a{2,}/.exec('aaaa')[0]
+/a{2,3}/.exec('aaaaa')[0]
+/^a{0,}$/.test('')
+/<.+>/.exec('<a><b>')[0]
+
+# quantifiers: lazy
+/a*?/.exec('aaab')[0].length
+/a+?/.exec('aaab')[0]
+/a??/.exec('aaab')[0].length
+/a{2,3}?/.exec('aaaaa')[0]
+/a{2,}?/.exec('aaaa')[0]
+/<.+?>/.exec('<a><b>')[0]
+/^(a+?)(a*)$/.exec('aaa').slice(1).join('|')
+
+# nesting of quantified groups
+/(?:a+b)+/.exec('abaabx')[0]
+/^(?:(?:a|b)+c)+$/.test('abcbac')
+/((a)+)+b/.exec('aaab')[0]
+/(?:(a)(b))+/.exec('abab').join('|')
+/^(?:a{1,2}){2,3}$/.test('aaaa')
+new RegExp('(?:' + new Array(30).join('a?') + ')b').test('b')
+
+# /i case-insensitivity across constructs
+/abc/i.exec('xABCy')[0]
+/[a-z]+/i.exec('ABC')[0]
+/(a)\1/i.exec('Aa')[0]
+new RegExp('\\u00c9', 'i').test('é')
+/^ABC$/i.test('abc')
+
+# /m multiline across constructs
+new RegExp('^b$', 'm').test('a' + String.fromCharCode(10) + 'b' + String.fromCharCode(10) + 'c')
+new RegExp('^\\w+$', 'gm').test('ab' + String.fromCharCode(10) + 'cd')
+('a' + String.fromCharCode(10) + 'b').match(new RegExp('^.', 'gm')).join(',')
+('a' + String.fromCharCode(10) + 'b').split(new RegExp(String.fromCharCode(10))).join('|')
+
+# /g across the String methods
+'aaa'.replace(/a/g, 'b')
+'a1b2c3'.match(/\d/g).join('')
+'a1b2c3'.split(/\d/g).join('|')
+'aaa'.search(/a/g)
+var r = /a/g; 'aaa'.match(r); r.lastIndex
+var r = /a/g; 'aaa'.replace(r, 'x'); r.lastIndex

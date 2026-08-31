@@ -1,0 +1,306 @@
+# Phase C error corpus -- runtime / interpreter / property machinery.
+# ERRORS.md sections 7-11 (jsrun.c, jsvalue.c, jsproperty.c), rows 132-250.
+# Every snippet MUST error in the C build in at least one of flags=0 /
+# flags=JS_STRICT. Many of these are strict-only (the loose mode silently
+# ignores the violation), which is exactly the difference being compared.
+# No try/catch: the bare failing construct is the test.
+#
+# NOT REACHABLE FROM PURE JS (covered by the in-engine C-API probe tests instead):
+#   row 138 "stack underflow!"        -- js_pop past the frame base
+#   row 140/141 "stack error!"        -- js_remove / js_replace bad index
+#   row 142 "not implemented yet"     -- js_insert is unconditionally an error
+#   row 155/156 "not a %s"            -- js_touserdata; no userdata from script
+#   rows 180-183 "out of memory"      -- needs js_setlimit(memlimit)
+#   row 184 "script ran too long"     -- needs js_setlimit(runlimit)
+#   row 178 "endtry: exception stack underflow" -- unbalanced js_endtry
+#   row 240 "not an iterator"         -- js_nextiterator on a non-iterator
+#   row 215 "array too large" via jsR_setarrayindex -- would need a *flat* array
+#           of 2^26 elements (1 GiB) first; the sparse path is taken instead, so
+#           only the "length" route (row 220) is testable here.
+#   row 222 "cannot create property '%s' on transient object" -- the bytecode
+#           SETPROP path leaves `transient` clear, so `'abc'.foo = 1` is a silent
+#           no-op in BOTH modes rather than a strict-mode TypeError.
+#   row 236 js_delvar non-configurable -- `delete <name>` is already a *compile*
+#           error in strict mode (row 306), so the runtime check is unreachable.
+#   row 250 js_setlength negative -- Array.prototype.push/pop clamp before the set.
+
+# --- row 158: jsV_toobject -- TypeError "cannot convert undefined to object" ---
+undefined.foo
+undefined[0]
+undefined.x = 1
+var a; a.b
+var a; a.b = 1
+var o = {}; o.a.b
+(void 0).x
+(function () {})().x
+undefined.length
+[][0].x
+({}).missing.deeper
+delete undefined.x
+for (var k in undefined.x) ;
+
+# --- row 159: jsV_toobject -- TypeError "cannot convert null to object" ---
+null.foo
+null[0]
+null.x = 1
+var a = null; a.b
+var a = null; a.b = 1
+null.length
+delete null.x
+var o = {a: null}; o.a.b
+
+# --- rows 160/161: jsV_toprimitive -- "cannot convert object to primitive" (STRICT) ---
+var o = {toString: null, valueOf: null}; o + ''
+var o = {toString: null, valueOf: null}; String(o)
+var o = {toString: null, valueOf: null}; o * 1
+var o = {toString: null, valueOf: null}; '' + o
+Object.create(null) + ''
+String(Object.create(null))
+var o = {toString: {}, valueOf: {}}; o + 1
+var o = {toString: function () { return {} }, valueOf: function () { return {} }}; o + 1
+
+# --- row 162: js_instanceof -- TypeError "instanceof: invalid operand" ---
+1 instanceof {}
+'a' instanceof 'b'
+({}) instanceof 1
+({}) instanceof null
+({}) instanceof undefined
+({}) instanceof {}
+({}) instanceof []
+1 instanceof 1
+
+# --- row 163: js_instanceof -- "instanceof: 'prototype' property is not an object" ---
+var f = function () {}; f.prototype = 1; ({}) instanceof f
+var f = function () {}; f.prototype = 'x'; ({}) instanceof f
+var f = function () {}; f.prototype = null; ({}) instanceof f
+var f = function () {}; f.prototype = undefined; [] instanceof f
+var f = function () {}; f.prototype = true; (function () {}) instanceof f
+
+# --- rows 170/171: js_call -- TypeError "%s is not callable" ---
+undefined()
+null()
+(1)()
+'a'()
+true()
+({})()
+[]()
+var o = {}; o.f()
+var o = {f: 1}; o.f()
+Math()
+Math.PI()
+JSON()
+(void 0)()
+[1, 2].missing()
+'abc'.missing()
+
+# --- row 172: js_construct -- TypeError "%s is not callable" ---
+new 1
+new 'a'
+new true
+new null
+new undefined
+new ({})
+new []
+new Math.PI
+new JSON
+var o = {}; new o.f()
+
+# --- rows 174/175: deep recursion -- "call stack overflow" vs literal "stack overflow" ---
+# jsR_pushtrace hits JS_ENVLIMIT first for a plain tail call ...
+function f() { return f() }\nf()
+function f() { f() }\nf()
+function f(a) { return f(a + 1) }\nf(0)
+var f = function () { return f() }; f()
+function f() { return [f()] }\nf()
+function f() { return f() + f() }\nf()
+function f() { return f.call(null) }\nf()
+function f() { return f.apply(null, []) }\nf()
+var o = {get x() { return this.x }}; o.x
+var o = {}; Object.defineProperty(o, 'x', {get: function () { return o.x }}); o.x
+# ... while jsR_savescope hits JS_ENVLIMIT via a non-lightweight frame first.
+function f() { var o = {a: f()}; return o }\nf()
+var o = {set x(v) { this.x = v }}; o.x = 1
+function f() { var g = function () {}; return f() }\nf()
+
+# --- rows 176/177/194: js_savetry / js_savetrypc -- "exception stack overflow" (JS_TRYLIMIT 64) ---
+function f(n) { if (n <= 0) return 0; try { return f(n - 1) } catch (e) { throw e } }\nf(200)
+function f() { try { f() } catch (e) { throw e } }\nf()
+function f() { try { return f() } finally { 1 } }\nf()
+
+# --- rows 190/191: OP_GETLOCAL / OP_GETVAR -- ReferenceError "'%s' is not defined" ---
+zzzUndefinedVariable
+zzzUndefinedVariable + 1
+zzzUndefinedVariable()
+zzzUndefinedVariable.x
+-zzzUndefinedVariable
+zzzUndefinedVariable ? 1 : 2
+function f() { return zzzInner }\nf()
+var a = [zzzUndefinedVariable]
+({a: zzzUndefinedVariable})
+zzzUndefinedVariable = zzzOther
+for (var i = 0; i < zzzLimit; i++) ;
+
+# --- row 192: OP_IN -- TypeError "operand to 'in' is not an object" ---
+'a' in 'abc'
+1 in 1
+'x' in null
+'x' in undefined
+0 in 'abc'
+'length' in 'abc'
+'x' in true
+'x' in 1.5
+
+# --- row 193: OP_THROW -- the value on top of the stack is thrown as-is ---
+throw 1
+throw 0
+throw -1.5
+throw 'str'
+throw ''
+throw null
+throw undefined
+throw true
+throw false
+throw new Error('boom')
+throw new TypeError('tp')
+throw new RangeError('rg')
+throw new SyntaxError('sx')
+throw new ReferenceError('rf')
+throw new EvalError('ev')
+throw new URIError('ur')
+throw {a: 1}
+throw []
+throw [1, 2, 3]
+throw function () {}
+throw /re/g
+throw new Error()
+if (1) throw 1
+while (1) throw 1
+for (;;) throw 1
+switch (1) { case 1: throw 1 }
+throw (1, 2)
+
+# --- row 219: jsR_setproperty on array "length" -- RangeError "invalid array length" ---
+var a = []; a.length = -1
+var a = []; a.length = 1.5
+var a = []; a.length = NaN
+var a = []; a.length = Infinity
+var a = []; a.length = -Infinity
+var a = [1, 2, 3]; a.length = -1
+var a = [1, 2, 3]; a.length = 0.5
+var a = []; a.length = '-1'
+var a = []; a.length = {}
+new Array(-1)
+new Array(1.5)
+new Array(NaN)
+new Array(-0.5)
+new Array(4294967296)
+new Array(Infinity)
+
+# --- row 220: jsR_setproperty on array "length" -- RangeError "array too large" ---
+var a = []; a.length = 67108865
+var a = []; a.length = 70000000
+var a = []; a.push(1); a.length = 67108865
+var a = []; a.unshift(1); a.length = 1e9
+new Array(67108865)
+
+# --- row 221: jsR_setproperty -- "setting property '%s' that only has a getter" (STRICT) ---
+var o = {get x() { return 1 }}; o.x = 2
+var o = {get x() { return 1 }}; o.x += 1
+var o = {get x() { return 1 }}; o.x++
+var o = {}; Object.defineProperty(o, 'g', {get: function () { return 1 }}); o.g = 2
+var o = {get 0() { return 1 }}; o[0] = 2
+
+# --- rows 223/227: JS_READONLY property assignment -- "'%s' is read-only" (STRICT) ---
+var o = {}; Object.defineProperty(o, 'a', {value: 1}); o.a = 2
+var o = {}; Object.defineProperty(o, 'a', {value: 1, writable: false}); o.a = 2
+var o = Object.freeze({a: 1}); o.a = 2
+var o = Object.freeze([1]); o[0] = 2
+var o = {}; Object.defineProperty(o, 'a', {value: 1}); Object.defineProperty(o, 'a', {value: 2})
+Object.defineProperty(Object.freeze({a: 1}), 'a', {value: 2})
+
+# --- row 224: JS_CSTRING objects -- "length"/index are read-only (STRICT) ---
+var s = new String('abc'); s.length = 5
+var s = new String('abc'); s[0] = 'z'
+var s = new String('abc'); s[2] = 'z'
+'abc'.length = 9
+var s = new String(''); s.length = 1
+
+# --- row 225: JS_CREGEXP objects -- source/global/ignoreCase/multiline read-only (STRICT) ---
+var r = /a/; r.source = 'b'
+var r = /a/; r.global = true
+var r = /a/; r.ignoreCase = true
+var r = /a/; r.multiline = true
+var r = /a/gim; r.source = ''
+
+# --- rows 228/229: jsR_defproperty -- "'%s' is non-configurable" (STRICT) ---
+var o = {}; Object.defineProperty(o, 'a', {value: 1}); Object.defineProperty(o, 'a', {get: function () {}})
+var o = {}; Object.defineProperty(o, 'a', {value: 1}); Object.defineProperty(o, 'a', {set: function (v) {}})
+var o = {}; Object.defineProperty(o, 'a', {value: 1, configurable: false}); Object.defineProperty(o, 'a', {get: function () {}})
+var o = Object.freeze({a: 1}); Object.defineProperty(o, 'a', {get: function () {}})
+
+# --- row 230: readonly: label with throw==1 -- "'%s' is read-only or non-configurable" ---
+Object.defineProperty([], 'length', {value: 1})
+Object.defineProperty([1, 2], 'length', {value: 1})
+Object.defineProperty(/a/, 'source', {value: 'b'})
+Object.defineProperty(/a/, 'global', {value: true})
+Object.defineProperty(/a/, 'ignoreCase', {value: true})
+Object.defineProperty(/a/, 'multiline', {value: true})
+Object.defineProperty(/a/, 'lastIndex', {value: 3})
+Object.defineProperty(new String('a'), 'length', {value: 2})
+Object.defineProperty(new String('ab'), '0', {value: 'z'})
+
+# --- row 231: jsR_delproperty -- "'%s' is non-configurable" (STRICT) ---
+var a = []; delete a.length
+var a = [1, 2]; delete a.length
+var r = /a/; delete r.source
+var r = /a/; delete r.global
+var r = /a/; delete r.lastIndex
+var s = new String('ab'); delete s[0]
+var s = new String('ab'); delete s.length
+var o = {}; Object.defineProperty(o, 'a', {value: 1}); delete o.a
+delete Object.prototype
+delete Math.PI
+
+# --- row 233: js_setvar -- "'%s' is read-only" (STRICT) ---
+undefined = 1
+NaN = 1
+Infinity = 1
+undefined += 1
+NaN++
+
+# --- row 234: js_setvar -- ReferenceError "assignment to undeclared variable '%s'" (STRICT) ---
+zzzUndeclared = 1
+zzzUndeclared = zzzUndeclared2 = 1
+function f() { zzzInnerUndeclared = 1 }\nf()
+for (zzzLoopVar = 0; zzzLoopVar < 1; zzzLoopVar++) ;
+var o = {}; o.f = function () { zzzDeep = 1 }; o.f()
+
+# --- row 238: jsV_setproperty -- TypeError "object is non-extensible" (STRICT) ---
+var o = Object.preventExtensions({}); o.x = 1
+var o = Object.seal({a: 1}); o.b = 2
+var o = Object.freeze({}); o.b = 2
+var o = Object.preventExtensions([]); o.x = 1
+var f = function () {}; Object.preventExtensions(f); f.zz = 1
+var f = function () {}; Object.freeze(f); f.zz = 1
+
+# --- getter / setter bodies that themselves throw (OP_THROW through an accessor) ---
+var o = {get x() { throw new Error('getter') }}; o.x
+var o = {set x(v) { throw new Error('setter') }}; o.x = 1
+var o = {}; Object.defineProperty(o, 'x', {get: function () { throw 1 }}); o.x
+var o = {}; Object.defineProperty(o, 'x', {set: function (v) { throw 2 }}); o.x = 1
+var o = {get x() { return null.q }}; o.x
+
+# --- row 157: jsR_tofunction (js_defaccessor arguments) -- TypeError "not a function" ---
+var o = {}; Object.defineProperty(o, 'x', {get: 1})
+var o = {}; Object.defineProperty(o, 'x', {set: 1})
+var o = {}; Object.defineProperty(o, 'x', {get: 'foo'})
+var o = {}; Object.defineProperty(o, 'x', {get: {}})
+var o = {}; Object.defineProperty(o, 'x', {set: []})
+
+# --- rows 135/136/166: JS_STRLIMIT (1<<28) -- RangeError "invalid string length" ---
+var s = 'x'; while (1) s = s + s
+
+# --- row 422 / row 133: Fp_apply pushing more values than JS_STACKSIZE (4096) ---
+function g() {}\nvar a = new Array(5000); g.apply(null, a)
+function g() {}\nvar a = new Array(100000); g.apply(null, a)
+Math.max.apply(null, new Array(20000))

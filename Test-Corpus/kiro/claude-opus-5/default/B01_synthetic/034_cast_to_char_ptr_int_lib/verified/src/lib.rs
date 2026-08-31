@@ -1,7 +1,5 @@
 // Rust translation of c_src/src/driver.c
 //
-// Original copyright notice from the C sources:
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -25,51 +23,45 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_int;
-use std::io::Write;
+use std::ffi::{c_char, c_int, c_uchar};
 
-/// Mirrors the `static void print_hex(unsigned char *p, int len)` helper:
-/// prints each byte as two lowercase hex digits, then a newline.
+unsafe extern "C" {
+    /// C `printf` from the platform libc. Used instead of Rust's `std::io::stdout`
+    /// so that output goes through the exact same C stdio stream (and buffering)
+    /// as the original implementation.
+    #[link_name = "printf"]
+    unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
+}
+
+/// Translation of the C `static void print_hex(unsigned char *p, int len)`.
 ///
-/// A negative `len` yields no byte output (the C `for` loop body never runs),
-/// only the trailing newline; that behavior is preserved.
-fn print_hex(p: &[u8], len: c_int) {
-    // Build the output in one buffer so it reaches stdout as a single write,
-    // matching the contiguous bytes emitted by the C printf calls.
-    let mut out = Vec::with_capacity((len.max(0) as usize) * 2 + 1);
+/// Static in C, so it is not exported from the shared object; here it is a
+/// private Rust function taking the byte slice the caller would have pointed at.
+fn print_hex(p: &[c_uchar], len: c_int) {
+    // `for (int i = 0; i < len; i++) printf("%02x", p[i]);`
     let mut i: c_int = 0;
     while i < len {
-        // `printf("%02x", p[i])` on an unsigned char: two lowercase hex digits.
-        let byte = p[i as usize];
-        out.push(hex_digit(byte >> 4));
-        out.push(hex_digit(byte & 0x0f));
+        // `p[i]` is an `unsigned char`, promoted to `int` for the variadic call.
+        let byte: c_uchar = p[i as usize];
+        unsafe {
+            c_printf(c"%02x".as_ptr(), byte as c_int);
+        }
         i += 1;
     }
-    out.push(b'\n');
-
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    // Ignore write errors, as C's printf return value is ignored here.
-    let _ = lock.write_all(&out);
-    // C's stdio flushes at process exit; flush explicitly so the output is
-    // emitted even when this library is driven from a non-Rust main().
-    let _ = lock.flush();
-}
-
-#[inline]
-fn hex_digit(nibble: u8) -> u8 {
-    match nibble {
-        0..=9 => b'0' + nibble,
-        _ => b'a' + (nibble - 10),
+    // `printf("\n");`
+    unsafe {
+        c_printf(c"\n".as_ptr());
     }
 }
 
-/// void driver(int x);
+/// Translation of the C `void driver(int x)`.
 ///
-/// Prints the object representation of `x` (native byte order) as hex.
+/// The C code reinterprets the storage of the `int` parameter as
+/// `unsigned char[sizeof(int)]`, so the output is the native-endian byte
+/// representation of `x` (little-endian on x86-64/aarch64).
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
-    // (unsigned char *)&x over sizeof(x) bytes.
-    let bytes = x.to_ne_bytes();
+    // `print_hex((unsigned char *)&x, sizeof(x));`
+    let bytes: [c_uchar; size_of::<c_int>()] = x.to_ne_bytes();
     print_hex(&bytes, size_of::<c_int>() as c_int);
 }

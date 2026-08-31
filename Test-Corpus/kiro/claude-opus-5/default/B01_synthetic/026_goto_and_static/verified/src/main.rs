@@ -1,5 +1,7 @@
 // Rust translation of c_src/src/main.c
 //
+// Original C copyright notice:
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -23,146 +25,166 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
+use std::sync::atomic::{AtomicI32, Ordering};
 
-/// Mirrors the `static int y = 123;` file-scope variable in the C source.
-///
-/// In the C program this global is written to by `scanf` and read back by
-/// `multi_stage`, so its pre-set value of 123 is observable whenever `scanf`
-/// fails to convert the second field.
-struct Globals {
-    y: i32,
+/// Mirrors `static int y = 123;` in the C source. `scanf` writes directly into
+/// this object, so if the conversion for the second field never happens the
+/// value observed by `multi_stage` is still the initializer, 123.
+static Y: AtomicI32 = AtomicI32::new(123);
+
+fn get_y() -> i32 {
+    Y.load(Ordering::Relaxed)
 }
 
-/// A minimal `scanf`-style reader over stdin.
-///
-/// Reads one byte at a time with a single byte of pushback, which reproduces
-/// C's `scanf` behaviour of consuming exactly as much input as a conversion
-/// needs while freely skipping over whitespace, including newlines.
-struct Scanner<R: Read> {
-    input: R,
+fn set_y(v: i32) {
+    Y.store(v, Ordering::Relaxed);
+}
+
+/// A byte-oriented view of stdin with a single byte of pushback, which is all
+/// `scanf`'s `%d` conversion needs (it un-reads the first non-matching byte).
+struct CStdin {
+    inner: std::io::Stdin,
     pushback: Option<u8>,
-    at_eof: bool,
+    eof: bool,
 }
 
-impl<R: Read> Scanner<R> {
-    fn new(input: R) -> Self {
-        Scanner {
-            input,
+impl CStdin {
+    fn new() -> Self {
+        CStdin {
+            inner: std::io::stdin(),
             pushback: None,
-            at_eof: false,
+            eof: false,
         }
     }
 
-    fn next_byte(&mut self) -> Option<u8> {
+    fn getc(&mut self) -> Option<u8> {
         if let Some(b) = self.pushback.take() {
             return Some(b);
         }
-        if self.at_eof {
+        if self.eof {
             return None;
         }
         let mut buf = [0u8; 1];
         loop {
-            match self.input.read(&mut buf) {
+            match self.inner.read(&mut buf) {
                 Ok(0) => {
-                    self.at_eof = true;
+                    self.eof = true;
                     return None;
                 }
                 Ok(_) => return Some(buf[0]),
-                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => {
-                    self.at_eof = true;
+                    self.eof = true;
                     return None;
                 }
             }
         }
     }
 
-    fn unget(&mut self, b: u8) {
+    fn ungetc(&mut self, b: u8) {
         self.pushback = Some(b);
-    }
-
-    /// Matches C's `isspace` for the default "C" locale.
-    fn is_space(b: u8) -> bool {
-        matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(b) = self.next_byte() {
-            if !Self::is_space(b) {
-                self.unget(b);
-                return;
-            }
-        }
-    }
-
-    /// Performs a single `%d` conversion.
-    ///
-    /// Returns `None` on input failure (EOF before any character) or matching
-    /// failure (no digits), in which case `scanf` leaves the destination
-    /// untouched and stops processing the remainder of the format string.
-    ///
-    /// On overflow this follows glibc, which converts via `strtol` semantics:
-    /// the value saturates at `long` range and is then truncated to `int`.
-    fn scan_i32(&mut self) -> Option<i32> {
-        self.skip_whitespace();
-
-        let mut negative = false;
-        let first = self.next_byte()?;
-        let mut current = match first {
-            b'+' => self.next_byte(),
-            b'-' => {
-                negative = true;
-                self.next_byte()
-            }
-            other => Some(other),
-        };
-
-        let mut magnitude: u64 = 0;
-        let mut saw_digit = false;
-        while let Some(b) = current {
-            if !b.is_ascii_digit() {
-                self.unget(b);
-                break;
-            }
-            saw_digit = true;
-            magnitude = magnitude
-                .saturating_mul(10)
-                .saturating_add(u64::from(b - b'0'));
-            current = self.next_byte();
-        }
-
-        if !saw_digit {
-            // Matching failure: the sign (if any) is not pushed back, matching
-            // the fact that glibc has already consumed it.
-            return None;
-        }
-
-        let clamped: i64 = if negative {
-            if magnitude > (i64::MAX as u64) + 1 {
-                i64::MIN
-            } else {
-                (magnitude as i128).wrapping_neg() as i64
-            }
-        } else if magnitude > i64::MAX as u64 {
-            i64::MAX
-        } else {
-            magnitude as i64
-        };
-
-        Some(clamped as i32)
     }
 }
 
-fn multi_stage<W: Write>(out: &mut W, globals: &Globals, x: i32, z: i32) -> i32 {
+/// True for the bytes that C's `isspace` accepts in the "C" locale.
+fn is_c_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+}
+
+/// One `%d` conversion.
+///
+/// Returns `Some(value)` on a successful conversion, `None` on either a
+/// matching failure or an input failure. Like `scanf`, leading whitespace
+/// (newlines included) is skipped, an optional sign is accepted, and the first
+/// byte that cannot be part of the number is pushed back.
+///
+/// glibc collects the digits and hands them to `strtol`, which saturates at
+/// `LONG_MAX`/`LONG_MIN` on overflow; the result is then stored through an
+/// `int *`, truncating it. The saturate-then-truncate below reproduces that.
+fn scan_int(input: &mut CStdin) -> Option<i32> {
+    // Skip whitespace.
+    let mut b = loop {
+        match input.getc() {
+            Some(c) if is_c_space(c) => continue,
+            Some(c) => break c,
+            None => return None, // input failure
+        }
+    };
+
+    let mut negative = false;
+    if b == b'+' || b == b'-' {
+        negative = b == b'-';
+        match input.getc() {
+            Some(c) => b = c,
+            None => return None, // sign with nothing after it: matching failure
+        }
+    }
+
+    if !b.is_ascii_digit() {
+        input.ungetc(b);
+        return None; // matching failure
+    }
+
+    let mut acc: i64 = 0;
+    let mut overflow = false;
+    loop {
+        let digit = i64::from(b - b'0');
+        if !overflow {
+            let step = acc
+                .checked_mul(10)
+                .and_then(|v| if negative { v.checked_sub(digit) } else { v.checked_add(digit) });
+            match step {
+                Some(v) => acc = v,
+                None => overflow = true,
+            }
+        }
+        match input.getc() {
+            Some(c) if c.is_ascii_digit() => b = c,
+            Some(c) => {
+                input.ungetc(c);
+                break;
+            }
+            None => break,
+        }
+    }
+
+    if overflow {
+        acc = if negative { i64::MIN } else { i64::MAX };
+    }
+
+    Some(acc as i32)
+}
+
+/// `scanf("%d %d %d", &x, &y, &z)`.
+///
+/// Whitespace directives in the format match any run of whitespace (including
+/// none), and `%d` skips leading whitespace on its own, so the three
+/// conversions are simply attempted in order. Assignment stops at the first
+/// failure, leaving later variables untouched.
+fn scanf_three(input: &mut CStdin, x: &mut i32, z: &mut i32) {
+    match scan_int(input) {
+        Some(v) => *x = v,
+        None => return,
+    }
+    match scan_int(input) {
+        Some(v) => set_y(v),
+        None => return,
+    }
+    if let Some(v) = scan_int(input) {
+        *z = v;
+    }
+}
+
+fn multi_stage(out: &mut impl Write, x: i32, z: i32) -> i32 {
     let result;
 
-    // The C code uses `goto fail` for each failing stage, so every error also
-    // prints "Operation failed" before returning.
+    // Errors are reported in exactly this order; the C code funnels every
+    // failure through a `goto fail` that also prints "Operation failed".
     if x != 1 {
         let _ = write!(out, "Error: x != 1\n");
         result = 1;
-    } else if globals.y != 2 {
+    } else if get_y() != 2 {
         let _ = write!(out, "Error: x == 1 but y != 2\n");
         result = 2;
     } else if z != 3 {
@@ -173,60 +195,24 @@ fn multi_stage<W: Write>(out: &mut W, globals: &Globals, x: i32, z: i32) -> i32 
         return 0;
     }
 
+    // fail:
     let _ = write!(out, "Operation failed\n");
     result
 }
 
-/// Restores the default `SIGPIPE` disposition that a C program starts with.
-///
-/// The Rust runtime installs `SIG_IGN` for `SIGPIPE` before `main` runs, which
-/// turns a hung-up stdout reader into an `EPIPE` write error instead of a fatal
-/// signal. The C program never touches the disposition, so it is killed by
-/// `SIGPIPE` in that situation. Resetting it here keeps the exit status
-/// identical.
-#[cfg(unix)]
-fn restore_default_sigpipe() {
-    // SIGPIPE is 13 and SIG_DFL is 0 on every POSIX platform Rust supports.
-    const SIGPIPE: i32 = 13;
-    const SIG_DFL: usize = 0;
-
-    extern "C" {
-        fn signal(signum: i32, handler: usize) -> usize;
-    }
-
-    unsafe {
-        signal(SIGPIPE, SIG_DFL);
-    }
-}
-
-#[cfg(not(unix))]
-fn restore_default_sigpipe() {}
-
 fn main() {
-    restore_default_sigpipe();
+    let mut input = CStdin::new();
+    let stdout = std::io::stdout();
+    // C's stdout is fully buffered when redirected; a single buffered writer
+    // flushed at exit keeps the byte stream identical either way.
+    let mut out = std::io::BufWriter::new(stdout.lock());
 
-    let mut globals = Globals { y: 123 };
     let mut x: i32 = 0;
     let mut z: i32 = 0;
+    scanf_three(&mut input, &mut x, &mut z);
 
-    // scanf("%d %d %d", &x, &y, &z): assignments happen left to right and stop
-    // at the first conversion that fails, leaving later targets unmodified.
-    let stdin = io::stdin();
-    let mut scanner = Scanner::new(stdin.lock());
-    if let Some(v) = scanner.scan_i32() {
-        x = v;
-        if let Some(v) = scanner.scan_i32() {
-            globals.y = v;
-            if let Some(v) = scanner.scan_i32() {
-                z = v;
-            }
-        }
-    }
-
-    let stdout = io::stdout();
-    let mut out = io::BufWriter::new(stdout.lock());
-
-    let result = multi_stage(&mut out, &globals, x, z);
+    let result = multi_stage(&mut out, x, z);
     let _ = write!(out, "Result: {}\n", result);
+
     let _ = out.flush();
 }

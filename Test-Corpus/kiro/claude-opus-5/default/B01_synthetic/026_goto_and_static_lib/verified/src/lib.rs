@@ -1,5 +1,3 @@
-// Rust translation of c_src/src/driver.c
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -23,75 +21,68 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{CStr, c_char, c_int};
+//! Rust translation of `c_src/src/driver.c`.
+//!
+//! Output is emitted through C `printf` so that stream buffering and
+//! interleaving with any C-side output stay byte-for-byte identical to the
+//! original library.
+
+use std::ffi::c_char;
+use std::ffi::c_int;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-// The original C uses the platform `stdio` stream for output. Going through
-// `printf` (rather than Rust's `std::io::stdout`) keeps the buffering and
-// flushing behaviour byte-for-byte identical to the C library, including when
-// the output is interleaved with writes performed by a C caller.
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
+    fn printf(format: *const c_char, ...) -> c_int;
 }
 
-/// `printf("%s", s)` for a fixed, NUL-terminated string.
-fn print_str(s: &CStr) {
+/// Emit a NUL-terminated literal through C `printf`.
+///
+/// The literal is used as the format string, mirroring the original C calls
+/// (none of them contain conversion specifiers).
+fn c_print(msg: &'static str) {
+    debug_assert!(msg.ends_with('\0'));
     unsafe {
-        printf(c"%s".as_ptr(), s.as_ptr());
+        printf(msg.as_ptr() as *const c_char);
     }
 }
 
-/// `printf("<prefix>%d\n", value)`.
-fn print_int(fmt: &CStr, value: c_int) {
-    unsafe {
-        printf(fmt.as_ptr(), value);
-    }
-}
-
-// `static int y = 123;` — file-scope mutable state in the C translation unit.
+/// `static int y = 123;` from driver.c — file-scope mutable state.
 static Y: AtomicI32 = AtomicI32::new(123);
 
-// `static int multi_stage(int x, int z)` — internal linkage, so no `no_mangle`.
+/// Translation of the file-local `multi_stage` helper.
+///
+/// The C version uses `goto fail`, so every error path prints its specific
+/// message followed by "Operation failed", while the success path returns
+/// without printing it.
 fn multi_stage(x: c_int, z: c_int) -> c_int {
-    let mut result: c_int = 0;
+    let result: c_int;
 
-    // The C body uses `goto fail` for the three failure paths; the closure below
-    // reproduces the identical check order and the shared failure epilogue.
-    let failed = loop {
-        if x != 1 {
-            print_str(c"Error: x != 1\n");
-            result = 1;
-            break true;
-        }
-
-        if Y.load(Ordering::Relaxed) != 2 {
-            print_str(c"Error: x == 1 but y != 2\n");
-            result = 2;
-            break true;
-        }
-
-        if z != 3 {
-            print_str(c"Error: x == 1 and y == 2, but z != 3\n");
-            result = 3;
-            break true;
-        }
-
-        print_str(c"Ok!\n");
-        break false;
-    };
-
-    if failed {
-        // fail:
-        print_str(c"Operation failed\n");
+    // Each check mirrors the C order exactly: x, then y, then z.
+    if x != 1 {
+        c_print("Error: x != 1\n\0");
+        result = 1;
+    } else if Y.load(Ordering::Relaxed) != 2 {
+        c_print("Error: x == 1 but y != 2\n\0");
+        result = 2;
+    } else if z != 3 {
+        c_print("Error: x == 1 and y == 2, but z != 3\n\0");
+        result = 3;
+    } else {
+        c_print("Ok!\n\0");
+        return 0; // `result` is still 0 here in the C original.
     }
 
+    // `fail:` label.
+    c_print("Operation failed\n\0");
     result
 }
 
-// `void driver(int x, int local_y, int z)`
+/// Translation of `void driver(int x, int local_y, int z)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int, local_y: c_int, z: c_int) {
     Y.store(local_y, Ordering::Relaxed);
     let result = multi_stage(x, z);
-    print_int(c"Result: %d\n", result);
+    unsafe {
+        printf(c"Result: %d\n".as_ptr(), result);
+    }
 }
