@@ -1,0 +1,1107 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand what I'm translating.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
+
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  15 c_src/CMakeLists.txt
+   1 c_src/include/lib.h
+ 219 c_src/src/lib.c
+ 235 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m41 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m5812 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la; ls -la translation 2>/dev/null; cmake --version | head -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check working dir and translation dir
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 16:06 .
+drwxr-xr-x. 825 scheschb amazon 81920 Sep  1 16:06 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 16:06 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 16:06 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 16:06 translation
+total 0
+drwxr-xr-x. 2 scheschb amazon  6 Sep  1 16:06 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 16:06 ..
+cmake version 3.28.6
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; tail -5 cm.log; echo "=== SO ==="; ls *.so; echo "=== nm -D ==="; nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and enumerate exported symbols
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+=== SO ===
+libc_src.so
+libdriver.so
+=== nm -D ===
+
+libc_src.so:
+00000000000011f0 T add_three
+0000000000001240 T apply_operation
+0000000000001210 T complex_calc
+00000000000012b0 T compute_with_dynamic_memory
+0000000000001340 T get_time_based_value
+00000000000013f0 T hatch
+0000000000001220 T increment_counter
+0000000000001380 T manipulate_records
+0000000000001200 T multiply_add
+00000000000012a0 T process_pointer_data
+0000000000001250 T shift_array_data
+0000000000001230 T update_accumulator
+
+libdriver.so:
+0000000000001290 T driver
+0000000000001190 T forward_goto_example
+00000000000011e0 T open_with_cleanup
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_x9 && mkdir -p /tmp/cbuild_x9 && cd /tmp/cbuild_x9 && cmake /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; tail -3 cm.log; echo "=== SO ==="; ls *.so; echo "=== nm -D defined ==="; nm -D --defined-only *.so; echo "=== nm all ==="; nm *.so | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fresh C build and symbol enumeration
+
+[ 50%] Building C object CMakeFiles/harvest-work-X9GQIx.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-X9GQIx.so
+[100%] Built target harvest-work-X9GQIx
+=== SO ===
+libharvest-work-X9GQIx.so
+=== nm -D defined ===
+0000000000001120 T jumpnode
+=== nm all ===
+0000000000003df8 d _DYNAMIC
+0000000000003fe8 d _GLOBAL_OFFSET_TABLE_
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+0000000000002098 r __FRAME_END__
+0000000000002014 r __GNU_EH_FRAME_HDR
+0000000000004018 d __TMC_END__
+                 w __cxa_finalize@GLIBC_2.2.5
+00000000000010d0 t __do_global_dtors_aux
+0000000000003de8 d __do_global_dtors_aux_fini_array_entry
+0000000000003df0 d __dso_handle
+0000000000003de0 d __frame_dummy_init_array_entry
+                 w __gmon_start__
+00000000000011a0 t _fini
+0000000000001000 t _init
+0000000000004018 b completed.0
+0000000000001060 t deregister_tm_clones
+0000000000001110 t frame_dummy
+0000000000001120 T jumpnode
+0000000000001090 t register_tm_clones
+                 U sprintf@GLIBC_2.2.5
+                 U strlen@GLIBC_2.2.5
+[38;5;244m - Completed in 0.458s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la .claude; cat .claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check .claude for harness hints
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 16:06 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 16:06 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 16:06 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-X9GQIx"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-X9GQIx"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original C source:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //   Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //   Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //   to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //   and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //   to deal in the Software without restriction,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //   including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //   modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //   and/or sell copies of the Software,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //   and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //   subject to the following conditions:
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //   The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //   shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //   THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //   FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //   OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m // The public ABI of the C library consists of a single exported symbol:
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //   int jumpnode(int, int, int, int);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m // Everything else in the translation unit is `static` (internal linkage) and is
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // reproduced here as private Rust items so that the observable behaviour of
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m // `jumpnode` is identical, including the fact that `initialize_test_data()` is
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m // never called (so `node_count` stays 0 for the lifetime of the process).
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// C: typedef struct { int id; int parent_id; double value; int data[4]; } Node;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m struct Node {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     id: c_int,
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     parent_id: c_int,
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     value: f64,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     data: [c_int; 4],
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m impl Node {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     const fn zeroed() -> Self {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         Node {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             id: 0,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             parent_id: 0,
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             value: 0.0,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             data: [0; 4],
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// C: #define MAX_NODES 100
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m const MAX_NODES: usize = 100;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// C: static Node node_storage[MAX_NODES];
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m static mut NODE_STORAGE: [Node; MAX_NODES] = [Node::zeroed(); MAX_NODES];
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// C: static int node_count = 0;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m static mut NODE_COUNT: c_int = 0;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// C: #define STATUS_OK       0000
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m const STATUS_OK: c_int = 0o0;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// C: #define STATUS_WARNING  0001
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m const STATUS_WARNING: c_int = 0o1;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// C: #define STATUS_ERROR    0002
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m const STATUS_ERROR: c_int = 0o2;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// C: #define STATUS_CRITICAL 0377
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m const STATUS_CRITICAL: c_int = 0o377;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// C: static Node* find_node_by_id(int id)
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// Returns a raw pointer into `NODE_STORAGE`, or null, exactly like the C code.
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m unsafe fn find_node_by_id(id: c_int) -> *mut Node {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     let storage: *mut Node = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     let count = NODE_COUNT;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     while i < count {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         let elem = storage.offset(i as isize);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         if (*elem).id == id {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             return elem;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     core::ptr::null_mut()
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// C: static int add_node(int id, int parent_id, double value)
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m unsafe fn add_node(id: c_int, parent_id: c_int, value: f64) -> c_int {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     if NODE_COUNT as usize >= MAX_NODES {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         return STATUS_ERROR;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let storage: *mut Node = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     let slot = storage.offset(NODE_COUNT as isize);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     (*slot).id = id;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     (*slot).parent_id = parent_id;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     (*slot).value = value;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     (*slot).data[0] = 0o100;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     (*slot).data[1] = 0o200;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     (*slot).data[2] = 0o300;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     (*slot).data[3] = 0o400;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     NODE_COUNT += 1;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     STATUS_OK
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// C: static int process_backward(int *array, size_t size, int start_offset)
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m /// Walks backwards from `array + size` down to (exclusive) `array + start_offset`
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// summing the elements. Pointer arithmetic and the `int` accumulator wrap-around
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m /// are reproduced literally.
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m unsafe fn process_backward(array: *mut c_int, size: usize, start_offset: c_int) -> c_int {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     let mut sum: c_int = 0;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     let mut ptr: *mut c_int = array.wrapping_add(size);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     let start: *mut c_int = array.wrapping_offset(start_offset as isize);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     while ptr > start {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         ptr = ptr.wrapping_sub(1);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         sum = sum.wrapping_add(*ptr);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     sum
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m /// C: size_t strlen(const char *)
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m unsafe fn c_strlen(str: *const c_char) -> usize {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let mut n: usize = 0;
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     while *str.add(n) != 0 {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         n += 1;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     n
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m /// C: static int compute_size_metric(const char *str)
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m unsafe fn compute_size_metric(str: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     let len: usize = c_strlen(str);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     let mut metric: c_int;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     metric = len as c_int;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     metric = metric.wrapping_mul(2).wrapping_add(0o10);
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     metric
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m /// C: static int safe_double_to_int(double value)
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m /// After the two clamps the value always fits in `int`, so the C cast is a plain
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m /// truncation towards zero. NaN is handled the way the x86-64 `cvttsd2si`
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m /// instruction behaves (the "integer indefinite" value, i.e. INT_MIN), matching
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m /// what the compiled C does for that otherwise-undefined input.
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m fn safe_double_to_int(value: f64) -> c_int {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let mut value = value;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     if value > 2147483647.0 {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         value = 2147483647.0;
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     if value < -2147483648.0 {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         value = -2147483648.0;
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     if value.is_nan() {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         return c_int::MIN;
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     value as c_int
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m /// C: int jumpnode(int operation_mode, int node_id, int depth, int flags)
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m pub unsafe extern "C" fn jumpnode(
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     operation_mode: c_int,
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     node_id: c_int,
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     depth: c_int,
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     flags: c_int,
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     let mut current_node: *mut Node;
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let parent_node: *mut Node;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     let mut i: c_int;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     let mut accumulated_value: f64;
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     // C: int temp_array[20];  (uninitialised; indices 0..15 are written before use)
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     let mut temp_array: [c_int; 20] = [0; 20];
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     let array_size: usize;
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     // C: char buffer[50];
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     let mut buffer: [c_char; 50] = [0; 50];
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     match operation_mode {
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         // case 0001:
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         0o1 => {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             current_node = find_node_by_id(node_id);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m             if current_node.is_null() {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m                 return STATUS_ERROR | 0o20;
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m             accumulated_value = (*current_node).value;
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             i = 0;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             while i < depth && (*current_node).parent_id != -1 {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m                 let parent_node = find_node_by_id((*current_node).parent_id);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m                 if parent_node.is_null() {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m                 accumulated_value += (*parent_node).value * 1.5;
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m                 current_node = parent_node;
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m             result = safe_double_to_int(accumulated_value);
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         // case 0002:
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         0o2 => {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m             current_node = find_node_by_id(node_id);
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m             if current_node.is_null() {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m                 return STATUS_ERROR | 0o40;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m             i = 0;
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m             while i < 4 {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m                 temp_array[i as usize] = (*current_node).data[i as usize];
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m             i = 4;
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m             while i < 0o20 {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m                 temp_array[i as usize] = i.wrapping_mul(0o7);
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m             array_size = 0o20;
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m             result = process_backward(temp_array.as_mut_ptr(), array_size, depth);
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m             result = result.wrapping_add((array_size as c_int).wrapping_mul(flags));
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         // case 0003:
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         0o3 => {
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m             c_sprintf_node_depth(buffer.as_mut_ptr(), node_id, depth);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m             result = compute_size_metric(buffer.as_ptr());
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m             result = result.wrapping_add(flags & 0o177); /* Mask with octal 0177 */
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         // case 0004:
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         0o4 => {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             current_node = find_node_by_id(node_id);
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m             if current_node.is_null() {
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m                 return STATUS_ERROR | 0o100;
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m             accumulated_value = 0.0;
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             i = 0;
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             while i < 4 {
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m                 accumulated_value +=
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m                     ((*current_node).data[i as usize] as f64).sqrt() * 2.718281828;
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m             accumulated_value *= 1.0 + depth as f64 * 0.1;
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m             result = safe_double_to_int(accumulated_value);
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m             if NODE_COUNT > 2 {
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m                 let storage: *mut Node = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m                 let end_ptr: *mut Node = storage.offset(NODE_COUNT as isize);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m                 let mut iter: *mut Node = end_ptr;
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m                 let mut backward_sum: c_int = 0;
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m                 i = 0;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m                 while i < 3 && iter > storage {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m                     iter = iter.offset(-1);
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m                     backward_sum = backward_sum.wrapping_add(safe_double_to_int((*iter).value));
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m                 result = result.wrapping_add(backward_sum);
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         // default:
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m         _ => {
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m             result = STATUS_ERROR | 0o200;
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     let _ = parent_node_placeholder(&mut current_node, &parent_node_unused());
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m /// C: sprintf(buffer, "Node_%d_Depth_%d", node_id, depth);
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m /// Writes the formatted text plus a terminating NUL into `buffer`, which the C
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m /// code sizes at 50 bytes (the widest possible result is 34 characters plus the
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m /// NUL, so it always fits).
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m unsafe fn c_sprintf_node_depth(buffer: *mut c_char, node_id: c_int, depth: c_int) -> c_int {
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     let mut bytes: [u8; 64] = [0; 64];
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m     let mut len: usize = 0;
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     write_bytes_str(&mut bytes, &mut len, b"Node_");
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     write_bytes_int(&mut bytes, &mut len, node_id);
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     write_bytes_str(&mut bytes, &mut len, b"_Depth_");
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     write_bytes_int(&mut bytes, &mut len, depth);
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     let mut k: usize = 0;
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m     while k < len {
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m         *buffer.add(k) = bytes[k] as c_char;
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m         k += 1;
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     *buffer.add(len) = 0;
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     len as c_int
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m fn write_bytes_str(out: &mut [u8; 64], len: &mut usize, s: &[u8]) {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m     for &b in s {
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m         out[*len] = b;
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m         *len += 1;
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m /// Formats an `int` the way printf's `%d` conversion does.
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m fn write_bytes_int(out: &mut [u8; 64], len: &mut usize, value: c_int) {
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m     let negative = value < 0;
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     // Use the unsigned magnitude so INT_MIN is handled correctly.
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m     let mut magnitude: u32 = if negative {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m         (value as i64).unsigned_abs() as u32
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m         value as u32
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     let mut digits: [u8; 10] = [0; 10];
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m     let mut n: usize = 0;
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m     if magnitude == 0 {
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m         digits[0] = b'0';
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m         n = 1;
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m         while magnitude > 0 {
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m             digits[n] = b'0' + (magnitude % 10) as u8;
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m             magnitude /= 10;
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m             n += 1;
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m     if negative {
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m         out[*len] = b'-';
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m         *len += 1;
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m     while n > 0 {
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         n -= 1;
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         out[*len] = digits[n];
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         *len += 1;
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m // The C function declares `Node *parent_node;` at block scope; it is only ever
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m // assigned inside `case 0001`. These helpers exist purely so that the Rust
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m // translation keeps the same set of local declarations without tripping
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m // "unused variable" diagnostics; they have no runtime effect.
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m fn parent_node_unused() -> () {}
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m fn parent_node_placeholder(_current: &mut *mut Node, _unused: &()) -> () {}
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mThat placeholder scaffolding is pointless cruft — removing it.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  186, 186[0m:[39m[49m     let mut current_node: *mut Node;
+[0m[49m[38;5;9m- 187     [0m:[38;5;9m[49m     let parent_node: *mut Node;
+[0m[49m[39m  188, 187[0m:[39m[49m     let mut result: c_int = 0;
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 299     [0m:[38;5;9m[49m     let _ = parent_node_placeholder(&mut current_node, &parent_node_unused());
+[0m[49m[38;5;9m- 300     [0m:[38;5;9m[49m 
+[0m[49m[39m  301, 299[0m:[39m[49m     result
+[0m[49m[39m  302, 300[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 367     [0m:[38;5;9m[49m // The C function declares `Node *parent_node;` at block scope; it is only ever
+[0m[49m[38;5;9m- 368     [0m:[38;5;9m[49m // assigned inside `case 0001`. These helpers exist purely so that the Rust
+[0m[49m[38;5;9m- 369     [0m:[38;5;9m[49m // translation keeps the same set of local declarations without tripping
+[0m[49m[38;5;9m- 370     [0m:[38;5;9m[49m // "unused variable" diagnostics; they have no runtime effect.
+[0m[49m[38;5;9m- 371     [0m:[38;5;9m[49m fn parent_node_unused() -> () {}
+[0m[49m[38;5;9m- 372     [0m:[38;5;9m[49m fn parent_node_placeholder(_current: &mut *mut Node, _unused: &()) -> () {}
+[0m[49m[38;5;10m+      367[0m:[38;5;10m[49m // The C function declares `Node *parent_node;` at block scope; the Rust
+[0m[49m[38;5;10m+      368[0m:[38;5;10m[49m // translation scopes that variable to `case 0001`, where it is the only place it
+[0m[49m[38;5;10m+      369[0m:[38;5;10m[49m // is ever assigned or read.
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation)
+warning: value assigned to `result` is never read
+   --> src/lib.rs:187:29
+    |
+187 |     let mut result: c_int = 0;
+    |                             ^ this value is reassigned later and never used
+...
+219 |             result = safe_double_to_int(accumulated_value);
+    |             ---------------------------------------------- `result` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: `translation` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.165s[0m
+
+[?25l[0m[38;5;141m> [0mIt compiles. Now verifying the exported symbol table matches the C library:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-X9GQIx
+nm -D --defined-only /tmp/cbuild_x9/libharvest-work-X9GQIx.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+echo "C symbols:";   cat /tmp/c_syms.txt
+echo "Rust symbols:"; cat /tmp/rust_syms.txt
+echo "=== MISSING FROM RUST (C - Rust) ==="
+comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== (end diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+C symbols:
+jumpnode
+Rust symbols:
+jumpnode
+=== MISSING FROM RUST (C - Rust) ===
+=== (end diff) ===
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now differential-testing behavior against the C library across a wide input space:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust jumpnode
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m typedef int (*fn_t)(int, int, int, int);
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m static int vals[] = {
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m     -2147483648, -2147483647, -1000000, -70000, -256, -129, -128, -100, -17, -16,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 15, 16, 17, 63, 64, 100,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     127, 128, 129, 255, 256, 1000, 65535, 65536, 1000000, 2147483646, 2147483647
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m #define NV ((int)(sizeof(vals)/sizeof(vals[0])))
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     if (!hc || !hr) { fprintf(stderr, "dlopen failed: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     fn_t c = (fn_t)dlsym(hc, "jumpnode");
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     fn_t r = (fn_t)dlsym(hr, "jumpnode");
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     if (!c || !r) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     long long total = 0, bad = 0;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     /* Exhaustive over operation_mode in a wide window, cross product of the rest. */
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     for (int om = -20; om <= 20; om++) {
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         for (int ni = 0; ni < NV; ni++) {
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m             for (int d = 0; d < NV; d++) {
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m                 for (int f = 0; f < NV; f++) {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m                     int a = c(om, vals[ni], vals[d], vals[f]);
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m                     int b = r(om, vals[ni], vals[d], vals[f]);
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m                     total++;
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m                     if (a != b) {
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m                         if (bad < 10)
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m                             printf("MISMATCH jumpnode(%d,%d,%d,%d): C=%d Rust=%d\n",
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m                                    om, vals[ni], vals[d], vals[f], a, b);
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m                         bad++;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     /* Also sweep the interesting op modes against dense small inputs. */
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     for (int om = 1; om <= 4; om++)
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         for (int ni = -300; ni <= 300; ni++)
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m             for (int d = -40; d <= 40; d++)
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m                 for (int f = -300; f <= 300; f += 7) {
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m                     int a = c(om, ni, d, f);
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m                     int b = r(om, ni, d, f);
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m                     total++;
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m                     if (a != b) {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m                         if (bad < 10)
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m                             printf("MISMATCH jumpnode(%d,%d,%d,%d): C=%d Rust=%d\n",
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m                                    om, ni, d, f, a, b);
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m                         bad++;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     /* Random fuzz over the full int32 space. */
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     srand(12345);
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     for (long i = 0; i < 4000000; i++) {
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         int om = (rand() % 9) - 2;                       /* bias toward valid modes */
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m         int ni = (int)((unsigned)rand() << 1 ^ rand());
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         int d  = (int)((unsigned)rand() << 1 ^ rand());
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         int f  = (int)((unsigned)rand() << 1 ^ rand());
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         int a = c(om, ni, d, f);
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m         int b = r(om, ni, d, f);
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         total++;
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         if (a != b) {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m             if (bad < 10)
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m                 printf("MISMATCH jumpnode(%d,%d,%d,%d): C=%d Rust=%d\n", om, ni, d, f, a, b);
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m             bad++;
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     printf("compared=%lld mismatches=%lld\n", total, bad);
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m     return bad ? 1 : 0;
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o difftest difftest.c -ldl && ./difftest /tmp/cbuild_x9/libharvest-work-X9GQIx.so /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/target/release/libtranslation.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
+
+compared=23572025 mismatches=0
+exit=0
+[38;5;244m - Completed in 1.85s[0m
+
+[?25l[0m[38;5;141m> [0mTwo code paths (modes 2 and 4) are unreachable in the shipped library because [38;5;10minitialize_test_data[0m is [38;5;10mstatic[0m and never called, so [38;5;10mnode_count[0m stays 0. I'll add that function for completeness and then force-exercise those paths.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  367, 367[0m:[39m[49m // The C function declares `Node *parent_node;` at block scope; the Rust
+[0m[49m[39m  368, 368[0m:[39m[49m // translation scopes that variable to `case 0001`, where it is the only place it
+[0m[49m[39m  369, 369[0m:[39m[49m // is ever assigned or read.
+[0m[49m[38;5;10m+      370[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      371[0m:[38;5;10m[49m /// C: static void initialize_test_data(void)
+[0m[49m[38;5;10m+      372[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      373[0m:[38;5;10m[49m /// Present in the C translation unit but never called from anywhere, so
+[0m[49m[38;5;10m+      374[0m:[38;5;10m[49m /// `node_count` remains 0 for the life of the process and every
+[0m[49m[38;5;10m+      375[0m:[38;5;10m[49m /// `find_node_by_id` lookup in `jumpnode` fails. Translated for completeness;
+[0m[49m[38;5;10m+      376[0m:[38;5;10m[49m /// like the C original it has internal linkage and no callers.
+[0m[49m[38;5;10m+      377[0m:[38;5;10m[49m unsafe fn initialize_test_data() {
+[0m[49m[38;5;10m+      378[0m:[38;5;10m[49m     NODE_COUNT = 0;
+[0m[49m[38;5;10m+      379[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      380[0m:[38;5;10m[49m     add_node(1, -1, 100.5);
+[0m[49m[38;5;10m+      381[0m:[38;5;10m[49m     add_node(2, 1, 50.25);
+[0m[49m[38;5;10m+      382[0m:[38;5;10m[49m     add_node(3, 1, 75.75);
+[0m[49m[38;5;10m+      383[0m:[38;5;10m[49m     add_node(4, 2, 25.125);
+[0m[49m[38;5;10m+      384[0m:[38;5;10m[49m     add_node(5, 2, 30.875);
+[0m[49m[38;5;10m+      385[0m:[38;5;10m[49m     add_node(6, 3, 40.0625);
+[0m[49m[38;5;10m+      386[0m:[38;5;10m[49m     add_node(7, 4, 12.5);
+[0m[49m[38;5;10m+      387[0m:[38;5;10m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-X9GQIx
+rm -rf /tmp/hooked && mkdir -p /tmp/hooked/rust/src
+# --- hooked C copy (c_src untouched) ---
+cp $W/c_src/src/lib.c /tmp/hooked/lib_hooked.c
+cat >> /tmp/hooked/lib_hooked.c <<'EOF'
+
+/* test-only hook, not part of the shipped library */
+void __test_init(void) { initialize_test_data(); }
+EOF
+gcc -O2 -shared -fPIC -o /tmp/hooked/libc_hooked.so /tmp/hooked/lib_hooked.c -lm
+# --- hooked Rust copy (shipped crate untouched) ---
+cp $W/translation/Cargo.toml /tmp/hooked/rust/Cargo.toml
+sed -i 's/^name = "translation"/name = "hooked"/' /tmp/hooked/rust/Cargo.toml
+cp $W/translation/src/lib.rs /tmp/hooked/rust/src/lib.rs
+cat >> /tmp/hooked/rust/src/lib.rs <<'EOF'
+
+// test-only hook, not part of the shipped library
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __test_init() { initialize_test_data(); }
+EOF
+cd /tmp/hooked/rust && cargo build --release 2>&1 | grep -E "^(error|warning: unused)" || true
+ls -l /tmp/hooked/rust/target/release/libhooked.so /tmp/hooked/libc_hooked.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build hooked copies of both libraries to exercise the node-populated paths
+
+-rwxr-xr-x. 1 scheschb amazon  16040 Sep  1 16:09 /tmp/hooked/libc_hooked.so
+-rwxr-xr-x. 2 scheschb amazon 405400 Sep  1 16:09 /tmp/hooked/rust/target/release/libhooked.so
+[38;5;244m - Completed in 0.292s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest2.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test for the populated-node-table code paths
+
+[49m[38;5;9m-   1    [0m:[38;5;9m[49m // Differential test: dlopen the C and Rust .so side by side and compare every
+[0m[49m[38;5;9m-   2    [0m:[38;5;9m[49m // exported symbol's observable behavior.
+[0m[49m[38;5;9m-   3    [0m:[38;5;9m[49m #define _GNU_SOURCE
+[0m[49m[38;5;9m-   4    [0m:[38;5;9m[49m #include <dlfcn.h>
+[0m[49m[39m    5,  1[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m    6,  2[0m:[39m[49m #include <stdlib.h>
+[0m[49m[38;5;9m-   7    [0m:[38;5;9m[49m #include <string.h>
+[0m[49m[38;5;9m-   8    [0m:[38;5;9m[49m #include <limits.h>
+[0m[49m[38;5;9m-   9    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  10    [0m:[38;5;9m[49m typedef struct {
+[0m[49m[38;5;9m-  11    [0m:[38;5;9m[49m     int id, value, parent_id, left_child_id, right_child_id;
+[0m[49m[38;5;9m-  12    [0m:[38;5;9m[49m     char label[32];
+[0m[49m[38;5;9m-  13    [0m:[38;5;9m[49m } TreeNode;
+[0m[49m[38;5;9m-  14    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  15    [0m:[38;5;9m[49m typedef int (*op4)(int, int, int, int);
+[0m[49m[38;5;9m-  16    [0m:[38;5;9m[49m typedef TreeNode *(*findfn)(int);
+[0m[49m[38;5;9m-  17    [0m:[38;5;9m[49m typedef int (*addfn)(int, int, int, const char *);
+[0m[49m[38;5;9m-  18    [0m:[38;5;9m[49m typedef int (*sumfn)(int);
+[0m[49m[38;5;9m-  19    [0m:[38;5;9m[49m typedef int (*parsefn)(const char *);
+[0m[49m[38;5;9m-  20    [0m:[38;5;9m[49m typedef op4 (*getfn)(int);
+[0m[49m[38;5;9m-  21    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  22    [0m:[38;5;9m[49m typedef struct {
+[0m[49m[38;5;9m-  23    [0m:[38;5;9m[49m     void *h;
+[0m[49m[38;5;9m-  24    [0m:[38;5;9m[49m     op4 add_op, multiply_op, subtract_op, divide_op, modulo_op;
+[0m[49m[38;5;9m-  25    [0m:[38;5;9m[49m     findfn find_node_by_id;
+[0m[49m[38;5;9m-  26    [0m:[38;5;9m[49m     addfn add_tree_node;
+[0m[49m[38;5;9m-  27    [0m:[38;5;9m[49m     sumfn calculate_tree_sum;
+[0m[49m[38;5;9m-  28    [0m:[38;5;9m[49m     parsefn parse_operation;
+[0m[49m[38;5;9m-  29    [0m:[38;5;9m[49m     getfn get_operation_func;
+[0m[49m[38;5;9m-  30    [0m:[38;5;9m[49m     op4 inreftree;
+[0m[49m[38;5;9m-  31    [0m:[38;5;9m[49m     TreeNode *node_table;
+[0m[49m[38;5;9m-  32    [0m:[38;5;9m[49m     int *node_count;
+[0m[49m[38;5;9m-  33    [0m:[38;5;9m[49m } lib_t;
+[0m[49m[38;5;9m-  34    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  35    [0m:[38;5;9m[49m static void *req(void *h, const char *n) {
+[0m[49m[38;5;9m-  36    [0m:[38;5;9m[49m     void *p = dlsym(h, n);
+[0m[49m[38;5;9m-  37    [0m:[38;5;9m[49m     if (!p) { fprintf(stderr, "missing symbol %s: %s\n", n, dlerror()); exit(2); }
+[0m[49m[38;5;9m-  38    [0m:[38;5;9m[49m     return p;
+[0m[49m[38;5;9m-  39    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  40    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  41    [0m:[38;5;9m[49m static void load(lib_t *l, const char *path) {
+[0m[49m[38;5;9m-  42    [0m:[38;5;9m[49m     l->h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;9m-  43    [0m:[38;5;9m[49m     if (!l->h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;9m-  44    [0m:[38;5;9m[49m     l->add_op            = (op4)req(l->h, "add_op");
+[0m[49m[38;5;9m-  45    [0m:[38;5;9m[49m     l->multiply_op       = (op4)req(l->h, "multiply_op");
+[0m[49m[38;5;9m-  46    [0m:[38;5;9m[49m     l->subtract_op       = (op4)req(l->h, "subtract_op");
+[0m[49m[38;5;9m-  47    [0m:[38;5;9m[49m     l->divide_op         = (op4)req(l->h, "divide_op");
+[0m[49m[38;5;9m-  48    [0m:[38;5;9m[49m     l->modulo_op         = (op4)req(l->h, "modulo_op");
+[0m[49m[38;5;9m-  49    [0m:[38;5;9m[49m     l->find_node_by_id   = (findfn)req(l->h, "find_node_by_id");
+[0m[49m[38;5;9m-  50    [0m:[38;5;9m[49m     l->add_tree_node     = (addfn)req(l->h, "add_tree_node");
+[0m[49m[38;5;9m-  51    [0m:[38;5;9m[49m     l->calculate_tree_sum= (sumfn)req(l->h, "calculate_tree_sum");
+[0m[49m[38;5;9m-  52    [0m:[38;5;9m[49m     l->parse_operation   = (parsefn)req(l->h, "parse_operation");
+[0m[49m[38;5;9m-  53    [0m:[38;5;9m[49m     l->get_operation_func= (getfn)req(l->h, "get_operation_func");
+[0m[49m[38;5;9m-  54    [0m:[38;5;9m[49m     l->inreftree         = (op4)req(l->h, "inreftree");
+[0m[49m[38;5;9m-  55    [0m:[38;5;9m[49m     l->node_table        = (TreeNode *)req(l->h, "node_table");
+[0m[49m[38;5;9m-  56    [0m:[38;5;9m[49m     l->node_count        = (int *)req(l->h, "node_count");
+[0m[49m[38;5;9m-  57    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  58    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  59    [0m:[38;5;9m[49m static int fail = 0;
+[0m[49m[38;5;9m-  60    [0m:[38;5;9m[49m static long checks = 0;
+[0m[49m[38;5;9m-  61    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  62    [0m:[38;5;9m[49m #define CK(desc, cv, rv) do { \
+[0m[49m[38;5;9m-  63    [0m:[38;5;9m[49m     checks++; \
+[0m[49m[38;5;9m-  64    [0m:[38;5;9m[49m     long _c = (long)(cv), _r = (long)(rv); \
+[0m[49m[38;5;9m-  65    [0m:[38;5;9m[49m     if (_c != _r) { \
+[0m[49m[38;5;9m-  66    [0m:[38;5;9m[49m         if (fail < 25) printf("MISMATCH %s: C=%ld Rust=%ld\n", desc, _c, _r); \
+[0m[49m[38;5;9m-  67    [0m:[38;5;9m[49m         fail++; \
+[0m[49m[38;5;9m-  68    [0m:[38;5;9m[49m     } \
+[0m[49m[38;5;9m-  69    [0m:[38;5;9m[49m } while (0)
+[0m[49m[38;5;9m-  70    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  71    [0m:[38;5;9m[49m /* Map a returned function pointer to an index within its own library. */
+[0m[49m[38;5;9m-  72    [0m:[38;5;9m[49m static int op_index(lib_t *l, op4 f) {
+[0m[49m[38;5;9m-  73    [0m:[38;5;9m[49m     if (f == l->add_op) return 1;
+[0m[49m[38;5;9m-  74    [0m:[38;5;9m[49m     if (f == l->multiply_op) return 2;
+[0m[49m[38;5;9m-  75    [0m:[38;5;9m[49m     if (f == l->subtract_op) return 3;
+[0m[49m[38;5;9m-  76    [0m:[38;5;9m[49m     if (f == l->divide_op) return 4;
+[0m[49m[38;5;9m-  77    [0m:[38;5;9m[49m     if (f == l->modulo_op) return 5;
+[0m[49m[38;5;9m-  78    [0m:[38;5;9m[49m     return f ? -1 : 0;
+[0m[49m[38;5;9m-  79    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  80    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  81    [0m:[38;5;9m[49m /* Map a returned node pointer to a table index within its own library. */
+[0m[49m[38;5;9m-  82    [0m:[38;5;9m[49m static long node_index(lib_t *l, TreeNode *n) {
+[0m[49m[38;5;9m-  83    [0m:[38;5;9m[49m     if (!n) return -1;
+[0m[49m[38;5;9m-  84    [0m:[38;5;9m[49m     return (long)(n - l->node_table);
+[0m[49m[38;5;9m-  85    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  86    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  87    [0m:[38;5;9m[49m static void cmp_state(lib_t *c, lib_t *r, const char *desc) {
+[0m[49m[38;5;9m-  88    [0m:[38;5;9m[49m     checks++;
+[0m[49m[38;5;9m-  89    [0m:[38;5;9m[49m     if (*c->node_count != *r->node_count) {
+[0m[49m[38;5;9m-  90    [0m:[38;5;9m[49m         if (fail < 25) printf("MISMATCH node_count %s: C=%d Rust=%d\n", desc, *c->node_count, *r->node_count);
+[0m[49m[38;5;9m-  91    [0m:[38;5;9m[49m         fail++;
+[0m[49m[38;5;9m-  92    [0m:[38;5;9m[49m         return;
+[0m[49m[38;5;9m-  93    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m-  94    [0m:[38;5;9m[49m     if (memcmp(c->node_table, r->node_table, 50 * sizeof(TreeNode)) != 0) {
+[0m[49m[38;5;9m-  95    [0m:[38;5;9m[49m         if (fail < 25) printf("MISMATCH node_table bytes %s\n", desc);
+[0m[49m[38;5;9m-  96    [0m:[38;5;9m[49m         fail++;
+[0m[49m[38;5;9m-  97    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m-  98    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  99    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 100    [0m:[38;5;9m[49m int main(void) {
+[0m[49m[38;5;9m- 101    [0m:[38;5;9m[49m     lib_t c, r;
+[0m[49m[38;5;9m- 102    [0m:[38;5;9m[49m     load(&c, "/tmp/cb2/libharvest-work-stOZz3.so");
+[0m[49m[38;5;9m- 103    [0m:[38;5;9m[49m     load(&r, "/local/home/scheschb/.harvest/work/harvest-work-stOZz3/translation/target/release/libtranslation.so");
+[0m[49m[38;5;9m- 104    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 105    [0m:[38;5;9m[49m     /* sizeof(TreeNode) sanity: 52 bytes as in the C .so layout. */
+[0m[49m[38;5;9m- 106    [0m:[38;5;9m[49m     if (sizeof(TreeNode) != 52) { printf("host TreeNode size %zu\n", sizeof(TreeNode)); return 2; }
+[0m[49m[38;5;9m- 107    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 108    [0m:[38;5;9m[49m     /* --- arithmetic ops --- */
+[0m[49m[38;5;9m- 109    [0m:[38;5;9m[49m     int vals[] = {0, 1, -1, 2, -2, 3, -3, 7, -7, 10, 100, -100, 12345, -12345,
+[0m[49m[38;5;9m- 110    [0m:[38;5;9m[49m                   65536, -65536, 46341, -46341, INT_MAX, INT_MIN, INT_MAX - 1, INT_MIN + 1};
+[0m[49m[38;5;9m- 111    [0m:[38;5;9m[49m     int nv = sizeof(vals) / sizeof(vals[0]);
+[0m[49m[38;5;9m- 112    [0m:[38;5;9m[49m     for (int i = 0; i < nv; i++)
+[0m[49m[38;5;9m- 113    [0m:[38;5;9m[49m         for (int j = 0; j < nv; j++) {
+[0m[49m[38;5;9m- 114    [0m:[38;5;9m[49m             int a = vals[i], b = vals[j];
+[0m[49m[38;5;9m- 115    [0m:[38;5;9m[49m             CK("add_op", c.add_op(a, b, 9, 9), r.add_op(a, b, 9, 9));
+[0m[49m[38;5;9m- 116    [0m:[38;5;9m[49m             CK("multiply_op", c.multiply_op(a, b, 9, 9), r.multiply_op(a, b, 9, 9));
+[0m[49m[38;5;9m- 117    [0m:[38;5;9m[49m             CK("subtract_op", c.subtract_op(a, b, 9, 9), r.subtract_op(a, b, 9, 9));
+[0m[49m[38;5;9m- 118    [0m:[38;5;9m[49m             /* skip INT_MIN / -1 and INT_MIN %% -1: those trap (SIGFPE) in C */
+[0m[49m[38;5;9m- 119    [0m:[38;5;9m[49m             if (!(a == INT_MIN && b == -1)) {
+[0m[49m[38;5;9m- 120    [0m:[38;5;9m[49m                 CK("divide_op", c.divide_op(a, b, 9, 9), r.divide_op(a, b, 9, 9));
+[0m[49m[38;5;9m- 121    [0m:[38;5;9m[49m                 CK("modulo_op", c.modulo_op(a, b, 9, 9), r.modulo_op(a, b, 9, 9));
+[0m[49m[38;5;9m- 122    [0m:[38;5;9m[49m             }
+[0m[49m[38;5;9m- 123    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 124    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 125    [0m:[38;5;9m[49m     /* --- parse_operation --- */
+[0m[49m[38;5;9m- 126    [0m:[38;5;9m[49m     const char *strs[] = {NULL, "", "+", "*", "-", "/", "%", "++", "*+", "+*", "a", "abc",
+[0m[49m[38;5;9m- 127    [0m:[38;5;9m[49m                           "x*y", "x-y", "x/y", "x%y", "%/-*+", "+%", "-%", "/%", "\x01",
+[0m[49m[38;5;9m- 128    [0m:[38;5;9m[49m                           "root", "left", "left-left", "\xff\xfe", "  ", "12+34", "12%34"};
+[0m[49m[38;5;9m- 129    [0m:[38;5;9m[49m     for (unsigned i = 0; i < sizeof(strs) / sizeof(strs[0]); i++)
+[0m[49m[38;5;9m- 130    [0m:[38;5;9m[49m         CK("parse_operation", c.parse_operation(strs[i]), r.parse_operation(strs[i]));
+[0m[49m[38;5;9m- 131    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 132    [0m:[38;5;9m[49m     /* single-byte strings across the whole char range */
+[0m[49m[38;5;9m- 133    [0m:[38;5;9m[49m     for (int b = 0; b < 256; b++) {
+[0m[49m[38;5;9m- 134    [0m:[38;5;9m[49m         char s[2] = {(char)b, 0};
+[0m[49m[38;5;9m- 135    [0m:[38;5;9m[49m         CK("parse_operation byte", c.parse_operation(s), r.parse_operation(s));
+[0m[49m[38;5;9m- 136    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+       3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[39m  137,  4[0m:[39m[49m 
+[0m[49m[38;5;9m- 138    [0m:[38;5;9m[49m     /* --- get_operation_func --- */
+[0m[49m[38;5;9m- 139    [0m:[38;5;9m[49m     for (int op = -5; op <= 12; op++)
+[0m[49m[38;5;9m- 140    [0m:[38;5;9m[49m         CK("get_operation_func", op_index(&c, c.get_operation_func(op)),
+[0m[49m[38;5;9m- 141    [0m:[38;5;9m[49m                                  op_index(&r, r.get_operation_func(op)));
+[0m[49m[38;5;9m- 142    [0m:[38;5;9m[49m     CK("get_operation_func INT_MAX", op_index(&c, c.get_operation_func(INT_MAX)),
+[0m[49m[38;5;9m- 143    [0m:[38;5;9m[49m                                      op_index(&r, r.get_operation_func(INT_MAX)));
+[0m[49m[38;5;9m- 144    [0m:[38;5;9m[49m     CK("get_operation_func INT_MIN", op_index(&c, c.get_operation_func(INT_MIN)),
+[0m[49m[38;5;9m- 145    [0m:[38;5;9m[49m                                      op_index(&r, r.get_operation_func(INT_MIN)));
+[0m[49m[38;5;10m+       5[0m:[38;5;10m[49m typedef int (*fn_t)(int, int, int, int);
+[0m[49m[38;5;10m+       6[0m:[38;5;10m[49m typedef void (*init_t)(void);
+[0m[49m[39m  146,  7[0m:[39m[49m 
+[0m[49m[38;5;9m- 147    [0m:[38;5;9m[49m     /* --- inreftree over a broad input grid --- */
+[0m[49m[38;5;9m- 148    [0m:[38;5;9m[49m     for (int i = 0; i < nv; i++)
+[0m[49m[38;5;9m- 149    [0m:[38;5;9m[49m         for (int j = 0; j < nv; j++)
+[0m[49m[38;5;9m- 150    [0m:[38;5;9m[49m             for (int k = 0; k < nv; k++) {
+[0m[49m[38;5;9m- 151    [0m:[38;5;9m[49m                 int d = vals[(i + j + k) % nv];
+[0m[49m[38;5;9m- 152    [0m:[38;5;9m[49m                 CK("inreftree", c.inreftree(vals[i], vals[j], vals[k], d),
+[0m[49m[38;5;9m- 153    [0m:[38;5;9m[49m                                 r.inreftree(vals[i], vals[j], vals[k], d));
+[0m[49m[38;5;9m- 154    [0m:[38;5;9m[49m                 cmp_state(&c, &r, "after inreftree");
+[0m[49m[38;5;9m- 155    [0m:[38;5;9m[49m             }
+[0m[49m[38;5;10m+       8[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+       9[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+      10[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+      11[0m:[38;5;10m[49m     if (!hc || !hr) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+      12[0m:[38;5;10m[49m     fn_t c = (fn_t)dlsym(hc, "jumpnode");
+[0m[49m[38;5;10m+      13[0m:[38;5;10m[49m     fn_t r = (fn_t)dlsym(hr, "jumpnode");
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m     init_t ci = (init_t)dlsym(hc, "__test_init");
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m     init_t ri = (init_t)dlsym(hr, "__test_init");
+[0m[49m[38;5;10m+      16[0m:[38;5;10m[49m     if (!c || !r || !ci || !ri) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[39m  156, 17[0m:[39m[49m 
+[0m[49m[38;5;9m- 157    [0m:[38;5;9m[49m     /* dense sweep to hit every tree_sum %% 4 residue, positive and negative */
+[0m[49m[38;5;9m- 158    [0m:[38;5;9m[49m     for (int a = -40; a <= 40; a++)
+[0m[49m[38;5;9m- 159    [0m:[38;5;9m[49m         for (int b = -6; b <= 6; b++) {
+[0m[49m[38;5;9m- 160    [0m:[38;5;9m[49m             CK("inreftree dense", c.inreftree(a, b, -a, b), r.inreftree(a, b, -a, b));
+[0m[49m[38;5;9m- 161    [0m:[38;5;9m[49m             CK("inreftree dense2", c.inreftree(a, 0, b, -b), r.inreftree(a, 0, b, -b));
+[0m[49m[38;5;9m- 162    [0m:[38;5;9m[49m             cmp_state(&c, &r, "after inreftree dense");
+[0m[49m[38;5;9m- 163    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m     ci(); ri();   /* populate the 7-node table in both libraries */
+[0m[49m[39m  164, 19[0m:[39m[49m 
+[0m[49m[38;5;9m- 165    [0m:[38;5;9m[49m     /* --- manual table building: add_tree_node / find_node_by_id / calculate_tree_sum --- */
+[0m[49m[38;5;9m- 166    [0m:[38;5;9m[49m     struct { int id, value, parent; const char *label; } prog[] = {
+[0m[49m[38;5;9m- 167    [0m:[38;5;9m[49m         {10, 5, -1, "root"},
+[0m[49m[38;5;9m- 168    [0m:[38;5;9m[49m         {11, 7, 10, "a"},
+[0m[49m[38;5;9m- 169    [0m:[38;5;9m[49m         {12, 9, 10, "bb"},
+[0m[49m[38;5;9m- 170    [0m:[38;5;9m[49m         {13, 1, 10, "third-child-ignored"},
+[0m[49m[38;5;9m- 171    [0m:[38;5;9m[49m         {14, 2, 99, "orphan"},                  /* unknown parent -> -1, count unchanged */
+[0m[49m[38;5;9m- 172    [0m:[38;5;9m[49m         {15, 3, 11, "this-label-is-far-longer-than-thirty-one-characters"},
+[0m[49m[38;5;9m- 173    [0m:[38;5;9m[49m         {16, 4, -1, ""},
+[0m[49m[38;5;9m- 174    [0m:[38;5;9m[49m         {10, 8, 10, "dup-id"},                  /* duplicate id */
+[0m[49m[38;5;9m- 175    [0m:[38;5;9m[49m         {17, 6, 16, "x"},
+[0m[49m[38;5;9m- 176    [0m:[38;5;9m[49m     };
+[0m[49m[38;5;9m- 177    [0m:[38;5;9m[49m     /* reset both tables by driving inreftree, then replay the program */
+[0m[49m[38;5;9m- 178    [0m:[38;5;9m[49m     c.inreftree(1, 1, 1, 1); r.inreftree(1, 1, 1, 1);
+[0m[49m[38;5;9m- 179    [0m:[38;5;9m[49m     *c.node_count = 0; *r.node_count = 0;
+[0m[49m[38;5;9m- 180    [0m:[38;5;9m[49m     for (unsigned i = 0; i < sizeof(prog) / sizeof(prog[0]); i++) {
+[0m[49m[38;5;9m- 181    [0m:[38;5;9m[49m         CK("add_tree_node", c.add_tree_node(prog[i].id, prog[i].value, prog[i].parent, prog[i].label),
+[0m[49m[38;5;9m- 182    [0m:[38;5;9m[49m                             r.add_tree_node(prog[i].id, prog[i].value, prog[i].parent, prog[i].label));
+[0m[49m[38;5;9m- 183    [0m:[38;5;9m[49m         cmp_state(&c, &r, "after add_tree_node");
+[0m[49m[38;5;9m- 184    [0m:[38;5;9m[49m         for (int id = -2; id <= 20; id++) {
+[0m[49m[38;5;9m- 185    [0m:[38;5;9m[49m             CK("find_node_by_id", node_index(&c, c.find_node_by_id(id)),
+[0m[49m[38;5;9m- 186    [0m:[38;5;9m[49m                                   node_index(&r, r.find_node_by_id(id)));
+[0m[49m[38;5;9m- 187    [0m:[38;5;9m[49m             CK("calculate_tree_sum", c.calculate_tree_sum(id), r.calculate_tree_sum(id));
+[0m[49m[38;5;9m- 188    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 189    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 190    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 191    [0m:[38;5;9m[49m     /* --- overflow the table: 60 inserts into a 50-slot table --- */
+[0m[49m[38;5;9m- 192    [0m:[38;5;9m[49m     *c.node_count = 0; *r.node_count = 0;
+[0m[49m[38;5;9m- 193    [0m:[38;5;9m[49m     for (int i = 0; i < 60; i++) {
+[0m[49m[38;5;9m- 194    [0m:[38;5;9m[49m         char lbl[64];
+[0m[49m[38;5;9m- 195    [0m:[38;5;9m[49m         snprintf(lbl, sizeof(lbl), "node-%d-with-a-long-suffix-to-truncate", i);
+[0m[49m[38;5;9m- 196    [0m:[38;5;9m[49m         int parent = (i == 0) ? -1 : (i - 1) + 100;
+[0m[49m[38;5;9m- 197    [0m:[38;5;9m[49m         CK("add_tree_node overflow", c.add_tree_node(i + 100, i, parent, lbl),
+[0m[49m[38;5;9m- 198    [0m:[38;5;9m[49m                                      r.add_tree_node(i + 100, i, parent, lbl));
+[0m[49m[38;5;9m- 199    [0m:[38;5;9m[49m         cmp_state(&c, &r, "after overflow insert");
+[0m[49m[38;5;9m- 200    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 201    [0m:[38;5;9m[49m     CK("node_count after overflow", *c.node_count, *r.node_count);
+[0m[49m[38;5;9m- 202    [0m:[38;5;9m[49m     CK("sum after overflow", c.calculate_tree_sum(100), r.calculate_tree_sum(100));
+[0m[49m[38;5;9m- 203    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 204    [0m:[38;5;9m[49m     /* inreftree must still behave identically after the table was filled */
+[0m[49m[38;5;9m- 205    [0m:[38;5;9m[49m     for (int a = -3; a <= 3; a++) {
+[0m[49m[38;5;9m- 206    [0m:[38;5;9m[49m         CK("inreftree post-overflow", c.inreftree(a, a + 1, a + 2, a + 3),
+[0m[49m[38;5;9m- 207    [0m:[38;5;9m[49m                                       r.inreftree(a, a + 1, a + 2, a + 3));
+[0m[49m[38;5;9m- 208    [0m:[38;5;9m[49m         cmp_state(&c, &r, "after inreftree post-overflow");
+[0m[49m[38;5;9m- 209    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 210    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 211    [0m:[38;5;9m[49m     printf("%ld checks, %d mismatches\n", checks, fail);
+[0m[49m[38;5;9m- 212    [0m:[38;5;9m[49m     return fail != 0;
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m     long long total = 0, bad = 0;
+[0m[49m[38;5;10m+      21[0m:[38;5;10m[49m     /* Dense sweep. depth is kept >= 0 for mode 2: negative start_offset reads
+[0m[49m[38;5;10m+      22[0m:[38;5;10m[49m        before temp_array, which is undefined behaviour in the C original. */
+[0m[49m[38;5;10m+      23[0m:[38;5;10m[49m     for (int om = -3; om <= 8; om++)
+[0m[49m[38;5;10m+      24[0m:[38;5;10m[49m         for (int ni = -3; ni <= 12; ni++)
+[0m[49m[38;5;10m+      25[0m:[38;5;10m[49m             for (int d = -25; d <= 40; d++)
+[0m[49m[38;5;10m+      26[0m:[38;5;10m[49m                 for (int f = -70000; f <= 70000; f += 997) {
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m                     int dd = (om == 2 && d < 0) ? 0 : d;
+[0m[49m[38;5;10m+      28[0m:[38;5;10m[49m                     int a = c(om, ni, dd, f);
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m                     int b = r(om, ni, dd, f);
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m                     total++;
+[0m[49m[38;5;10m+      31[0m:[38;5;10m[49m                     if (a != b) {
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m                         if (bad < 20)
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m                             printf("MISMATCH jumpnode(%d,%d,%d,%d): C=%d Rust=%d\n",
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m                                    om, ni, dd, f, a, b);
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m                         bad++;
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m     /* Extreme magnitudes for depth/flags (overflow + clamping behaviour). */
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m     int big[] = {-2147483648, -2147483647, -1000000, -1, 0, 1, 1000000,
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m                  2147483646, 2147483647};
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m     for (int om = 1; om <= 4; om++)
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m         for (int ni = 1; ni <= 8; ni++)
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m             for (unsigned i = 0; i < sizeof(big)/sizeof(big[0]); i++)
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m                 for (unsigned j = 0; j < sizeof(big)/sizeof(big[0]); j++) {
+[0m[49m[38;5;10m+      45[0m:[38;5;10m[49m                     int d = (om == 2 && big[i] < 0) ? 0 : big[i];
+[0m[49m[38;5;10m+      46[0m:[38;5;10m[49m                     int a = c(om, ni, d, big[j]);
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m                     int b = r(om, ni, d, big[j]);
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m                     total++;
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m                     if (a != b) {
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m                         if (bad < 20)
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m                             printf("MISMATCH jumpnode(%d,%d,%d,%d): C=%d Rust=%d\n",
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m                                    om, ni, d, big[j], a, b);
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m                         bad++;
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m     printf("populated-table compared=%lld mismatches=%lld\n", total, bad);
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     return bad ? 1 : 0;
+[0m[49m[39m  213, 58[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/difftest2.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o difftest2 difftest2.c -ldl && ./difftest2 /tmp/hooked/libc_hooked.so /tmp/hooked/rust/target/release/libhooked.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run populated-table differential test
+
+populated-table compared=1789344 mismatches=0
+exit=0
+[38;5;244m - Completed in 0.91s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  34, 34[0m:[39m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // `int result = 0;` in the C original is overwritten on every switch arm; the
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m // initialiser is kept for fidelity with the source.
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m #![allow(unused_assignments)]
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation && touch src/lib.rs && cargo build --release 2>&1 | tail -20
+echo "=== crate-type check ==="; grep -A2 '\[lib\]' Cargo.toml
+echo "=== final symbol diff (C vs Rust) ==="
+nm -D --defined-only /tmp/cbuild_x9/libharvest-work-X9GQIx.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+diff /tmp/c_syms.txt /tmp/rust_syms.txt && echo "IDENTICAL: $(wc -l < /tmp/c_syms.txt) symbol(s): $(cat /tmp/c_syms.txt | tr '\n' ' ')"
+echo "=== re-run shipped-lib difftest ==="
+/tmp/difftest /tmp/cbuild_x9/libharvest-work-X9GQIx.so target/release/libtranslation.so
+echo "=== no writes to c_src ==="; find /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src -newer /local/home/scheschb/.harvest/work/harvest-work-X9GQIx/.claude/settings.json[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final rebuild, symbol diff, behavior test, and c_src integrity check
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+=== crate-type check ===
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+=== final symbol diff (C vs Rust) ===
+IDENTICAL: 1 symbol(s): jumpnode 
+=== re-run shipped-lib difftest ===
+compared=23572025 mismatches=0
+=== no writes to c_src ===
+[38;5;244m - Completed in 1.200s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/hooked /tmp/difftest /tmp/difftest2 /tmp/difftest.c /tmp/difftest2.c /tmp/cbuild_x9 /tmp/cbuild /tmp/c_syms.txt /tmp/rust_syms.txt
+find /local/home/scheschb/.harvest/work/harvest-work-X9GQIx -maxdepth 3 -not -path '*/target/*' -not -path '*/.git/*' | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temp verification artifacts and show final tree
+
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/.claude
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/.claude/settings.json
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/CMakeLists.txt
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/include
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/include/lib.h
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/src
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/c_src/src/lib.c
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/Cargo.lock
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/Cargo.toml
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/src
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/src/lib.rs
+/local/home/scheschb/.harvest/work/harvest-work-X9GQIx/translation/target
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified. The library turned out to be small — [38;5;10mc_src/[0m is three files (CMakeLists.txt, one header, one 219-line [38;5;10m.c[0m), and its entire public ABI is a single symbol.[0m[0m
+[0m[0m
+Surface enumeration (the definition of done): I built the C library with CMake and ran [38;5;10mnm -D --defined-only[0m, which reports exactly one export, [38;5;10mjumpnode[0m. The header declares [38;5;10mint jumpnode(int,int,int,int)[0m with no namespace/renaming macros, and everything else in the translation unit ([38;5;10mfind_node_by_id[0m, [38;5;10madd_node[0m, [38;5;10mprocess_backward[0m, [38;5;10mcompute_size_metric[0m, [38;5;10msafe_double_to_int[0m, [38;5;10minitialize_test_data[0m) is [38;5;10mstatic[0m, so it contributes no dynamic symbols. I translated all of it anyway, including the internal helpers.[0m[0m
+[0m[0m
+Verification I ran myself, not delegated:[0m[0m
+- [38;5;10mnm -D[0m symbol lists for both [38;5;10m.so[0m files diffed clean — 1 for 1, [38;5;10mjumpnode[0m.[0m[0m
+- Differential test dlopening both libraries side by side: 23,572,025 input tuples (dense sweeps over operation_mode plus boundary values like [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m, plus 4M random fuzz cases), zero mismatches.[0m[0m
+- Because [38;5;10minitialize_test_data[0m is [38;5;10mstatic[0m and never called, [38;5;10mnode_count[0m is permanently 0, so every [38;5;10mfind_node_by_id[0m fails and operation modes 1, 2, and 4 can only return their error codes (18, 34, 66). Those bodies are unreachable in the shipped library, so the test above cannot cover them. I built throwaway copies of both libraries in [38;5;10m/tmp[0m with a test-only [38;5;10m__test_init[0m hook that calls the initializer, populating the 7-node table, and diffed another 1,789,344 tuples through the now-live paths — also zero mismatches. [38;5;10mc_src/[0m was never modified; the copies were made outside it and deleted afterward.[0m[0m
+[0m[0m
+Behavior-preserving choices worth flagging: I reproduced the C's quirks rather than fixing them — the dead initializer stays uncalled, [38;5;10mint[0m arithmetic uses wrapping ops to match C's two's-complement overflow, and [38;5;10mprocess_backward[0m keeps its literal pointer walk. For [38;5;10msafe_double_to_int[0m the two clamps mean the cast is always an in-range truncation, so Rust's saturating [38;5;10mas[0m matches; I special-cased NaN to [38;5;10mINT_MIN[0m to mirror what x86-64 [38;5;10mcvttsd2si[0m produces for that otherwise-undefined input. [38;5;10msprintf[0m is reimplemented as a manual [38;5;10m%d[0m formatter writing into the same 50-byte buffer, since the widest result is 34 bytes plus NUL.[0m[0m
+[0m[0m
+[38;5;10mcargo build --release[0m succeeds warning-free, with [38;5;10mcrate-type = ["cdylib"][0m and [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C" fn jumpnode[0m.[0m[0m
+[38;5;8m
+ ▸ Credits: 9.26 • Time: 3m 57s
+
+[0m[1G[0m[0m[?25h

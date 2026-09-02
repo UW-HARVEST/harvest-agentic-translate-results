@@ -1,20 +1,15 @@
-//! Shared-library half of the translation of `c_src/`.
-//!
-//! The CMake project compiles `src/mdcore.c` and `src/mdmain.c`; this crate root
-//! exposes the C ABI surface that `mdcore.c` provides so the resulting `cdylib`
-//! can be linked against exactly like the C object would be. The `driver`
-//! executable (`src/main.rs`) is the translation of `mdmain.c`.
-//!
-//! Build configuration mirrors the CMake cache variables `OP` and `REPEAT` via
-//! Cargo features — see `Cargo.toml` and `mdmacros.rs`.
+// Shared library entry point.
+//
+// Exposes the public surface of c_src/src/mdcore.c (op_add, op_sub, op_mul,
+// helper_call, helper_ptr, use_generated, G_OP, G_OP_NAME) as a cdylib.
+//
+// Build-time configurability from c_src/CMakeLists.txt is preserved with Cargo
+// features: `add`/`sub`/`mul` for the OP cache variable and `repeat_0`..
+// `repeat_7` (aliases "0".."7") for the REPEAT cache variable.
+
+#![allow(dead_code)]
 
 pub mod mdcore;
 pub mod mdmacros;
 
-// Re-exported for Rust consumers; the exported linker symbols come from the
-// `#[unsafe(no_mangle)]` definitions in `mdcore`.
-pub use mdcore::{
-    G_OP, G_OP_NAME, g_op, g_op_name, helper_call, helper_ptr, op_add, op_mul, op_sub,
-    use_generated,
-};
-pub use mdmacros::{INIT, OP, OP_NAME, REPEAT};
+pub use mdcore::{helper_call, helper_ptr, op_add, op_mul, op_sub, use_generated, G_OP, G_OP_NAME};

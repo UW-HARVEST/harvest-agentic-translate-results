@@ -1,17 +1,43 @@
-//! Rust translation of the C `driver` shared library (c_src/).
-//!
-//! The layout mirrors the C sources one-to-one:
-//!   * `logger`       <- src/logger.c       / include/logger.h
-//!   * `task_manager` <- src/task_manager.c / include/task_manager.h
-//!   * `driver`       <- src/driver.c
-//!
-//! Behaviour (including the quirks and bugs of the original) is reproduced
-//! exactly: same order of checks, same messages, same return codes, same
-//! `malloc` success/failure semantics, same `atoi`/`strncpy`/`%s` semantics.
+/*
+ * Copyright 2025 MIT Lincoln Laboratory
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software
+ * and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,
+ * including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice
+ * shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ * THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+ * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+ * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
-pub mod cstdio;
-pub mod cutil;
+//! Rust translation of the `driver` C shared library (`c_src/`).
+//!
+//! Exported ABI (matches `nm -D libdriver.so` of the C build):
+//!
+//! * `task_manager.h`: `create_task_manager`, `add_task`, `print_tasks`,
+//!   `destroy_task_manager`
+//! * `logger.h`: `initialize_logger`, `log_info`, `log_warning`, `log_error`,
+//!   `finalize_logger`
+//! * `driver.c`: `driver`
+//!
+//! Behaviour - including the original's quirks (unchecked `MAX_TASKS`,
+//! `NULL`-unsafe `add_task`/`print_tasks`/`destroy_task_manager`, the
+//! non-reset `log_file` handle) - is reproduced as-is rather than corrected.
+
+pub mod cbind;
 pub mod driver;
 pub mod logger;
-pub mod stdio_stream;
 pub mod task_manager;

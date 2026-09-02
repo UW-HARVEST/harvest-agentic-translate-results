@@ -1,140 +1,157 @@
-//! Rust translation of `c_src/src/lib.c` (stb_ds-style siphash test-vector dumper).
+//! Rust translation of the C library in `c_src/`.
 //!
-//! Behaviour notes -- these mirror the C exactly and are deliberately *not* "fixed":
+//! The C library consists of a single translation unit (`src/lib.c`) that
+//! provides the `stb_ds` SipHash-based byte hashing routine plus a small
+//! table-printing helper. The exported ABI is:
 //!
-//! * `size_t` is the target's pointer-sized unsigned integer (`usize`). All the
-//!   `SIPROUND` arithmetic in the C is done on `size_t`, and the rotate widths are
-//!   spelled `sizeof(size_t)*8`, so on a 64-bit target every rotate is a 64-bit rotate.
-//! * In the C, `d[0] | (d[1] << 8) | (d[2] << 16) | (d[3] << 24)` is evaluated in
-//!   `int` because `unsigned char` promotes to `int`. When `d[3] >= 0x80` the `int`
-//!   result is negative, and the subsequent implicit conversion to `size_t`
-//!   *sign-extends*, flooding the upper 32 bits of `data` with ones. The same happens
-//!   for `case 4:` of the tail switch (`data |= (d[3] << 24);`). This is reproduced
-//!   below via `i32 as u64`.
-//! * The high half of the loop body, `(size_t)(d[4] | ... | (d[7] << 24)) << 16 << 16`,
-//!   also sign-extends, but the extension bits are then shifted out by `<< 32`, so it
-//!   behaves as an unsigned gather.
-//! * Output is emitted through C `printf` so that stdio buffering and any interleaving
-//!   with a C caller's own output is byte-for-byte identical.
+//!   * `size_t stbds_hash_bytes(void *p, size_t len, size_t seed);`
+//!   * `void   siphash(int init);`
+//!
+//! `stbds_siphash_bytes` is `static` in the C source and therefore not part of
+//! the public ABI; it is kept private here as well.
+//!
+//! The original C relies on several implementation-defined / undefined
+//! behaviours (signed `int` shift overflow followed by sign-extension into
+//! `size_t`). Those are reproduced bit-for-bit rather than "fixed", because the
+//! translation must be output-identical to the C build.
+
+#![allow(non_camel_case_types)]
 
 use std::ffi::{c_char, c_int, c_void};
 
-unsafe extern "C" {
+extern "C" {
     fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// Width of `size_t` in bits, as the C spells it: `sizeof(size_t) * 8`.
-const SIZE_T_BITS: u32 = (size_of::<usize>() as u32) * 8;
+/// Number of bits in a `size_t` on the supported targets (`sizeof(size_t) * 8`).
+const SIZE_T_BITS: u32 = 64;
 
-/// One `stbds_SIPROUND()` step from the C macro, on `size_t`-wide values.
-#[inline]
-fn sipround(v0: &mut usize, v1: &mut usize, v2: &mut usize, v3: &mut usize) {
-    *v0 = v0.wrapping_add(*v1);
-    *v1 = rotl(*v1, 13);
-    *v1 ^= *v0;
-    *v0 = rotl(*v0, SIZE_T_BITS / 2);
-    *v2 = v2.wrapping_add(*v3);
-    *v3 = rotl(*v3, 16);
-    *v3 ^= *v2;
-    *v2 = v2.wrapping_add(*v1);
-    *v1 = rotl(*v1, 17);
-    *v1 ^= *v2;
-    *v2 = rotl(*v2, SIZE_T_BITS / 2);
-    *v0 = v0.wrapping_add(*v3);
-    *v3 = rotl(*v3, 21);
-    *v3 ^= *v0;
+/// One SipHash round, matching the `stbds_sipround` macro expansion that the C
+/// source spells out inline.
+///
+/// `(x << n) | (x >> (SIZE_T_BITS - n))` on an unsigned value is a rotate-left.
+macro_rules! sipround {
+    ($v0:ident, $v1:ident, $v2:ident, $v3:ident) => {{
+        $v0 = $v0.wrapping_add($v1);
+        $v1 = $v1.rotate_left(13);
+        $v1 ^= $v0;
+        $v0 = $v0.rotate_left(SIZE_T_BITS / 2);
+        $v2 = $v2.wrapping_add($v3);
+        $v3 = $v3.rotate_left(16);
+        $v3 ^= $v2;
+        $v2 = $v2.wrapping_add($v1);
+        $v1 = $v1.rotate_left(17);
+        $v1 ^= $v2;
+        $v2 = $v2.rotate_left(SIZE_T_BITS / 2);
+        $v0 = $v0.wrapping_add($v3);
+        $v3 = $v3.rotate_left(21);
+        $v3 ^= $v0;
+    }};
 }
 
-/// `((x) << (n)) | ((x) >> (SIZE_T_BITS - (n)))`; every `n` used by the C is in
-/// `1 ..= SIZE_T_BITS - 1`, so this is an ordinary rotate.
+/// Reproduces C's `d[k] << shift` where `d[k]` is an `unsigned char` promoted to
+/// `int`, the shift may overflow the `int`, and the resulting (possibly
+/// negative) `int` is then converted to `size_t` — sign-extending into the upper
+/// 32 bits.
 #[inline]
-fn rotl(x: usize, n: u32) -> usize {
-    (x << n) | (x >> (SIZE_T_BITS - n))
+fn int_shift_sext(byte: u8, shift: u32) -> usize {
+    (((byte as u32) << shift) as i32) as i64 as u64 as usize
 }
 
-fn stbds_siphash_bytes(data_in: &[u8], seed: usize) -> usize {
-    let len = data_in.len();
+/// `static size_t stbds_siphash_bytes(void *p, size_t len, size_t seed)`
+unsafe fn stbds_siphash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize {
+    let mut d = p as *const u8;
+    let mut i: usize;
 
-    let mut v0: usize = ((0x736f_6d65usize << 16) << 16).wrapping_add(0x7073_6575) ^ seed;
-    let mut v1: usize = ((0x646f_7261usize << 16) << 16).wrapping_add(0x6e64_6f6d) ^ !seed;
-    let mut v2: usize = ((0x6c79_6765usize << 16) << 16).wrapping_add(0x6e65_7261) ^ seed;
-    let mut v3: usize = ((0x7465_6462usize << 16) << 16).wrapping_add(0x7974_6573) ^ !seed;
+    let mut v0: usize;
+    let mut v1: usize;
+    let mut v2: usize;
+    let mut v3: usize;
+    let mut data: usize;
 
-    // The C xors in the 64-bit literals unconditionally; on a 32-bit `size_t` they
-    // would be truncated by the implicit conversion, which `as usize` reproduces.
-    v0 ^= (0x0706_0504_0302_0100u64 as usize) ^ seed;
-    v1 ^= (0x0f0e_0d0c_0b0a_0908u64 as usize) ^ !seed;
-    v2 ^= (0x0706_0504_0302_0100u64 as usize) ^ seed;
-    v3 ^= (0x0f0e_0d0c_0b0a_0908u64 as usize) ^ !seed;
+    v0 = ((((0x736f_6d65usize) << 16) << 16).wrapping_add(0x7073_6575)) ^ seed;
+    v1 = ((((0x646f_7261usize) << 16) << 16).wrapping_add(0x6e64_6f6d)) ^ !seed;
+    v2 = ((((0x6c79_6765usize) << 16) << 16).wrapping_add(0x6e65_7261)) ^ seed;
+    v3 = ((((0x7465_6462usize) << 16) << 16).wrapping_add(0x7974_6573)) ^ !seed;
 
-    let word = size_of::<usize>();
+    v0 ^= 0x0706_0504_0302_0100usize ^ seed;
+    v1 ^= 0x0f0e_0d0c_0b0a_0908usize ^ !seed;
+    v2 ^= 0x0706_0504_0302_0100usize ^ seed;
+    v3 ^= 0x0f0e_0d0c_0b0a_0908usize ^ !seed;
 
     // for (i = 0; i + sizeof(size_t) <= len; i += sizeof(size_t), d += sizeof(size_t))
-    let mut i: usize = 0;
-    while i + word <= len {
-        let d = &data_in[i..];
+    i = 0;
+    while i + core::mem::size_of::<usize>() <= len {
+        // data = d[0] | (d[1] << 8) | (d[2] << 16) | (d[3] << 24);
+        //
+        // The right-hand side is an `int`; when d[3] >= 0x80 it becomes negative
+        // and is sign-extended when stored into the `size_t`. Preserved as-is.
+        let lo = (*d.add(0) as u32)
+            | ((*d.add(1) as u32) << 8)
+            | ((*d.add(2) as u32) << 16)
+            | ((*d.add(3) as u32) << 24);
+        data = (lo as i32) as i64 as u64 as usize;
 
-        // Evaluated in `int` by the C, hence the i32 arithmetic and sign-extending cast.
-        let lo: i32 = (d[0] as i32)
-            | ((d[1] as i32) << 8)
-            | ((d[2] as i32) << 16)
-            | ((d[3] as i32) << 24);
-        let mut data: usize = lo as u64 as usize;
-
-        let hi: i32 = (d[4] as i32)
-            | ((d[5] as i32) << 8)
-            | ((d[6] as i32) << 16)
-            | ((d[7] as i32) << 24);
-        data |= ((((hi as u64 as usize) << 16) as usize) << 16) as usize;
+        // data |= (size_t)(d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24)) << 16 << 16;
+        let hi = (*d.add(4) as u32)
+            | ((*d.add(5) as u32) << 8)
+            | ((*d.add(6) as u32) << 16)
+            | ((*d.add(7) as u32) << 24);
+        let hi_sext = (hi as i32) as i64 as u64 as usize;
+        data |= (hi_sext << 16) << 16;
 
         v3 ^= data;
-        for _ in 0..2 {
-            sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        for _j in 0..2 {
+            sipround!(v0, v1, v2, v3);
         }
         v0 ^= data;
 
-        i += word;
+        i += core::mem::size_of::<usize>();
+        d = d.add(core::mem::size_of::<usize>());
     }
 
-    // data = len << (sizeof(size_t)*8 - 8);
-    let mut data: usize = len << (SIZE_T_BITS - 8);
+    // data = len << (sizeof(size_t) * 8 - 8);
+    data = len << (SIZE_T_BITS - 8);
 
-    // The switch on `len - i` falls through from the highest matching case down to
-    // `case 0`, so every case from 1 up to `len - i` runs. All of them are `|=`, so
-    // applying them in ascending order is equivalent.
-    let d = &data_in[i..];
-    let rem = len - i;
-    if rem >= 1 {
-        data |= (d[0] as i32) as u64 as usize;
-    }
-    if rem >= 2 {
-        data |= (((d[1] as i32) << 8) as u64) as usize;
-    }
-    if rem >= 3 {
-        data |= (((d[2] as i32) << 16) as u64) as usize;
-    }
-    if rem >= 4 {
-        // `(d[3] << 24)` is a negative `int` when d[3] >= 0x80: sign-extends.
-        data |= (((d[3] as i32) << 24) as u64) as usize;
-    }
-    if rem >= 5 {
-        data |= ((d[4] as usize) << 16) << 16;
+    // switch (len - i) { case 7: ... case 0: break; }  -- fall-through chain.
+    let rem = len.wrapping_sub(i);
+    if rem >= 7 {
+        // data |= ((size_t)d[6] << 24) << 24;
+        data |= ((*d.add(6) as usize) << 24) << 24;
     }
     if rem >= 6 {
-        data |= ((d[5] as usize) << 20) << 20;
+        // data |= ((size_t)d[5] << 20) << 20;
+        data |= ((*d.add(5) as usize) << 20) << 20;
     }
-    if rem >= 7 {
-        data |= ((d[6] as usize) << 24) << 24;
+    if rem >= 5 {
+        // data |= ((size_t)d[4] << 16) << 16;
+        data |= ((*d.add(4) as usize) << 16) << 16;
+    }
+    if rem >= 4 {
+        // data |= (d[3] << 24);   <-- `int` shift, sign-extended on conversion.
+        data |= int_shift_sext(*d.add(3), 24);
+    }
+    if rem >= 3 {
+        // data |= (d[2] << 16);
+        data |= int_shift_sext(*d.add(2), 16);
+    }
+    if rem >= 2 {
+        // data |= (d[1] << 8);
+        data |= int_shift_sext(*d.add(1), 8);
+    }
+    if rem >= 1 {
+        // data |= d[0];
+        data |= *d.add(0) as usize;
     }
 
     v3 ^= data;
-    for _ in 0..2 {
-        sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+    for _j in 0..2 {
+        sipround!(v0, v1, v2, v3);
     }
     v0 ^= data;
     v2 ^= 0xff;
-    for _ in 0..4 {
-        sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+    for _j in 0..4 {
+        sipround!(v0, v1, v2, v3);
     }
 
     v0 ^ v1 ^ v2 ^ v3
@@ -143,37 +160,28 @@ fn stbds_siphash_bytes(data_in: &[u8], seed: usize) -> usize {
 /// `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stbds_hash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize {
-    let bytes = if len == 0 {
-        &[][..]
-    } else {
-        unsafe { std::slice::from_raw_parts(p as *const u8, len) }
-    };
-    stbds_siphash_bytes(bytes, seed)
+    stbds_siphash_bytes(p, len, seed)
 }
 
 /// `void siphash(int init)`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn siphash(init: c_int) {
-    let mut mem = [0u8; 64];
-
-    // int z = init; for (i=0; i<64; ++i,z++) mem[i] = z;
-    // `z` is an `int` that wraps on overflow in practice; the store truncates to
-    // the low 8 bits.
+    let mut mem: [u8; 64] = [0; 64];
     let mut z: c_int = init;
+
+    // for (i=0; i < 64; ++i,z++) mem[i] = z;
     for i in 0..64usize {
         mem[i] = z as u8;
         z = z.wrapping_add(1);
     }
 
     for i in 0..64usize {
-        let hash = stbds_siphash_bytes(&mem[..i], 0);
-        unsafe {
-            printf(c"  { ".as_ptr());
-            for j in 0..8u32 {
-                let byte = ((hash >> (j * 8)) & 255) as u8;
-                printf(c"0x%02x, ".as_ptr(), byte as c_int);
-            }
-            printf(c" },\n".as_ptr());
+        let hash = stbds_hash_bytes(mem.as_mut_ptr() as *mut c_void, i, 0);
+        printf(b"  { \0".as_ptr() as *const c_char);
+        for j in 0..8usize {
+            let byte = ((hash >> (j * 8)) & 255) as u8;
+            printf(b"0x%02x, \0".as_ptr() as *const c_char, byte as c_int);
         }
+        printf(b" },\n\0".as_ptr() as *const c_char);
     }
 }

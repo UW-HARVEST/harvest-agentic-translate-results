@@ -1,36 +1,31 @@
-//! A Rust translation of jansson 2.15.0 that is ABI and byte-output compatible
-//! with the C library built from `c_src/`.
+//! Rust translation of the jansson 2.15.0 C library.
 //!
-//! Every public C entry point is re-exported with `#[unsafe(no_mangle)]` and
-//! the C calling convention. The internal (`jsonp_*`, `hashtable_*`, `utf8_*`,
-//! `strbuffer_*`, `dtoa_r`, ...) symbols that the C build also exports from the
-//! shared object are provided as well.
-
-#![allow(non_upper_case_globals)]
+//! The crate reproduces the complete public ABI (including private/internal
+//! symbols that the C shared object happens to export) and byte-identical
+//! behaviour.
 #![allow(non_camel_case_types)]
-#![allow(clippy::missing_safety_doc)]
-#![allow(clippy::manual_range_contains)]
-#![allow(clippy::needless_return)]
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
+#![allow(non_upper_case_globals)]
+#![allow(non_snake_case)]
+#![allow(unused_parens)]
+#![allow(unused_assignments)]
+#![allow(clippy::all)]
 
-pub mod cfmt;
+pub mod cffi;
 pub mod dtoa;
-pub mod dtoa_hex;
-pub mod dtoa_strtod;
-pub mod dtoa_strtod_helpers;
 pub mod dtoa_tables;
 pub mod dump;
 pub mod error;
 pub mod hashtable;
 pub mod hashtable_seed;
+pub mod jtypes;
 pub mod load;
 pub mod lookup3;
 pub mod memory;
 pub mod pack_unpack;
 pub mod strbuffer;
 pub mod strconv;
-pub mod types;
+pub mod trampolines;
 pub mod utf;
+pub mod valist;
 pub mod value;
-pub mod varargs;
 pub mod version;

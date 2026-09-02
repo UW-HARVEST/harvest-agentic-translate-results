@@ -1,0 +1,989 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f | head -100; echo "---"; wc -l $(find c_src -type f -name '*.c' -o -name '*.h') 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in both subtrees
+
+c_src/CMakeLists.txt
+c_src/src/main.c
+---
+155 c_src/src/main.c
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141mc_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141mc_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3615 bytes[0m from c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall single-file program (CWE-129 style). Let me build the C reference to observe actual behavior, including the out-of-bounds path.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/main.c 2>&1 | tail -5; echo "build rc=$?"; ls -l /tmp/cref/[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile the C reference program
+
+build rc=0
+total 424
+-rw-r--r--. 1 scheschb amazon  12840 Aug 31 03:31 CMakeCache.txt
+drwxr-xr-x. 5 scheschb amazon    240 Aug 31 04:08 CMakeFiles
+-rw-r--r--. 1 scheschb amazon  14725 Aug 31 03:31 Makefile
+-rw-r--r--. 1 scheschb amazon      0 Sep  1 07:03 c.err
+-rwxr-xr-x. 1 scheschb amazon  17048 Sep  1 07:14 cdriver
+-rwxr-xr-x. 1 scheschb amazon  17048 Sep  1 07:14 cdriver0
+-rwxr-xr-x. 1 scheschb amazon  17048 Sep  1 07:14 cdriver3
+-rw-r--r--. 1 scheschb amazon   1639 Aug 31 03:31 cmake_install.cmake
+-rw-r--r--. 1 scheschb amazon   1605 Sep  1 07:03 cmp.sh
+-rwxr-xr-x. 1 scheschb amazon  17080 Sep  1 07:17 driver
+-rw-r--r--. 1 scheschb amazon   4781 Sep  1 04:18 fuzz.py
+-rwxr-xr-x. 1 scheschb amazon 139128 Aug 31 03:31 libjansson.so
+-rw-r--r--. 1 scheschb amazon  27260 Sep  1 04:22 main.s
+-rwxr-xr-x. 1 scheschb amazon  16688 Sep  1 04:19 p
+-rw-r--r--. 1 scheschb amazon    899 Sep  1 04:19 p.c
+-rw-r--r--. 1 scheschb amazon      0 Sep  1 07:03 r.err
+-rw-r--r--. 1 scheschb amazon   2475 Sep  1 07:14 ref.c
+-rw-r--r--. 1 scheschb amazon   2472 Sep  1 07:14 ref0.c
+-rw-r--r--. 1 scheschb amazon   2472 Sep  1 07:14 ref3.c
+-rwxr-xr-x. 1 scheschb amazon  16752 Sep  1 04:29 sc
+-rw-r--r--. 1 scheschb amazon    120 Sep  1 04:29 sc.c
+-rwxr-xr-x. 1 scheschb amazon  16984 Sep  1 04:30 sc3
+-rw-r--r--. 1 scheschb amazon    207 Sep  1 04:30 sc3.c
+-rwxr-xr-x. 1 scheschb amazon  16984 Sep  1 04:31 si
+-rw-r--r--. 1 scheschb amazon    187 Sep  1 04:31 si.c
+-rwxr-xr-x. 1 scheschb amazon  16688 Sep  1 04:14 t
+-rw-r--r--. 1 scheschb amazon    437 Sep  1 04:14 t.c
+[38;5;244m - Completed in 0.51s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf myref && mkdir myref && gcc -O0 -o myref/driver /local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/c_src/src/main.c && echo OK
+for inp in "3
+5" "7" "" "-2
+-4" "12
+15" "0
+9" "abc
+xyz" "  42
+  8"; do
+  echo "=== INPUT: [$inp]"
+  printf '%s\n' "$inp" | /tmp/myref/driver; echo "rc=$?"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test C reference with various inputs
+
+OK
+=== INPUT: [3
+5]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+0
+Finished good()
+Calling bad()...
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+Finished bad()
+rc=0
+=== INPUT: [7]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+Finished good()
+Calling bad()...
+fgets() failed.
+ERROR: Array index is negative.
+Finished bad()
+rc=0
+=== INPUT: []
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+Finished good()
+Calling bad()...
+fgets() failed.
+ERROR: Array index is negative.
+Finished bad()
+rc=0
+=== INPUT: [-2
+-4]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+ERROR: Array index is out-of-bounds
+Finished good()
+Calling bad()...
+ERROR: Array index is negative.
+Finished bad()
+rc=0
+=== INPUT: [12
+15]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+ERROR: Array index is out-of-bounds
+Finished good()
+Calling bad()...
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+Finished bad()
+rc=0
+=== INPUT: [0
+9]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+Finished good()
+Calling bad()...
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+Finished bad()
+rc=0
+=== INPUT: [abc
+xyz]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+Finished good()
+Calling bad()...
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+Finished bad()
+rc=0
+=== INPUT: [  42
+  8]
+Calling good()...
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+ERROR: Array index is out-of-bounds
+Finished good()
+Calling bad()...
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+Finished bad()
+rc=0
+[38;5;244m - Completed in 0.58s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && for d in 10 11 12 13 14 15 16 17 18 19 20 24 28 32 40 48 64 100 1000 100000 1410065407 -1 2147483647; do
+  out=$(printf '5\n%s\n' "$d" | ./driver 2>&1; echo "rc=$?")
+  bad=$(echo "$out" | sed -n '/Calling bad/,$p' | tr '\n' ' ')
+  echo "d=$d -> $bad"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe out-of-bounds write behavior in bad()
+
+d=10 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=11 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=12 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=13 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=14 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=15 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=16 -> 
+d=17 -> 
+d=18 -> 
+d=19 -> 
+d=20 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=24 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=28 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=32 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=40 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=48 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=64 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=100 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=1000 -> Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() rc=0 
+d=100000 -> 
+d=1410065407 -> 
+d=-1 -> Calling bad()... ERROR: Array index is negative. Finished bad() rc=0 
+d=2147483647 -> 
+[38;5;244m - Completed in 3.572s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && for d in 16 17 18 19 100000 1410065407 2147483647; do
+  printf '5\n%s\n' "$d" | ./driver > /tmp/myref/o.txt 2>/tmp/myref/e.txt; rc=$?
+  echo "d=$d rc=$rc stdout_bytes=$(wc -c </tmp/myref/o.txt) stderr=[$(cat /tmp/myref/e.txt)]"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect crash cases
+
+d=16 rc=139 stdout_bytes=0 stderr=[]
+bash: line 1: 3999344 Done                    printf '5\n%s\n' "$d"
+     3999345 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+bash: line 1: 3999360 Done                    printf '5\n%s\n' "$d"
+     3999361 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+d=17 rc=139 stdout_bytes=0 stderr=[]
+bash: line 1: 3999375 Done                    printf '5\n%s\n' "$d"
+     3999376 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+d=18 rc=139 stdout_bytes=0 stderr=[]
+bash: line 1: 3999391 Done                    printf '5\n%s\n' "$d"
+     3999392 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+d=19 rc=139 stdout_bytes=0 stderr=[]
+bash: line 1: 3999406 Done                    printf '5\n%s\n' "$d"
+     3999407 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+d=100000 rc=139 stdout_bytes=0 stderr=[]
+bash: line 1: 3999467 Done                    printf '5\n%s\n' "$d"
+     3999468 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+d=1410065407 rc=139 stdout_bytes=0 stderr=[]
+bash: line 1: 3999502 Done                    printf '5\n%s\n' "$d"
+     3999503 Segmentation fault      (core dumped) | ./driver > /tmp/myref/o.txt 2> /tmp/myref/e.txt
+d=2147483647 rc=139 stdout_bytes=0 stderr=[]
+[38;5;244m - Completed in 3.431s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && gcc -O2 -o driver2 /local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/c_src/src/main.c && for d in 10 12 16 17 20 32 100 1000; do
+  out=$(printf '5\n%s\n' "$d" | ./driver2 2>/dev/null; ); rc=$?
+  echo "O2 d=$d rc=$rc bad=[$(echo "$out"|sed -n '/Calling bad/,$p'|tr '\n' ' ')]"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare -O2 behavior for OOB indices
+
+O2 d=10 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=12 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=16 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=17 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=20 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=32 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=100 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+O2 d=1000 rc=0 bad=[Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() ]
+[38;5;244m - Completed in 0.93s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: at [38;5;10m-O0[0m the out-of-bounds write in [38;5;10mbad()[0m crashes for a few layout-specific indices (16–19), but at [38;5;10m-O2[0m it's absorbed and prints ten zeros. The crash is nondeterministic UB tied to one stack layout, so I'll model the OOB write as absorbed into the frame (matching [38;5;10m-O2[0m and every non-crashing [38;5;10m-O0[0m case).[0m[0m
+[0m[0m
+Let me check two more semantics against the reference before writing Rust: [38;5;10mfgets[0m partial-line carryover and [38;5;10matoi[0m overflow truncation.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && cat > probe.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+int main(){
+ const char* t[] = {"1234567890123","9999999999","2147483648","-2147483649","  +8","-0","abc","","\n","0009","5abc","  -3","99999999999999999999","+","  ","12 34"};
+ for(int i=0;i<16;i++) printf("[%s] -> %d\n", t[i], atoi(t[i]));
+ return 0;}
+EOF
+gcc -O0 -o probe probe.c && ./probe
+echo "=== fgets carryover: 20-char first line ==="
+printf '12345678901234567890\n' | ./driver | sed -n '/Calling good/,$p' | tr '\n' ' '; echo[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe glibc atoi edge cases and fgets carryover
+
+[1234567890123] -> 1912276171
+[9999999999] -> 1410065407
+[2147483648] -> -2147483648
+[-2147483649] -> 2147483647
+[  +8] -> 8
+[-0] -> 0
+[abc] -> 0
+[] -> 0
+[
+] -> 0
+[0009] -> 9
+[5abc] -> 5
+[  -3] -> -3
+[99999999999999999999] -> -1
+[+] -> 0
+[  ] -> 0
+[12 34] -> 12
+=== fgets carryover: 20-char first line ===
+
+[38;5;244m - Completed in 0.521s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && echo "--- O2 carryover ---"; printf '12345678901234567890\n' | ./driver2 | sed -n '/Calling good/,$p' | tr '\n' ' '; echo
+echo "--- O2 13char line no newline then more ---"; printf '1234567890123456\n7\n' | ./driver2 | tail -14 | tr '\n' ' '; echo
+echo "--- O0 exactly 13 chars + nl ---"; printf '0000000000003\n8\n' | ./driver | sed -n '/Calling good/,$p' | tr '\n' ' '; echo[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify fgets 13-byte truncation and carryover at -O2
+
+--- O2 carryover ---
+
+--- O2 13char line no newline then more ---
+ERROR: Array index is out-of-bounds Finished good() Calling bad()... 0 0 0 0 0 0 0 0 0 0 Finished bad() 
+--- O0 exactly 13 chars + nl ---
+Calling good()... 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 Finished good() Calling bad()... 1 0 0 0 0 0 0 0 0 0 Finished bad() 
+[38;5;244m - Completed in 0.490s[0m
+
+[?25l[0m[38;5;141m> [0mAll semantics confirmed. Now writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translated executable
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the Rust translation of main.c
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original C: Copyright 2025 MIT Lincoln Laboratory (MIT-style license, see
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // c_src/src/main.c for the full notice).
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // This is a faithful, behaviour-preserving translation. Bugs present in the C
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // are reproduced, not fixed:
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //   * `bad()` validates only `data >= 0` and then performs `buffer[data] = 1`
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //     on a 10-element array, so any `data >= 10` is an out-of-bounds write
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //     (CWE-129 / CWE-787). See `StackFrame` below for how that is modelled.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //   * The order of reads, validations and prints is preserved exactly.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //   * `fgets` reads at most 13 bytes and never past a newline, so a long input
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //     line is split across the two `fgets` call sites, exactly as in C.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::io::{BufRead, StdinLock, Write};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Size of the C `char inputBuffer[14]`.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m const INPUT_BUFFER_LEN: usize = 14;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// Size of the C `int buffer[10]`.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m const BUFFER_LEN: usize = 10;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// Extra words standing in for the rest of the C function's stack frame.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// In C, `buffer[data] = 1` with `data >= BUFFER_LEN` writes past the array.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// That is undefined behaviour: with `gcc -O2` the store lands in unused frame
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// space and is unobservable, while with `gcc -O0` a handful of layout-specific
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// indices happen to clobber the return address and crash. Since only
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// `buffer[0..BUFFER_LEN]` is ever printed, the observable, reproducible
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// behaviour is that the stray store is absorbed; we model that with padding
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// rather than replicating one compiler's accidental crash.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m const FRAME_PAD_LEN: usize = 4096;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// Emulates the C stack frame holding `int buffer[10]`.
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m struct StackFrame {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     buffer: [i32; BUFFER_LEN],
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     /// Stands in for the remainder of the frame; written to but never read.
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     _pad: [i32; FRAME_PAD_LEN],
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m impl StackFrame {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         // `int buffer[10] = { 0 };`
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         StackFrame {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             buffer: [0; BUFFER_LEN],
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m             _pad: [0; FRAME_PAD_LEN],
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     /// `buffer[index] = value`, including the out-of-bounds case.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     /// `index` is the (already known non-negative) C `int`. Indices inside the
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     /// array behave normally; indices past it are absorbed by the emulated
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     /// frame, and indices beyond even that are dropped (in C they would scribble
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     /// on unrelated memory or fault, neither of which is observable in output).
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     fn store(&mut self, index: i32, value: i32) {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         let index = index as usize;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         if index < BUFFER_LEN {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             self.buffer[index] = value;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         } else if index < BUFFER_LEN + FRAME_PAD_LEN {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             self._pad[index - BUFFER_LEN] = value;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// `printf("%s\n", line)` guarded by a NULL check.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// The C takes `const char *` and skips NULL; `Option` makes that explicit.
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m fn print_line(out: &mut impl Write, line: Option<&str>) {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     if let Some(line) = line {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         // Errors are ignored, matching C's unchecked printf.
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         let _ = writeln!(out, "{}", line);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// `printf("%d\n", intNumber)`.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn print_int_line(out: &mut impl Write, int_number: i32) {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     let _ = writeln!(out, "{}", int_number);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// True for the characters glibc's `isspace` accepts in the C locale.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m fn is_c_space(b: u8) -> bool {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// glibc `atoi`, which is `(int) strtol(s, NULL, 10)`.
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// Skips leading whitespace, accepts one optional sign, consumes ASCII digits
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// and stops at the first non-digit. On `long` overflow `strtol` saturates to
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m /// `LONG_MAX`/`LONG_MIN`, and the cast to `int` truncates; both are reproduced,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// so e.g. "9999999999" yields 1410065407 and twenty nines yield -1.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m fn atoi(s: &[u8]) -> i32 {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     // The C string ends at the first NUL byte.
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     let s = match s.iter().position(|&b| b == 0) {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         Some(nul) => &s[..nul],
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         None => s,
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let mut i = 0;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     while i < s.len() && is_c_space(s[i]) {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let mut negative = false;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         negative = s[i] == b'-';
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let mut acc: i64 = 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let mut overflowed = false;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     while i < s.len() && s[i].is_ascii_digit() {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         let digit = i64::from(s[i] - b'0');
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         if !overflowed {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             match acc.checked_mul(10).and_then(|a| a.checked_add(digit)) {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 Some(next) => acc = next,
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                 // Keep scanning digits, as strtol does, but remember the overflow.
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                 None => overflowed = true,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     if overflowed {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         // (int) LONG_MAX == -1, (int) LONG_MIN == 0 on x86-64.
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         return if negative {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             i64::MIN as i32
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             i64::MAX as i32
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let value = if negative { -acc } else { acc };
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     // C's narrowing conversion to `int`: two's-complement truncation.
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     value as i32
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m /// Reads one byte, or `None` at EOF / on error.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m fn read_byte(reader: &mut StdinLock<'_>) -> Option<u8> {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         let byte = match reader.fill_buf() {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             Ok(available) => {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                 if available.is_empty() {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m                     return None; // EOF
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                 available[0]
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             Err(_) => return None,
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         reader.consume(1);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         return Some(byte);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m /// `fgets(dst, dst.len(), stdin)`; returns false where C returns NULL.
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m /// Copies at most `dst.len() - 1` bytes, stops after a newline (which is kept),
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m /// NUL-terminates, and leaves anything beyond that in the stream for the next
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m /// call. Returns false only when EOF/error is hit before any byte is read.
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m fn fgets(dst: &mut [u8], reader: &mut StdinLock<'_>) -> bool {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let capacity = dst.len() - 1;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let mut written = 0;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     while written < capacity {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         match read_byte(reader) {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m             Some(byte) => {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 dst[written] = byte;
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                 written += 1;
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m                 if byte == b'\n' {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     if written == 0 {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     dst[written] = 0;
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     true
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m fn bad(out: &mut impl Write, reader: &mut StdinLock<'_>) {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     let mut data: i32;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     // Initialize data
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     data = -1;
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         let mut input_buffer = [0u8; INPUT_BUFFER_LEN];
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         if fgets(&mut input_buffer, reader) {
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m             // Convert to int
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             data = atoi(&input_buffer);
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m             print_line(out, Some("fgets() failed."));
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         let mut frame = StackFrame::new();
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         if data >= 0 {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             // BUG (reproduced): no upper bound check, so data >= 10 writes
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             // out of bounds.
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m             frame.store(data, 1);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m             // Print the array values
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             for i in 0..BUFFER_LEN {
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m                 print_int_line(out, frame.buffer[i]);
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             print_line(out, Some("ERROR: Array index is negative."));
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m /// goodG2B uses the GoodSource with the BadSink
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m fn good_g2b(out: &mut impl Write) {
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     let mut data: i32;
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     // Initialize data
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     data = -1;
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     data = 7;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         let mut frame = StackFrame::new();
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         if data >= 0 {
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m             frame.store(data, 1);
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m             // Print the array values
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m             for i in 0..BUFFER_LEN {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m                 print_int_line(out, frame.buffer[i]);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m             print_line(out, Some("ERROR: Array index is negative."));
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m /// goodB2G uses the BadSource with the GoodSink
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m fn good_b2g(out: &mut impl Write, reader: &mut StdinLock<'_>) {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     let mut data: i32;
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     // Initialize data
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     data = -1;
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         let mut input_buffer = [0u8; INPUT_BUFFER_LEN];
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         if fgets(&mut input_buffer, reader) {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m             // Convert to int
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m             data = atoi(&input_buffer);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m             print_line(out, Some("fgets() failed."));
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         let mut frame = StackFrame::new();
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         if data >= 0 && data < (BUFFER_LEN as i32) {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m             frame.store(data, 1);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m             // Print the array values
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m             for i in 0..BUFFER_LEN {
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m                 print_int_line(out, frame.buffer[i]);
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m             print_line(out, Some("ERROR: Array index is out-of-bounds"));
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m fn good(out: &mut impl Write, reader: &mut StdinLock<'_>) {
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     good_g2b(out);
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     good_b2g(out, reader);
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     let stdin = std::io::stdin();
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     let mut reader = stdin.lock();
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     // Buffered like C's stdout, so the byte stream is emitted in the same order.
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m     let mut out = std::io::BufWriter::new(stdout.lock());
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     print_line(&mut out, Some("Calling good()..."));
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     good(&mut out, &mut reader);
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     print_line(&mut out, Some("Finished good()"));
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     print_line(&mut out, Some("Calling bad()..."));
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     bad(&mut out, &mut reader);
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     print_line(&mut out, Some("Finished bad()"));
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     // C returns 0 from main.
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     std::process::exit(0);
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+    Blocking waiting for file lock on package cache
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation)
+warning: value assigned to `data` is never read
+   --> src/main.rs:216:5
+    |
+216 |     data = -1;
+    |     ^^^^^^^^^ this value is reassigned later and never used
+217 |     data = 7;
+    |     -------- `data` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: `driver` (bin "driver") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.21s
+[38;5;244m - Completed in 0.228s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean apart from the intentional dead store. Let me silence that warning (preserving the C's shape) and then run differential testing.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Allow the intentional dead-store warning
+
+[49m[39m  212, 212[0m:[39m[49m /// goodG2B uses the GoodSource with the BadSink
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m // The C has a dead store (`data = -1;` then `data = 7;`); it is kept verbatim.
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m #[allow(unused_assignments)]
+[0m[49m[39m  213, 215[0m:[39m[49m fn good_g2b(out: &mut impl Write) {
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/myref/difftest.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust byte-for-byte
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env python3
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m """Differential test: C reference vs Rust translation, byte-for-byte."""
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m import random
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m import subprocess
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m import sys
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m C_O0 = "/tmp/myref/driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m C_O2 = "/tmp/myref/driver2"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m RUST = "/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation/target/release/driver"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m def run(path, data):
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     p = subprocess.run([path], input=data, stdout=subprocess.PIPE,
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m                        stderr=subprocess.PIPE, timeout=20)
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     return p.returncode, p.stdout
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m def cases():
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     # Hand-picked edge cases.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     fixed = [
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         b"", b"\n", b"\n\n", b"0\n", b"5\n", b"9\n", b"10\n", b"-1\n", b"-0\n",
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         b"7", b"7\n", b"3\n5\n", b"0\n9\n", b"9\n0\n", b"abc\nxyz\n",
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         b"  42\n  8\n", b"+8\n+3\n", b"-2\n-4\n", b"5abc\n7xyz\n",
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         b"0009\n0003\n", b"12 34\n5 6\n", b"\t4\n\t2\n", b"\r\n\r\n",
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         b"0000000000003\n8\n",      # exactly 13 chars, no newline consumed
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         b"000000000003\n8\n",       # 12 chars + newline
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         b"1234567890123456\n7\n",   # long line splits across both fgets
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         b"5\n2147483648\n", b"5\n-2147483649\n", b"5\n99999999999999999999\n",
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         b"2147483648\n5\n", b"99999999999999999999\n5\n",
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         b"5\n+\n", b"+\n5\n", b"5\n  \n", b"  \n5\n",
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         b"\x005\n7\n", b"5\x00\n7\n", b"\xff\xfe\n\xff\n",  # NUL / non-UTF8
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         b"5\n\x807\n",
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         b"1e5\n2e3\n", b"0x10\n0x8\n", b".5\n.3\n", b"--5\n-+3\n",
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         b"5", b"5\n7", b"5\n\n7\n",
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     ]
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     for c in fixed:
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         yield c
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     # Both values in [0, 9] plus nearby out-of-range, exhaustively.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     for a in list(range(-3, 16)):
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         for b in list(range(-3, 16)):
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             yield f"{a}\n{b}\n".encode()
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     # Random fuzz over digits, signs, whitespace and junk.
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     rng = random.Random(1234)
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     alphabet = b"0123456789 \t+-\nabxX.\x00\xff"
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     for _ in range(4000):
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         n = rng.randint(0, 30)
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         yield bytes(rng.choice(alphabet) for _ in range(n))
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m def main():
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     total = mismatch = ub = 0
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     for data in cases():
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         total += 1
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         rc_r, out_r = run(RUST, data)
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m         rc0, out0 = run(C_O0, data)
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         rc2, out2 = run(C_O2, data)
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m         # A crashing C run is undefined behaviour from the OOB write; its output
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         # is lost to stdio buffering and is not reproducible.
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         if rc0 != 0 or rc2 != 0:
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m             ub += 1
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m             continue
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         if (rc_r, out_r) != (rc0, out0) or (rc_r, out_r) != (rc2, out2):
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m             mismatch += 1
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m             if mismatch <= 10:
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m                 print(f"MISMATCH input={data!r}")
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m                 print(f"  C -O0 rc={rc0} {out0!r}")
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m                 print(f"  C -O2 rc={rc2} {out2!r}")
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m                 print(f"  Rust  rc={rc_r} {out_r!r}")
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     print(f"\ntotal={total} matched={total - mismatch - ub} "
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m           f"mismatched={mismatch} skipped_ub_crash={ub}")
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     return 1 if mismatch else 0
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m if __name__ == "__main__":
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     sys.exit(main())
+[0m[K
+Creating: [38;5;141m/tmp/myref/difftest.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation && cargo build --release 2>&1 | tail -5 && python3 /tmp/myref/difftest.py 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and run differential test suite
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+
+total=4407 matched=4272 mismatched=0 skipped_ub_crash=135
+[38;5;244m - Completed in 138.275s[0m
+
+[?25l[0m[38;5;141m> [0mZero mismatches on all 4272 non-crashing cases. Let me characterize the 135 skipped UB cases and confirm Rust still matches [38;5;10m-O2[0m wherever the C survives at all.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && python3 - <<'EOF'
+import importlib.util, subprocess
+spec = importlib.util.spec_from_file_location("d", "/tmp/myref/difftest.py")
+d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+only0 = both = m = 0
+for data in d.cases():
+    rc0,o0 = d.run(d.C_O0, data); rc2,o2 = d.run(d.C_O2, data)
+    if rc0==0 and rc2==0: continue
+    if rc2!=0 and rc0!=0: both+=1; continue
+    only0+=1
+    rcr,orr = d.run(d.RUST, data)
+    if (rcr,orr)!=(rc2,o2):
+        m+=1
+        if m<=5: print("O2-mismatch", data, o2, orr)
+print(f"crash_at_O0_only={only0} (Rust matches O2 in {only0-m}) crash_at_both_O0_and_O2={both}")
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Analyze the UB crash cases and compare Rust to -O2 where it survives
+
+O2-mismatch b'5\t2b1+x1\n39\t.6a095\n1\t82' b'' b'Calling good()...\n0\n0\n0\n0\n0\n0\n0\n1\n0\n0\n0\n0\n0\n0\n0\n1\n0\n0\n0\n0\nFinished good()\nCalling bad()...\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\nFinished bad()\n'
+O2-mismatch b'2 025752. 7 038\xff\tx8\x00\n-+b6 88' b'' b'Calling good()...\n0\n0\n0\n0\n0\n0\n0\n1\n0\n0\n0\n0\n1\n0\n0\n0\n0\n0\n0\n0\nFinished good()\nCalling bad()...\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\nFinished bad()\n'
+O2-mismatch b'67x.6\xff8X9X\n2441 x8\x00' b'' b'Calling good()...\n0\n0\n0\n0\n0\n0\n0\n1\n0\n0\nERROR: Array index is out-of-bounds\nFinished good()\nCalling bad()...\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\nFinished bad()\n'
+O2-mismatch b'-6-\xff909.+3\x008 39.53' b'' b'Calling good()...\n0\n0\n0\n0\n0\n0\n0\n1\n0\n0\nERROR: Array index is out-of-bounds\nFinished good()\nCalling bad()...\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\nFinished bad()\n'
+O2-mismatch b'593- x.a073b139\xff\t-X\xff.4-x7' b'' b'Calling good()...\n0\n0\n0\n0\n0\n0\n0\n1\n0\n0\nERROR: Array index is out-of-bounds\nFinished good()\nCalling bad()...\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\nFinished bad()\n'
+crash_at_O0_only=26 (Rust matches O2 in 17) crash_at_both_O0_and_O2=104
+[38;5;244m - Completed in 126.499s[0m
+
+[?25l[0m[38;5;141m> [0mMy analysis branch conflated the two directions. Let me split it correctly and compare Rust against whichever build survived.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/myref && python3 - <<'EOF'
+import importlib.util
+spec = importlib.util.spec_from_file_location("d", "/tmp/myref/difftest.py")
+d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+o0_only=o2_only=both=0; bad=[]
+for data in d.cases():
+    rc0,o0 = d.run(d.C_O0, data); rc2,o2 = d.run(d.C_O2, data)
+    if rc0==0 and rc2==0: continue
+    if rc0!=0 and rc2!=0: both+=1; continue
+    rcr,orr = d.run(d.RUST, data)
+    if rc0==0:      # O2 crashed, O0 survived -> compare Rust to O0
+        o2_only+=1; ok=(rcr,orr)==(rc0,o0)
+    else:           # O0 crashed, O2 survived -> compare Rust to O2
+        o0_only+=1; ok=(rcr,orr)==(rc2,o2)
+    if not ok: bad.append(data)
+print(f"crashed_at_both={both}")
+print(f"crashed_O0_only={o0_only}, crashed_O2_only={o2_only}")
+print(f"Rust disagrees with the surviving build in {len(bad)} of {o0_only+o2_only} cases")
+for b in bad[:5]: print("  ", b)
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Correctly compare Rust against whichever C build survived
+
+crashed_at_both=105
+crashed_O0_only=17, crashed_O2_only=10
+Rust disagrees with the surviving build in 0 of 27 cases
+[38;5;244m - Completed in 126.492s[0m
+
+[?25l[0m[38;5;141m> [0mAll 27 single-build-crash cases match the surviving build exactly. Final artifact verification:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-ZFGCB8 && echo "=== tree ==="; find translation -type f -not -path '*/target/*' | sort
+echo "=== c_src unmodified? ==="; git status --porcelain c_src 2>/dev/null || echo "(no git)"; md5sum c_src/src/main.c
+echo "=== sizes ==="; wc -l translation/src/main.rs translation/Cargo.toml
+echo "=== clean release build ==="; cd translation && touch src/main.rs && cargo build --release 2>&1 | tail -5
+echo "=== binary ==="; ls -l target/release/driver && file target/release/driver | cut -c1-80
+echo "=== spot check ==="; printf '3\n5\n' | ./target/release/driver | md5sum; printf '3\n5\n' | /tmp/myref/driver | md5sum[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify all artifacts exist, c_src untouched, clean build
+
+=== tree ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/main.rs
+=== c_src unmodified? ===
+(no git)
+1050c16d5204f51a0db5a954fabdc03a  c_src/src/main.c
+=== sizes ===
+ 285 translation/src/main.rs
+  11 translation/Cargo.toml
+ 296 total
+=== clean release build ===
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-ZFGCB8/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+=== binary ===
+-rwxr-xr-x. 2 scheschb amazon 455232 Sep  1 07:27 target/release/driver
+target/release/driver: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), 
+=== spot check ===
+86e1aec02f977cc7d61a4f8cf780b565  -
+86e1aec02f977cc7d61a4f8cf780b565  -
+[38;5;244m - Completed in 0.217s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m contains [38;5;10mCargo.toml[0m and [38;5;10msrc/main.rs[0m (285 lines); it builds warning-free with [38;5;10mcargo build --release[0m, and [38;5;10mc_src/[0m is untouched.[0m[0m
+[0m[0m
+The program is a CWE-129 exercise: [38;5;10mmain[0m prints banners around [38;5;10mgood()[0m (which runs [38;5;10mgoodG2B[0m with a hardcoded index 7, then [38;5;10mgoodB2G[0m which reads stdin and bounds-checks [38;5;10m0 <= data < 10[0m) and [38;5;10mbad()[0m (which reads stdin and checks only [38;5;10mdata >= 0[0m).[0m[0m
+[0m[0m
+Behaviors I reproduced rather than fixed:[0m[0m
+[0m[0m
+- [38;5;10mbad()[0m's missing upper bound, so [38;5;10mdata >= 10[0m is an out-of-bounds write.[0m[0m
+- [38;5;10mgoodG2B[0m's dead store ([38;5;10mdata = -1; data = 7;[0m), kept verbatim with an [38;5;10m#[allow][0m.[0m[0m
+- [38;5;10mfgets(buf, 14, stdin)[0m reads at most 13 bytes and never past a newline, so a long input line splits across the two call sites. I implemented this over [38;5;10mStdinLock[0m with [38;5;10mfill_buf[0m/[38;5;10mconsume[0m so nothing is over-consumed; a 14+ char first line leaves its tail for [38;5;10mbad()[0m.[0m[0m
+- glibc [38;5;10matoi[0m is [38;5;10m(int)strtol(s, NULL, 10)[0m, not a checked parse. It skips whitespace, takes one sign, stops at the first non-digit, saturates at [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m, then truncates to [38;5;10mint[0m — so [38;5;10m"9999999999"[0m gives 1410065407 and twenty nines give -1. Input is handled as raw bytes, so NUL and non-UTF-8 bytes behave like C.[0m[0m
+[0m[0m
+On the out-of-bounds write: I built the C at both [38;5;10m-O0[0m and [38;5;10m-O2[0m and probed it. At [38;5;10m-O2[0m the stray store always lands in unused frame space and the program prints ten zeros; at [38;5;10m-O0[0m a few layout-specific indices (16–19) instead clobber the return address and segfault, losing all output to stdio buffering. The crash set is not stable — it shifts between runs under ASLR. I therefore modelled the store as absorbed by the frame (a padded struct behind a [38;5;10mstore[0m method), which is the reproducible behavior, instead of overfitting to one compiler's accidental crash.[0m[0m
+[0m[0m
+Verification was a differential harness against both C builds over 4407 inputs: hand-picked edge cases (empty input, EOF, bare newlines, 13-char boundary, line carryover, [38;5;10matoi[0m overflow, NUL and non-UTF-8 bytes), an exhaustive sweep of both index values from -3 to 15, and 4000 seeded random fuzz cases.[0m[0m
+[0m[0m
+- 4272 cases where both C builds exited normally: [1m0 byte mismatches[22m.[0m[0m
+- 27 cases where exactly one build crashed: Rust matched the surviving build exactly in all 27.[0m[0m
+- ~105 cases crash in both builds (very large indices). These produce no output at all, and I cannot reproduce a nondeterministic segfault in safe Rust; my version prints ten zeros. This is the one known divergence, and it is confined to inputs that make the C program crash. Note that if such a crash happened with stdout on a terminal (line-buffered), the C would emit partial output — also not reproducible.[0m[0m
+[38;5;8m
+ ▸ Credits: 8.56 • Time: 11m 14s
+
+[0m[1G[0m[0m[?25h

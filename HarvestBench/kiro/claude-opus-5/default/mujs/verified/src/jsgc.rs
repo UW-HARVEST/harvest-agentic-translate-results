@@ -1,14 +1,15 @@
-// Translation of c_src/src/jsgc.c
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
+//! Translation of src/jsgc.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
 
-use crate::common::*;
+use crate::jsi::*;
 use crate::jsintern::jsS_freestrings;
-use crate::jsregexp::js_regfreex;
-use crate::jsrun::*;
+use crate::jsrun::js_free;
 use crate::jsstate::js_report;
-use crate::types::*;
-use std::ffi::{c_char, c_int, c_uint, c_void};
-use std::ptr;
+use crate::regexp::js_regfreex;
+use core::ptr::null_mut;
 
 unsafe fn jsG_freeenvironment(J: *mut js_State, env: *mut js_Environment) {
     unsafe {
@@ -37,11 +38,10 @@ unsafe fn jsG_freeproperty(J: *mut js_State, node: *mut js_Property) {
     }
 }
 
-unsafe fn jsG_freeiterator(J: *mut js_State, node: *mut js_Iterator) {
+unsafe fn jsG_freeiterator(J: *mut js_State, mut node: *mut js_Iterator) {
     unsafe {
-        let mut node = node;
         while !node.is_null() {
-            let next = (*node).next;
+            let next: *mut js_Iterator = (*node).next;
             js_free(J, node as *mut c_void);
             node = next;
         }
@@ -53,30 +53,30 @@ unsafe fn jsG_freeobject(J: *mut js_State, obj: *mut js_Object) {
         if (*(*obj).properties).level != 0 {
             jsG_freeproperty(J, (*obj).properties);
         }
-        if (*obj).type_ == JS_CREGEXP {
+        if (*obj).ty == JS_CREGEXP {
             js_free(J, (*obj).u.r.source as *mut c_void);
-            js_regfreex((*J).alloc, (*J).actx, (*obj).u.r.prog as *mut crate::regexp::Reprog);
+            js_regfreex(
+                core::mem::transmute::<js_Alloc, ReAlloc>((*J).alloc),
+                (*J).actx,
+                (*obj).u.r.prog as *mut crate::regexp::Reprog,
+            );
         }
-        if (*obj).type_ == JS_CSTRING {
+        if (*obj).ty == JS_CSTRING {
             if (*obj).u.s.string != (&raw mut (*obj).u.s.shrstr) as *mut c_char {
                 js_free(J, (*obj).u.s.string as *mut c_void);
             }
         }
-        if (*obj).type_ == JS_CARRAY && (*obj).u.a.simple != 0 {
+        if (*obj).ty == JS_CARRAY && (*obj).u.a.simple != 0 {
             js_free(J, (*obj).u.a.array as *mut c_void);
         }
-        if (*obj).type_ == JS_CITERATOR {
+        if (*obj).ty == JS_CITERATOR {
             jsG_freeiterator(J, (*obj).u.iter.head);
         }
-        if (*obj).type_ == JS_CUSERDATA {
-            if let Some(f) = (*obj).u.user.finalize {
-                f(J, (*obj).u.user.data);
-            }
+        if (*obj).ty == JS_CUSERDATA && (*obj).u.user.finalize.is_some() {
+            ((*obj).u.user.finalize.unwrap())(J, (*obj).u.user.data);
         }
-        if (*obj).type_ == JS_CCFUNCTION {
-            if let Some(f) = (*obj).u.c.finalize {
-                f(J, (*obj).u.c.data);
-            }
+        if (*obj).ty == JS_CCFUNCTION && (*obj).u.c.finalize.is_some() {
+            ((*obj).u.c.finalize.unwrap())(J, (*obj).u.c.data);
         }
         js_free(J, obj as *mut c_void);
     }
@@ -93,8 +93,9 @@ unsafe fn jsG_markobject(J: *mut js_State, mark: c_int, obj: *mut js_Object) {
 
 unsafe fn jsG_markfunction(J: *mut js_State, mark: c_int, fun: *mut js_Function) {
     unsafe {
+        let mut i: c_int;
         (*fun).gcmark = mark;
-        let mut i = 0;
+        i = 0;
         while i < (*fun).funlen {
             if (**(*fun).funtab.offset(i as isize)).gcmark != mark {
                 jsG_markfunction(J, mark, *(*fun).funtab.offset(i as isize));
@@ -104,16 +105,15 @@ unsafe fn jsG_markfunction(J: *mut js_State, mark: c_int, fun: *mut js_Function)
     }
 }
 
-unsafe fn jsG_markenvironment(J: *mut js_State, mark: c_int, env: *mut js_Environment) {
+unsafe fn jsG_markenvironment(J: *mut js_State, mark: c_int, mut env: *mut js_Environment) {
     unsafe {
-        let mut env = env;
         loop {
             (*env).gcmark = mark;
             if (*(*env).variables).gcmark != mark {
                 jsG_markobject(J, mark, (*env).variables);
             }
             env = (*env).outer;
-            if env.is_null() || (*env).gcmark == mark {
+            if !(!env.is_null() && (*env).gcmark != mark) {
                 break;
             }
         }
@@ -129,11 +129,11 @@ unsafe fn jsG_markproperty(J: *mut js_State, mark: c_int, node: *mut js_Property
             jsG_markproperty(J, mark, (*node).right);
         }
 
-        if (*node).value.ty() == JS_TMEMSTR && (*(*node).value.memstr()).gcmark as c_int != mark {
-            (*(*node).value.memstr()).gcmark = mark as c_char;
+        if (*node).value.ty() == JS_TMEMSTR && (*(*node).value.memstr).gcmark as c_int != mark {
+            (*(*node).value.memstr).gcmark = mark as c_char;
         }
-        if (*node).value.ty() == JS_TOBJECT && (*(*node).value.object()).gcmark != mark {
-            jsG_markobject(J, mark, (*node).value.object());
+        if (*node).value.ty() == JS_TOBJECT && (*(*node).value.object).gcmark != mark {
+            jsG_markobject(J, mark, (*node).value.object);
         }
         if !(*node).getter.is_null() && (*(*node).getter).gcmark != mark {
             jsG_markobject(J, mark, (*node).getter);
@@ -153,23 +153,24 @@ unsafe fn jsG_scanobject(J: *mut js_State, mark: c_int, obj: *mut js_Object) {
         if !(*obj).prototype.is_null() && (*(*obj).prototype).gcmark != mark {
             jsG_markobject(J, mark, (*obj).prototype);
         }
-        if (*obj).type_ == JS_CARRAY && (*obj).u.a.simple != 0 {
-            let mut i = 0;
+        if (*obj).ty == JS_CARRAY && (*obj).u.a.simple != 0 {
+            let mut i: c_int;
+            i = 0;
             while i < (*obj).u.a.flat_length {
-                let v = (*obj).u.a.array.offset(i as isize);
-                if (*v).ty() == JS_TMEMSTR && (*(*v).memstr()).gcmark as c_int != mark {
-                    (*(*v).memstr()).gcmark = mark as c_char;
+                let v: *mut js_Value = (*obj).u.a.array.offset(i as isize);
+                if (*v).ty() == JS_TMEMSTR && (*(*v).memstr).gcmark as c_int != mark {
+                    (*(*v).memstr).gcmark = mark as c_char;
                 }
-                if (*v).ty() == JS_TOBJECT && (*(*v).object()).gcmark != mark {
-                    jsG_markobject(J, mark, (*v).object());
+                if (*v).ty() == JS_TOBJECT && (*(*v).object).gcmark != mark {
+                    jsG_markobject(J, mark, (*v).object);
                 }
                 i += 1;
             }
         }
-        if (*obj).type_ == JS_CITERATOR && (*(*obj).u.iter.target).gcmark != mark {
+        if (*obj).ty == JS_CITERATOR && (*(*obj).u.iter.target).gcmark != mark {
             jsG_markobject(J, mark, (*obj).u.iter.target);
         }
-        if (*obj).type_ == JS_CFUNCTION || (*obj).type_ == JS_CSCRIPT {
+        if (*obj).ty == JS_CFUNCTION || (*obj).ty == JS_CSCRIPT {
             if !(*obj).u.f.scope.is_null() && (*(*obj).u.f.scope).gcmark != mark {
                 jsG_markenvironment(J, mark, (*obj).u.f.scope);
             }
@@ -182,17 +183,20 @@ unsafe fn jsG_scanobject(J: *mut js_State, mark: c_int, obj: *mut js_Object) {
 
 unsafe fn jsG_markstack(J: *mut js_State, mark: c_int) {
     unsafe {
-        let mut v = (*J).stack;
-        let mut n = (*J).top;
-        while n != 0 {
+        let mut v: *mut js_Value = (*J).stack;
+        let mut n: c_int = (*J).top;
+        while {
+            let old = n;
             n -= 1;
-            if (*v).ty() == JS_TMEMSTR && (*(*v).memstr()).gcmark as c_int != mark {
-                (*(*v).memstr()).gcmark = mark as c_char;
+            old != 0
+        } {
+            if (*v).ty() == JS_TMEMSTR && (*(*v).memstr).gcmark as c_int != mark {
+                (*(*v).memstr).gcmark = mark as c_char;
             }
-            if (*v).ty() == JS_TOBJECT && (*(*v).object()).gcmark != mark {
-                jsG_markobject(J, mark, (*v).object());
+            if (*v).ty() == JS_TOBJECT && (*(*v).object).gcmark != mark {
+                jsG_markobject(J, mark, (*v).object);
             }
-            v = v.add(1);
+            v = v.offset(1);
         }
     }
 }
@@ -200,10 +204,18 @@ unsafe fn jsG_markstack(J: *mut js_State, mark: c_int) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
     unsafe {
+        let mut fun: *mut js_Function;
         let mut nextfun: *mut js_Function;
+        let mut prevnextfun: *mut *mut js_Function;
+        let mut obj: *mut js_Object;
         let mut nextobj: *mut js_Object;
+        let mut prevnextobj: *mut *mut js_Object;
+        let mut str: *mut js_String;
         let mut nextstr: *mut js_String;
+        let mut prevnextstr: *mut *mut js_String;
+        let mut env: *mut js_Environment;
         let mut nextenv: *mut js_Environment;
+        let mut prevnextenv: *mut *mut js_Environment;
         let mut nenv: c_uint = 0;
         let mut nfun: c_uint = 0;
         let mut nobj: c_uint = 0;
@@ -214,9 +226,11 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
         let mut gobj: c_uint = 0;
         let mut gstr: c_uint = 0;
         let mut gprop: c_uint = 0;
+        let mark: c_int;
+        let mut i: c_int;
 
         (*J).gcmark = if (*J).gcmark == 1 { 2 } else { 1 };
-        let mark = (*J).gcmark;
+        mark = (*J).gcmark;
 
         /* Add initial roots. */
 
@@ -244,7 +258,7 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
 
         jsG_markenvironment(J, mark, (*J).E);
         jsG_markenvironment(J, mark, (*J).GE);
-        let mut i = 0;
+        i = 0;
         while i < (*J).envtop {
             jsG_markenvironment(J, mark, (*J).envstack[i as usize]);
             i += 1;
@@ -253,19 +267,19 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
         /* Scan objects until none remain. */
 
         loop {
-            let obj = (*J).gcroot;
+            obj = (*J).gcroot;
             if obj.is_null() {
                 break;
             }
             (*J).gcroot = (*obj).gcroot;
-            (*obj).gcroot = ptr::null_mut();
+            (*obj).gcroot = null_mut();
             jsG_scanobject(J, mark, obj);
         }
 
         /* Free everything not marked. */
 
-        let mut prevnextenv = &raw mut (*J).gcenv;
-        let mut env = (*J).gcenv;
+        prevnextenv = &raw mut (*J).gcenv;
+        env = (*J).gcenv;
         while !env.is_null() {
             nextenv = (*env).gcnext;
             if (*env).gcmark != mark {
@@ -279,8 +293,8 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
             env = nextenv;
         }
 
-        let mut prevnextfun = &raw mut (*J).gcfun;
-        let mut fun = (*J).gcfun;
+        prevnextfun = &raw mut (*J).gcfun;
+        fun = (*J).gcfun;
         while !fun.is_null() {
             nextfun = (*fun).gcnext;
             if (*fun).gcmark != mark {
@@ -294,8 +308,8 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
             fun = nextfun;
         }
 
-        let mut prevnextobj = &raw mut (*J).gcobj;
-        let mut obj = (*J).gcobj;
+        prevnextobj = &raw mut (*J).gcobj;
+        obj = (*J).gcobj;
         while !obj.is_null() {
             nprop += (*obj).count as c_uint;
             nextobj = (*obj).gcnext;
@@ -311,8 +325,8 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
             obj = nextobj;
         }
 
-        let mut prevnextstr = &raw mut (*J).gcstr;
-        let mut str = (*J).gcstr;
+        prevnextstr = &raw mut (*J).gcstr;
+        str = (*J).gcstr;
         while !str.is_null() {
             nextstr = (*str).gcnext;
             if (*str).gcmark as c_int != mark {
@@ -331,20 +345,15 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
         let remaining: c_uint = ntot.wrapping_sub(gtot);
 
         (*J).gccounter = remaining;
-        // C: `J->gcthresh = remaining * JS_GCFACTOR;` -- double to unsigned
-        // int, which on x86-64 truncates through a 64-bit signed conversion
-        // rather than saturating the way Rust's `as` would.
-        (*J).gcthresh = d2l(remaining as f64 * JS_GCFACTOR) as c_uint;
+        (*J).gcthresh = d2u(remaining as f64 * JS_GCFACTOR);
 
         if report != 0 {
             let mut buf: [c_char; 256] = [0; 256];
-            let pct = if ntot != 0 { 100 * gtot / ntot } else { 0 };
             snprintf(
                 buf.as_mut_ptr(),
-                256,
-                c"garbage collected (%d%%): %d/%d envs, %d/%d funs, %d/%d objs, %d/%d props, %d/%d strs"
-                    .as_ptr(),
-                pct,
+                core::mem::size_of::<[c_char; 256]>(),
+                c"garbage collected (%d%%): %d/%d envs, %d/%d funs, %d/%d objs, %d/%d props, %d/%d strs".as_ptr(),
+                100u32.wrapping_mul(gtot) / ntot,
                 genv,
                 nenv,
                 gfun,
@@ -364,31 +373,40 @@ pub unsafe extern "C-unwind" fn js_gc(J: *mut js_State, report: c_int) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_freestate(J: *mut js_State) {
     unsafe {
+        let mut fun: *mut js_Function;
+        let mut nextfun: *mut js_Function;
+        let mut obj: *mut js_Object;
+        let mut nextobj: *mut js_Object;
+        let mut env: *mut js_Environment;
+        let mut nextenv: *mut js_Environment;
+        let mut str: *mut js_String;
+        let mut nextstr: *mut js_String;
+
         if J.is_null() {
             return;
         }
 
-        let mut env = (*J).gcenv;
+        env = (*J).gcenv;
         while !env.is_null() {
-            let nextenv = (*env).gcnext;
+            nextenv = (*env).gcnext;
             jsG_freeenvironment(J, env);
             env = nextenv;
         }
-        let mut fun = (*J).gcfun;
+        fun = (*J).gcfun;
         while !fun.is_null() {
-            let nextfun = (*fun).gcnext;
+            nextfun = (*fun).gcnext;
             jsG_freefunction(J, fun);
             fun = nextfun;
         }
-        let mut obj = (*J).gcobj;
+        obj = (*J).gcobj;
         while !obj.is_null() {
-            let nextobj = (*obj).gcnext;
+            nextobj = (*obj).gcnext;
             jsG_freeobject(J, obj);
             obj = nextobj;
         }
-        let mut str = (*J).gcstr;
+        str = (*J).gcstr;
         while !str.is_null() {
-            let nextstr = (*str).gcnext;
+            nextstr = (*str).gcnext;
             js_free(J, str as *mut c_void);
             str = nextstr;
         }

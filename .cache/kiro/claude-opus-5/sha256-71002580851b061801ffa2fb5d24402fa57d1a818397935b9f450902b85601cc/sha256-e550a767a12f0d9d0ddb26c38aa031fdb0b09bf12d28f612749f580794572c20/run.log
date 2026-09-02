@@ -1,0 +1,893 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
+
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  15 c_src/CMakeLists.txt
+   1 c_src/include/lib.h
+ 208 c_src/src/lib.c
+ 224 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m42 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m5656 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a67HXs && mkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-a67HXs/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && ls[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library
+
+[ 50%] Building C object CMakeFiles/harvest-work-a67HXs.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-a67HXs.so
+[100%] Built target harvest-work-a67HXs
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+libharvest-work-a67HXs.so
+[38;5;244m - Completed in 0.421s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libharvest-work-a67HXs.so | awk '$2=="T"||$2=="D"||$2=="B"' [0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols from C .so
+
+0000000000001533 T confuse_types
+00000000000016a4 T confusion
+00000000000011b9 T create_state
+00000000000012ea T destroy_state
+0000000000001329 T process_buffer
+0000000000001403 T update_flags
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/probe.c <<'EOF'
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+typedef struct { unsigned int flag1:1; unsigned int flag2:1; unsigned int flag3:1;
+  unsigned int counter:5; unsigned int mode:3; unsigned int status:5; unsigned int reserved:16; } PackedFlags;
+typedef union { int int_val; float float_val; unsigned int uint_val; char bytes[4]; } TypeConfusion;
+typedef struct { PackedFlags flags; TypeConfusion data; char* buffer; int capacity; } ProcessState;
+int main(void){
+  printf("sizeof PackedFlags=%zu align=%zu\n", sizeof(PackedFlags), _Alignof(PackedFlags));
+  printf("sizeof ProcessState=%zu off flags=%zu data=%zu buffer=%zu capacity=%zu\n",
+    sizeof(ProcessState), offsetof(ProcessState,flags), offsetof(ProcessState,data),
+    offsetof(ProcessState,buffer), offsetof(ProcessState,capacity));
+  PackedFlags f; unsigned int raw;
+  memset(&f,0,sizeof f); f.flag1=1; memcpy(&raw,&f,4); printf("flag1 mask=%08x\n", raw);
+  memset(&f,0,sizeof f); f.flag2=1; memcpy(&raw,&f,4); printf("flag2 mask=%08x\n", raw);
+  memset(&f,0,sizeof f); f.flag3=1; memcpy(&raw,&f,4); printf("flag3 mask=%08x\n", raw);
+  memset(&f,0,sizeof f); f.counter=0x1F; memcpy(&raw,&f,4); printf("counter mask=%08x\n", raw);
+  memset(&f,0,sizeof f); f.mode=0x7; memcpy(&raw,&f,4); printf("mode mask=%08x\n", raw);
+  memset(&f,0,sizeof f); f.status=0x1F; memcpy(&raw,&f,4); printf("status mask=%08x\n", raw);
+  memset(&f,0,sizeof f); f.reserved=0xFFFF; memcpy(&raw,&f,4); printf("reserved mask=%08x\n", raw);
+  printf("char signed? %d\n", (int)(char)200);
+  return 0;
+}
+EOF
+gcc -o /tmp/probe /tmp/probe.c && /tmp/probe[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe struct/bitfield layout in C
+
+/usr/bin/ld: cannot open output file /tmp/probe: Is a directory
+collect2: error: ld returned 1 exit status
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mgcc -o /tmp/probe_bin /tmp/probe.c && /tmp/probe_bin[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run layout probe
+
+sizeof PackedFlags=4 align=4
+sizeof ProcessState=24 off flags=0 data=4 buffer=8 capacity=16
+flag1 mask=00000001
+flag2 mask=00000002
+flag3 mask=00000004
+counter mask=000000f8
+mode mask=00000700
+status mask=0000f800
+reserved mask=ffff0000
+char signed? -56
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && objdump -d --no-show-raw-insn libharvest-work-a67HXs.so | sed -n '/<confuse_types>:/,/^$/p' | grep -E "cvt|mul|movss"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check float conversion instructions
+
+    15c4:	movss  0x4(%rax),%xmm0
+    15cd:	cvtss2sd %xmm0,%xmm2
+    15f3:	movss  0x4(%rax),%xmm1
+    15f8:	movss  0xbcc(%rip),%xmm0        # 21cc <_fini+0x99c>
+    1600:	mulss  %xmm1,%xmm0
+    1604:	cvttss2si %xmm0,%eax
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the Rust translation of the C library
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original copyright notice from the C source:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m // libc bindings.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // The C library performs all of its I/O through `printf`/`snprintf` and all of
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m // its memory management through `malloc`/`free`.  We bind directly to the same
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m // libc entry points so that formatting, stdout buffering and allocation
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m // failure behaviour are bit-for-bit identical to the original.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     fn free(ptr: *mut c_void);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     fn strlen(s: *const c_char) -> usize;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     fn printf(fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     fn snprintf(s: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m // Types
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m ///     unsigned int flag1 : 1;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m ///     unsigned int flag2 : 1;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m ///     unsigned int flag3 : 1;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m ///     unsigned int counter : 5;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m ///     unsigned int mode : 3;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ///     unsigned int status : 5;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m ///     unsigned int reserved : 16;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// } PackedFlags;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// The System V x86-64 ABI (as implemented by gcc/clang) allocates these
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// bit-fields from the least significant bit of a single 4-byte storage unit:
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// | field    | bits  | mask       |
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// |----------|-------|------------|
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// | flag1    | 0     | 0x00000001 |
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// | flag2    | 1     | 0x00000002 |
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// | flag3    | 2     | 0x00000004 |
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// | counter  | 3..7  | 0x000000f8 |
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// | mode     | 8..10 | 0x00000700 |
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// | status   | 11..15| 0x0000f800 |
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// | reserved | 16..31| 0xffff0000 |
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m #[derive(Copy, Clone, Default)]
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m struct PackedFlags {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     raw: c_uint,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m macro_rules! bitfield {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     ($get:ident, $set:ident, $shift:expr, $width:expr) => {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         #[inline]
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         fn $get(&self) -> c_uint {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             (self.raw >> $shift) & ((1u32 << $width) - 1)
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         #[inline]
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         fn $set(&mut self, value: c_uint) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             let mask: c_uint = ((1u32 << $width) - 1) << $shift;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             self.raw = (self.raw & !mask) | ((value << $shift) & mask);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m impl PackedFlags {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     bitfield!(flag1, set_flag1, 0, 1);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     bitfield!(flag2, set_flag2, 1, 1);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     bitfield!(flag3, set_flag3, 2, 1);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     bitfield!(counter, set_counter, 3, 5);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     bitfield!(mode, set_mode, 8, 3);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     bitfield!(status, set_status, 11, 5);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     bitfield!(reserved, set_reserved, 16, 16);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m /// typedef union {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m ///     int int_val;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m ///     float float_val;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m ///     unsigned int uint_val;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m ///     char bytes[4];
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// } TypeConfusion;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// All members are 4 bytes wide, so the union is modelled as a single 4-byte
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// storage unit that is reinterpreted on access.
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m #[derive(Copy, Clone, Default)]
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m struct TypeConfusion {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     raw: c_uint,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m impl TypeConfusion {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     fn int_val(&self) -> c_int {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         self.raw as c_int
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     fn set_int_val(&mut self, value: c_int) {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         self.raw = value as c_uint;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     fn float_val(&self) -> f32 {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         f32::from_bits(self.raw)
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     fn uint_val(&self) -> c_uint {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         self.raw
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     /// `bytes[i]` — `char` is signed on x86-64 Linux, and the target is
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     /// little-endian, so byte `i` is bits `8*i .. 8*i+7`.
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     fn byte(&self, i: usize) -> c_char {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         (self.raw >> (8 * i)) as u8 as c_char
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m ///     PackedFlags flags;
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m ///     TypeConfusion data;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m ///     char* buffer;
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m ///     int capacity;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m /// } ProcessState;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m /// Verified layout: size 24, offsets flags=0, data=4, buffer=8, capacity=16.
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m struct ProcessState {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     flags: PackedFlags,
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     data: TypeConfusion,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     buffer: *mut c_char,
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     capacity: c_int,
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m // Helpers
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m /// Emulates the x86 `cvttss2si` instruction that gcc emits for
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m /// `(int)some_float`.  Truncates toward zero; values that are NaN or outside
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m /// the range of `int` yield the "integer indefinite" value `INT_MIN`.
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m /// Rust's `as` cast saturates instead, so it cannot be used directly.
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m fn f32_to_c_int_trunc(v: f32) -> c_int {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     if v.is_nan() {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         return c_int::MIN;
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     let t = v.trunc();
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     // -2^31 is exactly representable as f32; 2^31 is the first f32 above the
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     // representable range of `int`.
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     if t >= -2147483648.0f32 && t < 2147483648.0f32 {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         t as c_int
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         c_int::MIN
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m // Public ABI
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m /// ProcessState* create_state(int initial_val, int capacity);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m pub unsafe extern "C" fn create_state(initial_val: c_int, capacity: c_int) -> *mut ProcessState {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     let state = unsafe { malloc(size_of::<ProcessState>()) } as *mut ProcessState;
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     if state.is_null() {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             printf(c"Error: Failed to allocate memory for state\n".as_ptr());
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         return std::ptr::null_mut();
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     let s = unsafe { &mut *state };
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     // The C code assigns every bit-field of `flags`, which together cover all
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     // 32 bits of the storage unit, so the resulting value is fully defined.
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     s.flags = PackedFlags { raw: 0 };
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     s.flags.set_flag1(1);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     s.flags.set_flag2(0);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     s.flags.set_flag3(1);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     s.flags.set_counter(0);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     s.flags.set_mode(3);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     s.flags.set_status(15);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     s.flags.set_reserved(0);
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     s.data = TypeConfusion { raw: 0 };
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     s.data.set_int_val(initial_val);
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     s.capacity = capacity;
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     // `malloc(capacity)` — a negative `int` converts to a huge `size_t`, which
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     // makes the allocation fail.  Sign-extending `as usize` reproduces that.
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     s.buffer = unsafe { malloc(capacity as usize) } as *mut c_char;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     if s.buffer.is_null() {
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m             printf(c"Error: Failed to allocate buffer\n".as_ptr());
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             free(state as *mut c_void);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         return std::ptr::null_mut();
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         snprintf(
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m             s.buffer,
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m             capacity as usize,
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m             c"State:%d:Mode:%d".as_ptr(),
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m             initial_val,
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m             s.flags.mode() as c_int,
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     state
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m /// void destroy_state(ProcessState* state);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m pub unsafe extern "C" fn destroy_state(state: *mut ProcessState) {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     if !state.is_null() {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         let s = unsafe { &mut *state };
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         if !s.buffer.is_null() {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             unsafe { free(s.buffer as *mut c_void) };
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         unsafe { free(state as *mut c_void) };
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m /// int process_buffer(ProcessState* state, char target);
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m pub unsafe extern "C" fn process_buffer(state: *mut ProcessState, target: c_char) -> c_int {
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     if state.is_null() || unsafe { (*state).buffer }.is_null() {
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m             printf(c"Error: Null pointer in process_buffer\n".as_ptr());
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     let s = unsafe { &mut *state };
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     let mut count: c_int = 0;
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     let mut ptr = s.buffer;
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     let mut remaining = unsafe { strlen(s.buffer) };
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     // `memchr` compares bytes as `unsigned char`.
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m     let needle = target as u8;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     while remaining > 0 {
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         let haystack = unsafe { std::slice::from_raw_parts(ptr as *const u8, remaining) };
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         let found = match haystack.iter().position(|&b| b == needle) {
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m             Some(idx) => unsafe { ptr.add(idx) },
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m         count = count.wrapping_add(1);
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m             printf(
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m                 c"Operation: memchr_found with value %d\n".as_ptr(),
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m                 count,
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m         let consumed = unsafe { found.offset_from(ptr) } as usize + 1;
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m         remaining -= consumed;
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m         ptr = unsafe { found.add(1) };
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     count
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m /// void update_flags(ProcessState* state, int param);
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m pub unsafe extern "C" fn update_flags(state: *mut ProcessState, param: c_int) {
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     if state.is_null() {
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     let s = unsafe { &mut *state };
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m     // 5-bit counter
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     s.flags
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m         .set_counter((s.flags.counter().wrapping_add(1)) & 0x1F);
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     s.flags.set_flag1((param & 1) as c_uint);
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     s.flags.set_flag2(((param & 2) >> 1) as c_uint);
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     s.flags.set_flag3(((param & 4) >> 2) as c_uint);
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     // `param >> 3` is an arithmetic shift for signed `int` on gcc.
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m     s.flags.set_mode(((param >> 3) & 0x7) as c_uint);
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m         printf(
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m             c"Debug: state->flags.counter = %d\n".as_ptr(),
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m             s.flags.counter() as c_int,
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m         printf(
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m             c"Bit fields - flag1:%d flag2:%d flag3:%d mode:%d\n".as_ptr(),
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m             s.flags.flag1() as c_int,
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m             s.flags.flag2() as c_int,
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m             s.flags.flag3() as c_int,
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m             s.flags.mode() as c_int,
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m /// int confuse_types(ProcessState* state, int operation);
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m pub unsafe extern "C" fn confuse_types(state: *mut ProcessState, operation: c_int) -> c_int {
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     if state.is_null() {
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m     let s = unsafe { &mut *state };
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     match operation {
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m         0 => {
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m             s.data.set_int_val(1078530011);
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m                 printf(c"Set as int: %d\n".as_ptr(), s.data.int_val());
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         1 => {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m                 printf(
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m                     c"Read as float: %f\n".as_ptr(),
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m                     s.data.float_val() as c_double,
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m             result = f32_to_c_int_trunc(s.data.float_val() * 100.0f32);
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         2 => {
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m                 printf(c"Read as uint: %u\n".as_ptr(), s.data.uint_val());
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m             result = (s.data.uint_val() & 0xFF) as c_int;
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m         3 => {
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m                 printf(
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m                     c"Read as bytes: [%d, %d, %d, %d]\n".as_ptr(),
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m                     s.data.byte(0) as c_int,
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m                     s.data.byte(1) as c_int,
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m                     s.data.byte(2) as c_int,
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m                     s.data.byte(3) as c_int,
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m             result = (s.data.byte(0) as c_int).wrapping_add(s.data.byte(1) as c_int);
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m         _ => {}
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m /// int confusion(int param1, int param2, int param3, int param4);
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m pub unsafe extern "C" fn confusion(
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m     param1: c_int,
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m     param2: c_int,
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m     param3: c_int,
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m     param4: c_int,
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m         printf(c"Debug: param1 = %d\n".as_ptr(), param1);
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m         printf(c"Debug: param2 = %d\n".as_ptr(), param2);
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m         printf(c"Debug: param3 = %d\n".as_ptr(), param3);
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m         printf(c"Debug: param4 = %d\n".as_ptr(), param4);
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m     let state = unsafe { create_state(param1, 128) };
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m     if state.is_null() {
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m     unsafe { update_flags(state, param2) };
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m     let search_char = (b'0' as c_int).wrapping_add(param3 % 10) as c_char;
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m     let found_count = unsafe { process_buffer(state, search_char) };
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m     result = result.wrapping_add(found_count.wrapping_mul(10));
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m     let confusion_result = unsafe { confuse_types(state, param4 % 4) };
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m     result = result.wrapping_add(confusion_result);
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m     let s = unsafe { &*state };
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m     result = result.wrapping_add((s.flags.counter() as c_int).wrapping_mul(5));
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m     result = result.wrapping_add((s.flags.mode() as c_int).wrapping_mul(3));
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m         printf(c"Final result: %d\n".as_ptr(), result);
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m     unsafe { destroy_state(state) };
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: type `ProcessState` is more private than the item `confuse_types`
+   --> src/lib.rs:348:1
+    |
+348 | pub unsafe extern "C" fn confuse_types(state: *mut ProcessState, operation: c_int) -> c_int {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `confuse_types` is reachable at visibility `pub`
+    |
+note: but type `ProcessState` is only usable at visibility `pub(crate)`
+   --> src/lib.rs:159:1
+    |
+159 | struct ProcessState {
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: methods `status` and `reserved` are never used
+   --> src/lib.rs:102:15
+    |
+ 96 | impl PackedFlags {
+    | ---------------- methods in this implementation
+...
+102 |     bitfield!(status, set_status, 11, 5);
+    |               ^^^^^^
+103 |     bitfield!(reserved, set_reserved, 16, 16);
+    |               ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+    = note: this warning originates in the macro `bitfield` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `translation` (lib) generated 6 warnings
+    Finished `release` profile [optimized] target(s) in 0.17s
+[38;5;244m - Completed in 0.196s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation && sed -i 's/^#!\[allow(non_snake_case)\]$/#![allow(non_snake_case)]\n#![allow(dead_code)]/' src/lib.rs && sed -i 's/^struct ProcessState {/pub struct ProcessState {/' src/lib.rs && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Silence warnings and rebuild
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+[38;5;244m - Completed in 0.141s[0m
+
+[?25l[0m[38;5;141m> [0mClean build. Now the symbol diff gate:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a67HXs
+nm -D --defined-only /tmp/cbuild/libharvest-work-a67HXs.so | awk '{print $3}' | sort -u > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libtranslation.so | awk '$2=="T"{print $3}' | sort -u > /tmp/rust_syms.txt
+echo "=== C symbols ==="; cat /tmp/c_syms.txt
+echo "=== MISSING FROM RUST ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== (end) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+=== C symbols ===
+confuse_types
+confusion
+create_state
+destroy_state
+process_buffer
+update_flags
+=== MISSING FROM RUST ===
+=== (end) ===
+[38;5;244m - Completed in 0.35s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/difftest && cat > /tmp/difftest/driver.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
+#include <string.h>
+#include <limits.h>
+
+typedef void* (*create_fn)(int,int);
+typedef void  (*destroy_fn)(void*);
+typedef int   (*procbuf_fn)(void*,char);
+typedef void  (*update_fn)(void*,int);
+typedef int   (*confuse_fn)(void*,int);
+typedef int   (*confusion_fn)(int,int,int,int);
+
+int main(int argc, char** argv) {
+    void* h = dlopen(argv[1], RTLD_NOW);
+    if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+    create_fn  create_state   = (create_fn)dlsym(h, "create_state");
+    destroy_fn destroy_state  = (destroy_fn)dlsym(h, "destroy_state");
+    procbuf_fn process_buffer = (procbuf_fn)dlsym(h, "process_buffer");
+    update_fn  update_flags   = (update_fn)dlsym(h, "update_flags");
+    confuse_fn confuse_types  = (confuse_fn)dlsym(h, "confuse_types");
+    confusion_fn confusion    = (confusion_fn)dlsym(h, "confusion");
+    if (!create_state||!destroy_state||!process_buffer||!update_flags||!confuse_types||!confusion) {
+        fprintf(stderr, "dlsym failed\n"); return 3;
+    }
+
+    /* --- confusion() sweep --- */
+    int vals[] = {0,1,2,3,4,5,7,8,9,10,15,16,31,42,100,127,128,255,256,1000,
+                  -1,-2,-3,-7,-8,-9,-16,-42,-100,-1000,
+                  1078530011, 1065353216, 0x7f800000, 0x7fc00000, 0xff800000,
+                  2139095040, 1120403456, 12345678, -12345678,
+                  INT_MAX, INT_MIN, INT_MAX-1, INT_MIN+1};
+    int n = (int)(sizeof(vals)/sizeof(vals[0]));
+    for (int i = 0; i < n; i++)
+      for (int j = 0; j < n; j++) {
+        int a = vals[i], b = vals[j];
+        int c = vals[(i*7+j*3) % n], d = vals[(i*5+j*11) % n];
+        printf("== confusion(%d,%d,%d,%d) = %d\n", a,b,c,d, confusion(a,b,c,d));
+      }
+
+    /* --- direct API exercise --- */
+    int caps[] = {0,1,2,3,4,5,8,15,16,17,32,64,128,1024,-1,-128,7};
+    int inits[] = {0,1,-1,7,42,1078530011,INT_MAX,INT_MIN,1065353216,0x7fc00000,255,-255};
+    for (size_t ci = 0; ci < sizeof(caps)/sizeof(caps[0]); ci++) {
+      for (size_t ii = 0; ii < sizeof(inits)/sizeof(inits[0]); ii++) {
+        void* s = create_state(inits[ii], caps[ci]);
+        printf("-- create_state(%d,%d) -> %s\n", inits[ii], caps[ci], s?"ok":"null");
+        if (!s) continue;
+        /* dump raw struct bytes (flags + data + capacity), skip pointer */
+        unsigned char* raw = (unsigned char*)s;
+        unsigned int flags, data; int cap;
+        memcpy(&flags, raw+0, 4); memcpy(&data, raw+4, 4); memcpy(&cap, raw+16, 4);
+        char* buf; memcpy(&buf, raw+8, 8);
+        printf("   flags=%08x data=%08x cap=%d buf=\"%s\"\n", flags, data, cap, caps[ci]>0?buf:"<n/a>");
+        for (int t = 0; t < 12; t++) {
+          char target = (char)("0123456789:MSaeodt"[t]);
+          printf("   process_buffer('%c') = %d\n", target, process_buffer(s, target));
+        }
+        for (int p = -20; p <= 70; p += 7) {
+          update_flags(s, p);
+          memcpy(&flags, raw+0, 4);
+          printf("   after update_flags(%d) flags=%08x\n", p, flags);
+        }
+        for (int op = -2; op <= 5; op++) {
+          printf("   confuse_types(%d) = %d\n", op, confuse_types(s, op));
+          memcpy(&data, raw+4, 4);
+          printf("     data=%08x\n", data);
+        }
+        destroy_state(s);
+      }
+    }
+
+    /* --- NULL handling --- */
+    printf("null process_buffer = %d\n", process_buffer(NULL, 'x'));
+    update_flags(NULL, 5);
+    printf("null confuse_types = %d\n", confuse_types(NULL, 1));
+    destroy_state(NULL);
+
+    /* --- confuse_types over full float-bit-pattern space via create_state --- */
+    unsigned int pats[] = {0x00000000,0x80000000,0x3f800000,0xbf800000,0x7f7fffff,0xff7fffff,
+                           0x7f800000,0xff800000,0x7fc00000,0xffc00000,0x00000001,0x80000001,
+                           0x4b000000,0xcb000000,0x4f000000,0xcf000000,0x4effffff,0x4f000001,
+                           0x3dcccccd,0x41200000,0x40490fdb,0x477fff00,0x4b7fffff,0xcb7fffff,
+                           0x4e6e6b28,0x4e6e6b27,0xce6e6b28,0x501502f9};
+    for (size_t k = 0; k < sizeof(pats)/sizeof(pats[0]); k++) {
+      void* s = create_state((int)pats[k], 64);
+      if (!s) continue;
+      for (int op = 0; op < 4; op++) {
+        void* s2 = create_state((int)pats[k], 64);
+        printf("   pat %08x op %d -> %d\n", pats[k], op, confuse_types(s2, op));
+        destroy_state(s2);
+      }
+      destroy_state(s);
+    }
+
+    fflush(stdout);
+    dlclose(h);
+    return 0;
+}
+EOF
+gcc -O1 -o /tmp/difftest/driver /tmp/difftest/driver.c -ldl && echo built[0m[38;5;244m (using tool: shell)[0m
+Purpose: Write differential test driver
+
+built
+[38;5;244m - Completed in 0.71s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && ./driver /tmp/cbuild/libharvest-work-a67HXs.so > c_out.txt 2>c_err.txt; echo "c exit=$?"
+./driver /local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation/target/release/libtranslation.so > r_out.txt 2>r_err.txt; echo "r exit=$?"
+wc -c c_out.txt r_out.txt; cmp c_out.txt r_out.txt && echo "IDENTICAL" || echo "DIFFER"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test against both libraries
+
+c exit=0
+r exit=0
+ 935674 c_out.txt
+ 935674 r_out.txt
+1871348 total
+IDENTICAL
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && cat c_err.txt r_err.txt | head; cat > fuzz.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
+typedef int (*confusion_fn)(int,int,int,int);
+typedef void* (*create_fn)(int,int);
+typedef void (*destroy_fn)(void*);
+typedef int (*procbuf_fn)(void*,char);
+typedef int (*confuse_fn)(void*,int);
+typedef void (*update_fn)(void*,int);
+int main(int argc, char** argv){
+  void* h = dlopen(argv[1], RTLD_NOW);
+  if(!h){fprintf(stderr,"%s\n",dlerror());return 2;}
+  confusion_fn confusion=(confusion_fn)dlsym(h,"confusion");
+  create_fn cs=(create_fn)dlsym(h,"create_state");
+  destroy_fn ds=(destroy_fn)dlsym(h,"destroy_state");
+  procbuf_fn pb=(procbuf_fn)dlsym(h,"process_buffer");
+  confuse_fn ct=(confuse_fn)dlsym(h,"confuse_types");
+  update_fn uf=(update_fn)dlsym(h,"update_flags");
+  srandom(20260901);
+  for(int i=0;i<20000;i++){
+    int a=(int)random()-(int)(random()/2), b=(int)random()*(random()&1?1:-1);
+    int c=(int)random()%2000-1000, d=(int)random()%2000-1000;
+    printf("F %d %d %d %d -> %d\n",a,b,c,d,confusion(a,b,c,d));
+  }
+  for(int i=0;i<3000;i++){
+    int init=(int)random()*(random()&1?1:-1);
+    int cap=(int)(random()%300)-20;
+    void* s=cs(init,cap);
+    if(!s) continue;
+    uf(s,(int)random()-(int)(random()/2));
+    printf("G %d\n", pb(s,(char)(random()%256)));
+    printf("H %d\n", ct(s,(int)(random()%9)-3));
+    ds(s);
+  }
+  fflush(stdout); return 0;
+}
+EOF
+gcc -O1 -o fuzz fuzz.c -ldl && ./fuzz /tmp/cbuild/libharvest-work-a67HXs.so > cf.txt && ./fuzz /local/home/scheschb/.harvest/work/harvest-work-a67HXs/translation/target/release/libtranslation.so > rf.txt && wc -c cf.txt rf.txt && (cmp cf.txt rf.txt && echo "FUZZ IDENTICAL" || echo "FUZZ DIFFER")[0m[38;5;244m (using tool: shell)[0m
+Purpose: Randomized differential fuzz test
+
+ 5590812 cf.txt
+ 5590812 rf.txt
+11181624 total
+FUZZ IDENTICAL
+[38;5;244m - Completed in 0.119s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a67HXs && git status --short 2>/dev/null | head -20; echo "--- tree ---"; ls -la; ls -la translation translation/src
+rm -rf /tmp/difftest /tmp/probe.c /tmp/probe_bin /tmp/cbuild
+echo "--- c_src unmodified check ---"; find c_src -newer translation/Cargo.toml -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify final layout and clean temp files
+
+--- tree ---
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 15:29 .
+drwxr-xr-x. 801 scheschb amazon 81920 Sep  1 15:31 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 15:29 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 15:29 c_src
+drwxr-xr-x.   4 scheschb amazon    87 Sep  1 15:32 translation
+translation:
+total 8
+drwxr-xr-x. 4 scheschb amazon  87 Sep  1 15:32 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 15:29 ..
+-rw-r--r--. 1 scheschb amazon 155 Sep  1 15:32 Cargo.lock
+-rw-r--r--. 1 scheschb amazon 152 Sep  1 15:30 Cargo.toml
+drwxr-xr-x. 2 scheschb amazon  28 Sep  1 15:32 src
+drwxr-xr-x. 3 scheschb amazon  81 Sep  1 15:32 target
+
+translation/src:
+total 16
+drwxr-xr-x. 2 scheschb amazon    28 Sep  1 15:32 .
+drwxr-xr-x. 4 scheschb amazon    87 Sep  1 15:32 ..
+-rw-r--r--. 1 scheschb amazon 13239 Sep  1 15:32 lib.rs
+--- c_src unmodified check ---
+0
+[38;5;244m - Completed in 0.22s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+[1mScope[22m: The library turned out to be small — a single translation unit ([38;5;10mc_src/src/lib.c[0m, 208 lines) built by CMake into one shared object, exporting exactly 6 public symbols. No namespace-renaming macros in the header; [38;5;10mconfusion[0m is the only declared function but five more have external linkage.[0m[0m
+[0m[0m
+[1mSymbol gate — diff is empty:[22m[0m[0m
+[0m[0m
+| C [38;5;10m.so[0m exports | Rust [38;5;10m.so[0m exports |[0m[0m
+|---|---|[0m[0m
+| [38;5;10mconfuse_types[0m | ✅ |[0m[0m
+| [38;5;10mconfusion[0m | ✅ |[0m[0m
+| [38;5;10mcreate_state[0m | ✅ |[0m[0m
+| [38;5;10mdestroy_state[0m | ✅ |[0m[0m
+| [38;5;10mprocess_buffer[0m | ✅ |[0m[0m
+| [38;5;10mupdate_flags[0m | ✅ |[0m[0m
+[0m[0m
+[1mBehavioral verification[22m: I built a [38;5;10mdlopen[0m harness that loads either [38;5;10m.so[0m and drives all six entry points, then compared stdout byte-for-byte.[0m[0m
+- Structured sweep (~936 KB of output): [38;5;10mconfusion[0m over ~1900 argument combinations including [38;5;10mINT_MAX[0m/[38;5;10mINT_MIN[0m and float-significant bit patterns; direct [38;5;10mcreate_state[0m/[38;5;10mprocess_buffer[0m/[38;5;10mupdate_flags[0m/[38;5;10mconfuse_types[0m cycles across 17 capacities × 12 initial values, dumping raw struct bytes after each mutation; NULL-argument paths for all four pointer-taking functions. [1mIdentical.[22m[0m[0m
+- Randomized sweep (~5.6 MB): 20,000 random [38;5;10mconfusion[0m calls plus 3,000 random direct-API sequences. [1mIdentical.[22m[0m[0m
+[0m[0m
+[1mDetails that required care:[22m[0m[0m
+- *Bit-field layout* — I probed gcc's actual allocation rather than assuming: [38;5;10mflag1[0m=bit 0, [38;5;10mflag2[0m=1, [38;5;10mflag3[0m=2, [38;5;10mcounter[0m=3–7, [38;5;10mmode[0m=8–10, [38;5;10mstatus[0m=11–15, [38;5;10mreserved[0m=16–31, in one 4-byte unit. [38;5;10mProcessState[0m is 24 bytes with [38;5;10mbuffer[0m at offset 8, so pointers survive round-tripping between exported functions.[0m[0m
+- *Float→int conversion* — [38;5;10m(int)(float_val * 100)[0m compiles to [38;5;10mmulss[0m + [38;5;10mcvttss2si[0m, which yields [38;5;10m0x80000000[0m for NaN and out-of-range values. Rust's [38;5;10mas[0m cast saturates instead, so I emulate the x86 semantics explicitly. This matters because [38;5;10mfloat_val[0m is a reinterpretation of the caller's arbitrary [38;5;10mparam1[0m.[0m[0m
+- *libc passthrough* — I bind directly to [38;5;10mprintf[0m/[38;5;10msnprintf[0m/[38;5;10mmalloc[0m/[38;5;10mfree[0m/[38;5;10mstrlen[0m instead of using Rust's formatting or allocator. This keeps [38;5;10m%f[0m/[38;5;10m%u[0m formatting, stdout buffering mode, and allocation-failure behavior identical. In particular [38;5;10mmalloc(capacity)[0m with a negative [38;5;10mint[0m sign-extends to a huge [38;5;10msize_t[0m and fails, which the C error path depends on; [38;5;10mcapacity as usize[0m reproduces that.[0m[0m
+- *Preserved as-is* — the truncating [38;5;10m%[0m on negative operands, [38;5;10mchar[0m being signed, arithmetic [38;5;10m>>[0m on negative [38;5;10mparam[0m, and [38;5;10mconfuse_types[0m falling through to [38;5;10mreturn 0[0m for out-of-range [38;5;10moperation[0m (which [38;5;10mparam4 % 4[0m produces for negative [38;5;10mparam4[0m). No bugs were fixed.[0m[0m
+[0m[0m
+Internals use safe Rust where the FFI boundary allows: bit-fields via a masked-accessor macro, the union via reinterpretation helpers, and [38;5;10mmemchr[0m via slice iteration. [38;5;10mc_src/[0m was not modified.[0m[0m
+[38;5;8m
+ ▸ Credits: 8.44 • Time: 3m 56s
+
+[0m[1G[0m[0m[?25h

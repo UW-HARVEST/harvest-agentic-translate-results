@@ -1,0 +1,591 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory and enumerate C source files
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 14:22 .
+drwxr-xr-x. 772 scheschb amazon 81920 Sep  1 14:22 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 14:22 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 14:22 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 14:22 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+ 16 c_src/CMakeLists.txt
+  1 c_src/include/lib.h
+ 22 c_src/src/lib.c
+ 39 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m37 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m302 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mTiny library — a single function. Let me build the C [38;5;10m.so[0m to enumerate the exact symbol surface.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild && mkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1 && echo BUILD_OK && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+BUILD_OK
+-rwxr-xr-x. 1 scheschb amazon 15824 Sep  1 14:22 libdriver.so
+[38;5;244m - Completed in 0.418s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && echo "=== nm -D ===" && nm -D libdriver.so && echo "=== defined dynamic (T/W/D/B/R) ===" && nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate exported symbols of the C .so
+
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001130 T custom_strdup
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U strlen@GLIBC_2.2.5
+=== defined dynamic (T/W/D/B/R) ===
+0000000000001130 T custom_strdup
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la .claude && cat .claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check .claude dir for harness hints
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  35 Sep  1 14:22 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 14:22 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 14:22 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-ImDx0I"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-ImDx0I"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version for unsafe(no_mangle) support
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib translation
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate custom_strdup to Rust preserving malloc-based ABI
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Public ABI surface (matches `nm -D` on the C `libdriver.so`):
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //!   * `custom_strdup`
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! The header `include/lib.h` declares no namespace-renaming macros, so the
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! source-level names are also the final linker symbol names.
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m use std::ffi::{c_char, c_void};
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m // The C implementation hands back a buffer obtained from `malloc`, which makes
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m // the allocator part of the observable ABI: callers are expected to release the
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m // result with `free`. Rust's own allocator is not guaranteed to be compatible
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m // with `free`, so the platform allocator is used directly instead. These are
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m // declared locally to keep the crate dependency-free.
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     fn strlen(s: *const c_char) -> usize;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m /// Translation of:
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m /// char *custom_strdup(const char *str)
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m ///   size_t len;
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m ///   char *newstr;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m ///   if(!str)
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m ///     return (char *)NULL;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ///   len = strlen(str) + 1;
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ///   newstr = malloc(len);
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m ///   if(!newstr)
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ///     return (char *)NULL;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m ///   memcpy(newstr, str, len);
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m ///   return newstr;
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m /// The order of the checks (null input first, then allocation failure) is
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m /// preserved exactly, as is the `strlen(str) + 1` length computation including
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m /// its wrapping behaviour on overflow.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m pub unsafe extern "C" fn custom_strdup(str: *const c_char) -> *mut c_char {
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     if str.is_null() {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         return std::ptr::null_mut();
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     // `strlen(str) + 1`: matches the C exactly, wrapping like `size_t` would.
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     let len: usize = unsafe { strlen(str) }.wrapping_add(1);
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     let newstr = unsafe { malloc(len) };
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     if newstr.is_null() {
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         return std::ptr::null_mut();
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     unsafe { memcpy(newstr, str as *const c_void, len) };
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     newstr as *mut c_char
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib in release mode
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.148s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-ImDx0I
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+echo "=== C exports ($(wc -l < /tmp/c_syms.txt)) ==="; cat /tmp/c_syms.txt
+echo "=== Rust exports ($(wc -l < /tmp/rust_syms.txt)) ==="; cat /tmp/rust_syms.txt
+echo "=== MISSING from Rust (in C, not Rust) ==="
+comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== EXTRA in Rust ==="
+comm -13 /tmp/c_syms.txt /tmp/rust_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported dynamic symbols between C and Rust .so
+
+=== C exports (1) ===
+custom_strdup
+=== Rust exports (1) ===
+custom_strdup
+=== MISSING from Rust (in C, not Rust) ===
+=== EXTRA in Rust ===
+[38;5;244m - Completed in 0.44s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now verifying behavioral equivalence with a differential test harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/main.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write differential test harness comparing C and Rust .so
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m typedef char *(*strdup_fn)(const char *);
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m static strdup_fn load(const char *path) {
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m   void *h = dlopen(path, RTLD_NOW);
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m   if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m   strdup_fn f = (strdup_fn)dlsym(h, "custom_strdup");
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m   if (!f) { fprintf(stderr, "dlsym custom_strdup in %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m   return f;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m static int failures = 0;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /* Compare results byte-for-byte, then free both (proves malloc/free ABI compat). */
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m static void check(const char *name, strdup_fn c, strdup_fn r,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m                   const char *in, size_t nbytes) {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   char *rc = c(in);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m   char *rr = r(in);
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m   if ((rc == NULL) != (rr == NULL)) {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     printf("FAIL %-22s nullness differs: c=%p rust=%p\n", name, (void *)rc, (void *)rr);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     return;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m   if (rc == NULL) {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     printf("ok   %-22s both NULL\n", name);
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     return;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m   if (rc == in || rr == in) {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     printf("FAIL %-22s returned the input pointer (no copy made)\n", name);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     return;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m   if (memcmp(rc, rr, nbytes) != 0) {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     printf("FAIL %-22s bytes differ\n", name);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m   } else if (memcmp(rc, in, nbytes) != 0) {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     printf("FAIL %-22s copy does not match input\n", name);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m   } else {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     printf("ok   %-22s %zu bytes identical\n", name, nbytes);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m   free(rc);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m   free(rr);
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m   if (argc != 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m   strdup_fn c = load(argv[1]);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m   strdup_fn r = load(argv[2]);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m   /* NULL input -> NULL (first error check in the C). */
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     char *rc = c(NULL), *rr = r(NULL);
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     if (rc == NULL && rr == NULL) printf("ok   %-22s both NULL\n", "null-input");
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     else { printf("FAIL %-22s c=%p rust=%p\n", "null-input", (void *)rc, (void *)rr); failures++; }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m   check("empty", c, r, "", 1);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m   check("ascii", c, r, "hello world", 12);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m   check("single-char", c, r, "x", 2);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m   check("high-bytes", c, r, "\xff\xfe\x80\x7f caf\xc3\xa9", 12);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m   check("newlines-tabs", c, r, "a\nb\tc\r\n", 8);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m   /* Long string: exercises the length computation and the bulk memcpy. */
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     size_t n = 100000;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     char *big = malloc(n + 1);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     for (size_t i = 0; i < n; i++) big[i] = (char)('a' + (i % 26));
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     big[n] = '\0';
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     check("long-100k", c, r, big, n + 1);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     free(big);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m   /* Every single non-NUL byte value, to be sure nothing is transformed. */
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     int byte_failures = 0;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     for (int b = 1; b < 256; b++) {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m       char buf[2] = {(char)b, '\0'};
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m       char *rc = c(buf), *rr = r(buf);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m       if (!rc || !rr || memcmp(rc, rr, 2) != 0 || memcmp(rc, buf, 2) != 0) byte_failures++;
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m       free(rc); free(rr);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     if (byte_failures) { printf("FAIL %-22s %d byte values differ\n", "all-byte-values", byte_failures); failures++; }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     else printf("ok   %-22s all 255 byte values identical\n", "all-byte-values");
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m   /* Data after the terminator must NOT be copied: only strlen+1 bytes. */
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     char buf[16];
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     memset(buf, 'Z', sizeof buf);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     buf[3] = '\0';
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     char *rc = c(buf), *rr = r(buf);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     if (rc && rr && memcmp(rc, rr, 4) == 0 && memcmp(rc, "abc", 0) == 0 &&
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         strlen(rc) == 3 && strlen(rr) == 3)
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m       printf("ok   %-22s stops at terminator\n", "stops-at-nul");
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     else { printf("FAIL %-22s\n", "stops-at-nul"); failures++; }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     free(rc); free(rr);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m   printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL TESTS PASSED",
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m          failures, failures == 1 ? "" : "s");
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m   return failures ? 1 : 0;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m }
+[0m[K
+ ⋮ 
+[1m[38;5;9m ● Execution failed after 0.0s:
+[0m[38;5;9mFile exists (os error 17)[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -ld /tmp/difftest 2>&1; ls -la /tmp/difftest 2>&1 | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect /tmp/difftest path conflict
+
+-rwxr-xr-x. 1 scheschb amazon 21584 Sep  1 14:14 /tmp/difftest
+-rwxr-xr-x. 1 scheschb amazon 21584 Sep  1 14:14 /tmp/difftest
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/xlate_difftest/main.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write differential test harness comparing C and Rust .so
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m typedef char *(*strdup_fn)(const char *);
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m static strdup_fn load(const char *path) {
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m   void *h = dlopen(path, RTLD_NOW);
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m   if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m   strdup_fn f = (strdup_fn)dlsym(h, "custom_strdup");
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m   if (!f) { fprintf(stderr, "dlsym custom_strdup in %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m   return f;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m static int failures = 0;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /* Compare results byte-for-byte, then free both (proves malloc/free ABI compat). */
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m static void check(const char *name, strdup_fn c, strdup_fn r,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m                   const char *in, size_t nbytes) {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   char *rc = c(in);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m   char *rr = r(in);
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m   if ((rc == NULL) != (rr == NULL)) {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     printf("FAIL %-22s nullness differs: c=%p rust=%p\n", name, (void *)rc, (void *)rr);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     return;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m   if (rc == in || rr == in) {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     printf("FAIL %-22s returned the input pointer (no copy made)\n", name);
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     return;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m   if (memcmp(rc, rr, nbytes) != 0) {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     printf("FAIL %-22s bytes differ\n", name);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m   } else if (memcmp(rc, in, nbytes) != 0) {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     printf("FAIL %-22s copy does not match input\n", name);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m   } else {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     printf("ok   %-22s %zu bytes identical\n", name, nbytes);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m   free(rc);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m   free(rr);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m   if (argc != 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m   strdup_fn c = load(argv[1]);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m   strdup_fn r = load(argv[2]);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m   /* NULL input -> NULL (first error check in the C). */
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     char *rc = c(NULL), *rr = r(NULL);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     if (rc == NULL && rr == NULL) printf("ok   %-22s both NULL\n", "null-input");
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     else { printf("FAIL %-22s c=%p rust=%p\n", "null-input", (void *)rc, (void *)rr); failures++; }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m   check("empty", c, r, "", 1);
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m   check("ascii", c, r, "hello world", 12);
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m   check("single-char", c, r, "x", 2);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m   check("high-bytes", c, r, "\xff\xfe\x80\x7f caf\xc3\xa9", 12);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m   check("newlines-tabs", c, r, "a\nb\tc\r\n", 8);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m   /* Long string: exercises the length computation and the bulk memcpy. */
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     size_t n = 100000;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     char *big = malloc(n + 1);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     for (size_t i = 0; i < n; i++) big[i] = (char)('a' + (i % 26));
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     big[n] = '\0';
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     check("long-100k", c, r, big, n + 1);
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     free(big);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m   /* Every single non-NUL byte value, to be sure nothing is transformed. */
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     int byte_failures = 0;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     for (int b = 1; b < 256; b++) {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m       char buf[2] = {(char)b, '\0'};
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m       char *rc = c(buf), *rr = r(buf);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m       if (!rc || !rr || memcmp(rc, rr, 2) != 0 || memcmp(rc, buf, 2) != 0) byte_failures++;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m       free(rc); free(rr);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     if (byte_failures) { printf("FAIL %-22s %d byte values differ\n", "all-byte-values", byte_failures); failures++; }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     else printf("ok   %-22s all 255 byte values identical\n", "all-byte-values");
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m   /* Data after the terminator must NOT be copied: only strlen+1 bytes. */
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     char buf[16];
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     memset(buf, 'Z', sizeof buf);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     buf[3] = '\0';
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     char *rc = c(buf), *rr = r(buf);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     if (rc && rr && memcmp(rc, rr, 4) == 0 && strlen(rc) == 3 && strlen(rr) == 3)
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m       printf("ok   %-22s stops at terminator\n", "stops-at-nul");
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     else { printf("FAIL %-22s\n", "stops-at-nul"); failures++; }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     free(rc); free(rr);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m   printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL TESTS PASSED",
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m          failures, failures == 1 ? "" : "s");
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m   return failures ? 1 : 0;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/xlate_difftest/main.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate_difftest && gcc -O2 -Wall -Wextra -o difftest main.c -ldl && ./difftest /tmp/cbuild/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test between C and Rust libraries
+
+ok   null-input             both NULL
+ok   empty                  1 bytes identical
+ok   ascii                  12 bytes identical
+ok   single-char            2 bytes identical
+FAIL high-bytes             copy does not match input
+ok   newlines-tabs          8 bytes identical
+ok   long-100k              100001 bytes identical
+ok   all-byte-values        all 255 byte values identical
+ok   stops-at-nul           stops at terminator
+
+FAILED (1 failure)
+[38;5;244m - Completed in 0.69s[0m
+
+[?25l[0m[38;5;141m> [0mThat failure is a bug in my test harness — I hard-coded 12 bytes for a 10-character string, so it compared one byte past the terminator (unallocated memory). Let me derive the length instead of hard-coding it.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/xlate_difftest/main.c[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 19    [0m:[38;5;9m[49m static void check(const char *name, strdup_fn c, strdup_fn r,
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m                   const char *in, size_t nbytes) {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m static void check(const char *name, strdup_fn c, strdup_fn r, const char *in) {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m   /* The contract is "strlen + 1 bytes", so derive the compare length from the
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m      input rather than hard-coding it, to avoid reading past the allocation. */
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m   size_t nbytes = strlen(in) + 1;
+[0m[49m[39m  21, 23[0m:[39m[49m   char *rc = c(in);
+[0m[49m[39m  22, 24[0m:[39m[49m   char *rr = r(in);
+[0m[K
+Updating: [38;5;141m/tmp/xlate_difftest/main.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate_difftest && python3 - <<'EOF'
+import re
+s = open('main.c').read()
+# drop the explicit byte-count arguments from the check() call sites
+s = re.sub(r'(check\("(?:empty|ascii|single-char|high-bytes|newlines-tabs)", c, r, [^;]*?), \d+\);', r'\1);', s)
+s = s.replace('check("long-100k", c, r, big, n + 1);', 'check("long-100k", c, r, big);')
+open('main.c','w').write(s)
+EOF
+grep -n 'check("' main.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Update check() call sites to drop hard-coded lengths
+
+61:  check("empty", c, r, "");
+62:  check("ascii", c, r, "hello world");
+63:  check("single-char", c, r, "x");
+64:  check("high-bytes", c, r, "\xff\xfe\x80\x7f caf\xc3\xa9");
+65:  check("newlines-tabs", c, r, "a\nb\tc\r\n");
+73:    check("long-100k", c, r, big);
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate_difftest && gcc -O2 -Wall -Wextra -o difftest main.c -ldl && ./difftest /tmp/cbuild/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/target/release/libdriver.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run differential test after fixing harness
+
+ok   null-input             both NULL
+ok   empty                  1 bytes identical
+ok   ascii                  12 bytes identical
+ok   single-char            2 bytes identical
+ok   high-bytes             11 bytes identical
+ok   newlines-tabs          8 bytes identical
+ok   long-100k              100001 bytes identical
+ok   all-byte-values        all 255 byte values identical
+ok   stops-at-nul           stops at terminator
+
+ALL TESTS PASSED (0 failures)
+exit=0
+[38;5;244m - Completed in 0.70s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate_difftest && (command -v valgrind >/dev/null && MALLOC_CHECK_=3 valgrind -q --error-exitcode=9 --leak-check=no ./difftest /tmp/cbuild/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/target/release/libdriver.so 2>&1 | tail -8 && echo "valgrind exit=$?" || echo "valgrind not installed; running with MALLOC_CHECK_=3 + MALLOC_PERTURB_" ) ; echo "--- glibc allocator hardening run ---"; MALLOC_CHECK_=3 MALLOC_PERTURB_=42 ./difftest /tmp/cbuild/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-ImDx0I/translation/target/release/libdriver.so | tail -3; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Validate malloc/free ABI compatibility under allocator hardening
+
+valgrind not installed; running with MALLOC_CHECK_=3 + MALLOC_PERTURB_
+--- glibc allocator hardening run ---
+ok   stops-at-nul           stops at terminator
+
+ALL TESTS PASSED (0 failures)
+exit=0
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[38;5;141m> [0mFinal verification that [38;5;10mc_src/[0m is untouched and the deliverables are in place.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-ImDx0I
+echo "=== c_src integrity (mtimes/sizes, all 14:22 = untouched) ==="
+find c_src -type f -printf '%TY-%Tm-%Td %TH:%TM %7s  %p\n' | sort
+echo
+echo "=== md5 of c_src files ==="
+find c_src -type f | sort | xargs md5sum
+echo
+echo "=== translation/ contents ==="
+find translation -maxdepth 2 -not -path '*/target/*' -printf '%y %7s  %p\n' | sort -k3
+echo
+echo "=== rust .so ==="
+ls -la translation/target/release/libdriver.so
+echo
+echo "=== FINAL SYMBOL DIFF (empty == complete) ==="
+diff <(nm -D --defined-only /tmp/cbuild/libdriver.so | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort) \
+  && echo "IDENTICAL: all C exports present in Rust, no extras"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src unmodified and final symbol parity
+
+=== c_src integrity (mtimes/sizes, all 14:22 = untouched) ===
+2026-09-01 14:22      38  c_src/include/lib.h
+2026-09-01 14:22     303  c_src/src/lib.c
+2026-09-01 14:22     406  c_src/CMakeLists.txt
+
+=== md5 of c_src files ===
+58bd6b226779707714b5f7c3b3aaa3c0  c_src/CMakeLists.txt
+29e639ea87e27bb2e4824c3abc93b8e1  c_src/include/lib.h
+270b4bcc7b3849de43d1907d6cd6a414  c_src/src/lib.c
+
+=== translation/ contents ===
+d      87  translation
+f     150  translation/Cargo.lock
+f     163  translation/Cargo.toml
+d      28  translation/src
+f    1933  translation/src/lib.rs
+d      81  translation/target
+
+=== rust .so ===
+-rwxr-xr-x. 2 scheschb amazon 401872 Sep  1 14:23 translation/target/release/libdriver.so
+
+=== FINAL SYMBOL DIFF (empty == complete) ===
+IDENTICAL: all C exports present in Rust, no extras
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild /tmp/xlate_difftest && echo "temp verification artifacts removed"; ls /tmp/cbuild /tmp/xlate_difftest 2>&1 | head -2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temporary build and test directories
+
+temp verification artifacts removed
+ls: cannot access '/tmp/cbuild': No such file or directory
+ls: cannot access '/tmp/xlate_difftest': No such file or directory
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified. The library turned out to be far smaller than the task description anticipated: [38;5;10mc_src/[0m is three files totalling 39 lines, and the CMake target exports exactly one public symbol.[0m[0m
+[0m[0m
+[1mSymbol surface (the definition of done).[22m Building the C library and running [38;5;10mnm -D[0m on [38;5;10mlibdriver.so[0m gives one defined export: [38;5;10mcustom_strdup[0m. Everything else [38;5;10mnm[0m reports is either an undefined import ([38;5;10mmalloc[0m, [38;5;10mmemcpy[0m, [38;5;10mstrlen[0m) or a weak toolchain artifact ([38;5;10m__gmon_start__[0m, [38;5;10m_ITM_*[0m, [38;5;10m__cxa_finalize[0m) — not part of the library's ABI. [38;5;10minclude/lib.h[0m is a single declaration line with no namespace-renaming macros, so the source name is also the final linker symbol.[0m[0m
+[0m[0m
+The final diff of defined dynamic symbols between the two [38;5;10m.so[0m files is empty in both directions — no C export missing, no extras.[0m[0m
+[0m[0m
+[1mThe one ABI decision worth flagging.[22m The C returns a [38;5;10mmalloc[0m'd buffer, which makes the allocator observable: callers free the result with [38;5;10mfree[0m. Rust's global allocator is not guaranteed to be [38;5;10mfree[0m-compatible, so I call [38;5;10mmalloc[0m/[38;5;10mmemcpy[0m/[38;5;10mstrlen[0m through local [38;5;10mextern "C"[0m declarations rather than using [38;5;10mString[0m/[38;5;10mVec[0m or [38;5;10mCString[0m. Had I used a Rust allocation, the symbol list would still have matched and the crate would still compile, but callers freeing the pointer would risk heap corruption. I declared the three externs inline to keep the crate dependency-free.[0m[0m
+[0m[0m
+I preserved the C exactly rather than improving it: the null-input check comes before the allocation check, and the length is [38;5;10mstrlen(str) + 1[0m computed with [38;5;10mwrapping_add[0m to match [38;5;10msize_t[0m semantics instead of panicking on overflow.[0m[0m
+[0m[0m
+[1mVerification.[22m Beyond [38;5;10mcargo build --release[0m succeeding, I wrote a C harness that [38;5;10mdlopen[0ms both libraries and compares [38;5;10mcustom_strdup[0m output byte-for-byte: null input, empty string, ASCII, high/non-UTF-8 bytes, control characters, a 100 KB string, all 255 non-NUL byte values individually, and a buffer with data past the terminator to confirm only [38;5;10mstrlen+1[0m bytes are copied. Every case is identical, and the harness [38;5;10mfree[0ms every returned pointer — including under [38;5;10mMALLOC_CHECK_=3 MALLOC_PERTURB_=42[0m, which would trip on an allocator mismatch. Valgrind was not installed, so allocator compatibility rests on the glibc hardening run rather than a full memory-checker pass.[0m[0m
+[0m[0m
+One correction to my own work along the way: my first harness run reported a [38;5;10mhigh-bytes[0m failure. That was a defect in the test, not the translation — I had hard-coded 12 bytes for a 10-character string, so it compared a byte past the allocation. Deriving the length from [38;5;10mstrlen[0m cleared it.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified (md5sums and mtimes unchanged); deliverables are [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m, lib name [38;5;10mdriver[0m to match the C target) and [38;5;10mtranslation/src/lib.rs[0m. Temporary build and test directories under [38;5;10m/tmp[0m are removed.[0m[0m
+[38;5;8m
+ ▸ Credits: 6.26 • Time: 2m 55s
+
+[0m[1G[0m[0m[?25h

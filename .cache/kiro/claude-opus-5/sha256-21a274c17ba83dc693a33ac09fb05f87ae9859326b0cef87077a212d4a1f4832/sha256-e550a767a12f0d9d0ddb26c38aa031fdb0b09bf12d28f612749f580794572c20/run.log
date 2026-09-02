@@ -1,0 +1,476 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
+
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  14 c_src/CMakeLists.txt
+   3 c_src/include/lib.h
+ 119 c_src/src/lib.c
+ 136 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m403 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m82 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3554 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 2 files. Building the C lib to enumerate the ABI.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-7UFS6N/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SYMBOLS ===" && nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+[ 50%] Building C object CMakeFiles/driver.dir/src/lib.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+=== SYMBOLS ===
+0000000000001160 T w_utf8_drop
+00000000000012b0 T w_utf8_filter
+[38;5;244m - Completed in 0.450s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; ls translation 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain and translation dir
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.35s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib named driver
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of `c_src/src/lib.c` (UTF-8 validation / filtering).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The original C library exports exactly two public symbols:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!   * `w_utf8_drop`   — declared only in the .c file, but non-static, so exported.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!   * `w_utf8_filter` — declared in `include/lib.h`.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! Buffers handed back to the caller are allocated with the C allocator
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! (`malloc`/`realloc`/`strdup`) because callers of the C library free them with
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! `free()`. Behaviour — including the original's quirks — is reproduced exactly.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::ffi::{c_char, c_void};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     fn strdup(s: *const c_char) -> *mut c_char;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     fn strlen(s: *const c_char) -> usize;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// `#define REPLACEMENT_INC 4096`
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m const REPLACEMENT_INC: usize = 4096;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /* Single byte: 0xxxxxxx */
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m unsafe fn valid_1(x: *const u8) -> bool {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     (unsafe { *x } & 0x80) == 0
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /* Two bytes: 110xxxxx 10xxxxxx
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m  * Starting bytes 0xC0 and 0xC1 are forbidden (overlong).
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m  * NOTE: the C source compares `(x)[0] >= (char)0xC2` using a *signed* char,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m  * which is reproduced here with an `i8` comparison. */
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m unsafe fn valid_2(x: *const u8) -> bool {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         (*x & 0xE0) == 0xC0
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             && (*x as i8) >= (0xC2_u8 as i8)
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             && (*x.add(1) & 0xC0) == 0x80
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /* Three bytes: 1110xxxx 10xxxxxx 10xxxxxx
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m  * 0xE0 could start overlong encodings.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m  * 0xED (range U+D800-U+DFFF) is reserved for UTF-16 surrogate halves. */
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m unsafe fn valid_3(x: *const u8) -> bool {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         (*x & 0xF0) == 0xE0
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             && (*x.add(1) & 0xC0) == 0x80
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             && (*x.add(2) & 0xC0) == 0x80
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             && (*x != 0xE0 || *x.add(1) >= 0xA0)
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             && (*x != 0xED || *x.add(1) < 0xA0)
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             && (*x != 0xEF || *x.add(1) <= 0xBF)
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /* Four bytes: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m  * 0xF0 could start overlong encodings.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m  * Start bytes 0xF5 and above are invalid for UTF-8. */
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m unsafe fn valid_4(x: *const u8) -> bool {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         (*x & 0xF8) == 0xF0
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             && *x <= 0xF4
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             && (*x.add(1) & 0xC0) == 0x80
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             && (*x.add(2) & 0xC0) == 0x80
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             && (*x.add(3) & 0xC0) == 0x80
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             && (*x != 0xF0 || *x.add(1) >= 0x90)
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             && (*x != 0xF4 || *x.add(1) <= 0x8F)
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// Return pointer to the first character that does not match UTF-8, or the last
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// byte (0).
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m pub unsafe extern "C" fn w_utf8_drop(string: *const c_char) -> *const c_char {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     debug_assert!(!string.is_null());
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     let mut p = string as *const u8;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         while *p != 0 {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             if valid_1(p) {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m                 p = p.add(1);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             } else if valid_2(p) {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                 p = p.add(2);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             } else if valid_3(p) {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m                 p = p.add(3);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             } else if valid_4(p) {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 p = p.add(4);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m                 return p as *const c_char;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     p as *const c_char
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// Return a newly allocated copy of `string` with every byte that is not part of
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// a valid UTF-8 sequence dropped, or (when `replacement` is true) substituted
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// with U+FFFD (EF BF BD).
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m pub unsafe extern "C" fn w_utf8_filter(string: *const c_char, replacement: bool) -> *mut c_char {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     debug_assert!(!string.is_null());
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     let valid_start = unsafe { w_utf8_drop(string) };
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     if unsafe { *valid_start } == 0 {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         return unsafe { strdup(string) };
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let mut size = unsafe { strlen(string) } + 1;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     let mut i: usize = valid_start as usize - string as usize;
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     let mut repl: usize = 0;
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     let mut copy = unsafe { malloc(size) } as *mut u8;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     if copy.is_null() {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         return std::ptr::null_mut();
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     unsafe { memcpy(copy as *mut c_void, string as *const c_void, i) };
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     let mut valid = valid_start as *const u8;
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         while *valid != 0 {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             if valid_1(valid) {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m                 *copy.add(i) = *valid;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                 valid = valid.add(1);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             } else if valid_2(valid) {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                 for _ in 0..2 {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                     *copy.add(i) = *valid;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                     valid = valid.add(1);
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             } else if valid_3(valid) {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                 for _ in 0..3 {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m                     *copy.add(i) = *valid;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m                     valid = valid.add(1);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             } else if valid_4(valid) {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m                 for _ in 0..4 {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                     *copy.add(i) = *valid;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m                     valid = valid.add(1);
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m                 if replacement {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m                     if repl < 3 {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m                         size += REPLACEMENT_INC;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m                         copy = realloc(copy as *mut c_void, size) as *mut u8;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m                         if copy.is_null() {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m                             return std::ptr::null_mut();
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                         }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                         repl += REPLACEMENT_INC;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m                     *copy.add(i) = 0xEF;
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m                     *copy.add(i) = 0xBF;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                     *copy.add(i) = 0xBD;
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                     repl -= 3;
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                 valid = valid.add(1);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         *copy.add(i) = 0;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     copy as *mut c_char
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.153s[0m
+
+[?25l[0m[38;5;141m> [0mNow verifying the symbol diff against the C library.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-7UFS6N
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '{print $3}' | sort > /tmp/c.syms
+nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/r.syms
+echo "C symbols:"; cat /tmp/c.syms
+echo "Rust symbols:"; cat /tmp/r.syms
+echo "=== MISSING FROM RUST ==="; comm -23 /tmp/c.syms /tmp/r.syms
+echo "=== (end) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+C symbols:
+w_utf8_drop
+w_utf8_filter
+Rust symbols:
+w_utf8_drop
+w_utf8_filter
+=== MISSING FROM RUST ===
+=== (end) ===
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol lists match. Now a differential test against the real C [38;5;10m.so[0m to confirm byte-identical output.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust libs
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdbool.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m typedef char *(*filter_fn)(const char *, bool);
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m typedef const char *(*drop_fn)(const char *);
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m static filter_fn cf, rf;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m static drop_fn cd, rd;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m static long checks = 0, fails = 0;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m static void hexdump(const char *label, const char *s) {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     fprintf(stderr, "  %s: ", label);
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     if (!s) { fprintf(stderr, "(null)\n"); return; }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     for (const unsigned char *p = (const unsigned char *)s; *p; p++) fprintf(stderr, "%02X ", *p);
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     fprintf(stderr, "\n");
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m static void check(const char *in) {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     /* drop */
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     const char *a = cd(in), *b = rd(in);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     long oa = a - in, ob = b - in;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     if (oa != ob) {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         fails++;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         fprintf(stderr, "DROP MISMATCH off %ld vs %ld\n", oa, ob);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         hexdump("in", in);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     checks++;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     for (int r = 0; r < 2; r++) {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         char *x = cf(in, r ? true : false);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         char *y = rf(in, r ? true : false);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         checks++;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         if ((x == NULL) != (y == NULL) || (x && strcmp(x, y) != 0)) {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             fails++;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             fprintf(stderr, "FILTER MISMATCH (replacement=%d)\n", r);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             hexdump("in", in);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             hexdump("c ", x);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             hexdump("rs", y);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         free(x);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         free(y);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m static unsigned long long seed = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m static unsigned char rnd(void) {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     return (unsigned char)(seed >> 33);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m int main(void) {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     void *ch = dlopen("/tmp/cbuild/libdriver.so", RTLD_NOW);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     void *rh = dlopen(getenv("RSLIB"), RTLD_NOW);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     if (!ch || !rh) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     cf = (filter_fn)dlsym(ch, "w_utf8_filter");
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     rf = (filter_fn)dlsym(rh, "w_utf8_filter");
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     cd = (drop_fn)dlsym(ch, "w_utf8_drop");
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     rd = (drop_fn)dlsym(rh, "w_utf8_drop");
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     if (!cf || !rf || !cd || !rd) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     /* fixed cases */
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     const char *fixed[] = {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         "", "a", "hello world", "\x7f", "\xc2\xa9", "\xc0\xaf", "\xc1\x81",
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         "\xe0\x80\x80", "\xe0\xa0\x80", "\xed\xa0\x80", "\xed\x9f\xbf",
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         "\xef\xbf\xbd", "\xef\xbf\xbf", "\xf0\x80\x80\x80", "\xf0\x90\x80\x80",
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         "\xf4\x8f\xbf\xbf", "\xf4\x90\x80\x80", "\xf5\x80\x80\x80",
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         "\xff", "\xfe\xff", "\x80", "\xbf", "a\x80" "b", "\xc2", "\xe1\x80",
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         "\xf1\x80\x80", "abc\xff\xff\xff" "def", "\xe2\x82\xac ok \xed\xbf\xbf end",
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         "\xc2\xa9\xc2\xa9\xc2\xa9", "\x01\x02\x03",
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     for (size_t i = 0; i < sizeof(fixed) / sizeof(*fixed); i++) check(fixed[i]);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     /* every single byte, and every byte pair prefix */
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     for (int i = 1; i < 256; i++) {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         char buf[2] = { (char)i, 0 };
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         check(buf);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     for (int i = 1; i < 256; i++)
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         for (int j = 1; j < 256; j++) {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             char buf[3] = { (char)i, (char)j, 0 };
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             check(buf);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     /* long runs of invalid bytes -> exercises the realloc / repl accounting */
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     for (int n = 1; n < 3000; n += 7) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         char *buf = malloc(n + 1);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         for (int k = 0; k < n; k++) buf[k] = (char)0xFF;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         buf[n] = 0;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         check(buf);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         free(buf);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     for (int n = 4000; n < 4200; n++) {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         char *buf = malloc(n + 1);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         for (int k = 0; k < n; k++) buf[k] = (char)0x80;
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         buf[n] = 0;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         check(buf);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         free(buf);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     /* random fuzz */
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     for (int iter = 0; iter < 200000; iter++) {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         int n = rnd() % 64 + 1;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         char buf[65];
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         int len = 0;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         for (int k = 0; k < n; k++) {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             unsigned char c = rnd();
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             if (c == 0) c = 1;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m             buf[len++] = (char)c;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         buf[len] = 0;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         check(buf);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     /* random fuzz biased toward multibyte lead bytes */
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     for (int iter = 0; iter < 200000; iter++) {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         int n = rnd() % 32 + 1;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         char buf[33];
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         int len = 0;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         for (int k = 0; k < n; k++) {
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             unsigned char c = 0xC0 + (rnd() % 0x40);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             if (rnd() & 1) c = 0x80 + (rnd() % 0x40);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             buf[len++] = (char)c;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         buf[len] = 0;
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         check(buf);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     printf("checks=%ld fails=%ld\n", checks, fails);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     return fails != 0;
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o difftest difftest.c -ldl && RSLIB=/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/target/release/libdriver.so ./difftest 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
+
+checks=1397817 fails=0
+[38;5;244m - Completed in 0.507s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && (which valgrind >/dev/null && RSLIB=/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/target/release/libdriver.so valgrind -q --error-exitcode=9 ./difftest 2>&1 | tail -15) || echo "valgrind not available"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Memory-check the differential test
+
+/usr/bin/which: no valgrind in (/home/scheschb/.aim/mcp-servers:/home/scheschb/.toolbox/bin:/home/scheschb/.local/bin:/home/scheschb/bin:/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin:/home/scheschb/.local/share/mise/installs/python/3.12/bin:/home/scheschb/.cargo/bin:/local/home/scheschb/.toolbox/bin:/home/scheschb/.nix-profile/bin:/home/scheschb/.local/bin:/home/scheschb/.toolbox/bin:/home/scheschb/.aim/mcp-servers:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin)
+valgrind not available
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -g -fsanitize=address -o difftest_asan difftest.c -ldl 2>&1 | tail -3 && RSLIB=/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/target/release/libdriver.so ASAN_OPTIONS=detect_leaks=0 ./difftest_asan 2>&1 | tail -15[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test under AddressSanitizer
+
+./difftest_asan: error while loading shared libraries: libasan.so.6: cannot open shared object file: No such file or directory
+[38;5;244m - Completed in 0.126s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && MALLOC_CHECK_=3 MALLOC_PERTURB_=165 RSLIB=/local/home/scheschb/.harvest/work/harvest-work-7UFS6N/translation/target/release/libdriver.so ./difftest 2>&1 | tail -10; echo "exit=$?"; rm -f /tmp/difftest /tmp/difftest_asan /tmp/difftest.c; rm -rf /tmp/cbuild /tmp/c.syms /tmp/r.syms[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run with glibc malloc checking, then clean up temp artifacts
+
+checks=1397817 fails=0
+exit=0
+[38;5;244m - Completed in 0.480s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library turned out to be small — a single translation unit ([38;5;10mc_src/src/lib.c[0m, 119 lines) exporting exactly two symbols.[0m[0m
+[0m[0m
+[1mABI coverage (the completion gate):[22m [38;5;10mnm -D --defined-only[0m on the C [38;5;10mlibdriver.so[0m exports [38;5;10mw_utf8_drop[0m and [38;5;10mw_utf8_filter[0m. The Rust [38;5;10mlibdriver.so[0m exports the same two names; the [38;5;10mcomm -23[0m diff of the two sorted symbol lists is empty. There were no namespace-renaming macros in the header — only the [38;5;10mvalid_1..valid_4[0m predicate macros, which are function-local logic, not symbol renames. Note that [38;5;10mw_utf8_drop[0m is absent from [38;5;10minclude/lib.h[0m but non-static in the [38;5;10m.c[0m, so it is part of the exported ABI and is exported from Rust too.[0m[0m
+[0m[0m
+[1mBehavioral equivalence:[22m I built a [38;5;10mdlopen[0m-based differential harness that calls both [38;5;10m.so[0m files side by side and compares results byte-for-byte: 1,397,817 checks, 0 mismatches. Coverage included all 255 single bytes, all 65,025 two-byte combinations, overlong/surrogate/out-of-range sequences, truncated multibyte prefixes, long runs of invalid bytes (up to 4200) to drive the [38;5;10mrealloc[0m path repeatedly, and 400k randomized inputs (uniform plus lead/continuation-byte biased). It passed again under [38;5;10mMALLOC_CHECK_=3[0m/[38;5;10mMALLOC_PERTURB_[0m, so the pointer arithmetic isn't scribbling outside the allocation. Valgrind and ASan were unavailable in this environment, so that's the limit of my memory verification.[0m[0m
+[0m[0m
+Details worth flagging in the translation:[0m[0m
+- Returned buffers use libc [38;5;10mmalloc[0m/[38;5;10mrealloc[0m/[38;5;10mstrdup[0m, not Rust's allocator, since callers free them with [38;5;10mfree()[0m.[0m[0m
+- [38;5;10mvalid_2[0m's [38;5;10m(x)[0] >= (char)0xC2[0m is a [3msigned[23m char comparison in C; I reproduced it as an [38;5;10mi8[0m compare rather than "normalizing" it to unsigned.[0m[0m
+- The [38;5;10m&&[0m ordering in each predicate is preserved exactly, which is what keeps the original from reading past the NUL terminator on truncated sequences.[0m[0m
+- I left the original's oddities alone: the always-true [38;5;10m0xEF[0m/[38;5;10m<= 0xBF[0m clause in [38;5;10mvalid_3[0m, and the [38;5;10mrepl[0m credit accounting that charges 3 bytes per replacement while only 2 are needed (conservative, so no overflow) and leaks the old buffer if [38;5;10mrealloc[0m fails.[0m[0m
+[38;5;8m
+ ▸ Credits: 5.48 • Time: 2m 28s
+
+[0m[1G[0m[0m[?25h

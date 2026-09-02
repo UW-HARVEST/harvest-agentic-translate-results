@@ -1,4 +1,7 @@
-pub mod ed25519;
+pub mod core_ed25519;
+pub mod core_h2c;
+pub mod core_ristretto255;
+pub mod ed25519_ref10;
 pub mod hchacha20;
 pub mod hsalsa20;
 pub mod keccak1600;

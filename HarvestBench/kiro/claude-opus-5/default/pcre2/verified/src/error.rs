@@ -1,36 +1,25 @@
-//! Translation of `c_src/src/pcre2_error.c`.
+//! Translation of `pcre2_error.c`.
 //!
-//! Build configuration: `PCRE2_CODE_UNIT_WIDTH == 8`, `SUPPORT_UNICODE`, no
-//! `EBCDIC`, no `SUPPORT_JIT`. Only the non-EBCDIC branches are compiled.
+//! This module contains `pcre2_get_error_message()`, which copies an error
+//! message into a caller-supplied buffer.
 
-#![allow(non_snake_case)]
-
+use crate::internal::*;
 use core::ffi::c_int;
 
-use crate::chars::CHAR_NUL;
-use crate::internal::*;
-
-/* The texts of compile-time error messages. Compile-time error numbers start
-at COMPILE_ERROR_BASE (100).
-
-This used to be a table of strings, but in order to reduce the number of
-relocations needed when a shared library is loaded dynamically, it is now one
-long string. We cannot use a table of offsets, because the lengths of inserts
-such as XSTRING(MAX_NAME_SIZE) are not known. Instead,
-pcre2_get_error_message() counts through to the one it wants -- this isn't a
-performance issue because these strings are used only when there is an error.
-
-Each substring ends with \0 to insert a null character. This includes the final
-substring, so that the whole string ends with \0\0, which can be detected when
-counting through.
-
-The inserted values come from the build configuration:
-  XSTRING(PCRE2_CODE_UNIT_WIDTH) == "8"
-  XSTRING(MAX_NAME_SIZE)         == "128"
-  XSTRING(MAX_NAME_COUNT)        == "10000"
-*/
-
-static COMPILE_ERROR_TEXTS: &[u8] = b"\
+// The texts of compile-time error messages. Compile-time error numbers start
+// at COMPILE_ERROR_BASE (100).
+//
+// This is one long string. Each substring ends with `\0` to insert a null
+// character. This includes the final substring, so that the whole string ends
+// with `\0\0`, which can be detected when counting through.
+//
+// XSTRING(PCRE2_CODE_UNIT_WIDTH) == "8"
+// XSTRING(MAX_NAME_SIZE)         == "128"
+// XSTRING(MAX_NAME_COUNT)        == "10000"
+//
+// EBCDIC is not defined, so error 68 uses the ASCII text and no on-the-fly
+// EBCDIC translation is performed.
+static compile_error_texts: &[u8] = b"\
 no error\0\
 \\ at end of pattern\0\
 \\c at end of pattern\0\
@@ -151,11 +140,11 @@ unexpected character in (?[...]) extended character class\0\
 expected capture group number or name\0\
 missing opening parenthesis\0\
 syntax error in subpattern number (missing terminator?)\0\
-erroroffset passed as NULL\0\0";
+erroroffset passed as NULL\0\
+\0";
 
-/* Match-time and UTF error texts are in the same format. */
-
-static MATCH_ERROR_TEXTS: &[u8] = b"\
+// Match-time and UTF error texts are in the same format.
+static match_error_texts: &[u8] = b"\
 no error\0\
 no match\0\
 partial match\0\
@@ -232,88 +221,85 @@ substitute subject differs from prior match call\0\
 substitute start offset differs from prior match call\0\
 substitute options differ from prior match call\0\
 disallowed use of \\K in lookaround\0\
-replacement $' or $_ not supported with partial match\0\0";
+replacement $' or $_ not supported with partial match\0\
+\0";
 
-/*************************************************
-*            Return error message                *
-*************************************************/
-
-/* This function copies an error message into a buffer whose units are of an
-appropriate width. Error numbers are positive for compile-time errors, and
-negative for match-time errors (except for UTF errors), but the numbers are all
-distinct.
-
-Arguments:
-  enumber       error number
-  buffer        where to put the message (zero terminated)
-  size          size of the buffer in code units
-
-Returns:        length of message if all is well
-                negative on error
-*/
-
-pub unsafe fn get_error_message(
-    enumber: c_int,
-    buffer: *mut PCRE2_UCHAR,
-    size: PCRE2_SIZE,
-) -> c_int {
-    unsafe {
-        let mut message: *const u8;
-        let mut i: PCRE2_SIZE;
-        let mut n: c_int;
-        let mut rc: c_int = 0;
-
-        if size == 0 {
-            return PCRE2_ERROR_NOMEMORY;
-        }
-
-        if enumber >= COMPILE_ERROR_BASE {
-            /* Compile error */
-            message = COMPILE_ERROR_TEXTS.as_ptr();
-            n = enumber - COMPILE_ERROR_BASE;
-        } else if enumber < 0 {
-            /* Match or UTF error */
-            message = MATCH_ERROR_TEXTS.as_ptr();
-            n = -enumber;
-        } else {
-            /* Invalid error number */
-            message = b"\0\0".as_ptr(); /* Empty message list */
-            n = 1;
-        }
-
-        while n > 0 {
-            while {
-                let c = *message;
-                message = message.add(1);
-                c != CHAR_NUL as u8
-            } {}
-            if *message == CHAR_NUL as u8 {
-                return PCRE2_ERROR_BADDATA;
-            }
-            n -= 1;
-        }
-
-        i = 0;
-        while *message != 0 {
-            if i >= size - 1 {
-                rc = PCRE2_ERROR_NOMEMORY;
-                break;
-            }
-            *buffer.add(i) = *message;
-            message = message.add(1);
-            i += 1;
-        }
-
-        *buffer.add(i) = 0; /* Terminate message, even if truncated. */
-        if rc != 0 { rc } else { i as c_int }
-    }
-}
-
+/// `pcre2_get_error_message()` — copy an error message into a buffer whose
+/// units are of an appropriate width.
+///
+/// Arguments:
+///   enumber       error number
+///   buffer        where to put the message (zero terminated)
+///   size          size of the buffer in code units
+///
+/// Returns:        length of message if all is well
+///                 negative on error
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pcre2_get_error_message_8(
     enumber: c_int,
     buffer: *mut PCRE2_UCHAR,
     size: PCRE2_SIZE,
 ) -> c_int {
-    unsafe { get_error_message(enumber, buffer, size) }
+    unsafe {
+        // Empty message list for invalid error numbers.
+        // C: `(const unsigned char *)"\0"` — a 2-byte array (explicit NUL plus
+        // the implicit string terminator), which the counting loop relies on.
+        static EMPTY_MSG: &[u8] = b"\0\0";
+
+        let mut i: PCRE2_SIZE;
+        let mut n: c_int;
+        let mut rc: c_int = 0;
+
+        if size == 0 {
+            return PCRE2_ERROR_NOMEMORY as c_int;
+        }
+
+        // `message` is an index into the chosen table.
+        let table: &[u8];
+        if enumber as i64 >= COMPILE_ERROR_BASE {
+            // Compile error
+            table = compile_error_texts;
+            n = (enumber as i64 - COMPILE_ERROR_BASE) as c_int;
+        } else if enumber < 0 {
+            // Match or UTF error
+            table = match_error_texts;
+            n = -enumber;
+        } else {
+            // Invalid error number
+            table = EMPTY_MSG;
+            n = 1;
+        }
+
+        let mut message: usize = 0;
+
+        // Count through to the wanted message. This mirrors:
+        //   while (*message++ != CHAR_NUL) {}
+        //   if (*message == CHAR_NUL) return PCRE2_ERROR_BADDATA;
+        while n > 0 {
+            while table[message] != 0 {
+                message += 1;
+            }
+            message += 1; // step over the NUL (post-increment in C)
+            if table[message] == 0 {
+                return PCRE2_ERROR_BADDATA as c_int;
+            }
+            n -= 1;
+        }
+
+        i = 0;
+        while table[message] != 0 {
+            if i >= size - 1 {
+                rc = PCRE2_ERROR_NOMEMORY as c_int;
+                break;
+            }
+            *buffer.add(i) = table[message];
+            message += 1;
+            i += 1;
+        }
+
+        // EBCDIC is not defined, so no on-the-fly translation is performed.
+
+        *buffer.add(i) = 0; // Terminate message, even if truncated.
+        if rc != 0 { rc } else { i as c_int }
+    }
 }

@@ -1,0 +1,9 @@
+# The differential tests capture the library's stdout by temporarily
+# redirecting file descriptor 1, which is process-global. libtest's own progress
+# output ("test foo ... ok") is written to fd 1 from its main thread, so running
+# test threads in parallel lets harness text land inside a capture and show up as
+# a bogus "divergence". Force serial execution.
+#
+# `force = true` so an inherited RUST_TEST_THREADS cannot re-enable parallelism.
+[env]
+RUST_TEST_THREADS = { value = "1", force = true }

@@ -23,34 +23,32 @@
  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! Rust translation of `c_src/src/lib.c`.
+//! Direct translation of `c_src/src/lib.c`.
 //!
-//! The behaviour of the original C is reproduced exactly, including
-//! quirks such as unreachable branches, an unused bitmask, and the
-//! signed/unsigned comparisons between `int` counters and `size_t`
-//! lengths.
+//! The decision string is handled as raw bytes (`&[u8]`), mirroring C's
+//! `char *`, so that non-UTF-8 input behaves identically.
 
 /// Main entrance function - processes boolean decisions
 ///
-/// * `decision_string` - String of 'y'/'n' characters representing decisions
-/// * `length` - Length of decision string
-/// * `operation` - Operation to perform:
-///   - 0: apply permissions (uses first 3 decisions)
-///   - 1: evaluate conditions with logic (uses first 3 decisions)
-///   - 2: configure flags (uses all decisions)
-///   - 3: validate sequence (checks pattern)
-/// * `param` - Operation-specific parameter (logic operator, mode, etc)
+/// * `decision_string` - bytes of 'y'/'n' characters representing decisions
+/// * `length` - length of decision string (as computed by the caller)
+/// * `operation` - 0: apply permissions, 1: evaluate conditions,
+///   2: configure flags, 3: validate sequence
+/// * `param` - operation-specific parameter (logic operator, mode, etc)
 ///
 /// Returns the operation result or an error code.
+///
+/// Note: the C version accepts a possibly-NULL pointer; `None` models NULL.
 pub fn process_decisions(
-    decision_string: &[u8],
+    decision_string: Option<&[u8]>,
     length: usize,
     operation: i32,
     param: i32,
 ) -> i32 {
-    // The C code checks `decision_string == NULL || length == 0`. The
-    // pointer is never NULL when called from main, so only the length
-    // check is observable.
+    let decision_string = match decision_string {
+        None => return -1,
+        Some(s) => s,
+    };
     if length == 0 {
         return -1;
     }
@@ -143,8 +141,8 @@ fn apply_permissions(read: bool, write: bool, execute: bool) -> i32 {
         if permission_value == 6 {
             return 50 + permission_value; /* 56 */
         }
-        /* Otherwise the C falls out of the chain to the final return 0.
-         * (Unreachable: read && write && !execute implies 6.) */
+        /* NOTE: no `else` in the C source; control falls through to the
+         * final `return 0` below. */
     } else if read && execute {
         /* Read/execute but no write */
         return 30 + permission_value; /* 35 */
@@ -285,7 +283,7 @@ fn configure_flags(decisions: &[bool], count: usize) -> i32 {
         }
         i += 1;
     }
-    /* The C computes `flags` but never reads it again. */
+    /* `flags` is computed but never used in the C source. */
     let _ = flags;
 
     /* Apply rules based on flag patterns */
@@ -302,7 +300,7 @@ fn configure_flags(decisions: &[bool], count: usize) -> i32 {
                 return 100 + i as i32;
             }
         }
-    } else if special_count as usize == count - 1 {
+    } else if special_count as usize == count.wrapping_sub(1) {
         /* Exactly one false - find which one */
         for i in 0..count {
             if !decisions[i] {
@@ -349,10 +347,10 @@ fn configure_flags(decisions: &[bool], count: usize) -> i32 {
 /// Validate sequence has proper pattern
 /// Checks various decision sequence rules
 ///
-/// The C reinterprets the caller's `char` buffer as a `bool` array and
-/// overwrites it in place. Because each index is read before it is
-/// written, that is equivalent to building a separate boolean array,
-/// and the mutated buffer is never inspected by the caller.
+/// The C source aliases the input `char *` as a `bool *` and overwrites the
+/// caller's buffer in place. Every byte is read before it is written and the
+/// buffer is not used again by the caller, so a separate boolean vector is
+/// observationally equivalent.
 fn validate_sequence(sequence: &[u8], len: usize) -> i32 {
     if len == 0 {
         return 0;

@@ -1,19 +1,18 @@
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
-use crate::common::*;
-use crate::types::*;
-use crate::{js_rangeerror, js_typeerror};
-use std::ffi::{c_char, c_int, c_long, c_void};
+//! Translation of src/jsdate.c
 
+use crate::jsi::*;
+
+use crate::jsbuiltin::jsB_propf;
 use crate::jsproperty::jsV_newobject;
 use crate::jsrun::{
-    js_call, js_copy, js_defglobal, js_gettop, js_isdefined, js_isnumber, js_isstring,
-    js_iscallable, js_getproperty, js_pop, js_pushnull, js_pushnumber, js_pushobject,
-    js_pushstring, js_toobject, js_tonumber, js_toprimitive, js_tostring,
+    js_call, js_copy, js_defglobal, js_getproperty, js_gettop, js_iscallable, js_isdefined,
+    js_isnumber, js_isstring, js_pop, js_pushnull, js_pushnumber, js_pushobject, js_pushstring,
+    js_tonumber, js_toobject, js_toprimitive, js_tostring,
 };
-use crate::jsbuiltin::jsB_propf;
 use crate::jsvalue::js_newcconstructor;
 
-/* gettimeofday for Now() on unix */
+/* struct timeval / gettimeofday are not in jsi.rs; bind them locally so the
+ * unix Now() path matches the C bit for bit. */
 #[repr(C)]
 struct timeval {
     tv_sec: c_long,
@@ -24,37 +23,33 @@ unsafe extern "C" {
     fn gettimeofday(tv: *mut timeval, tz: *mut c_void) -> c_int;
 }
 
-#[inline]
-unsafe fn js_optnumber(J: *mut js_State, i: c_int, v: f64) -> f64 {
-    unsafe {
-        if js_isdefined(J, i) != 0 {
-            js_tonumber(J, i)
-        } else {
-            v
-        }
-    }
+/* #define js_optnumber(J,I,V) (js_isdefined(J,I) ? js_tonumber(J,I) : V) */
+macro_rules! js_optnumber {
+    ($J:expr, $I:expr, $V:expr) => {
+        if js_isdefined($J, $I) != 0 { js_tonumber($J, $I) } else { $V }
+    };
 }
 
 unsafe fn Now() -> f64 {
     unsafe {
-        let mut tv = timeval { tv_sec: 0, tv_usec: 0 };
-        gettimeofday(&mut tv, std::ptr::null_mut());
+        let mut tv: timeval = timeval { tv_sec: 0, tv_usec: 0 };
+        gettimeofday(&raw mut tv, core::ptr::null_mut());
         floor(tv.tv_sec as f64 * 1000.0 + tv.tv_usec as f64 / 1000.0)
     }
 }
 
 unsafe fn LocalTZA() -> f64 {
     unsafe {
-        static mut ONCE: c_int = 1;
-        static mut TZA: f64 = 0.0;
-        if ONCE != 0 {
-            let now: c_long = time(std::ptr::null_mut());
-            let utc = mktime(gmtime(&now));
-            let loc = mktime(localtime(&now));
-            TZA = (loc - utc) as f64 * 1000.0;
-            ONCE = 0;
+        static mut once: c_int = 1;
+        static mut tza: f64 = 0.0;
+        if once != 0 {
+            let mut now: time_t = time(core::ptr::null_mut());
+            let utc: time_t = mktime(gmtime(&raw const now));
+            let loc: time_t = mktime(localtime(&raw const now));
+            tza = ((loc - utc) * 1000) as f64;
+            once = 0;
         }
-        TZA
+        tza
     }
 }
 
@@ -87,7 +82,6 @@ unsafe fn pmod(mut x: f64, y: f64) -> f64 {
 }
 
 unsafe fn Day(t: f64) -> c_int {
-    // C: `return floor(t / msPerDay);` -- implicit double->int conversion.
     unsafe { d2i(floor(t / msPerDay)) }
 }
 
@@ -95,7 +89,7 @@ unsafe fn TimeWithinDay(t: f64) -> f64 {
     unsafe { pmod(t, msPerDay) }
 }
 
-fn DaysInYear(y: c_int) -> c_int {
+unsafe fn DaysInYear(y: c_int) -> c_int {
     if y % 4 == 0 && (y % 100 != 0 || (y % 400 == 0)) {
         366
     } else {
@@ -105,8 +99,6 @@ fn DaysInYear(y: c_int) -> c_int {
 
 unsafe fn DayFromYear(y: c_int) -> c_int {
     unsafe {
-        // C evaluates the whole expression as `double` (the floor() calls
-        // promote it) and converts to int once, at the return.
         d2i((365 * (y - 1970)) as f64
             + floor((y - 1969) as f64 / 4.0)
             - floor((y - 1901) as f64 / 100.0)
@@ -120,8 +112,8 @@ unsafe fn TimeFromYear(y: c_int) -> f64 {
 
 unsafe fn YearFromTime(t: f64) -> c_int {
     unsafe {
-        let mut y = d2i(floor(t / (msPerDay * 365.2425)) + 1970.0);
-        let t2 = TimeFromYear(y);
+        let mut y: c_int = d2i(floor(t / (msPerDay * 365.2425)) + 1970.0);
+        let t2: f64 = TimeFromYear(y);
         if t2 > t {
             y -= 1;
         } else if t2 + msPerDay * DaysInYear(y) as f64 <= t {
@@ -141,49 +133,27 @@ unsafe fn DayWithinYear(t: f64) -> c_int {
 
 unsafe fn MonthFromTime(t: f64) -> c_int {
     unsafe {
-        let day = DayWithinYear(t);
-        let leap = InLeapYear(t);
-        if day < 31 {
-            return 0;
-        }
-        if day < 59 + leap {
-            return 1;
-        }
-        if day < 90 + leap {
-            return 2;
-        }
-        if day < 120 + leap {
-            return 3;
-        }
-        if day < 151 + leap {
-            return 4;
-        }
-        if day < 181 + leap {
-            return 5;
-        }
-        if day < 212 + leap {
-            return 6;
-        }
-        if day < 243 + leap {
-            return 7;
-        }
-        if day < 273 + leap {
-            return 8;
-        }
-        if day < 304 + leap {
-            return 9;
-        }
-        if day < 334 + leap {
-            return 10;
-        }
+        let day: c_int = DayWithinYear(t);
+        let leap: c_int = InLeapYear(t);
+        if day < 31 { return 0; }
+        if day < 59 + leap { return 1; }
+        if day < 90 + leap { return 2; }
+        if day < 120 + leap { return 3; }
+        if day < 151 + leap { return 4; }
+        if day < 181 + leap { return 5; }
+        if day < 212 + leap { return 6; }
+        if day < 243 + leap { return 7; }
+        if day < 273 + leap { return 8; }
+        if day < 304 + leap { return 9; }
+        if day < 334 + leap { return 10; }
         11
     }
 }
 
 unsafe fn DateFromTime(t: f64) -> c_int {
     unsafe {
-        let day = DayWithinYear(t);
-        let leap = InLeapYear(t);
+        let day: c_int = DayWithinYear(t);
+        let leap: c_int = InLeapYear(t);
         match MonthFromTime(t) {
             0 => day + 1,
             1 => day - 30,
@@ -202,7 +172,7 @@ unsafe fn DateFromTime(t: f64) -> c_int {
 }
 
 unsafe fn WeekDay(t: f64) -> c_int {
-    unsafe { d2i(pmod((Day(t) + 4) as f64, 7.0)) }
+    unsafe { pmod(Day(t) as f64 + 4.0, 7.0) as c_int }
 }
 
 unsafe fn LocalTime(utc: f64) -> f64 {
@@ -214,19 +184,19 @@ unsafe fn UTC(loc: f64) -> f64 {
 }
 
 unsafe fn HourFromTime(t: f64) -> c_int {
-    unsafe { d2i(pmod(floor(t / msPerHour), HoursPerDay)) }
+    unsafe { pmod(floor(t / msPerHour), HoursPerDay) as c_int }
 }
 
 unsafe fn MinFromTime(t: f64) -> c_int {
-    unsafe { d2i(pmod(floor(t / msPerMinute), MinutesPerHour)) }
+    unsafe { pmod(floor(t / msPerMinute), MinutesPerHour) as c_int }
 }
 
 unsafe fn SecFromTime(t: f64) -> c_int {
-    unsafe { d2i(pmod(floor(t / msPerSecond), SecondsPerMinute)) }
+    unsafe { pmod(floor(t / msPerSecond), SecondsPerMinute) as c_int }
 }
 
 unsafe fn msFromTime(t: f64) -> c_int {
-    unsafe { d2i(pmod(t, msPerSecond)) }
+    unsafe { pmod(t, msPerSecond) as c_int }
 }
 
 unsafe fn MakeTime(hour: f64, min: f64, sec: f64, ms: f64) -> f64 {
@@ -251,7 +221,7 @@ unsafe fn MakeDay(mut y: f64, mut m: f64, date: f64) -> f64 {
         y += floor(m / 12.0);
         m = pmod(m, 12.0);
 
-        im = d2i(m);
+        im = m as c_int;
         if im < 0 || im >= 12 {
             return NAN;
         }
@@ -281,23 +251,27 @@ unsafe fn TimeClip(t: f64) -> f64 {
 
 unsafe fn toint(sp: *mut *const c_char, mut w: c_int, v: *mut c_int) -> c_int {
     unsafe {
-        let mut s = *sp;
+        let mut s: *const c_char = *sp;
         *v = 0;
-        while w != 0 {
+        while {
+            let old = w;
             w -= 1;
-            if *s < b'0' as c_char || *s > b'9' as c_char {
+            old != 0
+        } {
+            if (*s as c_int) < '0' as c_int || (*s as c_int) > '9' as c_int {
                 return 0;
             }
             *v = *v * 10 + (*s as c_int - '0' as c_int);
-            s = s.add(1);
+            s = s.offset(1);
         }
         *sp = s;
         1
     }
 }
 
-unsafe fn parseDateTime(s: *const c_char) -> f64 {
+unsafe fn parseDateTime(s0: *const c_char) -> f64 {
     unsafe {
+        let mut s: *const c_char = s0;
         let mut y: c_int = 1970;
         let mut m: c_int = 1;
         let mut d: c_int = 1;
@@ -308,102 +282,62 @@ unsafe fn parseDateTime(s: *const c_char) -> f64 {
         let mut tza: c_int = 0;
         let t: f64;
 
-        let mut s = s;
-
         /* Parse ISO 8601 formatted date and time: */
         /* YYYY("-"MM("-"DD)?)?("T"HH":"mm(":"ss("."sss)?)?("Z"|[+-]HH(":"mm)?)?)? */
 
-        if toint(&mut s, 4, &mut y) == 0 {
-            return NAN;
-        }
-        if *s == b'-' as c_char {
-            s = s.add(1);
-            if toint(&mut s, 2, &mut m) == 0 {
-                return NAN;
-            }
-            if *s == b'-' as c_char {
-                s = s.add(1);
-                if toint(&mut s, 2, &mut d) == 0 {
-                    return NAN;
-                }
+        if toint(&raw mut s, 4, &raw mut y) == 0 { return NAN; }
+        if *s as c_int == '-' as c_int {
+            s = s.offset(1);
+            if toint(&raw mut s, 2, &raw mut m) == 0 { return NAN; }
+            if *s as c_int == '-' as c_int {
+                s = s.offset(1);
+                if toint(&raw mut s, 2, &raw mut d) == 0 { return NAN; }
             }
         }
 
-        if *s == b'T' as c_char {
-            s = s.add(1);
-            if toint(&mut s, 2, &mut H) == 0 {
-                return NAN;
-            }
-            if *s != b':' as c_char {
-                return NAN;
-            }
-            s = s.add(1);
-            if toint(&mut s, 2, &mut M) == 0 {
-                return NAN;
-            }
-            if *s == b':' as c_char {
-                s = s.add(1);
-                if toint(&mut s, 2, &mut S) == 0 {
-                    return NAN;
-                }
-                if *s == b'.' as c_char {
-                    s = s.add(1);
-                    if toint(&mut s, 3, &mut ms) == 0 {
-                        return NAN;
-                    }
+        if *s as c_int == 'T' as c_int {
+            s = s.offset(1);
+            if toint(&raw mut s, 2, &raw mut H) == 0 { return NAN; }
+            if *s as c_int != ':' as c_int { return NAN; }
+            s = s.offset(1);
+            if toint(&raw mut s, 2, &raw mut M) == 0 { return NAN; }
+            if *s as c_int == ':' as c_int {
+                s = s.offset(1);
+                if toint(&raw mut s, 2, &raw mut S) == 0 { return NAN; }
+                if *s as c_int == '.' as c_int {
+                    s = s.offset(1);
+                    if toint(&raw mut s, 3, &raw mut ms) == 0 { return NAN; }
                 }
             }
-            if *s == b'Z' as c_char {
-                s = s.add(1);
+            if *s as c_int == 'Z' as c_int {
+                s = s.offset(1);
                 tza = 0;
-            } else if *s == b'+' as c_char || *s == b'-' as c_char {
+            } else if *s as c_int == '+' as c_int || *s as c_int == '-' as c_int {
                 let mut tzh: c_int = 0;
                 let mut tzm: c_int = 0;
-                let tzs: c_int = if *s == b'+' as c_char { 1 } else { -1 };
-                s = s.add(1);
-                if toint(&mut s, 2, &mut tzh) == 0 {
-                    return NAN;
+                let tzs: c_int = if *s as c_int == '+' as c_int { 1 } else { -1 };
+                s = s.offset(1);
+                if toint(&raw mut s, 2, &raw mut tzh) == 0 { return NAN; }
+                if *s as c_int == ':' as c_int {
+                    s = s.offset(1);
+                    if toint(&raw mut s, 2, &raw mut tzm) == 0 { return NAN; }
                 }
-                if *s == b':' as c_char {
-                    s = s.add(1);
-                    if toint(&mut s, 2, &mut tzm) == 0 {
-                        return NAN;
-                    }
-                }
-                if tzh > 23 || tzm > 59 {
-                    return NAN;
-                }
-                tza = tzs * (tzh * msPerHour as c_int + tzm * msPerMinute as c_int);
+                if tzh > 23 || tzm > 59 { return NAN; }
+                tza = d2i(tzs as f64 * (tzh as f64 * msPerHour + tzm as f64 * msPerMinute));
             } else {
                 tza = d2i(LocalTZA());
             }
         }
 
-        if *s != 0 {
-            return NAN;
-        }
+        if *s as c_int != 0 { return NAN; }
 
-        if m < 1 || m > 12 {
-            return NAN;
-        }
-        if d < 1 || d > 31 {
-            return NAN;
-        }
-        if H < 0 || H > 24 {
-            return NAN;
-        }
-        if M < 0 || M > 59 {
-            return NAN;
-        }
-        if S < 0 || S > 59 {
-            return NAN;
-        }
-        if ms < 0 || ms > 999 {
-            return NAN;
-        }
-        if H == 24 && (M != 0 || S != 0 || ms != 0) {
-            return NAN;
-        }
+        if m < 1 || m > 12 { return NAN; }
+        if d < 1 || d > 31 { return NAN; }
+        if H < 0 || H > 24 { return NAN; }
+        if M < 0 || M > 59 { return NAN; }
+        if S < 0 || S > 59 { return NAN; }
+        if ms < 0 || ms > 999 { return NAN; }
+        if H == 24 && (M != 0 || S != 0 || ms != 0) { return NAN; }
 
         /* TODO: DaylightSavingTA on local times */
         t = MakeDate(
@@ -418,9 +352,9 @@ unsafe fn parseDateTime(s: *const c_char) -> f64 {
 
 unsafe fn fmtdate(buf: *mut c_char, t: f64) -> *const c_char {
     unsafe {
-        let y = YearFromTime(t);
-        let m = MonthFromTime(t);
-        let d = DateFromTime(t);
+        let y: c_int = YearFromTime(t);
+        let m: c_int = MonthFromTime(t);
+        let d: c_int = DateFromTime(t);
         if !isfinite(t) {
             return c"Invalid Date".as_ptr();
         }
@@ -431,39 +365,21 @@ unsafe fn fmtdate(buf: *mut c_char, t: f64) -> *const c_char {
 
 unsafe fn fmttime(buf: *mut c_char, t: f64, tza: f64) -> *const c_char {
     unsafe {
-        let H = HourFromTime(t);
-        let M = MinFromTime(t);
-        let S = SecFromTime(t);
-        let ms = msFromTime(t);
-        let tzh = HourFromTime(fabs(tza));
-        let tzm = MinFromTime(fabs(tza));
+        let H: c_int = HourFromTime(t);
+        let M: c_int = MinFromTime(t);
+        let S: c_int = SecFromTime(t);
+        let ms: c_int = msFromTime(t);
+        let tzh: c_int = HourFromTime(fabs(tza));
+        let tzm: c_int = MinFromTime(fabs(tza));
         if !isfinite(t) {
             return c"Invalid Date".as_ptr();
         }
         if tza == 0.0 {
             sprintf(buf, c"%02d:%02d:%02d.%03dZ".as_ptr(), H, M, S, ms);
         } else if tza < 0.0 {
-            sprintf(
-                buf,
-                c"%02d:%02d:%02d.%03d-%02d:%02d".as_ptr(),
-                H,
-                M,
-                S,
-                ms,
-                tzh,
-                tzm,
-            );
+            sprintf(buf, c"%02d:%02d:%02d.%03d-%02d:%02d".as_ptr(), H, M, S, ms, tzh, tzm);
         } else {
-            sprintf(
-                buf,
-                c"%02d:%02d:%02d.%03d+%02d:%02d".as_ptr(),
-                H,
-                M,
-                S,
-                ms,
-                tzh,
-                tzm,
-            );
+            sprintf(buf, c"%02d:%02d:%02d.%03d+%02d:%02d".as_ptr(), H, M, S, ms, tzh, tzm);
         }
         buf
     }
@@ -471,8 +387,8 @@ unsafe fn fmttime(buf: *mut c_char, t: f64, tza: f64) -> *const c_char {
 
 unsafe fn fmtdatetime(buf: *mut c_char, t: f64, tza: f64) -> *const c_char {
     unsafe {
-        let mut dbuf = [0 as c_char; 20];
-        let mut tbuf = [0 as c_char; 20];
+        let mut dbuf: [c_char; 20] = [0; 20];
+        let mut tbuf: [c_char; 20] = [0; 20];
         if !isfinite(t) {
             return c"Invalid Date".as_ptr();
         }
@@ -487,9 +403,9 @@ unsafe fn fmtdatetime(buf: *mut c_char, t: f64, tza: f64) -> *const c_char {
 
 unsafe fn js_todate(J: *mut js_State, idx: c_int) -> f64 {
     unsafe {
-        let self_ = js_toobject(J, idx);
-        if (*self_).type_ != JS_CDATE {
-            js_typeerror!(J, c"not a date");
+        let self_: *mut js_Object = js_toobject(J, idx);
+        if (*self_).ty != JS_CDATE {
+            js_typeerror!(J, c"not a date".as_ptr());
         }
         (*self_).u.number
     }
@@ -497,9 +413,9 @@ unsafe fn js_todate(J: *mut js_State, idx: c_int) -> f64 {
 
 unsafe fn js_setdate(J: *mut js_State, idx: c_int, t: f64) {
     unsafe {
-        let self_ = js_toobject(J, idx);
-        if (*self_).type_ != JS_CDATE {
-            js_typeerror!(J, c"not a date");
+        let self_: *mut js_Object = js_toobject(J, idx);
+        if (*self_).ty != JS_CDATE {
+            js_typeerror!(J, c"not a date".as_ptr());
         }
         (*self_).u.number = TimeClip(t);
         js_pushnumber(J, (*self_).u.number);
@@ -508,7 +424,7 @@ unsafe fn js_setdate(J: *mut js_State, idx: c_int, t: f64) {
 
 unsafe extern "C-unwind" fn D_parse(J: *mut js_State) {
     unsafe {
-        let t = parseDateTime(js_tostring(J, 1));
+        let t: f64 = parseDateTime(js_tostring(J, 1));
         js_pushnumber(J, t);
     }
 }
@@ -524,15 +440,13 @@ unsafe extern "C-unwind" fn D_UTC(J: *mut js_State) {
         let ms: f64;
         let mut t: f64;
         y = js_tonumber(J, 1);
-        if y < 100.0 {
-            y += 1900.0;
-        }
+        if y < 100.0 { y += 1900.0; }
         m = js_tonumber(J, 2);
-        d = js_optnumber(J, 3, 1.0);
-        H = js_optnumber(J, 4, 0.0);
-        M = js_optnumber(J, 5, 0.0);
-        S = js_optnumber(J, 6, 0.0);
-        ms = js_optnumber(J, 7, 0.0);
+        d = js_optnumber!(J, 3, 1.0);
+        H = js_optnumber!(J, 4, 0.0);
+        M = js_optnumber!(J, 5, 0.0);
+        S = js_optnumber!(J, 6, 0.0);
+        ms = js_optnumber!(J, 7, 0.0);
         t = MakeDate(MakeDay(y, m, d), MakeTime(H, M, S, ms));
         t = TimeClip(t);
         js_pushnumber(J, t);
@@ -547,16 +461,16 @@ unsafe extern "C-unwind" fn D_now(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn jsB_Date(J: *mut js_State) {
     unsafe {
-        let mut buf = [0 as c_char; 64];
+        let mut buf: [c_char; 64] = [0; 64];
         js_pushstring(J, fmtdatetime(buf.as_mut_ptr(), LocalTime(Now()), LocalTZA()));
     }
 }
 
 unsafe extern "C-unwind" fn jsB_new_Date(J: *mut js_State) {
     unsafe {
-        let top = js_gettop(J);
+        let top: c_int = js_gettop(J);
         let obj: *mut js_Object;
-        let t: f64;
+        let mut t: f64;
 
         if top == 1 {
             t = Now();
@@ -576,16 +490,15 @@ unsafe extern "C-unwind" fn jsB_new_Date(J: *mut js_State) {
             let S: f64;
             let ms: f64;
             y = js_tonumber(J, 1);
-            if y < 100.0 {
-                y += 1900.0;
-            }
+            if y < 100.0 { y += 1900.0; }
             m = js_tonumber(J, 2);
-            d = js_optnumber(J, 3, 1.0);
-            H = js_optnumber(J, 4, 0.0);
-            M = js_optnumber(J, 5, 0.0);
-            S = js_optnumber(J, 6, 0.0);
-            ms = js_optnumber(J, 7, 0.0);
-            t = TimeClip(UTC(MakeDate(MakeDay(y, m, d), MakeTime(H, M, S, ms))));
+            d = js_optnumber!(J, 3, 1.0);
+            H = js_optnumber!(J, 4, 0.0);
+            M = js_optnumber!(J, 5, 0.0);
+            S = js_optnumber!(J, 6, 0.0);
+            ms = js_optnumber!(J, 7, 0.0);
+            t = MakeDate(MakeDay(y, m, d), MakeTime(H, M, S, ms));
+            t = TimeClip(UTC(t));
         }
 
         obj = jsV_newobject(J, JS_CDATE, (*J).Date_prototype);
@@ -597,49 +510,49 @@ unsafe extern "C-unwind" fn jsB_new_Date(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_valueOf(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         js_pushnumber(J, t);
     }
 }
 
 unsafe extern "C-unwind" fn Dp_toString(J: *mut js_State) {
     unsafe {
-        let mut buf = [0 as c_char; 64];
-        let t = js_todate(J, 0);
+        let mut buf: [c_char; 64] = [0; 64];
+        let t: f64 = js_todate(J, 0);
         js_pushstring(J, fmtdatetime(buf.as_mut_ptr(), LocalTime(t), LocalTZA()));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_toDateString(J: *mut js_State) {
     unsafe {
-        let mut buf = [0 as c_char; 64];
-        let t = js_todate(J, 0);
+        let mut buf: [c_char; 64] = [0; 64];
+        let t: f64 = js_todate(J, 0);
         js_pushstring(J, fmtdate(buf.as_mut_ptr(), LocalTime(t)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_toTimeString(J: *mut js_State) {
     unsafe {
-        let mut buf = [0 as c_char; 64];
-        let t = js_todate(J, 0);
+        let mut buf: [c_char; 64] = [0; 64];
+        let t: f64 = js_todate(J, 0);
         js_pushstring(J, fmttime(buf.as_mut_ptr(), LocalTime(t), LocalTZA()));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_toUTCString(J: *mut js_State) {
     unsafe {
-        let mut buf = [0 as c_char; 64];
-        let t = js_todate(J, 0);
+        let mut buf: [c_char; 64] = [0; 64];
+        let t: f64 = js_todate(J, 0);
         js_pushstring(J, fmtdatetime(buf.as_mut_ptr(), t, 0.0));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_toISOString(J: *mut js_State) {
     unsafe {
-        let mut buf = [0 as c_char; 64];
-        let t = js_todate(J, 0);
+        let mut buf: [c_char; 64] = [0; 64];
+        let t: f64 = js_todate(J, 0);
         if !isfinite(t) {
-            js_rangeerror!(J, c"invalid date");
+            js_rangeerror!(J, c"invalid date".as_ptr());
         }
         js_pushstring(J, fmtdatetime(buf.as_mut_ptr(), t, 0.0));
     }
@@ -647,7 +560,7 @@ unsafe extern "C-unwind" fn Dp_toISOString(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getFullYear(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -658,7 +571,7 @@ unsafe extern "C-unwind" fn Dp_getFullYear(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getMonth(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -669,7 +582,7 @@ unsafe extern "C-unwind" fn Dp_getMonth(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getDate(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -680,7 +593,7 @@ unsafe extern "C-unwind" fn Dp_getDate(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getDay(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -691,7 +604,7 @@ unsafe extern "C-unwind" fn Dp_getDay(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getHours(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -702,7 +615,7 @@ unsafe extern "C-unwind" fn Dp_getHours(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getMinutes(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -713,7 +626,7 @@ unsafe extern "C-unwind" fn Dp_getMinutes(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getSeconds(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -724,7 +637,7 @@ unsafe extern "C-unwind" fn Dp_getSeconds(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getMilliseconds(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -735,7 +648,7 @@ unsafe extern "C-unwind" fn Dp_getMilliseconds(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCFullYear(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -746,7 +659,7 @@ unsafe extern "C-unwind" fn Dp_getUTCFullYear(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCMonth(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -757,7 +670,7 @@ unsafe extern "C-unwind" fn Dp_getUTCMonth(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCDate(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -768,7 +681,7 @@ unsafe extern "C-unwind" fn Dp_getUTCDate(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCDay(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -779,7 +692,7 @@ unsafe extern "C-unwind" fn Dp_getUTCDay(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCHours(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -790,7 +703,7 @@ unsafe extern "C-unwind" fn Dp_getUTCHours(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCMinutes(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -801,7 +714,7 @@ unsafe extern "C-unwind" fn Dp_getUTCMinutes(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCSeconds(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -812,7 +725,7 @@ unsafe extern "C-unwind" fn Dp_getUTCSeconds(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getUTCMilliseconds(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -823,7 +736,7 @@ unsafe extern "C-unwind" fn Dp_getUTCMilliseconds(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_getTimezoneOffset(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
+        let t: f64 = js_todate(J, 0);
         if isnan(t) {
             js_pushnumber(J, NAN);
         } else {
@@ -840,148 +753,148 @@ unsafe extern "C-unwind" fn Dp_setTime(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Dp_setMilliseconds(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let h = HourFromTime(t) as f64;
-        let m = MinFromTime(t) as f64;
-        let s = SecFromTime(t) as f64;
-        let ms = js_tonumber(J, 1);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let h: f64 = HourFromTime(t) as f64;
+        let m: f64 = MinFromTime(t) as f64;
+        let s: f64 = SecFromTime(t) as f64;
+        let ms: f64 = js_tonumber(J, 1);
         js_setdate(J, 0, UTC(MakeDate(Day(t) as f64, MakeTime(h, m, s, ms))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setSeconds(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let h = HourFromTime(t) as f64;
-        let m = MinFromTime(t) as f64;
-        let s = js_tonumber(J, 1);
-        let ms = js_optnumber(J, 2, msFromTime(t) as f64);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let h: f64 = HourFromTime(t) as f64;
+        let m: f64 = MinFromTime(t) as f64;
+        let s: f64 = js_tonumber(J, 1);
+        let ms: f64 = js_optnumber!(J, 2, msFromTime(t) as f64);
         js_setdate(J, 0, UTC(MakeDate(Day(t) as f64, MakeTime(h, m, s, ms))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setMinutes(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let h = HourFromTime(t) as f64;
-        let m = js_tonumber(J, 1);
-        let s = js_optnumber(J, 2, SecFromTime(t) as f64);
-        let ms = js_optnumber(J, 3, msFromTime(t) as f64);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let h: f64 = HourFromTime(t) as f64;
+        let m: f64 = js_tonumber(J, 1);
+        let s: f64 = js_optnumber!(J, 2, SecFromTime(t) as f64);
+        let ms: f64 = js_optnumber!(J, 3, msFromTime(t) as f64);
         js_setdate(J, 0, UTC(MakeDate(Day(t) as f64, MakeTime(h, m, s, ms))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setHours(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let h = js_tonumber(J, 1);
-        let m = js_optnumber(J, 2, MinFromTime(t) as f64);
-        let s = js_optnumber(J, 3, SecFromTime(t) as f64);
-        let ms = js_optnumber(J, 4, msFromTime(t) as f64);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let h: f64 = js_tonumber(J, 1);
+        let m: f64 = js_optnumber!(J, 2, MinFromTime(t) as f64);
+        let s: f64 = js_optnumber!(J, 3, SecFromTime(t) as f64);
+        let ms: f64 = js_optnumber!(J, 4, msFromTime(t) as f64);
         js_setdate(J, 0, UTC(MakeDate(Day(t) as f64, MakeTime(h, m, s, ms))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setDate(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let y = YearFromTime(t) as f64;
-        let m = MonthFromTime(t) as f64;
-        let d = js_tonumber(J, 1);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let y: f64 = YearFromTime(t) as f64;
+        let m: f64 = MonthFromTime(t) as f64;
+        let d: f64 = js_tonumber(J, 1);
         js_setdate(J, 0, UTC(MakeDate(MakeDay(y, m, d), TimeWithinDay(t))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setMonth(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let y = YearFromTime(t) as f64;
-        let m = js_tonumber(J, 1);
-        let d = js_optnumber(J, 2, DateFromTime(t) as f64);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let y: f64 = YearFromTime(t) as f64;
+        let m: f64 = js_tonumber(J, 1);
+        let d: f64 = js_optnumber!(J, 2, DateFromTime(t) as f64);
         js_setdate(J, 0, UTC(MakeDate(MakeDay(y, m, d), TimeWithinDay(t))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setFullYear(J: *mut js_State) {
     unsafe {
-        let t = LocalTime(js_todate(J, 0));
-        let y = js_tonumber(J, 1);
-        let m = js_optnumber(J, 2, MonthFromTime(t) as f64);
-        let d = js_optnumber(J, 3, DateFromTime(t) as f64);
+        let t: f64 = LocalTime(js_todate(J, 0));
+        let y: f64 = js_tonumber(J, 1);
+        let m: f64 = js_optnumber!(J, 2, MonthFromTime(t) as f64);
+        let d: f64 = js_optnumber!(J, 3, DateFromTime(t) as f64);
         js_setdate(J, 0, UTC(MakeDate(MakeDay(y, m, d), TimeWithinDay(t))));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCMilliseconds(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let h = HourFromTime(t) as f64;
-        let m = MinFromTime(t) as f64;
-        let s = SecFromTime(t) as f64;
-        let ms = js_tonumber(J, 1);
+        let t: f64 = js_todate(J, 0);
+        let h: f64 = HourFromTime(t) as f64;
+        let m: f64 = MinFromTime(t) as f64;
+        let s: f64 = SecFromTime(t) as f64;
+        let ms: f64 = js_tonumber(J, 1);
         js_setdate(J, 0, MakeDate(Day(t) as f64, MakeTime(h, m, s, ms)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCSeconds(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let h = HourFromTime(t) as f64;
-        let m = MinFromTime(t) as f64;
-        let s = js_tonumber(J, 1);
-        let ms = js_optnumber(J, 2, msFromTime(t) as f64);
+        let t: f64 = js_todate(J, 0);
+        let h: f64 = HourFromTime(t) as f64;
+        let m: f64 = MinFromTime(t) as f64;
+        let s: f64 = js_tonumber(J, 1);
+        let ms: f64 = js_optnumber!(J, 2, msFromTime(t) as f64);
         js_setdate(J, 0, MakeDate(Day(t) as f64, MakeTime(h, m, s, ms)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCMinutes(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let h = HourFromTime(t) as f64;
-        let m = js_tonumber(J, 1);
-        let s = js_optnumber(J, 2, SecFromTime(t) as f64);
-        let ms = js_optnumber(J, 3, msFromTime(t) as f64);
+        let t: f64 = js_todate(J, 0);
+        let h: f64 = HourFromTime(t) as f64;
+        let m: f64 = js_tonumber(J, 1);
+        let s: f64 = js_optnumber!(J, 2, SecFromTime(t) as f64);
+        let ms: f64 = js_optnumber!(J, 3, msFromTime(t) as f64);
         js_setdate(J, 0, MakeDate(Day(t) as f64, MakeTime(h, m, s, ms)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCHours(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let h = js_tonumber(J, 1);
-        let m = js_optnumber(J, 2, HourFromTime(t) as f64);
-        let s = js_optnumber(J, 3, SecFromTime(t) as f64);
-        let ms = js_optnumber(J, 4, msFromTime(t) as f64);
+        let t: f64 = js_todate(J, 0);
+        let h: f64 = js_tonumber(J, 1);
+        let m: f64 = js_optnumber!(J, 2, HourFromTime(t) as f64);
+        let s: f64 = js_optnumber!(J, 3, SecFromTime(t) as f64);
+        let ms: f64 = js_optnumber!(J, 4, msFromTime(t) as f64);
         js_setdate(J, 0, MakeDate(Day(t) as f64, MakeTime(h, m, s, ms)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCDate(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let y = YearFromTime(t) as f64;
-        let m = MonthFromTime(t) as f64;
-        let d = js_tonumber(J, 1);
+        let t: f64 = js_todate(J, 0);
+        let y: f64 = YearFromTime(t) as f64;
+        let m: f64 = MonthFromTime(t) as f64;
+        let d: f64 = js_tonumber(J, 1);
         js_setdate(J, 0, MakeDate(MakeDay(y, m, d), TimeWithinDay(t)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCMonth(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let y = YearFromTime(t) as f64;
-        let m = js_tonumber(J, 1);
-        let d = js_optnumber(J, 2, DateFromTime(t) as f64);
+        let t: f64 = js_todate(J, 0);
+        let y: f64 = YearFromTime(t) as f64;
+        let m: f64 = js_tonumber(J, 1);
+        let d: f64 = js_optnumber!(J, 2, DateFromTime(t) as f64);
         js_setdate(J, 0, MakeDate(MakeDay(y, m, d), TimeWithinDay(t)));
     }
 }
 
 unsafe extern "C-unwind" fn Dp_setUTCFullYear(J: *mut js_State) {
     unsafe {
-        let t = js_todate(J, 0);
-        let y = js_tonumber(J, 1);
-        let m = js_optnumber(J, 2, MonthFromTime(t) as f64);
-        let d = js_optnumber(J, 3, DateFromTime(t) as f64);
+        let t: f64 = js_todate(J, 0);
+        let y: f64 = js_tonumber(J, 1);
+        let m: f64 = js_optnumber!(J, 2, MonthFromTime(t) as f64);
+        let d: f64 = js_optnumber!(J, 3, DateFromTime(t) as f64);
         js_setdate(J, 0, MakeDate(MakeDay(y, m, d), TimeWithinDay(t)));
     }
 }
@@ -998,7 +911,7 @@ unsafe extern "C-unwind" fn Dp_toJSON(J: *mut js_State) {
 
         js_getproperty(J, 0, c"toISOString".as_ptr());
         if js_iscallable(J, -1) == 0 {
-            js_typeerror!(J, c"this.toISOString is not a function");
+            js_typeerror!(J, c"this.toISOString is not a function".as_ptr());
         }
         js_copy(J, 0);
         js_call(J, 0);

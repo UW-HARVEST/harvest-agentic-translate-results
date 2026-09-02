@@ -1,0 +1,894 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -maxdepth 2 -type d | head -50; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+.
+./c_src
+./c_src/include
+./c_src/src
+./translation
+./.claude
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; echo "---"; cat c_src/CMakeLists.txt; echo "---"; ls -la translation .claude 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+
+  15 c_src/CMakeLists.txt
+  14 c_src/include/lib.h
+  43 c_src/src/lib.c
+  72 total
+---
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+---
+.claude:
+total 4
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 05:06 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 05:06 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 05:06 settings.json
+
+translation:
+total 0
+drwxr-xr-x. 2 scheschb amazon  6 Sep  1 05:06 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 05:06 ..
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[38;5;141m> [0mThe library is small — 57 lines total. Let me read it.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m333 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1412 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mOnly one public function. Let me build the C library to get the authoritative symbol list.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-VCihkt && mkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && make >> /tmp/cmake.log 2>&1 && find . -name "*.so" && echo "=== nm -D ===" && nm -D $(find . -name "*.so") | grep -v ' U ' [0m[38;5;244m (using tool: shell)[0m
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mtail -30 /tmp/cmake.log; which cmake gcc cc[0m[38;5;244m (using tool: shell)[0m
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-lKEZlf/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-g46BHm/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin/cmake
+/usr/bin/gcc
+/usr/bin/cc
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_v && mkdir -p /tmp/cbuild_v && cd /tmp/cbuild_v && cmake /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && make >> /tmp/cmake.log 2>&1; echo "exit=$?"; find . -name "*.so"; echo "=== defined syms ==="; nm -D --defined-only $(find . -name "*.so" | head -1)[0m[38;5;244m (using tool: shell)[0m
+
+exit=0
+./libharvest-work-VCihkt.so
+=== defined syms ===
+0000000000001100 T dequantize_granule
+[38;5;244m - Completed in 0.436s[0m
+
+[?25l[0m[38;5;141m> [0mOne exported symbol: [38;5;10mdequantize_granule[0m. No namespace macros in the header. Now the Rust crate — I'll reproduce the C semantics precisely, including the out-of-bounds [38;5;10mbitalloc[i][0m reads (C indexes up to [38;5;10m2*total_bands - 1[0m into a 64-byte array) and the unsigned-wraparound in the grouped-quantization path.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust cdylib preserving exact C semantics
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Public ABI (from `nm -D` on the C shared object):
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!   * `dequantize_granule`
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! `get_bits` is `static` in the C source and therefore not exported; it is
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! kept private here as well.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! The translation is deliberately literal. In particular it reproduces the
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! C code's quirks rather than fixing them:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //!   * `sci->bitalloc[i]` is indexed with `i` up to `2 * total_bands - 1`
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!     (up to 509) even though `bitalloc` is only 64 bytes wide, so the read
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //!     runs off the end of `bitalloc` and into the following `scfcod` field
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //!     (and past the end of the struct). Raw pointer arithmetic on a `repr(C)`
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!     struct with the identical layout is used so the same bytes are read.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //!   * The grouped-quantization path computes `code % mod - mod / 2` in
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //!     *unsigned* arithmetic and then converts to `int`, so small codes wrap
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //!     around to huge unsigned values before becoming negative ints. This is
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //!     reproduced with `wrapping_sub` + `as i32`.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //!   * Shift counts that C leaves undefined (`2 << (ba - 17)` for large `ba`,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //!     `next << shl` for large `n`) are reproduced with `wrapping_shl` /
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //!     `wrapping_shr`, which mask the count to 5 bits exactly like the x86
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //!     shift instructions that the C compiler emits.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //!   * Reads/writes past the ends of `grbuf` and `bs->buf` are performed as-is.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// Mirrors:
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m ///     const uint8_t *buf;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m ///     int pos, limit;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// } bs_t;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m pub struct bs_t {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     pub buf: *const u8,
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     pub pos: c_int,
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     pub limit: c_int,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// Mirrors:
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m ///     float scf[3 * 64];
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ///     uint8_t total_bands, stereo_bands, bitalloc[64], scfcod[64];
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// } L12_scale_info;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m pub struct L12_scale_info {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     pub scf: [f32; 3 * 64],
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     pub total_bands: u8,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     pub stereo_bands: u8,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     pub bitalloc: [u8; 64],
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     pub scfcod: [u8; 64],
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// Translation of the `static` C helper:
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// static uint32_t get_bits(bs_t *bs, int n) {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m ///     uint32_t next, cache = 0, s = bs->pos & 7;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m ///     int shl = n + s;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m ///     const uint8_t *p = bs->buf + (bs->pos >> 3);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ///     if ((bs->pos += n) > bs->limit)
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m ///         return 0;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m ///     next = *p++ & (255 >> s);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ///     while ((shl -= 8) > 0) {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m ///         cache |= next << shl;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m ///         next = *p++;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m ///     return cache | (next >> -shl);
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// Note the ordering: `s` and `p` are derived from the *old* `bs->pos`, and
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// `bs->pos` is advanced by `n` even on the early-out path that returns 0.
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m unsafe fn get_bits(bs: *mut bs_t, n: c_int) -> u32 {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     let mut cache: u32 = 0;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     // `uint32_t s = bs->pos & 7;`
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let s: u32 = ((*bs).pos & 7) as u32;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     // `int shl = n + s;`  (s converts to int here)
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     let mut shl: c_int = n.wrapping_add(s as c_int);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     // `const uint8_t *p = bs->buf + (bs->pos >> 3);`
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let mut p: *const u8 = (*bs).buf.offset(((*bs).pos >> 3) as isize);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     // `if ((bs->pos += n) > bs->limit) return 0;`
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     (*bs).pos = (*bs).pos.wrapping_add(n);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     if (*bs).pos > (*bs).limit {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     // `next = *p++ & (255 >> s);`
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let mut next: u32 = ((*p as c_int) & (255 >> s)) as u32;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     p = p.offset(1);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     // `while ((shl -= 8) > 0) { cache |= next << shl; next = *p++; }`
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         shl = shl.wrapping_sub(8);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         if shl <= 0 {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         cache |= next.wrapping_shl(shl as u32);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         next = *p as u32;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         p = p.offset(1);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     // `return cache | (next >> -shl);`
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     cache | next.wrapping_shr(shl.wrapping_neg() as u32)
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m /// Translation of the single exported C function.
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m /// int dequantize_granule(float *grbuf, bs_t *bs, L12_scale_info *sci,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m ///                        int group_size);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m pub unsafe extern "C" fn dequantize_granule(
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     grbuf: *mut f32,
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     bs: *mut bs_t,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     sci: *mut L12_scale_info,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     group_size: c_int,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     // `int i, j, k, choff = 576;` -- `choff` lives outside the `j` loop and
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     // keeps its value across iterations.
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let mut choff: c_int = 576;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let mut j: c_int = 0;
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     while j < 4 {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         // `float *dst = grbuf + group_size * j;`
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         let mut dst: *mut f32 = grbuf.offset(group_size.wrapping_mul(j) as isize);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         // `for (i = 0; i < 2 * sci->total_bands; i++)` -- the bound is re-read
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         // from the struct on every iteration, as in the C source.
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         let mut i: c_int = 0;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         while i < 2 * (*sci).total_bands as c_int {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             // `int ba = sci->bitalloc[i];`
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             //
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             // Unchecked, so that `i >= 64` reads past `bitalloc` into the
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m             // adjacent struct bytes exactly like the C does.
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             let bitalloc: *const u8 = std::ptr::addr_of!((*sci).bitalloc) as *const u8;
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             let ba: c_int = *bitalloc.offset(i as isize) as c_int;
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             if ba != 0 {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m                 if ba < 17 {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m                     // `int half = (1 << (ba - 1)) - 1;`
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m                     let half: c_int = 1i32.wrapping_shl((ba - 1) as u32).wrapping_sub(1);
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m                     let mut k: c_int = 0;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m                     while k < group_size {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m                         // `dst[k] = (float)((int)get_bits(bs, ba) - half);`
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m                         let v = (get_bits(bs, ba) as c_int).wrapping_sub(half);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m                         *dst.offset(k as isize) = v as f32;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m                         k += 1;
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m                     // `unsigned mod = (2 << (ba - 17)) + 1;`
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m                     let m: u32 = 2i32.wrapping_shl((ba - 17) as u32).wrapping_add(1) as u32;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m                     // `unsigned code = get_bits(bs, mod + 2 - (mod >> 3));`
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m                     let n: c_int = m.wrapping_add(2).wrapping_sub(m >> 3) as c_int;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m                     let mut code: u32 = get_bits(bs, n);
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                     let mut k: c_int = 0;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                     while k < group_size {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                         // `dst[k] = (float)((int)(code % mod - mod / 2));`
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                         // Unsigned subtraction wraps before the cast to int.
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                         let v = (code % m).wrapping_sub(m / 2) as c_int;
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m                         *dst.offset(k as isize) = v as f32;
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                         // `k++, code /= mod`
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                         k += 1;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m                         code /= m;
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m             // `dst += choff; choff = 18 - choff;`
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m             dst = dst.offset(choff as isize);
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             choff = 18 - choff;
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         j += 1;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     // `return group_size * 4;`
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     group_size.wrapping_mul(4)
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.148s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the symbol tables.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-VCihkt
+C_SO=/tmp/cbuild_v/libharvest-work-VCihkt.so
+R_SO=translation/target/release/libtranslation.so
+ls -l $C_SO $R_SO
+nm -D --defined-only $C_SO | awk '$2=="T"||$2=="W"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/c.syms
+nm -D --defined-only $R_SO | awk '$2=="T"||$2=="W"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/r.syms
+echo "=== C exports ($(wc -l < /tmp/c.syms)) ==="; cat /tmp/c.syms
+echo "=== R exports ($(wc -l < /tmp/r.syms)) ==="; cat /tmp/r.syms
+echo "=== MISSING FROM RUST ==="; comm -23 /tmp/c.syms /tmp/r.syms
+echo "=== (extra in rust) ==="; comm -13 /tmp/c.syms /tmp/r.syms[0m[38;5;244m (using tool: shell)[0m
+
+-rwxr-xr-x. 1 scheschb amazon  15672 Sep  1 05:06 /tmp/cbuild_v/libharvest-work-VCihkt.so
+-rwxr-xr-x. 2 scheschb amazon 402528 Sep  1 05:08 translation/target/release/libtranslation.so
+=== C exports (1) ===
+dequantize_granule
+=== R exports (1) ===
+dequantize_granule
+=== MISSING FROM RUST ===
+=== (extra in rust) ===
+[38;5;244m - Completed in 0.47s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now let me verify byte-identical behavior with a differential harness that [38;5;10mdlopen[0ms both shared objects.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust shared objects
+
+[49m[38;5;10m+       1[0m:[38;5;10m[49m /* Differential test harness: dlopen the C .so and the Rust .so, feed both the
+[0m[49m[38;5;10m+       2[0m:[38;5;10m[49m  * identical randomized inputs, and require bit-identical results (return
+[0m[49m[38;5;10m+       3[0m:[38;5;10m[49m  * value, output buffer bytes, and mutated bitstream cursor).
+[0m[49m[38;5;10m+       4[0m:[38;5;10m[49m  * Not part of the deliverable; used only for verification.
+[0m[49m[38;5;10m+       5[0m:[38;5;10m[49m  */
+[0m[49m[39m   1,   6[0m:[39m[49m #include <stdio.h>
+[0m[49m[38;5;9m-  2     [0m:[38;5;9m[49m #include <stdint.h>
+[0m[49m[39m   3,   7[0m:[39m[49m #include <stdlib.h>
+[0m[49m[39m   4,   8[0m:[39m[49m #include <string.h>
+[0m[49m[38;5;10m+       9[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[39m   5,  10[0m:[39m[49m #include <dlfcn.h>
+[0m[49m[39m   6,  11[0m:[39m[49m 
+[0m[49m[38;5;9m-  7     [0m:[38;5;9m[49m typedef struct { uint64_t val; uint32_t bits, pos, len, tot; uint8_t *buffer; } bwr;
+[0m[49m[38;5;9m-  8     [0m:[38;5;9m[49m typedef int (*fn_t)(bwr*, uint32_t, uint64_t);
+[0m[49m[38;5;10m+      12[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+      13[0m:[38;5;10m[49m     const uint8_t *buf;
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m     int pos, limit;
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m } bs_t;
+[0m[49m[39m   9,  16[0m:[39m[49m 
+[0m[49m[38;5;9m- 10     [0m:[38;5;9m[49m static uint64_t rng_s = 0x123456789abcdefULL;
+[0m[49m[38;5;9m- 11     [0m:[38;5;9m[49m static uint64_t rnd(void){ rng_s ^= rng_s<<13; rng_s ^= rng_s>>7; rng_s ^= rng_s<<17; return rng_s; }
+[0m[49m[38;5;10m+      17[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m     float scf[3 * 64];
+[0m[49m[38;5;10m+      19[0m:[38;5;10m[49m     uint8_t total_bands, stereo_bands, bitalloc[64], scfcod[64];
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m } L12_scale_info;
+[0m[49m[39m  12,  21[0m:[39m[49m 
+[0m[49m[38;5;9m- 13     [0m:[38;5;9m[49m int main(int argc, char**argv){
+[0m[49m[38;5;9m- 14     [0m:[38;5;9m[49m     void *hc = dlopen(argv[1], RTLD_NOW), *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;9m- 15     [0m:[38;5;9m[49m     if(!hc||!hr){ fprintf(stderr,"dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m- 16     [0m:[38;5;9m[49m     fn_t fc = (fn_t)dlsym(hc,"bitwriter_add"), fr = (fn_t)dlsym(hr,"bitwriter_add");
+[0m[49m[38;5;9m- 17     [0m:[38;5;9m[49m     if(!fc||!fr){ fprintf(stderr,"dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+      22[0m:[38;5;10m[49m typedef int (*fn_t)(float *, bs_t *, L12_scale_info *, int);
+[0m[49m[39m  18,  23[0m:[39m[49m 
+[0m[49m[38;5;9m- 19     [0m:[38;5;9m[49m     long n=0, bad=0;
+[0m[49m[38;5;9m- 20     [0m:[38;5;9m[49m     /* exhaustive-ish sweep over interesting bits / bw->bits combos */
+[0m[49m[38;5;9m- 21     [0m:[38;5;9m[49m     uint64_t vals[] = {0, 1, 2, 3, 0xFFULL, 0xFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL,
+[0m[49m[38;5;9m- 22     [0m:[38;5;9m[49m                        0x8000000000000000ULL, 0x5555555555555555ULL, 0xAAAAAAAAAAAAAAAAULL,
+[0m[49m[38;5;9m- 23     [0m:[38;5;9m[49m                        0x123456789ABCDEF0ULL, 0x7FFFFFFFFFFFFFFFULL};
+[0m[49m[38;5;9m- 24     [0m:[38;5;9m[49m     uint32_t bitset[] = {0,1,2,3,4,5,7,8,15,16,31,32,33,47,63,64,65,100,127,128,255,
+[0m[49m[38;5;9m- 25     [0m:[38;5;9m[49m                          1000, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFE, 0xFFFFFFFF};
+[0m[49m[38;5;9m- 26     [0m:[38;5;9m[49m     uint32_t bwbits[] = {0,1,2,3,7,8,15,16,31,32,33,48,63,64,65,100,1000,
+[0m[49m[38;5;9m- 27     [0m:[38;5;9m[49m                          0xFFFFFFFF, 0xFFFFFF00, 0x80000000};
+[0m[49m[38;5;9m- 28     [0m:[38;5;9m[49m     for(size_t a=0;a<sizeof(vals)/sizeof(*vals);a++)
+[0m[49m[38;5;9m- 29     [0m:[38;5;9m[49m     for(size_t b=0;b<sizeof(bitset)/sizeof(*bitset);b++)
+[0m[49m[38;5;9m- 30     [0m:[38;5;9m[49m     for(size_t c=0;c<sizeof(bwbits)/sizeof(*bwbits);c++)
+[0m[49m[38;5;9m- 31     [0m:[38;5;9m[49m     for(int vseed=0; vseed<3; vseed++){
+[0m[49m[38;5;9m- 32     [0m:[38;5;9m[49m         bwr s1, s2;
+[0m[49m[38;5;9m- 33     [0m:[38;5;9m[49m         memset(&s1,0,sizeof s1);
+[0m[49m[38;5;9m- 34     [0m:[38;5;9m[49m         s1.val = vals[(a+vseed)%(sizeof(vals)/sizeof(*vals))];
+[0m[49m[38;5;9m- 35     [0m:[38;5;9m[49m         s1.bits = bwbits[c];
+[0m[49m[38;5;9m- 36     [0m:[38;5;9m[49m         s1.pos = 0x11223344u; s1.len = 0x55667788u; s1.tot = (uint32_t)(0xDEADBEEFu ^ (uint32_t)a);
+[0m[49m[38;5;9m- 37     [0m:[38;5;9m[49m         s1.buffer = (uint8_t*)0x1234;
+[0m[49m[38;5;9m- 38     [0m:[38;5;9m[49m         s2 = s1;
+[0m[49m[38;5;9m- 39     [0m:[38;5;9m[49m         int r1 = fc(&s1, bitset[b], vals[a]);
+[0m[49m[38;5;9m- 40     [0m:[38;5;9m[49m         int r2 = fr(&s2, bitset[b], vals[a]);
+[0m[49m[38;5;9m- 41     [0m:[38;5;9m[49m         n++;
+[0m[49m[38;5;9m- 42     [0m:[38;5;9m[49m         if(r1!=r2 || memcmp(&s1,&s2,sizeof s1)!=0){
+[0m[49m[38;5;9m- 43     [0m:[38;5;9m[49m             if(bad++<10) printf("MISMATCH bits=%u bwbits=%u val=%llx: C{v=%llx b=%u t=%u r=%d} R{v=%llx b=%u t=%u r=%d}\n",
+[0m[49m[38;5;9m- 44     [0m:[38;5;9m[49m                 bitset[b], bwbits[c], (unsigned long long)vals[a],
+[0m[49m[38;5;9m- 45     [0m:[38;5;9m[49m                 (unsigned long long)s1.val,s1.bits,s1.tot,r1,
+[0m[49m[38;5;9m- 46     [0m:[38;5;9m[49m                 (unsigned long long)s2.val,s2.bits,s2.tot,r2);
+[0m[49m[38;5;10m+      24[0m:[38;5;10m[49m #define GRBUF_N 4096
+[0m[49m[38;5;10m+      25[0m:[38;5;10m[49m #define BUF_N   65536
+[0m[49m[38;5;10m+      26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m static uint64_t rs = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+      28[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m     rs ^= rs << 13; rs ^= rs >> 7; rs ^= rs << 17;
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m     return (uint32_t)(rs >> 32);
+[0m[49m[38;5;10m+      31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m static void *must_open(const char *p) {
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m     void *h = dlopen(p, RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", p, dlerror()); exit(2); }
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m     return h;
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m     if (argc < 3) { fprintf(stderr, "usage: %s c.so rust.so\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m     void *hc = must_open(argv[1]), *hr = must_open(argv[2]);
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m     fn_t fc = (fn_t)dlsym(hc, "dequantize_granule");
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m     fn_t fr = (fn_t)dlsym(hr, "dequantize_granule");
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m     if (!fc || !fr) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+      45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      46[0m:[38;5;10m[49m     /* ABI sanity: the Rust structs must have the same layout. */
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m     printf("sizeof(bs_t)=%zu sizeof(L12_scale_info)=%zu "
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m            "offsetof(bitalloc)=%zu offsetof(scfcod)=%zu\n",
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m            sizeof(bs_t), sizeof(L12_scale_info),
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m            (size_t)((char *)&((L12_scale_info *)0)->bitalloc - (char *)0),
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m            (size_t)((char *)&((L12_scale_info *)0)->scfcod - (char *)0));
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m     static uint8_t buf[BUF_N];
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m     static float gc[GRBUF_N], gr[GRBUF_N];
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m     long mism = 0, iters = 200000;
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     for (long it = 0; it < iters; it++) {
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m         for (size_t i = 0; i < 512; i++) buf[i] = (uint8_t)rnd();
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m         L12_scale_info sc, sr;
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m         memset(&sc, 0, sizeof sc);
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m         /* total_bands up to 64 -> bitalloc index up to 127, which stays inside
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m          * the struct (bitalloc[64] followed by scfcod[64]), so the C's
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m          * out-of-bounds read is still deterministic and comparable. */
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m         sc.total_bands  = (uint8_t)(rnd() % 65);
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m         sc.stereo_bands = (uint8_t)rnd();
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m         int mode = it % 4;
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m         for (int i = 0; i < 64; i++) {
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m             uint32_t r = rnd();
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m             uint8_t v;
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m             switch (mode) {
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m             case 0: v = (uint8_t)(r % 17); break;              /* plain path only */
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m             case 1: v = (uint8_t)(17 + r % 3); break;          /* grouped path only */
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m             case 2: v = (uint8_t)(r % 20); break;              /* mixed */
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m             default: v = (uint8_t)(r % 31); break;             /* incl. wild shifts */
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m             sc.bitalloc[i] = v;
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m             sc.scfcod[i] = (uint8_t)(rnd() % 31);
+[0m[49m[39m  47,  79[0m:[39m[49m         }
+[0m[49m[38;5;9m- 48     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 49     [0m:[38;5;9m[49m     /* random fuzz */
+[0m[49m[38;5;9m- 50     [0m:[38;5;9m[49m     for(long k=0;k<3000000;k++){
+[0m[49m[38;5;9m- 51     [0m:[38;5;9m[49m         bwr s1,s2; memset(&s1,0,sizeof s1);
+[0m[49m[38;5;9m- 52     [0m:[38;5;9m[49m         s1.val=rnd(); s1.bits=(uint32_t)rnd()>>(rnd()%32); s1.pos=(uint32_t)rnd();
+[0m[49m[38;5;9m- 53     [0m:[38;5;9m[49m         s1.len=(uint32_t)rnd(); s1.tot=(uint32_t)rnd(); s1.buffer=(uint8_t*)rnd();
+[0m[49m[38;5;9m- 54     [0m:[38;5;9m[49m         uint32_t bits=(uint32_t)rnd()>>(rnd()%32); uint64_t v=rnd()>>(rnd()%64);
+[0m[49m[38;5;9m- 55     [0m:[38;5;9m[49m         s2=s1;
+[0m[49m[38;5;9m- 56     [0m:[38;5;9m[49m         int r1=fc(&s1,bits,v), r2=fr(&s2,bits,v); n++;
+[0m[49m[38;5;9m- 57     [0m:[38;5;9m[49m         if(r1!=r2||memcmp(&s1,&s2,sizeof s1)!=0){
+[0m[49m[38;5;9m- 58     [0m:[38;5;9m[49m             if(bad++<20) printf("FUZZ MISMATCH bits=%u bwbits=%u val=%llx: C{v=%llx b=%u} R{v=%llx b=%u}\n",
+[0m[49m[38;5;9m- 59     [0m:[38;5;9m[49m                 bits,s1.bits,(unsigned long long)v,(unsigned long long)s1.val,s1.bits,
+[0m[49m[38;5;9m- 60     [0m:[38;5;9m[49m                 (unsigned long long)s2.val,s2.bits);
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m         for (int i = 0; i < 3 * 64; i++) sc.scf[i] = (float)(int)(rnd() % 1000);
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m         sr = sc;
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m         int group_size = (int)(rnd() % 13);          /* 0..12, includes 0 */
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m         bs_t bc, br;
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m         bc.buf = buf;
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m         bc.pos = (int)(rnd() % 64);
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m         /* Mix of limits: generous (full read paths) and tight (early-out 0). */
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m         bc.limit = (it & 1) ? (int)(rnd() % 4096) : (int)(rnd() % 64);
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m         br = bc;
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m         memset(gc, 0, sizeof gc);
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m         memset(gr, 0, sizeof gr);
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m         int rc = fc(gc, &bc, &sc, group_size);
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m         int rr = fr(gr, &br, &sr, group_size);
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m         if (rc != rr || bc.pos != br.pos || bc.limit != br.limit ||
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m             memcmp(gc, gr, sizeof gc) != 0 ||
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m             memcmp(&sc, &sr, sizeof sc) != 0) {
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m             if (mism < 5) {
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m                 fprintf(stderr,
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m                         "MISMATCH it=%ld ret %d/%d pos %d/%d gs=%d tb=%u limit=%d\n",
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m                         it, rc, rr, bc.pos, br.pos, group_size,
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m                         sc.total_bands, bc.limit);
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m                 for (int i = 0; i < GRBUF_N; i++) {
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m                     if (memcmp(&gc[i], &gr[i], 4)) {
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m                         fprintf(stderr, "  grbuf[%d] C=%.9g R=%.9g\n", i, gc[i], gr[i]);
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m             mism++;
+[0m[49m[39m  61, 113[0m:[39m[49m         }
+[0m[49m[39m  62, 114[0m:[39m[49m     }
+[0m[49m[38;5;9m- 63     [0m:[38;5;9m[49m     printf("cases=%ld mismatches=%ld\n", n, bad);
+[0m[49m[38;5;9m- 64     [0m:[38;5;9m[49m     return bad!=0;
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     116[0m:[38;5;10m[49m     printf("iterations=%ld mismatches=%ld -> %s\n", iters, mism,
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m            mism ? "FAIL" : "PASS (byte-identical)");
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m     dlclose(hc); dlclose(hr);
+[0m[49m[38;5;10m+     119[0m:[38;5;10m[49m     return mism != 0;
+[0m[49m[39m  65, 120[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest difftest.c -ldl 2>&1 | head -20 && ./difftest /tmp/cbuild_v/libharvest-work-VCihkt.so /local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+
+sizeof(bs_t)=16 sizeof(L12_scale_info)=900 offsetof(bitalloc)=770 offsetof(scfcod)=834
+iterations=200000 mismatches=0 -> PASS (byte-identical)
+[38;5;244m - Completed in 1.748s[0m
+
+[?25l[0m[38;5;141m> [0m200,000 randomized cases, zero mismatches. Let me lock the struct layout with compile-time assertions and confirm the build still holds.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add compile-time ABI layout assertions
+
+[49m[38;5;10m+     60[0m:[38;5;10m[49m // Lock the ABI layout of the two structs against the C definitions
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m // (verified against the C compiler: sizeof(bs_t) == 16,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m // sizeof(L12_scale_info) == 900, offsetof(bitalloc) == 770,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m // offsetof(scfcod) == 834 on LP64).
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m const _: () = {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     assert!(std::mem::size_of::<bs_t>() == 16);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     assert!(std::mem::size_of::<L12_scale_info>() == 900);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L12_scale_info, total_bands) == 768);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L12_scale_info, stereo_bands) == 769);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L12_scale_info, bitalloc) == 770);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L12_scale_info, scfcod) == 834);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[39m  60, 73[0m:[39m[49m /// Translation of the `static` C helper:
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation && cargo build --release 2>&1 | tail -10 && echo "=== nm ===" && nm -D --defined-only target/release/libtranslation.so && echo "=== rerun difftest ===" && /tmp/difftest /tmp/cbuild_v/libharvest-work-VCihkt.so target/release/libtranslation.so && echo "=== c_src untouched ===" && (cd /local/home/scheschb/.harvest/work/harvest-work-VCihkt && git status --porcelain c_src 2>/dev/null || md5sum c_src/src/lib.c c_src/include/lib.h c_src/CMakeLists.txt)[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation)
+    Finished `release` profile [optimized] target(s) in 0.10s
+=== nm ===
+00000000000116d0 T dequantize_granule
+=== rerun difftest ===
+bash: line 1: /tmp/difftest: No such file or directory
+[38;5;244m - Completed in 0.132s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/difftest* /tmp/cbuild_v 2>&1 | head[0m[38;5;244m (using tool: shell)[0m
+
+-rwxr-xr-x. 1 scheschb amazon 17232 Sep  1 05:08 /tmp/difftest_h2
+-rw-r--r--. 1 scheschb amazon  3385 Sep  1 05:08 /tmp/difftest_h2.c
+
+/tmp/cbuild_v:
+total 44
+drwxr-xr-x.   3 scheschb amazon   140 Sep  1 05:06 .
+drwxrwxrwt. 940 root     root   77120 Sep  1 05:09 ..
+-rw-r--r--.   1 scheschb amazon 14555 Sep  1 05:06 CMakeCache.txt
+drwxr-xr-x.   6 scheschb amazon   260 Sep  1 05:06 CMakeFiles
+-rw-r--r--.   1 scheschb amazon  7833 Sep  1 05:06 Makefile
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10m/tmp[0m is shared with other concurrent runs and my artifacts got clobbered. Redoing verification in a private directory, all in one shot.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-VCihkt
+V=$W/.verify; rm -rf $V; mkdir -p $V/cbuild
+# 1. Build the C library exactly as CMakeLists does
+cd $V/cbuild && cmake $W/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1
+C_SO=$(find $V/cbuild -name '*.so' | head -1); echo "C_SO=$C_SO"
+# 2. Build Rust
+cd $W/translation && cargo build --release 2>&1 | tail -3
+R_SO=$W/translation/target/release/libtranslation.so
+# 3. Symbol diff (the completion gate)
+nm -D --defined-only $C_SO | awk '{print $3}' | sort > $V/c.syms
+nm -D --defined-only $R_SO | awk '{print $3}' | sort > $V/r.syms
+echo "C exports: $(wc -l < $V/c.syms) | Rust exports: $(wc -l < $V/r.syms)"
+echo "--- C symbol list ---"; cat $V/c.syms
+echo "--- missing from Rust (must be empty) ---"; comm -23 $V/c.syms $V/r.syms; echo "--- end ---"
+echo "--- extra in Rust ---"; comm -13 $V/c.syms $V/r.syms; echo "--- end ---"[0m[38;5;244m (using tool: shell)[0m
+
+C_SO=/local/home/scheschb/.harvest/work/harvest-work-VCihkt/.verify/cbuild/libharvest-work-VCihkt.so
+    Finished `release` profile [optimized] target(s) in 0.01s
+C exports: 1 | Rust exports: 1
+--- C symbol list ---
+dequantize_granule
+--- missing from Rust (must be empty) ---
+--- end ---
+--- extra in Rust ---
+--- end ---
+[38;5;244m - Completed in 0.497s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-VCihkt
+V=$W/.verify
+cp /tmp/difftest_h2.c $V/difftest.c 2>/dev/null || true
+ls -l $V/difftest.c 2>/dev/null || echo "need to rewrite harness"[0m[38;5;244m (using tool: shell)[0m
+
+-rw-r--r--. 1 scheschb amazon 3385 Sep  1 05:09 /local/home/scheschb/.harvest/work/harvest-work-VCihkt/.verify/difftest.c
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[38;5;141m> [0mThat file is from another concurrent run, not mine — discarding it and writing my own harness into the private dir.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m.verify/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Rewrite differential harness in private verify dir
+
+[49m[38;5;9m-  1     [0m:[38;5;9m[49m #define _GNU_SOURCE
+[0m[49m[38;5;9m-  2     [0m:[38;5;9m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+       1[0m:[38;5;10m[49m /* Differential test harness: dlopen the C .so and the Rust .so, feed both
+[0m[49m[38;5;10m+       2[0m:[38;5;10m[49m  * identical randomized inputs, require bit-identical results (return value,
+[0m[49m[38;5;10m+       3[0m:[38;5;10m[49m  * output buffer bytes, mutated bitstream cursor, and scale-info struct).
+[0m[49m[38;5;10m+       4[0m:[38;5;10m[49m  * Verification only; not part of the deliverable.
+[0m[49m[38;5;10m+       5[0m:[38;5;10m[49m  */
+[0m[49m[39m   3,   6[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m   4,   7[0m:[39m[49m #include <stdlib.h>
+[0m[49m[39m   5,   8[0m:[39m[49m #include <string.h>
+[0m[49m[38;5;10m+       9[0m:[38;5;10m[49m #include <stddef.h>
+[0m[49m[39m   6,  10[0m:[39m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      11[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[39m   7,  12[0m:[39m[49m 
+[0m[49m[38;5;9m-  8     [0m:[38;5;9m[49m typedef char *(*bin2hex_t)(char *, size_t, const uint8_t *, size_t);
+[0m[49m[38;5;10m+      13[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m     const uint8_t *buf;
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m     int pos, limit;
+[0m[49m[38;5;10m+      16[0m:[38;5;10m[49m } bs_t;
+[0m[49m[39m   9,  17[0m:[39m[49m 
+[0m[49m[38;5;9m- 10     [0m:[38;5;9m[49m static bin2hex_t load(const char *path) {
+[0m[49m[38;5;9m- 11     [0m:[38;5;9m[49m     void *h = dlopen(path, RTLD_NOW);
+[0m[49m[38;5;9m- 12     [0m:[38;5;9m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;9m- 13     [0m:[38;5;9m[49m     bin2hex_t f = (bin2hex_t)dlsym(h, "bin2hex");
+[0m[49m[38;5;9m- 14     [0m:[38;5;9m[49m     if (!f) { fprintf(stderr, "dlsym bin2hex in %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;9m- 15     [0m:[38;5;9m[49m     return f;
+[0m[49m[38;5;9m- 16     [0m:[38;5;9m[49m }
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+      19[0m:[38;5;10m[49m     float scf[3 * 64];
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m     uint8_t total_bands, stereo_bands, bitalloc[64], scfcod[64];
+[0m[49m[38;5;10m+      21[0m:[38;5;10m[49m } L12_scale_info;
+[0m[49m[39m  17,  22[0m:[39m[49m 
+[0m[49m[38;5;9m- 18     [0m:[38;5;9m[49m #define BUFSZ 4096
+[0m[49m[38;5;9m- 19     [0m:[38;5;9m[49m static unsigned long long failures = 0, cases = 0;
+[0m[49m[38;5;10m+      23[0m:[38;5;10m[49m typedef int (*fn_t)(float *, bs_t *, L12_scale_info *, int);
+[0m[49m[39m  20,  24[0m:[39m[49m 
+[0m[49m[38;5;9m- 21     [0m:[38;5;9m[49m static void cmp(bin2hex_t c, bin2hex_t r, const uint8_t *bin, size_t bin_len,
+[0m[49m[38;5;9m- 22     [0m:[38;5;9m[49m                 size_t hex_maxlen, const char *label) {
+[0m[49m[38;5;9m- 23     [0m:[38;5;9m[49m     char bc[BUFSZ], br[BUFSZ];
+[0m[49m[38;5;9m- 24     [0m:[38;5;9m[49m     memset(bc, 0xAA, sizeof bc);
+[0m[49m[38;5;9m- 25     [0m:[38;5;9m[49m     memset(br, 0xAA, sizeof br);
+[0m[49m[38;5;9m- 26     [0m:[38;5;9m[49m     char *rc = c(bc, hex_maxlen, bin, bin_len);
+[0m[49m[38;5;9m- 27     [0m:[38;5;9m[49m     char *rr = r(br, hex_maxlen, bin, bin_len);
+[0m[49m[38;5;9m- 28     [0m:[38;5;9m[49m     cases++;
+[0m[49m[38;5;9m- 29     [0m:[38;5;9m[49m     /* return value must be the buffer that was passed in */
+[0m[49m[38;5;9m- 30     [0m:[38;5;9m[49m     if (rc != bc || rr != br) {
+[0m[49m[38;5;9m- 31     [0m:[38;5;9m[49m         printf("FAIL[%s] return pointer mismatch (len=%zu)\n", label, bin_len);
+[0m[49m[38;5;9m- 32     [0m:[38;5;9m[49m         failures++;
+[0m[49m[38;5;9m- 33     [0m:[38;5;9m[49m         return;
+[0m[49m[38;5;9m- 34     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 35     [0m:[38;5;9m[49m     /* compare the ENTIRE buffer, so stray writes are caught too */
+[0m[49m[38;5;9m- 36     [0m:[38;5;9m[49m     if (memcmp(bc, br, sizeof bc) != 0) {
+[0m[49m[38;5;9m- 37     [0m:[38;5;9m[49m         size_t k = 0;
+[0m[49m[38;5;9m- 38     [0m:[38;5;9m[49m         while (k < sizeof bc && bc[k] == br[k]) k++;
+[0m[49m[38;5;9m- 39     [0m:[38;5;9m[49m         printf("FAIL[%s] bin_len=%zu hex_maxlen=%zu first diff at %zu: C=0x%02x R=0x%02x\n",
+[0m[49m[38;5;9m- 40     [0m:[38;5;9m[49m                label, bin_len, hex_maxlen, k,
+[0m[49m[38;5;9m- 41     [0m:[38;5;9m[49m                (unsigned char)bc[k], (unsigned char)br[k]);
+[0m[49m[38;5;9m- 42     [0m:[38;5;9m[49m         failures++;
+[0m[49m[38;5;9m- 43     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+      25[0m:[38;5;10m[49m #define GRBUF_N 4096
+[0m[49m[38;5;10m+      26[0m:[38;5;10m[49m #define BUF_N   65536
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      28[0m:[38;5;10m[49m static uint64_t rs = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m     rs ^= rs << 13; rs ^= rs >> 7; rs ^= rs << 17;
+[0m[49m[38;5;10m+      31[0m:[38;5;10m[49m     return (uint32_t)(rs >> 32);
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m static void *must_open(const char *p) {
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m     void *h = dlopen(p, RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", p, dlerror()); exit(2); }
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m     return h;
+[0m[49m[39m  44,  38[0m:[39m[49m }
+[0m[49m[39m  45,  39[0m:[39m[49m 
+[0m[49m[39m  46,  40[0m:[39m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;9m- 47     [0m:[38;5;9m[49m     if (argc != 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;9m- 48     [0m:[38;5;9m[49m     bin2hex_t c = load(argv[1]);
+[0m[49m[38;5;9m- 49     [0m:[38;5;9m[49m     bin2hex_t r = load(argv[2]);
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m     if (argc < 3) { fprintf(stderr, "usage: %s c.so rust.so\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m     void *hc = must_open(argv[1]), *hr = must_open(argv[2]);
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m     fn_t fc = (fn_t)dlsym(hc, "dequantize_granule");
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m     fn_t fr = (fn_t)dlsym(hr, "dequantize_granule");
+[0m[49m[38;5;10m+      45[0m:[38;5;10m[49m     if (!fc || !fr) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[39m  50,  46[0m:[39m[49m 
+[0m[49m[38;5;9m- 51     [0m:[38;5;9m[49m     uint8_t bin[512];
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m     printf("C layout: sizeof(bs_t)=%zu sizeof(L12_scale_info)=%zu "
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m            "off(total_bands)=%zu off(bitalloc)=%zu off(scfcod)=%zu\n",
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m            sizeof(bs_t), sizeof(L12_scale_info),
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m            offsetof(L12_scale_info, total_bands),
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m            offsetof(L12_scale_info, bitalloc),
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m            offsetof(L12_scale_info, scfcod));
+[0m[49m[39m  52,  53[0m:[39m[49m 
+[0m[49m[38;5;9m- 53     [0m:[38;5;9m[49m     /* 1. empty input */
+[0m[49m[38;5;9m- 54     [0m:[38;5;9m[49m     cmp(c, r, bin, 0, 1, "empty/min");
+[0m[49m[38;5;9m- 55     [0m:[38;5;9m[49m     cmp(c, r, bin, 0, 64, "empty/slack");
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m     static uint8_t buf[BUF_N];
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m     static float gc[GRBUF_N], gr[GRBUF_N];
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m     long mism = 0, iters = 300000;
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     long hit_plain = 0, hit_group = 0, hit_early0 = 0, hit_oob = 0;
+[0m[49m[39m  56,  58[0m:[39m[49m 
+[0m[49m[38;5;9m- 57     [0m:[38;5;9m[49m     /* 2. every single byte value 0..255, at the tightest legal hex_maxlen and slack */
+[0m[49m[38;5;9m- 58     [0m:[38;5;9m[49m     for (int v = 0; v < 256; v++) {
+[0m[49m[38;5;9m- 59     [0m:[38;5;9m[49m         bin[0] = (uint8_t)v;
+[0m[49m[38;5;9m- 60     [0m:[38;5;9m[49m         cmp(c, r, bin, 1, 3, "single/tight");
+[0m[49m[38;5;9m- 61     [0m:[38;5;9m[49m         cmp(c, r, bin, 1, 128, "single/slack");
+[0m[49m[38;5;9m- 62     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m     for (long it = 0; it < iters; it++) {
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m         for (size_t i = 0; i < 1024; i++) buf[i] = (uint8_t)rnd();
+[0m[49m[39m  63,  61[0m:[39m[49m 
+[0m[49m[38;5;9m- 64     [0m:[38;5;9m[49m     /* 3. all 65536 byte pairs -> covers every nibble combination across positions */
+[0m[49m[38;5;9m- 65     [0m:[38;5;9m[49m     for (int a = 0; a < 256; a++) {
+[0m[49m[38;5;9m- 66     [0m:[38;5;9m[49m         for (int b = 0; b < 256; b++) {
+[0m[49m[38;5;9m- 67     [0m:[38;5;9m[49m             bin[0] = (uint8_t)a; bin[1] = (uint8_t)b;
+[0m[49m[38;5;9m- 68     [0m:[38;5;9m[49m             cmp(c, r, bin, 2, 5, "pair");
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m         L12_scale_info sc, sr;
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m         memset(&sc, 0, sizeof sc);
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m         /* total_bands <= 64 keeps bitalloc[i] (i <= 127) inside the struct, so
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m          * the C code's read past bitalloc[] into scfcod[] is deterministic and
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m          * therefore legitimately comparable. */
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m         sc.total_bands  = (uint8_t)(rnd() % 65);
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m         sc.stereo_bands = (uint8_t)rnd();
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m         if (sc.total_bands > 32) hit_oob++;
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m         int mode = (int)(it % 4);
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m         for (int i = 0; i < 64; i++) {
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m             uint32_t r = rnd();
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m             uint8_t v;
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m             switch (mode) {
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m             case 0:  v = (uint8_t)(r % 17);      break; /* ba < 17 path only  */
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m             case 1:  v = (uint8_t)(17 + r % 3);  break; /* grouped path only  */
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m             case 2:  v = (uint8_t)(r % 20);      break; /* mixed              */
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m             default: v = (uint8_t)(r % 31);      break; /* wild shift counts  */
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m             sc.bitalloc[i] = v;
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m             sc.scfcod[i]   = (uint8_t)(rnd() % 31);
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m             if (v && v < 17) hit_plain++; else if (v >= 17) hit_group++;
+[0m[49m[39m  69,  83[0m:[39m[49m         }
+[0m[49m[38;5;9m- 70     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m         for (int i = 0; i < 3 * 64; i++) sc.scf[i] = (float)(int)(rnd() % 1000);
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m         sr = sc;
+[0m[49m[39m  71,  86[0m:[39m[49m 
+[0m[49m[38;5;9m- 72     [0m:[38;5;9m[49m     /* 4. ascending / descending / boundary-nibble patterns at many lengths */
+[0m[49m[38;5;9m- 73     [0m:[38;5;9m[49m     for (size_t len = 0; len <= 256; len++) {
+[0m[49m[38;5;9m- 74     [0m:[38;5;9m[49m         for (size_t k = 0; k < len; k++) bin[k] = (uint8_t)k;
+[0m[49m[38;5;9m- 75     [0m:[38;5;9m[49m         cmp(c, r, bin, len, len * 2 + 1, "asc/tight");
+[0m[49m[38;5;9m- 76     [0m:[38;5;9m[49m         cmp(c, r, bin, len, BUFSZ - 1, "asc/slack");
+[0m[49m[38;5;9m- 77     [0m:[38;5;9m[49m         for (size_t k = 0; k < len; k++) bin[k] = (uint8_t)(255 - k);
+[0m[49m[38;5;9m- 78     [0m:[38;5;9m[49m         cmp(c, r, bin, len, len * 2 + 1, "desc/tight");
+[0m[49m[38;5;9m- 79     [0m:[38;5;9m[49m         for (size_t k = 0; k < len; k++) bin[k] = (uint8_t)((k % 2) ? 0x9A : 0xA9);
+[0m[49m[38;5;9m- 80     [0m:[38;5;9m[49m         cmp(c, r, bin, len, len * 2 + 7, "nibble-boundary");
+[0m[49m[38;5;9m- 81     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m         int group_size = (int)(rnd() % 13);   /* 0..12, includes 0 */
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m         bs_t bc, br;
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m         bc.buf   = buf;
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m         bc.pos   = (int)(rnd() % 64);
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m         /* Alternate generous limits (full multi-byte read paths) with tight
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m          * limits (the `pos > limit` early-return-0 path). */
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m         bc.limit = (it & 1) ? (int)(rnd() % 8192) : (int)(rnd() % 64);
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m         if (bc.limit < 200) hit_early0++;
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m         br = bc;
+[0m[49m[39m  82,  96[0m:[39m[49m 
+[0m[49m[38;5;9m- 83     [0m:[38;5;9m[49m     /* 5. randomized fuzzing */
+[0m[49m[38;5;9m- 84     [0m:[38;5;9m[49m     srand(12345);
+[0m[49m[38;5;9m- 85     [0m:[38;5;9m[49m     for (int iter = 0; iter < 200000; iter++) {
+[0m[49m[38;5;9m- 86     [0m:[38;5;9m[49m         size_t len = (size_t)(rand() % 300);
+[0m[49m[38;5;9m- 87     [0m:[38;5;9m[49m         for (size_t k = 0; k < len; k++) bin[k] = (uint8_t)(rand() & 0xff);
+[0m[49m[38;5;9m- 88     [0m:[38;5;9m[49m         size_t extra = (size_t)(rand() % 32);
+[0m[49m[38;5;9m- 89     [0m:[38;5;9m[49m         cmp(c, r, bin, len, len * 2 + 1 + extra, "fuzz");
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m         memset(gc, 0, sizeof gc);
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m         memset(gr, 0, sizeof gr);
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m         int rc = fc(gc, &bc, &sc, group_size);
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m         int rr = fr(gr, &br, &sr, group_size);
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m         if (rc != rr || bc.pos != br.pos || bc.limit != br.limit ||
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m             bc.buf != br.buf ||
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m             memcmp(gc, gr, sizeof gc) != 0 ||
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m             memcmp(&sc, &sr, sizeof sc) != 0) {
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m             if (mism < 5) {
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m                 fprintf(stderr, "MISMATCH it=%ld ret %d/%d pos %d/%d "
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m                                 "gs=%d tb=%u limit=%d mode=%d\n",
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m                         it, rc, rr, bc.pos, br.pos, group_size,
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m                         sc.total_bands, bc.limit, mode);
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m                 for (int i = 0; i < GRBUF_N; i++)
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m                     if (memcmp(&gc[i], &gr[i], 4)) {
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m                         fprintf(stderr, "  first diff grbuf[%d] C=%.9g R=%.9g\n",
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m                                 i, gc[i], gr[i]);
+[0m[49m[38;5;10m+     116[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     119[0m:[38;5;10m[49m             mism++;
+[0m[49m[38;5;10m+     120[0m:[38;5;10m[49m         }
+[0m[49m[39m  90, 121[0m:[39m[49m     }
+[0m[49m[39m  91, 122[0m:[39m[49m 
+[0m[49m[38;5;9m- 92     [0m:[38;5;9m[49m     printf("cases=%llu failures=%llu\n", cases, failures);
+[0m[49m[38;5;9m- 93     [0m:[38;5;9m[49m     return failures ? 1 : 0;
+[0m[49m[38;5;10m+     123[0m:[38;5;10m[49m     printf("coverage: plain-path bands=%ld grouped-path bands=%ld "
+[0m[49m[38;5;10m+     124[0m:[38;5;10m[49m            "tight-limit iters=%ld oob-bitalloc iters=%ld\n",
+[0m[49m[38;5;10m+     125[0m:[38;5;10m[49m            hit_plain, hit_group, hit_early0, hit_oob);
+[0m[49m[38;5;10m+     126[0m:[38;5;10m[49m     printf("iterations=%ld mismatches=%ld -> %s\n", iters, mism,
+[0m[49m[38;5;10m+     127[0m:[38;5;10m[49m            mism ? "FAIL" : "PASS (byte-identical)");
+[0m[49m[38;5;10m+     128[0m:[38;5;10m[49m     dlclose(hc); dlclose(hr);
+[0m[49m[38;5;10m+     129[0m:[38;5;10m[49m     return mism != 0;
+[0m[49m[39m  94, 130[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m.verify/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-VCihkt; V=$W/.verify
+gcc -O1 -o $V/difftest $V/difftest.c -ldl && \
+$V/difftest $V/cbuild/libharvest-work-VCihkt.so $W/translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+
+C layout: sizeof(bs_t)=16 sizeof(L12_scale_info)=900 off(total_bands)=768 off(bitalloc)=770 off(scfcod)=834
+coverage: plain-path bands=10833306 grouped-path bands=7688831 tight-limit iters=153696 oob-bitalloc iters=148263
+iterations=300000 mismatches=0 -> PASS (byte-identical)
+[38;5;244m - Completed in 3.194s[0m
+
+[?25l[0m[38;5;141m> [0mLet me confirm the match isn't an artifact of one optimization level, since the C exercises undefined shift counts ([38;5;10mnext << shl[0m with [38;5;10mshl >= 32[0m).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-VCihkt; V=$W/.verify
+for O in 0 1 2 3 s; do
+  gcc -O$O -fPIC -shared -I$W/c_src/include -o $V/libc_O$O.so $W/c_src/src/lib.c
+  printf "gcc -O%-2s: " "$O"
+  $V/difftest $V/libc_O$O.so $W/translation/target/release/libtranslation.so | tail -1
+done[0m[38;5;244m (using tool: shell)[0m
+
+gcc -O0 : iterations=300000 mismatches=0 -> PASS (byte-identical)
+gcc -O1 : iterations=300000 mismatches=0 -> PASS (byte-identical)
+gcc -O2 : iterations=300000 mismatches=0 -> PASS (byte-identical)
+gcc -O3 : iterations=300000 mismatches=0 -> PASS (byte-identical)
+gcc -Os : iterations=300000 mismatches=0 -> PASS (byte-identical)
+[38;5;244m - Completed in 18.151s[0m
+
+[?25l[0m[38;5;141m> [0mNow cleaning up verification artifacts and confirming [38;5;10mc_src/[0m is untouched.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-VCihkt
+md5sum $W/c_src/src/lib.c $W/c_src/include/lib.h $W/c_src/CMakeLists.txt
+rm -rf $W/.verify
+echo "--- deliverable tree ---"
+find $W/translation -maxdepth 2 -not -path '*/target/*' | sort
+echo "--- final build + symbols ---"
+cd $W/translation && cargo build --release 2>&1 | tail -2 && nm -D --defined-only target/release/libtranslation.so
+grep -n 'crate-type' Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+
+17f70c6a4a84fa9eb8ae14d8504c8c64  /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/src/lib.c
+0ba427dc5fc20b506f296af8d6cdf4cf  /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/include/lib.h
+8889366dbb1535b8a848547af64fbc79  /local/home/scheschb/.harvest/work/harvest-work-VCihkt/c_src/CMakeLists.txt
+--- deliverable tree ---
+/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation
+/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/Cargo.lock
+/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/Cargo.toml
+/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/src
+/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/src/lib.rs
+/local/home/scheschb/.harvest/work/harvest-work-VCihkt/translation/target
+--- final build + symbols ---
+    Finished `release` profile [optimized] target(s) in 0.01s
+00000000000116d0 T dequantize_granule
+7:crate-type = ["cdylib"]
+[38;5;244m - Completed in 0.52s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
+[0m[0m
+[1mThe library turned out to be small[22m, contrary to the "dozens of files, hundreds of symbols" the task anticipated: [38;5;10mc_src/[0m is three files (57 lines of C), and the CMake [38;5;10mSHARED[0m target exports exactly one symbol. [38;5;10mnm -D[0m on the C [38;5;10m.so[0m gives [38;5;10mdequantize_granule[0m and nothing else — [38;5;10mget_bits[0m is [38;5;10mstatic[0m, so it isn't exported. There are no namespace-renaming macros in [38;5;10mlib.h[0m, so the linker name equals the source name. That one-symbol list is the definition of done, and the Rust [38;5;10m.so[0m matches it exactly: the [38;5;10mcomm -23[0m diff of the two sorted symbol lists is empty, with no extra exports either.[0m[0m
+[0m[0m
+Behavioral equivalence was checked by [38;5;10mdlopen[0ming both shared objects and calling them with identical randomized inputs — 300,000 iterations comparing return value, all 4096 output floats bytewise, the mutated [38;5;10mbs_t[0m cursor, and the [38;5;10mL12_scale_info[0m struct. Zero mismatches, against the C compiled at [38;5;10m-O0[0m, [38;5;10m-O1[0m, [38;5;10m-O2[0m, [38;5;10m-O3[0m, and [38;5;10m-Os[0m. The multi-level check mattered because the C relies on shift counts ≥ 32, which is undefined behavior.[0m[0m
+[0m[0m
+Three C quirks I reproduced rather than fixed:[0m[0m
+[0m[0m
+- [38;5;10msci->bitalloc[i][0m is indexed up to [38;5;10m2 * total_bands - 1[0m (as high as 509) though [38;5;10mbitalloc[0m is only 64 bytes, so reads run into the adjacent [38;5;10mscfcod[0m field. I used raw pointer arithmetic over a [38;5;10mrepr(C)[0m struct with identical layout, and pinned that layout with compile-time asserts (size 900, [38;5;10mbitalloc[0m at 770, [38;5;10mscfcod[0m at 834) matching what the C compiler reports.[0m[0m
+- The grouped-quantization path computes [38;5;10mcode % mod - mod / 2[0m in [3munsigned[23m arithmetic before casting to [38;5;10mint[0m, so small codes wrap to huge values and then become negative. Preserved via [38;5;10mwrapping_sub[0m then [38;5;10mas i32[0m.[0m[0m
+- Undefined shifts are reproduced with [38;5;10mwrapping_shl[0m/[38;5;10mwrapping_shr[0m, which mask the count to 5 bits exactly like the x86 shift instructions gcc emits.[0m[0m
+[0m[0m
+Also preserved: [38;5;10mget_bits[0m advances [38;5;10mbs->pos[0m even on the early-return-0 path, and derives [38;5;10ms[0m and [38;5;10mp[0m from the pre-increment [38;5;10mpos[0m.[0m[0m
+[0m[0m
+The deliverable is [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m) and [38;5;10mtranslation/src/lib.rs[0m. [38;5;10mc_src/[0m is unmodified — I confirmed by checksum, and my build/verification artifacts went to a scratch directory that I removed. One note: [38;5;10m/tmp[0m on this host is shared with other concurrent runs and my first harness was clobbered mid-session, so I redid verification in a private directory.[0m[0m
+[38;5;8m
+ ▸ Credits: 9.29 • Time: 4m 47s
+
+[0m[1G[0m[0m[?25h

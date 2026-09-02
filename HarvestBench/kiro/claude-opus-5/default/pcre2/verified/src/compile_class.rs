@@ -1,88 +1,107 @@
-//! Translation of `c_src/src/pcre2_compile_class.c`.
+//! Translation of `pcre2_compile_class.c`.
 //!
-//! Character-class and extended-class compilation. Built for the 8-bit library
-//! with `SUPPORT_UNICODE` (hence `SUPPORT_WIDE_CHARS`), `LINK_SIZE == 2`, no
-//! JIT, no EBCDIC, no `PCRE2_DEBUG`.
+//! This module builds character-class opcodes: the class bitmap,
+//! `OP_XCLASS` construction, the `XCL_LIST` character-list encoding, the
+//! extended-class (`OP_ECLASS`) expression compiler, and the Unicode property
+//! handling for POSIX classes.
+//!
+//! This is the 8-bit build (`PCRE2_CODE_UNIT_WIDTH == 8`) with
+//! `SUPPORT_UNICODE` enabled (which implies `SUPPORT_WIDE_CHARS`),
+//! `SUPPORT_JIT` off, and `PCRE2_DEBUG` off. EBCDIC is not supported.
 
-#![allow(non_snake_case, non_upper_case_globals, unused_parens, dead_code)]
-
-use core::ffi::{c_int, c_void};
-use core::ptr;
-
-use crate::chars::*;
-use crate::compile_internal::*;
+use crate::compile_h::*;
+use crate::consts::*;
 use crate::internal::*;
-use crate::opcodes::*;
-use crate::ord2utf::ord2utf;
-use crate::ucd::{UCD_BOOLPROP_SETS, UCD_CASELESS_SETS, UCD_NOCASE_RANGES,
-    UCD_NOCASE_RANGES_SIZE, UCD_SCRIPT_SETS, UCD_TURKISH_DOTTED_I_CASESET};
-use crate::ucp::*;
+// Disambiguate BOOL/TRUE/FALSE (defined in both consts and internal globs).
+// The internal.rs versions are the `c_int`-typed ones we want.
+use crate::internal::{BOOL, FALSE, TRUE};
+use core::ffi::{c_int, c_void};
 
-/*************************************************
-*        POSIX class bit-map offset table        *
-*************************************************/
+// ---------------------------------------------------------------------------
+// ASCII CHAR_* constants used below (this build is not EBCDIC).
+// ---------------------------------------------------------------------------
+const CHAR_CR: u32 = 0x0d;
+const CHAR_NL_C: u32 = 0x0a;
+const CHAR_DOLLAR_SIGN: u32 = 0x24;
+const CHAR_COMMERCIAL_AT: u32 = 0x40;
+const CHAR_GRAVE_ACCENT: u32 = 0x60;
+const CHAR_0: u32 = 0x30;
+const CHAR_9: u32 = 0x39;
+const CHAR_A: u32 = 0x41;
+const CHAR_F: u32 = 0x46;
+const CHAR_a: u32 = 0x61;
+const CHAR_f: u32 = 0x66;
 
-/* Table of class bit maps for each POSIX class. Each class is formed from a
-base map, with an optional addition or removal of another map. The triples in
-the table consist of the base map offset, second map offset or -1 if no second
-map, and a non-negative value for map addition or a negative value for map
-subtraction (if there are two maps). The absolute value of the third field has
-these meanings: 0 => no tweaking, 1 => remove vertical space characters, 2 =>
-remove underscore.
+// ---------------------------------------------------------------------------
+// eclass_context
+// ---------------------------------------------------------------------------
 
-This is defined in pcre2_compile.c in the C sources, but for this translation
-it lives here so it can be exported alongside the other class helpers. */
-
-pub static POSIX_CLASS_MAPS: [c_int; 42] = [
-    cbit_word as c_int,   cbit_digit as c_int, -2,            /* alpha */
-    cbit_lower as c_int,  -1,                   0,            /* lower */
-    cbit_upper as c_int,  -1,                   0,            /* upper */
-    cbit_word as c_int,   -1,                   2,            /* alnum */
-    cbit_print as c_int,  cbit_cntrl as c_int,  0,            /* ascii */
-    cbit_space as c_int,  -1,                   1,            /* blank */
-    cbit_cntrl as c_int,  -1,                   0,            /* cntrl */
-    cbit_digit as c_int,  -1,                   0,            /* digit */
-    cbit_graph as c_int,  -1,                   0,            /* graph */
-    cbit_print as c_int,  -1,                   0,            /* print */
-    cbit_punct as c_int,  -1,                   0,            /* punct */
-    cbit_space as c_int,  -1,                   0,            /* space */
-    cbit_word as c_int,   -1,                   0,            /* word  */
-    cbit_xdigit as c_int, -1,                   0,            /* xdigit */
-];
-
-/// Exported as `_pcre2_posix_class_maps8` (note: no underscore before the `8`,
-/// because the C macro is `_pcre2_posix_class_maps` and `PCRE2_SUFFIX`
-/// concatenates the width directly).
-#[unsafe(no_mangle)]
-pub static _pcre2_posix_class_maps8: [c_int; 42] = POSIX_CLASS_MAPS;
-
-/*************************************************
-*             eclass_context struct              *
-*************************************************/
-
+/// Local context threaded through the ECLASS-compiling functions.
 struct eclass_context {
-    /* Option bits for eclass. */
+    /// Option bits for eclass.
     options: u32,
     xoptions: u32,
-    /* Rarely used members. */
+    /// Rarely used members.
     errorcodeptr: *mut c_int,
     cb: *mut compile_block,
-    /* Bitmap is needed. */
+    /// Bitmap is needed.
     needs_bitmap: BOOL,
 }
 
-/* Codes for the constant-folded operand type. Match the ECL_* opcodes. */
+// ---------------------------------------------------------------------------
+// UCD helper macros not present in internal.rs
+// ---------------------------------------------------------------------------
 
-/*************************************************
-*               Heapsort algorithm               *
-*************************************************/
+/// `UCD_ANY_I(ch)` — match any of 'i', 'I', U+0130, U+0131.
+#[inline(always)]
+fn UCD_ANY_I(ch: u32) -> bool {
+    (ch | 0x20u32) == 0x69u32 || (ch | 1u32) == 0x0131u32
+}
 
+/// `UCD_DOTTED_I(ch)`.
+#[inline(always)]
+fn UCD_DOTTED_I(ch: u32) -> bool {
+    ch == 0x69u32 || ch == 0x0130u32
+}
+
+// ---------------------------------------------------------------------------
+// PARSE_CLASS flags (SUPPORT_UNICODE)
+// ---------------------------------------------------------------------------
+
+const PARSE_CLASS_UTF: u32 = 0x1;
+const PARSE_CLASS_CASELESS_UTF: u32 = 0x2;
+const PARSE_CLASS_RESTRICTED_UTF: u32 = 0x4;
+const PARSE_CLASS_TURKISH_UTF: u32 = 0x8;
+
+// ---------------------------------------------------------------------------
+// XClass related properties
+// ---------------------------------------------------------------------------
+
+/// XClass needs to be generated.
+const XCLASS_REQUIRED: u32 = 0x1;
+/// XClass has 8 bit character.
+const XCLASS_HAS_8BIT_CHARS: u32 = 0x2;
+/// XClass has properties.
+const XCLASS_HAS_PROPS: u32 = 0x4;
+/// XClass has character lists.
+const XCLASS_HAS_CHAR_LISTS: u32 = 0x8;
+/// XClass matches to all >= 256 characters.
+const XCLASS_HIGH_ANY: u32 = 0x10;
+
+/// `XCL_LIST` for 8-bit mode: `sizeof(PCRE2_UCHAR) == 1 ? 0x10 : 0x1000`.
+const XCL_LIST_VAL: u32 = 0x10;
+
+// ---------------------------------------------------------------------------
+// SUPPORT_WIDE_CHARS block
+// ---------------------------------------------------------------------------
+
+/// Heapsort helper.
 unsafe fn do_heapify(buffer: *mut u32, size: usize, mut i: usize) {
     unsafe {
         loop {
-            let mut max: usize = i;
-            let left: usize = (i << 1) + 2;
-            let right: usize = left + 2;
+            let mut max = i;
+            let left = (i << 1) + 2;
+            let right = left + 2;
 
             if left < size && *buffer.add(left) > *buffer.add(max) {
                 max = left;
@@ -94,7 +113,7 @@ unsafe fn do_heapify(buffer: *mut u32, size: usize, mut i: usize) {
                 return;
             }
 
-            /* Swap items. */
+            // Swap items.
             let tmp1 = *buffer.add(i);
             let tmp2 = *buffer.add(i + 1);
             *buffer.add(i) = *buffer.add(max);
@@ -106,42 +125,35 @@ unsafe fn do_heapify(buffer: *mut u32, size: usize, mut i: usize) {
     }
 }
 
-const PARSE_CLASS_UTF: u32 = 0x1;
-const PARSE_CLASS_CASELESS_UTF: u32 = 0x2;
-const PARSE_CLASS_RESTRICTED_UTF: u32 = 0x4;
-const PARSE_CLASS_TURKISH_UTF: u32 = 0x8;
-
-/* Get the range of nocase characters which includes the 'c' character passed
-as argument, or directly follows 'c'. */
-
+/// Get the range of nocase characters which includes the 'c' character passed
+/// as argument, or directly follows 'c'.
 unsafe fn get_nocase_range(c: u32) -> *const u32 {
     unsafe {
+        let base = crate::tables::_pcre2_ucd_nocase_ranges.as_ptr();
         let mut left: u32 = 0;
-        let mut right: u32 = UCD_NOCASE_RANGES_SIZE;
-        let mut middle: u32;
+        let mut right: u32 = crate::tables::_pcre2_ucd_nocase_ranges_size;
 
-        if c > MAX_UTF_CODE_POINT {
-            return UCD_NOCASE_RANGES.as_ptr().add(right as usize);
+        if c > MAX_UTF_CODE_POINT as u32 {
+            return base.add(right as usize);
         }
 
         loop {
-            /* Range end of the middle element. */
-            middle = ((left + right) >> 1) | 0x1;
+            // Range end of the middle element.
+            let middle = ((left + right) >> 1) | 0x1;
 
-            if UCD_NOCASE_RANGES[middle as usize] <= c {
+            if *base.add(middle as usize) <= c {
                 left = middle + 1;
-            } else if middle > 1 && UCD_NOCASE_RANGES[(middle - 2) as usize] > c {
+            } else if middle > 1 && *base.add((middle - 2) as usize) > c {
                 right = middle - 1;
             } else {
-                return UCD_NOCASE_RANGES.as_ptr().add((middle - 1) as usize);
+                return base.add((middle - 1) as usize);
             }
         }
     }
 }
 
-/* Get the list of othercase characters, which belongs to the passed range.
-Create ranges from these characters, and append them to the buffer argument. */
-
+/// Get the list of othercase characters belonging to the passed range; create
+/// ranges from these characters and append them to the buffer.
 unsafe fn utf_caseless_extend(
     start: u32,
     end: u32,
@@ -149,16 +161,16 @@ unsafe fn utf_caseless_extend(
     mut buffer: *mut u32,
 ) -> usize {
     unsafe {
-        let mut new_start: u32 = start;
-        let mut new_end: u32 = end;
-        let mut c: u32 = start;
+        let mut new_start = start;
+        let mut new_end = end;
+        let mut c = start;
         let mut list: *const u32;
         let mut tmp: [u32; 3] = [0; 3];
         let mut result: usize = 2;
-        let mut skip_range: *const u32 = get_nocase_range(c);
-        let mut skip_start: u32 = *skip_range.add(0);
+        let mut skip_range = get_nocase_range(c);
+        let mut skip_start = *skip_range.add(0);
 
-        /* PCRE2_ASSERT(options & PARSE_CLASS_UTF); */
+        // PCRE2_ASSERT(options & PARSE_CLASS_UTF) in 8-bit mode.
 
         while c <= end {
             let mut co: u32;
@@ -170,83 +182,74 @@ unsafe fn utf_caseless_extend(
                 continue;
             }
 
-            /* Compute caseless set. */
-
+            // Compute caseless set.
             if (options & (PARSE_CLASS_TURKISH_UTF | PARSE_CLASS_RESTRICTED_UTF))
                 == PARSE_CLASS_TURKISH_UTF
-                && ucd_any_i(c)
+                && UCD_ANY_I(c)
             {
-                co = UCD_TURKISH_DOTTED_I_CASESET + (if ucd_dotted_i(c) { 0 } else { 3 });
-            } else if {
-                co = ucd_caseset(c);
-                co != 0
-            } && (options & PARSE_CLASS_RESTRICTED_UTF) != 0
-                && UCD_CASELESS_SETS[co as usize] < 128
-            {
-                co = 0; /* Ignore the caseless set if it's restricted. */
+                co = crate::tables::_pcre2_ucd_turkish_dotted_i_caseset
+                    + if UCD_DOTTED_I(c) { 0 } else { 3 };
+            } else {
+                co = UCD_CASESET(c);
+                if co != 0
+                    && (options & PARSE_CLASS_RESTRICTED_UTF) != 0
+                    && crate::tables::_pcre2_ucd_caseless_sets[co as usize] < 128
+                {
+                    co = 0; // Ignore the caseless set if it's restricted.
+                }
             }
 
             if co != 0 {
-                list = UCD_CASELESS_SETS.as_ptr().add(co as usize);
+                list = crate::tables::_pcre2_ucd_caseless_sets.as_ptr().add(co as usize);
             } else {
-                co = ucd_othercase(c);
+                co = UCD_OTHERCASE(c);
+                list = tmp.as_ptr();
                 tmp[0] = c;
-                tmp[1] = NOTACHAR;
+                tmp[1] = NOTACHAR as u32;
 
                 if co != c {
                     tmp[1] = co;
-                    tmp[2] = NOTACHAR;
+                    tmp[2] = NOTACHAR as u32;
                 }
-                /* Take the pointer only after filling the buffer: deriving it
-                from a shared borrow first would let the optimiser assume the
-                writes are not observable through it. */
-                list = tmp.as_ptr();
             }
             c += 1;
 
-            /* Add characters. */
+            // Add characters.
             loop {
-                if *list < new_start {
-                    if *list + 1 == new_start {
+                let val = *list;
+
+                let mut skip = false;
+                if val < new_start {
+                    if val + 1 == new_start {
                         new_start -= 1;
-                        list = list.add(1);
-                        if *list == NOTACHAR {
-                            break;
-                        }
-                        continue;
+                        skip = true;
                     }
-                } else if *list > new_end {
-                    if *list - 1 == new_end {
+                } else if val > new_end {
+                    if val - 1 == new_end {
                         new_end += 1;
-                        list = list.add(1);
-                        if *list == NOTACHAR {
-                            break;
-                        }
-                        continue;
+                        skip = true;
                     }
                 } else {
-                    list = list.add(1);
-                    if *list == NOTACHAR {
-                        break;
-                    }
-                    continue;
+                    skip = true;
                 }
 
-                result += 2;
-                if buffer != ptr::null_mut() {
-                    *buffer.add(0) = *list;
-                    *buffer.add(1) = *list;
-                    buffer = buffer.add(2);
+                if !skip {
+                    result += 2;
+                    if !buffer.is_null() {
+                        *buffer.add(0) = val;
+                        *buffer.add(1) = val;
+                        buffer = buffer.add(2);
+                    }
                 }
 
                 list = list.add(1);
-                if *list == NOTACHAR {
+                if *list == NOTACHAR as u32 {
                     break;
                 }
             }
         }
 
-        if buffer != ptr::null_mut() {
+        if !buffer.is_null() {
             *buffer.add(0) = new_start;
             *buffer.add(1) = new_end;
             buffer = buffer.add(2);
@@ -256,23 +259,20 @@ unsafe fn utf_caseless_extend(
     }
 }
 
-/* Add a character list to a buffer. */
-
-unsafe fn append_char_list(p: *const u32, mut buffer: *mut u32) -> usize {
+/// Add a character list to a buffer.
+unsafe fn append_char_list(mut p: *const u32, mut buffer: *mut u32) -> usize {
     unsafe {
-        let mut p = p;
-        let mut n: *const u32;
         let mut result: usize = 0;
 
-        while *p != NOTACHAR {
-            n = p;
+        while *p != NOTACHAR as u32 {
+            let mut n = p;
             while *n.add(0) == *n.add(1) - 1 {
                 n = n.add(1);
             }
 
-            /* PCRE2_ASSERT(*p < 0xffff); */
+            // PCRE2_ASSERT(*p < 0xffff);
 
-            if buffer != ptr::null_mut() {
+            if !buffer.is_null() {
                 *buffer.add(0) = *p;
                 *buffer.add(1) = *n;
                 buffer = buffer.add(2);
@@ -286,30 +286,32 @@ unsafe fn append_char_list(p: *const u32, mut buffer: *mut u32) -> usize {
     }
 }
 
-fn get_highest_char(_options: u32) -> u32 {
-    /* PCRE2_CODE_UNIT_WIDTH == 8 */
-    MAX_UTF_CODE_POINT
+fn get_highest_char(options: u32) -> u32 {
+    // 8-bit mode with SUPPORT_UNICODE.
+    GET_MAX_CHAR_VALUE((options & PARSE_CLASS_UTF) != 0)
 }
 
-/* Add a negated character list to a buffer. */
-unsafe fn append_negated_char_list(p: *const u32, options: u32, mut buffer: *mut u32) -> usize {
+/// Add a negated character list to a buffer.
+unsafe fn append_negated_char_list(
+    mut p: *const u32,
+    options: u32,
+    mut buffer: *mut u32,
+) -> usize {
     unsafe {
-        let mut p = p;
-        let mut n: *const u32;
         let mut start: u32 = 0;
         let mut result: usize = 2;
 
-        /* PCRE2_ASSERT(*p > 0); */
+        // PCRE2_ASSERT(*p > 0);
 
-        while *p != NOTACHAR {
-            n = p;
+        while *p != NOTACHAR as u32 {
+            let mut n = p;
             while *n.add(0) == *n.add(1) - 1 {
                 n = n.add(1);
             }
 
-            /* PCRE2_ASSERT(*p < 0xffff); */
+            // PCRE2_ASSERT(*p < 0xffff);
 
-            if buffer != ptr::null_mut() {
+            if !buffer.is_null() {
                 *buffer.add(0) = start;
                 *buffer.add(1) = *p - 1;
                 buffer = buffer.add(2);
@@ -320,7 +322,7 @@ unsafe fn append_negated_char_list(p: *const u32, options: u32, mut buffer: *mut
             p = n.add(1);
         }
 
-        if buffer != ptr::null_mut() {
+        if !buffer.is_null() {
             *buffer.add(0) = start;
             *buffer.add(1) = get_highest_char(options);
             buffer = buffer.add(2);
@@ -333,8 +335,8 @@ unsafe fn append_negated_char_list(p: *const u32, options: u32, mut buffer: *mut
 
 unsafe fn append_non_ascii_range(options: u32, buffer: *mut u32) -> *mut u32 {
     unsafe {
-        if buffer == ptr::null_mut() {
-            return ptr::null_mut();
+        if buffer.is_null() {
+            return core::ptr::null_mut();
         }
 
         *buffer.add(0) = 0x100;
@@ -343,61 +345,68 @@ unsafe fn append_non_ascii_range(options: u32, buffer: *mut u32) -> *mut u32 {
     }
 }
 
-unsafe fn parse_class(ptr_in: *mut u32, options: u32, buffer_in: *mut u32) -> usize {
+unsafe fn parse_class(mut ptr: *mut u32, options: u32, mut buffer: *mut u32) -> usize {
     unsafe {
-        let mut ptr = ptr_in;
-        let mut buffer = buffer_in;
         let mut total_size: usize = 0;
         let mut size: usize;
         let mut meta_arg: u32;
         let mut start_char: u32;
 
         loop {
-            match meta_code(*ptr) {
+            match META_CODE(*ptr) as i64 {
                 x if x == META_ESCAPE => {
-                    meta_arg = meta_data(*ptr);
-                    match meta_arg as i32 {
-                        ESC_D | ESC_W | ESC_S => {
+                    meta_arg = META_DATA(*ptr);
+                    match meta_arg {
+                        m if m == ESC_D || m == ESC_W || m == ESC_S => {
                             buffer = append_non_ascii_range(options, buffer);
                             total_size += 2;
                         }
-
-                        ESC_h => {
-                            size = append_char_list(HSPACE_LIST.as_ptr(), buffer);
+                        m if m == ESC_h => {
+                            size = append_char_list(
+                                crate::tables::_pcre2_hspace_list.as_ptr(),
+                                buffer,
+                            );
                             total_size += size;
-                            if buffer != ptr::null_mut() {
+                            if !buffer.is_null() {
                                 buffer = buffer.add(size);
                             }
                         }
-
-                        ESC_H => {
-                            size = append_negated_char_list(HSPACE_LIST.as_ptr(), options, buffer);
+                        m if m == ESC_H => {
+                            size = append_negated_char_list(
+                                crate::tables::_pcre2_hspace_list.as_ptr(),
+                                options,
+                                buffer,
+                            );
                             total_size += size;
-                            if buffer != ptr::null_mut() {
+                            if !buffer.is_null() {
                                 buffer = buffer.add(size);
                             }
                         }
-
-                        ESC_v => {
-                            size = append_char_list(VSPACE_LIST.as_ptr(), buffer);
+                        m if m == ESC_v => {
+                            size = append_char_list(
+                                crate::tables::_pcre2_vspace_list.as_ptr(),
+                                buffer,
+                            );
                             total_size += size;
-                            if buffer != ptr::null_mut() {
+                            if !buffer.is_null() {
                                 buffer = buffer.add(size);
                             }
                         }
-
-                        ESC_V => {
-                            size = append_negated_char_list(VSPACE_LIST.as_ptr(), options, buffer);
+                        m if m == ESC_V => {
+                            size = append_negated_char_list(
+                                crate::tables::_pcre2_vspace_list.as_ptr(),
+                                options,
+                                buffer,
+                            );
                             total_size += size;
-                            if buffer != ptr::null_mut() {
+                            if !buffer.is_null() {
                                 buffer = buffer.add(size);
                             }
                         }
-
-                        ESC_p | ESC_P => {
+                        m if m == ESC_p || m == ESC_P => {
                             ptr = ptr.add(1);
-                            if meta_arg as i32 == ESC_p && (*ptr >> 16) == PT_ANY {
-                                if buffer != ptr::null_mut() {
+                            if meta_arg == ESC_p && (*ptr >> 16) == PT_ANY as u32 {
+                                if !buffer.is_null() {
                                     *buffer.add(0) = 0;
                                     *buffer.add(1) = get_highest_char(options);
                                     buffer = buffer.add(2);
@@ -405,7 +414,6 @@ unsafe fn parse_class(ptr_in: *mut u32, options: u32, buffer_in: *mut u32) -> us
                                 total_size += 2;
                             }
                         }
-
                         _ => {}
                     }
                     ptr = ptr.add(1);
@@ -422,11 +430,12 @@ unsafe fn parse_class(ptr_in: *mut u32, options: u32, buffer_in: *mut u32) -> us
                     continue;
                 }
                 x if x == META_BIGVALUE => {
-                    /* Character literal */
+                    // Character literal.
                     ptr = ptr.add(1);
                 }
+                // CLASS_END_CASES: PCRE2_DEBUG off, so `default`.
                 _ => {
-                    if *ptr >= META_END {
+                    if (*ptr as i64) >= META_END {
                         return total_size;
                     }
                 }
@@ -434,27 +443,29 @@ unsafe fn parse_class(ptr_in: *mut u32, options: u32, buffer_in: *mut u32) -> us
 
             start_char = *ptr;
 
-            if *ptr.add(1) == META_RANGE_LITERAL || *ptr.add(1) == META_RANGE_ESCAPED {
+            if *ptr.add(1) == META_RANGE_LITERAL as u32
+                || *ptr.add(1) == META_RANGE_ESCAPED as u32
+            {
                 ptr = ptr.add(2);
-                /* PCRE2_ASSERT(*ptr < META_END || *ptr == META_BIGVALUE); */
+                // PCRE2_ASSERT(*ptr < META_END || *ptr == META_BIGVALUE);
 
-                if *ptr == META_BIGVALUE {
+                if *ptr == META_BIGVALUE as u32 {
                     ptr = ptr.add(1);
                 }
             }
 
             if options & PARSE_CLASS_CASELESS_UTF != 0 {
-                let end = *ptr;
+                let end_ch = *ptr;
                 ptr = ptr.add(1);
-                size = utf_caseless_extend(start_char, end, options, buffer);
-                if buffer != ptr::null_mut() {
+                size = utf_caseless_extend(start_char, end_ch, options, buffer);
+                if !buffer.is_null() {
                     buffer = buffer.add(size);
                 }
                 total_size += size;
                 continue;
             }
 
-            if buffer != ptr::null_mut() {
+            if !buffer.is_null() {
                 *buffer.add(0) = start_char;
                 *buffer.add(1) = *ptr;
                 buffer = buffer.add(2);
@@ -466,17 +477,15 @@ unsafe fn parse_class(ptr_in: *mut u32, options: u32, buffer_in: *mut u32) -> us
     }
 }
 
-/* Extra uint32_t values for storing the lengths of range lists in the worst
-case. Two uint32_t lengths and a range end for a range starting before 255 */
+/// Extra `uint32_t` values for storing the lengths of range lists in the worst
+/// case.
 const CHAR_LIST_EXTRA_SIZE: usize = 3;
 
-/* Starting character values for each character list. */
-static char_list_starts: [u32; 3] = [
-    XCL_CHAR_LIST_LOW_32_START,
-    XCL_CHAR_LIST_HIGH_16_START,
-    /* Must be terminated by XCL_CHAR_LIST_LOW_16_START, which also represents
-    the end of the bitset. */
-    XCL_CHAR_LIST_LOW_16_START,
+/// Starting character values for each character list (8-bit + SUPPORT_UNICODE).
+static CHAR_LIST_STARTS: [u32; 3] = [
+    XCL_CHAR_LIST_LOW_32_START as u32,
+    XCL_CHAR_LIST_HIGH_16_START as u32,
+    XCL_CHAR_LIST_LOW_16_START as u32,
 ];
 
 unsafe fn compile_optimize_class(
@@ -486,7 +495,6 @@ unsafe fn compile_optimize_class(
     cb: *mut compile_block,
 ) -> *mut class_ranges {
     unsafe {
-        let cranges: *mut class_ranges;
         let mut ptr: *mut u32;
         let buffer: *mut u32;
         let mut dst: *mut u32;
@@ -496,48 +504,41 @@ unsafe fn compile_optimize_class(
         let mut i: usize;
         let mut tmp1: u32;
         let mut tmp2: u32;
-        let mut char_list_next: *const u32;
-        let mut next_char: *mut u16;
-        let mut char_list_start: u32;
-        let mut char_list_end: u32;
-        let mut range_start: u32;
-        let mut range_end: u32;
 
-        if options & PCRE2_UTF != 0 {
+        if options & PCRE2_UTF as u32 != 0 {
             class_options |= PARSE_CLASS_UTF;
         }
-
-        if (options & PCRE2_CASELESS) != 0 && (options & (PCRE2_UTF | PCRE2_UCP)) != 0 {
+        if (options & PCRE2_CASELESS as u32) != 0
+            && (options & (PCRE2_UTF as u32 | PCRE2_UCP as u32)) != 0
+        {
             class_options |= PARSE_CLASS_CASELESS_UTF;
         }
-
-        if xoptions & PCRE2_EXTRA_CASELESS_RESTRICT != 0 {
+        if xoptions & PCRE2_EXTRA_CASELESS_RESTRICT as u32 != 0 {
             class_options |= PARSE_CLASS_RESTRICTED_UTF;
         }
-
-        if xoptions & PCRE2_EXTRA_TURKISH_CASING != 0 {
+        if xoptions & PCRE2_EXTRA_TURKISH_CASING as u32 != 0 {
             class_options |= PARSE_CLASS_TURKISH_UTF;
         }
 
-        /* Compute required space for the range. */
+        // Compute required space for the range.
+        range_list_size = parse_class(start_ptr, class_options, core::ptr::null_mut());
+        // PCRE2_ASSERT((range_list_size & 0x1) == 0);
 
-        range_list_size = parse_class(start_ptr, class_options, ptr::null_mut());
-        /* PCRE2_ASSERT((range_list_size & 0x1) == 0); */
+        // Allocate buffer. total_size also represents the end of the buffer.
+        total_size =
+            range_list_size + if range_list_size >= 2 { CHAR_LIST_EXTRA_SIZE } else { 0 };
 
-        /* Allocate buffer. The total_size also represents the end of the buffer. */
-
-        total_size = range_list_size + (if range_list_size >= 2 { CHAR_LIST_EXTRA_SIZE } else { 0 });
-
-        cranges = (*cb).cx.as_ref().unwrap().memctl.malloc.unwrap()(
+        let memctl = &raw mut (*(*cb).cx).memctl;
+        let cranges = ((*memctl).malloc.unwrap())(
             core::mem::size_of::<class_ranges>() + total_size * core::mem::size_of::<u32>(),
-            (*cb).cx.as_ref().unwrap().memctl.memory_data,
+            (*memctl).memory_data,
         ) as *mut class_ranges;
 
-        if cranges == ptr::null_mut() {
-            return ptr::null_mut();
+        if cranges.is_null() {
+            return core::ptr::null_mut();
         }
 
-        (*cranges).header.next = ptr::null_mut();
+        (*cranges).header.next = core::ptr::null_mut();
         (*cranges).range_list_size = range_list_size as u16;
         (*cranges).char_lists_types = 0;
         (*cranges).char_lists_size = 0;
@@ -550,13 +551,12 @@ unsafe fn compile_optimize_class(
         buffer = cranges.add(1) as *mut u32;
         parse_class(start_ptr, class_options, buffer);
 
-        /* Using <= instead of == to help static analysis. */
+        // Using <= instead of == to help static analysis.
         if range_list_size <= 2 {
             return cranges;
         }
 
-        /* In-place sorting of ranges. */
-
+        // In-place sorting of ranges.
         i = ((range_list_size >> 2) - 1) << 1;
         loop {
             do_heapify(buffer, range_list_size, i);
@@ -582,14 +582,10 @@ unsafe fn compile_optimize_class(
             i -= 2;
         }
 
-        /* Merge ranges whenever possible. */
+        // Merge ranges whenever possible.
         dst = buffer;
         ptr = buffer.add(2);
         range_list_size -= 2;
-
-        /* The second condition is a very rare corner case, where the end of the
-        last range is the maximum character. This range cannot be extended
-        further. */
 
         while range_list_size > 0 && *dst.add(1) != !0u32 {
             if *dst.add(1) + 1 < *ptr.add(0) {
@@ -604,33 +600,33 @@ unsafe fn compile_optimize_class(
             range_list_size -= 2;
         }
 
-        /* PCRE2_ASSERT(dst[1] <= get_highest_char(class_options)); */
+        // PCRE2_ASSERT(dst[1] <= get_highest_char(class_options));
 
-        /* When the number of ranges are less than six, they are not converted
-        to range lists. */
-
+        // When the number of ranges is less than six, they are not converted
+        // to range lists.
         ptr = buffer;
         while ptr < dst && *ptr.add(1) < 0x100 {
             ptr = ptr.add(2);
         }
-        if (dst.offset_from(ptr) as isize) < (2 * (6 - 1)) as isize {
-            (*cranges).range_list_size = (dst.add(2).offset_from(buffer)) as u16;
+        if (dst as isize - ptr as isize) / (core::mem::size_of::<u32>() as isize)
+            < (2 * (6 - 1))
+        {
+            (*cranges).range_list_size =
+                (dst.add(2).offset_from(buffer)) as u16;
             return cranges;
         }
 
-        /* Compute character lists structures. */
-
-        char_list_next = char_list_starts.as_ptr();
-        char_list_start = *char_list_next;
+        // Compute character lists structures.
+        let mut char_list_next = CHAR_LIST_STARTS.as_ptr();
+        let mut char_list_start = *char_list_next;
         char_list_next = char_list_next.add(1);
-        char_list_end = XCL_CHAR_LIST_LOW_32_END;
-        next_char = buffer.add(total_size) as *mut u16;
+        let mut char_list_end: u32 = XCL_CHAR_LIST_LOW_32_END as u32;
+        let mut next_char = (buffer.add(total_size)) as *mut u16;
 
         tmp1 = 0;
-        tmp2 = ((char_list_starts.len() as u32) - 1) * XCL_TYPE_BIT_LEN;
-        /* PCRE2_ASSERT(tmp2 <= 3 * XCL_TYPE_BIT_LEN && tmp2 >= XCL_TYPE_BIT_LEN); */
-        range_start = *dst.add(0);
-        range_end = *dst.add(1);
+        tmp2 = ((CHAR_LIST_STARTS.len() as u32) - 1) * (XCL_TYPE_BIT_LEN as u32);
+        let mut range_start = *dst.add(0);
+        let mut range_end = *dst.add(1);
 
         loop {
             if range_start >= char_list_start {
@@ -638,11 +634,14 @@ unsafe fn compile_optimize_class(
                     tmp1 += 1;
                     next_char = next_char.sub(1);
 
-                    if char_list_start < XCL_CHAR_LIST_LOW_32_START {
-                        *next_char = ((range_end << XCL_CHAR_SHIFT) | XCL_CHAR_END) as u16;
+                    if char_list_start < XCL_CHAR_LIST_LOW_32_START as u32 {
+                        *next_char =
+                            ((range_end << XCL_CHAR_SHIFT as u32) | XCL_CHAR_END as u32) as u16;
                     } else {
-                        next_char = next_char.sub(1);
-                        *(next_char as *mut u32) = (range_end << XCL_CHAR_SHIFT) | XCL_CHAR_END;
+                        next_char = next_char.sub(1); // C: `--next_char` on a uint16_t*
+                        (next_char as *mut u32).write_unaligned(
+                            (range_end << XCL_CHAR_SHIFT as u32) | XCL_CHAR_END as u32,
+                        );
                     }
                 }
 
@@ -651,18 +650,18 @@ unsafe fn compile_optimize_class(
                         tmp1 += 1;
                         next_char = next_char.sub(1);
 
-                        if char_list_start < XCL_CHAR_LIST_LOW_32_START {
-                            *next_char = (range_start << XCL_CHAR_SHIFT) as u16;
+                        if char_list_start < XCL_CHAR_LIST_LOW_32_START as u32 {
+                            *next_char = (range_start << XCL_CHAR_SHIFT as u32) as u16;
                         } else {
-                            next_char = next_char.sub(1);
-                            *(next_char as *mut u32) = range_start << XCL_CHAR_SHIFT;
+                            next_char = next_char.sub(1); // C: `--next_char` on a uint16_t*
+                            (next_char as *mut u32)
+                                .write_unaligned(range_start << XCL_CHAR_SHIFT as u32);
                         }
                     } else {
-                        (*cranges).char_lists_types |= (XCL_BEGIN_WITH_RANGE << tmp2) as u16;
+                        (*cranges).char_lists_types |=
+                            ((XCL_BEGIN_WITH_RANGE as u32) << tmp2) as u16;
                     }
                 }
-
-                /* PCRE2_ASSERT((uint32_t*)next_char >= dst + 2); */
 
                 if dst > buffer {
                     dst = dst.sub(2);
@@ -676,209 +675,73 @@ unsafe fn compile_optimize_class(
             }
 
             if range_end >= char_list_start {
-                /* PCRE2_ASSERT(range_start < char_list_start); */
+                // PCRE2_ASSERT(range_start < char_list_start);
 
                 if range_end < char_list_end {
                     tmp1 += 1;
                     next_char = next_char.sub(1);
 
-                    if char_list_start < XCL_CHAR_LIST_LOW_32_START {
-                        *next_char = ((range_end << XCL_CHAR_SHIFT) | XCL_CHAR_END) as u16;
+                    if char_list_start < XCL_CHAR_LIST_LOW_32_START as u32 {
+                        *next_char =
+                            ((range_end << XCL_CHAR_SHIFT as u32) | XCL_CHAR_END as u32) as u16;
                     } else {
-                        next_char = next_char.sub(1);
-                        *(next_char as *mut u32) = (range_end << XCL_CHAR_SHIFT) | XCL_CHAR_END;
+                        next_char = next_char.sub(1); // C: `--next_char` on a uint16_t*
+                        (next_char as *mut u32).write_unaligned(
+                            (range_end << XCL_CHAR_SHIFT as u32) | XCL_CHAR_END as u32,
+                        );
                     }
-
-                    /* PCRE2_ASSERT((uint32_t*)next_char >= dst + 2); */
                 }
 
-                (*cranges).char_lists_types |= (XCL_BEGIN_WITH_RANGE << tmp2) as u16;
+                (*cranges).char_lists_types |= ((XCL_BEGIN_WITH_RANGE as u32) << tmp2) as u16;
             }
 
-            if tmp1 >= XCL_ITEM_COUNT_MASK {
-                (*cranges).char_lists_types |= (XCL_ITEM_COUNT_MASK << tmp2) as u16;
+            if tmp1 >= XCL_ITEM_COUNT_MASK as u32 {
+                (*cranges).char_lists_types |=
+                    ((XCL_ITEM_COUNT_MASK as u32) << tmp2) as u16;
                 next_char = next_char.sub(1);
 
-                if char_list_start < XCL_CHAR_LIST_LOW_32_START {
+                if char_list_start < XCL_CHAR_LIST_LOW_32_START as u32 {
                     *next_char = tmp1 as u16;
                 } else {
-                    next_char = next_char.sub(1);
-                    *(next_char as *mut u32) = tmp1;
+                    next_char = next_char.sub(1); // C: `--next_char` on a uint16_t*
+                    (next_char as *mut u32).write_unaligned(tmp1);
                 }
             } else {
                 (*cranges).char_lists_types |= (tmp1 << tmp2) as u16;
             }
 
-            if range_end < XCL_CHAR_LIST_LOW_16_START || tmp2 == 0 {
-                /* PCRE2_ASSERT(range_start < XCL_CHAR_LIST_LOW_16_START); */
+            if range_end < XCL_CHAR_LIST_LOW_16_START as u32 || tmp2 == 0 {
+                // PCRE2_ASSERT(range_start < XCL_CHAR_LIST_LOW_16_START);
                 break;
             }
 
-            /* PCRE2_ASSERT((tmp2 % XCL_TYPE_BIT_LEN) == 0); */
+            // PCRE2_ASSERT((tmp2 % XCL_TYPE_BIT_LEN) == 0);
             char_list_end = char_list_start - 1;
             char_list_start = *char_list_next;
             char_list_next = char_list_next.add(1);
             tmp1 = 0;
-            tmp2 -= XCL_TYPE_BIT_LEN;
+            tmp2 -= XCL_TYPE_BIT_LEN as u32;
         }
 
-        if *dst.add(0) < XCL_CHAR_LIST_LOW_16_START {
+        if *dst.add(0) < XCL_CHAR_LIST_LOW_16_START as u32 {
             dst = dst.add(2);
         }
-        /* PCRE2_ASSERT((uint16_t*)dst <= next_char); */
+        // PCRE2_ASSERT((uint16_t*)dst <= next_char);
 
         (*cranges).char_lists_size =
-            (buffer.add(total_size) as *mut u8).offset_from(next_char as *mut u8) as usize;
+            (buffer.add(total_size) as *const u8).offset_from(next_char as *const u8) as usize;
         (*cranges).char_lists_start =
-            (next_char as *mut u8).offset_from(buffer as *mut u8) as usize;
+            (next_char as *const u8).offset_from(buffer as *const u8) as usize;
         (*cranges).range_list_size = dst.offset_from(buffer) as u16;
         cranges
     }
 }
 
-/*************************************************
-*            Update classbits for \p etc.        *
-*************************************************/
+// ---------------------------------------------------------------------------
+// SUPPORT_UNICODE: update_classbits
+// ---------------------------------------------------------------------------
 
-/// `PRIV(update_classbits)`
-pub unsafe fn update_classbits(ptype: u32, pdata: u32, negated: BOOL, classbits: *mut u8) {
-    unsafe {
-        /* Update PRIV(xclass) when this function is changed. */
-        let mut classbits = classbits;
-        let mut chartype: c_int;
-        let mut gentype: u32;
-        let mut set_bit: BOOL;
-
-        if ptype == PT_ANY {
-            if negated == FALSE {
-                ptr::write_bytes(classbits, 0xff, 32);
-            }
-            return;
-        }
-
-        let mut c: c_int = 0;
-        while c < 256 {
-            let prop = get_ucd(c as u32);
-            set_bit = FALSE;
-
-            match ptype {
-                PT_LAMP => {
-                    chartype = prop.chartype as c_int;
-                    set_bit = (chartype == ucp_Lu as c_int
-                        || chartype == ucp_Ll as c_int
-                        || chartype == ucp_Lt as c_int) as BOOL;
-                }
-
-                PT_GC => {
-                    set_bit = (UCP_GENTYPE[prop.chartype as usize] == pdata) as BOOL;
-                }
-
-                PT_PC => {
-                    set_bit = (prop.chartype as u32 == pdata) as BOOL;
-                }
-
-                PT_SC => {
-                    set_bit = (prop.script as u32 == pdata) as BOOL;
-                }
-
-                PT_SCX => {
-                    set_bit = (prop.script as u32 == pdata
-                        || mapbit(
-                            &UCD_SCRIPT_SETS[ucd_scriptx_prop(prop) as usize..],
-                            pdata,
-                        ) != 0) as BOOL;
-                }
-
-                PT_ALNUM => {
-                    gentype = UCP_GENTYPE[prop.chartype as usize];
-                    set_bit = (gentype == ucp_L || gentype == ucp_N) as BOOL;
-                }
-
-                PT_SPACE /* Perl space */ | PT_PXSPACE /* POSIX space */ => {
-                    match c as u32 {
-                        /* HSPACE_BYTE_CASES */
-                        0x09 | 0x20 | 0xa0
-                        /* VSPACE_BYTE_CASES */
-                        | 0x0a | 0x0b | 0x0c | 0x0d | 0x85 => {
-                            set_bit = TRUE;
-                        }
-                        _ => {
-                            set_bit = (UCP_GENTYPE[prop.chartype as usize] == ucp_Z) as BOOL;
-                        }
-                    }
-                }
-
-                PT_WORD => {
-                    chartype = prop.chartype as c_int;
-                    gentype = UCP_GENTYPE[chartype as usize];
-                    set_bit = (gentype == ucp_L
-                        || gentype == ucp_N
-                        || chartype == ucp_Mn as c_int
-                        || chartype == ucp_Pc as c_int) as BOOL;
-                }
-
-                PT_UCNC => {
-                    set_bit = (c as u32 == CHAR_DOLLAR_SIGN
-                        || c as u32 == CHAR_COMMERCIAL_AT
-                        || c as u32 == CHAR_GRAVE_ACCENT
-                        || c >= 0xa0) as BOOL;
-                }
-
-                PT_BIDICL => {
-                    set_bit = (ucd_bidiclass_prop(prop) == pdata) as BOOL;
-                }
-
-                PT_BOOL => {
-                    set_bit = (mapbit(
-                        &UCD_BOOLPROP_SETS[ucd_bprops_prop(prop) as usize..],
-                        pdata,
-                    ) != 0) as BOOL;
-                }
-
-                PT_PXGRAPH => {
-                    chartype = prop.chartype as c_int;
-                    gentype = UCP_GENTYPE[chartype as usize];
-                    set_bit = (gentype != ucp_Z
-                        && (gentype != ucp_C || chartype == ucp_Cf as c_int)) as BOOL;
-                }
-
-                PT_PXPRINT => {
-                    chartype = prop.chartype as c_int;
-                    set_bit = (chartype != ucp_Zl as c_int
-                        && chartype != ucp_Zp as c_int
-                        && (UCP_GENTYPE[chartype as usize] != ucp_C
-                            || chartype == ucp_Cf as c_int)) as BOOL;
-                }
-
-                PT_PXPUNCT => {
-                    gentype = UCP_GENTYPE[prop.chartype as usize];
-                    set_bit = (gentype == ucp_P || (c < 128 && gentype == ucp_S)) as BOOL;
-                }
-
-                _ => {
-                    /* PCRE2_ASSERT(ptype == PT_PXXDIGIT); */
-                    set_bit = ((c as u32 >= CHAR_0 && c as u32 <= CHAR_9)
-                        || (c as u32 >= CHAR_A && c as u32 <= CHAR_F)
-                        || (c as u32 >= CHAR_a && c as u32 <= CHAR_f)) as BOOL;
-                }
-            }
-
-            if negated != FALSE {
-                set_bit = (set_bit == 0) as BOOL;
-            }
-            if set_bit != FALSE {
-                *classbits |= (1u32 << (c & 0x7)) as u8;
-            }
-            if (c & 0x7) == 0x7 {
-                classbits = classbits.add(1);
-            }
-
-            c += 1;
-        }
-    }
-}
-
-/// Exported as `_pcre2_update_classbits_8`.
+/// `PRIV(update_classbits)`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _pcre2_update_classbits_8(
     ptype: u32,
@@ -886,31 +749,164 @@ pub unsafe extern "C" fn _pcre2_update_classbits_8(
     negated: BOOL,
     classbits: *mut u8,
 ) {
-    unsafe { update_classbits(ptype, pdata, negated, classbits) }
+    unsafe {
+        // Update PRIV(xclass) when this function is changed.
+        let mut classbits = classbits;
+        let mut chartype: u32;
+        let mut gentype: u32;
+        let mut set_bit: BOOL;
+
+        if ptype == PT_ANY as u32 {
+            if negated == FALSE {
+                core::ptr::write_bytes(classbits, 0xff, 32);
+            }
+            return;
+        }
+
+        for c in 0u32..256u32 {
+            let prop = GET_UCD(c);
+            set_bit = FALSE;
+
+            match ptype as i64 {
+                x if x == PT_LAMP => {
+                    chartype = prop.chartype as u32;
+                    set_bit = bool_to(
+                        chartype == ucp_Lu || chartype == ucp_Ll || chartype == ucp_Lt,
+                    );
+                }
+                x if x == PT_GC => {
+                    set_bit = bool_to(
+                        crate::tables::_pcre2_ucp_gentype[prop.chartype as usize] == pdata,
+                    );
+                }
+                x if x == PT_PC => {
+                    set_bit = bool_to(prop.chartype as u32 == pdata);
+                }
+                x if x == PT_SC => {
+                    set_bit = bool_to(prop.script as u32 == pdata);
+                }
+                x if x == PT_SCX => {
+                    set_bit = bool_to(
+                        prop.script as u32 == pdata
+                            || MAPBIT(
+                                crate::tables::_pcre2_ucd_script_sets
+                                    .as_ptr()
+                                    .add(UCD_SCRIPTX_PROP(prop) as usize),
+                                pdata,
+                            ) != 0,
+                    );
+                }
+                x if x == PT_ALNUM => {
+                    gentype = crate::tables::_pcre2_ucp_gentype[prop.chartype as usize];
+                    set_bit = bool_to(gentype == ucp_L || gentype == ucp_N);
+                }
+                x if x == PT_SPACE || x == PT_PXSPACE => {
+                    // HSPACE_BYTE_CASES / VSPACE_BYTE_CASES.
+                    set_bit = if is_hspace_byte(c) || is_vspace_byte(c) {
+                        TRUE
+                    } else {
+                        bool_to(
+                            crate::tables::_pcre2_ucp_gentype[prop.chartype as usize] == ucp_Z,
+                        )
+                    };
+                }
+                x if x == PT_WORD => {
+                    chartype = prop.chartype as u32;
+                    gentype = crate::tables::_pcre2_ucp_gentype[chartype as usize];
+                    set_bit = bool_to(
+                        gentype == ucp_L
+                            || gentype == ucp_N
+                            || chartype == ucp_Mn
+                            || chartype == ucp_Pc,
+                    );
+                }
+                x if x == PT_UCNC => {
+                    set_bit = bool_to(
+                        c == CHAR_DOLLAR_SIGN
+                            || c == CHAR_COMMERCIAL_AT
+                            || c == CHAR_GRAVE_ACCENT
+                            || c >= 0xa0,
+                    );
+                }
+                x if x == PT_BIDICL => {
+                    set_bit = bool_to(UCD_BIDICLASS_PROP(prop) == pdata);
+                }
+                x if x == PT_BOOL => {
+                    set_bit = bool_to(
+                        MAPBIT(
+                            crate::tables::_pcre2_ucd_boolprop_sets
+                                .as_ptr()
+                                .add(UCD_BPROPS_PROP(prop) as usize),
+                            pdata,
+                        ) != 0,
+                    );
+                }
+                x if x == PT_PXGRAPH => {
+                    chartype = prop.chartype as u32;
+                    gentype = crate::tables::_pcre2_ucp_gentype[chartype as usize];
+                    set_bit = bool_to(
+                        gentype != ucp_Z && (gentype != ucp_C || chartype == ucp_Cf),
+                    );
+                }
+                x if x == PT_PXPRINT => {
+                    chartype = prop.chartype as u32;
+                    set_bit = bool_to(
+                        chartype != ucp_Zl
+                            && chartype != ucp_Zp
+                            && (crate::tables::_pcre2_ucp_gentype[chartype as usize] != ucp_C
+                                || chartype == ucp_Cf),
+                    );
+                }
+                x if x == PT_PXPUNCT => {
+                    gentype = crate::tables::_pcre2_ucp_gentype[prop.chartype as usize];
+                    set_bit = bool_to(gentype == ucp_P || (c < 128 && gentype == ucp_S));
+                }
+                // default: PCRE2_ASSERT(ptype == PT_PXXDIGIT);
+                _ => {
+                    set_bit = bool_to(
+                        (c >= CHAR_0 && c <= CHAR_9)
+                            || (c >= CHAR_A && c <= CHAR_F)
+                            || (c >= CHAR_a && c <= CHAR_f),
+                    );
+                }
+            }
+
+            if negated != FALSE {
+                set_bit = if set_bit == FALSE { TRUE } else { FALSE };
+            }
+            if set_bit != FALSE {
+                *classbits |= 1u8 << (c & 0x7);
+            }
+            if (c & 0x7) == 0x7 {
+                classbits = classbits.add(1);
+            }
+        }
+    }
 }
 
-/*************************************************
-*        XClass related property flags           *
-*************************************************/
+/// `HSPACE_BYTE_CASES` — horizontal white space with a code point < 256.
+#[inline(always)]
+fn is_hspace_byte(c: u32) -> bool {
+    matches!(c, 0x09 | 0x20 | 0xa0)
+}
 
-/* XClass needs to be generated. */
-const XCLASS_REQUIRED: u32 = 0x1;
-/* XClass has 8 bit character. */
-const XCLASS_HAS_8BIT_CHARS: u32 = 0x2;
-/* XClass has properties. */
-const XCLASS_HAS_PROPS: u32 = 0x4;
-/* XClass has character lists. */
-const XCLASS_HAS_CHAR_LISTS: u32 = 0x8;
-/* XClass matches to all >= 256 characters. */
-const XCLASS_HIGH_ANY: u32 = 0x10;
+/// `VSPACE_BYTE_CASES` — vertical white space with a code point < 256.
+#[inline(always)]
+fn is_vspace_byte(c: u32) -> bool {
+    matches!(c, 0x0a | 0x0b | 0x0c | 0x0d | 0x85)
+}
 
-/*************************************************
-*   Internal entry point for add range to class  *
-*************************************************/
+#[inline(always)]
+fn bool_to(b: bool) -> BOOL {
+    if b { TRUE } else { FALSE }
+}
 
-/* This function sets the overall range for characters < 256. It also handles
-non-utf case folding. cb->classbits is updated. */
+// ---------------------------------------------------------------------------
+// add_to_class and list helpers
+// ---------------------------------------------------------------------------
 
+/// Sets the overall range for characters < 256; also handles non-utf case
+/// folding.
 unsafe fn add_to_class(
     options: u32,
     xoptions: u32,
@@ -919,65 +915,58 @@ unsafe fn add_to_class(
     end: u32,
 ) {
     unsafe {
-        let classbits: *mut u8 = (*cb).classbits.classbits.as_mut_ptr();
+        let classbits = (*cb).classbits.classbits.as_mut_ptr();
         let mut c: u32;
         let mut byte_start: u32;
         let mut byte_end: u32;
         let classbits_end: u32 = if end <= 0xff { end } else { 0xff };
+        let fcc = (*cb).fcc;
 
-        /* If caseless matching is required, scan the range and process alternate
-        cases. */
-
-        if (options & PCRE2_CASELESS) != 0 {
-            /* UTF/UCP mode. */
-            if (options & (PCRE2_UTF | PCRE2_UCP)) != 0 {
-                let turkish_i: BOOL = ((xoptions
-                    & (PCRE2_EXTRA_TURKISH_CASING | PCRE2_EXTRA_CASELESS_RESTRICT))
-                    == PCRE2_EXTRA_TURKISH_CASING) as BOOL;
+        if (options & PCRE2_CASELESS as u32) != 0 {
+            if (options & (PCRE2_UTF as u32 | PCRE2_UCP as u32)) != 0 {
+                let turkish_i = (xoptions
+                    & (PCRE2_EXTRA_TURKISH_CASING as u32 | PCRE2_EXTRA_CASELESS_RESTRICT as u32))
+                    == PCRE2_EXTRA_TURKISH_CASING as u32;
                 if start < 128 {
-                    let lo_end: u32 = if classbits_end < 127 { classbits_end } else { 127 };
+                    let lo_end = if classbits_end < 127 { classbits_end } else { 127 };
                     c = start;
                     while c <= lo_end {
-                        if turkish_i != FALSE && ucd_any_i(c) {
-                            c += 1;
-                            continue;
+                        if !(turkish_i && UCD_ANY_I(c)) {
+                            SETBIT(classbits, *fcc.add(c as usize) as u32);
                         }
-                        setbit(classbits, *(*cb).fcc.add(c as usize) as u32);
                         c += 1;
                     }
                 }
                 if classbits_end >= 128 {
-                    let hi_start: u32 = if start > 128 { start } else { 128 };
+                    let hi_start = if start > 128 { start } else { 128 };
                     c = hi_start;
                     while c <= classbits_end {
-                        let co: u32 = ucd_othercase(c);
+                        let co = UCD_OTHERCASE(c);
                         if co <= 0xff {
-                            setbit(classbits, co);
+                            SETBIT(classbits, co);
                         }
                         c += 1;
                     }
                 }
-            }
-            /* Not UTF mode */
-            else {
+            } else {
+                // Not UTF mode.
                 c = start;
                 while c <= classbits_end {
-                    setbit(classbits, *(*cb).fcc.add(c as usize) as u32);
+                    SETBIT(classbits, *fcc.add(c as usize) as u32);
                     c += 1;
                 }
             }
         }
 
-        /* Use the bitmap for characters < 256. Otherwise use extra data. */
-
+        // Use the bitmap for characters < 256.
         byte_start = (start + 7) >> 3;
         byte_end = (classbits_end + 1) >> 3;
 
         if byte_start >= byte_end {
             c = start;
             while c <= classbits_end {
-                /* Regardless of start, c will always be <= 255. */
-                setbit(classbits, c);
+                // Regardless of start, c will always be <= 255.
+                SETBIT(classbits, c);
                 c += 1;
             }
             return;
@@ -994,32 +983,26 @@ unsafe fn add_to_class(
 
         c = start;
         while c < byte_start {
-            setbit(classbits, c);
+            SETBIT(classbits, c);
             c += 1;
         }
 
         c = byte_end;
         while c <= classbits_end {
-            setbit(classbits, c);
+            SETBIT(classbits, c);
             c += 1;
         }
     }
 }
 
-/*************************************************
-*   Internal entry point for add list to class   *
-*************************************************/
-
-/* Add a list of horizontal or vertical whitespace characters to a class. */
-
+/// Adds a list of horizontal or vertical whitespace characters to a class.
 unsafe fn add_list_to_class(
     options: u32,
     xoptions: u32,
     cb: *mut compile_block,
-    p: *const u32,
+    mut p: *const u32,
 ) {
     unsafe {
-        let mut p = p;
         while *p.add(0) < 256 {
             let mut n: usize = 0;
 
@@ -1033,21 +1016,15 @@ unsafe fn add_list_to_class(
     }
 }
 
-/*************************************************
-*    Add characters not in a list to a class     *
-*************************************************/
-
-/* Add the complement of a list of horizontal or vertical whitespace to a
-class. */
-
+/// Adds the complement of a list of horizontal or vertical whitespace to a
+/// class.
 unsafe fn add_not_list_to_class(
     options: u32,
     xoptions: u32,
     cb: *mut compile_block,
-    p: *const u32,
+    mut p: *const u32,
 ) {
     unsafe {
-        let mut p = p;
         if *p.add(0) > 0 {
             add_to_class(options, xoptions, cb, 0, *p.add(0) - 1);
         }
@@ -1067,15 +1044,15 @@ unsafe fn add_not_list_to_class(
     }
 }
 
-/*************************************************
-*  Main entry-point to compile a character class *
-*************************************************/
+// ---------------------------------------------------------------------------
+// compile_class_not_nested — main entry point to compile a character class
+// ---------------------------------------------------------------------------
 
-/* This function consumes a "leaf", which is a set of characters that will
-become a single OP_CLASS OP_NCLASS, OP_XCLASS, or OP_ALLANY. */
-
-/// `PRIV(compile_class_not_nested)`
-pub unsafe fn compile_class_not_nested(
+/// `PRIV(compile_class_not_nested)`. Consumes a "leaf" (a set of characters
+/// that will become a single `OP_CLASS`, `OP_NCLASS`, `OP_XCLASS`, or
+/// `OP_ALLANY`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn _pcre2_compile_class_not_nested_8(
     options: u32,
     xoptions: u32,
     start_ptr: *mut u32,
@@ -1090,62 +1067,55 @@ pub unsafe fn compile_class_not_nested(
         let mut pptr: *mut u32 = start_ptr;
         let mut code: *mut PCRE2_UCHAR = *pcode;
         let mut should_flip_negation: BOOL;
-        let cbits: *const u8 = (*cb).cbits;
-        /* Some functions such as add_to_class() or eclass processing expect
-        that the bitset is stored in cb->classbits.classbits. */
-        let classbits: *mut u8 = (*cb).classbits.classbits.as_mut_ptr();
+        let cbits = (*cb).cbits;
+        let classbits = (*cb).classbits.classbits.as_mut_ptr();
 
-        let utf: BOOL = ((options & PCRE2_UTF) != 0) as BOOL;
+        let utf: BOOL = bool_to((options & PCRE2_UTF as u32) != 0);
 
-        /* Helper variables for OP_XCLASS opcode (for characters > 255). */
+        // Helper variables for OP_XCLASS opcode (for characters > 255).
         let mut xclass_props: u32;
         let mut class_uchardata: *mut PCRE2_UCHAR;
         let mut cranges: *mut class_ranges;
 
-        /* If an XClass contains a negative special such as \S, we need to flip
-        the negation flag at the end. */
-
         should_flip_negation = FALSE;
 
-        /* XClass will be used when characters > 255 might match. */
-
+        // XClass will be used when characters > 255 might match.
         xclass_props = 0;
-
-        cranges = ptr::null_mut();
+        cranges = core::ptr::null_mut();
 
         if utf != FALSE {
-            if lengthptr != ptr::null_mut() {
+            if !lengthptr.is_null() {
                 cranges = compile_optimize_class(pptr, options, xoptions, cb);
 
-                if cranges == ptr::null_mut() {
+                if cranges.is_null() {
                     *errorcodeptr = ERR21;
-                    return ptr::null_mut();
+                    return core::ptr::null_mut();
                 }
 
-                /* Caching the pre-processed character ranges. */
-                if (*cb).last_data != ptr::null_mut() {
-                    (*(*cb).last_data).next = &mut (*cranges).header;
+                // Caching the pre-processed character ranges.
+                if !(*cb).last_data.is_null() {
+                    (*(*cb).last_data).next = &raw mut (*cranges).header;
                 } else {
-                    (*cb).first_data = &mut (*cranges).header;
+                    (*cb).first_data = &raw mut (*cranges).header;
                 }
 
-                (*cb).last_data = &mut (*cranges).header;
+                (*cb).last_data = &raw mut (*cranges).header;
             } else {
-                /* Reuse the pre-processed character ranges. */
+                // Reuse the pre-processed character ranges.
                 cranges = (*cb).first_data as *mut class_ranges;
-                /* PCRE2_ASSERT(cranges != NULL && cranges->header.type == CDATA_CRANGE); */
+                // PCRE2_ASSERT(cranges != NULL ...);
                 (*cb).first_data = (*cranges).header.next;
             }
 
             if (*cranges).range_list_size > 0 {
-                let ranges: *const u32 = cranges.add(1) as *const u32;
+                let ranges = cranges.add(1) as *const u32;
 
                 if *ranges.add(0) <= 255 {
                     xclass_props |= XCLASS_HAS_8BIT_CHARS;
                 }
 
                 if *ranges.add((*cranges).range_list_size as usize - 1)
-                    == get_max_char_value(utf != FALSE)
+                    == GET_MAX_CHAR_VALUE(utf != FALSE)
                     && *ranges.add((*cranges).range_list_size as usize - 2) <= 256
                 {
                     xclass_props |= XCLASS_HIGH_ANY;
@@ -1153,75 +1123,64 @@ pub unsafe fn compile_class_not_nested(
             }
         }
 
-        class_uchardata = code.add(LINK_SIZE + 2); /* For XCLASS items */
+        class_uchardata = code.add(LINK_SIZE_U + 2); // For XCLASS items.
 
-        /* Initialize the 256-bit (32-byte) bit map to all zeros. */
+        // Initialize the 256-bit (32-byte) bit map to all zeros.
+        core::ptr::write_bytes(classbits, 0, 32);
 
-        ptr::write_bytes(classbits, 0, 32);
-
-        /* Process items until end_ptr is reached. */
-
+        // Process items until end_ptr is reached.
         'main_loop: loop {
-            let mut meta: u32 = *pptr;
+            let mut meta = *pptr;
             pptr = pptr.add(1);
             let local_negate: BOOL;
             let mut posix_class: c_int;
             let mut taboffset: c_int;
             let mut tabopt: c_int;
-            let mut pbits: class_bits_storage = class_bits_storage { classbits: [0; 32] };
+            let mut pbits: class_bits_storage;
             let escape: u32;
             let c: u32;
 
-            /* Handle POSIX classes such as [:alpha:] etc. */
-            match meta_code(meta) {
+            // Handle POSIX classes such as [:alpha:] etc.
+            match META_CODE(meta) as i64 {
                 x if x == META_POSIX || x == META_POSIX_NEG => {
-                    local_negate = (meta == META_POSIX_NEG) as BOOL;
+                    local_negate = bool_to(meta == META_POSIX_NEG as u32);
                     posix_class = *pptr as c_int;
                     pptr = pptr.add(1);
 
                     if local_negate != FALSE {
-                        should_flip_negation = TRUE; /* Note negative special */
+                        should_flip_negation = TRUE;
                     }
 
-                    /* If matching is caseless, upper and lower are converted to
-                    alpha. */
-
-                    if (options & PCRE2_CASELESS) != 0 && posix_class <= 2 {
+                    if (options & PCRE2_CASELESS as u32) != 0 && posix_class <= 2 {
                         posix_class = 0;
                     }
 
-                    /* When PCRE2_UCP is set, some of the POSIX classes are
-                    converted to different escape sequences. Others that are not
-                    available via \p or \P have to generate XCL_PROP/XCL_NOTPROP
-                    directly, which is done here. */
-
-                    if (options & PCRE2_UCP) != 0 && (xoptions & PCRE2_EXTRA_ASCII_POSIX) == 0 {
-                        let ptype: u32;
-
-                        match posix_class as usize {
-                            PC_GRAPH | PC_PRINT | PC_PUNCT => {
-                                ptype = if posix_class as usize == PC_GRAPH {
-                                    PT_PXGRAPH
-                                } else if posix_class as usize == PC_PRINT {
-                                    PT_PXPRINT
+                    if (options & PCRE2_UCP as u32) != 0
+                        && (xoptions & PCRE2_EXTRA_ASCII_POSIX as u32) == 0
+                    {
+                        match posix_class as i64 {
+                            p if p == PC_GRAPH || p == PC_PRINT || p == PC_PUNCT => {
+                                let ptype: u32 = if posix_class as i64 == PC_GRAPH {
+                                    PT_PXGRAPH as u32
+                                } else if posix_class as i64 == PC_PRINT {
+                                    PT_PXPRINT as u32
                                 } else {
-                                    PT_PXPUNCT
+                                    PT_PXPUNCT as u32
                                 };
 
-                                update_classbits(ptype, 0, local_negate, classbits);
+                                _pcre2_update_classbits_8(ptype, 0, local_negate, classbits);
 
                                 if (xclass_props & XCLASS_HIGH_ANY) == 0 {
-                                    if lengthptr != ptr::null_mut() {
+                                    if !lengthptr.is_null() {
                                         *lengthptr += 3;
                                     } else {
-                                        *class_uchardata =
-                                            if local_negate != FALSE {
-                                                XCL_NOTPROP as u8
-                                            } else {
-                                                XCL_PROP as u8
-                                            };
+                                        *class_uchardata = if local_negate != FALSE {
+                                            XCL_NOTPROP as u8
+                                        } else {
+                                            XCL_PROP as u8
+                                        };
                                         class_uchardata = class_uchardata.add(1);
-                                        *class_uchardata = ptype as PCRE2_UCHAR;
+                                        *class_uchardata = ptype as u8;
                                         class_uchardata = class_uchardata.add(1);
                                         *class_uchardata = 0;
                                         class_uchardata = class_uchardata.add(1);
@@ -1230,45 +1189,41 @@ pub unsafe fn compile_class_not_nested(
                                 }
                                 continue 'main_loop;
                             }
-
                             _ => {}
                         }
                     }
 
-                    /* In the non-UCP case, or when UCP makes no difference, we
-                    build the bit map for the POSIX class in a chunk of local
-                    store. */
-
+                    // Build the bit map for the POSIX class in local store.
                     posix_class *= 3;
 
-                    /* Copy in the first table (always present) */
-
-                    ptr::copy_nonoverlapping(
-                        cbits.add(POSIX_CLASS_MAPS[posix_class as usize] as usize),
+                    // Copy in the first table (always present).
+                    pbits = core::mem::zeroed();
+                    core::ptr::copy_nonoverlapping(
+                        cbits.add(
+                            crate::compile_h::_pcre2_posix_class_maps8[posix_class as usize]
+                                as usize,
+                        ),
                         pbits.classbits.as_mut_ptr(),
                         32,
                     );
 
-                    /* If there is a second table, add or remove it as required. */
-
-                    taboffset = POSIX_CLASS_MAPS[posix_class as usize + 1];
-                    tabopt = POSIX_CLASS_MAPS[posix_class as usize + 2];
+                    // If there is a second table, add or remove it as required.
+                    taboffset =
+                        crate::compile_h::_pcre2_posix_class_maps8[posix_class as usize + 1];
+                    tabopt =
+                        crate::compile_h::_pcre2_posix_class_maps8[posix_class as usize + 2];
 
                     if taboffset >= 0 {
                         if tabopt >= 0 {
-                            for ii in 0..32usize {
-                                pbits.classbits[ii] |= *cbits.add(ii + taboffset as usize);
+                            for i in 0..32usize {
+                                pbits.classbits[i] |= *cbits.add(i + taboffset as usize);
                             }
                         } else {
-                            for ii in 0..32usize {
-                                pbits.classbits[ii] &= !*cbits.add(ii + taboffset as usize);
+                            for i in 0..32usize {
+                                pbits.classbits[i] &= !*cbits.add(i + taboffset as usize);
                             }
                         }
                     }
-
-                    /* Now see if we need to remove any special characters. An
-                    option value of 1 removes vertical space and 2 removes
-                    underscore. */
 
                     if tabopt < 0 {
                         tabopt = -tabopt;
@@ -1279,151 +1234,133 @@ pub unsafe fn compile_class_not_nested(
                         pbits.classbits[11] &= 0x7f;
                     }
 
-                    /* Add the POSIX table or its complement into the main table
-                    that is being built and we are done. */
-
+                    // Add the POSIX table or its complement into the main table.
                     {
-                        let classwords: *mut u32 = (*cb).classbits.classwords.as_mut_ptr();
-
+                        let classwords = (*cb).classbits.classwords.as_mut_ptr();
                         if local_negate != FALSE {
-                            for ii in 0..8usize {
-                                *classwords.add(ii) |= !pbits.classwords[ii];
+                            for i in 0..8usize {
+                                *classwords.add(i) |= !pbits.classwords[i];
                             }
                         } else {
-                            for ii in 0..8usize {
-                                *classwords.add(ii) |= pbits.classwords[ii];
+                            for i in 0..8usize {
+                                *classwords.add(i) |= pbits.classwords[i];
                             }
                         }
                     }
 
-                    /* Every class contains at least one < 256 character. */
+                    // Every class contains at least one < 256 character.
                     xclass_props |= XCLASS_HAS_8BIT_CHARS;
-                    continue 'main_loop; /* End of POSIX handling */
+                    continue 'main_loop; // End of POSIX handling.
                 }
 
                 x if x == META_BIGVALUE => {
                     meta = *pptr;
                     pptr = pptr.add(1);
+                    // Fall through to literal handling below.
                 }
 
                 x if x == META_ESCAPE => {
-                    escape = meta_data(meta);
+                    escape = META_DATA(meta);
 
-                    match escape as i32 {
-                        ESC_d => {
-                            for ii in 0..32usize {
-                                *classbits.add(ii) |= *cbits.add(ii + cbit_digit);
+                    match escape {
+                        e if e == ESC_d => {
+                            for i in 0..32usize {
+                                *classbits.add(i) |= *cbits.add(i + cbit_digit as usize);
                             }
                         }
-
-                        ESC_D => {
+                        e if e == ESC_D => {
                             should_flip_negation = TRUE;
-                            for ii in 0..32usize {
-                                *classbits.add(ii) |= !*cbits.add(ii + cbit_digit);
+                            for i in 0..32usize {
+                                *classbits.add(i) |= !*cbits.add(i + cbit_digit as usize);
                             }
                         }
-
-                        ESC_w => {
-                            for ii in 0..32usize {
-                                *classbits.add(ii) |= *cbits.add(ii + cbit_word);
+                        e if e == ESC_w => {
+                            for i in 0..32usize {
+                                *classbits.add(i) |= *cbits.add(i + cbit_word as usize);
                             }
                         }
-
-                        ESC_W => {
+                        e if e == ESC_W => {
                             should_flip_negation = TRUE;
-                            for ii in 0..32usize {
-                                *classbits.add(ii) |= !*cbits.add(ii + cbit_word);
+                            for i in 0..32usize {
+                                *classbits.add(i) |= !*cbits.add(i + cbit_word as usize);
                             }
                         }
-
-                        ESC_s => {
-                            for ii in 0..32usize {
-                                *classbits.add(ii) |= *cbits.add(ii + cbit_space);
+                        e if e == ESC_s => {
+                            for i in 0..32usize {
+                                *classbits.add(i) |= *cbits.add(i + cbit_space as usize);
                             }
                         }
-
-                        ESC_S => {
+                        e if e == ESC_S => {
                             should_flip_negation = TRUE;
-                            for ii in 0..32usize {
-                                *classbits.add(ii) |= !*cbits.add(ii + cbit_space);
+                            for i in 0..32usize {
+                                *classbits.add(i) |= !*cbits.add(i + cbit_space as usize);
                             }
                         }
-
-                        /* When adding the horizontal or vertical space lists to
-                        a class, or their complements, disable PCRE2_CASELESS. */
-
-                        ESC_h => {
-                            if cranges != ptr::null_mut() {
-                                /* break */
-                            } else {
+                        e if e == ESC_h => {
+                            if cranges.is_null() {
                                 add_list_to_class(
-                                    options & !PCRE2_CASELESS,
+                                    options & !(PCRE2_CASELESS as u32),
                                     xoptions,
                                     cb,
-                                    HSPACE_LIST.as_ptr(),
+                                    crate::tables::_pcre2_hspace_list.as_ptr(),
                                 );
                             }
                         }
-
-                        ESC_H => {
-                            if cranges != ptr::null_mut() {
-                                /* break */
-                            } else {
+                        e if e == ESC_H => {
+                            if cranges.is_null() {
                                 add_not_list_to_class(
-                                    options & !PCRE2_CASELESS,
+                                    options & !(PCRE2_CASELESS as u32),
                                     xoptions,
                                     cb,
-                                    HSPACE_LIST.as_ptr(),
+                                    crate::tables::_pcre2_hspace_list.as_ptr(),
                                 );
                             }
                         }
-
-                        ESC_v => {
-                            if cranges != ptr::null_mut() {
-                                /* break */
-                            } else {
+                        e if e == ESC_v => {
+                            if cranges.is_null() {
                                 add_list_to_class(
-                                    options & !PCRE2_CASELESS,
+                                    options & !(PCRE2_CASELESS as u32),
                                     xoptions,
                                     cb,
-                                    VSPACE_LIST.as_ptr(),
+                                    crate::tables::_pcre2_vspace_list.as_ptr(),
                                 );
                             }
                         }
-
-                        ESC_V => {
-                            if cranges != ptr::null_mut() {
-                                /* break */
-                            } else {
+                        e if e == ESC_V => {
+                            if cranges.is_null() {
                                 add_not_list_to_class(
-                                    options & !PCRE2_CASELESS,
+                                    options & !(PCRE2_CASELESS as u32),
                                     xoptions,
                                     cb,
-                                    VSPACE_LIST.as_ptr(),
+                                    crate::tables::_pcre2_vspace_list.as_ptr(),
                                 );
                             }
                         }
-
-                        ESC_p | ESC_P => {
+                        e if e == ESC_p || e == ESC_P => {
                             let ptype: u32 = *pptr >> 16;
                             let pdata: u32 = *pptr & 0xffff;
                             pptr = pptr.add(1);
 
-                            /* The "Any" is processed by update_classbits(). */
-                            if ptype == PT_ANY {
-                                if utf == FALSE && escape as i32 == ESC_p {
-                                    ptr::write_bytes(classbits, 0xff, 32);
+                            // The "Any" is processed by update_classbits().
+                            if ptype == PT_ANY as u32 {
+                                if utf == FALSE && escape == ESC_p {
+                                    core::ptr::write_bytes(classbits, 0xff, 32);
                                 }
                                 continue 'main_loop;
                             }
 
-                            update_classbits(ptype, pdata, (escape as i32 == ESC_P) as BOOL, classbits);
+                            _pcre2_update_classbits_8(
+                                ptype,
+                                pdata,
+                                bool_to(escape == ESC_P),
+                                classbits,
+                            );
 
                             if (xclass_props & XCLASS_HIGH_ANY) == 0 {
-                                if lengthptr != ptr::null_mut() {
+                                if !lengthptr.is_null() {
                                     *lengthptr += 3;
                                 } else {
-                                    *class_uchardata = if escape as i32 == ESC_p {
+                                    *class_uchardata = if escape == ESC_p {
                                         XCL_PROP as u8
                                     } else {
                                         XCL_NOTPROP as u8
@@ -1438,94 +1375,77 @@ pub unsafe fn compile_class_not_nested(
                             }
                             continue 'main_loop;
                         }
-
                         _ => {}
                     }
 
-                    /* Every non-property class contains at least one < 256
-                    character. */
+                    // Every non-property class contains at least one < 256 char.
                     xclass_props |= XCLASS_HAS_8BIT_CHARS;
-                    /* End handling \d-type escapes */
-                    continue 'main_loop;
+                    continue 'main_loop; // End handling \d-type escapes.
                 }
 
+                // CLASS_END_CASES: PCRE2_DEBUG off, so `default`.
                 _ => {
-                    /* CLASS_END_CASES */
-                    /* Literals. */
-                    if meta < META_END {
-                        /* break: fall through to literal handling below */
+                    // Literals.
+                    if (meta as i64) < META_END {
+                        // break — fall through to literal handling.
                     } else {
-                        /* Non-literals: end of class contents. */
+                        // Non-literals: end of class contents.
                         break 'main_loop;
                     }
                 }
             }
 
-            /* A literal character may be followed by a range meta. */
-
+            // A literal character may be followed by a range meta.
             c = meta;
 
-            /* Remember if \r or \n were explicitly used */
-
-            if c == CHAR_CR || c == CHAR_NL {
-                (*cb).external_flags |= PCRE2_HASCRORLF;
+            // Remember if \r or \n were explicitly used.
+            if c == CHAR_CR || c == CHAR_NL_C {
+                (*cb).external_flags |= PCRE2_HASCRORLF as u32;
             }
 
-            /* Process a character range */
-
-            if *pptr == META_RANGE_LITERAL || *pptr == META_RANGE_ESCAPED {
+            // Process a character range.
+            if *pptr == META_RANGE_LITERAL as u32 || *pptr == META_RANGE_ESCAPED as u32 {
                 let mut d: u32;
 
                 pptr = pptr.add(1);
                 d = *pptr;
                 pptr = pptr.add(1);
-                if d == META_BIGVALUE {
+                if d == META_BIGVALUE as u32 {
                     d = *pptr;
                     pptr = pptr.add(1);
                 }
 
-                /* Remember an explicit \r or \n, and add the range to the class. */
-
-                if d == CHAR_CR || d == CHAR_NL {
-                    (*cb).external_flags |= PCRE2_HASCRORLF;
+                if d == CHAR_CR || d == CHAR_NL_C {
+                    (*cb).external_flags |= PCRE2_HASCRORLF as u32;
                 }
 
-                if cranges != ptr::null_mut() {
-                    continue 'main_loop;
+                if cranges.is_null() {
+                    xclass_props |= XCLASS_HAS_8BIT_CHARS;
+                    add_to_class(options, xoptions, cb, c, d);
                 }
+                continue 'main_loop;
+            } // End of range handling.
+
+            // Character ranges are ignored when class_ranges is present.
+            if cranges.is_null() {
                 xclass_props |= XCLASS_HAS_8BIT_CHARS;
-
-                /* Not an EBCDIC special range */
-
-                add_to_class(options, xoptions, cb, c, d);
-                continue 'main_loop;
-            } /* End of range handling */
-
-            /* Character ranges are ignored when class_ranges is present. */
-            if cranges != ptr::null_mut() {
-                continue 'main_loop;
+                // Handle a single character.
+                add_to_class(options, xoptions, cb, meta, meta);
             }
-            xclass_props |= XCLASS_HAS_8BIT_CHARS;
-            /* Handle a single character. */
+        } // End of main class-processing loop.
 
-            add_to_class(options, xoptions, cb, meta, meta);
-        } /* End of main class-processing loop */
+        // END_PROCESSING:
 
-        /* END_PROCESSING: */
+        // PCRE2_ASSERT((xclass_props & XCLASS_HAS_PROPS) == 0 || ...);
 
-        /* PCRE2_ASSERT((xclass_props & XCLASS_HAS_PROPS) == 0 ||
-                     (xclass_props & XCLASS_HIGH_ANY) == 0); */
-
-        if cranges != ptr::null_mut() {
-            let mut range: *mut u32 = cranges.add(1) as *mut u32;
-            let end: *mut u32 = range.add((*cranges).range_list_size as usize);
+        if !cranges.is_null() {
+            let mut range = cranges.add(1) as *mut u32;
+            let end = range.add((*cranges).range_list_size as usize);
 
             while range < end && *range.add(0) < 256 {
-                /* Add range to bitset. If we are in UTF or UCP mode, then clear
-                the caseless bit. */
                 add_to_class(
-                    if (options & (PCRE2_UTF | PCRE2_UCP)) != 0 {
-                        options & !PCRE2_CASELESS
+                    if (options & (PCRE2_UTF as u32 | PCRE2_UCP as u32)) != 0 {
+                        options & !(PCRE2_CASELESS as u32)
                     } else {
                         options
                     },
@@ -1542,7 +1462,7 @@ pub unsafe fn compile_class_not_nested(
             }
 
             if (*cranges).char_lists_size > 0 {
-                /* The cranges structure is still used and freed later. */
+                // The cranges structure is still used and freed later.
                 xclass_props |= XCLASS_REQUIRED | XCLASS_HAS_CHAR_LISTS;
             } else {
                 if (xclass_props & XCLASS_HIGH_ANY) != 0 {
@@ -1551,8 +1471,8 @@ pub unsafe fn compile_class_not_nested(
                 }
 
                 while range < end {
-                    let mut range_start: u32 = *range.add(0);
-                    let range_end: u32 = *range.add(1);
+                    let mut range_start = *range.add(0);
+                    let range_end = *range.add(1);
 
                     range = range.add(2);
                     xclass_props |= XCLASS_REQUIRED;
@@ -1561,15 +1481,21 @@ pub unsafe fn compile_class_not_nested(
                         range_start = 256;
                     }
 
-                    if lengthptr != ptr::null_mut() {
+                    if !lengthptr.is_null() {
                         if utf != FALSE {
                             *lengthptr += 1;
 
                             if range_start < range_end {
-                                *lengthptr += ord2utf(range_start, class_uchardata) as usize;
+                                *lengthptr += crate::ord2utf::_pcre2_ord2utf_8(
+                                    range_start,
+                                    class_uchardata,
+                                ) as usize;
                             }
 
-                            *lengthptr += ord2utf(range_end, class_uchardata) as usize;
+                            *lengthptr += crate::ord2utf::_pcre2_ord2utf_8(
+                                range_end,
+                                class_uchardata,
+                            ) as usize;
                             continue;
                         }
 
@@ -1581,293 +1507,224 @@ pub unsafe fn compile_class_not_nested(
                         if range_start < range_end {
                             *class_uchardata = XCL_RANGE as u8;
                             class_uchardata = class_uchardata.add(1);
-                            class_uchardata =
-                                class_uchardata.add(ord2utf(range_start, class_uchardata) as usize);
+                            class_uchardata = class_uchardata.add(
+                                crate::ord2utf::_pcre2_ord2utf_8(range_start, class_uchardata)
+                                    as usize,
+                            );
                         } else {
                             *class_uchardata = XCL_SINGLE as u8;
                             class_uchardata = class_uchardata.add(1);
                         }
 
-                        class_uchardata =
-                            class_uchardata.add(ord2utf(range_end, class_uchardata) as usize);
+                        class_uchardata = class_uchardata.add(
+                            crate::ord2utf::_pcre2_ord2utf_8(range_end, class_uchardata) as usize,
+                        );
                         continue;
                     }
-
-                    /* Without UTF support, character values are constrained by
-                    the bit length, and can only be > 256 for 16-bit and 32-bit
-                    libraries. (8-bit branch produces nothing here.) */
+                    // Without UTF support, no wide chars can exist in 8-bit mode.
                 }
 
-                if lengthptr == ptr::null_mut() {
-                    (*cb).cx.as_ref().unwrap().memctl.free.unwrap()(
-                        cranges as *mut c_void,
-                        (*cb).cx.as_ref().unwrap().memctl.memory_data,
-                    );
+                if lengthptr.is_null() {
+                    let memctl = &raw mut (*(*cb).cx).memctl;
+                    ((*memctl).free.unwrap())(cranges as *mut c_void, (*memctl).memory_data);
                 }
             }
         }
 
-        /* If there are characters with values > 255, or Unicode property
-        settings (\p or \P), we have to compile an extended class. */
-
+        // Extended class (OP_XCLASS) construction.
         if (xclass_props & XCLASS_REQUIRED) != 0 {
             let previous: *mut PCRE2_UCHAR = code;
 
             if (xclass_props & XCLASS_HAS_CHAR_LISTS) == 0 {
-                *class_uchardata = XCL_END as u8; /* Marks the end of extra data */
+                *class_uchardata = XCL_END as u8; // Marks the end of extra data.
                 class_uchardata = class_uchardata.add(1);
             }
-            *code = OP_XCLASS;
+            *code = OP_XCLASS as u8;
             code = code.add(1);
-            code = code.add(LINK_SIZE);
+            code = code.add(LINK_SIZE_U);
             *code = if negate_class != FALSE { XCL_NOT as u8 } else { 0 };
             if (xclass_props & XCLASS_HAS_PROPS) != 0 {
                 *code |= XCL_HASPROP as u8;
             }
 
-            /* If the map is required, move up the extra data to make room for
-            it; otherwise just move the code pointer to the end of the extra
-            data. */
-
-            if (xclass_props & XCLASS_HAS_8BIT_CHARS) != 0 || has_bitmap != ptr::null_mut() {
+            if (xclass_props & XCLASS_HAS_8BIT_CHARS) != 0 || !has_bitmap.is_null() {
                 if negate_class != FALSE {
-                    let classwords: *mut u32 = (*cb).classbits.classwords.as_mut_ptr();
-                    for ii in 0..8usize {
-                        *classwords.add(ii) = !*classwords.add(ii);
+                    let classwords = (*cb).classbits.classwords.as_mut_ptr();
+                    for i in 0..8usize {
+                        *classwords.add(i) = !*classwords.add(i);
                     }
                 }
 
-                if has_bitmap == ptr::null_mut() {
-                    /* Note the C post-increment: `*code++ |= XCL_MAP;` */
+                if has_bitmap.is_null() {
                     *code |= XCL_MAP as u8;
                     code = code.add(1);
-                    ptr::copy(
+                    core::ptr::copy(
                         code,
-                        code.add(32),
-                        cu2bytes(class_uchardata.offset_from(code) as usize),
+                        code.add(32 / core::mem::size_of::<PCRE2_UCHAR>()),
+                        CU2BYTES(class_uchardata.offset_from(code) as usize),
                     );
-                    ptr::copy_nonoverlapping(classbits, code, 32);
-                    code = class_uchardata.add(32);
+                    core::ptr::copy_nonoverlapping(classbits, code, 32);
+                    code = class_uchardata.add(32 / core::mem::size_of::<PCRE2_UCHAR>());
                 } else {
+                    code = code.add(1);
                     code = class_uchardata;
                     if (xclass_props & XCLASS_HAS_8BIT_CHARS) != 0 {
                         *has_bitmap = TRUE;
                     }
                 }
             } else {
+                code = code.add(1);
                 code = class_uchardata;
             }
 
             if (xclass_props & XCLASS_HAS_CHAR_LISTS) != 0 {
-                /* Char lists size is an even number, because all items are 16 or
-                32 bit values. The character list data is always aligned to 32
-                bits. */
-                let mut char_lists_size: usize = (*cranges).char_lists_size;
-                /* PCRE2_ASSERT((char_lists_size & 0x1) == 0 &&
-                             (cb->char_lists_size & 0x3) == 0); */
+                let mut char_lists_size = (*cranges).char_lists_size;
+                // PCRE2_ASSERT((char_lists_size & 0x1) == 0 && ...);
 
-                if lengthptr != ptr::null_mut() {
+                if !lengthptr.is_null() {
                     char_lists_size =
-                        clist_align_to(char_lists_size, core::mem::size_of::<u32>());
+                        CLIST_ALIGN_TO(char_lists_size, core::mem::size_of::<u32>());
 
-                    *lengthptr += 2 + LINK_SIZE;
+                    *lengthptr += 2 + LINK_SIZE_U;
 
                     (*cb).char_lists_size += char_lists_size;
 
                     char_lists_size /= core::mem::size_of::<PCRE2_UCHAR>();
 
-                    /* Storage space for character lists is included in the
-                    maximum pattern size. */
-                    if *lengthptr > MAX_PATTERN_SIZE
-                        || MAX_PATTERN_SIZE - *lengthptr < char_lists_size
+                    if *lengthptr > MAX_PATTERN_SIZE_U
+                        || MAX_PATTERN_SIZE_U - *lengthptr < char_lists_size
                     {
-                        *errorcodeptr = ERR20; /* Pattern is too large */
-                        return ptr::null_mut();
+                        *errorcodeptr = ERR20; // Pattern is too large.
+                        return core::ptr::null_mut();
                     }
                 } else {
-                    let data: *mut u8;
-
-                    /* PCRE2_ASSERT(cranges->char_lists_types <= XCL_TYPE_MASK); */
-                    /* Encode as high / low bytes. */
-                    *code.add(0) = (XCL_LIST | ((*cranges).char_lists_types as u32 >> 8)) as u8;
+                    // PCRE2_ASSERT(cranges->char_lists_types <= XCL_TYPE_MASK);
+                    // Encode as high / low bytes.
+                    *code.add(0) =
+                        (XCL_LIST_VAL | ((*cranges).char_lists_types as u32 >> 8)) as u8;
                     *code.add(1) = (*cranges).char_lists_types as u8;
                     code = code.add(2);
 
-                    /* Character lists are stored in backwards direction from
-                    byte code start. */
-
                     (*cb).char_lists_size += char_lists_size;
-                    data = ((*cb).start_code as *mut u8).sub((*cb).char_lists_size);
+                    let data = ((*cb).start_code as *mut u8).sub((*cb).char_lists_size);
 
-                    ptr::copy_nonoverlapping(
-                        (cranges.add(1) as *mut u8).add((*cranges).char_lists_start),
+                    core::ptr::copy_nonoverlapping(
+                        (cranges.add(1) as *const u8).add((*cranges).char_lists_start),
                         data,
                         char_lists_size,
                     );
 
-                    /* Since character lists total size is less than
-                    MAX_PATTERN_SIZE, their starting offset fits into a value
-                    which size is LINK_SIZE. */
+                    char_lists_size = (*cb).char_lists_size;
+                    PUT(code, 0, (char_lists_size >> 1) as i32);
+                    code = code.add(LINK_SIZE_U);
 
-                    let char_lists_size2 = (*cb).char_lists_size;
-                    put(code, 0, (char_lists_size2 >> 1) as i32);
-                    code = code.add(LINK_SIZE);
-
-                    /* If we added padding to align the list, initialize the
-                    bytes to defined values. */
-
-                    if (char_lists_size2 & 0x2) != 0 {
+                    if (char_lists_size & 0x2) != 0 {
                         *(data as *mut u16).sub(1) = 0xdead;
                     }
 
                     (*cb).char_lists_size =
-                        clist_align_to(char_lists_size2, core::mem::size_of::<u32>());
+                        CLIST_ALIGN_TO(char_lists_size, core::mem::size_of::<u32>());
 
-                    (*cb).cx.as_ref().unwrap().memctl.free.unwrap()(
-                        cranges as *mut c_void,
-                        (*cb).cx.as_ref().unwrap().memctl.memory_data,
-                    );
+                    let memctl = &raw mut (*(*cb).cx).memctl;
+                    ((*memctl).free.unwrap())(cranges as *mut c_void, (*memctl).memory_data);
                 }
             }
 
-            /* Now fill in the complete length of the item */
-
-            put(previous, 1, code.offset_from(previous) as i32);
-            /* goto DONE */
+            // Now fill in the complete length of the item.
+            PUT(previous, 1, code.offset_from(previous) as i32);
             *pcode = code;
-            return pptr.sub(1);
+            return pptr.sub(1); // DONE
         }
 
-        /* If there are no characters > 255, or they are all to be included or
-        excluded, set the opcode to OP_CLASS or OP_NCLASS. */
-
+        // OP_CLASS / OP_NCLASS / OP_ALLANY.
         if negate_class != FALSE {
-            let classwords: *mut u32 = (*cb).classbits.classwords.as_mut_ptr();
-            for ii in 0..8usize {
-                *classwords.add(ii) = !*classwords.add(ii);
+            let classwords = (*cb).classbits.classwords.as_mut_ptr();
+            for i in 0..8usize {
+                *classwords.add(i) = !*classwords.add(i);
             }
         }
 
-        if (select_value8(utf == FALSE, false) || (negate_class != should_flip_negation))
+        if (SELECT_VALUE8((utf == FALSE) as i32, 0) != 0
+            || (negate_class != should_flip_negation))
             && (*cb).classbits.classwords[0] == !0u32
         {
-            let classwords: *const u32 = (*cb).classbits.classwords.as_ptr();
-            let mut ii: usize = 0;
-
-            while ii < 8 {
-                if *classwords.add(ii) != !0u32 {
+            let classwords = (*cb).classbits.classwords.as_ptr();
+            let mut i = 0usize;
+            while i < 8 {
+                if *classwords.add(i) != !0u32 {
                     break;
                 }
-                ii += 1;
+                i += 1;
             }
 
-            if ii == 8 {
-                *code = OP_ALLANY;
+            if i == 8 {
+                *code = OP_ALLANY as u8;
                 code = code.add(1);
-                /* goto DONE */
                 *pcode = code;
-                return pptr.sub(1);
+                return pptr.sub(1); // DONE
             }
         }
 
         *code = if negate_class == should_flip_negation {
-            OP_CLASS
+            OP_CLASS as u8
         } else {
-            OP_NCLASS
+            OP_NCLASS as u8
         };
         code = code.add(1);
-        ptr::copy_nonoverlapping(classbits, code, 32);
-        code = code.add(32);
+        core::ptr::copy_nonoverlapping(classbits, code, 32);
+        code = code.add(32 / core::mem::size_of::<PCRE2_UCHAR>());
 
-        /* DONE: */
+        // DONE:
         *pcode = code;
         pptr.sub(1)
     }
 }
 
-/// Exported as `_pcre2_compile_class_not_nested_8`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_class_not_nested_8(
-    options: u32,
-    xoptions: u32,
-    start_ptr: *mut u32,
-    pcode: *mut *mut PCRE2_UCHAR,
-    negate_class: BOOL,
-    has_bitmap: *mut BOOL,
-    errorcodeptr: *mut c_int,
-    cb: *mut compile_block,
-    lengthptr: *mut PCRE2_SIZE,
-) -> *mut u32 {
-    unsafe {
-        compile_class_not_nested(
-            options,
-            xoptions,
-            start_ptr,
-            pcode,
-            negate_class,
-            has_bitmap,
-            errorcodeptr,
-            cb,
-            lengthptr,
-        )
-    }
-}
+// ===========================================================================
+// ECLASS-compiling functions (leafmost at top).
+// ===========================================================================
 
-/* ===================================================================*/
-/* Here follows a block of ECLASS-compiling functions, ordered from leafmost
-(at the top) to outermost parser (at the bottom of the file). */
-
-/* This function folds one operand using the negation operator. The new,
-combined chunk of stack code is written out to *pop_info. */
-
+/// Folds one operand using the negation operator.
 unsafe fn fold_negation(
     pop_info: *mut eclass_op_info,
     lengthptr: *mut PCRE2_SIZE,
     preserve_classbits: BOOL,
 ) {
     unsafe {
-        /* If the chunk of stack code is already composed of multiple ops, we
-        won't descend in and try and propagate the negation down the tree. */
-
         if (*pop_info).op_single_type == 0 {
-            if lengthptr != ptr::null_mut() {
+            if !lengthptr.is_null() {
                 *lengthptr += 1;
             } else {
-                *(*pop_info).code_start.add((*pop_info).length) = ECL_NOT;
+                *(*pop_info).code_start.add((*pop_info).length) = ECL_NOT as u8;
             }
             (*pop_info).length += 1;
-        }
-        /* Otherwise, it's a nice single-op item, so we can easily fold in the
-        negation without needing to produce an ECL_NOT. */
-        else if (*pop_info).op_single_type == ECL_ANY
-            || (*pop_info).op_single_type == ECL_NONE
+        } else if (*pop_info).op_single_type as i64 == ECL_ANY
+            || (*pop_info).op_single_type as i64 == ECL_NONE
         {
-            (*pop_info).op_single_type = if (*pop_info).op_single_type == ECL_NONE {
-                ECL_ANY
+            (*pop_info).op_single_type = if (*pop_info).op_single_type as i64 == ECL_NONE {
+                ECL_ANY as u8
             } else {
-                ECL_NONE
+                ECL_NONE as u8
             };
-            if lengthptr == ptr::null_mut() {
+            if lengthptr.is_null() {
                 *(*pop_info).code_start = (*pop_info).op_single_type;
             }
         } else {
-            /* PCRE2_ASSERT(op_single_type == ECL_XCLASS && length >= 1+LINK_SIZE+1); */
-            if lengthptr == ptr::null_mut() {
-                *(*pop_info).code_start.add(1 + LINK_SIZE) ^= XCL_NOT as u8;
+            // PCRE2_ASSERT(op_single_type == ECL_XCLASS && ...);
+            if lengthptr.is_null() {
+                *(*pop_info).code_start.add(1 + LINK_SIZE_U) ^= XCL_NOT as u8;
             }
         }
 
         if preserve_classbits == FALSE {
-            for ii in 0..8usize {
-                (*pop_info).bits.classwords[ii] = !(*pop_info).bits.classwords[ii];
+            for i in 0..8usize {
+                (*pop_info).bits.classwords[i] = !(*pop_info).bits.classwords[i];
             }
         }
     }
 }
 
-/* This function folds together two operands using a binary operator. The new,
-combined chunk of stack code is written out to *lhs_op_info. */
-
+/// Folds together two operands using a binary operator.
 unsafe fn fold_binary(
     op: c_int,
     lhs_op_info: *mut eclass_op_info,
@@ -1875,145 +1732,131 @@ unsafe fn fold_binary(
     lengthptr: *mut PCRE2_SIZE,
 ) {
     unsafe {
-        match op as u8 {
-            ECL_AND => {
-                if (*rhs_op_info).op_single_type == ECL_ANY {
-                    /* no-op: drop the RHS */
-                } else if (*lhs_op_info).op_single_type == ECL_ANY {
-                    /* no-op: drop the LHS, and memmove the RHS into its place */
-                    if lengthptr == ptr::null_mut() {
-                        ptr::copy(
+        match op as i64 {
+            o if o == ECL_AND => {
+                if (*rhs_op_info).op_single_type as i64 == ECL_ANY {
+                    // no-op: drop the RHS
+                } else if (*lhs_op_info).op_single_type as i64 == ECL_ANY {
+                    if lengthptr.is_null() {
+                        core::ptr::copy(
                             (*rhs_op_info).code_start,
                             (*lhs_op_info).code_start,
-                            cu2bytes((*rhs_op_info).length),
+                            CU2BYTES((*rhs_op_info).length),
                         );
                     }
                     (*lhs_op_info).length = (*rhs_op_info).length;
                     (*lhs_op_info).op_single_type = (*rhs_op_info).op_single_type;
-                } else if (*rhs_op_info).op_single_type == ECL_NONE {
-                    /* the result is ECL_NONE: write into the LHS */
-                    if lengthptr == ptr::null_mut() {
-                        *(*lhs_op_info).code_start = ECL_NONE;
+                } else if (*rhs_op_info).op_single_type as i64 == ECL_NONE {
+                    if lengthptr.is_null() {
+                        *(*lhs_op_info).code_start.add(0) = ECL_NONE as u8;
                     }
                     (*lhs_op_info).length = 1;
-                    (*lhs_op_info).op_single_type = ECL_NONE;
-                } else if (*lhs_op_info).op_single_type == ECL_NONE {
-                    /* the result is ECL_NONE: drop the RHS */
+                    (*lhs_op_info).op_single_type = ECL_NONE as u8;
+                } else if (*lhs_op_info).op_single_type as i64 == ECL_NONE {
+                    // the result is ECL_NONE: drop the RHS
                 } else {
-                    /* Both of LHS & RHS are either ECL_XCLASS, or compound. */
-                    if lengthptr != ptr::null_mut() {
+                    if !lengthptr.is_null() {
                         *lengthptr += 1;
                     } else {
-                        *(*rhs_op_info).code_start.add((*rhs_op_info).length) = ECL_AND;
+                        *(*rhs_op_info).code_start.add((*rhs_op_info).length) = ECL_AND as u8;
                     }
                     (*lhs_op_info).length += (*rhs_op_info).length + 1;
                     (*lhs_op_info).op_single_type = 0;
                 }
 
-                for ii in 0..8usize {
-                    (*lhs_op_info).bits.classwords[ii] &= (*rhs_op_info).bits.classwords[ii];
+                for i in 0..8usize {
+                    (*lhs_op_info).bits.classwords[i] &= (*rhs_op_info).bits.classwords[i];
                 }
             }
 
-            ECL_OR => {
-                if (*rhs_op_info).op_single_type == ECL_NONE {
-                    /* no-op: drop the RHS */
-                } else if (*lhs_op_info).op_single_type == ECL_NONE {
-                    /* no-op: drop the LHS, and memmove the RHS into its place */
-                    if lengthptr == ptr::null_mut() {
-                        ptr::copy(
+            o if o == ECL_OR => {
+                if (*rhs_op_info).op_single_type as i64 == ECL_NONE {
+                    // no-op: drop the RHS
+                } else if (*lhs_op_info).op_single_type as i64 == ECL_NONE {
+                    if lengthptr.is_null() {
+                        core::ptr::copy(
                             (*rhs_op_info).code_start,
                             (*lhs_op_info).code_start,
-                            cu2bytes((*rhs_op_info).length),
+                            CU2BYTES((*rhs_op_info).length),
                         );
                     }
                     (*lhs_op_info).length = (*rhs_op_info).length;
                     (*lhs_op_info).op_single_type = (*rhs_op_info).op_single_type;
-                } else if (*rhs_op_info).op_single_type == ECL_ANY {
-                    /* the result is ECL_ANY: write into the LHS */
-                    if lengthptr == ptr::null_mut() {
-                        *(*lhs_op_info).code_start = ECL_ANY;
+                } else if (*rhs_op_info).op_single_type as i64 == ECL_ANY {
+                    if lengthptr.is_null() {
+                        *(*lhs_op_info).code_start.add(0) = ECL_ANY as u8;
                     }
                     (*lhs_op_info).length = 1;
-                    (*lhs_op_info).op_single_type = ECL_ANY;
-                } else if (*lhs_op_info).op_single_type == ECL_ANY {
-                    /* the result is ECL_ANY: drop the RHS */
+                    (*lhs_op_info).op_single_type = ECL_ANY as u8;
+                } else if (*lhs_op_info).op_single_type as i64 == ECL_ANY {
+                    // the result is ECL_ANY: drop the RHS
                 } else {
-                    /* Both of LHS & RHS are either ECL_XCLASS, or compound. */
-                    if lengthptr != ptr::null_mut() {
+                    if !lengthptr.is_null() {
                         *lengthptr += 1;
                     } else {
-                        *(*rhs_op_info).code_start.add((*rhs_op_info).length) = ECL_OR;
+                        *(*rhs_op_info).code_start.add((*rhs_op_info).length) = ECL_OR as u8;
                     }
                     (*lhs_op_info).length += (*rhs_op_info).length + 1;
                     (*lhs_op_info).op_single_type = 0;
                 }
 
-                for ii in 0..8usize {
-                    (*lhs_op_info).bits.classwords[ii] |= (*rhs_op_info).bits.classwords[ii];
+                for i in 0..8usize {
+                    (*lhs_op_info).bits.classwords[i] |= (*rhs_op_info).bits.classwords[i];
                 }
             }
 
-            ECL_XOR => {
-                if (*rhs_op_info).op_single_type == ECL_NONE {
-                    /* no-op: drop the RHS */
-                } else if (*lhs_op_info).op_single_type == ECL_NONE {
-                    /* no-op: drop the LHS, and memmove the RHS into its place */
-                    if lengthptr == ptr::null_mut() {
-                        ptr::copy(
+            o if o == ECL_XOR => {
+                if (*rhs_op_info).op_single_type as i64 == ECL_NONE {
+                    // no-op: drop the RHS
+                } else if (*lhs_op_info).op_single_type as i64 == ECL_NONE {
+                    if lengthptr.is_null() {
+                        core::ptr::copy(
                             (*rhs_op_info).code_start,
                             (*lhs_op_info).code_start,
-                            cu2bytes((*rhs_op_info).length),
+                            CU2BYTES((*rhs_op_info).length),
                         );
                     }
                     (*lhs_op_info).length = (*rhs_op_info).length;
                     (*lhs_op_info).op_single_type = (*rhs_op_info).op_single_type;
-                } else if (*rhs_op_info).op_single_type == ECL_ANY {
-                    /* the result is !LHS: fold in the negation, and drop the RHS */
-                    /* Preserve the classbits, because we deal with them later. */
+                } else if (*rhs_op_info).op_single_type as i64 == ECL_ANY {
+                    // the result is !LHS: fold in the negation, drop the RHS
                     fold_negation(lhs_op_info, lengthptr, TRUE);
-                } else if (*lhs_op_info).op_single_type == ECL_ANY {
-                    /* the result is !RHS: drop the LHS, memmove the RHS into its
-                    place, and fold in the negation */
-                    if lengthptr == ptr::null_mut() {
-                        ptr::copy(
+                } else if (*lhs_op_info).op_single_type as i64 == ECL_ANY {
+                    if lengthptr.is_null() {
+                        core::ptr::copy(
                             (*rhs_op_info).code_start,
                             (*lhs_op_info).code_start,
-                            cu2bytes((*rhs_op_info).length),
+                            CU2BYTES((*rhs_op_info).length),
                         );
                     }
                     (*lhs_op_info).length = (*rhs_op_info).length;
                     (*lhs_op_info).op_single_type = (*rhs_op_info).op_single_type;
 
-                    /* Preserve the classbits, because we deal with them later. */
                     fold_negation(lhs_op_info, lengthptr, TRUE);
                 } else {
-                    /* Both of LHS & RHS are either ECL_XCLASS, or compound. */
-                    if lengthptr != ptr::null_mut() {
+                    if !lengthptr.is_null() {
                         *lengthptr += 1;
                     } else {
-                        *(*rhs_op_info).code_start.add((*rhs_op_info).length) = ECL_XOR;
+                        *(*rhs_op_info).code_start.add((*rhs_op_info).length) = ECL_XOR as u8;
                     }
                     (*lhs_op_info).length += (*rhs_op_info).length + 1;
                     (*lhs_op_info).op_single_type = 0;
                 }
 
-                for ii in 0..8usize {
-                    (*lhs_op_info).bits.classwords[ii] ^= (*rhs_op_info).bits.classwords[ii];
+                for i in 0..8usize {
+                    (*lhs_op_info).bits.classwords[i] ^= (*rhs_op_info).bits.classwords[i];
                 }
             }
 
             _ => {
-                /* PCRE2_DEBUG_UNREACHABLE(); */
+                // PCRE2_DEBUG_UNREACHABLE();
             }
         }
     }
 }
 
-/* This function consumes a group of implicitly-unioned class elements. These
-can be characters, ranges, properties, or nested classes, as long as they are
-all joined by being placed adjacently. */
-
+/// Consumes a group of implicitly-unioned class elements (characters, ranges,
+/// properties, or nested classes).
 unsafe fn compile_class_operand(
     context: *mut eclass_context,
     negated: BOOL,
@@ -2024,167 +1867,164 @@ unsafe fn compile_class_operand(
 ) -> BOOL {
     unsafe {
         let mut ptr: *mut u32 = *pptr;
-        let prev_ptr: *mut u32;
+        let mut prev_ptr: *mut u32;
         let mut code: *mut PCRE2_UCHAR = *pcode;
         let code_start: *mut PCRE2_UCHAR = code;
-        let prev_length: PCRE2_SIZE = if lengthptr != ptr::null_mut() { *lengthptr } else { 0 };
+        let prev_length: PCRE2_SIZE = if !lengthptr.is_null() { *lengthptr } else { 0 };
         let extra_length: PCRE2_SIZE;
-        let meta: u32 = meta_code(*ptr);
+        let meta = META_CODE(*ptr) as i64;
+
+        let mut done = false;
 
         match meta {
-            x if x == META_CLASS_EMPTY_NOT || x == META_CLASS_EMPTY => {
+            m if m == META_CLASS_EMPTY_NOT || m == META_CLASS_EMPTY => {
                 ptr = ptr.add(1);
                 (*pop_info).length = 1;
                 if (meta == META_CLASS_EMPTY) == (negated != FALSE) {
-                    (*pop_info).op_single_type = ECL_ANY;
-                    *code = ECL_ANY;
+                    *code = ECL_ANY as u8;
+                    (*pop_info).op_single_type = ECL_ANY as u8;
                     code = code.add(1);
-                    ptr::write_bytes((*pop_info).bits.classbits.as_mut_ptr(), 0xff, 32);
+                    core::ptr::write_bytes((*pop_info).bits.classbits.as_mut_ptr(), 0xff, 32);
                 } else {
-                    (*pop_info).op_single_type = ECL_NONE;
-                    *code = ECL_NONE;
+                    *code = ECL_NONE as u8;
+                    (*pop_info).op_single_type = ECL_NONE as u8;
                     code = code.add(1);
-                    ptr::write_bytes((*pop_info).bits.classbits.as_mut_ptr(), 0, 32);
+                    core::ptr::write_bytes((*pop_info).bits.classbits.as_mut_ptr(), 0, 32);
                 }
             }
 
             _ => {
-                let mut fell_through_from_class = false;
+                let mut fallthrough_to_default = true;
 
                 if meta == META_CLASS || meta == META_CLASS_NOT {
-                    if (*ptr & CLASS_IS_ECLASS) != 0 {
-                        if compile_eclass_nested(context, negated, &mut ptr, &mut code,
-                                                 pop_info, lengthptr) == FALSE
+                    if (*ptr & CLASS_IS_ECLASS as u32) != 0 {
+                        if compile_eclass_nested(
+                            context,
+                            negated,
+                            &mut ptr,
+                            &mut code,
+                            pop_info,
+                            lengthptr,
+                        ) == FALSE
                         {
                             return FALSE;
                         }
 
-                        /* PCRE2_ASSERT(*ptr == META_CLASS_END); */
+                        // PCRE2_ASSERT(*ptr == META_CLASS_END);
                         ptr = ptr.add(1);
-                        /* goto DONE */
-                        *pptr = ptr;
-                        *pcode = code;
-                        return TRUE;
-                    }
-
-                    ptr = ptr.add(1);
-                    fell_through_from_class = true;
-                }
-                let _ = fell_through_from_class;
-
-                /* default (and fall-through from META_CLASS/NOT):
-                Scan forward characters, ranges, and properties. */
-
-                prev_ptr = ptr;
-                ptr = compile_class_not_nested(
-                    (*context).options,
-                    (*context).xoptions,
-                    ptr,
-                    &mut code,
-                    ((meta != META_CLASS_NOT) == (negated != FALSE)) as BOOL,
-                    &mut (*context).needs_bitmap,
-                    (*context).errorcodeptr,
-                    (*context).cb,
-                    lengthptr,
-                );
-                if ptr == ptr::null_mut() {
-                    return FALSE;
-                }
-
-                /* We must have a 100% guarantee that ptr increases. */
-                if ptr <= prev_ptr {
-                    return FALSE;
-                }
-
-                /* If we fell through above, consume the closing ']'. */
-                if meta == META_CLASS || meta == META_CLASS_NOT {
-                    /* PCRE2_ASSERT(*ptr == META_CLASS_END); */
-                    ptr = ptr.add(1);
-                }
-
-                /* Regardless of whether (lengthptr == NULL), some data will
-                still be written out to *pcode, which we need. */
-                extra_length = if lengthptr != ptr::null_mut() {
-                    *lengthptr - prev_length
-                } else {
-                    0
-                };
-
-                /* Easiest case: convert OP_ALLANY to ECL_ANY */
-
-                if *code_start == OP_ALLANY {
-                    (*pop_info).length = 1;
-                    (*pop_info).op_single_type = ECL_ANY;
-                    *code_start = ECL_ANY;
-                    ptr::write_bytes((*pop_info).bits.classbits.as_mut_ptr(), 0xff, 32);
-                }
-                /* For OP_CLASS and OP_NCLASS, we hoist out the bitmap and
-                convert to ECL_NONE / ECL_ANY respectively. */
-                else if *code_start == OP_CLASS || *code_start == OP_NCLASS {
-                    (*pop_info).length = 1;
-                    (*pop_info).op_single_type = if *code_start == OP_CLASS {
-                        ECL_NONE
+                        done = true;
+                        fallthrough_to_default = false;
                     } else {
-                        ECL_ANY
-                    };
-                    *code_start = (*pop_info).op_single_type;
-                    ptr::copy_nonoverlapping(
-                        code_start.add(1),
-                        (*pop_info).bits.classbits.as_mut_ptr(),
-                        32,
-                    );
-                    /* Rewind the code pointer, but adjust *lengthptr. */
-                    if lengthptr != ptr::null_mut() {
-                        *lengthptr += code.offset_from(code_start.add(1)) as usize;
+                        ptr = ptr.add(1);
+                        // Fall through to default.
                     }
-                    code = code_start.add(1);
+                }
 
-                    if (*context).needs_bitmap == FALSE && *code_start == ECL_NONE {
-                        let classwords: *const u32 = (*pop_info).bits.classwords.as_ptr();
+                if fallthrough_to_default {
+                    // default: scan forward characters, ranges, and properties.
+                    prev_ptr = ptr;
+                    ptr = _pcre2_compile_class_not_nested_8(
+                        (*context).options,
+                        (*context).xoptions,
+                        ptr,
+                        &mut code,
+                        bool_to((meta != META_CLASS_NOT) == (negated != FALSE)),
+                        &mut (*context).needs_bitmap,
+                        (*context).errorcodeptr,
+                        (*context).cb,
+                        lengthptr,
+                    );
+                    if ptr.is_null() {
+                        return FALSE;
+                    }
 
-                        let mut jj = 0;
-                        while jj < 8 {
-                            if *classwords.add(jj) != 0 {
-                                (*context).needs_bitmap = TRUE;
-                                break;
+                    if ptr <= prev_ptr {
+                        return FALSE;
+                    }
+
+                    // If we fell through above, consume the closing ']'.
+                    if meta == META_CLASS || meta == META_CLASS_NOT {
+                        // PCRE2_ASSERT(*ptr == META_CLASS_END);
+                        ptr = ptr.add(1);
+                    }
+
+                    // PCRE2_ASSERT(code > code_start);
+                    extra_length =
+                        if !lengthptr.is_null() { *lengthptr - prev_length } else { 0 };
+
+                    if *code_start as u32 == OP_ALLANY {
+                        // Easiest case: convert OP_ALLANY to ECL_ANY.
+                        (*pop_info).length = 1;
+                        *code_start = ECL_ANY as u8;
+                        (*pop_info).op_single_type = ECL_ANY as u8;
+                        core::ptr::write_bytes(
+                            (*pop_info).bits.classbits.as_mut_ptr(),
+                            0xff,
+                            32,
+                        );
+                    } else if *code_start as u32 == OP_CLASS || *code_start as u32 == OP_NCLASS
+                    {
+                        (*pop_info).length = 1;
+                        let is_class = *code_start as u32 == OP_CLASS;
+                        *code_start = if is_class { ECL_NONE as u8 } else { ECL_ANY as u8 };
+                        (*pop_info).op_single_type = *code_start;
+                        core::ptr::copy_nonoverlapping(
+                            code_start.add(1),
+                            (*pop_info).bits.classbits.as_mut_ptr(),
+                            32,
+                        );
+                        // Rewind the code pointer, adjust *lengthptr.
+                        if !lengthptr.is_null() {
+                            *lengthptr += code.offset_from(code_start.add(1)) as usize;
+                        }
+                        code = code_start.add(1);
+
+                        if (*context).needs_bitmap == FALSE
+                            && *code_start as i64 == ECL_NONE
+                        {
+                            let classwords = (*pop_info).bits.classwords;
+                            let mut set = false;
+                            for i in 0..8usize {
+                                if classwords[i] != 0 {
+                                    (*context).needs_bitmap = TRUE;
+                                    set = true;
+                                    break;
+                                }
                             }
-                            jj += 1;
+                            let _ = set;
+                        } else {
+                            (*context).needs_bitmap = TRUE;
                         }
                     } else {
-                        (*context).needs_bitmap = TRUE;
+                        // OP_XCLASS: hoist out the bitmap (if any).
+                        // PCRE2_ASSERT(*code_start == OP_XCLASS);
+                        *code_start = ECL_XCLASS as u8;
+                        (*pop_info).op_single_type = ECL_XCLASS as u8;
+
+                        core::ptr::copy_nonoverlapping(
+                            (*(*context).cb).classbits.classbits.as_ptr(),
+                            (*pop_info).bits.classbits.as_mut_ptr(),
+                            32,
+                        );
+                        (*pop_info).length =
+                            (code.offset_from(code_start) as usize) + extra_length;
                     }
                 }
-                /* Finally, for OP_XCLASS we hoist out the bitmap (if any), and
-                convert to ECL_XCLASS. */
-                else {
-                    /* PCRE2_ASSERT(*code_start == OP_XCLASS); */
-                    *code_start = ECL_XCLASS;
-                    (*pop_info).op_single_type = ECL_XCLASS;
-
-                    ptr::copy_nonoverlapping(
-                        (*(*context).cb).classbits.classbits.as_ptr(),
-                        (*pop_info).bits.classbits.as_mut_ptr(),
-                        32,
-                    );
-                    (*pop_info).length =
-                        (code.offset_from(code_start) as usize) + extra_length;
-                }
             }
-        } /* End of switch(meta) */
-
-        (*pop_info).code_start = if lengthptr == ptr::null_mut() {
-            code_start
-        } else {
-            ptr::null_mut()
-        };
-
-        if lengthptr != ptr::null_mut() {
-            *lengthptr += code.offset_from(code_start) as usize;
-            code = code_start;
         }
 
-        /* DONE: */
-        /* PCRE2_ASSERT(lengthptr == NULL || (code == code_start)); */
+        if !done {
+            (*pop_info).code_start =
+                if lengthptr.is_null() { code_start } else { core::ptr::null_mut() };
+
+            if !lengthptr.is_null() {
+                *lengthptr += code.offset_from(code_start) as usize;
+                code = code_start;
+            }
+        }
+
+        // DONE:
+        // PCRE2_ASSERT(lengthptr == NULL || (code == code_start));
 
         *pptr = ptr;
         *pcode = code;
@@ -2192,8 +2032,7 @@ unsafe fn compile_class_operand(
     }
 }
 
-/* This function consumes a group of implicitly-unioned class elements. */
-
+/// Consumes a group of implicitly-unioned (juxtaposed) class elements.
 unsafe fn compile_class_juxtaposition(
     context: *mut eclass_context,
     negated: BOOL,
@@ -2206,31 +2045,31 @@ unsafe fn compile_class_juxtaposition(
         let mut ptr: *mut u32 = *pptr;
         let mut code: *mut PCRE2_UCHAR = *pcode;
 
-        /* Because it's a non-empty class, there must be an operand at the start. */
+        // Because it's a non-empty class, there must be an operand at the start.
         if compile_class_operand(context, negated, &mut ptr, &mut code, pop_info, lengthptr)
             == FALSE
         {
             return FALSE;
         }
 
-        while *ptr != META_CLASS_END
-            && !(*ptr >= META_ECLASS_AND && *ptr <= META_ECLASS_NOT)
+        while *ptr != META_CLASS_END as u32
+            && !(*ptr >= META_ECLASS_AND as u32 && *ptr <= META_ECLASS_NOT as u32)
         {
-            let op: u32;
+            let op: c_int;
             let rhs_negated: BOOL;
             let mut rhs_op_info: eclass_op_info = core::mem::zeroed();
 
             if negated != FALSE {
-                /* !(A juxtapose B)  ->  !A && !B */
-                op = ECL_AND as u32;
+                // !(A juxtapose B)  ->  !A && !B
+                op = ECL_AND as c_int;
                 rhs_negated = TRUE;
             } else {
-                /* A juxtapose B  ->  A || B */
-                op = ECL_OR as u32;
+                // A juxtapose B  ->  A || B
+                op = ECL_OR as c_int;
                 rhs_negated = FALSE;
             }
 
-            /* An operand must follow the operator. */
+            // An operand must follow the operator.
             if compile_class_operand(
                 context,
                 rhs_negated,
@@ -2243,9 +2082,9 @@ unsafe fn compile_class_juxtaposition(
                 return FALSE;
             }
 
-            /* Convert infix to postfix (RPN). */
-            fold_binary(op as c_int, pop_info, &mut rhs_op_info, lengthptr);
-            if lengthptr == ptr::null_mut() {
+            // Convert infix to postfix (RPN).
+            fold_binary(op, pop_info, &mut rhs_op_info, lengthptr);
+            if lengthptr.is_null() {
                 code = (*pop_info).code_start.add((*pop_info).length);
             }
         }
@@ -2256,8 +2095,7 @@ unsafe fn compile_class_juxtaposition(
     }
 }
 
-/* This function consumes unary prefix operators. */
-
+/// Consumes unary prefix operators.
 unsafe fn compile_class_unary(
     context: *mut eclass_context,
     mut negated: BOOL,
@@ -2269,13 +2107,13 @@ unsafe fn compile_class_unary(
     unsafe {
         let mut ptr: *mut u32 = *pptr;
 
-        while *ptr == META_ECLASS_NOT {
+        while *ptr == META_ECLASS_NOT as u32 {
             ptr = ptr.add(1);
-            negated = (negated == 0) as BOOL;
+            negated = if negated == FALSE { TRUE } else { FALSE };
         }
 
         *pptr = ptr;
-        /* Because it's a non-empty class, there must be an operand. */
+        // Because it's a non-empty class, there must be an operand.
         if compile_class_juxtaposition(context, negated, pptr, pcode, pop_info, lengthptr)
             == FALSE
         {
@@ -2286,8 +2124,7 @@ unsafe fn compile_class_unary(
     }
 }
 
-/* This function consumes tightly-binding binary operators. */
-
+/// Consumes tightly-binding binary operators.
 unsafe fn compile_class_binary_tight(
     context: *mut eclass_context,
     negated: BOOL,
@@ -2300,31 +2137,31 @@ unsafe fn compile_class_binary_tight(
         let mut ptr: *mut u32 = *pptr;
         let mut code: *mut PCRE2_UCHAR = *pcode;
 
-        /* Because it's a non-empty class, there must be an operand at the start. */
+        // Because it's a non-empty class, there must be an operand at the start.
         if compile_class_unary(context, negated, &mut ptr, &mut code, pop_info, lengthptr)
             == FALSE
         {
             return FALSE;
         }
 
-        while *ptr == META_ECLASS_AND {
-            let op: u32;
+        while *ptr == META_ECLASS_AND as u32 {
+            let op: c_int;
             let rhs_negated: BOOL;
             let mut rhs_op_info: eclass_op_info = core::mem::zeroed();
 
             if negated != FALSE {
-                /* !(A && B)  ->  !A || !B */
-                op = ECL_OR as u32;
+                // !(A && B)  ->  !A || !B
+                op = ECL_OR as c_int;
                 rhs_negated = TRUE;
             } else {
-                /* A && B  ->  A && B */
-                op = ECL_AND as u32;
+                // A && B  ->  A && B
+                op = ECL_AND as c_int;
                 rhs_negated = FALSE;
             }
 
             ptr = ptr.add(1);
 
-            /* An operand must follow the operator. */
+            // An operand must follow the operator.
             if compile_class_unary(
                 context,
                 rhs_negated,
@@ -2337,9 +2174,9 @@ unsafe fn compile_class_binary_tight(
                 return FALSE;
             }
 
-            /* Convert infix to postfix (RPN). */
-            fold_binary(op as c_int, pop_info, &mut rhs_op_info, lengthptr);
-            if lengthptr == ptr::null_mut() {
+            // Convert infix to postfix (RPN).
+            fold_binary(op, pop_info, &mut rhs_op_info, lengthptr);
+            if lengthptr.is_null() {
                 code = (*pop_info).code_start.add((*pop_info).length);
             }
         }
@@ -2350,8 +2187,7 @@ unsafe fn compile_class_binary_tight(
     }
 }
 
-/* This function consumes loosely-binding binary operators. */
-
+/// Consumes loosely-binding binary operators.
 unsafe fn compile_class_binary_loose(
     context: *mut eclass_context,
     negated: BOOL,
@@ -2364,50 +2200,44 @@ unsafe fn compile_class_binary_loose(
         let mut ptr: *mut u32 = *pptr;
         let mut code: *mut PCRE2_UCHAR = *pcode;
 
-        /* Because it's a non-empty class, there must be an operand at the start. */
+        // Because it's a non-empty class, there must be an operand at the start.
         if compile_class_binary_tight(context, negated, &mut ptr, &mut code, pop_info, lengthptr)
             == FALSE
         {
             return FALSE;
         }
 
-        while *ptr >= META_ECLASS_OR && *ptr <= META_ECLASS_XOR {
-            let op: u32;
+        while *ptr >= META_ECLASS_OR as u32 && *ptr <= META_ECLASS_XOR as u32 {
+            let op: c_int;
             let op_neg: BOOL;
             let rhs_negated: BOOL;
             let mut rhs_op_info: eclass_op_info = core::mem::zeroed();
 
             if negated != FALSE {
-                /* !(A || B)   ->  !A && !B                     */
-                /* !(A -- B)   ->  !(A && !B)    ->  !A || B    */
-                /* !(A XOR B)  ->  !(!A XOR !B)  ->  !A XNOR !B */
-                op = if *ptr == META_ECLASS_OR {
-                    ECL_AND as u32
-                } else if *ptr == META_ECLASS_SUB {
-                    ECL_OR as u32
+                op = if *ptr == META_ECLASS_OR as u32 {
+                    ECL_AND as c_int
+                } else if *ptr == META_ECLASS_SUB as u32 {
+                    ECL_OR as c_int
                 } else {
-                    ECL_XOR as u32
+                    ECL_XOR as c_int
                 };
-                op_neg = (*ptr == META_ECLASS_XOR) as BOOL;
-                rhs_negated = (*ptr != META_ECLASS_SUB) as BOOL;
+                op_neg = bool_to(*ptr == META_ECLASS_XOR as u32);
+                rhs_negated = bool_to(*ptr != META_ECLASS_SUB as u32);
             } else {
-                /* A || B   ->  A || B  */
-                /* A -- B   ->  A && !B */
-                /* A XOR B  ->  A XOR B */
-                op = if *ptr == META_ECLASS_OR {
-                    ECL_OR as u32
-                } else if *ptr == META_ECLASS_SUB {
-                    ECL_AND as u32
+                op = if *ptr == META_ECLASS_OR as u32 {
+                    ECL_OR as c_int
+                } else if *ptr == META_ECLASS_SUB as u32 {
+                    ECL_AND as c_int
                 } else {
-                    ECL_XOR as u32
+                    ECL_XOR as c_int
                 };
                 op_neg = FALSE;
-                rhs_negated = (*ptr == META_ECLASS_SUB) as BOOL;
+                rhs_negated = bool_to(*ptr == META_ECLASS_SUB as u32);
             }
 
             ptr = ptr.add(1);
 
-            /* An operand must follow the operator. */
+            // An operand must follow the operator.
             if compile_class_binary_tight(
                 context,
                 rhs_negated,
@@ -2420,12 +2250,12 @@ unsafe fn compile_class_binary_loose(
                 return FALSE;
             }
 
-            /* Convert infix to postfix (RPN). */
-            fold_binary(op as c_int, pop_info, &mut rhs_op_info, lengthptr);
+            // Convert infix to postfix (RPN).
+            fold_binary(op, pop_info, &mut rhs_op_info, lengthptr);
             if op_neg != FALSE {
                 fold_negation(pop_info, lengthptr, FALSE);
             }
-            if lengthptr == ptr::null_mut() {
+            if lengthptr.is_null() {
                 code = (*pop_info).code_start.add((*pop_info).length);
             }
         }
@@ -2436,10 +2266,7 @@ unsafe fn compile_class_binary_loose(
     }
 }
 
-/* This function converts the META codes in pptr into opcodes written to pcode.
-The pptr must start at a META_CLASS or META_CLASS_NOT. The pptr will be left
-pointing at the matching META_CLASS_END. */
-
+/// Converts the META codes in `pptr` into opcodes written to `pcode`.
 unsafe fn compile_eclass_nested(
     context: *mut eclass_context,
     mut negated: BOOL,
@@ -2449,232 +2276,28 @@ unsafe fn compile_eclass_nested(
     lengthptr: *mut PCRE2_SIZE,
 ) -> BOOL {
     unsafe {
-        let mut ptr: *mut u32 = *pptr;
+        let ptr: *mut u32 = *pptr;
 
-        /* The CLASS_IS_ECLASS bit must be set since it is a nested class. */
-        /* PCRE2_ASSERT(*ptr == (META_CLASS | CLASS_IS_ECLASS) ||
-                     *ptr == (META_CLASS_NOT | CLASS_IS_ECLASS)); */
-
-        let val = *ptr;
-        ptr = ptr.add(1);
-        let _ = ptr;
-        if val == (META_CLASS_NOT | CLASS_IS_ECLASS) {
-            negated = (negated == 0) as BOOL;
+        // The CLASS_IS_ECLASS bit must be set since it is a nested class.
+        if *ptr == (META_CLASS_NOT as u32 | CLASS_IS_ECLASS as u32) {
+            negated = if negated == FALSE { TRUE } else { FALSE };
         }
 
-        *pptr = (*pptr).add(1);
+        (*pptr) = (*pptr).add(1);
 
-        /* Because it's a non-empty class, there must be an operand at the start. */
+        // Because it's a non-empty class, there must be an operand at the start.
         if compile_class_binary_loose(context, negated, pptr, pcode, pop_info, lengthptr)
             == FALSE
         {
             return FALSE;
         }
 
-        /* PCRE2_ASSERT(**pptr == META_CLASS_END); */
+        // PCRE2_ASSERT(**pptr == META_CLASS_END);
         TRUE
     }
 }
 
-/// `PRIV(compile_class_nested)`
-pub unsafe fn compile_class_nested(
-    options: u32,
-    xoptions: u32,
-    pptr: *mut *mut u32,
-    pcode: *mut *mut PCRE2_UCHAR,
-    errorcodeptr: *mut c_int,
-    cb: *mut compile_block,
-    lengthptr: *mut PCRE2_SIZE,
-) -> BOOL {
-    unsafe {
-        let mut context: eclass_context = core::mem::zeroed();
-        let mut op_info: eclass_op_info = core::mem::zeroed();
-        let previous_length: PCRE2_SIZE =
-            if lengthptr != ptr::null_mut() { *lengthptr } else { 0 };
-        let mut code: *mut PCRE2_UCHAR = *pcode;
-        let previous: *mut PCRE2_UCHAR;
-        let mut allbitsone: BOOL = TRUE;
-
-        context.needs_bitmap = FALSE;
-        context.options = options;
-        context.xoptions = xoptions;
-        context.errorcodeptr = errorcodeptr;
-        context.cb = cb;
-
-        previous = code;
-        *code = OP_ECLASS;
-        code = code.add(1);
-        code = code.add(LINK_SIZE);
-        *code = 0; /* Flags, currently zero. */
-        code = code.add(1);
-        if compile_eclass_nested(&mut context, FALSE, pptr, &mut code, &mut op_info, lengthptr)
-            == FALSE
-        {
-            return FALSE;
-        }
-
-        if lengthptr != ptr::null_mut() {
-            *lengthptr += code.offset_from(previous) as usize;
-            code = previous;
-        }
-
-        /* Do some useful counting of what's in the bitmap. */
-        for ii in 0..8usize {
-            if op_info.bits.classwords[ii] != 0xffffffff {
-                allbitsone = FALSE;
-                break;
-            }
-        }
-
-        /* After constant-folding the extended class syntax, it may turn out to
-        be a simple class after all. */
-
-        if op_info.op_single_type != 0 {
-            /* Rewind back over the OP_ECLASS. */
-            code = previous;
-
-            /* If the bits are all ones, and the "high characters" are all
-            matched too, we use a special-cased encoding of OP_ALLANY. */
-
-            if op_info.op_single_type == ECL_ANY && allbitsone != FALSE {
-                /* Advancing code means rewinding lengthptr, at this point. */
-                if lengthptr != ptr::null_mut() {
-                    *lengthptr -= 1;
-                }
-                *code = OP_ALLANY;
-                code = code.add(1);
-            }
-            /* If the high bits are all matched / all not-matched, then we emit
-            an OP_NCLASS/OP_CLASS respectively. */
-            else if op_info.op_single_type == ECL_ANY || op_info.op_single_type == ECL_NONE {
-                let required_len: PCRE2_SIZE = 1 + 32;
-
-                if lengthptr != ptr::null_mut() {
-                    if required_len > (*lengthptr - previous_length) {
-                        *lengthptr = previous_length + required_len;
-                    }
-                }
-
-                /* Advancing code means rewinding lengthptr, at this point. */
-                if lengthptr != ptr::null_mut() {
-                    *lengthptr -= required_len;
-                }
-                *code = if op_info.op_single_type == ECL_ANY {
-                    OP_NCLASS
-                } else {
-                    OP_CLASS
-                };
-                code = code.add(1);
-                ptr::copy_nonoverlapping(op_info.bits.classbits.as_ptr(), code, 32);
-                code = code.add(32);
-            }
-            /* Otherwise, we have an ECL_XCLASS, so we have the OP_XCLASS data
-            there, but we pulled out its bitmap into op_info, so now we have to
-            put that back into the OP_XCLASS. */
-            else {
-                let need_map: BOOL = context.needs_bitmap;
-                let required_len: PCRE2_SIZE;
-
-                /* PCRE2_ASSERT(op_info.op_single_type == ECL_XCLASS); */
-                required_len = op_info.length + (if need_map != FALSE { 32 } else { 0 });
-
-                if lengthptr != ptr::null_mut() {
-                    /* Don't unconditionally request all the space we need. */
-                    if required_len > (*lengthptr - previous_length) {
-                        *lengthptr = previous_length + required_len;
-                    }
-
-                    /* We do have to write out a (truncated) OP_XCLASS, even on
-                    this branch. */
-                    *lengthptr -= 1 + LINK_SIZE + 1;
-                    *code = OP_XCLASS;
-                    code = code.add(1);
-                    put(code, 0, (1 + LINK_SIZE + 1) as i32);
-                    code = code.add(LINK_SIZE);
-                    *code = 0;
-                    code = code.add(1);
-                } else {
-                    let rest: *mut PCRE2_UCHAR;
-                    let rest_len: PCRE2_SIZE;
-                    let flags: PCRE2_UCHAR;
-
-                    /* 1 unit: OP_XCLASS | LINK_SIZE units | 1 unit: flags | rest */
-                    /* PCRE2_ASSERT(op_info.length >= 1 + LINK_SIZE + 1); */
-                    rest = op_info.code_start.add(1 + LINK_SIZE + 1);
-                    rest_len = op_info
-                        .code_start
-                        .add(op_info.length)
-                        .offset_from(rest) as usize;
-
-                    /* First read any data we use, before memmove splats it. */
-                    flags = *op_info.code_start.add(1 + LINK_SIZE);
-                    /* PCRE2_ASSERT((flags & XCL_MAP) == 0); */
-
-                    /* Next do the memmove before any writes. */
-                    ptr::copy(
-                        rest,
-                        code.add(1 + LINK_SIZE + 1 + (if need_map != FALSE { 32 } else { 0 })),
-                        cu2bytes(rest_len),
-                    );
-
-                    /* Finally write the header data. */
-                    *code = OP_XCLASS;
-                    code = code.add(1);
-                    put(code, 0, required_len as i32);
-                    code = code.add(LINK_SIZE);
-                    *code = flags | (if need_map != FALSE { XCL_MAP as u8 } else { 0 });
-                    code = code.add(1);
-                    if need_map != FALSE {
-                        ptr::copy_nonoverlapping(op_info.bits.classbits.as_ptr(), code, 32);
-                        code = code.add(32);
-                    }
-                    code = code.add(rest_len);
-                }
-            }
-        }
-        /* Otherwise, we're going to keep the OP_ECLASS. However, again we need
-        to do some adjustment to insert the bitmap if we have one. */
-        else {
-            let need_map: BOOL = context.needs_bitmap;
-            let required_len: PCRE2_SIZE =
-                1 + LINK_SIZE + 1 + (if need_map != FALSE { 32 } else { 0 }) + op_info.length;
-
-            if lengthptr != ptr::null_mut() {
-                if required_len > (*lengthptr - previous_length) {
-                    *lengthptr = previous_length + required_len;
-                }
-
-                /* As for the XCLASS branch above, we do have to write out a
-                dummy OP_ECLASS. */
-                *lengthptr -= 1 + LINK_SIZE + 1;
-                *code = OP_ECLASS;
-                code = code.add(1);
-                put(code, 0, (1 + LINK_SIZE + 1) as i32);
-                code = code.add(LINK_SIZE);
-                *code = 0;
-                code = code.add(1);
-            } else {
-                if need_map != FALSE {
-                    let map_start: *mut PCRE2_UCHAR = previous.add(1 + LINK_SIZE + 1);
-                    *previous.add(1 + LINK_SIZE) |= ECL_MAP as u8;
-                    ptr::copy(
-                        map_start,
-                        map_start.add(32),
-                        cu2bytes(code.offset_from(map_start) as usize),
-                    );
-                    ptr::copy_nonoverlapping(op_info.bits.classbits.as_ptr(), map_start, 32);
-                    code = code.add(32);
-                }
-                put(previous, 1, code.offset_from(previous) as i32);
-            }
-        }
-
-        *pcode = code;
-        TRUE
-    }
-}
-
-/// Exported as `_pcre2_compile_class_nested_8`.
+/// `PRIV(compile_class_nested)`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _pcre2_compile_class_nested_8(
     options: u32,
@@ -2686,8 +2309,199 @@ pub unsafe extern "C" fn _pcre2_compile_class_nested_8(
     lengthptr: *mut PCRE2_SIZE,
 ) -> BOOL {
     unsafe {
-        compile_class_nested(options, xoptions, pptr, pcode, errorcodeptr, cb, lengthptr)
+        let mut context: eclass_context = eclass_context {
+            options,
+            xoptions,
+            errorcodeptr,
+            cb,
+            needs_bitmap: FALSE,
+        };
+        let mut op_info: eclass_op_info = core::mem::zeroed();
+        let previous_length: PCRE2_SIZE = if !lengthptr.is_null() { *lengthptr } else { 0 };
+        let mut code: *mut PCRE2_UCHAR = *pcode;
+        let previous: *mut PCRE2_UCHAR;
+        let mut allbitsone: BOOL = TRUE;
+
+        previous = code;
+        *code = OP_ECLASS as u8;
+        code = code.add(1);
+        code = code.add(LINK_SIZE_U);
+        *code = 0; // Flags, currently zero.
+        code = code.add(1);
+        if compile_eclass_nested(&mut context, FALSE, pptr, &mut code, &mut op_info, lengthptr)
+            == FALSE
+        {
+            return FALSE;
+        }
+
+        if !lengthptr.is_null() {
+            *lengthptr += code.offset_from(previous) as usize;
+            code = previous;
+        }
+
+        // Do some useful counting of what's in the bitmap.
+        for i in 0..8usize {
+            if op_info.bits.classwords[i] != 0xffffffff {
+                allbitsone = FALSE;
+                break;
+            }
+        }
+
+        // After constant-folding, it may turn out to be a simple class.
+        if op_info.op_single_type != 0 {
+            // Rewind back over the OP_ECLASS.
+            code = previous;
+
+            if op_info.op_single_type as i64 == ECL_ANY && allbitsone != FALSE {
+                // Special-cased encoding of OP_ALLANY.
+                if !lengthptr.is_null() {
+                    *lengthptr -= 1;
+                }
+                *code = OP_ALLANY as u8;
+                code = code.add(1);
+            } else if op_info.op_single_type as i64 == ECL_ANY
+                || op_info.op_single_type as i64 == ECL_NONE
+            {
+                let required_len: PCRE2_SIZE = 1 + (32 / core::mem::size_of::<PCRE2_UCHAR>());
+
+                if !lengthptr.is_null() {
+                    if required_len > (*lengthptr - previous_length) {
+                        *lengthptr = previous_length + required_len;
+                    }
+                }
+
+                if !lengthptr.is_null() {
+                    *lengthptr -= required_len;
+                }
+                *code = if op_info.op_single_type as i64 == ECL_ANY {
+                    OP_NCLASS as u8
+                } else {
+                    OP_CLASS as u8
+                };
+                code = code.add(1);
+                core::ptr::copy_nonoverlapping(
+                    op_info.bits.classbits.as_ptr(),
+                    code,
+                    32,
+                );
+                code = code.add(32 / core::mem::size_of::<PCRE2_UCHAR>());
+            } else {
+                // ECL_XCLASS: put the bitmap back into the OP_XCLASS.
+                let need_map: BOOL = context.needs_bitmap;
+                let required_len: PCRE2_SIZE;
+
+                // PCRE2_ASSERT(op_info.op_single_type == ECL_XCLASS);
+                required_len = op_info.length
+                    + if need_map != FALSE {
+                        32 / core::mem::size_of::<PCRE2_UCHAR>()
+                    } else {
+                        0
+                    };
+
+                if !lengthptr.is_null() {
+                    if required_len > (*lengthptr - previous_length) {
+                        *lengthptr = previous_length + required_len;
+                    }
+
+                    *lengthptr -= 1 + LINK_SIZE_U + 1;
+                    *code = OP_XCLASS as u8;
+                    code = code.add(1);
+                    PUT(code, 0, (1 + LINK_SIZE_U + 1) as i32);
+                    code = code.add(LINK_SIZE_U);
+                    *code = 0;
+                    code = code.add(1);
+                } else {
+                    let rest: *mut PCRE2_UCHAR;
+                    let rest_len: PCRE2_SIZE;
+                    let flags: PCRE2_UCHAR;
+
+                    // 1 unit: OP_XCLASS | LINK_SIZE units | 1 unit: flags | rest
+                    rest = op_info.code_start.add(1 + LINK_SIZE_U + 1);
+                    rest_len = op_info.code_start.add(op_info.length).offset_from(rest) as usize;
+
+                    // First read any data we use.
+                    flags = *op_info.code_start.add(1 + LINK_SIZE_U);
+                    // PCRE2_ASSERT((flags & XCL_MAP) == 0);
+
+                    // Do the memmove before any writes.
+                    core::ptr::copy(
+                        rest,
+                        code.add(
+                            1 + LINK_SIZE_U
+                                + 1
+                                + if need_map != FALSE {
+                                    32 / core::mem::size_of::<PCRE2_UCHAR>()
+                                } else {
+                                    0
+                                },
+                        ),
+                        CU2BYTES(rest_len),
+                    );
+
+                    // Finally write the header data.
+                    *code = OP_XCLASS as u8;
+                    code = code.add(1);
+                    PUT(code, 0, required_len as i32);
+                    code = code.add(LINK_SIZE_U);
+                    *code = flags | if need_map != FALSE { XCL_MAP as u8 } else { 0 };
+                    code = code.add(1);
+                    if need_map != FALSE {
+                        core::ptr::copy_nonoverlapping(
+                            op_info.bits.classbits.as_ptr(),
+                            code,
+                            32,
+                        );
+                        code = code.add(32 / core::mem::size_of::<PCRE2_UCHAR>());
+                    }
+                    code = code.add(rest_len);
+                }
+            }
+        } else {
+            // Keep the OP_ECLASS; insert the bitmap if we have one.
+            let need_map: BOOL = context.needs_bitmap;
+            let required_len: PCRE2_SIZE = 1
+                + LINK_SIZE_U
+                + 1
+                + if need_map != FALSE {
+                    32 / core::mem::size_of::<PCRE2_UCHAR>()
+                } else {
+                    0
+                }
+                + op_info.length;
+
+            if !lengthptr.is_null() {
+                if required_len > (*lengthptr - previous_length) {
+                    *lengthptr = previous_length + required_len;
+                }
+
+                *lengthptr -= 1 + LINK_SIZE_U + 1;
+                *code = OP_ECLASS as u8;
+                code = code.add(1);
+                PUT(code, 0, (1 + LINK_SIZE_U + 1) as i32);
+                code = code.add(LINK_SIZE_U);
+                *code = 0;
+                code = code.add(1);
+            } else {
+                if need_map != FALSE {
+                    let map_start: *mut PCRE2_UCHAR = previous.add(1 + LINK_SIZE_U + 1);
+                    *previous.add(1 + LINK_SIZE_U) |= ECL_MAP as u8;
+                    core::ptr::copy(
+                        map_start,
+                        map_start.add(32 / core::mem::size_of::<PCRE2_UCHAR>()),
+                        CU2BYTES(code.offset_from(map_start) as usize),
+                    );
+                    core::ptr::copy_nonoverlapping(
+                        op_info.bits.classbits.as_ptr(),
+                        map_start,
+                        32,
+                    );
+                    code = code.add(32 / core::mem::size_of::<PCRE2_UCHAR>());
+                }
+                PUT(previous, 1, code.offset_from(previous) as i32);
+            }
+        }
+
+        *pcode = code;
+        TRUE
     }
 }
-
-/* End of pcre2_compile_class.c */

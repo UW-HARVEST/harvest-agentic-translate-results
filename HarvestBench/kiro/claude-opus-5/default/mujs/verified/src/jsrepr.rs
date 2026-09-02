@@ -1,13 +1,21 @@
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
-use crate::common::*;
+//! Translation of src/jsrepr.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
+
+use crate::jsi::*;
+
 use crate::jsarray::js_getlength;
 use crate::jsintern::{js_putc, js_puts};
-use crate::jsrun::*;
 use crate::jsvalue::jsV_numbertostring;
-use crate::types::*;
-use crate::utf::{jsU_chartorune, Rune};
-use std::ffi::{c_char, c_int, c_void};
-use std::ptr;
+use crate::jsrun::{
+    js_copy, js_free, js_getproperty, js_gettop, js_hasindex, js_hasproperty, js_isboolean,
+    js_isnull, js_isnumber, js_isobject, js_isstring, js_isundefined, js_nextiterator, js_pop,
+    js_pushiterator, js_pushstring, js_replace, js_throw, js_toboolean, js_tonumber, js_toobject,
+    js_tostring,
+};
+use crate::utf::jsU_chartorune;
 
 unsafe fn reprnum(J: *mut js_State, sb: *mut *mut js_Buffer, n: f64) {
     unsafe {
@@ -15,50 +23,54 @@ unsafe fn reprnum(J: *mut js_State, sb: *mut *mut js_Buffer, n: f64) {
         if n == 0.0 && signbit(n) {
             js_puts(J, sb, c"-0".as_ptr());
         } else {
-            js_puts(J, sb, jsV_numbertostring(J, buf.as_mut_ptr(), n));
+            js_puts(J, sb, jsV_numbertostring(J, (&raw mut buf) as *mut c_char, n));
         }
     }
 }
 
-unsafe fn reprstr(J: *mut js_State, sb: *mut *mut js_Buffer, s: *const c_char) {
+unsafe fn reprstr(J: *mut js_State, sb: *mut *mut js_Buffer, mut s: *const c_char) {
     unsafe {
         static HEX: &[u8; 17] = b"0123456789ABCDEF\0";
         let mut i: c_int;
         let mut n: c_int;
         let mut c: Rune = 0;
-        let mut s = s;
         js_putc(J, sb, '"' as c_int);
         while *s != 0 {
-            n = jsU_chartorune(&mut c, s);
-            match c {
-                x if x == '"' as Rune => js_puts(J, sb, c"\\\"".as_ptr()),
-                x if x == '\\' as Rune => js_puts(J, sb, c"\\\\".as_ptr()),
-                0x08 => js_puts(J, sb, c"\\b".as_ptr()),
-                0x0c => js_puts(J, sb, c"\\f".as_ptr()),
-                0x0a => js_puts(J, sb, c"\\n".as_ptr()),
-                0x0d => js_puts(J, sb, c"\\r".as_ptr()),
-                0x09 => js_puts(J, sb, c"\\t".as_ptr()),
-                _ => {
-                    if c < ' ' as Rune {
-                        js_putc(J, sb, '\\' as c_int);
-                        js_putc(J, sb, 'x' as c_int);
-                        js_putc(J, sb, HEX[((c >> 4) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[(c & 15) as usize] as c_int);
-                    } else if c < 128 {
-                        js_putc(J, sb, c as c_int);
-                    } else if c < 0x10000 {
-                        js_putc(J, sb, '\\' as c_int);
-                        js_putc(J, sb, 'u' as c_int);
-                        js_putc(J, sb, HEX[((c >> 12) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[((c >> 8) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[((c >> 4) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[(c & 15) as usize] as c_int);
-                    } else {
-                        i = 0;
-                        while i < n {
-                            js_putc(J, sb, *s.offset(i as isize) as c_int);
-                            i += 1;
-                        }
+            n = jsU_chartorune(&raw mut c, s);
+            if c == '"' as c_int {
+                js_puts(J, sb, c"\\\"".as_ptr());
+            } else if c == '\\' as c_int {
+                js_puts(J, sb, c"\\\\".as_ptr());
+            } else if c == '\u{8}' as c_int {
+                js_puts(J, sb, c"\\b".as_ptr());
+            } else if c == '\u{c}' as c_int {
+                js_puts(J, sb, c"\\f".as_ptr());
+            } else if c == '\n' as c_int {
+                js_puts(J, sb, c"\\n".as_ptr());
+            } else if c == '\r' as c_int {
+                js_puts(J, sb, c"\\r".as_ptr());
+            } else if c == '\t' as c_int {
+                js_puts(J, sb, c"\\t".as_ptr());
+            } else {
+                if c < ' ' as c_int {
+                    js_putc(J, sb, '\\' as c_int);
+                    js_putc(J, sb, 'x' as c_int);
+                    js_putc(J, sb, HEX[((c >> 4) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[(c & 15) as usize] as c_int);
+                } else if c < 128 {
+                    js_putc(J, sb, c);
+                } else if c < 0x10000 {
+                    js_putc(J, sb, '\\' as c_int);
+                    js_putc(J, sb, 'u' as c_int);
+                    js_putc(J, sb, HEX[((c >> 12) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[((c >> 8) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[((c >> 4) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[(c & 15) as usize] as c_int);
+                } else {
+                    i = 0;
+                    while i < n {
+                        js_putc(J, sb, *s.offset(i as isize) as c_int);
+                        i += 1;
                     }
                 }
             }
@@ -69,28 +81,27 @@ unsafe fn reprstr(J: *mut js_State, sb: *mut *mut js_Buffer, s: *const c_char) {
 }
 
 #[inline]
-fn isalpha_c(c: c_char) -> bool {
-    (c >= 'a' as c_char && c <= 'z' as c_char) || (c >= 'A' as c_char && c <= 'Z' as c_char)
+fn isalpha_c(c: c_int) -> bool {
+    (c >= 'a' as c_int && c <= 'z' as c_int) || (c >= 'A' as c_int && c <= 'Z' as c_int)
 }
-
 #[inline]
-fn isdigit_c(c: c_char) -> bool {
-    c >= '0' as c_char && c <= '9' as c_char
+fn isdigit_c(c: c_int) -> bool {
+    c >= '0' as c_int && c <= '9' as c_int
 }
 
 unsafe fn reprident(J: *mut js_State, sb: *mut *mut js_Buffer, name: *const c_char) {
     unsafe {
-        let mut p = name;
-        if isdigit_c(*p) {
-            while isdigit_c(*p) {
+        let mut p: *const c_char = name;
+        if isdigit_c(*p as c_int) {
+            while isdigit_c(*p as c_int) {
                 p = p.offset(1);
             }
-        } else if isalpha_c(*p) || *p == '_' as c_char {
-            while isdigit_c(*p) || isalpha_c(*p) || *p == '_' as c_char {
+        } else if isalpha_c(*p as c_int) || *p as c_int == '_' as c_int {
+            while isdigit_c(*p as c_int) || isalpha_c(*p as c_int) || *p as c_int == '_' as c_int {
                 p = p.offset(1);
             }
         }
-        if p > name && *p == 0 {
+        if p > name && *p as c_int == 0 {
             js_puts(J, sb, name);
         } else {
             reprstr(J, sb, name);
@@ -214,90 +225,82 @@ unsafe fn reprvalue(J: *mut js_State, sb: *mut *mut js_Buffer) {
             reprstr(J, sb, js_tostring(J, -1));
         } else if js_isobject(J, -1) != 0 {
             let obj = js_toobject(J, -1);
-            match (*obj).type_ {
-                JS_CARRAY => {
-                    reprarray(J, sb);
+            let ot = (*obj).ty;
+            if ot == JS_CARRAY {
+                reprarray(J, sb);
+            } else if ot == JS_CFUNCTION || ot == JS_CSCRIPT {
+                reprfun(J, sb, (*obj).u.f.function);
+            } else if ot == JS_CCFUNCTION {
+                js_puts(J, sb, c"function ".as_ptr());
+                js_puts(J, sb, (*obj).u.c.name);
+                js_puts(J, sb, c"() { [native code] }".as_ptr());
+            } else if ot == JS_CBOOLEAN {
+                js_puts(J, sb, c"(new Boolean(".as_ptr());
+                js_puts(
+                    J,
+                    sb,
+                    if (*obj).u.boolean != 0 {
+                        c"true".as_ptr()
+                    } else {
+                        c"false".as_ptr()
+                    },
+                );
+                js_puts(J, sb, c"))".as_ptr());
+            } else if ot == JS_CNUMBER {
+                js_puts(J, sb, c"(new Number(".as_ptr());
+                reprnum(J, sb, (*obj).u.number);
+                js_puts(J, sb, c"))".as_ptr());
+            } else if ot == JS_CSTRING {
+                js_puts(J, sb, c"(new String(".as_ptr());
+                reprstr(J, sb, (*obj).u.s.string);
+                js_puts(J, sb, c"))".as_ptr());
+            } else if ot == JS_CREGEXP {
+                js_putc(J, sb, '/' as c_int);
+                js_puts(J, sb, (*obj).u.r.source);
+                js_putc(J, sb, '/' as c_int);
+                if (*obj).u.r.flags as c_int & JS_REGEXP_G != 0 {
+                    js_putc(J, sb, 'g' as c_int);
                 }
-                JS_CFUNCTION | JS_CSCRIPT => {
-                    reprfun(J, sb, (*obj).u.f.function);
+                if (*obj).u.r.flags as c_int & JS_REGEXP_I != 0 {
+                    js_putc(J, sb, 'i' as c_int);
                 }
-                JS_CCFUNCTION => {
-                    js_puts(J, sb, c"function ".as_ptr());
-                    js_puts(J, sb, (*obj).u.c.name);
-                    js_puts(J, sb, c"() { [native code] }".as_ptr());
+                if (*obj).u.r.flags as c_int & JS_REGEXP_M != 0 {
+                    js_putc(J, sb, 'm' as c_int);
                 }
-                JS_CBOOLEAN => {
-                    js_puts(J, sb, c"(new Boolean(".as_ptr());
+            } else if ot == JS_CDATE {
+                {
+                    let mut buf: [c_char; 40] = [0; 40];
+                    js_puts(J, sb, c"(new Date(".as_ptr());
                     js_puts(
                         J,
                         sb,
-                        if (*obj).u.boolean != 0 {
-                            c"true".as_ptr()
-                        } else {
-                            c"false".as_ptr()
-                        },
+                        jsV_numbertostring(J, (&raw mut buf) as *mut c_char, (*obj).u.number),
                     );
                     js_puts(J, sb, c"))".as_ptr());
                 }
-                JS_CNUMBER => {
-                    js_puts(J, sb, c"(new Number(".as_ptr());
-                    reprnum(J, sb, (*obj).u.number);
-                    js_puts(J, sb, c"))".as_ptr());
-                }
-                JS_CSTRING => {
-                    js_puts(J, sb, c"(new String(".as_ptr());
-                    reprstr(J, sb, (*obj).u.s.string);
-                    js_puts(J, sb, c"))".as_ptr());
-                }
-                JS_CREGEXP => {
-                    js_putc(J, sb, '/' as c_int);
-                    js_puts(J, sb, (*obj).u.r.source);
-                    js_putc(J, sb, '/' as c_int);
-                    if (*obj).u.r.flags as c_int & JS_REGEXP_G != 0 {
-                        js_putc(J, sb, 'g' as c_int);
-                    }
-                    if (*obj).u.r.flags as c_int & JS_REGEXP_I != 0 {
-                        js_putc(J, sb, 'i' as c_int);
-                    }
-                    if (*obj).u.r.flags as c_int & JS_REGEXP_M != 0 {
-                        js_putc(J, sb, 'm' as c_int);
-                    }
-                }
-                JS_CDATE => {
-                    let mut buf: [c_char; 40] = [0; 40];
-                    js_puts(J, sb, c"(new Date(".as_ptr());
-                    js_puts(J, sb, jsV_numbertostring(J, buf.as_mut_ptr(), (*obj).u.number));
-                    js_puts(J, sb, c"))".as_ptr());
-                }
-                JS_CERROR => {
-                    js_puts(J, sb, c"(new ".as_ptr());
-                    js_getproperty(J, -1, c"name".as_ptr());
-                    js_puts(J, sb, js_tostring(J, -1));
+            } else if ot == JS_CERROR {
+                js_puts(J, sb, c"(new ".as_ptr());
+                js_getproperty(J, -1, c"name".as_ptr());
+                js_puts(J, sb, js_tostring(J, -1));
+                js_pop(J, 1);
+                js_putc(J, sb, '(' as c_int);
+                if js_hasproperty(J, -1, c"message".as_ptr()) != 0 {
+                    reprvalue(J, sb);
                     js_pop(J, 1);
-                    js_putc(J, sb, '(' as c_int);
-                    if js_hasproperty(J, -1, c"message".as_ptr()) != 0 {
-                        reprvalue(J, sb);
-                        js_pop(J, 1);
-                    }
-                    js_puts(J, sb, c"))".as_ptr());
                 }
-                JS_CMATH => {
-                    js_puts(J, sb, c"Math".as_ptr());
-                }
-                JS_CJSON => {
-                    js_puts(J, sb, c"JSON".as_ptr());
-                }
-                JS_CITERATOR => {
-                    js_puts(J, sb, c"[iterator ".as_ptr());
-                }
-                JS_CUSERDATA => {
-                    js_puts(J, sb, c"[userdata ".as_ptr());
-                    js_puts(J, sb, (*obj).u.user.tag);
-                    js_putc(J, sb, ']' as c_int);
-                }
-                _ => {
-                    reprobject(J, sb);
-                }
+                js_puts(J, sb, c"))".as_ptr());
+            } else if ot == JS_CMATH {
+                js_puts(J, sb, c"Math".as_ptr());
+            } else if ot == JS_CJSON {
+                js_puts(J, sb, c"JSON".as_ptr());
+            } else if ot == JS_CITERATOR {
+                js_puts(J, sb, c"[iterator ".as_ptr());
+            } else if ot == JS_CUSERDATA {
+                js_puts(J, sb, c"[userdata ".as_ptr());
+                js_puts(J, sb, (*obj).u.user.tag);
+                js_putc(J, sb, ']' as c_int);
+            } else {
+                reprobject(J, sb);
             }
         }
     }
@@ -306,38 +309,29 @@ unsafe fn reprvalue(J: *mut js_State, sb: *mut *mut js_Buffer) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_repr(J: *mut js_State, idx: c_int) {
     unsafe {
-        let mut sb: *mut js_Buffer = ptr::null_mut();
-        let sbp: *mut *mut js_Buffer = &raw mut sb;
+        let mut sb: *mut js_Buffer = core::ptr::null_mut();
+        let mut savebot: c_int = 0;
 
-        if js_try(J, || {
+        if crate::except::js_try_run(J, || {
             js_copy(J, idx);
 
-            let savebot = (*J).bot;
+            savebot = (*J).bot;
             (*J).bot = (*J).top - 1;
-            reprvalue(J, sbp);
+            reprvalue(J, &raw mut sb);
             (*J).bot = savebot;
 
             js_pop(J, 1);
 
-            js_putc(J, sbp, 0);
-            let cur = *sbp;
-            js_pushstring(
-                J,
-                if !cur.is_null() {
-                    (&raw const (*cur).s) as *const c_char
-                } else {
-                    c"undefined".as_ptr()
-                },
-            );
+            js_putc(J, &raw mut sb, 0);
+            js_pushstring(J, if !sb.is_null() { sbs(sb) } else { c"undefined".as_ptr() });
 
-            js_endtry(J);
-        })
-        .is_err()
-        {
-            js_free(J, ptr::read_volatile(sbp) as *mut c_void);
+            crate::jsrun::js_endtry(J);
+        }) {
+            js_free(J, sb as *mut c_void);
             js_throw(J);
         }
-        js_free(J, ptr::read_volatile(sbp) as *mut c_void);
+
+        js_free(J, sb as *mut c_void);
     }
 }
 
@@ -357,19 +351,13 @@ pub unsafe extern "C-unwind" fn js_tryrepr(
     error: *const c_char,
 ) -> *const c_char {
     unsafe {
-        let s: *const c_char;
-        match js_try(J, || {
-            let r = js_torepr(J, idx);
-            js_endtry(J);
-            r
+        let mut s: *const c_char = core::ptr::null();
+        if crate::except::js_try_run(J, || {
+            s = js_torepr(J, idx);
+            crate::jsrun::js_endtry(J);
         }) {
-            Ok(r) => {
-                s = r;
-            }
-            Err(_) => {
-                js_pop(J, 1);
-                return error;
-            }
+            js_pop(J, 1);
+            return error;
         }
         s
     }

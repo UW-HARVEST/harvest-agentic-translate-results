@@ -1,22 +1,49 @@
-// Rust translation of c_src/src/driver.c
+// Rust translation of c_src/src/driver.c (+ c_src/include/driver.h).
 //
-// The C library exposes a single function, `driver`, which fills in a
-// `house_t` struct and then dumps the struct's raw bytes as lowercase hex.
-// Output must be byte-identical, so the struct layout (`#[repr(C)]`) and the
-// use of C `stdio` (for identical buffering behaviour) are both preserved.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use std::ffi::{c_char, c_double, c_int, c_uchar};
 
-unsafe extern "C" {
-    // Variadic C `printf` from libc; used instead of Rust's `print!` so that
-    // stream buffering and flushing behave exactly as in the original.
+// `#include <stdio.h>`
+//
+// Output is emitted through the C library's `printf`/`putchar` so that it lands
+// in the exact same `stdout` stream (and buffering discipline) as the original C
+// implementation. Using Rust's `println!` would write through a separate,
+// independently buffered handle and could reorder output relative to any C code
+// sharing the process.
+extern "C" {
     fn printf(fmt: *const c_char, ...) -> c_int;
+    fn putchar(c: c_int) -> c_int;
 }
 
-/// Mirrors the anonymous struct typedef'd as `house_t` in driver.c.
-///
-/// On the target ABI this is 16 bytes: `floors` at offset 0, `bedrooms` at
-/// offset 4, and `bathrooms` (8-byte aligned) at offset 8.
+/// ```c
+/// typedef struct {
+///     int floors;
+///     int bedrooms;
+///     double bathrooms;
+/// } house_t;
+/// ```
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct HouseT {
@@ -25,37 +52,67 @@ struct HouseT {
     bathrooms: c_double,
 }
 
-/// `static void print_hex(unsigned char *p, int len)`
+/// ```c
+/// static void print_hex(unsigned char *p, int len) {
+///     for (int i = 0; i < len; i++) {
+///         printf("%02x", p[i]);
+///     }
+///     printf("\n");
+/// }
+/// ```
 ///
-/// Kept as a private helper (it has internal linkage in C, so it is not part
-/// of the exported ABI).
-fn print_hex(p: *const c_uchar, len: c_int) {
+/// `static` in C, so it is not part of the exported ABI; kept private here.
+fn print_hex(p: &[c_uchar], len: c_int) {
     let mut i: c_int = 0;
     while i < len {
-        // "%02x" promotes the unsigned char argument to int.
-        let byte = unsafe { *p.offset(i as isize) };
+        // `p[i]` is an `unsigned char`, promoted to `int` by the default
+        // argument promotions before being consumed by `%02x`.
         unsafe {
-            printf(c"%02x".as_ptr(), byte as c_int);
+            printf(c"%02x".as_ptr(), c_int::from(p[i as usize]));
         }
         i += 1;
     }
+    // gcc lowers `printf("\n")` to `putchar('\n')`; byte-identical either way.
     unsafe {
-        printf(c"\n".as_ptr());
+        putchar(c_int::from(b'\n'));
     }
 }
 
-/// `void driver(int floors)`
+/// ```c
+/// void driver(int floors) {
+///     house_t house = {0};
+///     house.floors = floors;
+///     house.bedrooms = 3;
+///     house.bathrooms = 2.;
+///     print_hex((unsigned char *)&house, sizeof(house));
+/// }
+/// ```
+///
+/// Declared in `include/driver.h` as `void driver(int x);` with no namespace
+/// macro, so the linker symbol is plain `driver`.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(floors: c_int) {
-    // `house_t house = {0};` zero-initialises every byte, including any
-    // padding, before the individual fields are assigned.
-    let mut house: HouseT = unsafe { std::mem::zeroed() };
-    house.floors = floors;
-    house.bedrooms = 3;
-    house.bathrooms = 2.;
+    // `house_t house = {0};` — every byte of the object, including any padding,
+    // starts out zeroed.
+    let mut house_bytes = [0u8; core::mem::size_of::<HouseT>()];
 
-    print_hex(
-        (&raw const house) as *const HouseT as *const c_uchar,
-        std::mem::size_of::<HouseT>() as c_int,
-    );
+    // Reproduce the field stores through the `#[repr(C)]` struct so the exact
+    // C layout (offsets and padding) is preserved on every target.
+    //
+    // SAFETY: `house_bytes` is `size_of::<HouseT>()` bytes of zeroed storage.
+    // `HouseT` is a `#[repr(C)]` plain-old-data aggregate with no invalid bit
+    // patterns, so an all-zero image is a valid value. The array is declared
+    // `align(8)`-compatible by going through `write_unaligned`/`read_unaligned`,
+    // so no alignment assumption is made about the byte buffer.
+    unsafe {
+        let p = house_bytes.as_mut_ptr().cast::<HouseT>();
+        let mut house: HouseT = p.read_unaligned();
+        house.floors = floors;
+        house.bedrooms = 3;
+        house.bathrooms = 2.;
+        p.write_unaligned(house);
+    }
+
+    // `sizeof(house)` is a `size_t`, narrowed to the `int len` parameter.
+    print_hex(&house_bytes, core::mem::size_of::<HouseT>() as c_int);
 }

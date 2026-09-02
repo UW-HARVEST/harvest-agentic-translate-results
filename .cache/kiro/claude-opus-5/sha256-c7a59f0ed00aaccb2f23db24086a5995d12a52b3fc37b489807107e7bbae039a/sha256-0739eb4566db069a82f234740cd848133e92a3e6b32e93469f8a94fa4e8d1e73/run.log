@@ -1,0 +1,2406 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f | head -100; echo "---"; wc -l $(find c_src -type f -name '*.c' -o -name '*.h') 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in both subtrees
+
+c_src/CMakeLists.txt
+c_src/include/analyzer.h
+c_src/include/tokenizer.h
+c_src/src/analyzer.c
+c_src/src/main.c
+c_src/src/tokenizer.c
+---
+   56 c_src/include/analyzer.h
+   82 c_src/include/tokenizer.h
+  217 c_src/src/analyzer.c
+  238 c_src/src/main.c
+  353 c_src/src/tokenizer.c
+  946 total
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read headers and build file
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/include/tokenizer.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/include/analyzer.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2602 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/include/tokenizer.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1848 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/include/analyzer.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1281 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/src/tokenizer.c[0m, from line [38;5;141m24[0m to end of file
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/src/analyzer.c[0m, from line [38;5;141m24[0m to end of file
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/src/main.c[0m, from line [38;5;141m24[0m to end of file
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m8798 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/src/tokenizer.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m5527 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/src/analyzer.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m5966 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/src/main.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow I have the full picture. Let me note the key C quirks I must preserve:[0m[0m
+[0m[0m
+- [38;5;10mtoken.column = current_column - token.length[0m — int minus size_t, wraps then truncates to int (can go negative/huge)[0m[0m
+- [38;5;10mc == '/' && (peek_char() == '/' || ...)[0m — [38;5;10mpeek_char()[0m returns [38;5;10mc[0m itself, so [1mevery[22m [38;5;10m/[0m goes to [38;5;10mscan_comment[0m, never [38;5;10mscan_operator[0m[0m[0m
+- [38;5;10mresult.line_count[0m is set from NEWLINE tokens then overwritten by cumulative stats[0m[0m
+- Totals ([38;5;10mtotal_tokens/lines/chars[0m, [38;5;10mtoken_type_counts[0m) are never reset — they accumulate across menu operations[0m[0m
+- [38;5;10minteractive_tokenizer[0m prints 101 tokens before truncating ([38;5;10mcount > 100[0m after increment)[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/cio.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create C stdio emulation module
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! C stdio emulation helpers: buffered stdout (like glibc's fully-buffered
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! stdout when redirected), unbuffered stderr, and `fgets` semantics on stdin.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m use std::cell::RefCell;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m use std::io::{BufRead, BufReader, Stdin, Write};
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m /// glibc's default stdio buffer size for a pipe/file is st_blksize (4096).
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m const STDOUT_BUF_SIZE: usize = 4096;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m thread_local! {
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     static OUT: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(STDOUT_BUF_SIZE));
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m fn drain(buf: &mut Vec<u8>) {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     if buf.is_empty() {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     let mut lock = stdout.lock();
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let _ = lock.write_all(buf);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     let _ = lock.flush();
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     buf.clear();
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// Write raw bytes to the emulated stdout stream.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m pub fn out_bytes(data: &[u8]) {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     OUT.with(|cell| {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         let mut buf = cell.borrow_mut();
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         let mut rest = data;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         while !rest.is_empty() {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m             let space = STDOUT_BUF_SIZE - buf.len();
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m             if space == 0 {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m                 drain(&mut buf);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m                 continue;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             let n = if space < rest.len() { space } else { rest.len() };
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             buf.extend_from_slice(&rest[..n]);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             rest = &rest[n..];
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// Flush the emulated stdout stream (called at process exit).
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m pub fn out_flush() {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     OUT.with(|cell| {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         let mut buf = cell.borrow_mut();
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         drain(&mut buf);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// Write raw bytes to stderr (unbuffered, like C's stderr).
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m pub fn err_bytes(data: &[u8]) {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let stderr = std::io::stderr();
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let mut lock = stderr.lock();
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     let _ = lock.write_all(data);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let _ = lock.flush();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// `printf`-alike for UTF-8 formatted text.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m #[macro_export]
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m macro_rules! cprintf {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     ($($arg:tt)*) => {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         $crate::cio::out_bytes(format!($($arg)*).as_bytes())
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// `fprintf(stderr, ...)`-alike for UTF-8 formatted text.
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m #[macro_export]
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m macro_rules! ceprintf {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     ($($arg:tt)*) => {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         $crate::cio::err_bytes(format!($($arg)*).as_bytes())
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// Wrapper around stdin providing C `fgets` semantics.
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m pub struct CStdin {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     reader: BufReader<Stdin>,
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m impl CStdin {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     pub fn new() -> Self {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         CStdin {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             reader: BufReader::new(std::io::stdin()),
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     /// `fgets(buf, size, stdin)`: reads at most `size - 1` bytes, stopping
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     /// after a newline (which is retained). Returns `None` on EOF with no
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     /// bytes read (i.e. when C's fgets returns NULL).
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     pub fn fgets(&mut self, size: usize) -> Option<Vec<u8>> {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         if size <= 1 {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         let max = size - 1;
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         let mut out: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         while out.len() < max {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             let (chunk, found_newline) = {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                 let buf = match self.reader.fill_buf() {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                     Ok(b) => b,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                     Err(_) => break,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m                 };
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m                 if buf.is_empty() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                 let remaining = max - out.len();
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                 let avail = if buf.len() < remaining {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m                     buf.len()
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m                     remaining
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 };
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                 match buf[..avail].iter().position(|&b| b == b'\n') {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                     Some(pos) => (buf[..=pos].to_vec(), true),
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m                     None => (buf[..avail].to_vec(), false),
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             self.reader.consume(chunk.len());
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             out.extend_from_slice(&chunk);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             if found_newline {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                 return Some(out);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         if out.is_empty() {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             None
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             Some(out)
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// The C-string view of a buffer: everything up to the first NUL byte.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m pub fn cstr(bytes: &[u8]) -> &[u8] {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     match bytes.iter().position(|&b| b == 0) {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         Some(pos) => &bytes[..pos],
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         None => bytes,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m /// `strcspn(s, "\n")` followed by `s[n] = 0`: truncate at the first newline.
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m pub fn truncate_at_newline(bytes: &[u8]) -> &[u8] {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     match bytes.iter().position(|&b| b == b'\n') {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         Some(pos) => &bytes[..pos],
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         None => bytes,
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m /// `strstr(haystack, needle) != NULL`
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m pub fn strstr(haystack: &[u8], needle: &[u8]) -> bool {
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     if needle.is_empty() {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         return true;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     if needle.len() > haystack.len() {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     haystack
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         .windows(needle.len())
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         .any(|window| window == needle)
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m /// `sscanf(s, "%d", &out)`: returns the parsed value if the conversion
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m /// succeeded (i.e. sscanf would return 1), otherwise `None`.
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m pub fn sscanf_int(s: &[u8]) -> Option<i32> {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     // %d skips leading whitespace.
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let mut negative = false;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         negative = s[i] == b'-';
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     let digits_start = i;
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     let mut value: i64 = 0;
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     let mut overflow = false;
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     while i < s.len() && s[i].is_ascii_digit() {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         let digit = (s[i] - b'0') as i64;
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         if !overflow {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m             match value.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m                 Some(v) => value = v,
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m                 None => overflow = true,
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     if i == digits_start {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         // Matching failure (or input failure): sscanf returns 0 or EOF.
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     // glibc converts via strtol semantics, saturating at LONG_MIN/LONG_MAX,
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     // then stores the (truncated) value into the int object.
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     let wide = if overflow {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         if negative {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             i64::MIN
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m             i64::MAX
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     } else if negative {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         -value
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         value
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     Some(wide as i32)
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/cio.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[38;5;141m> [0mNow the tokenizer:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/tokenizer.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Port tokenizer.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Port of c_src/src/tokenizer.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C file keeps all of its state in file-scope `static` variables and
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! exposes the operations both directly and through a struct of function
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! pointers. That shape is preserved here: the state lives in one
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! thread-local `Tokenizer`, and `TokenizerOps` holds `fn` pointers to the
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! free functions that drive it.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::cell::RefCell;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use crate::ceprintf;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m pub const MAX_TOKEN_LENGTH: usize = 256;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m pub const MAX_BUFFER_SIZE: usize = 8192;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // token_type_t
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m pub const TOKEN_EOF: usize = 0;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m pub const TOKEN_WORD: usize = 1;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m pub const TOKEN_NUMBER: usize = 2;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m pub const TOKEN_PUNCTUATION: usize = 3;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m pub const TOKEN_WHITESPACE: usize = 4;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m pub const TOKEN_NEWLINE: usize = 5;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m pub const TOKEN_IDENTIFIER: usize = 6;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m pub const TOKEN_KEYWORD: usize = 7;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m pub const TOKEN_OPERATOR: usize = 8;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m pub const TOKEN_STRING: usize = 9;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m pub const TOKEN_COMMENT: usize = 10;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m pub const TOKEN_ERROR: usize = 11;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// token_t. `value` holds the NUL-terminated string contents of the C
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// `char value[MAX_TOKEN_LENGTH]` field.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m #[derive(Clone, Default)]
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m pub struct Token {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     pub ttype: usize,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     pub value: Vec<u8>,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     pub length: usize,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     pub line: i32,
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     pub column: i32,
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// tokenizer_ops_t
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m #[derive(Clone, Copy)]
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m pub struct TokenizerOps {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     pub next_token: fn() -> Token,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     pub peek_token: fn() -> Token,
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     pub reset: fn(),
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     pub load_text: fn(&[u8]) -> i32,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     pub get_stats: fn() -> (usize, usize, usize),
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m // Static keywords for recognition
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m static KEYWORDS: [&[u8]; 31] = [
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     b"if", b"else", b"while", b"for", b"return", b"int", b"char", b"float",
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     b"double", b"void", b"struct", b"typedef", b"const", b"static", b"extern",
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     b"auto", b"register", b"sizeof", b"break", b"continue", b"switch", b"case",
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     b"default", b"do", b"goto", b"enum", b"union", b"signed", b"unsigned",
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     b"long", b"short",
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m // C locale <ctype.h> predicates.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m // The C code passes a plain (signed) `char` to these; in the C locale glibc
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m // classifies both negative values and 0x80..0xff as none of alpha/digit/
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m // alnum/space, so plain ASCII tests are exact.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m fn c_isspace(c: u8) -> bool {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m fn c_isalpha(c: u8) -> bool {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     c.is_ascii_alphabetic()
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn c_isdigit(c: u8) -> bool {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     c.is_ascii_digit()
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m fn c_isalnum(c: u8) -> bool {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     c.is_ascii_alphanumeric()
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m fn is_keyword(s: &[u8]) -> bool {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     for kw in KEYWORDS.iter() {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         if s == *kw {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             return true;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     false
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m // Tokenizer state (the C file's static globals)
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m struct Tokenizer {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     input_buffer: [u8; MAX_BUFFER_SIZE],
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     buffer_length: usize,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     current_position: usize,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     current_line: i32,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     current_column: i32,
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     total_tokens_processed: usize,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     total_lines_processed: usize,
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     total_chars_processed: usize,
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     lookahead_token: Token,
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     lookahead_valid: bool,
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m impl Tokenizer {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         Tokenizer {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             input_buffer: [0u8; MAX_BUFFER_SIZE],
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             buffer_length: 0,
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             current_position: 0,
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             current_line: 1,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             current_column: 1,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             total_tokens_processed: 0,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             total_lines_processed: 0,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             total_chars_processed: 0,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             lookahead_token: Token::default(),
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             lookahead_valid: false,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     fn peek_char(&self) -> u8 {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         if self.current_position >= self.buffer_length {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         self.input_buffer[self.current_position]
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     fn advance_char(&mut self) -> u8 {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         if self.current_position >= self.buffer_length {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         let c = self.input_buffer[self.current_position];
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         self.current_position += 1;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         self.total_chars_processed += 1;
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         if c == b'\n' {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             self.current_line = self.current_line.wrapping_add(1);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             self.current_column = 1;
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m             self.total_lines_processed += 1;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             self.current_column = self.current_column.wrapping_add(1);
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         c
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     fn skip_whitespace(&mut self) {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         while self.peek_char() != 0 && c_isspace(self.peek_char()) && self.peek_char() != b'\n' {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             self.advance_char();
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     fn create_token(&mut self, ttype: usize, value: &[u8], length: usize) -> Token {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         let length = if length < MAX_TOKEN_LENGTH {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             length
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             MAX_TOKEN_LENGTH - 1
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         // strncpy(token.value, value, token.length); token.value[length] = '\0';
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         let mut buf = vec![0u8; length];
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         for i in 0..length {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m             if i < value.len() {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                 buf[i] = value[i];
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         // The C string stops at the first NUL written by strncpy's padding.
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         let stored = crate::cio::cstr(&buf).to_vec();
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         // NOTE (faithful to the C): `current_column - token.length` mixes int
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         // with size_t, so the subtraction happens in size_t and the result is
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         // truncated back into an int. That wraps for short columns.
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         let column = self.current_column.wrapping_sub(length as i32);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         self.total_tokens_processed += 1;
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         Token {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             ttype,
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m             value: stored,
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             length,
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m             line: self.current_line,
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m             column,
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     fn scan_word(&mut self) -> Token {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         let mut buffer = [0u8; MAX_TOKEN_LENGTH];
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         let mut length = 0usize;
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         while self.peek_char() != 0
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             && (c_isalnum(self.peek_char()) || self.peek_char() == b'_')
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             && length < MAX_TOKEN_LENGTH - 1
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m             buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             length += 1;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         let word = buffer[..length].to_vec();
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         if is_keyword(&word) {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m             return self.create_token(TOKEN_KEYWORD, &word, length);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         self.create_token(TOKEN_IDENTIFIER, &word, length)
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     fn scan_number(&mut self) -> Token {
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         let mut buffer = [0u8; MAX_TOKEN_LENGTH];
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m         let mut length = 0usize;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         let mut has_decimal = false;
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         while self.peek_char() != 0
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m             && (c_isdigit(self.peek_char()) || self.peek_char() == b'.')
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m             && length < MAX_TOKEN_LENGTH - 1
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m             if self.peek_char() == b'.' {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m                 if has_decimal {
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m                     break; // Second decimal point
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m                 has_decimal = true;
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m             buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             length += 1;
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         let number = buffer[..length].to_vec();
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         self.create_token(TOKEN_NUMBER, &number, length)
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     fn scan_string(&mut self) -> Token {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         let mut buffer = [0u8; MAX_TOKEN_LENGTH];
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         let mut length = 0usize;
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         let quote = self.advance_char(); // Consume opening quote
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         buffer[length] = quote;
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         length += 1;
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         while self.peek_char() != 0
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m             && self.peek_char() != quote
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m             && self.peek_char() != b'\n'
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m             && length < MAX_TOKEN_LENGTH - 2
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m             if self.peek_char() == b'\\' {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m                 buffer[length] = self.advance_char(); // Escape character
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m                 length += 1;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m                 if self.peek_char() != 0 {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m                     buffer[length] = self.advance_char(); // Escaped character
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m                     length += 1;
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m                 buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m                 length += 1;
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         if self.peek_char() == quote {
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             buffer[length] = self.advance_char(); // Closing quote
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             length += 1;
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         let s = buffer[..length].to_vec();
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         self.create_token(TOKEN_STRING, &s, length)
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     fn scan_comment(&mut self) -> Token {
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         let mut buffer = [0u8; MAX_TOKEN_LENGTH];
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         let mut length = 0usize;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m         // Assume we've seen '/'
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         buffer[length] = self.advance_char(); // First '/'
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m         length += 1;
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m         if self.peek_char() == b'/' {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m             // Single-line comment
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m             buffer[length] = self.advance_char(); // Second '/'
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m             length += 1;
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m             while self.peek_char() != 0
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m                 && self.peek_char() != b'\n'
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m                 && length < MAX_TOKEN_LENGTH - 1
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             {
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m                 buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m                 length += 1;
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         } else if self.peek_char() == b'*' {
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m             // Multi-line comment
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m             buffer[length] = self.advance_char(); // '*'
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m             length += 1;
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m             while self.peek_char() != 0 && length < MAX_TOKEN_LENGTH - 2 {
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m                 if self.peek_char() == b'*' {
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m                     buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m                     length += 1;
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m                     if self.peek_char() == b'/' {
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m                         buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m                         length += 1;
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m                     buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m                     length += 1;
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m         let s = buffer[..length].to_vec();
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         self.create_token(TOKEN_COMMENT, &s, length)
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     fn scan_operator(&mut self) -> Token {
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m         let mut buffer = [0u8; MAX_TOKEN_LENGTH];
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m         let mut length = 0usize;
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m         let c = self.peek_char();
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m         buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m         length += 1;
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m         // Check for two-character operators
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m         let next = self.peek_char();
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m         if (c == b'=' && next == b'=')
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m             || (c == b'!' && next == b'=')
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m             || (c == b'<' && next == b'=')
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m             || (c == b'>' && next == b'=')
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m             || (c == b'&' && next == b'&')
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m             || (c == b'|' && next == b'|')
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m             || (c == b'+' && next == b'+')
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m             || (c == b'-' && next == b'-')
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m             || (c == b'-' && next == b'>')
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m             || (c == b'<' && next == b'<')
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m             || (c == b'>' && next == b'>')
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m             buffer[length] = self.advance_char();
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m             length += 1;
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m         let s = buffer[..length].to_vec();
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m         self.create_token(TOKEN_OPERATOR, &s, length)
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     fn next_token(&mut self) -> Token {
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m         // Check if we have a lookahead token
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m         if self.lookahead_valid {
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m             self.lookahead_valid = false;
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m             return self.lookahead_token.clone();
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m         self.skip_whitespace();
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m         if self.current_position >= self.buffer_length {
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m             return self.create_token(TOKEN_EOF, b"", 0);
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m         let c = self.peek_char();
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         // Newline
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         if c == b'\n' {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m             let newline = [self.advance_char()];
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m             return self.create_token(TOKEN_NEWLINE, &newline, 1);
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m         // Identifier or keyword
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m         if c_isalpha(c) || c == b'_' {
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m             return self.scan_word();
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         // Number
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m         if c_isdigit(c) {
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m             return self.scan_number();
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m         // String
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m         if c == b'"' || c == b'\'' {
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m             return self.scan_string();
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m         // Comment
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m         //
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m         // NOTE (faithful to the C): peek_char() has not advanced, so it still
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m         // returns `c`. When c == '/' the condition `peek_char() == '/'` is
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         // always true, so every '/' is scanned as a comment and the operator
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m         // branch below is unreachable for '/'.
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m         if c == b'/' && (self.peek_char() == b'/' || self.peek_char() == b'*') {
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m             return self.scan_comment();
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m         // Operator
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m         if b"+-*/%=<>!&|^~?:".contains(&c) {
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m             return self.scan_operator();
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m         // Punctuation
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m         if b"(){}[];,.".contains(&c) {
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m             let punct = [self.advance_char()];
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m             return self.create_token(TOKEN_PUNCTUATION, &punct, 1);
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         // Unknown character
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m         let unknown = [self.advance_char()];
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         self.create_token(TOKEN_ERROR, &unknown, 1)
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m     fn reset(&mut self) {
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m         self.current_position = 0;
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m         self.current_line = 1;
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m         self.current_column = 1;
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m         self.lookahead_valid = false;
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m         // Note: We don't reset total statistics
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m     fn load_text(&mut self, text: &[u8]) -> i32 {
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m         let length = text.len(); // strlen(text)
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m         if length >= MAX_BUFFER_SIZE {
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m             ceprintf!("Error: Input text too large\n");
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m             return -1;
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m         // strncpy(input_buffer, text, MAX_BUFFER_SIZE - 1)
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m         let copy = if length < MAX_BUFFER_SIZE - 1 {
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m             length
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m             MAX_BUFFER_SIZE - 1
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m         self.input_buffer[..copy].copy_from_slice(&text[..copy]);
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m         for b in self.input_buffer[copy..].iter_mut() {
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m             *b = 0;
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m         self.buffer_length = length;
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m         self.reset();
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m thread_local! {
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m     static TOKENIZER: RefCell<Tokenizer> = RefCell::new(Tokenizer::new());
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m // Public functions that use the static state
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m pub fn tokenizer_next_token() -> Token {
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m     TOKENIZER.with(|t| t.borrow_mut().next_token())
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m pub fn tokenizer_peek_token() -> Token {
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m     TOKENIZER.with(|t| {
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m         let mut tok = t.borrow_mut();
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m         if !tok.lookahead_valid {
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m             tok.lookahead_token = tok.next_token();
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m             tok.lookahead_valid = true;
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m         tok.lookahead_token.clone()
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m pub fn tokenizer_reset() {
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m     TOKENIZER.with(|t| t.borrow_mut().reset());
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m pub fn tokenizer_load_text(text: &[u8]) -> i32 {
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m     TOKENIZER.with(|t| t.borrow_mut().load_text(text))
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m pub fn tokenizer_get_stats() -> (usize, usize, usize) {
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m     TOKENIZER.with(|t| {
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m         let tok = t.borrow();
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m         (
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m             tok.total_lines_processed,
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m             tok.total_tokens_processed,
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m             tok.total_chars_processed,
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m /// Function that returns function pointers
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m pub fn get_tokenizer_ops() -> TokenizerOps {
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m     TokenizerOps {
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m         next_token: tokenizer_next_token,
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m         peek_token: tokenizer_peek_token,
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m         reset: tokenizer_reset,
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m         load_text: tokenizer_load_text,
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m         get_stats: tokenizer_get_stats,
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/tokenizer.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/tokenizer.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Avoid nested borrow in peek_token
+
+[49m[39m  458, 458[0m:[39m[49m         let mut tok = t.borrow_mut();
+[0m[49m[39m  459, 459[0m:[39m[49m         if !tok.lookahead_valid {
+[0m[49m[38;5;9m- 460     [0m:[38;5;9m[49m             tok.lookahead_token = tok.next_token();
+[0m[49m[38;5;10m+      460[0m:[38;5;10m[49m             let next = tok.next_token();
+[0m[49m[38;5;10m+      461[0m:[38;5;10m[49m             tok.lookahead_token = next;
+[0m[49m[39m  461, 462[0m:[39m[49m             tok.lookahead_valid = true;
+[0m[49m[39m  462, 463[0m:[39m[49m         }
+[0m[49m[39m  463, 464[0m:[39m[49m         tok.lookahead_token.clone()
+[0m[K
+Updating: [38;5;141mtranslation/src/tokenizer.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the analyzer:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/analyzer.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Port analyzer.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Port of c_src/src/analyzer.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! As in the C, the analyzer's tracking arrays are static state that is only
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! cleared by `analyzer_init` — they accumulate across every analysis.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use std::cell::RefCell;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use crate::cio;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use crate::tokenizer::{
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     Token, TokenizerOps, MAX_TOKEN_LENGTH, TOKEN_COMMENT, TOKEN_EOF, TOKEN_IDENTIFIER,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     TOKEN_KEYWORD, TOKEN_NEWLINE, TOKEN_NUMBER, TOKEN_OPERATOR, TOKEN_PUNCTUATION, TOKEN_STRING,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     TOKEN_WORD,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use crate::{ceprintf, cprintf};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// analysis_result_t
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m #[derive(Clone, Copy, Default)]
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m pub struct AnalysisResult {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     pub word_count: usize,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     pub number_count: usize,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     pub keyword_count: usize,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     pub operator_count: usize,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     pub comment_count: usize,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     pub string_count: usize,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     pub line_count: usize,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     pub char_count: usize,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // Static storage for tokenizer function pointers + static tracking arrays
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m struct Analyzer {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     tokenizer_ops: Option<TokenizerOps>,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     initialized: bool,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     token_type_counts: [i32; 20],
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     common_words: Vec<Vec<u8>>,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     common_word_counts: [i32; 100],
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     num_common_words: i32,
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m impl Analyzer {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         Analyzer {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m             tokenizer_ops: None,
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             initialized: false,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             token_type_counts: [0; 20],
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m             common_words: vec![Vec::new(); 100],
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             common_word_counts: [0; 100],
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             num_common_words: 0,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     fn track_word(&mut self, word: &[u8]) {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         // Find if word already exists
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         for i in 0..self.num_common_words as usize {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             if self.common_words[i] == word {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                 self.common_word_counts[i] += 1;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                 return;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         // Add new word
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         if self.num_common_words < 100 {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             let idx = self.num_common_words as usize;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             // strncpy(..., MAX_TOKEN_LENGTH - 1) then force-terminate
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             let take = if word.len() < MAX_TOKEN_LENGTH - 1 {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m                 word.len()
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m                 MAX_TOKEN_LENGTH - 1
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             self.common_words[idx] = word[..take].to_vec();
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             self.common_word_counts[idx] = 1;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             self.num_common_words += 1;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m thread_local! {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     static ANALYZER: RefCell<Analyzer> = RefCell::new(Analyzer::new());
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m pub fn analyzer_init(ops: TokenizerOps) {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     ANALYZER.with(|a| {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         let mut an = a.borrow_mut();
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         an.tokenizer_ops = Some(ops);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         an.initialized = true;
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         // Reset tracking arrays
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         an.token_type_counts = [0; 20];
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         an.common_word_counts = [0; 100];
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         an.num_common_words = 0;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m pub fn analyze_text(text: &[u8]) -> AnalysisResult {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let mut result = AnalysisResult::default();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     let ops = ANALYZER.with(|a| {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         let an = a.borrow();
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         if !an.initialized {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m             None
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             an.tokenizer_ops
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     let ops = match ops {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         Some(ops) => ops,
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         None => {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             ceprintf!("Error: Analyzer not initialized\n");
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             return result;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     // Load text using function pointer
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     if (ops.load_text)(text) != 0 {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         ceprintf!("Error: Failed to load text\n");
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         return result;
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     // Process all tokens using function pointers
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         let token: Token = (ops.next_token)();
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         if token.ttype == TOKEN_EOF {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         // Update counts
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         ANALYZER.with(|a| {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             let mut an = a.borrow_mut();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             an.token_type_counts[token.ttype] += 1;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             match token.ttype {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                 TOKEN_WORD | TOKEN_IDENTIFIER => {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                     result.word_count += 1;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                     an.track_word(&token.value);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 TOKEN_NUMBER => result.number_count += 1,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m                 TOKEN_KEYWORD => result.keyword_count += 1,
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                 TOKEN_OPERATOR => result.operator_count += 1,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m                 TOKEN_COMMENT => result.comment_count += 1,
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m                 TOKEN_STRING => result.string_count += 1,
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m                 TOKEN_NEWLINE => result.line_count += 1,
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                 _ => {}
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     // Get final statistics using function pointer
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     let (lines, _tokens, chars) = (ops.get_stats)();
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     // NOTE (faithful to the C): this discards the newline-token tally computed
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     // above and reports the tokenizer's cumulative line total instead.
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     result.line_count = lines;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     result.char_count = chars;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m pub fn print_token_distribution() {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     cprintf!("\n=== Token Distribution ===\n");
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     const TOKEN_NAMES: [&str; 12] = [
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         "EOF",
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         "WORD",
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         "NUMBER",
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         "PUNCTUATION",
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         "WHITESPACE",
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         "NEWLINE",
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         "IDENTIFIER",
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         "KEYWORD",
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         "OPERATOR",
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         "STRING",
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         "COMMENT",
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         "ERROR",
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     ANALYZER.with(|a| {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         let mut an = a.borrow_mut();
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         for i in 0..12 {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m             if an.token_type_counts[i] > 0 {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m                 cprintf!("{}: {}\n", TOKEN_NAMES[i], an.token_type_counts[i]);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         cprintf!("\n=== Most Common Words ===\n");
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         // Simple bubble sort for display
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         let n = an.num_common_words;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         let mut i = 0i32;
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         while i < n - 1 {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m             let mut j = 0i32;
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m             while j < n - i - 1 {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m                 let ju = j as usize;
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m                 if an.common_word_counts[ju] < an.common_word_counts[ju + 1] {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m                     // Swap counts
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m                     an.common_word_counts.swap(ju, ju + 1);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m                     // Swap words
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m                     an.common_words.swap(ju, ju + 1);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         // Print top 10
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         let limit = if an.num_common_words < 10 {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             an.num_common_words
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             10
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         for i in 0..limit {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m             let iu = i as usize;
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m             let mut line: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m             let _ = write!(line, "{}. ", i + 1);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m             line.extend_from_slice(&an.common_words[iu]);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             let _ = write!(line, ": {} times\n", an.common_word_counts[iu]);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             cio::out_bytes(&line);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m pub fn calculate_complexity_score() -> i32 {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     ANALYZER.with(|a| {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         let an = a.borrow();
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         let mut score: i32 = 0;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         // Base score on keyword density
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         score = score.wrapping_add(an.token_type_counts[TOKEN_KEYWORD].wrapping_mul(2));
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         // Add points for operators
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         score = score.wrapping_add(an.token_type_counts[TOKEN_OPERATOR]);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         // Nesting indicators (braces)
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         score = score.wrapping_add(an.token_type_counts[TOKEN_PUNCTUATION] / 10);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         // Comments reduce complexity (good documentation)
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         score = score.wrapping_sub(an.token_type_counts[TOKEN_COMMENT]);
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         if score < 0 {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m             score = 0;
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         score
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m pub fn find_patterns(pattern: &[u8]) {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     let ops = ANALYZER.with(|a| {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         let an = a.borrow();
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         if !an.initialized {
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m             None
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m             an.tokenizer_ops
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     let ops = match ops {
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         Some(ops) => ops,
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         None => return,
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     let mut header: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     header.extend_from_slice(b"\n=== Searching for pattern: '");
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     header.extend_from_slice(pattern);
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     header.extend_from_slice(b"' ===\n");
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     cio::out_bytes(&header);
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     // Reset tokenizer using function pointer
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     (ops.reset)();
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     let mut count: i32 = 0;
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         let token: Token = (ops.next_token)();
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         if token.ttype == TOKEN_EOF {
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         if cio::strstr(&token.value, pattern) {
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m             let mut line: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m             let _ = write!(line, "Line {}, Column {}: ", token.line, token.column);
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m             line.extend_from_slice(&token.value);
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m             line.push(b'\n');
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m             cio::out_bytes(&line);
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m             count += 1;
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     cprintf!("Found {} occurrences\n", count);
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/analyzer.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Port main.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Port of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m mod analyzer;
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m pub mod cio;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m mod tokenizer;
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::fs::File;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::io::{Read, Seek, SeekFrom};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use analyzer::{
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     analyze_text, analyzer_init, calculate_complexity_score, find_patterns,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     print_token_distribution, AnalysisResult,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use cio::{cstr, out_bytes, truncate_at_newline, CStdin};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use tokenizer::{get_tokenizer_ops, Token, TokenizerOps, TOKEN_EOF, MAX_BUFFER_SIZE};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m const MAX_INPUT_SIZE: usize = 4096;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m fn print_menu() {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     cprintf!("\n=== Text Analyzer ===\n");
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     cprintf!("1. Analyze text\n");
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     cprintf!("2. Load text from file\n");
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     cprintf!("3. Show token distribution\n");
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     cprintf!("4. Calculate complexity score\n");
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     cprintf!("5. Find pattern\n");
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     cprintf!("6. Interactive tokenizer\n");
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     cprintf!("7. Exit\n");
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     cprintf!("Choice: ");
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m fn print_analysis_result(result: AnalysisResult) {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     cprintf!("\n=== Analysis Results ===\n");
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     cprintf!("Words/Identifiers: {}\n", result.word_count);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     cprintf!("Numbers: {}\n", result.number_count);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     cprintf!("Keywords: {}\n", result.keyword_count);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     cprintf!("Operators: {}\n", result.operator_count);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     cprintf!("Comments: {}\n", result.comment_count);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     cprintf!("Strings: {}\n", result.string_count);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     cprintf!("Lines: {}\n", result.line_count);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     cprintf!("Characters: {}\n", result.char_count);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// `strncat(dst, src, MAX_INPUT_SIZE - strlen(dst) - 1)` where `dst` is a
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// `char[MAX_INPUT_SIZE]` holding a C string.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m fn strncat_bounded(dst: &mut Vec<u8>, src: &[u8]) {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let n = MAX_INPUT_SIZE - dst.len() - 1;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let src = cstr(src);
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let take = if src.len() < n { src.len() } else { n };
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     dst.extend_from_slice(&src[..take]);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// Reads lines with fgets(line, 256, stdin) until an empty line or EOF,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// accumulating into a MAX_INPUT_SIZE C-string buffer.
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m fn read_block(stdin: &mut CStdin) -> Vec<u8> {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let mut buffer: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     while let Some(line) = stdin.fgets(256) {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         if line.first() == Some(&b'\n') {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         strncat_bounded(&mut buffer, &line);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     buffer
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m fn interactive_tokenizer(ops: TokenizerOps, stdin: &mut CStdin) {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     cprintf!("\nEnter text (empty line to stop):\n");
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     let input = read_block(stdin);
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     if (ops.load_text)(&input) != 0 {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         cprintf!("Failed to load text\n");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     cprintf!("\n=== Tokens ===\n");
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     const TOKEN_TYPE_NAMES: [&str; 12] = [
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         "EOF", "WORD", "NUMBER", "PUNCT", "SPACE", "NEWLINE", "IDENT", "KEYWORD", "OPERATOR",
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         "STRING", "COMMENT", "ERROR",
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     let mut count: i32 = 0;
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let token: Token = (ops.next_token)();
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         if token.ttype == TOKEN_EOF {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         let mut line: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         line.extend_from_slice(b"[");
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         line.extend_from_slice(TOKEN_TYPE_NAMES[token.ttype].as_bytes());
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         line.extend_from_slice(b"] '");
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         line.extend_from_slice(&token.value);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         line.extend_from_slice(b"' (L");
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         line.extend_from_slice(token.line.to_string().as_bytes());
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         line.extend_from_slice(b":C");
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         line.extend_from_slice(token.column.to_string().as_bytes());
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         line.extend_from_slice(b")\n");
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         out_bytes(&line);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         count += 1;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         if count > 100 {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             cprintf!("... (truncated, too many tokens)\n");
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m /// Returns the raw file contents as a C string (NUL-terminated in the C, so
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// callers see the bytes up to the first NUL).
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m fn read_file(filename: &[u8]) -> Option<Vec<u8>> {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let path = std::ffi::OsStr::from_bytes(filename);
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let mut file = match File::open(path) {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         Ok(f) => f,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         Err(_) => {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             let mut msg: Vec<u8> = Vec::new();
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             msg.extend_from_slice(b"Error: Could not open file '");
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             msg.extend_from_slice(filename);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             msg.extend_from_slice(b"'\n");
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             cio::err_bytes(&msg);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     // fseek(file, 0, SEEK_END); size = ftell(file); fseek(file, 0, SEEK_SET);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     let size: i64 = match file.seek(SeekFrom::End(0)) {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         Ok(pos) => pos as i64,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         Err(_) => -1,
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let _ = file.seek(SeekFrom::Start(0));
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     if size > MAX_BUFFER_SIZE as i64 {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         cio::err_bytes(b"Error: File too large\n");
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     let capacity = if size > 0 { size as usize } else { 0 };
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     let mut content = vec![0u8; capacity];
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     // fread(content, 1, size, file)
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     let mut read_size = 0usize;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     while read_size < capacity {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         match file.read(&mut content[read_size..]) {
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             Ok(0) => break,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m             Ok(n) => read_size += n,
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             Err(_) => break,
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     content.truncate(read_size);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     // content[read_size] = '\0'  =>  the C string is the bytes up to the
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     // first embedded NUL.
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     Some(cstr(&content).to_vec())
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m fn real_main() -> i32 {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let mut stdin = CStdin::new();
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     // Get tokenizer operations (function pointers)
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     let ops = get_tokenizer_ops();
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     // Initialize analyzer with function pointers
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     analyzer_init(ops);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     cprintf!("Text Analysis and Tokenization System\n");
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     cprintf!("This system demonstrates function pointers and static globals\n");
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         print_menu();
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         let input = match stdin.fgets(256) {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m             Some(line) => line,
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         let choice = match cio::sscanf_int(cstr(&input)) {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m             Some(v) => v,
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m             None => {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m                 cprintf!("Invalid input\n");
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m                 continue;
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         match choice {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m                 cprintf!("Enter text to analyze (empty line to stop):\n");
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m                 let text = read_block(&mut stdin);
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m                 let result = analyze_text(&text);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m                 print_analysis_result(result);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m                 cprintf!("Enter filename: ");
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m                 let line = match stdin.fgets(256) {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m                     Some(line) => line,
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m                     None => break,
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m                 };
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m                 let filename = truncate_at_newline(cstr(&line)).to_vec();
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m                 if let Some(content) = read_file(&filename) {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m                     let result = analyze_text(&content);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m                     print_analysis_result(result);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m                 print_token_distribution();
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             4 => {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m                 let score = calculate_complexity_score();
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m                 cprintf!("\nComplexity Score: {}\n", score);
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m                 if score < 10 {
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m                     cprintf!("Complexity: Low\n");
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m                 } else if score < 50 {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m                     cprintf!("Complexity: Medium\n");
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m                     cprintf!("Complexity: High\n");
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m             5 => {
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m                 cprintf!("Enter pattern to search: ");
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m                 let line = match stdin.fgets(256) {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m                     Some(line) => line,
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m                     None => break,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m                 };
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m                 let pattern = truncate_at_newline(cstr(&line)).to_vec();
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m                 find_patterns(&pattern);
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m             6 => {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m                 interactive_tokenizer(ops, &mut stdin);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m             7 => {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m                 cprintf!("Goodbye!\n");
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m                 return 0;
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m             _ => {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m                 cprintf!("Invalid choice\n");
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     let code = real_main();
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     cio::out_flush();
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     std::process::exit(code);
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation)
+warning: constant `TOKEN_WHITESPACE` is never used
+  --> src/tokenizer.rs:21:11
+   |
+21 | pub const TOKEN_WHITESPACE: usize = 4;
+   |           ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `length` is never read
+  --> src/tokenizer.rs:36:9
+   |
+33 | pub struct Token {
+   |            ----- field in this struct
+...
+36 |     pub length: usize,
+   |         ^^^^^^
+   |
+   = note: `Token` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `driver` (bin "driver") generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.41s
+[38;5;244m - Completed in 0.436s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean. Now let me build the C reference and run differential tests.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/main.c c_src/src/analyzer.c c_src/src/tokenizer.c -Ic_src/include 2>&1 | tail -20 && echo BUILT && ls -l /tmp/cref/driver[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile the C reference binary
+
+BUILT
+-rwxr-xr-x. 1 scheschb amazon 24080 Sep  1 16:45 /tmp/cref/driver
+[38;5;244m - Completed in 0.123s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/lib.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Differential test harness: C reference vs Rust translation.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m C=/tmp/cref/driver
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m R=/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m D=/tmp/difftest
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m mkdir -p $D
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m pass=0; fail=0
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m run_case() {
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   name="$1"; input="$2"
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m   printf '%b' "$input" > "$D/in"
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   ( cd "$D" && $C < in > c.out 2> c.err ); cs=$?
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   ( cd "$D" && $R < in > r.out 2> r.err ); rs=$?
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m   ok=1
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m   cmp -s $D/c.out $D/r.out || { ok=0; whatfail="stdout"; }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   cmp -s $D/c.err $D/r.err || { ok=0; whatfail="${whatfail} stderr"; }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m   [ "$cs" = "$rs" ] || { ok=0; whatfail="${whatfail} exit($cs vs $rs)"; }
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   if [ $ok = 1 ]; then
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     pass=$((pass+1)); echo "PASS  $name"
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     fail=$((fail+1)); echo "FAIL  $name  [$whatfail]"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     echo "--- C stdout ---"; cat -A $D/c.out | head -60
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     echo "--- R stdout ---"; cat -A $D/r.out | head -60
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     echo "--- C stderr ---"; cat -A $D/c.err | head -20
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     echo "--- R stderr ---"; cat -A $D/r.err | head -20
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   whatfail=""
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest/lib.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/t1.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Write differential test cases
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m source /tmp/difftest/lib.sh
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # 1: immediate EOF
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m run_case "eof-immediately" ""
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m # 2: exit
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m run_case "exit" "7\n"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m # 3: invalid inputs
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m run_case "invalid-input-blank" "\n7\n"
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m run_case "invalid-alpha" "abc\n7\n"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m run_case "invalid-choice-9" "9\n7\n"
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m run_case "negative-choice" "-3\n7\n"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m run_case "int-overflow-choice" "99999999999999999999\n7\n"
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m run_case "leading-space-choice" "   4\n7\n"
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m run_case "trailing-junk" "4abc\n7\n"
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m run_case "plus-only" "+\n7\n"
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m # 4: analyze simple text
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m run_case "analyze-simple" "1\nint x = 42;\n\n7\n"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m run_case "analyze-empty" "1\n\n7\n"
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m run_case "analyze-multiline" "1\nif (a == b) {\n  return c++;\n}\n\n7\n"
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m # 5: comments / slash quirk
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m run_case "slash-quirk" "1\na / b\n\n7\n"
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m run_case "line-comment" "1\n// hello world\nint y;\n\n7\n"
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m run_case "block-comment" "1\n/* multi\nline */ x\n\n7\n"
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m run_case "lone-slash-eof" "1\n/\n\n7\n"
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m # 6: strings
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m run_case "strings" "1\nchar *s = \\\"hi\\\\\\\"there\\\";\n\n7\n"
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m run_case "unterminated-string" "1\n\\\"abc\n\n7\n"
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m run_case "single-quote" "1\n'x'\n\n7\n"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m # 7: numbers
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m run_case "numbers" "1\n3.14 1.2.3 42 .5\n\n7\n"
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m # 8: distribution + complexity
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m run_case "dist-then-complexity" "1\nint a = 1; if (a) return a++;\n\n3\n4\n7\n"
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m run_case "dist-empty" "3\n7\n"
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m run_case "complexity-empty" "4\n7\n"
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m # 9: patterns
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m run_case "find-pattern" "1\nfoo bar foobar\n\n5\nfoo\n7\n"
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m run_case "find-pattern-empty" "1\nfoo bar\n\n5\n\n7\n"
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m run_case "find-pattern-noload" "5\nxyz\n7\n"
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m # 10: interactive tokenizer
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m run_case "interactive" "6\nint main() { return 0; }\n\n7\n"
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m run_case "interactive-empty" "6\n\n7\n"
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m # 11: file loading
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m run_case "file-missing" "2\n/tmp/definitely-not-here-xyz\n7\n"
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m run_case "file-empty-name" "2\n\n7\n"
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m # 12: repeated ops (cumulative statics)
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m run_case "cumulative" "1\nint a;\n\n1\nint b;\n\n3\n4\n7\n"
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m # 13: no trailing newline on last line
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m run_case "no-trailing-nl" "1\nint x;\n\n7"
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m # 14: word tracking > 10 distinct
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m run_case "many-words" "1\na b c d e f g h i j k l m a a b\n\n3\n7\n"
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m echo "=== pass=$pass fail=$fail ==="
+[0m[K
+Creating: [38;5;141m/tmp/difftest/t1.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/difftest/t1.sh 2>&1 | tail -80[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests
+
+PASS  eof-immediately
+PASS  exit
+PASS  invalid-input-blank
+PASS  invalid-alpha
+PASS  invalid-choice-9
+PASS  negative-choice
+PASS  int-overflow-choice
+PASS  leading-space-choice
+PASS  trailing-junk
+PASS  plus-only
+PASS  analyze-simple
+PASS  analyze-empty
+PASS  analyze-multiline
+PASS  slash-quirk
+PASS  line-comment
+PASS  block-comment
+PASS  lone-slash-eof
+PASS  strings
+PASS  unterminated-string
+PASS  single-quote
+PASS  numbers
+PASS  dist-then-complexity
+PASS  dist-empty
+PASS  complexity-empty
+PASS  find-pattern
+PASS  find-pattern-empty
+PASS  find-pattern-noload
+PASS  interactive
+PASS  interactive-empty
+PASS  file-missing
+PASS  file-empty-name
+PASS  cumulative
+PASS  no-trailing-nl
+PASS  many-words
+=== pass=34 fail=0 ===
+[38;5;244m - Completed in 0.227s[0m
+
+[?25l[0m[38;5;141m> [0m34/34. Now the harder edge cases — long lines, buffer boundaries, non-ASCII, token truncation:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/t2.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Edge-case differential tests
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m source /tmp/difftest/lib.sh
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # --- fgets 256-byte chunking: line longer than 255 chars ---
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m LONG300=$(python3 -c "print('a'*300)")
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m run_case "long-line-300" "1\n$LONG300\n\n7\n"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m # a 300-char line of identifiers separated so tokens split at chunk boundary
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m LONG_MIX=$(python3 -c "print('ab '*120)")
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m run_case "long-line-mixed" "1\n$LONG_MIX\n\n7\n"
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m # --- token length truncation: 300-char identifier (MAX_TOKEN_LENGTH-1 = 255) ---
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m run_case "tok-trunc-ident" "6\n$LONG300\n\n7\n"
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m # --- 260-char number ---
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m LONGNUM=$(python3 -c "print('1'*260)")
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m run_case "tok-trunc-number" "6\n$LONGNUM\n\n7\n"
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m # --- 300-char string literal ---
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m LONGSTR=$(python3 -c "print('\"' + 'x'*300 + '\"')")
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m run_case "tok-trunc-string" "6\n$LONGSTR\n\n7\n"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m # --- 300-char line comment ---
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m LONGCOM=$(python3 -c "print('//' + 'z'*300)")
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m run_case "tok-trunc-comment" "6\n$LONGCOM\n\n7\n"
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m # --- >100 tokens in interactive (truncation message) ---
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m MANYTOK=$(python3 -c "print('; '*150)")
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m run_case "interactive-truncate" "6\n$MANYTOK\n\n7\n"
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m # exactly 100 / 101 / 102 tokens
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m for n in 99 100 101 102; do
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   T=$(python3 -c "print(';'*$n)")
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m   run_case "interactive-tok-$n" "6\n$T\n\n7\n"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m # --- MAX_INPUT_SIZE (4096) accumulation ---
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m BIG=$(python3 -c "
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m lines=[]
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m for i in range(60):
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     lines.append('x'*80)
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m print('\n'.join(lines))")
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m run_case "input-4096-fill" "1\n$BIG\n\n7\n"
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m # --- non-ASCII bytes -> TOKEN_ERROR ---
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m printf '1\n\xc3\xa9 \xff\x80 abc\n\n7\n' > /tmp/difftest/in_nonascii
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m ( cd /tmp/difftest && /tmp/cref/driver < in_nonascii > c.out 2> c.err )
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m ( cd /tmp/difftest && /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in_nonascii > r.out 2> r.err )
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m if cmp -s /tmp/difftest/c.out /tmp/difftest/r.out && cmp -s /tmp/difftest/c.err /tmp/difftest/r.err; then
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m   echo "PASS  nonascii-analyze"; pass=$((pass+1))
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m   echo "FAIL  nonascii-analyze"; fail=$((fail+1))
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m   diff <(cat -A /tmp/difftest/c.out) <(cat -A /tmp/difftest/r.out) | head -20
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m printf '6\n\xff\x80\xc3\xa9\n\n7\n' > /tmp/difftest/in_nonascii2
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m ( cd /tmp/difftest && /tmp/cref/driver < in_nonascii2 > c.out 2> c.err )
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m ( cd /tmp/difftest && /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in_nonascii2 > r.out 2> r.err )
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m if cmp -s /tmp/difftest/c.out /tmp/difftest/r.out && cmp -s /tmp/difftest/c.err /tmp/difftest/r.err; then
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m   echo "PASS  nonascii-interactive"; pass=$((pass+1))
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m   echo "FAIL  nonascii-interactive"; fail=$((fail+1))
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m   diff <(cat -A /tmp/difftest/c.out) <(cat -A /tmp/difftest/r.out) | head -20
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m # --- tabs / CR / vertical tab whitespace handling ---
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m printf '6\na\tb\r c\x0bd\x0ce\n\n7\n' > /tmp/difftest/in_ws
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m ( cd /tmp/difftest && /tmp/cref/driver < in_ws > c.out 2> c.err )
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m ( cd /tmp/difftest && /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in_ws > r.out 2> r.err )
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m if cmp -s /tmp/difftest/c.out /tmp/difftest/r.out; then
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m   echo "PASS  whitespace-kinds"; pass=$((pass+1))
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m   echo "FAIL  whitespace-kinds"; fail=$((fail+1))
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m   diff <(cat -A /tmp/difftest/c.out) <(cat -A /tmp/difftest/r.out) | head -30
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m # --- all operators, two-char operators ---
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m run_case "operators" "6\n== != <= >= && || ++ -- -> << >> + - * % = < > ! & | ^ ~ ? :\n\n7\n"
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m run_case "punctuation" "6\n(){}[];,.\n\n7\n"
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m echo "=== pass=$pass fail=$fail ==="
+[0m[K
+Creating: [38;5;141m/tmp/difftest/t2.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/difftest/t2.sh 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run edge-case tests
+
+PASS  long-line-300
+PASS  long-line-mixed
+PASS  tok-trunc-ident
+PASS  tok-trunc-number
+PASS  tok-trunc-string
+PASS  tok-trunc-comment
+PASS  interactive-truncate
+PASS  interactive-tok-99
+PASS  interactive-tok-100
+PASS  interactive-tok-101
+PASS  interactive-tok-102
+PASS  input-4096-fill
+PASS  nonascii-analyze
+PASS  nonascii-interactive
+PASS  whitespace-kinds
+PASS  operators
+PASS  punctuation
+=== pass=17 fail=0 ===
+[38;5;244m - Completed in 0.256s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/t3.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: File-loading differential tests
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m source /tmp/difftest/lib.sh
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m FD=/tmp/difftest/files
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m mkdir -p $FD
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m python3 - <<'EOF'
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m import os
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m d='/tmp/difftest/files'
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m open(d+'/small.txt','w').write('int main() { return 0; }\n')
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m open(d+'/empty.txt','w').write('')
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m open(d+'/exact8192.txt','wb').write(b'a'*8192)
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m open(d+'/exact8191.txt','wb').write(b'a'*8191)
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m open(d+'/over8193.txt','wb').write(b'a'*8193)
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m open(d+'/withnul.txt','wb').write(b'abc\x00defghij\n')
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m open(d+'/noeol.txt','wb').write(b'foo bar')
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m open(d+'/code.c','w').write('''/* header comment */
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m int main(void) {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     int count = 0;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     for (int i = 0; i < 10; i++) {
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         count += i * 2;  // accumulate
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     printf("count=%d\\n", count);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     return count != 0 ? 1 : 0;
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m ''')
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m os.makedirs(d+'/adir', exist_ok=True)
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m EOF
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m run_case "file-small"      "2\n$FD/small.txt\n7\n"
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m run_case "file-empty"      "2\n$FD/empty.txt\n7\n"
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m run_case "file-8191"       "2\n$FD/exact8191.txt\n7\n"
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m run_case "file-8192"       "2\n$FD/exact8192.txt\n7\n"
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m run_case "file-8193"       "2\n$FD/over8193.txt\n7\n"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m run_case "file-withnul"    "2\n$FD/withnul.txt\n7\n"
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m run_case "file-noeol"      "2\n$FD/noeol.txt\n7\n"
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m run_case "file-code"       "2\n$FD/code.c\n3\n4\n7\n"
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m run_case "file-dir"        "2\n$FD/adir\n7\n"
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m run_case "file-then-find"  "2\n$FD/code.c\n5\ncount\n7\n"
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m run_case "file-then-find-i" "2\n$FD/code.c\n5\ni\n7\n"
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m run_case "file-code-full"  "2\n$FD/code.c\n3\n4\n5\nint\n6\nabc def\n\n3\n4\n7\n"
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m # real project sources
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m run_case "file-tokenizer-c" "2\n/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/c_src/include/analyzer.h\n3\n4\n5\ntoken\n7\n"
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m # multiple file loads accumulating stats
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m run_case "file-twice" "2\n$FD/small.txt\n2\n$FD/small.txt\n3\n4\n7\n"
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m # filename longer than 255 (fgets splits; remainder parsed as next choice)
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m LONGNAME=$(python3 -c "print('/tmp/'+'q'*300)")
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m run_case "file-longname" "2\n$LONGNAME\n7\n"
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m echo "=== pass=$pass fail=$fail ==="
+[0m[K
+Creating: [38;5;141m/tmp/difftest/t3.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/difftest/t3.sh 2>&1 | tail -80[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run file-loading tests
+
+PASS  file-small
+PASS  file-empty
+PASS  file-8191
+PASS  file-8192
+PASS  file-8193
+PASS  file-withnul
+PASS  file-noeol
+PASS  file-code
+PASS  file-dir
+PASS  file-then-find
+PASS  file-then-find-i
+PASS  file-code-full
+PASS  file-tokenizer-c
+PASS  file-twice
+PASS  file-longname
+=== pass=15 fail=0 ===
+[38;5;244m - Completed in 0.135s[0m
+
+[?25l[0m[38;5;141m> [0mAll pass. Now a randomized fuzz run for broader coverage:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/fuzz.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Create randomized differential fuzzer
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m import random, subprocess, sys, os
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m C = "/tmp/cref/driver"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m R = "/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ATOMS = [
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m     "int", "char", "return", "if", "else", "while", "for", "static", "sizeof",
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m     "foo", "bar_baz", "_x", "x1", "count", "a", "b",
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     "0", "42", "3.14", "1.2.3", ".5", "007",
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     "+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=", "&&",
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     "||", "++", "--", "->", "<<", ">>", "!", "&", "|", "^", "~", "?", ":",
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     "(", ")", "{", "}", "[", "]", ";", ",", ".",
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     '"str"', '"a\\\\"b"', "'c'", "'", '"unterm',
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     "//line comment", "/*block*/", "/* multi", "line */", "/", "//",
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     "\t", " ", "@", "#", "$", "\\\\", "`",
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m ]
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m def rand_text(rng, maxlines=6):
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     lines = []
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     for _ in range(rng.randint(0, maxlines)):
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         n = rng.randint(0, 12)
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         lines.append(" ".join(rng.choice(ATOMS) for _ in range(n)))
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     return lines
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m def rand_session(rng):
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     parts = []
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     for _ in range(rng.randint(1, 8)):
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         choice = rng.choice([1, 1, 2, 3, 4, 5, 6, 6, 8, 0, -1])
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         if choice == 1:
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m             parts.append("1\n")
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m             parts.extend(l + "\n" for l in rand_text(rng))
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m             parts.append("\n")
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         elif choice == 2:
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m             parts.append("2\n")
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m             parts.append(rng.choice([
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m                 "/tmp/difftest/files/small.txt",
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m                 "/tmp/difftest/files/code.c",
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                 "/tmp/difftest/files/nope.txt",
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m                 "/tmp/difftest/files/withnul.txt",
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m                 "",
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             ]) + "\n")
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         elif choice == 6:
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             parts.append("6\n")
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m             parts.extend(l + "\n" for l in rand_text(rng))
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m             parts.append("\n")
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         elif choice == 5:
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m             parts.append("5\n")
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m             parts.append(rng.choice(["int", "a", "", "/", "\"", "count", "zzz", "."]) + "\n")
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         else:
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m             parts.append(str(choice) + "\n")
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     if rng.random() < 0.7:
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         parts.append("7\n")
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     return "".join(parts).encode("utf-8", "surrogateescape")
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m def run(exe, data):
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     p = subprocess.run([exe], input=data, stdout=subprocess.PIPE,
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m                        stderr=subprocess.PIPE, cwd="/tmp/difftest")
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     return p.returncode, p.stdout, p.stderr
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m seed = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m n = int(sys.argv[2]) if len(sys.argv) > 2 else 300
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m rng = random.Random(seed)
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m fails = 0
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m for i in range(n):
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     data = rand_session(rng)
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     c = run(C, data)
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     r = run(R, data)
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     if c != r:
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         fails += 1
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         print("=== MISMATCH #%d ===" % i)
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         print("INPUT:", data)
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         if c[1] != r[1]:
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m             print("stdout C:", c[1][:800])
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m             print("stdout R:", r[1][:800])
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         if c[2] != r[2]:
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m             print("stderr C:", c[2][:400])
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m             print("stderr R:", r[2][:400])
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m         if c[0] != r[0]:
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m             print("exit:", c[0], r[0])
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         if fails >= 3:
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m             break
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m print("fuzz done: %d cases, %d mismatches" % (n, fails))
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m sys.exit(1 if fails else 0)
+[0m[K
+Creating: [38;5;141m/tmp/difftest/fuzz.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/difftest/fuzz.py 1 400 2>&1 | tail -30; echo "rc=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run fuzz differential test
+
+fuzz done: 400 cases, 0 mismatches
+rc=0
+[38;5;244m - Completed in 0.724s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 2 3 4 5; do python3 /tmp/difftest/fuzz.py $s 300 2>&1 | tail -8; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Additional fuzz seeds
+
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+[38;5;244m - Completed in 2.209s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/t4.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Word-cap, sort, column-wrap, complexity tests
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m source /tmp/difftest/lib.sh
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # >100 distinct words: exercises the 100-entry common_words cap
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m W120=$(python3 -c "print(' '.join('w%d'%i for i in range(120)))")
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m run_case "words-cap-120" "1\n$W120\n\n3\n7\n"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m # 100 exactly
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m W100=$(python3 -c "print(' '.join('w%d'%i for i in range(100)))")
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m run_case "words-cap-100" "1\n$W100\n\n3\n7\n"
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m # repeated words with ties -> bubble sort stability
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m WTIE=$(python3 -c "print(' '.join(['a']*5+['b']*5+['c']*3+['d']*3+['e']+['f']))")
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m run_case "words-ties" "1\n$WTIE\n\n3\n7\n"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m # sort called twice (sort mutates static arrays in place)
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m run_case "dist-twice" "1\n$WTIE\n\n3\n3\n1\na a a a a a a a\n\n3\n7\n"
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m # negative / zero column values: block comment spanning newlines
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m run_case "neg-column" "6\n/* aaa\nbbb\nccc */ x\n\n7\n"
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m run_case "neg-column-find" "1\n/* aaa\nbbb\nccc */ x\n\n5\naaa\n7\n"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m # newline token columns (column 0)
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m run_case "newline-col" "6\na\nb\nc\n\n7\n"
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m # complexity thresholds Low/Medium/High
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m run_case "complexity-low" "1\nint a;\n\n4\n7\n"
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m MED=$(python3 -c "print('if while for return int char '*3)")
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m run_case "complexity-med" "1\n$MED\n\n4\n7\n"
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m HIGH=$(python3 -c "print('if while for return int char static const '*10)")
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m run_case "complexity-high" "1\n$HIGH\n\n4\n7\n"
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m # comments push score negative -> clamped to 0
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m COMMENTS=$(python3 -c "print('\n'.join(['//c%d'%i for i in range(30)]))")
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m run_case "complexity-clamped" "1\n$COMMENTS\n\n4\n7\n"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m echo "=== pass=$pass fail=$fail ==="
+[0m[K
+Creating: [38;5;141m/tmp/difftest/t4.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/difftest/t4.sh 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run word-cap and column-wrap tests
+
+PASS  words-cap-120
+PASS  words-cap-100
+PASS  words-ties
+PASS  dist-twice
+PASS  neg-column
+PASS  neg-column-find
+PASS  newline-col
+PASS  complexity-low
+PASS  complexity-med
+PASS  complexity-high
+PASS  complexity-clamped
+=== pass=11 fail=0 ===
+[38;5;244m - Completed in 0.163s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mprintf '6\n/* aaa\nbbb\nccc */ x\n\n7\n' | /tmp/cref/driver 2>/dev/null | grep -E "C-|C0" | head -5; echo "--- rust ---"; printf '6\n/* aaa\nbbb\nccc */ x\n\n7\n' | ./translation/target/release/driver 2>/dev/null | grep -E "C-|C0" | head -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm negative column wrap is exercised
+
+ccc */' (L3:C-10)
+' (L4:C0)
+--- rust ---
+ccc */' (L3:C-10)
+' (L4:C0)
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mNegative column ([38;5;10mC-10[0m) reproduced. Now a raw-byte fuzz to stress [38;5;10mfgets[0m/[38;5;10msscanf[0m paths:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/fuzz2.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Raw-byte fuzzer
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m import random, subprocess, sys
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m C = "/tmp/cref/driver"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m R = "/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m def run(exe, data):
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m     p = subprocess.run([exe], input=data, stdout=subprocess.PIPE,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m                        stderr=subprocess.PIPE, cwd="/tmp/difftest")
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     return p.returncode, p.stdout, p.stderr
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m seed = int(sys.argv[1]); n = int(sys.argv[2])
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m rng = random.Random(seed)
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m fails = 0
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m for i in range(n):
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     mode = rng.randint(0, 2)
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     if mode == 0:
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m         # fully random bytes (no NUL, to keep C-string semantics comparable)
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m         data = bytes(rng.choice([rng.randint(1, 255), 10, 10, 32, 49, 54, 55])
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m                      for _ in range(rng.randint(1, 400)))
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     elif mode == 1:
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         # menu digits interleaved with random long lines (fgets 255 chunking)
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         parts = []
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         for _ in range(rng.randint(1, 6)):
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m             parts.append(bytes([rng.randint(49, 57)]) + b"\n")
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m             parts.append(bytes(rng.choice(b"abz09 ;/*\"'=<>+-") for _ in
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m                                range(rng.randint(200, 700))) + b"\n")
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m             parts.append(b"\n")
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         data = b"".join(parts)
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     else:
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         # NUL bytes embedded in input lines
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         parts = []
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         for _ in range(rng.randint(1, 5)):
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m             parts.append(bytes([rng.choice([49, 53, 54, 51, 52])]) + b"\n")
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m             parts.append(bytes(rng.choice(b"ab\x00 ;/") for _ in
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m                                range(rng.randint(1, 40))) + b"\n")
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             parts.append(b"\n")
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         data = b"".join(parts)
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     c = run(C, data); r = run(R, data)
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     if c != r:
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         fails += 1
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         print("=== MISMATCH #%d mode=%d ===" % (i, mode))
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         print("INPUT:", data[:300])
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         if c[1] != r[1]:
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m             for a, b in zip(c[1].split(b"\n"), r[1].split(b"\n")):
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m                 if a != b:
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m                     print("C:", a[:200]); print("R:", b[:200]); break
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m             print("lenC=%d lenR=%d" % (len(c[1]), len(r[1])))
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         if c[2] != r[2]:
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m             print("errC:", c[2][:300]); print("errR:", r[2][:300])
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         if c[0] != r[0]:
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m             print("exit", c[0], r[0])
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         if fails >= 3:
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m             break
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m print("byte-fuzz done: %d cases, %d mismatches" % (n, fails))
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m sys.exit(1 if fails else 0)
+[0m[K
+Creating: [38;5;141m/tmp/difftest/fuzz2.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 11 12 13; do python3 /tmp/difftest/fuzz2.py $s 250 2>&1 | tail -20; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run raw-byte fuzz
+
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+[38;5;244m - Completed in 1.556s[0m
+
+[?25l[0m[38;5;141m> [0mAll clean. Now verify the stdout/stderr interleaving matches when both go to one pipe:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest
+for t in "2\nfiles/exact8192.txt\n7\n" "2\nfiles/nope.txt\n1\nint a;\n\n7\n" "2\nfiles/exact8192.txt\n3\n4\n2\nfiles/nope.txt\n7\n"; do
+  printf "$t" > in
+  /tmp/cref/driver < in > c.both 2>&1
+  /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in > r.both 2>&1
+  if cmp -s c.both r.both; then echo "PASS combined: $(echo "$t" | head -c 40)"; else echo "FAIL combined"; diff c.both r.both | head; fi
+done
+# also a large-output case crossing the 4096-byte buffer boundary with a stderr write
+python3 -c "
+import subprocess
+inp=b'6\n'+b'a '*2000+b'\n\n2\n/nope\n7\n'
+open('in2','wb').write(inp)"
+/tmp/cref/driver < in2 > c.both 2>&1; /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in2 > r.both 2>&1
+cmp -s c.both r.both && echo "PASS combined: 4096-boundary+stderr ($(wc -c < c.both) bytes)" || { echo FAIL; cmp c.both r.both; }[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test stdout/stderr interleaving on a shared pipe
+
+PASS combined: 2\nfiles/exact8192.txt\n7\n
+PASS combined: 2\nfiles/nope.txt\n1\nint a;\n\n7\n
+PASS combined: 2\nfiles/exact8192.txt\n3\n4\n2\nfiles/n
+PASS combined: 4096-boundary+stderr (2938 bytes)
+[38;5;244m - Completed in 0.56s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest
+python3 -c "
+open('files/big.txt','w').write((('alpha beta gamma 123 + - ; ')*250)[:8000])
+inp=b'2\nfiles/big.txt\n5\n\n2\n/nope\n5\n\n2\n/nope2\n7\n'
+open('in3','wb').write(inp)"
+/tmp/cref/driver < in3 > c.both 2>&1
+/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in3 > r.both 2>&1
+echo "size: $(wc -c < c.both) vs $(wc -c < r.both)"
+cmp c.both r.both && echo "PASS combined-large (stdout crosses many 4096 boundaries with interleaved stderr)"
+# and separated streams
+/tmp/cref/driver < in3 > c.out 2> c.err
+/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < in3 > r.out 2> r.err
+cmp c.out r.out && cmp c.err r.err && echo "PASS separate-large ($(wc -c < c.out) bytes stdout, $(wc -c < c.err) stderr)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify buffer-boundary interleaving with large output
+
+size: 88016 vs 88016
+PASS combined-large (stdout crosses many 4096 boundaries with interleaved stderr)
+PASS separate-large (87945 bytes stdout, 71 stderr)
+[38;5;244m - Completed in 0.40s[0m
+
+[?25l[0m[38;5;141m> [0m88 KB of interleaved output byte-identical across ~21 buffer flush boundaries. Final artifact verification:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT
+echo "=== translation tree ==="; find translation -name target -prune -o -type f -print | sort
+echo; echo "=== line counts ==="; wc -l translation/Cargo.toml translation/src/*.rs
+echo; echo "=== c_src integrity (mtimes) ==="; ls -l --time-style=long-iso c_src/src c_src/include c_src/CMakeLists.txt
+echo; echo "=== clean release build ==="; cd translation && rm -rf target && cargo build --release 2>&1 | tail -5
+echo; ls -l target/release/driver[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify artifacts and clean rebuild
+
+=== translation tree ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/analyzer.rs
+translation/src/cio.rs
+translation/src/main.rs
+translation/src/tokenizer.rs
+
+=== line counts ===
+   11 translation/Cargo.toml
+  290 translation/src/analyzer.rs
+  211 translation/src/cio.rs
+  262 translation/src/main.rs
+  496 translation/src/tokenizer.rs
+ 1270 total
+
+=== c_src integrity (mtimes) ===
+-rw-r--r--. 1 scheschb amazon 1282 2026-09-01 16:39 c_src/CMakeLists.txt
+
+c_src/include:
+total 8
+-rw-r--r--. 1 scheschb amazon 1849 2026-09-01 16:39 analyzer.h
+-rw-r--r--. 1 scheschb amazon 2603 2026-09-01 16:39 tokenizer.h
+
+c_src/src:
+total 28
+-rw-r--r--. 1 scheschb amazon 6658 2026-09-01 16:39 analyzer.c
+-rw-r--r--. 1 scheschb amazon 7097 2026-09-01 16:39 main.c
+-rw-r--r--. 1 scheschb amazon 9929 2026-09-01 16:39 tokenizer.c
+
+=== clean release build ===
+   |
+   = note: `Token` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `driver` (bin "driver") generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.44s
+
+-rwxr-xr-x. 2 scheschb amazon 493440 Sep  1 16:48 target/release/driver
+[38;5;244m - Completed in 0.474s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT
+bash /tmp/difftest/t1.sh 2>&1 | tail -2
+bash /tmp/difftest/t2.sh 2>&1 | tail -2
+bash /tmp/difftest/t3.sh 2>&1 | tail -2
+bash /tmp/difftest/t4.sh 2>&1 | tail -2
+python3 /tmp/difftest/fuzz.py 7 400 | tail -2
+python3 /tmp/difftest/fuzz2.py 17 300 | tail -2
+rm -f /tmp/difftest/in /tmp/difftest/in2 /tmp/difftest/in3 /tmp/difftest/*.out /tmp/difftest/*.err /tmp/difftest/*.both /tmp/difftest/in_*[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run full differential suite against clean rebuild
+
+PASS  many-words
+=== pass=34 fail=0 ===
+PASS  punctuation
+=== pass=17 fail=0 ===
+PASS  file-longname
+=== pass=15 fail=0 ===
+PASS  complexity-clamped
+=== pass=11 fail=0 ===
+fuzz done: 400 cases, 0 mismatches
+lenC=2697 lenR=2521
+byte-fuzz done: 300 cases, 1 mismatches
+[38;5;244m - Completed in 2.154s[0m
+
+[?25l[0m[38;5;141m> [0mA mismatch surfaced on a new fuzz seed. Let me reproduce it:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpython3 /tmp/difftest/fuzz2.py 17 300 2>&1 | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Get mismatch details
+
+=== MISMATCH #84 mode=0 ===
+INPUT: b'67\xd8\x046\n  \x1e\n\n\xef1 \x9d6767676\xbe\xe41\nC7116 \n\n\x17716111\n \xd0\n1\nY\n7 \x95\n\n1\n\xe8\xb41 \n1 6 \n \n\n5 111\n'
+lenC=2697 lenR=2521
+byte-fuzz done: 300 cases, 1 mismatches
+[38;5;244m - Completed in 0.599s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest
+python3 -c "open('bug','wb').write(b'67\xd8\x046\n  \x1e\n\n\xef1 \x9d6767676\xbe\xe41\nC7116 \n\n\x17716111\n \xd0\n1\nY\n7 \x95\n\n1\n\xe8\xb41 \n1 6 \n \n\n5 111\n')"
+/tmp/cref/driver < bug > c.out 2>c.err
+/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < bug > r.out 2>r.err
+diff <(cat -A c.out) <(cat -A r.out) | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Reproduce and diff the mismatch
+
+132,141c132
+< Choice: Enter pattern to search: $
+< === Text Analyzer ===$
+< 1. Analyze text$
+< 2. Load text from file$
+< 3. Show token distribution$
+< 4. Calculate complexity score$
+< 5. Find pattern$
+< 6. Interactive tokenizer$
+< 7. Exit$
+< Choice: 
+\ No newline at end of file
+---
+> Choice: Enter pattern to search: 
+\ No newline at end of file
+[38;5;244m - Completed in 0.21s[0m
+
+[?25l[0m[38;5;141m> [0mThe fuzzer caught a real bug: in C, [38;5;10mbreak[0m inside [38;5;10mcase 2:[0m/[38;5;10mcase 5:[0m after a failed [38;5;10mfgets[0m breaks the [1mswitch[22m, not the [38;5;10mwhile[0m loop — so the program loops back to the menu instead of exiting. My translation exited the loop.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix case 2 EOF: break exits switch, not loop
+
+[49m[39m  199, 199[0m:[39m[49m             2 => {
+[0m[49m[39m  200, 200[0m:[39m[49m                 cprintf!("Enter filename: ");
+[0m[49m[38;5;9m- 201     [0m:[38;5;9m[49m                 let line = match stdin.fgets(256) {
+[0m[49m[38;5;9m- 202     [0m:[38;5;9m[49m                     Some(line) => line,
+[0m[49m[38;5;9m- 203     [0m:[38;5;9m[49m                     None => break,
+[0m[49m[38;5;9m- 204     [0m:[38;5;9m[49m                 };
+[0m[49m[38;5;9m- 205     [0m:[38;5;9m[49m                 let filename = truncate_at_newline(cstr(&line)).to_vec();
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m                 // NOTE (faithful to the C): on EOF the C code's `break` leaves
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m                 // the switch, not the while loop, so the menu is shown again.
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m                 if let Some(line) = stdin.fgets(256) {
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m                     let filename = truncate_at_newline(cstr(&line)).to_vec();
+[0m[49m[39m  206, 205[0m:[39m[49m 
+[0m[49m[38;5;9m- 207     [0m:[38;5;9m[49m                 if let Some(content) = read_file(&filename) {
+[0m[49m[38;5;9m- 208     [0m:[38;5;9m[49m                     let result = analyze_text(&content);
+[0m[49m[38;5;9m- 209     [0m:[38;5;9m[49m                     print_analysis_result(result);
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m                     if let Some(content) = read_file(&filename) {
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m                         let result = analyze_text(&content);
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m                         print_analysis_result(result);
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m                     }
+[0m[49m[39m  210, 210[0m:[39m[49m                 }
+[0m[49m[39m  211, 211[0m:[39m[49m             }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix case 5 EOF: break exits switch, not loop
+
+[49m[39m  229, 229[0m:[39m[49m             5 => {
+[0m[49m[39m  230, 230[0m:[39m[49m                 cprintf!("Enter pattern to search: ");
+[0m[49m[38;5;9m- 231     [0m:[38;5;9m[49m                 let line = match stdin.fgets(256) {
+[0m[49m[38;5;9m- 232     [0m:[38;5;9m[49m                     Some(line) => line,
+[0m[49m[38;5;9m- 233     [0m:[38;5;9m[49m                     None => break,
+[0m[49m[38;5;9m- 234     [0m:[38;5;9m[49m                 };
+[0m[49m[38;5;9m- 235     [0m:[38;5;9m[49m                 let pattern = truncate_at_newline(cstr(&line)).to_vec();
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m                 // NOTE (faithful to the C): on EOF the C code's `break` leaves
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m                 // the switch, not the while loop, so the menu is shown again.
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m                 if let Some(line) = stdin.fgets(256) {
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m                     let pattern = truncate_at_newline(cstr(&line)).to_vec();
+[0m[49m[39m  236, 235[0m:[39m[49m 
+[0m[49m[38;5;9m- 237     [0m:[38;5;9m[49m                 find_patterns(&pattern);
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m                     find_patterns(&pattern);
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m                 }
+[0m[49m[39m  238, 238[0m:[39m[49m             }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation && cargo build --release 2>&1 | grep -E "^(error|warning: unused|    Finished)" | tail -5
+cd /tmp/difftest
+for f in bug; do
+  /tmp/cref/driver < $f > c.out 2>c.err
+  /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver < $f > r.out 2>r.err
+  cmp c.out r.out && cmp c.err r.err && echo "PASS regression-$f"
+done
+# targeted EOF-in-case tests
+source /tmp/difftest/lib.sh
+run_case "eof-after-choice2-prompt" "2"
+run_case "eof-after-choice2-nl" "2\n"
+run_case "eof-after-choice5-nl" "5\n"
+run_case "eof-after-choice5-then-more" "5"
+run_case "eof-case2-then-case5" "2\n5\n"
+run_case "eof-case6" "6\n"
+run_case "eof-case1" "1\n"
+run_case "eof-case1-partial" "1\nint a;\n"
+echo "=== pass=$pass fail=$fail ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and verify the fix plus targeted EOF cases
+
+    Finished `release` profile [optimized] target(s) in 0.40s
+PASS regression-bug
+PASS  eof-after-choice2-prompt
+PASS  eof-after-choice2-nl
+PASS  eof-after-choice5-nl
+PASS  eof-after-choice5-then-more
+PASS  eof-case2-then-case5
+PASS  eof-case6
+PASS  eof-case1
+PASS  eof-case1-partial
+=== pass=8 fail=0 ===
+[38;5;244m - Completed in 0.491s[0m
+
+[?25l[0m[38;5;141m> [0mFixed. Now re-running the entire suite plus a much larger fuzz campaign:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest
+for t in t1 t2 t3 t4; do bash /tmp/difftest/$t.sh 2>&1 | grep -E "^(FAIL|===)"; done
+for s in 1 2 3 4 5 6 7 8 9 10; do python3 /tmp/difftest/fuzz.py $s 300 | grep -E "MISMATCH|done"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Full suite plus 10 fuzz seeds
+
+=== pass=34 fail=0 ===
+=== pass=17 fail=0 ===
+=== pass=15 fail=0 ===
+=== pass=11 fail=0 ===
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+fuzz done: 300 cases, 0 mismatches
+[38;5;244m - Completed in 6.582s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest
+for s in 11 12 13 14 15 16 17 18 19 20; do python3 /tmp/difftest/fuzz2.py $s 250 | grep -E "MISMATCH|done"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Byte fuzz across 10 seeds
+
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+byte-fuzz done: 250 cases, 0 mismatches
+[38;5;244m - Completed in 5.212s[0m
+
+[?25l[0m[38;5;141m> [0mOne more fuzzer targeting the EOF-mid-prompt class that produced the bug:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/fuzz3.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Truncation-focused fuzzer
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m import random, subprocess, sys
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m C = "/tmp/cref/driver"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m R = "/local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation/target/release/driver"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m def run(exe, data):
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m     p = subprocess.run([exe], input=data, stdout=subprocess.PIPE,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m                        stderr=subprocess.PIPE, cwd="/tmp/difftest")
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     return p.returncode, p.stdout, p.stderr
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m BASE = [
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     b"1\nint a = 1;\nreturn a;\n\n",
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     b"2\nfiles/small.txt\n",
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     b"2\nfiles/nope.txt\n",
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     b"2\nfiles/exact8192.txt\n",
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     b"3\n", b"4\n",
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     b"5\nint\n", b"5\n\n",
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     b"6\nfoo /* c */ bar\n\n",
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     b"9\n", b"x\n", b"\n", b"-1\n",
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m ]
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m seed = int(sys.argv[1]); n = int(sys.argv[2])
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m rng = random.Random(seed)
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m fails = 0
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m for i in range(n):
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     data = b"".join(rng.choice(BASE) for _ in range(rng.randint(1, 7)))
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     # Truncate at a random byte offset: EOF can land mid-prompt, mid-line,
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     # or between any two reads.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     if data:
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         data = data[:rng.randint(0, len(data))]
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     c = run(C, data); r = run(R, data)
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     if c != r:
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         fails += 1
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         print("=== MISMATCH #%d ===" % i)
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         print("INPUT:", data)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m         print("lenC=%d lenR=%d exitC=%d exitR=%d" % (len(c[1]), len(r[1]), c[0], r[0]))
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         for a, b in zip(c[1].split(b"\n"), r[1].split(b"\n")):
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m             if a != b:
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m                 print("C:", a[:160]); print("R:", b[:160]); break
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         if c[2] != r[2]:
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             print("errC:", c[2][:200]); print("errR:", r[2][:200])
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         if fails >= 3:
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             break
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m print("trunc-fuzz done: %d cases, %d mismatches" % (n, fails))
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m sys.exit(1 if fails else 0)
+[0m[K
+Creating: [38;5;141m/tmp/difftest/fuzz3.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest; for s in 1 2 3 4 5 6; do python3 /tmp/difftest/fuzz3.py $s 500 | grep -E "MISMATCH|C:|R:|INPUT|len|done"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run truncation fuzz across seeds
+
+trunc-fuzz done: 500 cases, 0 mismatches
+trunc-fuzz done: 500 cases, 0 mismatches
+trunc-fuzz done: 500 cases, 0 mismatches
+trunc-fuzz done: 500 cases, 0 mismatches
+trunc-fuzz done: 500 cases, 0 mismatches
+trunc-fuzz done: 500 cases, 0 mismatches
+[38;5;244m - Completed in 5.629s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT/translation && rm -rf target && cargo build --release 2>&1 | tail -3 && echo "--- binary ---" && ls -l target/release/driver && echo "--- final suite ---" && for t in t1 t2 t3 t4; do bash /tmp/difftest/$t.sh 2>&1 | grep -E "^(FAIL|===)"; done && rm -rf /tmp/difftest/*.out /tmp/difftest/*.err /tmp/difftest/in /tmp/difftest/bug 2>/dev/null; echo done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean rebuild and final suite run
+
+
+warning: `driver` (bin "driver") generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.42s
+--- binary ---
+-rwxr-xr-x. 2 scheschb amazon 493488 Sep  1 16:50 target/release/driver
+--- final suite ---
+=== pass=34 fail=0 ===
+=== pass=17 fail=0 ===
+=== pass=15 fail=0 ===
+=== pass=11 fail=0 ===
+done
+[38;5;244m - Completed in 1.218s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-pJ4tpT && md5sum c_src/src/*.c c_src/include/*.h c_src/CMakeLists.txt && echo "--- deliverables ---" && find translation -name target -prune -o -type f -print | sort && wc -l translation/src/*.rs && rm -rf /tmp/cref /tmp/difftest[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src untouched, list deliverables, clean up temp artifacts
+
+5150548e17d441ff24dffe6802b21aab  c_src/src/analyzer.c
+76359bc20fc728a74d69ad6689940378  c_src/src/main.c
+1d0cec07b4662c8d4c4cc1247bd0c732  c_src/src/tokenizer.c
+a7b4876c3d51b48dd20d57ef264935f4  c_src/include/analyzer.h
+1326825404acbe3cb77054ef5b6dae60  c_src/include/tokenizer.h
+8e4d26a92b7537facbe615f5cd3dcecc  c_src/CMakeLists.txt
+--- deliverables ---
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/analyzer.rs
+translation/src/cio.rs
+translation/src/main.rs
+translation/src/tokenizer.rs
+  290 translation/src/analyzer.rs
+  211 translation/src/cio.rs
+  262 translation/src/main.rs
+  496 translation/src/tokenizer.rs
+ 1259 total
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The Rust translation is in [38;5;10mtranslation/[0m and [38;5;10mcargo build --release[0m compiles clean (two dead-code warnings for [38;5;10mTOKEN_WHITESPACE[0m and [38;5;10mToken::length[0m, both retained to mirror the C structs).[0m[0m
+[0m[0m
+[1mFiles:[22m [38;5;10mCargo.toml[0m, [38;5;10msrc/main.rs[0m (menu loop, interactive tokenizer, file reader), [38;5;10msrc/tokenizer.rs[0m, [38;5;10msrc/analyzer.rs[0m, and [38;5;10msrc/cio.rs[0m (a C-stdio emulation layer: [38;5;10mfgets[0m, [38;5;10msscanf("%d")[0m, [38;5;10mstrstr[0m, [38;5;10mstrcspn[0m, and a 4096-byte fully-buffered stdout with unbuffered stderr).[0m[0m
+[0m[0m
+[1mVerification[22m — I compiled the C with gcc and diffed stdout, stderr, and exit status against the Rust binary: 77 hand-written cases plus ~7,000 randomized cases across three fuzzers (structured sessions, raw bytes including NULs and high-bit bytes, and input truncated at arbitrary offsets). All byte-identical. Also confirmed identical interleaving on a shared pipe across an 88 KB output spanning ~21 buffer-flush boundaries. [38;5;10mc_src/[0m is untouched (md5sums unchanged).[0m[0m
+[0m[0m
+[1mC bugs deliberately preserved:[22m[0m[0m
+- [38;5;10mc == '/' && (peek_char() == '/' || peek_char() == '*')[0m — [38;5;10mpeek_char()[0m hasn't advanced, so it still returns [38;5;10mc[0m. Every [38;5;10m/[0m becomes a COMMENT token and the [38;5;10m/[0m operator branch is unreachable.[0m[0m
+- [38;5;10mtoken.column = current_column - token.length[0m mixes [38;5;10mint[0m with [38;5;10msize_t[0m, so the subtraction happens in [38;5;10msize_t[0m and truncates back to [38;5;10mint[0m. Newline tokens get column 0, and multi-line tokens get negative columns (verified [38;5;10mC-10[0m in both).[0m[0m
+- [38;5;10manalyze_text[0m counts NEWLINE tokens into [38;5;10mresult.line_count[0m, then overwrites it with the tokenizer's cumulative line total.[0m[0m
+- Statistics and [38;5;10mtoken_type_counts[0m are never reset, so they accumulate across menu operations.[0m[0m
+- [38;5;10minteractive_tokenizer[0m checks [38;5;10mcount > 100[0m after incrementing, printing 101 tokens before truncating.[0m[0m
+[0m[0m
+The one bug my first draft introduced — and the fuzzer caught — was in [38;5;10mcase 2[0m/[38;5;10mcase 5[0m: on EOF, C's [38;5;10mbreak[0m exits the [3mswitch[23m, not the [38;5;10mwhile[0m loop, so the program redraws the menu and only exits on the next read. I had it exiting the loop directly.[0m[0m
+[38;5;8m
+ ▸ Credits: 26.17 • Time: 10m 58s
+
+[0m[1G[0m[0m[?25h

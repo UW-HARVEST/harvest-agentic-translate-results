@@ -1,0 +1,476 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
+
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Count lines
+
+  15 c_src/CMakeLists.txt
+  16 c_src/include/lib.h
+ 145 c_src/src/lib.c
+ 176 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m316 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3579 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && ls *.so && echo "=== nm -D ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && tail -30 cm.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake log
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-4E6CTX/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild2 && mkdir -p /tmp/cbuild2 && cd /tmp/cbuild2 && cmake /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; ls -la *.so 2>/dev/null; echo "=== nm -D ==="; nm -D --defined-only *.so 2>/dev/null || tail -20 cm.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir and list symbols
+
+-rwxr-xr-x. 1 scheschb amazon 15752 Sep  1 06:29 libharvest-work-pf8BxW.so
+=== nm -D ===
+0000000000001100 T update_frame_header
+[38;5;244m - Completed in 0.424s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/; echo "---translation---"; find /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation -maxdepth 3 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect working dir and translation dir
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 06:28 .
+drwxr-xr-x. 523 scheschb amazon 81920 Sep  1 06:29 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 06:28 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 06:28 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 06:28 translation
+---translation---
+/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate update_frame_header to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Public ABI surface (matches `nm -D` on the C shared object):
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!   * `update_frame_header`
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! The behaviour of the original C is reproduced exactly, including its quirks
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! (e.g. the `882000` sample-rate case, which in real FLAC would be `88200`,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! and the wrapping `channels - 1` when `channels == 0`).
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use core::ffi::c_void;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m pub type tflac_u8 = u8;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m pub type tflac_u32 = u32;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Mirrors `struct tflac` from `include/lib.h`.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// struct tflac {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m ///     tflac_u32 samplerate;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m ///     tflac_u32 channels;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m ///     tflac_u32 bitdepth;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m ///     tflac_u8 channel_mode;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m ///     tflac_u32 frame_header;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m ///     tflac_u32 cur_blocksize;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// };
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m pub struct tflac {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     pub samplerate: tflac_u32,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     pub channels: tflac_u32,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     pub bitdepth: tflac_u32,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     pub channel_mode: tflac_u8,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     pub frame_header: tflac_u32,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     pub cur_blocksize: tflac_u32,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// `enum TFLAC_CHANNEL_MODE` from `src/lib.c`.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m const TFLAC_CHANNEL_INDEPENDENT: tflac_u8 = 0;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m const TFLAC_CHANNEL_LEFT_SIDE: tflac_u8 = 1;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m const TFLAC_CHANNEL_SIDE_RIGHT: tflac_u8 = 2;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m const TFLAC_CHANNEL_MID_SIDE: tflac_u8 = 3;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// Computes the FLAC frame header bits from the encoder state.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// Direct translation of `void update_frame_header(tflac *t)`.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// `t` must be a valid, aligned, non-null pointer to a `tflac` struct, exactly
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// as required by the C original (which also dereferences it unconditionally).
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m pub unsafe extern "C" fn update_frame_header(t: *mut tflac) {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     debug_assert!(!t.is_null());
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     // Keep the null-pointer behaviour identical to C: an unconditional
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     // dereference. `c_void` import keeps the FFI intent explicit.
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     let _ = core::ptr::null::<c_void>();
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let t = &mut *t;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     // Sync code + reserved + blocking strategy bits.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let mut frame_header: tflac_u32 = 0xFFF8u32 << 16;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     // ---- block size ----
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     frame_header |= match t.cur_blocksize {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         192 => 0x01u32 << 12,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         576 => 0x02u32 << 12,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         1152 => 0x03u32 << 12,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         2304 => 0x04u32 << 12,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         4608 => 0x05u32 << 12,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         256 => 0x08u32 << 12,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         512 => 0x09u32 << 12,
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         1024 => 0x0Au32 << 12,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         2048 => 0x0Bu32 << 12,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         4096 => 0x0Cu32 << 12,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         8192 => 0x0Du32 << 12,
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         16384 => 0x0Eu32 << 12,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         32768 => 0x0Fu32 << 12,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         _ => {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             if t.cur_blocksize <= 256 {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m                 0x06u32 << 12
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m                 0x07u32 << 12
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     // ---- sample rate ----
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     match t.samplerate {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         // NOTE: `882000` (not `88200`) is what the C source says; preserved.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         882000 => frame_header |= 0x01u32 << 8,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         176400 => frame_header |= 0x02u32 << 8,
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         192000 => frame_header |= 0x03u32 << 8,
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         8000 => frame_header |= 0x04u32 << 8,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         16000 => frame_header |= 0x05u32 << 8,
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         22050 => frame_header |= 0x06u32 << 8,
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         24000 => frame_header |= 0x07u32 << 8,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         32000 => frame_header |= 0x08u32 << 8,
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         44100 => frame_header |= 0x09u32 << 8,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         48000 => frame_header |= 0x0Au32 << 8,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         96000 => frame_header |= 0x0Bu32 << 8,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         _ => {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             if t.samplerate % 1000 == 0 {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 if t.samplerate / 1000 < 256 {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                     frame_header |= 0x0Cu32 << 8;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             } else if t.samplerate < 65536 {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                 frame_header |= 0x0Du32 << 8;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             } else if t.samplerate % 10 == 0 {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 if t.samplerate / 10 < 65536 {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                     frame_header |= 0x0Eu32 << 8;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     // ---- channel assignment ----
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let mode: tflac_u8 = t.channel_mode % 4;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     match mode {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         TFLAC_CHANNEL_INDEPENDENT => {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             // Wrapping subtraction reproduces the C unsigned underflow when
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             // `channels == 0`.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             frame_header |= t.channels.wrapping_sub(1) << 4;
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         TFLAC_CHANNEL_LEFT_SIDE => frame_header |= 0x08u32 << 4,
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         TFLAC_CHANNEL_SIDE_RIGHT => frame_header |= 0x09u32 << 4,
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         TFLAC_CHANNEL_MID_SIDE => frame_header |= 0x0Au32 << 4,
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         _ => {}
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     // ---- bit depth ----
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     match t.bitdepth {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         8 => frame_header |= 1u32 << 1,
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         12 => frame_header |= 2u32 << 1,
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         16 => frame_header |= 4u32 << 1,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         20 => frame_header |= 5u32 << 1,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         24 => frame_header |= 6u32 << 1,
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         32 => frame_header |= 7u32 << 1,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         _ => {}
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     t.frame_header = frame_header;
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 55    [0m:[38;5;9m[49m     debug_assert!(!t.is_null());
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m     // Keep the null-pointer behaviour identical to C: an unconditional
+[0m[49m[38;5;9m- 57    [0m:[38;5;9m[49m     // dereference. `c_void` import keeps the FFI intent explicit.
+[0m[49m[38;5;9m- 58    [0m:[38;5;9m[49m     let _ = core::ptr::null::<c_void>();
+[0m[49m[38;5;9m- 59    [0m:[38;5;9m[49m 
+[0m[49m[39m  60, 55[0m:[39m[49m     let t = &mut *t;
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  10, 10[0m:[39m[49m #![allow(non_camel_case_types)]
+[0m[49m[39m  11, 11[0m:[39m[49m 
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m use core::ffi::c_void;
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m 
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20; echo "=== so ==="; ls -la target/release/*.so[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+=== so ===
+-rwxr-xr-x. 2 scheschb amazon 403072 Sep  1 06:30 target/release/libtranslation.so
+[38;5;244m - Completed in 0.135s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol sets.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild2 && nm -D --defined-only libharvest-work-pf8BxW.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation/target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rs_syms.txt
+echo "C symbols ($(wc -l < /tmp/c_syms.txt)):"; cat /tmp/c_syms.txt
+echo; echo "Rust symbols ($(wc -l < /tmp/rs_syms.txt)):"; cat /tmp/rs_syms.txt
+echo; echo "=== MISSING FROM RUST (C - Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt; echo "(end)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
+
+C symbols (1):
+update_frame_header
+
+Rust symbols (1):
+update_frame_header
+
+=== MISSING FROM RUST (C - Rust) ===
+(end)
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust implementations
+
+[49m[39m   1,  1[0m:[39m[49m #include <dlfcn.h>
+[0m[49m[39m   2,  2[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m   3,  3[0m:[39m[49m #include <stdlib.h>
+[0m[49m[39m   4,  4[0m:[39m[49m #include <string.h>
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m #include <math.h>
+[0m[49m[38;5;9m-  6    [0m:[38;5;9m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include "lib.h"
+[0m[49m[39m   7,  6[0m:[39m[49m 
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m typedef void (*tfm_t)(float *, const float *, int);
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m typedef void (*fn_t)(tflac *);
+[0m[49m[39m   9,  8[0m:[39m[49m 
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m static uint32_t rs = 0x12345678u;
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m static uint32_t nxt(void) { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs; }
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m static const tflac_u32 blocksizes[] = {
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m     0, 1, 2, 191, 192, 193, 255, 256, 257, 511, 512, 513, 575, 576, 577,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     1023, 1024, 1025, 1151, 1152, 1153, 2047, 2048, 2049, 2303, 2304, 2305,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     4095, 4096, 4097, 4607, 4608, 4609, 8191, 8192, 8193, 16383, 16384, 16385,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     32767, 32768, 32769, 65535, 65536, 0xFFFFFFFFu
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m static const tflac_u32 samplerates[] = {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     0, 1, 7, 10, 100, 999, 1000, 8000, 16000, 22050, 24000, 32000, 44100,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     48000, 88200, 96000, 176400, 192000, 255000, 256000, 257000, 65535, 65536,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     65530, 655350, 655360, 882000, 384000, 1000000, 2550000, 12345, 0xFFFFFFFFu,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     0xFFFFFFF6u, 4294960000u
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m };
+[0m[49m[39m  12, 22[0m:[39m[49m 
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m static float pick(int mode) {
+[0m[49m[38;5;9m- 14    [0m:[38;5;9m[49m     static const float sp[] = {
+[0m[49m[38;5;9m- 15    [0m:[38;5;9m[49m         0.0f, -0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 1e-45f, -1e-45f, 1e-38f, 1e38f,
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m         -1e38f, 3.4028235e38f, 1e-30f, 2.0f, -2.0f, 1e20f, -1e20f, 123.456f,
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m         -987.654f, 1e-20f, INFINITY, -INFINITY, NAN, -NAN, 1e16f, 4.0f, 0.25f
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m     };
+[0m[49m[38;5;9m- 19    [0m:[38;5;9m[49m     if (mode == 0) return sp[nxt() % (sizeof(sp)/sizeof(sp[0]))];
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m     if (mode == 1) { union { uint32_t u; float f; } v; v.u = nxt(); return v.f; }
+[0m[49m[38;5;9m- 21    [0m:[38;5;9m[49m     return ((float)(int32_t)nxt() / 65536.0f);
+[0m[49m[38;5;9m- 22    [0m:[38;5;9m[49m }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m static const tflac_u32 bitdepths[] = {0, 1, 4, 8, 12, 16, 17, 20, 24, 28, 32, 33, 64, 0xFFFFFFFFu};
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m static const tflac_u32 channelses[] = {0, 1, 2, 3, 8, 16, 255, 256, 0xFFFFFFFFu};
+[0m[49m[39m  23, 25[0m:[39m[49m 
+[0m[49m[39m  24, 26[0m:[39m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     if (argc != 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[39m  25, 28[0m:[39m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[39m  26, 29[0m:[39m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[39m  27, 30[0m:[39m[49m     if (!hc || !hr) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m- 28    [0m:[38;5;9m[49m     tfm_t fc = (tfm_t)dlsym(hc, "tfm");
+[0m[49m[38;5;9m- 29    [0m:[38;5;9m[49m     tfm_t fr = (tfm_t)dlsym(hr, "tfm");
+[0m[49m[38;5;9m- 30    [0m:[38;5;9m[49m     if (!fc || !fr) { fprintf(stderr, "dlsym failed (c=%p r=%p)\n", (void*)fc, (void*)fr); return 2; }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     fn_t fc = (fn_t)dlsym(hc, "update_frame_header");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     fn_t fr = (fn_t)dlsym(hr, "update_frame_header");
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     if (!fc || !fr) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[39m  31, 34[0m:[39m[49m 
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m     const int MAXN = 64;
+[0m[49m[38;5;9m- 33    [0m:[38;5;9m[49m     float *src = malloc(sizeof(float) * 3 * MAXN);
+[0m[49m[38;5;9m- 34    [0m:[38;5;9m[49m     float *dc  = malloc(sizeof(float) * 2 * MAXN);
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m     float *dr  = malloc(sizeof(float) * 2 * MAXN);
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m     long cases = 0, bad = 0;
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m     for (int mode = 0; mode < 3; mode++) {
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m         for (int trial = 0; trial < 40000; trial++) {
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m             int n = (int)(nxt() % (MAXN + 1));
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m             for (int k = 0; k < 3 * MAXN; k++) src[k] = pick(mode);
+[0m[49m[38;5;9m- 42    [0m:[38;5;9m[49m             memset(dc, 0xA5, sizeof(float) * 2 * MAXN);
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m             memset(dr, 0xA5, sizeof(float) * 2 * MAXN);
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m             fc(dc, src, n);
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m             fr(dr, src, n);
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m             cases++;
+[0m[49m[38;5;9m- 47    [0m:[38;5;9m[49m             if (memcmp(dc, dr, sizeof(float) * 2 * MAXN) != 0) {
+[0m[49m[38;5;9m- 48    [0m:[38;5;9m[49m                 if (bad++ < 5) {
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m                     fprintf(stderr, "MISMATCH mode=%d trial=%d n=%d\n", mode, trial, n);
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m                     for (int k = 0; k < 2 * n; k++)
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m                         if (memcmp(&dc[k], &dr[k], 4))
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m                             fprintf(stderr, "  [%d] c=%.9g (%08x) r=%.9g (%08x)\n", k,
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m                                     dc[k], *(uint32_t*)&dc[k], dr[k], *(uint32_t*)&dr[k]);
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m                 }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     unsigned long long n = 0, bad = 0;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     for (size_t bi = 0; bi < sizeof(blocksizes)/sizeof(*blocksizes); bi++)
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     for (size_t si = 0; si < sizeof(samplerates)/sizeof(*samplerates); si++)
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     for (size_t di = 0; di < sizeof(bitdepths)/sizeof(*bitdepths); di++)
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     for (size_t ci = 0; ci < sizeof(channelses)/sizeof(*channelses); ci++)
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     for (unsigned m = 0; m < 256; m += 1) {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         /* fill whole struct with a poison pattern so padding/layout diffs show up */
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         tflac a, b;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         memset(&a, 0xA5, sizeof(a));
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         memset(&b, 0xA5, sizeof(b));
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         a.cur_blocksize = b.cur_blocksize = blocksizes[bi];
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         a.samplerate    = b.samplerate    = samplerates[si];
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         a.bitdepth      = b.bitdepth      = bitdepths[di];
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         a.channels      = b.channels      = channelses[ci];
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         a.channel_mode  = b.channel_mode  = (tflac_u8)m;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         fc(&a);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         fr(&b);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         if (memcmp(&a, &b, sizeof(tflac)) != 0) {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             if (bad < 10) {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m                 printf("MISMATCH bs=%u sr=%u bd=%u ch=%u mode=%u : C=0x%08X RS=0x%08X\n",
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                        a.cur_blocksize, a.samplerate, a.bitdepth, a.channels, m,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                        a.frame_header, b.frame_header);
+[0m[49m[39m  55, 58[0m:[39m[49m             }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             bad++;
+[0m[49m[39m  56, 60[0m:[39m[49m         }
+[0m[49m[39m  57, 61[0m:[39m[49m     }
+[0m[49m[38;5;9m- 58    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 59    [0m:[38;5;9m[49m     /* Edge counts: 0 and negative must write nothing. */
+[0m[49m[38;5;9m- 60    [0m:[38;5;9m[49m     for (int n = -5; n <= 0; n++) {
+[0m[49m[38;5;9m- 61    [0m:[38;5;9m[49m         for (int k = 0; k < 3 * MAXN; k++) src[k] = pick(0);
+[0m[49m[38;5;9m- 62    [0m:[38;5;9m[49m         memset(dc, 0x5A, sizeof(float) * 2 * MAXN);
+[0m[49m[38;5;9m- 63    [0m:[38;5;9m[49m         memset(dr, 0x5A, sizeof(float) * 2 * MAXN);
+[0m[49m[38;5;9m- 64    [0m:[38;5;9m[49m         fc(dc, src, n); fr(dr, src, n); cases++;
+[0m[49m[38;5;9m- 65    [0m:[38;5;9m[49m         if (memcmp(dc, dr, sizeof(float) * 2 * MAXN)) { fprintf(stderr, "MISMATCH count=%d\n", n); bad++; }
+[0m[49m[38;5;9m- 66    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 67    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 68    [0m:[38;5;9m[49m     /* Exhaustive small structured grid to hit the s0<s1 branch boundary hard. */
+[0m[49m[38;5;9m- 69    [0m:[38;5;9m[49m     static const float g[] = {-2.0f, -1.0f, -0.0f, 0.0f, 1.0f, 2.0f, 1e30f, -1e30f,
+[0m[49m[38;5;9m- 70    [0m:[38;5;9m[49m                               INFINITY, -INFINITY, NAN, 1e-40f, 0.5f};
+[0m[49m[38;5;9m- 71    [0m:[38;5;9m[49m     int G = sizeof(g)/sizeof(g[0]);
+[0m[49m[38;5;9m- 72    [0m:[38;5;9m[49m     for (int a = 0; a < G; a++) for (int b = 0; b < G; b++) for (int c = 0; c < G; c++) {
+[0m[49m[38;5;9m- 73    [0m:[38;5;9m[49m         float s[3] = { g[a], g[b], g[c] };
+[0m[49m[38;5;9m- 74    [0m:[38;5;9m[49m         float o1[2], o2[2];
+[0m[49m[38;5;9m- 75    [0m:[38;5;9m[49m         memset(o1, 0x3C, sizeof o1); memset(o2, 0x3C, sizeof o2);
+[0m[49m[38;5;9m- 76    [0m:[38;5;9m[49m         fc(o1, s, 1); fr(o2, s, 1); cases++;
+[0m[49m[38;5;9m- 77    [0m:[38;5;9m[49m         if (memcmp(o1, o2, sizeof o1)) {
+[0m[49m[38;5;9m- 78    [0m:[38;5;9m[49m             if (bad++ < 20)
+[0m[49m[38;5;9m- 79    [0m:[38;5;9m[49m                 fprintf(stderr, "GRID MISMATCH s=(%08x,%08x,%08x) c=(%08x,%08x) r=(%08x,%08x)\n",
+[0m[49m[38;5;9m- 80    [0m:[38;5;9m[49m                         *(uint32_t*)&s[0], *(uint32_t*)&s[1], *(uint32_t*)&s[2],
+[0m[49m[38;5;9m- 81    [0m:[38;5;9m[49m                         *(uint32_t*)&o1[0], *(uint32_t*)&o1[1],
+[0m[49m[38;5;9m- 82    [0m:[38;5;9m[49m                         *(uint32_t*)&o2[0], *(uint32_t*)&o2[1]);
+[0m[49m[38;5;9m- 83    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 84    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 85    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 86    [0m:[38;5;9m[49m     printf("cases=%ld mismatches=%ld\n", cases, bad);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     printf("cases=%llu mismatches=%llu\n", n, bad);
+[0m[49m[39m  87, 63[0m:[39m[49m     return bad ? 1 : 0;
+[0m[49m[39m  88, 64[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -I /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/c_src/include difftest.c -o difftest -ldl && ./difftest /tmp/cbuild2/libharvest-work-pf8BxW.so /local/home/scheschb/.harvest/work/harvest-work-pf8BxW/translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
+
+cases=49351680 mismatches=0
+[38;5;244m - Completed in 0.630s[0m
+
+[?25l[0m[38;5;141m> [0mComplete and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## Scope[0m[0m
+The C library is a single translation unit: [38;5;10mc_src/src/lib.c[0m + [38;5;10mc_src/include/lib.h[0m, exporting exactly one public symbol. No namespace-renaming macros exist in the header, so the linker name is the source name.[0m[0m
+[0m[0m
+[38;5;10mC  (libharvest-work-pf8BxW.so):  update_frame_header
+Rust (libtranslation.so):        update_frame_header
+comm -23 c_syms rs_syms  →  empty
+[0m[0m[0m
+[0m[0m
+[38;5;252m[1m## What was written[0m[0m
+- [38;5;10mtranslation/Cargo.toml[0m — [38;5;10mcrate-type = ["cdylib"][0m[0m[0m
+- [38;5;10mtranslation/src/lib.rs[0m — [38;5;10m#[repr(C)] struct tflac[0m mirroring the header, and [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C" fn update_frame_header(t: *mut tflac)[0m[0m[0m
+[0m[0m
+Behaviour is a literal translation, preserving the C quirks rather than fixing them:[0m[0m
+- the sample-rate case [38;5;10m882000[0m (real FLAC uses [38;5;10m88200[0m) is kept as written;[0m[0m
+- [38;5;10m(channels - 1) << 4[0m uses [38;5;10mwrapping_sub[0m, reproducing the unsigned underflow to [38;5;10m0xFFFFFFF0[0m when [38;5;10mchannels == 0[0m;[0m[0m
+- the nested-[38;5;10mif[0m structure of the sample-rate [38;5;10mdefault[0m branch is kept, so rates like [38;5;10m256000[0m (divisible by 1000 but [38;5;10m/1000 >= 256[0m) fall through with [3mno[23m rate bits set instead of reaching the [38;5;10m%10[0m path;[0m[0m
+- all [38;5;10mswitch[0m fallthrough/default outcomes and the check order are unchanged.[0m[0m
+[0m[0m
+The only structural difference is that the header bits accumulate in a local and are stored once at the end. Nothing else reads [38;5;10mframe_header[0m during the function, so this is observationally identical.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+Built the C library with CMake and diffed [38;5;10mnm -D --defined-only[0m against the Rust [38;5;10m.so[0m: identical single-symbol export list.[0m[0m
+[0m[0m
+Then ran a differential harness ([38;5;10m/tmp/difftest.c[0m) that [38;5;10mdlopen[0ms both shared objects and calls both through the C header's own type. Each struct is pre-filled with [38;5;10m0xA5[0m poison and compared with [38;5;10mmemcmp[0m over the whole struct, so a layout or padding discrepancy would surface, not just a wrong return value. Across the cross product of boundary-heavy blocksizes, sample rates, bit depths, channel counts, and all 256 [38;5;10mchannel_mode[0m values:[0m[0m
+[0m[0m
+[38;5;10mcases=49351680 mismatches=0
+[0m[0m[0m
+[0m[0m
+[38;5;10mcargo build --release[0m succeeds with no warnings.[0m[0m
+[38;5;8m
+ ▸ Credits: 4.70 • Time: 2m 11s
+
+[0m[1G[0m[0m[?25h

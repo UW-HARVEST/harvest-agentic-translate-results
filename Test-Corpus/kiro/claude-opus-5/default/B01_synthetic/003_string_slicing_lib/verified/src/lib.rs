@@ -1,105 +1,92 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Permission is hereby granted, free of charge,
-// to any person obtaining a copy of this software
-// and associated documentation files (the "Software"),
-// to deal in the Software without restriction,
-// including without limitation the rights to use, copy,
-// modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software,
-// and to permit persons to whom the Software is furnished to do so,
-// subject to the following conditions:
+// Rust translation of c_src/src/slicing.c (MIT Lincoln Laboratory, 2025).
 //
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions of the Software.
+// The C library exports exactly one public symbol, `slice`, declared in
+// include/slicing.h as:
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//     int slice(char *mystr, int *start_ptr, int *stop_ptr);
+//
+// There are no namespace/renaming macros in the public header, so the final
+// linker symbol is plain `slice`.
+//
+// Output is produced through libc's `printf` so that formatting, stdout
+// buffering and flush ordering are byte-for-byte identical to the C library.
 
 #![allow(non_snake_case)]
-
-//! Rust translation of `src/slicing.c`.
-//!
-//! Output is emitted through the C runtime's `printf` so that the bytes
-//! written, and the stdio buffering behaviour, are identical to the original
-//! C library (important when the caller is a C program that also writes to
-//! `stdout`).
 
 use std::ffi::{c_char, c_int};
 
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
     fn strlen(s: *const c_char) -> usize;
+    fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/*
-Index into a passed string
-and print the substring indexed by [*start_ptr, *stop_ptr).
-If there is no start, use 0.
-If there is no stop, use the end of the string.
-*/
+const ERR_START: &[u8] = b"Error: start is off the end of the string!\n\0";
+const ERR_STOP_OFF_END: &[u8] = b"Error: stop is off the end of the string!\n\0";
+const ERR_STOP_ORDER: &[u8] = b"Error: stop must come after start!\n\0";
+const FMT_SLICE: &[u8] = b"%.*s\n\0";
 
+/// Index into a passed string and print the substring indexed by
+/// `[*start_ptr, *stop_ptr)`.
+/// If there is no start, use 0. If there is no stop, use the end of the string.
+///
+/// Faithful translation notes (C behaviour reproduced verbatim, bugs included):
+///
+/// * `len` is a `size_t`. The C comparisons `start > len` and `stop > len`
+///   therefore undergo the usual arithmetic conversions and promote the *signed*
+///   `int` to `size_t`. A negative index wraps to a huge unsigned value and
+///   trips the "off the end of the string" branch. `x as usize` in Rust performs
+///   the same sign-extending reinterpretation.
+/// * `stop <= start` is a plain signed `int` comparison, done *after* the
+///   `stop > len` check. Order of the checks is preserved.
+/// * When `stop_ptr` is NULL, `stop = len` truncates `size_t` to `int`.
+/// * `stop - start` is computed in `int` and passed as the `%.*s` precision.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn slice(
     mystr: *mut c_char,
     start_ptr: *mut c_int,
     stop_ptr: *mut c_int,
 ) -> c_int {
-    // size_t len = strlen(mystr);
-    let len: usize = unsafe { strlen(mystr) };
-
-    let start: c_int;
-    let stop: c_int;
-
-    if !start_ptr.is_null() {
-        start = unsafe { *start_ptr };
-        // `start > len` in C: the int is converted to size_t, so the
-        // comparison is unsigned. A negative `start` therefore compares
-        // greater than `len`. Reproduced here with the same cast.
-        if (start as usize) > len {
-            unsafe {
-                printf(c"Error: start is off the end of the string!\n".as_ptr());
-            }
-            return 1;
-        }
-    } else {
-        start = 0;
-    }
-
-    if !stop_ptr.is_null() {
-        let s = unsafe { *stop_ptr };
-        // Same unsigned promotion as above.
-        if (s as usize) > len {
-            unsafe {
-                printf(c"Error: stop is off the end of the string!\n".as_ptr());
-            }
-            return 1;
-        }
-        if s <= start {
-            unsafe {
-                printf(c"Error: stop must come after start!\n".as_ptr());
-            }
-            return 1;
-        }
-        stop = s;
-    // single-line else statement just to make style checking sad
-    } else {
-        stop = len as c_int;
-    }
-
-    /* char arithmetic: skip ahead `start` characters in the array */
     unsafe {
+        let len: usize = strlen(mystr);
+
+        let start: c_int;
+        let stop: c_int;
+
+        if !start_ptr.is_null() {
+            start = *start_ptr;
+            // C: `start > len` -> int promoted to size_t.
+            if (start as usize) > len {
+                printf(ERR_START.as_ptr() as *const c_char);
+                return 1;
+            }
+        } else {
+            start = 0;
+        }
+
+        if !stop_ptr.is_null() {
+            stop = *stop_ptr;
+            // C: `stop > len` -> int promoted to size_t.
+            if (stop as usize) > len {
+                printf(ERR_STOP_OFF_END.as_ptr() as *const c_char);
+                return 1;
+            }
+            // C: signed comparison.
+            if stop <= start {
+                printf(ERR_STOP_ORDER.as_ptr() as *const c_char);
+                return 1;
+            }
+        } else {
+            // C: `stop = len` truncates size_t -> int.
+            stop = len as c_int;
+        }
+
+        // char arithmetic: skip ahead `start` characters in the array
         printf(
-            c"%.*s\n".as_ptr(),
+            FMT_SLICE.as_ptr() as *const c_char,
             stop.wrapping_sub(start),
             mystr.offset(start as isize),
         );
-    }
 
-    0
+        0
+    }
 }

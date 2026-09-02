@@ -1,39 +1,26 @@
-// Rust translation of c_src/src/driver.c
+// Rust translation of the C library in c_src/.
 //
-// Original copyright notice from the C sources:
+// Original C library (c_src/):
+//   * c_src/include/driver.h -- public header, declares `void driver(int x);`
+//   * c_src/src/driver.c     -- the single translation unit
 //
-// Copyright 2025 MIT Lincoln Laboratory
-// Permission is hereby granted, free of charge,
-// to any person obtaining a copy of this software
-// and associated documentation files (the "Software"),
-// to deal in the Software without restriction,
-// including without limitation the rights to use, copy,
-// modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software,
-// and to permit persons to whom the Software is furnished to do so,
-// subject to the following conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// The C build (c_src/CMakeLists.txt) compiles src/driver.c into a shared
+// library whose only exported (defined) dynamic symbol is `driver`. There are
+// no namespace-renaming preprocessor macros in the public header, so the final
+// linker symbol is plainly `driver`.
 
-use std::ffi::c_char;
-use std::ffi::c_int;
+#![allow(non_snake_case)]
 
+use std::ffi::{c_char, c_int};
+
+// The C code uses `printf("%d\n", y)` from <stdio.h>. We call the very same
+// libc function rather than Rust's own `print!`/`std::io::stdout`, so that the
+// emitted bytes *and* the stdio buffering/flush semantics (line buffered on a
+// tty, fully buffered when redirected, flushed at exit by libc) are identical
+// to the original library. This also keeps output correctly interleaved with
+// any stdio writes performed by a C caller that loads this shared object.
 unsafe extern "C" {
-    /// C standard library `printf`. Used directly so that output goes through
-    /// the same `stdout` `FILE` stream (and therefore the same buffering and
-    /// interleaving behavior) as the original C implementation.
-    #[link_name = "printf"]
-    safe fn c_printf(format: *const c_char, ...) -> c_int;
+    fn printf(format: *const c_char, ...) -> c_int;
 }
 
 /// Translation of:
@@ -46,12 +33,23 @@ unsafe extern "C" {
 /// }
 /// ```
 ///
-/// `wrapping_*` arithmetic is used to reproduce the two's-complement wrap-around
-/// that the C code exhibits in practice on overflow (signed overflow is UB in C,
-/// but the emitted code wraps).
+/// `register` is only a (long-obsolete) storage-class hint and has no bearing
+/// on observable behaviour, so it is not modelled.
+///
+/// The arithmetic is performed with wrapping semantics on `i32`: signed
+/// overflow is undefined behaviour in C, but the C library as actually compiled
+/// (two's-complement `lea`/`add` on the target) wraps, so `wrapping_*` faithfully
+/// reproduces the original behaviour for every input, including `INT_MIN` and
+/// values near `INT_MAX`, instead of panicking as Rust's checked arithmetic
+/// would in a debug build. No bug is "fixed" here: the observable result matches
+/// the C.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
-    let mut y: c_int = 2i32.wrapping_mul(x);
+    let mut y: c_int = (x as i32).wrapping_mul(2);
     y = y.wrapping_add(300);
-    c_printf(c"%d\n".as_ptr(), y);
+
+    // "%d\n\0" -- exactly the format string used by the C source.
+    unsafe {
+        printf(c"%d\n".as_ptr(), y);
+    }
 }

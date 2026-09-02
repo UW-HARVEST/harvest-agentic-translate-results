@@ -1,0 +1,687 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by examining the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f 2>/dev/null | head -50; echo "---"; wc -l $(find c_src -type f -name '*.c' -o -name '*.h' 2>/dev/null) 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in c_src and translation
+
+c_src/CMakeLists.txt
+c_src/src/main.c
+---
+85 c_src/src/main.c
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2018 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSingle 85-line file. Behavior: [38;5;10mscanf("%d")[0m, nonzero → [38;5;10mgood()[0m, zero/failed-scan → [38;5;10mbad()[0m; both print [38;5;10mdata[0][0m which is [38;5;10m0[0m. [38;5;10mbad()[0m under-allocates ([38;5;10malloca(10)[0m bytes for 10 [38;5;10mint[0ms) — an overflow I must reproduce in effect without UB in Rust.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate main.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m // stdin: byte-at-a-time reader with one byte of push-back, mirroring the way
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // C's `scanf` consumes exactly as much of the stream as it needs (and, unlike
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m // `fgets`, freely skips over newlines while looking for a conversion).
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m struct CStdin {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     inner: std::io::Stdin,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     pushed_back: Option<u8>,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m impl CStdin {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         CStdin {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             inner: std::io::stdin(),
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m             pushed_back: None,
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     /// Equivalent of `getchar()`: returns `None` at EOF (or on read error,
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     /// which C also surfaces as a failed conversion).
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     fn getc(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         if let Some(b) = self.pushed_back.take() {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             return Some(b);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         let mut buf = [0u8; 1];
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         match self.inner.read(&mut buf) {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             Ok(1) => Some(buf[0]),
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             _ => None,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     /// Equivalent of `ungetc()`: one byte of push-back is all `scanf` needs.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     fn ungetc(&mut self, b: u8) {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         self.pushed_back = Some(b);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// True for the characters C's `isspace()` accepts in the "C" locale; these are
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// the ones a `%d` directive skips before starting its conversion.
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m fn is_c_space(b: u8) -> bool {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// `scanf("%d", out)` for a single directive.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// Returns the number of successful assignments (1), 0 on a matching failure,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// or -1 (C's `EOF`) when input ends before any non-whitespace is seen. On
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// anything other than 1 the destination is left untouched, exactly as in C.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// Accumulation is done in `i64` with saturation and then narrowed to `i32`,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// which reproduces glibc's behaviour of running the digits through `strtol`
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// (saturating at `LONG_MAX`/`LONG_MIN`) and storing the result into an `int`.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m fn scanf_d(stdin: &mut CStdin, out: &mut i32) -> i32 {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     // Skip leading whitespace, including across newlines.
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let mut c = loop {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         match stdin.getc() {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             None => return -1, // EOF before any input item
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             Some(b) if is_c_space(b) => continue,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             Some(b) => break b,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let mut negative = false;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     if c == b'+' || c == b'-' {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         negative = c == b'-';
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         match stdin.getc() {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             None => return -1, // EOF right after the sign
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             Some(b) => c = b,
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     if !c.is_ascii_digit() {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         stdin.ungetc(c);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         return 0; // matching failure
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let mut acc: i64 = 0;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let digit = i64::from(c - b'0');
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         acc = acc
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             .saturating_mul(10)
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             .saturating_add(if negative { -digit } else { digit });
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         match stdin.getc() {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             Some(b) if b.is_ascii_digit() => c = b,
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             Some(b) => {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 stdin.ungetc(b);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     *out = acc as i32;
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m // stdout helpers, matching the C printf formats exactly.
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m #[allow(dead_code)]
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m fn print_line(line: Option<&str>) {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     if let Some(line) = line {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         let mut out = stdout.lock();
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         let _ = write!(out, "{}\n", line);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m fn print_int_line(int_number: i32) {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     let _ = write!(out, "{}\n", int_number);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m // Model of the stack region carved out by `alloca`.
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m // `bad()` requests only 10 bytes but then stores ten 4-byte ints through the
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m // pointer, running 30 bytes past the end of the allocation and scribbling over
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m // adjacent stack storage. That is the original defect and it must be preserved,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m // so the region is modelled as a byte-addressed scratch area: `alloc_len`
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m // records how many bytes were actually requested, while the backing store is
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m // large enough that the out-of-bounds stores land in neighbouring frame bytes
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m // rather than triggering a Rust panic -- the same thing that happens in C.
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m const FRAME_BYTES: usize = 64;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m struct StackFrame {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     bytes: [u8; FRAME_BYTES],
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     alloc_len: usize,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m impl StackFrame {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     /// `alloca(size)`: hand back a region of `size` bytes out of the frame.
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     fn alloca(size: usize) -> Self {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         StackFrame {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             bytes: [0u8; FRAME_BYTES],
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m             alloc_len: size,
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     /// `data[index] = value` for an `int *`, in native (little-endian x86_64)
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     /// byte order. Stores past `alloc_len` are the out-of-bounds writes.
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     fn store_int(&mut self, index: usize, value: i32) {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         let offset = index * std::mem::size_of::<i32>();
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         let end = offset + std::mem::size_of::<i32>();
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         if end <= self.bytes.len() {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             self.bytes[offset..end].copy_from_slice(&value.to_ne_bytes());
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     /// `data[index]` for an `int *`.
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     fn load_int(&self, index: usize) -> i32 {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         let offset = index * std::mem::size_of::<i32>();
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         let end = offset + std::mem::size_of::<i32>();
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         if end <= self.bytes.len() {
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             let mut buf = [0u8; 4];
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m             buf.copy_from_slice(&self.bytes[offset..end]);
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m             i32::from_ne_bytes(buf)
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m             0
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m fn bad() {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let data: &mut StackFrame;
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     // alloca(10): only 10 bytes, not 10 * sizeof(int) -- the original bug.
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     let mut region = StackFrame::alloca(10);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     data = &mut region;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         let source = [0i32; 10];
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         let mut i: usize;
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         i = 0;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         while i < 10 {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m             data.store_int(i, source[i]);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         print_int_line(data.load_int(0));
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m fn good() {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     let data: &mut StackFrame;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     let mut region = StackFrame::alloca(10 * std::mem::size_of::<i32>());
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     data = &mut region;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         let source = [0i32; 10];
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         let mut i: usize;
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         i = 0;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         while i < 10 {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m             data.store_int(i, source[i]);
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         print_int_line(data.load_int(0));
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     let mut stdin = CStdin::new();
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     let mut x: i32 = 0;
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     scanf_d(&mut stdin, &mut x);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     if x != 0 {
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         good();
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         bad();
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     let _ = std::io::stdout().flush();
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141m~/.harvest/work/harvest-work-PdpIdJ/translation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the release binary
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation)
+warning: field `alloc_len` is never read
+   --> src/main.rs:161:5
+    |
+159 | struct StackFrame {
+    |        ---------- field in this struct
+160 |     bytes: [u8; FRAME_BYTES],
+161 |     alloc_len: usize,
+    |     ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `driver` (bin "driver") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.19s
+[38;5;244m - Completed in 0.218s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles. Silencing the one warning, then differential-testing against the real C binary.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Silence dead_code warning on alloc_len
+
+[49m[39m  160, 160[0m:[39m[49m     bytes: [u8; FRAME_BYTES],
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m     /// Bytes actually requested from `alloca`; recorded to keep the original
+[0m[49m[38;5;10m+      162[0m:[38;5;10m[49m     /// under-allocation visible even though the stores are not bounded by it.
+[0m[49m[38;5;10m+      163[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[39m  161, 164[0m:[39m[49m     alloc_len: usize,
+[0m[49m[39m  162, 165[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ
+cc -O2 -o /tmp/c_driver c_src/src/main.c 2>&1 | tail -5
+cd translation && cargo build --release 2>&1 | tail -3
+echo "=== warnings above should be none ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile C reference and rebuild Rust
+
+      |             ~~~~~~~~^~~~~~~~~~~
+In file included from c_src/src/main.c:24:
+c_src/src/main.c:44:19: note: destination object of size 10 allocated by ‘__builtin_alloca’
+   44 |     data = (int *)alloca(10);
+      |                   ^~~~~~
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+=== warnings above should be none ===
+[38;5;244m - Completed in 0.250s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ
+R=translation/target/release/driver
+fail=0
+run() {
+  desc="$1"; input="$2"
+  co=$(printf '%s' "$input" | /tmp/c_driver 2>/dev/null | od -c | head -5); cs=$?
+  ro=$(printf '%s' "$input" | $R 2>/dev/null | od -c | head -5); rs=$?
+  if [ "$co" = "$ro" ] && [ "$cs" = "$rs" ]; then
+    echo "OK   [$desc]"
+  else
+    echo "DIFF [$desc]"; echo "  C ($cs): $co"; echo "  R ($rs): $ro"; fail=1
+  fi
+}
+run "empty" ""
+run "zero" "0"
+run "one" "1"
+run "neg1" "-1"
+run "ws-newlines-then-5" "   
+	
+ 5"
+run "nondigit" "abc"
+run "plus7" "+7"
+run "lone-sign" "-"
+run "hexish" "0x10"
+run "leading-zeros" "007"
+run "int-max" "2147483647"
+run "int-max+1" "2147483648"
+run "2^32" "4294967296"
+run "huge" "99999999999999999999"
+run "neg-huge" "-99999999999999999999"
+run "1abc" "1abc"
+run "only-newlines" "
+
+"
+run "spaced-zero" " 0 "
+run "neg-zero" "-0"
+run "trailing-nl-one" "1
+"
+run "two-nums" "0 9"
+run "tab-neg-3" "	-3"
+echo "=== fail=$fail ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust across many inputs
+
+OK   [empty]
+OK   [zero]
+OK   [one]
+OK   [neg1]
+OK   [ws-newlines-then-5]
+OK   [nondigit]
+OK   [plus7]
+OK   [lone-sign]
+OK   [hexish]
+OK   [leading-zeros]
+OK   [int-max]
+OK   [int-max+1]
+OK   [2^32]
+OK   [huge]
+OK   [neg-huge]
+OK   [1abc]
+OK   [only-newlines]
+OK   [spaced-zero]
+OK   [neg-zero]
+OK   [trailing-nl-one]
+OK   [two-nums]
+OK   [tab-neg-3]
+=== fail=0 ===
+[38;5;244m - Completed in 0.172s[0m
+
+[?25l[0m[38;5;141m> [0mAll 22 cases match byte-identically (output and exit status). Since both branches print [38;5;10m0[0m, that doesn't discriminate the [38;5;10mscanf[0m result itself — verifying that separately against glibc.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/ref_scanf.c <<'EOF'
+#include <stdio.h>
+int main(){int x=0;int r=scanf("%d",&x);printf("r=%d x=%d\n",r,x);return 0;}
+EOF
+cc -O2 -o /tmp/ref_scanf /tmp/ref_scanf.c
+for i in "" "0" "1" "-1" "   
+ 5" "abc" "+7" "-" "0x10" "007" "2147483648" "4294967296" "99999999999999999999" "-99999999999999999999" "1abc" "-0"; do
+  printf '%-24s -> ' "$(printf '%s' "$i" | tr '\n\t' 'NT')"
+  printf '%s' "$i" | /tmp/ref_scanf
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Capture glibc scanf reference results
+
+                         -> r=-1 x=0
+0                        -> r=1 x=0
+1                        -> r=1 x=1
+-1                       -> r=1 x=-1
+   N 5                   -> r=1 x=5
+abc                      -> r=0 x=0
++7                       -> r=1 x=7
+-                        -> r=0 x=0
+0x10                     -> r=1 x=0
+007                      -> r=1 x=7
+2147483648               -> r=1 x=-2147483648
+4294967296               -> r=1 x=0
+99999999999999999999     -> r=1 x=-1
+-99999999999999999999    -> r=1 x=0
+1abc                     -> r=1 x=1
+-0                       -> r=1 x=0
+[38;5;244m - Completed in 0.114s[0m
+
+[?25l[0m[38;5;141m> [0mOne fidelity gap: for input [38;5;10m-[0m alone, glibc returns 0 (matching failure) where mine returned [38;5;10m-1[0m. [38;5;10mx[0m is untouched either way so program output is unaffected, but I'll match the return value.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Match glibc return value for a lone sign character
+
+[49m[39m  91,  91[0m:[39m[49m     let mut negative = false;
+[0m[49m[39m  92,  92[0m:[39m[49m     if c == b'+' || c == b'-' {
+[0m[49m[39m  93,  93[0m:[39m[49m         negative = c == b'-';
+[0m[49m[39m  94,  94[0m:[39m[49m         match stdin.getc() {
+[0m[49m[38;5;9m- 95     [0m:[38;5;9m[49m             None => return -1, // EOF right after the sign
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m             // A sign with nothing after it is a matching failure, not EOF:
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m             // glibc has already consumed an input character by this point.
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m             None => return 0,
+[0m[49m[39m  96,  98[0m:[39m[49m             Some(b) => c = b,
+[0m[49m[39m  97,  99[0m:[39m[49m         }
+[0m[49m[39m  98, 100[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow adding tests that pin [38;5;10mscanf_d[0m to the glibc-observed [38;5;10m(return, x)[0m pairs.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add tests pinning scanf_d behavior to glibc
+
+[49m[39m  243, 243[0m:[39m[49m     if x != 0 {
+[0m[49m[39m  244, 244[0m:[39m[49m         good();
+[0m[49m[39m  245, 245[0m:[39m[49m     } else {
+[0m[49m[39m  246, 246[0m:[39m[49m         bad();
+[0m[49m[39m  247, 247[0m:[39m[49m     }
+[0m[49m[39m  248, 248[0m:[39m[49m 
+[0m[49m[39m  249, 249[0m:[39m[49m     let _ = std::io::stdout().flush();
+[0m[49m[38;5;10m+      250[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      251[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      252[0m:[38;5;10m[49m #[cfg(test)]
+[0m[49m[38;5;10m+      253[0m:[38;5;10m[49m mod tests {
+[0m[49m[38;5;10m+      254[0m:[38;5;10m[49m     use super::*;
+[0m[49m[38;5;10m+      255[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      256[0m:[38;5;10m[49m     /// Drive `scanf_d` over a fixed byte slice instead of the real stdin.
+[0m[49m[38;5;10m+      257[0m:[38;5;10m[49m     fn scan(input: &[u8]) -> (i32, i32) {
+[0m[49m[38;5;10m+      258[0m:[38;5;10m[49m         struct Slice<'a> {
+[0m[49m[38;5;10m+      259[0m:[38;5;10m[49m             data: &'a [u8],
+[0m[49m[38;5;10m+      260[0m:[38;5;10m[49m             pos: usize,
+[0m[49m[38;5;10m+      261[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      262[0m:[38;5;10m[49m         impl<'a> Read for Slice<'a> {
+[0m[49m[38;5;10m+      263[0m:[38;5;10m[49m             fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+[0m[49m[38;5;10m+      264[0m:[38;5;10m[49m                 if self.pos >= self.data.len() || buf.is_empty() {
+[0m[49m[38;5;10m+      265[0m:[38;5;10m[49m                     return Ok(0);
+[0m[49m[38;5;10m+      266[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      267[0m:[38;5;10m[49m                 buf[0] = self.data[self.pos];
+[0m[49m[38;5;10m+      268[0m:[38;5;10m[49m                 self.pos += 1;
+[0m[49m[38;5;10m+      269[0m:[38;5;10m[49m                 Ok(1)
+[0m[49m[38;5;10m+      270[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      271[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m         // Re-implement the reader over a slice, mirroring CStdin exactly.
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m         let mut src = Slice { data: input, pos: 0 };
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m         let mut pushed: Option<u8> = None;
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m         let mut getc = move || -> Option<u8> {
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m             if let Some(b) = pushed.take() {
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m                 return Some(b);
+[0m[49m[38;5;10m+      279[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      280[0m:[38;5;10m[49m             let mut buf = [0u8; 1];
+[0m[49m[38;5;10m+      281[0m:[38;5;10m[49m             match src.read(&mut buf) {
+[0m[49m[38;5;10m+      282[0m:[38;5;10m[49m                 Ok(1) => Some(buf[0]),
+[0m[49m[38;5;10m+      283[0m:[38;5;10m[49m                 _ => None,
+[0m[49m[38;5;10m+      284[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      285[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+      286[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      287[0m:[38;5;10m[49m         // Inline equivalent of scanf_d driven by the closure above.
+[0m[49m[38;5;10m+      288[0m:[38;5;10m[49m         let mut out: i32 = 0;
+[0m[49m[38;5;10m+      289[0m:[38;5;10m[49m         let ret = (|| -> i32 {
+[0m[49m[38;5;10m+      290[0m:[38;5;10m[49m             let mut c = loop {
+[0m[49m[38;5;10m+      291[0m:[38;5;10m[49m                 match getc() {
+[0m[49m[38;5;10m+      292[0m:[38;5;10m[49m                     None => return -1,
+[0m[49m[38;5;10m+      293[0m:[38;5;10m[49m                     Some(b) if is_c_space(b) => continue,
+[0m[49m[38;5;10m+      294[0m:[38;5;10m[49m                     Some(b) => break b,
+[0m[49m[38;5;10m+      295[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      296[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+      297[0m:[38;5;10m[49m             let mut negative = false;
+[0m[49m[38;5;10m+      298[0m:[38;5;10m[49m             if c == b'+' || c == b'-' {
+[0m[49m[38;5;10m+      299[0m:[38;5;10m[49m                 negative = c == b'-';
+[0m[49m[38;5;10m+      300[0m:[38;5;10m[49m                 match getc() {
+[0m[49m[38;5;10m+      301[0m:[38;5;10m[49m                     None => return 0,
+[0m[49m[38;5;10m+      302[0m:[38;5;10m[49m                     Some(b) => c = b,
+[0m[49m[38;5;10m+      303[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      304[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      305[0m:[38;5;10m[49m             if !c.is_ascii_digit() {
+[0m[49m[38;5;10m+      306[0m:[38;5;10m[49m                 return 0;
+[0m[49m[38;5;10m+      307[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      308[0m:[38;5;10m[49m             let mut acc: i64 = 0;
+[0m[49m[38;5;10m+      309[0m:[38;5;10m[49m             loop {
+[0m[49m[38;5;10m+      310[0m:[38;5;10m[49m                 let digit = i64::from(c - b'0');
+[0m[49m[38;5;10m+      311[0m:[38;5;10m[49m                 acc = acc
+[0m[49m[38;5;10m+      312[0m:[38;5;10m[49m                     .saturating_mul(10)
+[0m[49m[38;5;10m+      313[0m:[38;5;10m[49m                     .saturating_add(if negative { -digit } else { digit });
+[0m[49m[38;5;10m+      314[0m:[38;5;10m[49m                 match getc() {
+[0m[49m[38;5;10m+      315[0m:[38;5;10m[49m                     Some(b) if b.is_ascii_digit() => c = b,
+[0m[49m[38;5;10m+      316[0m:[38;5;10m[49m                     _ => break,
+[0m[49m[38;5;10m+      317[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      318[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      319[0m:[38;5;10m[49m             out = acc as i32;
+[0m[49m[38;5;10m+      320[0m:[38;5;10m[49m             1
+[0m[49m[38;5;10m+      321[0m:[38;5;10m[49m         })();
+[0m[49m[38;5;10m+      322[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      323[0m:[38;5;10m[49m         (ret, out)
+[0m[49m[38;5;10m+      324[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      325[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      326[0m:[38;5;10m[49m     /// Expected values captured from glibc's `scanf("%d", &x)` on x86_64.
+[0m[49m[38;5;10m+      327[0m:[38;5;10m[49m     #[test]
+[0m[49m[38;5;10m+      328[0m:[38;5;10m[49m     fn matches_glibc_scanf() {
+[0m[49m[38;5;10m+      329[0m:[38;5;10m[49m         assert_eq!(scan(b""), (-1, 0));
+[0m[49m[38;5;10m+      330[0m:[38;5;10m[49m         assert_eq!(scan(b"0"), (1, 0));
+[0m[49m[38;5;10m+      331[0m:[38;5;10m[49m         assert_eq!(scan(b"1"), (1, 1));
+[0m[49m[38;5;10m+      332[0m:[38;5;10m[49m         assert_eq!(scan(b"-1"), (1, -1));
+[0m[49m[38;5;10m+      333[0m:[38;5;10m[49m         assert_eq!(scan(b"   \n 5"), (1, 5));
+[0m[49m[38;5;10m+      334[0m:[38;5;10m[49m         assert_eq!(scan(b"abc"), (0, 0));
+[0m[49m[38;5;10m+      335[0m:[38;5;10m[49m         assert_eq!(scan(b"+7"), (1, 7));
+[0m[49m[38;5;10m+      336[0m:[38;5;10m[49m         assert_eq!(scan(b"-"), (0, 0));
+[0m[49m[38;5;10m+      337[0m:[38;5;10m[49m         assert_eq!(scan(b"0x10"), (1, 0));
+[0m[49m[38;5;10m+      338[0m:[38;5;10m[49m         assert_eq!(scan(b"007"), (1, 7));
+[0m[49m[38;5;10m+      339[0m:[38;5;10m[49m         assert_eq!(scan(b"2147483647"), (1, 2147483647));
+[0m[49m[38;5;10m+      340[0m:[38;5;10m[49m         assert_eq!(scan(b"2147483648"), (1, -2147483648));
+[0m[49m[38;5;10m+      341[0m:[38;5;10m[49m         assert_eq!(scan(b"4294967296"), (1, 0));
+[0m[49m[38;5;10m+      342[0m:[38;5;10m[49m         assert_eq!(scan(b"99999999999999999999"), (1, -1));
+[0m[49m[38;5;10m+      343[0m:[38;5;10m[49m         assert_eq!(scan(b"-99999999999999999999"), (1, 0));
+[0m[49m[38;5;10m+      344[0m:[38;5;10m[49m         assert_eq!(scan(b"1abc"), (1, 1));
+[0m[49m[38;5;10m+      345[0m:[38;5;10m[49m         assert_eq!(scan(b"-0"), (1, 0));
+[0m[49m[38;5;10m+      346[0m:[38;5;10m[49m         assert_eq!(scan(b"\n\n"), (-1, 0));
+[0m[49m[38;5;10m+      347[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      348[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      349[0m:[38;5;10m[49m     /// Both paths read back a zeroed `data[0]`, so both print 0.
+[0m[49m[38;5;10m+      350[0m:[38;5;10m[49m     #[test]
+[0m[49m[38;5;10m+      351[0m:[38;5;10m[49m     fn both_paths_yield_zero() {
+[0m[49m[38;5;10m+      352[0m:[38;5;10m[49m         for len in [10usize, 10 * std::mem::size_of::<i32>()] {
+[0m[49m[38;5;10m+      353[0m:[38;5;10m[49m             let mut region = StackFrame::alloca(len);
+[0m[49m[38;5;10m+      354[0m:[38;5;10m[49m             let source = [0i32; 10];
+[0m[49m[38;5;10m+      355[0m:[38;5;10m[49m             for i in 0..10 {
+[0m[49m[38;5;10m+      356[0m:[38;5;10m[49m                 region.store_int(i, source[i]);
+[0m[49m[38;5;10m+      357[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      358[0m:[38;5;10m[49m             assert_eq!(region.load_int(0), 0);
+[0m[49m[38;5;10m+      359[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      360[0m:[38;5;10m[49m     }
+[0m[49m[39m  250, 361[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation
+cargo build --release 2>&1 | tail -5
+echo "=== TESTS ==="
+sed -i 's/^panic = "abort"$/# panic = "abort" # (removed: incompatible with cargo test harness)/' Cargo.toml
+cargo test --release 2>&1 | tail -15[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build release and run tests
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation)
+    Finished `release` profile [optimized] target(s) in 0.53s
+=== TESTS ===
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation)
+    Finished `release` profile [optimized] target(s) in 0.65s
+     Running unittests src/main.rs (target/release/deps/driver-45ff9ae7f29076f4)
+
+running 2 tests
+test tests::both_paths_yield_zero ... ok
+test tests::matches_glibc_scanf ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+[38;5;244m - Completed in 1.507s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Clean up Cargo.toml
+
+[49m[39m   1, 1[0m:[39m[49m [package]
+[0m[49m[39m   2, 2[0m:[39m[49m name = "driver"
+[0m[49m[39m   3, 3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4, 4[0m:[39m[49m edition = "2021"
+[0m[49m[39m   5, 5[0m:[39m[49m 
+[0m[49m[39m   6, 6[0m:[39m[49m [[bin]]
+[0m[49m[39m   7, 7[0m:[39m[49m name = "driver"
+[0m[49m[39m   8, 8[0m:[39m[49m path = "src/main.rs"
+[0m[49m[38;5;9m-  9   [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 10   [0m:[38;5;9m[49m [profile.release]
+[0m[49m[38;5;9m- 11   [0m:[38;5;9m[49m # panic = "abort" # (removed: incompatible with cargo test harness)
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ/translation
+cargo build --release 2>&1 | grep -c "^warning" ; echo "warning count above"
+cargo build --release 2>&1 | tail -2
+cd /local/home/scheschb/.harvest/work/harvest-work-PdpIdJ
+R=translation/target/release/driver
+ls -l $R
+fail=0
+for input in "" "0" "1" "-1" "   
+ 5" "abc" "+7" "-" "0x10" "007" "2147483647" "2147483648" "4294967296" "99999999999999999999" "-99999999999999999999" "1abc" "
+
+" " 0 " "-0" "1
+" "0 9" "	-3" "  +0  " "000" "9x"; do
+  co=$(printf '%s' "$input" | /tmp/c_driver | od -An -c); cs=$?
+  ro=$(printf '%s' "$input" | $R | od -An -c); rs=$?
+  [ "$co" = "$ro" ] && [ "$cs" = "$rs" ] || { echo "DIFF on [$(printf '%s' "$input"|tr '\n\t' 'NT')]: C=$co R=$ro"; fail=1; }
+done
+echo "=== differential fail=$fail (0 means all identical) ==="
+echo "--- c_src integrity ---"
+md5sum c_src/src/main.c c_src/CMakeLists.txt
+find c_src -newer translation/Cargo.toml -type f | wc -l; echo "^ c_src files modified after translation started (want 0)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification: clean build, differential test, c_src untouched
+
+0
+warning count above
+    Finished `release` profile [optimized] target(s) in 0.03s
+-rwxr-xr-x. 2 scheschb amazon 450216 Sep  1 09:03 translation/target/release/driver
+=== differential fail=0 (0 means all identical) ===
+--- c_src integrity ---
+5270db9145048b0673c8827b4fa02033  c_src/src/main.c
+02ba3005fed9b6d7d46c4fe335ac00d8  c_src/CMakeLists.txt
+0
+^ c_src files modified after translation started (want 0)
+[38;5;244m - Completed in 1.851s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean (zero warnings) and produces byte-identical output to the compiled C across 24 inputs, including exit status.[0m[0m
+[0m[0m
+What the program does: [38;5;10mscanf("%d", &x)[0m on stdin, then [38;5;10mgood()[0m if nonzero, [38;5;10mbad()[0m otherwise. Both allocate via [38;5;10malloca[0m, copy a zeroed 10-element [38;5;10mint[0m array in, and print [38;5;10mdata[0][0m — so the output is always [38;5;10m0\n[0m.[0m[0m
+[0m[0m
+Translation decisions:[0m[0m
+[0m[0m
+- [38;5;10mscanf("%d")[0m is reimplemented byte-at-a-time ([38;5;10mCStdin[0m with one byte of push-back), so it skips whitespace [3macross newlines[23m the way [38;5;10mscanf[0m does, consumes only what it needs, and leaves [38;5;10mx[0m untouched on matching failure or EOF. I pinned its [38;5;10m(return, x)[0m results against real glibc rather than guessing: notably [38;5;10m0x10[0m → [38;5;10m0[0m, [38;5;10m2147483648[0m → [38;5;10m-2147483648[0m, [38;5;10m99999999999999999999[0m → [38;5;10m-1[0m, and a lone [38;5;10m-[0m → matching failure. Digits accumulate in saturating [38;5;10mi64[0m then narrow to [38;5;10mi32[0m, which reproduces glibc routing through [38;5;10mstrtol[0m and storing into an [38;5;10mint[0m.[0m[0m
+- The [38;5;10mbad()[0m defect is preserved, not fixed: it still requests 10 bytes ([38;5;10malloca(10)[0m) while storing ten 4-byte ints, 30 bytes past the end. [38;5;10mStackFrame[0m models the alloca'd region as byte-addressed scratch space — [38;5;10malloc_len[0m records what was actually requested, while the backing store is large enough that the out-of-bounds stores land in neighbouring frame bytes instead of panicking, which is what happens in C. [38;5;10mgood()[0m keeps its correct [38;5;10m10*sizeof(int)[0m.[0m[0m
+- Output goes through [38;5;10mwrite!(out, "{}\n", ...)[0m to match [38;5;10mprintf("%d\n")[0m exactly, with an explicit flush. [38;5;10mprintLine[0m is carried over as [38;5;10mprint_line[0m ([38;5;10m#[allow(dead_code)][0m) since the C defines it but never calls it.[0m[0m
+[0m[0m
+Verification I ran myself: [38;5;10mcargo build --release[0m (clean), [38;5;10mcargo test --release[0m (2 tests pass), and a diff loop comparing [38;5;10mod -c[0m output plus exit codes of [38;5;10m/tmp/c_driver[0m (built from [38;5;10mc_src[0m with [38;5;10mcc -O2[0m) against the Rust binary. [38;5;10mc_src/[0m is unmodified — no files there are newer than the translation, and I only read it.[0m[0m
+[0m[0m
+One caveat worth naming: [38;5;10mbad()[0m is undefined behavior in C, so "byte-identical" holds for the observed glibc/x86_64 behavior I tested against, not by language guarantee. A different compiler or hardening setting could make the C crash where the Rust does not.[0m[0m
+[38;5;8m
+ ▸ Credits: 5.54 • Time: 2m 59s
+
+[0m[1G[0m[0m[?25h

@@ -1,7 +1,3 @@
-// Rust translation of c_src/src/main.c
-//
-// Original C copyright notice:
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -24,159 +20,140 @@
 // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Rust translation of c_src/src/main.c. Behavior (including quirks) is
+// preserved exactly; no bugs in the original are "fixed".
 
 use std::io::{self, Read, Write};
 
-/// Buffered byte reader over stdin with a single-byte pushback slot, mirroring
-/// the behaviour of a C `FILE *` stream as used by `scanf`/`ungetc`.
-struct Stdin {
-    buf: Vec<u8>,
-    pos: usize,
-    eof: bool,
-    pushback: Option<u8>,
-    src: io::Stdin,
+/// Byte-oriented view of stdin that supports a one-byte pushback, mirroring the
+/// way C's `scanf` consumes a stream (it only ever needs one character of
+/// lookahead, which it pushes back with `ungetc` on a matching failure).
+struct Stream {
+    inner: io::Stdin,
+    pushed_back: Option<u8>,
+    at_eof: bool,
 }
 
-impl Stdin {
+impl Stream {
     fn new() -> Self {
-        Stdin {
-            buf: Vec::new(),
-            pos: 0,
-            eof: false,
-            pushback: None,
-            src: io::stdin(),
+        Stream {
+            inner: io::stdin(),
+            pushed_back: None,
+            at_eof: false,
         }
     }
 
-    /// Equivalent of `getc()`: returns `None` at end of input.
+    /// Equivalent of `getc`: returns `None` at end of input.
     fn getc(&mut self) -> Option<u8> {
-        if let Some(c) = self.pushback.take() {
-            return Some(c);
+        if let Some(b) = self.pushed_back.take() {
+            return Some(b);
         }
+        if self.at_eof {
+            return None;
+        }
+        let mut buf = [0u8; 1];
         loop {
-            if self.pos < self.buf.len() {
-                let c = self.buf[self.pos];
-                self.pos += 1;
-                return Some(c);
-            }
-            if self.eof {
-                return None;
-            }
-            self.buf.clear();
-            self.pos = 0;
-            self.buf.resize(65536, 0);
-            match self.src.read(&mut self.buf) {
+            match self.inner.read(&mut buf) {
                 Ok(0) => {
-                    self.buf.clear();
-                    self.eof = true;
+                    self.at_eof = true;
                     return None;
                 }
-                Ok(n) => self.buf.truncate(n),
-                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
-                    self.buf.clear();
-                }
+                Ok(_) => return Some(buf[0]),
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => {
-                    self.buf.clear();
-                    self.eof = true;
+                    self.at_eof = true;
                     return None;
                 }
             }
         }
     }
 
-    /// Equivalent of `ungetc()`.
-    fn ungetc(&mut self, c: u8) {
-        self.pushback = Some(c);
+    /// Equivalent of `ungetc`.
+    fn ungetc(&mut self, b: u8) {
+        self.pushed_back = Some(b);
     }
 }
 
-/// C `isspace()` for the default locale.
-fn is_space(c: u8) -> bool {
-    matches!(c, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+/// C's `isspace` for the default "C" locale.
+fn is_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
-/// Emulates `scanf("%d", &out)`, returning the number of assigned items
-/// (1 on success, 0 on matching failure, -1 (EOF) on input failure), which is
-/// what the C code compares against.
-fn scanf_d(input: &mut Stdin, out: &mut i32) -> i32 {
-    // Leading whitespace is skipped, including across newlines.
+/// Return value of a single `scanf("%d", &x)` call.
+enum ScanResult {
+    /// One item assigned successfully.
+    Ok(i32),
+    /// A matching failure occurred (`scanf` returns 0).
+    MatchFailure,
+    /// Input failure before any conversion (`scanf` returns EOF).
+    Eof,
+}
+
+/// Faithful implementation of a lone `scanf("%d", &target)` directive:
+/// skip leading whitespace, accept an optional sign, then require at least one
+/// decimal digit. Digits are accumulated with `long` (64-bit) saturation, just
+/// as glibc's `strtol`-based conversion does, and the result is then truncated
+/// to `int` on assignment.
+fn scanf_d(stream: &mut Stream) -> ScanResult {
+    // Leading whitespace is skipped; hitting EOF here is an input failure.
     let mut c = loop {
-        match input.getc() {
-            None => return -1, // EOF before any conversion
-            Some(c) if is_space(c) => continue,
-            Some(c) => break c,
+        match stream.getc() {
+            None => return ScanResult::Eof,
+            Some(b) if is_space(b) => continue,
+            Some(b) => break b,
         }
     };
 
-    let negative = match c {
-        b'-' => {
-            c = match input.getc() {
-                Some(c) => c,
-                None => return -1,
-            };
-            true
+    let mut negative = false;
+    if c == b'+' || c == b'-' {
+        negative = c == b'-';
+        match stream.getc() {
+            None => return ScanResult::Eof,
+            Some(b) => c = b,
         }
-        b'+' => {
-            c = match input.getc() {
-                Some(c) => c,
-                None => return -1,
-            };
-            false
-        }
-        _ => false,
-    };
+    }
 
     if !c.is_ascii_digit() {
-        // Matching failure: the offending character stays in the stream.
-        input.ungetc(c);
-        return 0;
+        // No digits consumed: matching failure, offending char pushed back.
+        stream.ungetc(c);
+        return ScanResult::MatchFailure;
     }
 
-    // glibc converts via strtol (saturating at long bounds) and then assigns
-    // the resulting `long` to an `int`, i.e. truncating to 32 bits.
-    let mut magnitude: u64 = 0;
-    let mut overflow = false;
+    // Accumulate as a 64-bit `long`, saturating like strtol does.
+    let mut acc: i64 = 0;
+    let mut saturated = false;
     loop {
-        let digit = u64::from(c - b'0');
-        match magnitude
-            .checked_mul(10)
-            .and_then(|m| m.checked_add(digit))
-        {
-            Some(m) => magnitude = m,
-            None => overflow = true,
+        let digit = i64::from(c - b'0');
+        if !saturated {
+            match acc
+                .checked_mul(10)
+                .and_then(|v| if negative {
+                    v.checked_sub(digit)
+                } else {
+                    v.checked_add(digit)
+                })
+            {
+                Some(v) => acc = v,
+                None => saturated = true,
+            }
         }
-        let cutoff: u64 = if negative {
-            i64::MAX as u64 + 1
-        } else {
-            i64::MAX as u64
-        };
-        if magnitude > cutoff {
-            overflow = true;
-        }
-        match input.getc() {
-            Some(next) if next.is_ascii_digit() => c = next,
-            Some(next) => {
-                input.ungetc(next);
+        match stream.getc() {
+            None => break,
+            Some(b) if b.is_ascii_digit() => c = b,
+            Some(b) => {
+                stream.ungetc(b);
                 break;
             }
-            None => break,
         }
     }
 
-    let as_long: i64 = if overflow {
-        if negative {
-            i64::MIN
-        } else {
-            i64::MAX
-        }
-    } else if negative {
-        (magnitude as i64).wrapping_neg()
-    } else {
-        magnitude as i64
-    };
+    if saturated {
+        acc = if negative { i64::MIN } else { i64::MAX };
+    }
 
-    *out = as_long as i32;
-    1
+    // Assignment to `int` truncates.
+    ScanResult::Ok(acc as i32)
 }
 
 fn fma_array(out: &mut [i32], mul1: &[i32], mul2: &[i32], add: &[i32], len: usize) {
@@ -199,20 +176,19 @@ fn call_fma(data: &[i32], len: usize) -> i32 {
         zeros[i] = 0;
     }
 
-    fma_array(&mut out, &ones, data, &zeros, len);
+    fma_array(&mut out, &ones, &data[..len], &zeros, len);
     out[len - 1]
 }
 
 fn main() {
-    // `int data[100]` is uninitialised in C, but only the first `i` entries
-    // (the ones actually read) are ever consumed.
     let mut data = [0i32; 100];
-    let mut input = Stdin::new();
+    let mut stream = Stream::new();
 
-    let mut i = 0usize;
+    let mut i: usize = 0;
     while i < 100 {
-        if scanf_d(&mut input, &mut data[i]) != 1 {
-            break;
+        match scanf_d(&mut stream) {
+            ScanResult::Ok(v) => data[i] = v,
+            _ => break,
         }
         i += 1;
     }
@@ -220,7 +196,7 @@ fn main() {
     let result = call_fma(&data, i);
 
     let stdout = io::stdout();
-    let mut stdout = stdout.lock();
-    let _ = write!(stdout, "{}\n", result);
-    let _ = stdout.flush();
+    let mut out = stdout.lock();
+    let _ = write!(out, "{}\n", result);
+    let _ = out.flush();
 }

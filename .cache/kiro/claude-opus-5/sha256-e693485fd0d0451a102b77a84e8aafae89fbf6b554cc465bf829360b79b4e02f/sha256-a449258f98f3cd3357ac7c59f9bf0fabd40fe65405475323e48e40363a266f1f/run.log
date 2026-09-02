@@ -1,0 +1,1355 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -50 && echo "---TRANSLATION---" && find translation -type f -not -path "*/target/*" | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore directory structure
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 10:57 .
+drwxr-xr-x. 677 scheschb amazon 81920 Sep  1 10:57 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 10:57 .claude
+drwxr-xr-x.   3 scheschb amazon    39 Sep  1 10:57 c_src
+drwxr-xr-x.   3 scheschb amazon    53 Sep  1 10:57 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/src/main.c
+---TRANSLATION---
+translation/Cargo.toml
+translation/src/main.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/c_src/src/main.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1260 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1735 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m154 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/src/main.rs[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m6568 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/src/main.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && echo OK && ls -l driver || tail -30 /tmp/cmake.log[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build C program
+
+OK
+-rwxr-xr-x. 1 scheschb amazon 16832 Sep  1 10:58 driver
+[38;5;244m - Completed in 0.428s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20 && ls -l target/release/driver[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust program
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+-rwxr-xr-x. 2 scheschb amazon 447528 Sep  1 10:58 target/release/driver
+[38;5;244m - Completed in 0.197s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+run() { # $1 = label, uses stdin from printf string $2
+  co=$(printf '%s' "$2" | $C 2>/tmp/ce; echo "rc=$?")
+  ro=$(printf '%s' "$2" | $R 2>/tmp/re; echo "rc=$?")
+  ce=$(cat /tmp/ce); re=$(cat /tmp/re)
+  if [ "$co" = "$ro" ] && [ "$ce" = "$re" ]; then echo "OK   [$1] $co"; else echo "FAIL [$1]"; echo "  C : $co | err=$ce"; echo "  R : $ro | err=$re"; fi
+}
+run empty ""
+run zero "0"
+run one "1"
+run neg1 "-1"
+run plus5 "+5"
+run intmax "2147483647"
+run intmin "-2147483648"
+run intmax_p1 "2147483648"
+run intmin_m1 "-2147483649"
+run longmax "9223372036854775807"
+run longmax_p1 "9223372036854775808"
+run longmin "-9223372036854775808"
+run longmin_m1 "-9223372036854775809"
+run huge "99999999999999999999999999999999"
+run huge_neg "-99999999999999999999999999999999"
+run abc "abc"
+run lone_minus "-"
+run lone_plus "+"
+run ws_then_num "   \n\t  42"
+run newline_only "\n"
+run hex "0x10"
+run trailing "42abc"
+run two_nums "7 8"
+run leading_zeros "0000000000000000000042"
+run space_only "     "
+run dot ".5"
+run neg_zero "-0"
+run five_thousand_mil "5000000000"
+run nul_then "\0005"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential run over enumerated inputs
+
+OK   [empty] 00000000030000000000000000000040
+rc=0
+OK   [zero] 00000000030000000000000000000040
+rc=0
+OK   [one] 01000000030000000000000000000040
+rc=0
+OK   [neg1] ffffffff030000000000000000000040
+rc=0
+OK   [plus5] 05000000030000000000000000000040
+rc=0
+OK   [intmax] ffffff7f030000000000000000000040
+rc=0
+OK   [intmin] 00000080030000000000000000000040
+rc=0
+OK   [intmax_p1] 00000080030000000000000000000040
+rc=0
+OK   [intmin_m1] ffffff7f030000000000000000000040
+rc=0
+OK   [longmax] ffffffff030000000000000000000040
+rc=0
+OK   [longmax_p1] ffffffff030000000000000000000040
+rc=0
+OK   [longmin] 00000000030000000000000000000040
+rc=0
+OK   [longmin_m1] 00000000030000000000000000000040
+rc=0
+OK   [huge] ffffffff030000000000000000000040
+rc=0
+OK   [huge_neg] 00000000030000000000000000000040
+rc=0
+OK   [abc] 00000000030000000000000000000040
+rc=0
+OK   [lone_minus] 00000000030000000000000000000040
+rc=0
+OK   [lone_plus] 00000000030000000000000000000040
+rc=0
+OK   [ws_then_num] 00000000030000000000000000000040
+rc=0
+OK   [newline_only] 00000000030000000000000000000040
+rc=0
+OK   [hex] 00000000030000000000000000000040
+rc=0
+OK   [trailing] 2a000000030000000000000000000040
+rc=0
+OK   [two_nums] 07000000030000000000000000000040
+rc=0
+OK   [leading_zeros] 2a000000030000000000000000000040
+rc=0
+OK   [space_only] 00000000030000000000000000000040
+rc=0
+OK   [dot] 00000000030000000000000000000040
+rc=0
+OK   [neg_zero] 00000000030000000000000000000040
+rc=0
+OK   [five_thousand_mil] 00f2052a030000000000000000000040
+rc=0
+OK   [nul_then] 00000000030000000000000000000040
+rc=0
+[38;5;244m - Completed in 0.209s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+run() { # $1 label, $2 = printf FORMAT (escapes honored)
+  co=$(printf "$2" | $C 2>/tmp/ce; echo "rc=$?")
+  ro=$(printf "$2" | $R 2>/tmp/re; echo "rc=$?")
+  ce=$(cat /tmp/ce|xxd -p); re=$(cat /tmp/re|xxd -p)
+  if [ "$co" = "$ro" ] && [ "$ce" = "$re" ]; then echo "OK   [$1] ${co%%$'\n'*}"; else echo "FAIL [$1]"; echo "  C : $co | err=$ce"; echo "  R : $ro | err=$re"; fi
+}
+run ws_then_num '   \n\t  42'
+run all_ws '  \t\n\v\f\r  '
+run nl_before '\n\n\n99'
+run vtab '\v7'
+run cr '\r-3'
+run ff '\f\f12'
+run nul_first '\0005'
+run num_then_nul '5\000abc'
+run tab_between '\t\t-2147483648\n'
+run newline_after '42\n'
+run crlf '42\r\n'
+run just_sign_nl '-\n5'
+run plus_minus '+-5'
+run minus_plus '-+5'
+run double_minus '--5'
+run space_in_num '4 2'
+run e_notation '1e5'
+run big_ws_num '                                                                 123456'
+run comma '1,234'
+run underscore '1_000'
+run unicode '\303\251 5'
+run bin_junk '\001\002\003'
+run one_digit_eof '9'
+run zeros '000'
+run neg_big_fit '-5000000000'
+run l_suffix '5L'
+run overflow_19 '1000000000000000000'
+run overflow_20 '10000000000000000000'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test with real escape sequences
+
+OK   [ws_then_num] 2a000000030000000000000000000040
+OK   [all_ws] 00000000030000000000000000000040
+OK   [nl_before] 63000000030000000000000000000040
+FAIL [vtab]
+  C : 07000000030000000000000000000040
+rc=0 | err=
+  R : 00000000030000000000000000000040
+rc=0 | err=
+OK   [cr] fdffffff030000000000000000000040
+OK   [ff] 0c000000030000000000000000000040
+OK   [nul_first] 00000000030000000000000000000040
+OK   [num_then_nul] 05000000030000000000000000000040
+OK   [tab_between] 00000080030000000000000000000040
+OK   [newline_after] 2a000000030000000000000000000040
+OK   [crlf] 2a000000030000000000000000000040
+environment: line 3: printf: -\: invalid option
+printf: usage: printf [-v var] format [arguments]
+environment: line 4: printf: -\: invalid option
+printf: usage: printf [-v var] format [arguments]
+OK   [just_sign_nl] 00000000030000000000000000000040
+OK   [plus_minus] 00000000030000000000000000000040
+environment: line 3: printf: -+: invalid option
+printf: usage: printf [-v var] format [arguments]
+environment: line 4: printf: -+: invalid option
+printf: usage: printf [-v var] format [arguments]
+OK   [minus_plus] 00000000030000000000000000000040
+environment: line 3: printf: --: invalid option
+printf: usage: printf [-v var] format [arguments]
+environment: line 4: printf: --: invalid option
+printf: usage: printf [-v var] format [arguments]
+OK   [double_minus] 00000000030000000000000000000040
+OK   [space_in_num] 04000000030000000000000000000040
+OK   [e_notation] 01000000030000000000000000000040
+OK   [big_ws_num] 40e20100030000000000000000000040
+OK   [comma] 01000000030000000000000000000040
+OK   [underscore] 01000000030000000000000000000040
+OK   [unicode] 00000000030000000000000000000040
+OK   [bin_junk] 00000000030000000000000000000040
+OK   [one_digit_eof] 09000000030000000000000000000040
+OK   [zeros] 00000000030000000000000000000040
+environment: line 3: printf: -5: invalid option
+printf: usage: printf [-v var] format [arguments]
+environment: line 4: printf: -5: invalid option
+printf: usage: printf [-v var] format [arguments]
+OK   [neg_big_fit] 00000000030000000000000000000040
+OK   [l_suffix] 05000000030000000000000000000040
+OK   [overflow_19] 000064a7030000000000000000000040
+OK   [overflow_20] ffffffff030000000000000000000040
+[38;5;244m - Completed in 0.215s[0m
+
+[?25l[0m[38;5;141m> [0mFound a mismatch: vertical tab (0x0B). C's [38;5;10misspace[0m includes [38;5;10m\v[0m, but Rust's [38;5;10mis_ascii_whitespace()[0m does not.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add C isspace helper including vertical tab
+
+[49m[38;5;10m+      137[0m:[38;5;10m[49m     /// C's `isspace()` in the "C" locale: space, \t, \n, \v, \f, \r.
+[0m[49m[38;5;10m+      138[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+      139[0m:[38;5;10m[49m     /// NOTE: this is deliberately *not* Rust's `u8::is_ascii_whitespace()`,
+[0m[49m[38;5;10m+      140[0m:[38;5;10m[49m     /// which omits the vertical tab (0x0B).
+[0m[49m[38;5;10m+      141[0m:[38;5;10m[49m     fn is_c_space(c: u8) -> bool {
+[0m[49m[38;5;10m+      142[0m:[38;5;10m[49m         matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+      143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      144[0m:[38;5;10m[49m 
+[0m[49m[39m  137, 145[0m:[39m[49m     /// `scanf("%d", &out)`.
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Use C isspace semantics for whitespace skipping
+
+[49m[38;5;9m- 155     [0m:[38;5;9m[49m             if (c as char).is_ascii_whitespace() {
+[0m[49m[38;5;10m+      155[0m:[38;5;10m[49m             if Self::is_c_space(c) {
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -5
+cd ..
+C=c_src/build/driver; R=translation/target/release/driver
+run() { co=$(printf -- "$2" | $C 2>/tmp/ce; echo "rc=$?"); ro=$(printf -- "$2" | $R 2>/tmp/re; echo "rc=$?"); ce=$(xxd -p </tmp/ce); re=$(xxd -p </tmp/re)
+  if [ "$co" = "$ro" ] && [ "$ce" = "$re" ]; then echo "OK   [$1] ${co%%$'\n'*}"; else echo "FAIL [$1]"; echo "  C : $co|$ce"; echo "  R : $ro|$re"; fi; }
+run vtab '\v7'
+run vtab_only '\v'
+run vtab_mix ' \v\t\v-8\v9'
+run just_sign_nl -- '-\n5'
+run minus_plus '\055+5'
+run double_minus '\055\0555'
+run neg_big_fit '\0555000000000'
+run neg_5e9_alt '\055705032704'
+run neg_intmin_m1 '\0552147483649'
+run neg_longmin '\0559223372036854775808'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and retest vertical tab plus negative-leading inputs
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.14s
+OK   [vtab] 07000000030000000000000000000040
+OK   [vtab_only] 00000000030000000000000000000040
+OK   [vtab_mix] f8ffffff030000000000000000000040
+OK   [just_sign_nl] 00000000030000000000000000000040
+OK   [minus_plus] 00000000030000000000000000000040
+OK   [double_minus] 00000000030000000000000000000040
+OK   [neg_big_fit] 000efad5030000000000000000000040
+OK   [neg_5e9_alt] 000efad5030000000000000000000040
+OK   [neg_intmin_m1] ffffff7f030000000000000000000040
+OK   [neg_longmin] 00000000030000000000000000000040
+[38;5;244m - Completed in 0.218s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+fails=0
+for i in $(seq 1 600); do
+  head -c $((RANDOM % 24)) /dev/urandom > /tmp/in.bin
+  co=$($C </tmp/in.bin 2>/tmp/ce | xxd -p; echo $?); cs=$(xxd -p </tmp/ce)
+  ro=$($R </tmp/in.bin 2>/tmp/re | xxd -p; echo $?); rs=$(xxd -p </tmp/re)
+  if [ "$co" != "$ro" ] || [ "$cs" != "$rs" ]; then fails=$((fails+1)); echo "FAIL random:"; xxd /tmp/in.bin; echo "C=$co/$cs R=$ro/$rs"; fi
+done
+# structured fuzz: numeric-ish strings
+for i in $(seq 1 800); do
+  n=$(( RANDOM % 6 ))
+  case $n in
+   0) s=$(head -c $((RANDOM%8)) /dev/urandom | tr -dc '0-9+- \t\n\v\f\r');;
+   1) s=$(head -c $((RANDOM%25)) /dev/urandom | tr -dc '0-9');;
+   2) s="-$(head -c $((RANDOM%25)) /dev/urandom | tr -dc '0-9')";;
+   3) s=$(head -c $((RANDOM%12)) /dev/urandom | tr -dc '0-9xXeE.,+-');;
+   4) s="$(head -c $((RANDOM%6)) /dev/urandom | tr -dc ' \t\v\f\r\n')$((RANDOM-16384))";;
+   5) s=$(head -c $((RANDOM%40)) /dev/urandom | tr -dc '0-9a-fA-F+-');;
+  esac
+  printf '%s' "$s" > /tmp/in.bin
+  co=$($C </tmp/in.bin 2>/tmp/ce | xxd -p; echo $?); cs=$(xxd -p </tmp/ce)
+  ro=$($R </tmp/in.bin 2>/tmp/re | xxd -p; echo $?); rs=$(xxd -p </tmp/re)
+  if [ "$co" != "$ro" ] || [ "$cs" != "$rs" ]; then fails=$((fails+1)); echo "FAIL struct: [$s]"; echo "C=$co/$cs R=$ro/$rs"; fi
+done
+echo "total fails=$fails"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Randomized differential fuzzing
+
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+total fails=0
+[38;5;244m - Completed in 11.503s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=c_src/build/driver; R=translation/target/release/driver
+fails=0; n=0
+for i in $(seq 1 1500); do
+  k=$(( RANDOM % 7 ))
+  case $k in
+   0) s=$(head -c $((RANDOM%10)) /dev/urandom | tr -dc '0-9\-+ \t\013\014\r\n');;
+   1) s=$(head -c $((RANDOM%30)) /dev/urandom | tr -dc '0-9');;
+   2) s="-$(head -c $((RANDOM%30)) /dev/urandom | tr -dc '0-9')";;
+   3) s=$(head -c $((RANDOM%14)) /dev/urandom | tr -dc '0-9xXeE.,\-+');;
+   4) s="$(head -c $((RANDOM%8)) /dev/urandom | tr -dc ' \t\013\014\r\n')$((RANDOM-16384))";;
+   5) s=$(head -c $((RANDOM%40)) /dev/urandom | tr -dc '0-9a-fA-F\-+');;
+   6) s="00000000000$(head -c $((RANDOM%25)) /dev/urandom | tr -dc '0-9')";;
+  esac
+  printf '%s' "$s" > /tmp/in.bin; n=$((n+1))
+  co=$($C </tmp/in.bin 2>/tmp/ce | xxd -p; echo $?); cs=$(xxd -p </tmp/ce)
+  ro=$($R </tmp/in.bin 2>/tmp/re | xxd -p; echo $?); rs=$(xxd -p </tmp/re)
+  if [ "$co" != "$ro" ] || [ "$cs" != "$rs" ]; then fails=$((fails+1)); echo "FAIL: [$(printf '%s' "$s"|xxd -p)]"; echo " C=$co/$cs"; echo " R=$ro/$rs"; fi
+done
+echo "ran=$n fails=$fails"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Structured fuzz with corrected character classes
+
+ran=1500 fails=0
+[38;5;244m - Completed in 12.57s[0m
+
+[?25l[0m[38;5;141m> [0mAll 2100 differential cases pass. Now the integration test suite.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential integration test suite
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests: run the C `driver` and the Rust `driver` as *subprocesses*
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! and compare stdout, stderr and exit status byte-for-byte / value-for-value.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! The Rust code is never called as a library here — the binary is driven exactly
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! the way a shell would drive it, which is how the translation is graded.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! Input surface of the program (from `c_src/src/main.c`):
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! ```c
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! int main() { int x = 0; scanf("%d", &x); driver(x); return 0; }
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! ```
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //! The single input is stdin, consumed by one `scanf("%d", &x)`. Every branch the
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //! program can take is therefore a property of that conversion:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!   * input failure (EOF before any non-whitespace)  -> x stays 0
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //!   * matching failure (no digits after optional sign) -> x stays 0
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //!   * successful conversion, incl. leading whitespace (C `isspace`: ' ' \t \n \v \f \r)
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //!   * optional '+' / '-' sign
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //!   * strtol saturation at LONG_MAX / LONG_MIN followed by truncation to `int`
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //!   * plain truncation for values that fit in `long` but not `int`
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //! `driver()`/`print_hex()` have no data-dependent branches: the loop always runs
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //! `sizeof(house_t)` == 16 times. What varies is the 4 bytes of `house.floors`.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m use std::process::{Command, Stdio};
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m use std::sync::Once;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m // Locating and building the two executables
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m fn repo_root() -> PathBuf {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR == <root>/translation
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         .expect("translation/ must have a parent directory")
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// Path to the Rust executable under test. Cargo builds it for us.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m fn rust_bin() -> PathBuf {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_BIN_EXE_driver"))
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m static C_BUILD: Once = Once::new();
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// Path to the C executable, building it with CMake on first use.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m fn c_bin() -> PathBuf {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let root = repo_root();
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let c_src = root.join("c_src");
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let build_dir = c_src.join("build");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let exe = build_dir.join("driver");
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     C_BUILD.call_once(|| {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         if exe.is_file() {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             return;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         std::fs::create_dir_all(&build_dir).expect("create c_src/build");
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         let cfg = Command::new("cmake")
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             .arg("..")
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             .current_dir(&build_dir)
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             .expect("failed to spawn `cmake` — is CMake installed?");
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             cfg.status.success(),
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             "cmake configure failed:\n{}\n{}",
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             String::from_utf8_lossy(&cfg.stdout),
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             String::from_utf8_lossy(&cfg.stderr)
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         let bld = Command::new("cmake")
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m             .args(["--build", "."])
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m             .current_dir(&build_dir)
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             .expect("failed to spawn `cmake --build`");
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             bld.status.success(),
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             "cmake build failed:\n{}\n{}",
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             String::from_utf8_lossy(&bld.stdout),
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             String::from_utf8_lossy(&bld.stderr)
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         exe.is_file(),
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         "C executable not found at {} — build c_src first",
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         exe.display()
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     exe
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m // Running a program
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[derive(PartialEq, Eq)]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m struct Run {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     stdout: Vec<u8>,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     stderr: Vec<u8>,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     /// `Some(code)` for a normal exit, `None` if killed by a signal.
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     code: Option<i32>,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     /// Terminating signal, if any (Unix).
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     signal: Option<i32>,
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m impl std::fmt::Debug for Run {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         write!(
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m             f,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             "Run {{ exit: {}, stdout: {:?} ({}), stderr: {:?} ({}) }}",
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             match (self.code, self.signal) {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                 (Some(c), _) => format!("code {c}"),
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 (None, Some(s)) => format!("signal {s}"),
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                 (None, None) => "unknown".to_string(),
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             },
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             String::from_utf8_lossy(&self.stdout),
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             hex(&self.stdout),
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             String::from_utf8_lossy(&self.stderr),
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             hex(&self.stderr),
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m fn hex(bytes: &[u8]) -> String {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     bytes.iter().map(|b| format!("{b:02x}")).collect()
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m fn run(exe: &Path, input: &[u8]) -> Run {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     let mut child = Command::new(exe)
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", exe.display()));
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         let mut stdin = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         // The child may exit without reading everything; a broken pipe is fine.
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         let _ = stdin.write_all(input);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         let _ = stdin.flush();
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("wait_with_output");
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     let signal = {
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         use std::os::unix::process::ExitStatusExt;
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         out.status.signal()
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     #[cfg(not(unix))]
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     let signal: Option<i32> = None;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     Run {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         stdout: out.stdout,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         stderr: out.stderr,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         code: out.status.code(),
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         signal,
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m /// The core assertion: stdout, stderr and exit status must all match.
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m fn assert_same(label: &str, input: &[u8]) {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let c = run(&c_bin(), input);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     let r = run(&rust_bin(), input);
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         c.stdout,
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         r.stdout,
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         "STDOUT mismatch for {label}\n  input bytes: {}\n  C  : {:?}\n  Rust: {:?}",
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         hex(input),
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stdout),
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stdout)
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         c.stderr,
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         r.stderr,
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         "STDERR mismatch for {label}\n  input bytes: {}\n  C  : {:?}\n  Rust: {:?}",
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         hex(input),
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stderr),
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stderr)
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         (c.code, c.signal),
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         (r.code, r.signal),
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         "EXIT STATUS mismatch for {label}\n  input bytes: {}\n  C  : {:?}\n  Rust: {:?}",
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         hex(input),
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         c,
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         r
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m fn same(label: &str, input: &str) {
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     assert_same(label, input.as_bytes());
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m // Phase A — both programs exist, run, and produce something
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m fn both_binaries_run() {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let c = run(&c_bin(), b"1");
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     let r = run(&rust_bin(), b"1");
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     assert_eq!(c.code, Some(0), "C should exit 0: {c:?}");
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     assert_eq!(r.code, Some(0), "Rust should exit 0: {r:?}");
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     assert!(!c.stdout.is_empty(), "C produced no stdout");
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     assert_eq!(c.stdout, r.stdout);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m /// Pin the exact expected byte layout so a silent change in either program is
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m /// caught even if both drifted together.
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m /// `house_t{ int floors; int bedrooms; double bathrooms; }` on LP64 x86-64:
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m /// floors@0, bedrooms@4, bathrooms@8, size 16, no padding bytes.
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m /// bedrooms = 3 -> `03000000`; bathrooms = 2.0 -> `0000000000000040`.
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m fn known_layout_for_input_one() {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     let c = run(&c_bin(), b"1");
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         c.stdout, b"01000000030000000000000000000040\n",
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         "unexpected C layout (host ABI differs from the documented one?): {}",
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stdout)
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     let r = run(&rust_bin(), b"1");
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     assert_eq!(c.stdout, r.stdout);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     assert!(c.stdout.ends_with(b"\n"), "print_hex must end with a newline");
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m // Phase B — the input classes the C branches on
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m fn empty_and_eof_input() {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     // scanf returns EOF (input failure); x keeps its initializer 0.
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     assert_same("completely empty stdin", b"");
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m fn single_item_minimal_input() {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     same("single digit", "0");
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     same("single digit 1", "1");
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     same("single digit 9", "9");
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m fn plain_decimal_values() {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         "0", "1", "2", "3", "7", "10", "42", "99", "100", "12345", "65535", "65536", "1000000",
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         "123456789", "1073741824",
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         same("plain decimal", v);
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m fn signed_values() {
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         "-1", "-2", "-42", "-12345", "+1", "+42", "+0", "-0", "+2147483647", "-2147483647",
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m         same("signed", v);
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m fn int_boundaries() {
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     same("INT_MAX", "2147483647");
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     same("INT_MAX+1 (truncates to INT_MIN)", "2147483648");
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     same("INT_MIN", "-2147483648");
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     same("INT_MIN-1 (truncates to INT_MAX)", "-2147483649");
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     same("UINT_MAX", "4294967295");
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     same("2^32 (truncates to 0)", "4294967296");
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     same("2^32+1", "4294967297");
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     same("-2^32", "-4294967296");
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m fn long_boundaries_and_strtol_saturation() {
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     same("LONG_MAX", "9223372036854775807");
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     same("LONG_MAX+1 -> saturates to LONG_MAX", "9223372036854775808");
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     same("LONG_MIN", "-9223372036854775808");
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     same("LONG_MIN-1 -> saturates to LONG_MIN", "-9223372036854775809");
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m     same("far above LONG_MAX", "99999999999999999999999999999999");
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     same("far below LONG_MIN", "-99999999999999999999999999999999");
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     same("absurdly long digit run", &"9".repeat(400));
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     same("absurdly long negative digit run", &format!("-{}", "9".repeat(400)));
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m fn values_fitting_long_but_not_int() {
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m     same("5e9", "5000000000");
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     same("-5e9", "-5000000000");
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     same("1e18", "1000000000000000000");
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     same("-1e18", "-1000000000000000000");
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     same("1e19 (overflows long)", "10000000000000000000");
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m fn matching_failure_leaves_x_zero() {
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     same("letters", "abc");
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     same("lone minus", "-");
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m     same("lone plus", "+");
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m     same("minus then newline", "-\n5");
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m     same("plus then letters", "+abc");
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     same("two signs", "--5");
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     same("sign flip flop", "-+5");
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m     same("plus minus", "+-5");
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m     same("leading dot", ".5");
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     same("leading comma", ",5");
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     same("leading x", "x5");
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     same("punctuation", "!@#$%");
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m fn whitespace_is_skipped_including_vertical_tab() {
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     // C's isspace() in the "C" locale is exactly: ' ' \t \n \v \f \r.
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m     // Rust's u8::is_ascii_whitespace() omits \v (0x0B) — a real mismatch source.
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     same("leading space", " 42");
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     same("leading tab", "\t42");
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     same("leading newline", "\n42");
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     same("leading vertical tab", "\u{b}42");
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m     same("leading form feed", "\u{c}42");
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m     same("leading carriage return", "\r42");
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     same("all six whitespace chars", " \t\n\u{b}\u{c}\r42");
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m     same("scanf reads across newlines", "\n\n\n\n99");
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m     same("whitespace then sign", "  \u{b}\t-8");
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m     same("lots of whitespace", &format!("{}123456", " ".repeat(200)));
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m fn whitespace_only_input_is_input_failure() {
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m     same("single space", " ");
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m     same("single newline", "\n");
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     same("single vertical tab", "\u{b}");
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m     same("single form feed", "\u{c}");
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     same("single tab", "\t");
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m     same("single carriage return", "\r");
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m     same("mixed whitespace only", " \t\n\u{b}\u{c}\r \t\n");
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m     same("many spaces only", &" ".repeat(500));
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m fn conversion_stops_at_first_non_digit() {
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     same("digits then letters", "42abc");
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m     same("hex-looking", "0x10");
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     same("hex-looking nonzero lead", "0X1F");
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m     same("e-notation", "1e5");
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m     same("float", "3.14");
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m     same("thousands separator", "1,234");
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m     same("underscore separator", "1_000");
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m     same("trailing L", "5L");
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     same("digit space digit", "4 2");
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m     same("two numbers, only first read", "7 8");
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m     same("newline terminated", "42\n");
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m     same("crlf terminated", "42\r\n");
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m     same("trailing junk after newline", "42\nignored\n");
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m fn leading_zeros_are_decimal_not_octal() {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m     same("zeros", "000");
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m     same("many zeros", &"0".repeat(300));
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m     same("padded 42", "0000000000000000000042");
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m     same("octal-looking 010", "010");
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m     same("zeros then overflow", &format!("{}9223372036854775808", "0".repeat(50)));
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m     same("negative padded", "-0000042");
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m fn embedded_nul_and_non_ascii_bytes() {
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m     assert_same("NUL first", b"\x005");
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m     assert_same("digit then NUL", b"5\x00abc");
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m     assert_same("NUL only", b"\x00");
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m     assert_same("high bytes", b"\xff\xfe\xfd");
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m     assert_same("utf8 then number", "é 5".as_bytes());
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m     assert_same("control bytes", b"\x01\x02\x03");
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m     assert_same("digits then high byte", b"12\xff34");
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m // Phase C — systematic sweeps over paths not covered above
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m /// Every possible single byte as the entire input. Covers the whitespace set,
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m /// the sign characters, each digit, and every rejected byte, exhaustively.
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m fn exhaustive_single_byte_inputs() {
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m     for b in 0u8..=255 {
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         assert_same(&format!("single byte 0x{b:02x}"), &[b]);
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m /// Two-byte inputs drawn from the alphabet that actually matters to `%d`,
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m /// exercising sign/digit/whitespace/terminator combinations.
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m fn exhaustive_two_byte_inputs_over_interesting_alphabet() {
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m     let alphabet: &[u8] = b"0123456789+- \t\n\x0b\x0c\r.xeE,\x00a";
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m     for &a in alphabet {
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m         for &b in alphabet {
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m             assert_same(&format!("bytes 0x{a:02x}{b:02x}"), &[a, b]);
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m /// Every bit position of the resulting `int`, plus its negation, so each byte of
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m /// `house.floors` in the hex dump takes on non-zero values.
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m fn every_bit_of_floors() {
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m     for shift in 0..32u32 {
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m         let v = 1u32 << shift;
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m         same(&format!("1<<{shift}"), &v.to_string());
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m         same(&format!("-(1<<{shift})"), &format!("-{v}"));
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m         same(&format!("(1<<{shift})-1"), &(v.wrapping_sub(1)).to_string());
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m         i32::MIN,
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m         i32::MIN + 1,
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m         -1,
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m         0,
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m         i32::MAX - 1,
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m         i32::MAX,
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m         0x0f0f0f0fu32 as i32,
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m         0x7f7f7f7fu32 as i32,
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m         0x0000_00ffu32 as i32,
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m         0x00ff_0000u32 as i32,
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m         same(&format!("value {v}"), &v.to_string());
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m /// Digit-count sweep: 1..=25 digits, positive and negative, crossing the int and
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m /// long boundaries and entering strtol's saturation range.
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m fn digit_length_sweep() {
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m     for n in 1..=25usize {
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m         let s: String = (0..n).map(|i| char::from(b'1' + (i % 9) as u8)).collect();
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m         same(&format!("{n} digits"), &s);
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m         same(&format!("{n} digits negative"), &format!("-{s}"));
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m /// Deterministic pseudo-random inputs (xorshift, fixed seed) over both raw bytes
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m /// and numeric-looking text. Deterministic so the suite never flakes.
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m fn deterministic_fuzz() {
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m     let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m     let mut next = move || {
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m         state ^= state << 13;
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m         state ^= state >> 7;
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m         state ^= state << 17;
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m         state
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m     const NUMERIC_ALPHABET: &[u8] = b"0123456789+-  \t\n\x0b\x0c\r.,xXeEabcdefABCDEF_L";
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m     for i in 0..400 {
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m         // Raw arbitrary bytes.
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m         let len = (next() % 24) as usize;
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m         let bytes: Vec<u8> = (0..len).map(|_| (next() & 0xff) as u8).collect();
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m         assert_same(&format!("fuzz raw #{i}"), &bytes);
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m         // Numeric-ish text.
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m         let len = (next() % 30) as usize;
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m         let text: Vec<u8> = (0..len)
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m             .map(|_| NUMERIC_ALPHABET[(next() % NUMERIC_ALPHABET.len() as u64) as usize])
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m         assert_same(&format!("fuzz numeric #{i}"), &text);
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m         // Pure digit runs of random length, sometimes signed: hammers strtol
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m         // overflow/truncation.
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m         let len = (next() % 28) as usize + 1;
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m         let mut digits: Vec<u8> = Vec::with_capacity(len + 1);
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m         if next() % 2 == 0 {
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m             digits.push(b'-');
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m         for _ in 0..len {
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m             digits.push(b'0' + (next() % 10) as u8);
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m         assert_same(&format!("fuzz digits #{i}"), &digits);
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m /// Large input: the program reads only the first conversion, so a big payload
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m /// must not change the output (and must not deadlock on the write side either).
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m fn large_input_only_first_conversion_is_read() {
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m     let mut big = Vec::new();
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m     big.extend_from_slice(b"77\n");
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m     big.extend(std::iter::repeat(b'x').take(200_000));
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m     assert_same("77 followed by 200k junk bytes", &big);
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m     let mut big2 = Vec::new();
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m     big2.extend(std::iter::repeat(b' ').take(100_000));
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m     big2.extend_from_slice(b"-1234567\n");
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m     big2.extend(std::iter::repeat(b'9').take(100_000));
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m     assert_same("100k spaces, number, 100k digits", &big2);
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m /// stdin closed immediately vs. stdin that is an empty-but-open pipe: both are
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m /// input failures for scanf and must agree.
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m fn stdin_closed_and_binary_zero_fill() {
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m     assert_same("no bytes at all", b"");
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m     assert_same("1024 NUL bytes", &vec![0u8; 1024]);
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m     assert_same("1024 0xff bytes", &vec![0xffu8; 1024]);
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m /// Output must be exactly 33 bytes (32 hex digits + '\n') with no stderr,
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m /// for every input class — a structural invariant of print_hex.
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m fn output_shape_invariant() {
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m     for input in [
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m         "".to_string(),
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m         "0".to_string(),
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m         "-1".to_string(),
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m         "abc".to_string(),
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m         "2147483647".to_string(),
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m         "9".repeat(100),
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m         let c = run(&c_bin(), input.as_bytes());
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m         let r = run(&rust_bin(), input.as_bytes());
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m         assert_eq!(c.stdout.len(), 33, "C stdout length for {input:?}: {c:?}");
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m         assert_eq!(r.stdout.len(), 33, "Rust stdout length for {input:?}: {r:?}");
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m         assert!(c.stderr.is_empty(), "C wrote to stderr: {c:?}");
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m         assert!(r.stderr.is_empty(), "Rust wrote to stderr: {r:?}");
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m         assert_eq!(c.stdout, r.stdout);
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m         assert_eq!(c.code, r.code);
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --release 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Run the differential test suite
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.44s
+     Running unittests src/main.rs (target/release/deps/driver-45ff9ae7f29076f4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-6f5586eaa2bc1355)
+
+running 23 tests
+test both_binaries_run ... ok
+test known_layout_for_input_one ... ok
+test large_input_only_first_conversion_is_read ... ok
+test empty_and_eof_input ... ok
+test single_item_minimal_input ... ok
+test stdin_closed_and_binary_zero_fill ... ok
+test values_fitting_long_but_not_int ... ok
+test output_shape_invariant ... ok
+test leading_zeros_are_decimal_not_octal ... ok
+test embedded_nul_and_non_ascii_bytes ... ok
+test int_boundaries ... ok
+test long_boundaries_and_strtol_saturation ... ok
+test whitespace_only_input_is_input_failure ... ok
+test signed_values ... ok
+test whitespace_is_skipped_including_vertical_tab ... ok
+test matching_failure_leaves_x_zero ... ok
+test conversion_stops_at_first_non_digit ... ok
+test plain_decimal_values ... ok
+test digit_length_sweep ... ok
+test every_bit_of_floors ... ok
+test exhaustive_single_byte_inputs ... ok
+test exhaustive_two_byte_inputs_over_interesting_alphabet ... ok
+test deterministic_fuzz ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.64s
+
+[38;5;244m - Completed in 9.114s[0m
+
+[?25l[0m[38;5;141m> [0mVerifying the suite isn't vacuous — temporarily reintroduce the [38;5;10m\v[0m bug and confirm the tests catch it.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcp src/main.rs /tmp/main.rs.bak
+sed -i 's/matches!(c, b'"'"' '"'"' | b'"'"'\\t'"'"' | b'"'"'\\n'"'"' | 0x0b | 0x0c | b'"'"'\\r'"'"')/matches!(c, b'"'"' '"'"' | b'"'"'\\t'"'"' | b'"'"'\\n'"'"' | 0x0c | b'"'"'\\r'"'"')/' src/main.rs
+grep -n "matches!(c," src/main.rs
+cargo test --release 2>&1 | grep -E "^test |test result|MISMATCH" | head -30
+echo "=== restoring ==="
+cp /tmp/main.rs.bak src/main.rs && grep -n "matches!(c," src/main.rs[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Mutation-test the suite by reintroducing the vertical-tab bug
+
+142:        matches!(c, b' ' | b'\t' | b'\n' | 0x0c | b'\r')
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test both_binaries_run ... ok
+test empty_and_eof_input ... ok
+test known_layout_for_input_one ... ok
+test large_input_only_first_conversion_is_read ... ok
+test values_fitting_long_but_not_int ... ok
+test output_shape_invariant ... ok
+test leading_zeros_are_decimal_not_octal ... ok
+test embedded_nul_and_non_ascii_bytes ... ok
+test stdin_closed_and_binary_zero_fill ... ok
+test int_boundaries ... ok
+test single_item_minimal_input ... ok
+test whitespace_is_skipped_including_vertical_tab ... FAILED
+test matching_failure_leaves_x_zero ... ok
+test conversion_stops_at_first_non_digit ... ok
+test long_boundaries_and_strtol_saturation ... ok
+test whitespace_only_input_is_input_failure ... ok
+test signed_values ... ok
+test plain_decimal_values ... ok
+test digit_length_sweep ... ok
+test every_bit_of_floors ... ok
+test deterministic_fuzz ... FAILED
+test exhaustive_single_byte_inputs ... ok
+test exhaustive_two_byte_inputs_over_interesting_alphabet ... FAILED
+test result: FAILED. 20 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.73s
+=== restoring ===
+142:        matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[38;5;244m - Completed in 2.923s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcp src/main.rs /tmp/main.rs.bak
+# Mutation 2: exit code 1 instead of 0
+printf '\n' >> src/main.rs
+python3 - <<'EOF'
+import re
+p='src/main.rs'; s=open(p).read()
+s=s.replace("    let _ = out.flush();\n}", "    let _ = out.flush();\n    std::process::exit(1);\n}")
+open(p,'w').write(s)
+EOF
+grep -n "process::exit" src/main.rs
+cargo test --release 2>&1 | grep -cE "^test .* FAILED"
+echo "--- mutation 3: stderr write ---"
+cp /tmp/main.rs.bak src/main.rs
+python3 - <<'EOF'
+p='src/main.rs'; s=open(p).read()
+s=s.replace("    let _ = out.flush();\n}", "    let _ = out.flush();\n    eprintln!(\"noise\");\n}")
+open(p,'w').write(s)
+EOF
+cargo test --release 2>&1 | grep -cE "^test .* FAILED"
+echo "--- restore ---"
+cp /tmp/main.rs.bak src/main.rs
+cargo test --release 2>&1 | tail -3[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Mutation-test exit status and stderr assertions
+
+235:    std::process::exit(1);
+23
+--- mutation 3: stderr write ---
+22
+--- restore ---
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.67s
+
+[38;5;244m - Completed in 8.473s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Record findings in ERRORS.md
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m # Differential-testing findings
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m C ground truth: `c_src/src/main.c` (built with CMake → `c_src/build/driver`).
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m Rust under test: `translation/src/main.rs` (→ `translation/target/release/driver`).
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m Harness: `translation/tests/differential.rs` — runs both as subprocesses and
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m compares stdout bytes, stderr bytes and exit status.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m ## Program surface
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m int main() { int x = 0; scanf("%d", &x); driver(x); return 0; }
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m One input: stdin, consumed by a single `scanf("%d", &x)`. `driver()` and
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m `print_hex()` contain no data-dependent branches — the loop always runs
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m `sizeof(house_t) == 16` times — so the only observable variation is the four
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m bytes of `house.floors`. Output is always 32 hex digits plus `\n` (33 bytes),
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m stderr is always empty, exit status is always 0.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m All behavioural risk therefore lives in reproducing glibc's `%d` conversion
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m exactly.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m ## Mismatches found
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m ### 1. Vertical tab (0x0B) was not treated as whitespace — FIXED
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m Status: real mismatch, found by differential testing, now fixed.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m - Input: `"\v7"` (0x0B, 0x37)
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m - C output: `07000000030000000000000000000040` (converted 7)
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m - Rust output (before fix): `00000000030000000000000000000040` (conversion
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m   failed, `x` stayed 0)
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m Cause: the scanner skipped leading whitespace with Rust's
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m `char::is_ascii_whitespace()`, whose set is `{' ', '\t', '\n', '\f', '\r'}`.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m C's `isspace()` in the `"C"` locale also includes the vertical tab `'\v'`
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m (0x0B). `scanf`'s `%d` directive skips *C* whitespace, so the C program stepped
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m over the 0x0B and converted `7`, while Rust stopped on it and reported a
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m matching failure.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m Fix (`translation/src/main.rs`): replaced the call with an explicit helper that
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m spells out C's set.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m ```rust
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m fn is_c_space(c: u8) -> bool {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m Regression coverage: `whitespace_is_skipped_including_vertical_tab`,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m `exhaustive_two_byte_inputs_over_interesting_alphabet`, `deterministic_fuzz`.
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m ## Behaviours deliberately replicated (verified matching, not "fixed")
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m These looked like candidates for a mismatch and were each confirmed identical.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m None of them is a bug to be corrected — the C is the specification.
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m - **`scanf` reads across newlines.** `%d` skips *all* leading whitespace,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m   newlines included, so `"\n\n\n99"` yields 99 rather than a failure. Verified.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m - **Input failure leaves `x` at its initializer.** Empty stdin, whitespace-only
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m   stdin and `scanf` returning `EOF` all leave `x == 0`, and the program still
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m   prints a full line and exits 0. Verified for `""`, `" "`, `"\n"`, `"\v"`,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m   1024 NUL bytes and 1024 `0xff` bytes.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m - **Matching failure also leaves `x` at 0**, and the consumed sign character is
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m   not restored: `"-"`, `"+"`, `"-\n5"`, `"--5"`, `"-+5"` all print the `x == 0`
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m   line. Verified.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m - **glibc saturates in `long`, then truncates to `int`.** glibc's `%d` runs
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m   `strtol` and assigns the `long` result to an `int`:
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m   - `"2147483648"` → fits in `long`, truncates to `INT_MIN` → `00000080`
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m   - `"5000000000"` → truncates to 705032704 → `00f2052a`
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m   - `"9223372036854775808"` → over `LONG_MAX`, saturates to `LONG_MAX`, whose
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     low 32 bits are `0xffffffff` → `ffffffff`
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m   - `"-9223372036854775809"` → saturates to `LONG_MIN`, low 32 bits `0` →
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     `00000000`
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m   The Rust scanner reproduces this with a saturating `i64` accumulator followed
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m   by `value as i32`. Verified up to 400-digit inputs.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m - **Conversion stops at the first non-digit, which is pushed back.**
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m   `"0x10"` → 0 (stops at `x`), `"42abc"` → 42, `"1e5"` → 1, `"3.14"` → 3,
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m   `"1,234"` → 1, `"7 8"` → 7. Verified.
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m - **Leading zeros are decimal, not octal.** `%d` is base 10, so `"010"` → 10
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m   and 300 zeros → 0. Verified.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m - **Only the first conversion is consumed.** Trailing input is never read; the
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m   program may exit while the writer still has bytes queued, so the harness
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m   tolerates `EPIPE` on its own side. Verified with a 200 KB trailing payload.
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m - **Struct object representation, padding included.** `house_t` on LP64 x86-64
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m   is `floors@0, bedrooms@4, bathrooms@8`, size 16, with *no* padding bytes, so
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m   `house_t house = {0}` followed by three field assignments leaves nothing
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m   uninitialised and the dump is deterministic: `bedrooms = 3` → `03000000`,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m   `bathrooms = 2.0` → `0000000000000040` (little-endian IEEE-754). The Rust
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m   side uses `#[repr(C)]` and native-endian byte conversion.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m   `known_layout_for_input_one` pins the exact expected bytes so a silent drift
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m   in *both* programs would still be caught.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m - **`printf("%02x")` formatting.** Lowercase, zero-padded to two digits, no
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m   separators, single trailing `\n`. Verified byte-for-byte.
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m ## Harness validation (mutation testing)
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m To confirm the suite is not vacuous, three defects were injected into the Rust
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m program and the suite was re-run; each was caught, then reverted:
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m | Injected defect | Result |
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m |---|---|
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m | drop `0x0b` from `is_c_space` (the original bug) | 3 tests FAILED |
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m | `std::process::exit(1)` at end of `main` | 23 tests FAILED (exit-status assertion) |
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m | `eprintln!("noise")` at end of `main` | 22 tests FAILED (stderr assertion) |
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m ## Coverage summary
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 23 tests, ~2400 distinct inputs, all three of stdout/stderr/exit status asserted
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m on every one:
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m - all 256 single-byte inputs, exhaustively
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m - all 400 two-byte combinations over the alphabet `%d` reacts to
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m   (`0-9 + - space \t \n \v \f \r . x e E , NUL a`)
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m - every bit position of the resulting `int`, plus `±(1<<n)` and `(1<<n)-1`
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m - digit-count sweep 1..=25 digits, signed and unsigned
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m - `int` and `long` boundaries, and the saturation range beyond `LONG_MAX`
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m - 1200 deterministic pseudo-random inputs (fixed xorshift seed — no flakiness):
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m   raw bytes, numeric-looking text, and random-length digit runs
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m - 200 KB inputs to check that unread trailing input is irrelevant
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m No test is `#[ignore]`d, skipped or disabled. Nothing in `c_src/` was modified.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal gate verification, from a clean build of both programs:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+echo "=== c_src source files unmodified (only build/ artifacts added) ==="
+find c_src -type f -not -path "*/build/*" | sort
+md5sum c_src/src/main.c c_src/CMakeLists.txt
+echo
+echo "=== clean rebuild: C ==="
+rm -rf c_src/build && mkdir -p c_src/build
+(cd c_src/build && cmake .. >/tmp/c.log 2>&1 && cmake --build . >>/tmp/c.log 2>&1)
+echo "C build OK -> c_src/build/driver"; ls -l c_src/build/driver
+echo
+echo "=== clean rebuild: Rust ==="
+(cd translation && cargo clean >/dev/null 2>&1; cargo build --release 2>&1 | tail -3)
+ls -l translation/target/release/driver
+echo
+echo "=== run commands ==="
+echo '  C   : c_src/build/driver            (stdin -> stdout)'
+echo '  Rust: translation/target/release/driver'
+printf '42' | c_src/build/driver
+printf '42' | translation/target/release/driver
+echo
+echo "=== no ignored/skipped tests ==="
+grep -cE '#\[ignore\]|#\[cfg\(ignore|return;\s*//\s*skip' translation/tests/differential.rs || echo 0
+echo
+echo "=== cargo test ==="
+(cd translation && cargo test --release 2>&1 | tail -6)
+echo "=== artifacts ==="
+wc -l translation/tests/differential.rs translation/ERRORS.md translation/src/main.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final Phase D completion gate verification
+
+=== c_src source files unmodified (only build/ artifacts added) ===
+c_src/CMakeLists.txt
+c_src/src/main.c
+a4826791237bdd6268966d34194b9003  c_src/src/main.c
+8d336bf43d77db37b367558c27af5c20  c_src/CMakeLists.txt
+
+=== clean rebuild: C ===
+C build OK -> c_src/build/driver
+-rwxr-xr-x. 1 scheschb amazon 16872 Sep  1 11:03 c_src/build/driver
+
+=== clean rebuild: Rust ===
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-XkIrpZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+-rwxr-xr-x. 2 scheschb amazon 447512 Sep  1 11:03 translation/target/release/driver
+
+=== run commands ===
+  C   : c_src/build/driver            (stdin -> stdout)
+  Rust: translation/target/release/driver
+2a000000030000000000000000000040
+2a000000030000000000000000000040
+
+=== no ignored/skipped tests ===
+0
+0
+
+=== cargo test ===
+test exhaustive_single_byte_inputs ... ok
+test exhaustive_two_byte_inputs_over_interesting_alphabet ... ok
+test deterministic_fuzz ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.62s
+
+=== artifacts ===
+  535 translation/tests/differential.rs
+  122 translation/ERRORS.md
+  235 translation/src/main.rs
+  892 total
+[38;5;244m - Completed in 8.788s[0m
+
+[?25l[0m[38;5;141m> [0mAll four phases complete. One real mismatch found and fixed.[0m[0m
+[0m[0m
+[1mThe bug:[22m the Rust scanner skipped [38;5;10mscanf[0m's leading whitespace with [38;5;10mchar::is_ascii_whitespace()[0m, whose set is [38;5;10m{' ', '\t', '\n', '\f', '\r'}[0m. C's [38;5;10misspace()[0m in the [38;5;10m"C"[0m locale also includes vertical tab [38;5;10m0x0B[0m. So on input [38;5;10m"\v7"[0m the C program stepped over the 0x0B and converted 7 ([38;5;10m07000000…[0m), while Rust treated it as a non-matching character and reported a matching failure, leaving [38;5;10mx == 0[0m ([38;5;10m00000000…[0m). Fixed by spelling out C's set in an [38;5;10mis_c_space[0m helper.[0m[0m
+[0m[0m
+[1mPhase A[22m — both build clean. C: [38;5;10mcd c_src/build && cmake .. && cmake --build .[0m → [38;5;10mc_src/build/driver[0m. Rust: [38;5;10mcd translation && cargo build --release[0m → [38;5;10mtranslation/target/release/driver[0m. Both verified from a [38;5;10mrm -rf build[0m / [38;5;10mcargo clean[0m state.[0m[0m
+[0m[0m
+[1mPhases B–C[22m — [38;5;10mtranslation/tests/differential.rs[0m (535 lines, 23 tests) spawns both binaries as subprocesses and asserts stdout bytes, stderr bytes, and exit status/signal on every input. The program's whole input surface is one [38;5;10mscanf("%d", &x)[0m — [38;5;10mdriver()[0m/[38;5;10mprint_hex()[0m have no data-dependent branches, since the loop always runs [38;5;10msizeof(house_t) == 16[0m times — so coverage is organized around that conversion: input failure (empty/whitespace-only/EOF), matching failure ([38;5;10m-[0m, [38;5;10m+[0m, [38;5;10m--5[0m, [38;5;10m.5[0m), all six C whitespace characters, sign handling, stop-at-first-non-digit ([38;5;10m0x10[0m, [38;5;10m42abc[0m, [38;5;10m1e5[0m), leading zeros as decimal, [38;5;10mint[0m/[38;5;10mlong[0m boundaries and glibc's strtol-saturate-then-truncate-to-int behavior, embedded NUL and high bytes, and 200 KB inputs where trailing bytes are never read. On top of the enumerated cases: all 256 single-byte inputs exhaustively, all 400 two-byte combinations over the alphabet [38;5;10m%d[0m reacts to, every bit position of the resulting [38;5;10mint[0m, a 1–25 digit-length sweep, and 1200 deterministic pseudo-random inputs (fixed xorshift seed, so no flakiness). Roughly 2400 inputs total.[0m[0m
+[0m[0m
+I also mutation-tested the harness so its passing means something: dropping [38;5;10m0x0b[0m from [38;5;10mis_c_space[0m again fails 3 tests, [38;5;10mexit(1)[0m fails all 23, and an [38;5;10meprintln![0m fails 22. All three assertion dimensions are live.[0m[0m
+[0m[0m
+[1mPhase D[22m — [38;5;10mcargo test --release[0m: 23 passed, 0 failed, 0 ignored. Nothing is [38;5;10m#[ignore][0md or skipped. [38;5;10mc_src/[0m sources are untouched (only the [38;5;10mbuild/[0m artifact directory was added, per the build instructions). Findings are recorded in [38;5;10mtranslation/ERRORS.md[0m, including the behaviors that [3mlook[23m like bugs but were confirmed matching and deliberately preserved.[0m[0m
+[38;5;8m
+ ▸ Credits: 9.67 • Time: 5m 33s
+
+[0m[1G[0m[0m[?25h

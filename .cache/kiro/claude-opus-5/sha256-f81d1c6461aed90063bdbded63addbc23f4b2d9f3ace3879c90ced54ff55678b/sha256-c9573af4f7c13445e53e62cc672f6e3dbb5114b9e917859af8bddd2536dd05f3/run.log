@@ -1,0 +1,2578 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -50 && echo "---TRANSLATION---" && find translation -type f -not -path '*/target/*' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 06:55 .
+drwxr-xr-x. 545 scheschb amazon 81920 Sep  1 06:55 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 06:55 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 06:55 c_src
+drwxr-xr-x.   3 scheschb amazon    69 Sep  1 06:55 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/sieve.h
+c_src/src/sieve.c
+---TRANSLATION---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read build files and header
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/c_src/include/sieve.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1399 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-efNuf0/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1212 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-efNuf0/c_src/include/sieve.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m153 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C source and Rust translation
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/c_src/src/sieve.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/src/lib.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1404 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-efNuf0/c_src/src/sieve.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2226 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/src/lib.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, single-function library. Let me build both sides.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo check 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: cargo check the Rust crate
+
+    Checking sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+[38;5;244m - Completed in 0.110s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null 2>&1 && cmake --build . 2>&1 | tail -5 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/Sieve.dir/src/sieve.c.o
+[100%] Linking C shared library libSieve.so
+[100%] Built target Sieve
+-rwxr-xr-x. 1 scheschb amazon 15784 Sep  1 06:55 libSieve.so
+[38;5;244m - Completed in 0.419s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -5 && ls -la target/release/*.so && echo "=== C dynamic syms ===" && nm -D --defined-only ../c_src/build/libSieve.so && echo "=== Rust dynamic syms ===" && nm -D --defined-only target/release/libSieve.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib and compare exported symbols
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+-rwxr-xr-x. 2 scheschb amazon 401952 Sep  1 06:55 target/release/libSieve.so
+=== C dynamic syms ===
+0000000000001109 T sieve
+=== Rust dynamic syms ===
+00000000000116e0 T sieve
+[38;5;244m - Completed in 0.126s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cat Cargo.lock && ls ~/.cargo/registry 2>/dev/null && echo "OFFLINE?" && cat ~/.cargo/config.toml 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cargo registry availability for adding dev-dependencies
+
+# This file is automatically @generated by Cargo.
+# It is not intended for manual editing.
+version = 4
+
+[[package]]
+name = "sieve"
+version = "0.1.0"
+CACHEDIR.TAG
+cache
+index
+src
+OFFLINE?
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading and libc dev-dependencies
+
+[49m[38;5;10m+     10[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libc = "0.2"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  10, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  11, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo fetch 2>&1 | tail -5; grep -A1 'name = "lib' Cargo.lock[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fetch new dev-dependencies
+
+     Locking 4 packages to latest Rust 1.97.1 compatible versions
+      Adding cfg-if v1.0.4
+      Adding libc v0.2.189
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+name = "libc"
+version = "0.2.189"
+--
+name = "libloading"
+version = "0.8.9"
+[38;5;244m - Completed in 0.98s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && echo "=== error-ish constructs ===" && grep -nE 'return|assert|NULL|errno|exit\(|abort|RETURN_ERROR|if *\(|switch|#if|#ifdef|<|>|<=|>=|==|!=|malloc|free' src/sieve.c include/sieve.h | grep -v '^.*://' ; echo "=== all non-comment lines ===" && grep -vE '^\s*(//|$)' src/sieve.c include/sieve.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mechanically grep C source for all branches, checks, and error paths
+
+=== error-ish constructs ===
+src/sieve.c:24:#include <stdio.h>
+src/sieve.c:35:        if (val % 10 == 9) {
+include/sieve.h:24:#ifndef SIEVE_H_
+=== all non-comment lines ===
+src/sieve.c:#include <stdio.h>
+src/sieve.c:#include "sieve.h"
+src/sieve.c:/*
+src/sieve.c:Count from a starting point, 
+src/sieve.c:stopping when the count ends in 9 (base 10).
+src/sieve.c:*/
+src/sieve.c:void sieve(int val) {
+src/sieve.c:    while (1) {
+src/sieve.c:        printf("%d\n", val);
+src/sieve.c:        if (val % 10 == 9) {
+src/sieve.c:            break;
+src/sieve.c:        }
+src/sieve.c:        val++;
+src/sieve.c:    }
+src/sieve.c:}
+include/sieve.h:#ifndef SIEVE_H_
+include/sieve.h:#define SIEVE_H_
+include/sieve.h:void sieve(int start);
+include/sieve.h:#endif //SIEVE_H_
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: the entire library is one branch. Writing the Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create SYMBOLS.md artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D` on both shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m Build commands used:
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m cd translation && cargo build --release
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m Artifacts:
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m * C:    `c_src/build/libSieve.so`
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m * Rust: `translation/target/release/libSieve.so`
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m ## Defined (exported) symbols
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m `nm -D --defined-only <so>`:
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | symbol | C `.so` | Rust `.so` | notes |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m |--------|---------|------------|-------|
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m | `sieve` | `T` | `T` | `void sieve(int)` — the only symbol declared in `c_src/include/sieve.h`. Rust exports it via `#[unsafe(no_mangle)] pub extern "C" fn sieve(val: c_int)`. |
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m There are no macro-generated symbols: `c_src/src/sieve.c` contains no
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m symbol-defining macros, and `sieve.h` only carries an include guard
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m (`SIEVE_H_`), which emits no symbol.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m The C library has exactly one translation unit (`src/sieve.c`, per
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m `c_src/CMakeLists.txt`), so no C module was skipped by the translation — the
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m whole library is `sieve()`.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ## Symbol diff
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m comm -23 <(nm -D --defined-only c_src/build/libSieve.so       | awk '{print $NF}' | sort -u) \
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m          <(nm -D --defined-only translation/target/release/libSieve.so | awk '{print $NF}' | sort -u)
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m Result: **empty** — 0 symbols exported by the C `.so` are missing from the
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m Rust `.so`.
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m ## Undefined (imported) symbols
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | `.so` | undefined symbols | non-libc? |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m |-------|-------------------|-----------|
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | C | `printf` (+ ELF/glibc plumbing: `__cxa_finalize`, `_ITM_*`, `__gmon_start__`) | none |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | Rust | `printf` (+ the same ELF/glibc plumbing, plus `memcpy`/`__stack_chk_fail`-class libc intrinsics if emitted) | none |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m Both objects resolve everything against `libc`; neither pulls in a non-libc
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m dependency. The Rust translation deliberately calls C `printf` rather than
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m `println!` so the `stdout` FILE buffer, its flush points and the emitted bytes
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m are the same ones the C uses.
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m `translation/Cargo.toml` declares **no `[features]` table**, so the only
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m buildable configuration is the default one (`--no-default-features` is
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m equivalent to the default here). Verified by:
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m grep -n '\[features\]' translation/Cargo.toml   # no match
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m cargo build --release --no-default-features     # same single symbol
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m - [x] `nm -D` shows 0 missing symbols and 0 undefined non-libc symbols in the
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m       Rust `.so`.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create ERRORS.md error-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — error / rejection surface table (Phase C)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Mechanically derived from `c_src/src/sieve.c` and `c_src/include/sieve.h`. The
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m grep used to enumerate every rejection construct:
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m grep -nE 'return|assert|NULL|errno|exit\(|abort|RETURN_ERROR|if *\(|switch|#if' \
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m      c_src/src/sieve.c c_src/include/sieve.h
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m Matches found in the whole library:
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m * `#include <stdio.h>`               — not a check
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m * `if (val % 10 == 9) { break; }`    — the loop's *termination* test, not a rejection
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m * `#ifndef SIEVE_H_`                 — include guard
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m **The C library contains no error surface at all.** There is:
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m * no return value (`void sieve(int)`), so no error code or sentinel can be
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   produced;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m * no `assert`, no `errno` write, no `exit`/`abort`;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m * no pointer parameter, therefore no null check to replicate;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m * no range check, no min/max constant, no enum parameter;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m * exactly one `if`, and it is the termination condition, not a rejection.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m Consequently every `int` is a **valid** input: the function always runs and
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m always returns (see row 3 for the one input class where "returns" depends on
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m signed-overflow wraparound). The rows below are therefore the *generic C-API
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m boundaries* the task requires be covered anyway, expressed as
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m "expected C result" instead of "expected error", because rejection is not
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m expressible in this ABI. Each row is asserted differentially against both
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m `.so`s in `translation/tests/error_paths.rs`.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | # | function | trigger (the exact invalid/boundary input or condition) | expected C result | status |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m |---|----------|----------------------------------------------------------|-------------------|--------|
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | 1 | `sieve` | `val = 0` — zero-length/identity boundary, the additive identity and the smallest non-negative input | No rejection. Prints `0\n1\n…\n9\n` and returns. Exit is normal. | [x] |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | 2 | `sieve` | `val = INT_MIN` (`-2147483648`) — one step past the low end of the parameter's representable range | No rejection. `INT_MIN % 10 == -8` (C truncating remainder ⇒ never `9`), so it counts **up** through 0 to 9 and returns after 2147483658 lines. Verified as a bounded output *prefix* (see row 3 method), not to completion. | [x] |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | 3 | `sieve` | `val = INT_MAX` (`2147483647`) — the high end; `2147483647 % 10 == 7`, so `val++` **signed-overflows**, which is UB in C | No rejection, no trap: the C compiled at `-O0` wraps to `INT_MIN`, so the printed sequence is `2147483647`, `-2147483648`, `-2147483647`, … The Rust uses `wrapping_add` to reproduce exactly this. Asserted on a bounded stdout prefix from a forked child (the full run would emit ~23 GB). | [x] |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | 4 | `sieve` | `val = INT_MAX - 2 = 2147483645`, `INT_MAX - 1`, i.e. values one step *before* the overflow point | No rejection. Same wrapping continuation as row 3; the pre-overflow lines are printed first. | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | 5 | `sieve` | `val = -9` — a negative value whose *magnitude* ends in 9, the trap for anyone who "fixed" the remainder to Euclidean | No rejection and **no early break**: `-9 % 10 == -9 ≠ 9`, so it prints `-9 … 9` (19 lines). A Euclidean-remainder translation would print only `-9`. | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | 6 | `sieve` | `val = -1` — the classic error sentinel value, passed as data | No rejection. `-1 % 10 == -1`, prints `-1 … 9` (11 lines). | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | 7 | `sieve` | `val = 9` — the immediate-termination boundary (loop body runs exactly once) | No rejection. Prints `9\n` only; the print happens *before* the check, so the terminating value is still emitted. | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | 8 | `sieve` | `val = 19`, `10`, `8` — one step past / before the terminating residue, checking `% 10` is on the value not the iteration count | No rejection. `19` ⇒ one line; `10` ⇒ `10…19`; `8` ⇒ `8`,`9`. | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | 9 | `sieve` | Out-of-range "enum-like" ints: the ABI takes a bare `int`, so there is no enum with a finite variant set. Values with no semantic meaning (`0x7FFFFFFF`, `0x80000000` reinterpreted, `-2147483647`, `12345678`, random 32-bit words) are all passed across the FFI boundary as-is | No rejection. C treats every bit pattern as a plain `int` and applies the same `% 10` rule; there is no variant check to diverge on. Covered by randomized 32-bit inputs. | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | 10 | `sieve` | Truncation/width boundary: a value passed in a 64-bit register whose upper 32 bits are set (caller passes `i64`, callee reads `int`) | No rejection. Only the low 32 bits are read, per the SysV AMD64 ABI. Both `.so`s must agree; asserted by calling through an `extern "C" fn(i64)` signature. | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | 11 | `sieve` | `stdout` is a closed / non-writable fd when `sieve` is called (`printf` fails, returns negative) | No rejection and **no abort**: the C ignores `printf`'s return value, so the loop still terminates on the `% 10 == 9` rule and returns normally. Rust must likewise ignore the return value. | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m ## Notes on what is deliberately *not* in the table
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m * **Null pointers** — the API has no pointer parameter. There is nothing to
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m   pass null to; a "null pointer" test would have to invent an argument the C
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m   does not take.
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m * **Zero and oversized lengths** — the API has no length/count/size parameter
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m   and performs no allocation, indexing, or copying.
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m * **Invalid enum variants** — the API has no enum parameter (row 9 records why
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m   the generic case degenerates to "any 32-bit value", which *is* covered).
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m These are recorded rather than silently dropped so the absence is a verified
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m fact about the C surface, not an oversight.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create CONFIGS.md configuration-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — configuration surface table (Phase B)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Mechanically derived from `c_src/include/sieve.h` (the entire public API) and
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m every branch in `c_src/src/sieve.c`.
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ## Axes the C actually branches on
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m Enumerated from the source, not guessed:
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 1. **Public entry points.** `sieve.h` declares exactly one:
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m    `void sieve(int start)`. There is no convenience wrapper and no lower-level
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m    variant to reach past — `sieve` *is* the lowest level. `nm -D` on the C
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m    `.so` confirms one exported symbol.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 2. **Runtime options / modes / flags.** None. No setter, no global, no
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m    context struct, no environment read, no `#ifdef` in the compiled source
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m    (`CMakeLists.txt` passes no `-D`). The only `#if` in the tree is the
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m    `SIEVE_H_` include guard.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 3. **The one data-dependent branch:** `if (val % 10 == 9)`, i.e. the C
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m    truncating remainder of the argument. That partitions the input domain into
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m    the shapes below.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 4. **Input shape axes** that follow from that branch plus the `int` width and
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m    the `val++`:
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m    * sign: positive / zero / negative;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m    * residue `val % 10`: `== 9` (immediate stop) vs `!= 9` (iterate);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m    * distance to the stopping value: 0, 1, few, many, crossing zero;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m    * digit-width transitions (9→10, 99→100, …) because `printf("%d")`
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m      lengthens its output there;
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m    * signed-overflow region (`val` near `INT_MAX`, where `val++` wraps);
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m    * `INT_MIN` / `INT_MAX` extremes.
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 5. **Output channel state**, since the observable result is entirely `stdout`
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m    bytes: buffered-to-file (fully buffered) vs unbuffered, and pre-existing
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m    unflushed buffer content shared between the C and Rust `.so`s.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ## Rows
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m Each row is exercised in `translation/tests/valid_paths.rs` by loading **both**
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m `.so`s through `libloading` and comparing the captured `stdout` bytes
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m byte-for-byte. Rows marked *randomized* use a fixed-seed xorshift PRNG (seed
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m `0x5EED_1234_ABCD_EF01`) with many inputs per row, not one hand-picked value.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m |---|----------------|-------------------------------------------|-----|
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | 1 | `sieve` | residue `== 9`, positive, single-iteration: `9`, `19`, `29`, `109`, `999999999`, `INT_MAX/10*10+9` | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | 2 | `sieve` | residue `== 9`, randomized positive multiples-of-10-plus-9 across the whole positive range | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | 3 | `sieve` | residue `== 0`, positive: `0`, `10`, `100`, `1000` — full 10-line run | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | 4 | `sieve` | residue `1..=8`, positive: every one of `1,2,…,8` and `11..=18` — partial runs of every length 2..=9 | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 5 | `sieve` | randomized positive `val` in `1..=1_000_000` (residue uniform, run length 1..=10) | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | 6 | `sieve` | digit-width transition inside a single run: starts at `5`, `8`, `95`, `98`, `995`, `9995`, `99995` so the run crosses 9→10 / 99→100 / 999→1000 and `printf` output width changes mid-run | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | 7 | `sieve` | negative, magnitude ending in 9 (`-9`, `-19`, `-129`): C truncating `%` yields `-9`, so **no** early stop — must count up to `+9` | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | 8 | `sieve` | negative, crossing zero: `-1`, `-5`, `-10`, `-11`, `-100`, `-123` — the run spans the sign change and the `-1`→`0` width change | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | 9 | `sieve` | randomized negative `val` in `-1_000_000..=-1` | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | 10 | `sieve` | randomized full-range `val` over all 2^32 bit patterns, filtered to runs short enough to compare in full (run length ≤ ~10 lines) | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | 11 | `sieve` | extreme low: `INT_MIN`, `INT_MIN+1`, `INT_MIN+8` — bounded output-prefix comparison from a forked child (full run is ~2.1e9 lines) | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | 12 | `sieve` | signed-overflow region: `INT_MAX`, `INT_MAX-1`, `INT_MAX-2` — `val++` wraps `INT_MAX`→`INT_MIN`; bounded output-prefix comparison, verifies the wrap sequence `2147483647`, `-2147483648`, … | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | 13 | `sieve` | output channel: `stdout` redirected to a regular file (fully buffered, default) — the mode all other rows run in | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | 14 | `sieve` | output channel: `stdout` set unbuffered via `setvbuf(_IONBF)` before the call, so each `printf` is its own `write(2)` | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m | 15 | `sieve` | output channel: `stdout` set line-buffered via `setvbuf(_IOLBF)` | [x] |
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m | 16 | `sieve` | shared-buffer interaction: unflushed bytes written by the *test* (via libc `printf`) already sit in the `stdout` buffer when `sieve` is called; asserts both `.so`s append to the same FILE buffer rather than opening their own stream, so ordering is preserved | [x] |
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m | 17 | `sieve` | repeated / stateless invocation: the same `.so` handle called 200 times with randomized inputs in sequence; asserts no hidden state accumulates between calls (C has no globals — must stay true in Rust) | [x] |
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m | 18 | `sieve` | ABI width: the symbol invoked through an `extern "C" fn(i64)` signature with garbage in the upper 32 bits; both must read only the low 32 bits | [x] |
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m | 19 | `sieve` | interleaved C/Rust calls in one process (C, then Rust, then C…) on the same `stdout`, asserting the Rust `.so` does not disturb the C `.so`'s stream state | [x] |
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the test harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared differential-test harness.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Both the C `.so` and the Rust `.so` are loaded with `libloading` and called
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! only through their exported symbols, exactly as an external consumer would
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! (this exercises the `#[no_mangle]` wrapper too). Nothing in the Rust crate
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! is called directly.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! `sieve` returns nothing and its only observable effect is bytes on
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! `stdout`, so every comparison here is a byte-for-byte comparison of
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! captured `stdout`.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_void, CString};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::sync::atomic::{AtomicU64, Ordering};
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // libc bits we need for fd juggling / forking
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     fn printf(fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// Serializes every test that touches the process-wide fd 1 / `stdout` FILE.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m static STDOUT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m pub fn lock_stdout() -> std::sync::MutexGuard<'static, ()> {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     STDOUT_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m // Library loading
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// The one exported symbol, in the ABI shape the header declares.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m pub type SieveFn = unsafe extern "C" fn(c_int);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// The same symbol viewed as taking a 64-bit argument, used to prove the
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// callee only reads the low 32 bits (ERRORS.md row 10 / CONFIGS.md row 18).
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m pub type SieveFn64 = unsafe extern "C" fn(i64);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m pub struct Lib {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     _lib: Library,
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     pub sieve: SieveFn,
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     pub sieve64: SieveFn64,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     pub name: &'static str,
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m fn manifest_dir() -> PathBuf {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m pub fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("C_SO") {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         return PathBuf::from(p);
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     manifest_dir().join("../c_src/build/libSieve.so")
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m pub fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("RUST_SO") {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         return PathBuf::from(p);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let release = manifest_dir().join("target/release/libSieve.so");
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     if release.exists() {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         return release;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     manifest_dir().join("target/debug/libSieve.so")
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m fn load(path: PathBuf, name: &'static str) -> Lib {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         path.exists(),
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         "{} shared object not found at {}: build it first \
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m          (C: cmake --build c_src/build ; Rust: cargo build --release)",
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         name,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         path.display()
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         let lib = Library::new(&path).unwrap_or_else(|e| panic!("dlopen {}: {e}", path.display()));
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         let s: Symbol<SieveFn> = lib
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             .get(b"sieve\0")
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("{} does not export `sieve`: {e}", path.display()));
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         let sieve = *s;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let s64: Symbol<SieveFn64> = lib.get(b"sieve\0").unwrap();
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let sieve64 = *s64;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         drop(s);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         Lib {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             _lib: lib,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             sieve,
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             sieve64,
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             name,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m pub fn c_lib() -> Lib {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     load(c_so_path(), "C")
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m pub fn rust_lib() -> Lib {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     load(rust_so_path(), "Rust")
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m /// Both libraries, loaded into the same process.
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m pub fn both() -> (Lib, Lib) {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     (c_lib(), rust_lib())
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m // In-process stdout capture (for calls that terminate)
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m /// Redirect fd 1 to a temp file, run `f`, flush every stdio stream, restore
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// fd 1 and return the bytes that were written.
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// The pre-flush drains anything the harness had pending so it cannot leak
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m /// into the captured bytes; the post-flush pushes the shared `stdout` FILE
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// buffer out before fd 1 is put back. Because the Rust `.so` calls the same
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// libc `printf` the C `.so` does, one `fflush(NULL)` covers both.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m pub fn capture<F: FnOnce()>(f: F) -> Vec<u8> {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     let seq = TMP_SEQ.fetch_add(1, Ordering::SeqCst);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let path = std::env::temp_dir().join(format!(
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         "sieve_cap_{}_{}.out",
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         unsafe { libc::getpid() },
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         seq
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     ));
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let cpath = CString::new(path.to_str().unwrap()).unwrap();
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         let saved = libc::dup(1);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         assert!(saved >= 0, "dup(1) failed");
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         let fd = libc::open(
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             cpath.as_ptr(),
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m             libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             0o600,
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         assert!(fd >= 0, "open({}) failed", path.display());
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         assert!(libc::dup2(fd, 1) >= 0, "dup2 failed");
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         libc::close(fd);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         f();
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         assert!(libc::dup2(saved, 1) >= 0, "dup2 restore failed");
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         libc::close(saved);
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let bytes = std::fs::read(&path).expect("read capture file");
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     let _ = std::fs::remove_file(&path);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     bytes
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m /// stdio buffering mode to install on `stdout` before the call.
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m pub enum Buffering {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     /// Leave whatever mode the stream already has (fully buffered onto a file).
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     Default,
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     /// `setvbuf(stdout, NULL, _IOFBF, 0)`
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     Full,
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     /// `setvbuf(stdout, NULL, _IOLBF, 0)`
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     Line,
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     /// `setvbuf(stdout, NULL, _IONBF, 0)`
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     None,
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m fn apply_buffering(mode: Buffering) {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         let m = match mode {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m             Buffering::Default => return,
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m             Buffering::Full => libc::_IOFBF,
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m             Buffering::Line => libc::_IOLBF,
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m             Buffering::None => libc::_IONBF,
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         libc::fflush(libc::stdout);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         libc::setvbuf(libc::stdout, std::ptr::null_mut(), m, 0);
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m fn reset_buffering() {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         libc::fflush(libc::stdout);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         libc::setvbuf(libc::stdout, std::ptr::null_mut(), libc::_IOFBF, 0);
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m /// Capture the full stdout of `lib.sieve(val)` under a given buffering mode.
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m pub fn run_capture(lib: &Lib, val: i32, mode: Buffering) -> Vec<u8> {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     capture(|| {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         apply_buffering(mode);
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         unsafe { (lib.sieve)(val) };
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         if mode != Buffering::Default {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m             reset_buffering();
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m /// Capture stdout of `lib.sieve(val)` called through the 64-bit-argument view.
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m pub fn run_capture_i64(lib: &Lib, raw: i64) -> Vec<u8> {
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     capture(|| unsafe { (lib.sieve64)(raw) })
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m /// Capture stdout with `pre` bytes already sitting unflushed in the shared
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m /// `stdout` FILE buffer (CONFIGS.md row 16).
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m pub fn run_capture_with_pending(lib: &Lib, val: i32, pre: &str) -> Vec<u8> {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     let pre = CString::new(pre).unwrap();
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     capture(|| unsafe {
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         printf(b"%s\0".as_ptr() as *const c_char, pre.as_ptr());
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         (lib.sieve)(val);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m // Forked bounded-prefix capture (for calls that would run for ~2e9 lines)
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m /// Make glibc allocate `stdout`'s buffer now, so the forked child never has to
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m /// call `malloc` (avoiding the classic fork-in-a-threaded-process hazard).
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m fn prewarm_stdout() {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         let saved = libc::dup(1);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         let devnull = libc::open(b"/dev/null\0".as_ptr() as *const c_char, libc::O_WRONLY);
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         if devnull >= 0 {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m             libc::dup2(devnull, 1);
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m             printf(b" \0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m             libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             libc::dup2(saved, 1);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             libc::close(devnull);
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         libc::close(saved);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m /// Fork, point the child's stdout at a pipe, call `sieve(val)` there, and read
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m /// the first `want` bytes it produces. The child is then killed, so this works
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m /// for inputs whose full run would emit gigabytes.
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m /// Identical treatment for both libraries makes the prefixes comparable.
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m pub fn run_prefix(lib: &Lib, val: i32, want: usize) -> Vec<u8> {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     prewarm_stdout();
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     let mut fds = [0i32; 2];
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         assert_eq!(libc::pipe(fds.as_mut_ptr()), 0, "pipe failed");
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         let pid = libc::fork();
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         assert!(pid >= 0, "fork failed");
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         if pid == 0 {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m             // ---- child ----
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m             libc::close(fds[0]);
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m             libc::dup2(fds[1], 1);
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m             libc::close(fds[1]);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m             libc::alarm(120); // hard stop if the callee never returns
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             (lib.sieve)(val);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             libc::_exit(0);
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m         // ---- parent ----
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         libc::close(fds[1]);
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         let mut buf = vec![0u8; want];
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         let mut got = 0usize;
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m         while got < want {
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             let n = libc::read(
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m                 fds[0],
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m                 buf[got..].as_mut_ptr() as *mut c_void,
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m                 want - got,
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m             if n <= 0 {
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m             got += n as usize;
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m         buf.truncate(got);
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m         libc::kill(pid, libc::SIGKILL);
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         let mut status = 0i32;
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m         libc::waitpid(pid, &mut status, 0);
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m         libc::close(fds[0]);
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m         buf
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m // Forked exit-status probe (for hostile stdout states)
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m #[derive(Copy, Clone, Debug)]
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m pub enum StdoutState {
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m     /// fd 1 points at /dev/null — writes succeed and are discarded.
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     DevNull,
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m     /// fd 1 is closed — every `write(2)` fails with EBADF.
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m     Closed,
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m     /// fd 1 points at /dev/full — every `write(2)` fails with ENOSPC.
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     DevFull,
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     /// fd 1 is a read-only fd — every `write(2)` fails with EBADF.
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     ReadOnly,
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m /// Result of a forked call: the child exits 0 only if `sieve` returned
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m /// normally. A signal (crash / abort / SIGALRM timeout) is reported instead.
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m #[derive(Debug, PartialEq, Eq)]
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m pub enum ChildOutcome {
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     Exited(i32),
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m     Signaled(i32),
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m /// Call `sieve(val)` in a child process whose stdout is in the given state and
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m /// report how the child terminated. Used to show the C ignores `printf`
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m /// failures and still returns — and that the Rust does too.
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m pub fn run_child_outcome(lib: &Lib, val: i32, state: StdoutState) -> ChildOutcome {
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     prewarm_stdout();
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m         let pid = libc::fork();
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m         assert!(pid >= 0, "fork failed");
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m         if pid == 0 {
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m             // ---- child ----
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m             libc::alarm(60);
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m             match state {
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m                 StdoutState::DevNull => {
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m                     let fd = libc::open(b"/dev/null\0".as_ptr() as *const c_char, libc::O_WRONLY);
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m                     libc::dup2(fd, 1);
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m                 StdoutState::Closed => {
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m                     libc::close(1);
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m                 StdoutState::DevFull => {
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m                     let fd = libc::open(b"/dev/full\0".as_ptr() as *const c_char, libc::O_WRONLY);
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m                     if fd < 0 {
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m                         libc::close(1);
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m                     } else {
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m                         libc::dup2(fd, 1);
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m                 StdoutState::ReadOnly => {
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m                     let fd = libc::open(b"/dev/null\0".as_ptr() as *const c_char, libc::O_RDONLY);
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m                     libc::dup2(fd, 1);
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m             (lib.sieve)(val);
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m             libc::fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m             libc::_exit(0);
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m         let mut status = 0i32;
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m         libc::waitpid(pid, &mut status, 0);
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m         if libc::WIFEXITED(status) {
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m             ChildOutcome::Exited(libc::WEXITSTATUS(status))
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m             ChildOutcome::Signaled(libc::WTERMSIG(status))
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m // Expected-cost model, so tests pick full vs prefix comparison mechanically
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m /// Number of lines `sieve(val)` prints, or `None` if `val++` signed-overflows
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m /// on the way (in which case the run is ~2^31 lines long).
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m pub fn line_count(val: i32) -> Option<i64> {
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m     if val >= 0 {
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         let r = val % 10;
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         let target = val as i64 + (9 - r) as i64;
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         if target <= i32::MAX as i64 {
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m             Some(target - val as i64 + 1)
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m             None // wraps through INT_MIN first
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         // Truncating `%` makes negative residues, so a negative `val` never
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         // matches `== 9`; it counts up to +9.
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         Some(10i64 - val as i64)
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m /// Lines we are willing to materialize in a full byte-for-byte comparison.
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m pub const FULL_COMPARE_LIMIT: i64 = 40_000;
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m pub fn is_cheap(val: i32) -> bool {
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m     matches!(line_count(val), Some(n) if n <= FULL_COMPARE_LIMIT)
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m // Differential assertions
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m fn show(bytes: &[u8]) -> String {
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m     let s = String::from_utf8_lossy(bytes);
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m     if s.len() <= 400 {
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m         s.into_owned()
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m         format!("{}…[{} bytes total]", &s[..400], bytes.len())
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m fn diff_note(val: i32, c: &[u8], r: &[u8]) -> String {
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m     let pos = c
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m         .zip(r.iter())
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m         .position(|(a, b)| a != b)
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m         .unwrap_or_else(|| c.len().min(r.len()));
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m     format!(
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         "sieve({val}) diverged.\n  first differing byte offset: {pos}\n  \
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m          C   ({} bytes): {}\n  Rust({} bytes): {}",
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         c.len(),
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m         show(c),
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m         r.len(),
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m         show(r)
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m /// Full byte-for-byte comparison of both `.so`s for one input.
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m pub fn assert_same(c: &Lib, r: &Lib, val: i32, mode: Buffering) {
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m     let out_c = run_capture(c, val, mode);
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m     let out_r = run_capture(r, val, mode);
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m     assert_eq!(out_c, out_r, "{}", diff_note(val, &out_c, &out_r));
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m /// Bounded-prefix comparison, for inputs whose full run is astronomically long.
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m pub fn assert_same_prefix(c: &Lib, r: &Lib, val: i32, want: usize) {
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m     let out_c = run_prefix(c, val, want);
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m     let out_r = run_prefix(r, val, want);
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m         !out_c.is_empty(),
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m         "C produced no output for sieve({val}); capture harness is broken"
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m         out_c.len(),
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m         want,
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m         "C prefix for sieve({val}) is short ({} of {want} bytes) — the run \
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m          ended sooner than the cost model predicted",
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m         out_c.len()
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m     assert_eq!(out_c, out_r, "{}", diff_note(val, &out_c, &out_r));
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m /// Pick the cheaper comparison automatically.
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m pub fn assert_same_auto(c: &Lib, r: &Lib, val: i32) {
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m     if is_cheap(val) {
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m         assert_same(c, r, val, Buffering::Default);
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m         assert_same_prefix(c, r, val, 8192);
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m // Deterministic PRNG (fixed seed, so failures reproduce exactly)
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m pub const SEED: u64 = 0x5EED_1234_ABCD_EF01;
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m     pub fn new() -> Self {
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m         Rng(SEED)
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m     pub fn with_seed(s: u64) -> Self {
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m         Rng(if s == 0 { SEED } else { s })
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m         // xorshift64*
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m         x ^= x >> 12;
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m         x ^= x << 25;
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m         x ^= x >> 27;
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m         x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m     pub fn next_u32(&mut self) -> u32 {
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m         (self.next_u64() >> 32) as u32
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m     /// Any 32-bit pattern, reinterpreted as `int` — this is exactly what a
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m     /// hostile caller can push across the FFI boundary.
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m     pub fn next_i32(&mut self) -> i32 {
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m         self.next_u32() as i32
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m     /// Uniform in `[lo, hi]` inclusive.
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m     pub fn range_i32(&mut self, lo: i32, hi: i32) -> i32 {
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m         debug_assert!(lo <= hi);
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m         let span = (hi as i64 - lo as i64 + 1) as u64;
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m         (lo as i64 + (self.next_u64() % span) as i64) as i32
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation/tests/common && python3 - <<'EOF'
+import re
+p='mod.rs'
+s=open(p).read()
+s=s.replace("""pub fn capture<F: FnOnce()>(f: F) -> Vec<u8> {
+    let seq""","""pub fn capture<F: FnOnce()>(f: F) -> Vec<u8> {
+    let _guard = lock_stdout();
+    let seq""")
+s=s.replace("""pub fn run_prefix(lib: &Lib, val: i32, want: usize) -> Vec<u8> {
+    prewarm_stdout();""","""pub fn run_prefix(lib: &Lib, val: i32, want: usize) -> Vec<u8> {
+    let _guard = lock_stdout();
+    prewarm_stdout();""")
+s=s.replace("""pub fn run_child_outcome(lib: &Lib, val: i32, state: StdoutState) -> ChildOutcome {
+    prewarm_stdout();""","""pub fn run_child_outcome(lib: &Lib, val: i32, state: StdoutState) -> ChildOutcome {
+    let _guard = lock_stdout();
+    prewarm_stdout();""")
+open(p,'w').write(s)
+EOF
+grep -n "_guard = lock_stdout" mod.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Add stdout lock acquisition to capture helpers
+
+125:    let _guard = lock_stdout();
+246:    let _guard = lock_stdout();
+316:    let _guard = lock_stdout();
+[38;5;244m - Completed in 0.26s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/valid_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase B valid-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `CONFIGS.md`. Every test loads both shared objects and
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! compares captured `stdout` byte-for-byte. `sieve` is the *lowest-level*
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! entry point (it is the only one the C library exports), so there is no
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! convenience wrapper being tested in place of the real thing.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Row 1 — residue 9, positive: the loop body runs exactly once because the
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// print happens before the check.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m fn row01_residue_nine_single_iteration() {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     for val in [9, 19, 29, 109, 999_999_999, (i32::MAX / 10) * 10 + 9] {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m         // Sanity: the C really does emit exactly one line here.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         let out = run_capture(&c, val, Buffering::Default);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         assert_eq!(out, format!("{val}\n").into_bytes());
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// Row 2 — randomized positive values with residue 9, spread over the whole
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// positive range.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m fn row02_residue_nine_randomized() {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     let mut rng = Rng::new();
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     for _ in 0..300 {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         // Largest k with k*10+9 <= i32::MAX is 214748363.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         let k = rng.range_i32(0, 214_748_363);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         let val = k * 10 + 9;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// Row 3 — residue 0: a full ten-line run.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m fn row03_residue_zero_full_run() {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     for val in [0, 10, 100, 1000, 1_000_000, 2_147_483_640] {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         assert_eq!(line_count(val), Some(10));
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// Row 4 — every residue 1..=8, giving every partial run length 2..=9.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m fn row04_every_residue_partial_runs() {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     for val in 0..=19 {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     for base in [0, 10, 20, 100, 1230, 45_670] {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         for d in 0..10 {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             assert_same(&c, &r, base + d, Buffering::Default);
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// Row 5 — randomized positive values in a small range (residue uniform).
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m fn row05_randomized_small_positive() {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let mut rng = Rng::new();
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     for _ in 0..400 {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         let val = rng.range_i32(1, 1_000_000);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// Row 6 — the run crosses a decimal-width boundary, so `printf("%d")` changes
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// the number of bytes it emits partway through.
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn row06_digit_width_transitions() {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     for val in [
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         5, 8, 95, 98, 995, 998, 9995, 99_995, 999_995, 9_999_995, 99_999_995, 999_999_995,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         2_147_483_640,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     // Spot-check that the width really does change mid-run.
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let out = run_capture(&c, 95, Buffering::Default);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     assert_eq!(out, b"95\n96\n97\n98\n99\n100\n101\n102\n103\n104\n105\n106\n107\n108\n109\n");
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m /// Row 7 — negative magnitudes ending in 9. C's `%` truncates toward zero, so
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// `-9 % 10 == -9`, which never equals 9: the loop must keep counting up to +9.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// A Euclidean-remainder translation would stop immediately and print one line.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m fn row07_negative_magnitude_ends_in_nine() {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     for val in [-9, -19, -29, -129, -999] {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let out = run_capture(&c, -9, Buffering::Default);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     let expected: Vec<u8> = (-9..=9)
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         .flat_map(|v: i32| format!("{v}\n").into_bytes())
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     assert_eq!(out, expected, "C must not stop early on -9");
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m /// Row 8 — negative starts whose runs cross zero (and the `-1` → `0` width
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m /// change).
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m fn row08_negative_crossing_zero() {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     for val in [-1, -2, -5, -8, -10, -11, -100, -101, -123, -1000, -10_000] {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// Row 9 — randomized negatives.
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m fn row09_randomized_negative() {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     let mut rng = Rng::new();
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     for _ in 0..300 {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         let val = rng.range_i32(-1_000_000, -1);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         if is_cheap(val) {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             assert_same_prefix(&c, &r, val, 4096);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m /// Row 10 — randomized over the entire 32-bit domain (any bit pattern a caller
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// can push across the FFI boundary), with the comparison strategy chosen
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m /// mechanically from the predicted run length.
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m fn row10_randomized_full_range() {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     let mut rng = Rng::new();
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     let mut cheap = 0;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     let mut expensive = 0;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     for _ in 0..220 {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         let val = rng.next_i32();
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         if is_cheap(val) {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m             cheap += 1;
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m             expensive += 1;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             assert_same_prefix(&c, &r, val, 4096);
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     assert!(cheap > 0 && expensive > 0, "row 10 must hit both strategies");
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m /// Row 11 — the extreme low end. `INT_MIN % 10 == -8`, so the run climbs all
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m /// the way to +9 (~2.1e9 lines); compared as a bounded output prefix.
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m fn row11_int_min_prefix() {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     for val in [i32::MIN, i32::MIN + 1, i32::MIN + 8, i32::MIN + 9] {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         assert_same_prefix(&c, &r, val, 8192);
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let out = run_prefix(&c, i32::MIN, 64);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         out.starts_with(b"-2147483648\n-2147483647\n"),
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         "unexpected C prefix for INT_MIN: {:?}",
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         String::from_utf8_lossy(&out)
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m /// Row 12 — the signed-overflow region. `INT_MAX % 10 == 7`, so `val++`
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m /// overflows; the C compiled at -O0 wraps to `INT_MIN`, and the Rust must
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m /// reproduce that wrap rather than panicking or saturating.
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m fn row12_int_max_overflow_prefix() {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     for val in [i32::MAX, i32::MAX - 1, i32::MAX - 2, i32::MAX - 6] {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         assert_none_cheap(val);
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         assert_same_prefix(&c, &r, val, 8192);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     let out = run_prefix(&c, i32::MAX, 48);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         out.starts_with(b"2147483647\n-2147483648\n-2147483647\n"),
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         "C did not wrap as expected at INT_MAX; got {:?}",
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         String::from_utf8_lossy(&out)
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m fn assert_none_cheap(val: i32) {
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         line_count(val),
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         None,
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         "sieve({val}) was expected to overflow into a long run"
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m /// Row 13/14/15 — the three stdio buffering modes. The observable bytes must
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m /// not depend on how `stdout` is buffered, and must match between the two
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m /// libraries in every mode.
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m fn row13_15_buffering_modes() {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     let mut rng = Rng::with_seed(0xDEAD_BEEF_0000_0001);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     for mode in [
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         Buffering::Default,
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         Buffering::Full,
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         Buffering::Line,
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         Buffering::None,
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         for val in [0, 7, 9, 95, -1, -9, -123] {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m             assert_same(&c, &r, val, mode);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         for _ in 0..40 {
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m             let val = rng.range_i32(-5000, 5000);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m             assert_same(&c, &r, val, mode);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         // The bytes are mode-independent.
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             run_capture(&c, 95, mode),
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             run_capture(&c, 95, Buffering::Default)
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m /// Row 16 — unflushed bytes are already in the shared `stdout` FILE buffer when
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m /// `sieve` is called. Both libraries must append to that same buffer (not open
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m /// a private stream), so ordering is preserved.
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m fn row16_shared_pending_buffer() {
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     for val in [5, 9, -3] {
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         let out_c = run_capture_with_pending(&c, val, "PENDING>");
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         let out_r = run_capture_with_pending(&r, val, "PENDING>");
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             out_c,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m             out_r,
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m             "pending-buffer ordering diverged for sieve({val})"
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m             out_c.starts_with(b"PENDING>"),
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m             "library opened its own stream instead of using the shared stdout: {:?}",
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m             String::from_utf8_lossy(&out_c)
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m /// Row 17 — statelessness. The C has no globals, so 200 sequential calls on one
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m /// handle must behave exactly like 200 independent first calls.
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m fn row17_repeated_calls_are_stateless() {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     let mut rng = Rng::with_seed(0x0BAD_C0DE_1234_5678);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     let vals: Vec<i32> = (0..200).map(|_| rng.range_i32(-300, 300)).collect();
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     // Each call individually.
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     for &val in &vals {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     // All calls in one capture, in sequence: the concatenation must match too,
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     // which would fail if either side carried state between invocations.
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     let seq_c = capture(|| {
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         for &val in &vals {
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m             unsafe { (c.sieve)(val) };
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     let seq_r = capture(|| {
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m         for &val in &vals {
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             unsafe { (r.sieve)(val) };
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     assert_eq!(seq_c, seq_r, "sequential-call output diverged");
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     let concat: Vec<u8> = vals
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         .flat_map(|&val| run_capture(&c, val, Buffering::Default))
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     assert_eq!(seq_c, concat, "C is not stateless across calls");
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m /// Row 18 — ABI width. The symbol takes an `int`; called with a 64-bit
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m /// argument carrying garbage in the upper half, only the low 32 bits may be
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m /// read, and both libraries must agree on that.
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m fn row18_argument_width_truncation() {
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     let mut rng = Rng::new();
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     let mut cases: Vec<i64> = vec![
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         0x0000_0001_0000_0009,
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         0x7FFF_FFFF_0000_0000,
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m         -1i64,
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m         0xFFFF_FFFF_0000_0005u64 as i64,
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m         i64::MIN,
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         i64::MAX,
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m     for _ in 0..40 {
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m         let low = rng.range_i32(0, 100_000) as u32 as u64;
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m         let high = (rng.next_u32() as u64) << 32;
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m         cases.push((high | low) as i64);
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     for raw in cases {
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m         let low = raw as i32;
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m         if !is_cheap(low) {
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m             continue; // covered by the prefix tests
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m         let out_c = run_capture_i64(&c, raw);
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m         let out_r = run_capture_i64(&r, raw);
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m             out_c, out_r,
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m             "64-bit-argument call diverged for raw={raw:#x} (low32={low})"
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m             out_c,
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m             run_capture(&c, low, Buffering::Default),
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m             "C read more than the low 32 bits for raw={raw:#x}"
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m /// Row 19 — the two libraries interleaved in one process on the same stream.
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m fn row19_interleaved_c_and_rust() {
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m     let mut rng = Rng::with_seed(0xFEED_FACE_CAFE_0001);
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     let vals: Vec<i32> = (0..60).map(|_| rng.range_i32(-200, 200)).collect();
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     let interleaved = capture(|| {
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m         for (i, &val) in vals.iter().enumerate() {
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m                 if i % 2 == 0 {
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m                     (c.sieve)(val)
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m                     (r.sieve)(val)
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     let all_c = capture(|| {
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m         for &val in &vals {
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m             unsafe { (c.sieve)(val) };
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m         interleaved, all_c,
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m         "interleaving the Rust .so changed the C .so's output"
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/valid_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/error_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase C error-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error-path / boundary differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `ERRORS.md`. The C library has no error return, no
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! assert, no pointer and no enum, so "same error" here means "same
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! observable rejection behaviour": the same emitted bytes and the same
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! termination outcome (normal return vs signal), asserted for both `.so`s.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Row 1 — `val = 0`, the smallest non-negative input.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m fn err01_zero() {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     assert_same(&c, &r, 0, Buffering::Default);
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     let out = run_capture(&c, 0, Buffering::Default);
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     assert_eq!(out, b"0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n");
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// Row 2 — `INT_MIN`, one step past the low end of the representable range.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// Not a rejection: it counts up to +9. Compared as a bounded prefix.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m fn err02_int_min() {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     assert_same_prefix(&c, &r, i32::MIN, 8192);
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     assert_eq!(i32::MIN % 10, -8, "C truncating remainder assumption");
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     assert_eq!(line_count(i32::MIN), Some(2_147_483_658));
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// Row 3 — `INT_MAX`: `val++` signed-overflows (UB in C). The C as compiled
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// wraps; the Rust must produce the identical wrapped sequence, and must not
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// panic or abort.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m fn err03_int_max_overflow() {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     assert_same_prefix(&c, &r, i32::MAX, 8192);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     let pc = run_prefix(&c, i32::MAX, 40);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let pr = run_prefix(&r, i32::MAX, 40);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     assert_eq!(pc, pr);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         pc.starts_with(b"2147483647\n-2147483648\n"),
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         "C prefix at INT_MAX: {:?}",
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         String::from_utf8_lossy(&pc)
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     // And it must not die: the Rust must not trip a debug overflow panic.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let oc = run_child_outcome(&c, i32::MAX, StdoutState::DevNull);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let or = run_child_outcome(&r, i32::MAX, StdoutState::DevNull);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     // Both are killed by SIGALRM (the run is ~2e9 lines) — never by SIGILL,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     // SIGABRT or SIGSEGV, which is what a panic/trap would look like.
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     for (name, o) in [("C", &oc), ("Rust", &or)] {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         match o {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             ChildOutcome::Signaled(sig) => assert_eq!(
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                 *sig,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                 libc::SIGALRM,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m                 "{name} died from signal {sig} instead of the timeout"
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             ),
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             ChildOutcome::Exited(code) => assert_eq!(*code, 0, "{name} exited {code}"),
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         std::mem::discriminant(&oc),
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         std::mem::discriminant(&or),
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         "C and Rust terminated differently at INT_MAX: {oc:?} vs {or:?}"
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// Row 4 — one step before the overflow point.
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m fn err04_just_below_int_max() {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     for val in [i32::MAX - 1, i32::MAX - 2, i32::MAX - 5] {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         assert_eq!(line_count(val), None, "sieve({val}) should overflow");
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         assert_same_prefix(&c, &r, val, 8192);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     // `INT_MAX - 8` ends in 9, so it terminates immediately — the boundary
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     // between "stops now" and "overflows".
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     assert_eq!(i32::MAX - 8, 2_147_483_639);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     assert_same(&c, &r, i32::MAX - 8, Buffering::Default);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         run_capture(&c, i32::MAX - 8, Buffering::Default),
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         b"2147483639\n"
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// Row 5 — `-9`: the trap for a Euclidean-remainder "fix". Must NOT stop early.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m fn err05_negative_nine_no_early_stop() {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     assert_same(&c, &r, -9, Buffering::Default);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     let out_c = run_capture(&c, -9, Buffering::Default);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     let out_r = run_capture(&r, -9, Buffering::Default);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     assert_eq!(out_c.iter().filter(|&&b| b == b'\n').count(), 19);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     assert_eq!(out_c, out_r);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     assert_ne!(out_c, b"-9\n", "C must not treat -9 as terminating");
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// Row 6 — `-1`, the classic error sentinel, passed as data.
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m fn err06_minus_one_sentinel() {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     assert_same(&c, &r, -1, Buffering::Default);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         run_capture(&c, -1, Buffering::Default),
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         b"-1\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n"
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// Row 7 — `9`: the loop body runs once and the terminating value is still
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// printed, because the print precedes the check.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m fn err07_immediate_termination_still_prints() {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     assert_same(&c, &r, 9, Buffering::Default);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     assert_eq!(run_capture(&c, 9, Buffering::Default), b"9\n");
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     assert_eq!(run_capture(&r, 9, Buffering::Default), b"9\n");
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m /// Row 8 — one step either side of the terminating residue.
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m fn err08_around_terminating_residue() {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     for val in [8, 9, 10, 18, 19, 20] {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     assert_eq!(run_capture(&c, 8, Buffering::Default), b"8\n9\n");
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     assert_eq!(run_capture(&c, 19, Buffering::Default), b"19\n");
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         run_capture(&c, 10, Buffering::Default),
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         b"10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n"
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m /// Row 9 — "out-of-range enum" degenerates to "any 32-bit word", because the
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m /// ABI parameter is a bare `int` with no variant set. Hostile bit patterns are
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m /// pushed across the FFI boundary and must be handled identically.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m fn err09_arbitrary_bit_patterns() {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     let fixed: [i32; 10] = [
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         0x7FFF_FFFF,
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         0x8000_0000u32 as i32,
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         -2_147_483_647,
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         0x5555_5555,
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         0xAAAA_AAAAu32 as i32,
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         12_345_678,
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         -12_345_678,
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         0x0000_FFFF,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         0xFFFF_0000u32 as i32,
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         -0x7FFF_FFFF,
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     for val in fixed {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         assert_same_auto(&c, &r, val);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     let mut rng = Rng::with_seed(0xB1AB_B1AB_B1AB_B1AB);
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     for _ in 0..120 {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         assert_same_auto(&c, &r, rng.next_i32());
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m /// Row 10 — the 64-bit-register / 32-bit-parameter width boundary.
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m fn err10_upper_bits_ignored() {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     for raw in [
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         0xFFFF_FFFF_0000_0009u64 as i64,
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         0x0000_0001_0000_0000u64 as i64,
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         i64::MIN,
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         i64::MAX,
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         -1i64,
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         let low = raw as i32;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         if !is_cheap(low) {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         let out_c = run_capture_i64(&c, raw);
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         let out_r = run_capture_i64(&r, raw);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         assert_eq!(out_c, out_r, "diverged for raw={raw:#x}");
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         assert_eq!(out_c, run_capture(&c, low, Buffering::Default));
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m /// Row 11 — `printf` fails on every line (stdout closed / read-only /
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m /// /dev/full). The C ignores `printf`'s return value, so the loop still
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m /// terminates on the `% 10 == 9` rule and the function returns normally. The
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m /// Rust must not abort, retry, or loop forever either.
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m fn err11_printf_failure_is_ignored() {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     for state in [
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         StdoutState::Closed,
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         StdoutState::ReadOnly,
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         StdoutState::DevFull,
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         StdoutState::DevNull,
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         for val in [9, 0, -9, 95] {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             let oc = run_child_outcome(&c, val, state);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             let or = run_child_outcome(&r, val, state);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m                 oc, or,
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m                 "termination outcome diverged for sieve({val}) with stdout={state:?}: \
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m                  C={oc:?} Rust={or:?}"
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m                 oc,
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m                 ChildOutcome::Exited(0),
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m                 "sieve({val}) with stdout={state:?} did not return normally in C: {oc:?}"
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m /// Generic boundary sweep: every input one step past each interesting edge,
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m /// plus a dense sweep of the whole low-magnitude neighbourhood, where nearly
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m /// all behavioural edges of this function live.
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m fn err12_dense_boundary_sweep() {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     for val in -60..=60 {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     for val in [
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         i32::MIN + 9,
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         i32::MIN + 10,
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         -1_000_000_009,
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         -10,
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         -11,
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         i32::MAX - 8,
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         i32::MAX - 9,
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         i32::MAX - 18,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         999_999_999,
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         1_000_000_000,
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         assert_same_auto(&c, &r, val);
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m /// The API takes no pointer, no length and no enum — record that as a checked
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m /// fact rather than a silent omission, by asserting the exported symbol really
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m /// is the single-`int` function the header declares.
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m fn err13_surface_has_no_pointer_or_length_parameters() {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     let header = std::fs::read_to_string(
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../c_src/include/sieve.h"),
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     .expect("read sieve.h");
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     let decls: Vec<&str> = header
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         .lines()
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         .map(str::trim)
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         .filter(|l| l.ends_with(");") && !l.starts_with("//"))
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         decls,
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         vec!["void sieve(int start);"],
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         "the public API changed; ERRORS.md/CONFIGS.md must be re-derived"
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         !decls[0].contains('*'),
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m         "a pointer parameter appeared — null-pointer rows are now required"
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     // And both .so files really do export exactly that symbol and accept the
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     // call through it.
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     assert_same(&c, &r, 9, Buffering::Default);
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/error_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/symbols.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase D symbol parity tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase D — symbol parity between the two shared objects, enforced as a test
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! so it cannot silently regress.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::process::Command;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m fn defined_syms(so: &std::path::Path) -> Vec<String> {
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m     let out = Command::new("nm")
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m         .args(["-D", "--defined-only", so.to_str().unwrap()])
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m         .expect("run nm");
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m         out.status.success(),
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         "nm failed on {}: {}",
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m         so.display(),
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let mut v: Vec<String> = String::from_utf8_lossy(&out.stdout)
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         .lines()
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         .filter_map(|l| l.split_whitespace().last().map(str::to_string))
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         .filter(|s| !s.starts_with("_ITM_") && s != "__gmon_start__" && s != "__cxa_finalize")
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     v.sort();
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     v.dedup();
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m fn undefined_syms(so: &std::path::Path) -> Vec<String> {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let out = Command::new("nm")
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         .args(["-D", "--undefined-only", so.to_str().unwrap()])
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         .expect("run nm");
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     let mut v: Vec<String> = String::from_utf8_lossy(&out.stdout)
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         .lines()
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         .filter_map(|l| l.split_whitespace().last().map(str::to_string))
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     v.sort();
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     v.dedup();
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// Every symbol the C `.so` exports must also be exported by the Rust `.so`,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// under the exact same name. The diff must be empty.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m fn symbol_parity_c_to_rust() {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let c = defined_syms(&c_so_path());
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let r = defined_syms(&rust_so_path());
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         c.contains(&"sieve".to_string()),
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         "C .so does not export `sieve`; nm output: {c:?}"
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let missing: Vec<&String> = c.iter().filter(|s| !r.contains(s)).collect();
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         missing.is_empty(),
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         "symbols exported by the C .so but missing from the Rust .so: {missing:?}\n\
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m          C: {c:?}\nRust: {r:?}"
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// The Rust `.so` must not depend on anything outside libc — a Rust-runtime or
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// third-party dependency would mean the translation is not self-contained the
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// way the C is.
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m fn rust_so_has_no_non_libc_dependencies() {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let allowed_prefixes = [
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         "printf", "memcpy", "memmove", "memset", "memcmp", "bcmp", "strlen", "abort", "write",
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         "__", "_ITM_", "free", "malloc", "realloc", "calloc",
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     let undef = undefined_syms(&rust_so_path());
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     let bad: Vec<&String> = undef
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         .filter(|s| !allowed_prefixes.iter().any(|p| s.starts_with(p)))
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         bad.is_empty(),
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         "Rust .so imports non-libc symbols: {bad:?}\nall undefined: {undef:?}"
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         undef.iter().any(|s| s.starts_with("printf")),
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         "Rust .so does not import libc printf — it is not using the shared \
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m          stdout FILE the C uses; undefined: {undef:?}"
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// The crate declares no cargo features, so there is exactly one configuration
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// to verify. This test fails if a feature is ever added without extending the
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// verification matrix.
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m fn no_unverified_feature_configurations() {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let manifest = std::fs::read_to_string(
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     .expect("read Cargo.toml");
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         !manifest.contains("[features]"),
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         "Cargo.toml now declares features; Phases B and C must be re-run for \
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m          every combination and SYMBOLS.md updated"
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         !manifest.contains("cfg(feature"),
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         "feature gating appeared in the manifest"
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let src = std::fs::read_to_string(
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     .expect("read lib.rs");
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         !src.contains("feature = \""),
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         "src/lib.rs contains feature gating but Cargo.toml declares no features"
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/tests/symbols.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --no-run 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile the test targets
+
+    |
+help: consider importing this function
+    |
+ 14 + use std::io::stdout;
+    |
+help: if you import `stdout`, refer to it directly
+    |
+187 -         libc::fflush(libc::stdout);
+187 +         libc::fflush(stdout);
+    |
+
+error[E0425]: cannot find value `stdout` in crate `libc`
+   --> tests/common/mod.rs:188:29
+    |
+188 |         libc::setvbuf(libc::stdout, std::ptr::null_mut(), libc::_IOFBF, 0);
+    |                             ^^^^^^ not found in `libc`
+    |
+help: consider importing this function
+    |
+ 14 + use std::io::stdout;
+    |
+help: if you import `stdout`, refer to it directly
+    |
+188 -         libc::setvbuf(libc::stdout, std::ptr::null_mut(), libc::_IOFBF, 0);
+188 +         libc::setvbuf(stdout, std::ptr::null_mut(), libc::_IOFBF, 0);
+    |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `sieve` (test "symbols") due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: this arithmetic operation will overflow
+  --> tests/valid_paths.rs:17:46
+   |
+17 |     for val in [9, 19, 29, 109, 999_999_999, (i32::MAX / 10) * 10 + 9] {
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^ attempt to compute `2147483640_i32 + 9_i32`, which would overflow
+   |
+   = note: `#[deny(arithmetic_overflow)]` on by default
+
+error: could not compile `sieve` (test "error_paths") due to 4 previous errors
+error: could not compile `sieve` (test "valid_paths") due to 5 previous errors
+[38;5;244m - Completed in 0.984s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'EOF'
+p='tests/common/mod.rs'
+s=open(p).read()
+s=s.replace("""unsafe extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}""","""unsafe extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
+    /// glibc's `stdout` FILE*, shared by the test binary, the C `.so` and the
+    /// Rust `.so` (all three link the same libc).
+    static mut stdout: *mut libc::FILE;
+}
+
+fn stdout_file() -> *mut libc::FILE {
+    unsafe { stdout }
+}""")
+s=s.replace("libc::fflush(libc::stdout);","libc::fflush(stdout_file());")
+s=s.replace("libc::setvbuf(libc::stdout,","libc::setvbuf(stdout_file(),")
+open(p,'w').write(s)
+
+p='tests/valid_paths.rs'
+s=open(p).read()
+s=s.replace("(i32::MAX / 10) * 10 + 9","2_147_483_639 /* == (INT_MAX/10)*10+9 - 10, the largest int ending in 9 */")
+open(p,'w').write(s)
+EOF
+timeout 600 cargo test --no-run 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix libc::stdout and overflow errors, recompile tests
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+  Executable unittests src/lib.rs (target/debug/deps/Sieve-ab42fe6c581bfb90)
+  Executable tests/error_paths.rs (target/debug/deps/error_paths-e364fe2d973bf564)
+  Executable tests/symbols.rs (target/debug/deps/symbols-87cd277e127c1699)
+  Executable tests/valid_paths.rs (target/debug/deps/valid_paths-e2dd82f1eec98b8f)
+[38;5;244m - Completed in 0.420s[0m
+
+[?25l[0m[38;5;141m> [0mNow run the suite, starting with the fast symbol tests.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test symbols 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase D symbol parity tests
+
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 1.09s
+     Running tests/symbols.rs (target/release/deps/symbols-321a7d69c3d29c8c)
+
+running 3 tests
+test no_unverified_feature_configurations ... ok
+test rust_so_has_no_non_libc_dependencies ... FAILED
+test symbol_parity_c_to_rust ... ok
+
+failures:
+
+---- rust_so_has_no_non_libc_dependencies stdout ----
+
+thread 'rust_so_has_no_non_libc_dependencies' (3797555) panicked at tests/symbols.rs:76:5:
+Rust .so imports non-libc symbols: ["_Unwind_Backtrace@GCC_3.3", "_Unwind_GetDataRelBase@GCC_3.0", "_Unwind_GetIP@GCC_3.0", "_Unwind_GetIPInfo@GCC_4.2.0", "_Unwind_GetLanguageSpecificData@GCC_3.0", "_Unwind_GetRegionStart@GCC_3.0", "_Unwind_GetTextRelBase@GCC_3.0", "_Unwind_Resume@GCC_3.0", "_Unwind_SetGR@GCC_3.0", "_Unwind_SetIP@GCC_3.0", "close@GLIBC_2.2.5", "dl_iterate_phdr@GLIBC_2.2.5", "fstat64@GLIBC_2.33", "getcwd@GLIBC_2.2.5", "getenv@GLIBC_2.2.5", "gettid@GLIBC_2.30", "lseek64@GLIBC_2.2.5", "mmap64@GLIBC_2.2.5", "munmap@GLIBC_2.2.5", "open64@GLIBC_2.2.5", "posix_memalign@GLIBC_2.2.5", "pthread_key_create@GLIBC_2.34", "pthread_key_delete@GLIBC_2.34", "pthread_setspecific@GLIBC_2.34", "read@GLIBC_2.2.5", "readlink@GLIBC_2.2.5", "realpath@GLIBC_2.3", "stat64@GLIBC_2.33", "statx@GLIBC_2.28", "syscall@GLIBC_2.2.5"]
+all undefined: ["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "_Unwind_Backtrace@GCC_3.3", "_Unwind_GetDataRelBase@GCC_3.0", "_Unwind_GetIP@GCC_3.0", "_Unwind_GetIPInfo@GCC_4.2.0", "_Unwind_GetLanguageSpecificData@GCC_3.0", "_Unwind_GetRegionStart@GCC_3.0", "_Unwind_GetTextRelBase@GCC_3.0", "_Unwind_Resume@GCC_3.0", "_Unwind_SetGR@GCC_3.0", "_Unwind_SetIP@GCC_3.0", "__cxa_finalize@GLIBC_2.2.5", "__cxa_thread_atexit_impl@GLIBC_2.18", "__errno_location@GLIBC_2.2.5", "__gmon_start__", "__tls_get_addr@GLIBC_2.3", "abort@GLIBC_2.2.5", "bcmp@GLIBC_2.2.5", "calloc@GLIBC_2.2.5", "close@GLIBC_2.2.5", "dl_iterate_phdr@GLIBC_2.2.5", "free@GLIBC_2.2.5", "fstat64@GLIBC_2.33", "getcwd@GLIBC_2.2.5", "getenv@GLIBC_2.2.5", "gettid@GLIBC_2.30", "lseek64@GLIBC_2.2.5", "malloc@GLIBC_2.2.5", "memcpy@GLIBC_2.14", "memmove@GLIBC_2.2.5", "memset@GLIBC_2.2.5", "mmap64@GLIBC_2.2.5", "munmap@GLIBC_2.2.5", "open64@GLIBC_2.2.5", "posix_memalign@GLIBC_2.2.5", "printf@GLIBC_2.2.5", "pthread_key_create@GLIBC_2.34", "pthread_key_delete@GLIBC_2.34", "pthread_setspecific@GLIBC_2.34", "read@GLIBC_2.2.5", "readlink@GLIBC_2.2.5", "realloc@GLIBC_2.2.5", "realpath@GLIBC_2.3", "stat64@GLIBC_2.33", "statx@GLIBC_2.28", "strlen@GLIBC_2.2.5", "syscall@GLIBC_2.2.5", "write@GLIBC_2.2.5", "writev@GLIBC_2.2.5"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rust_so_has_no_non_libc_dependencies
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--test symbols`
+[38;5;244m - Completed in 1.156s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity passes; my dependency-hygiene assertion was wrong — a Rust cdylib legitimately imports libgcc unwind symbols. Fixing the check to what's actually verifiable.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/symbols.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Relax dependency test to accurate glibc/libgcc check
+
+[49m[38;5;9m- 62     [0m:[38;5;9m[49m /// The Rust `.so` must not depend on anything outside libc — a Rust-runtime or
+[0m[49m[38;5;9m- 63     [0m:[38;5;9m[49m /// third-party dependency would mean the translation is not self-contained the
+[0m[49m[38;5;9m- 64     [0m:[38;5;9m[49m /// way the C is.
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m /// The Rust `.so` must not depend on any library beyond the ones already
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m /// present in the C `.so`'s dependency closure: glibc and libgcc. Every
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m /// undefined symbol must therefore carry a `@GLIBC_*` / `@GCC_*` version tag
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m /// (or be one of the unversioned ELF placeholders every shared object has).
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m /// The Rust standard library brings in `_Unwind_*` (libgcc) and the `mmap`
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m /// / `dl_iterate_phdr` / `pthread_key_*` family for its panic-backtrace and
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m /// TLS machinery; those are fine, they resolve against libraries the process
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m /// already has. What would *not* be fine is an import from a third-party
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m /// `.so` that a consumer of the C library would not have loaded.
+[0m[49m[39m  65,  72[0m:[39m[49m #[test]
+[0m[49m[38;5;9m- 66     [0m:[38;5;9m[49m fn rust_so_has_no_non_libc_dependencies() {
+[0m[49m[38;5;9m- 67     [0m:[38;5;9m[49m     let allowed_prefixes = [
+[0m[49m[38;5;9m- 68     [0m:[38;5;9m[49m         "printf", "memcpy", "memmove", "memset", "memcmp", "bcmp", "strlen", "abort", "write",
+[0m[49m[38;5;9m- 69     [0m:[38;5;9m[49m         "__", "_ITM_", "free", "malloc", "realloc", "calloc",
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m fn rust_so_resolves_only_against_libc_and_libgcc() {
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m     let unversioned_ok = [
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m         "_ITM_deregisterTMCloneTable",
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m         "_ITM_registerTMCloneTable",
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m         "__gmon_start__",
+[0m[49m[39m  70,  78[0m:[39m[49m     ];
+[0m[49m[39m  71,  79[0m:[39m[49m     let undef = undefined_syms(&rust_so_path());
+[0m[49m[39m  72,  80[0m:[39m[49m     let bad: Vec<&String> = undef
+[0m[49m[39m  73,  81[0m:[39m[49m         .iter()
+[0m[49m[38;5;9m- 74     [0m:[38;5;9m[49m         .filter(|s| !allowed_prefixes.iter().any(|p| s.starts_with(p)))
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m         .filter(|s| {
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m             !(s.contains("@GLIBC_") || s.contains("@GCC_") || unversioned_ok.contains(&s.as_str()))
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m         })
+[0m[49m[39m  75,  85[0m:[39m[49m         .collect();
+[0m[49m[39m  76,  86[0m:[39m[49m     assert!(
+[0m[49m[39m  77,  87[0m:[39m[49m         bad.is_empty(),
+[0m[49m[38;5;9m- 78     [0m:[38;5;9m[49m         "Rust .so imports non-libc symbols: {bad:?}\nall undefined: {undef:?}"
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m         "Rust .so imports symbols from outside glibc/libgcc: {bad:?}\n\
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m          all undefined: {undef:?}"
+[0m[49m[39m  79,  90[0m:[39m[49m     );
+[0m[49m[39m  80,  91[0m:[39m[49m     assert!(
+[0m[49m[39m  81,  92[0m:[39m[49m         undef.iter().any(|s| s.starts_with("printf")),
+[0m[49m[39m  82,  93[0m:[39m[49m         "Rust .so does not import libc printf — it is not using the shared \
+[0m[49m[39m  83,  94[0m:[39m[49m          stdout FILE the C uses; undefined: {undef:?}"
+[0m[49m[39m  84,  95[0m:[39m[49m     );
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m     // Confirm the same, empirically: the needed-library list must be a subset
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m     // of what the C .so needs, plus libgcc.
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m     let out = Command::new("objdump")
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m         .args(["-p", rust_so_path().to_str().unwrap()])
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m         .output();
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m     if let Ok(out) = out {
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m         let text = String::from_utf8_lossy(&out.stdout);
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m         for line in text.lines().filter(|l| l.trim_start().starts_with("NEEDED")) {
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m             let needed = line.split_whitespace().last().unwrap_or("");
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m             assert!(
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m                 needed.starts_with("libc.so")
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m                     || needed.starts_with("libgcc_s.so")
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m                     || needed.starts_with("libm.so")
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m                     || needed.starts_with("ld-linux"),
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m                 "Rust .so NEEDED an unexpected library: {needed}"
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m     }
+[0m[49m[39m  85, 115[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/symbols.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test symbols 2>&1 | tail -15[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run symbol tests
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.42s
+     Running tests/symbols.rs (target/release/deps/symbols-321a7d69c3d29c8c)
+
+running 3 tests
+test no_unverified_feature_configurations ... ok
+test rust_so_resolves_only_against_libc_and_libgcc ... ok
+test symbol_parity_c_to_rust ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+[38;5;244m - Completed in 0.483s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase C error paths (has the fork-based tests, so let me run it with a timeout).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test error_paths -- --test-threads=1 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase C error-path differential tests
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.40s
+     Running tests/error_paths.rs (target/release/deps/error_paths-e3e30872a37a4857)
+
+running 13 tests
+test err01_zero ... ok
+test err02_int_min ... ok
+test err03_int_max_overflow ... ok
+test err04_just_below_int_max ... ok
+test err05_negative_nine_no_early_stop ... ok
+test err06_minus_one_sentinel ... ok
+test err07_immediate_termination_still_prints ... ok
+test err08_around_terminating_residue ... ok
+test err09_arbitrary_bit_patterns ... ok
+test err10_upper_bits_ignored ... ok
+test err11_printf_failure_is_ignored ... ok
+test err12_dense_boundary_sweep ... ok
+test err13_surface_has_no_pointer_or_length_parameters ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 120.09s
+
+[38;5;244m - Completed in 120.514s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && sed -i 's/libc::alarm(60);/libc::alarm(10); \/\/ hard stop for inputs whose run is ~2e9 lines/' tests/common/mod.rs && timeout 600 cargo test --release --test valid_paths -- --test-threads=1 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase B valid-path differential tests
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.44s
+     Running tests/valid_paths.rs (target/release/deps/valid_paths-2a3a23170e5bd833)
+
+running 17 tests
+test row01_residue_nine_single_iteration ... ok
+test row02_residue_nine_randomized ... ok
+test row03_residue_zero_full_run ... error: test failed, to rerun pass `--test valid_paths`
+
+Caused by:
+  process didn't exit successfully: `/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/target/release/deps/valid_paths-2a3a23170e5bd833 --test-threads=1` (signal: 25)
+[38;5;244m - Completed in 23.152s[0m
+
+[?25l[0m[38;5;141m> [0mSignal 25 = SIGXFSZ: [38;5;10m2_147_483_640[0m is actually in the overflow region ([38;5;10m+9[0m exceeds [38;5;10mINT_MAX[0m), so it tried to write ~23 GB. Fixing the test data and adding a guard so this fails loudly instead.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rm -f /tmp/sieve_cap_*.out && python3 - <<'EOF'
+p='tests/common/mod.rs'
+s=open(p).read()
+s=s.replace("""pub fn assert_same(c: &Lib, r: &Lib, val: i32, mode: Buffering) {
+    let out_c""","""pub fn assert_same(c: &Lib, r: &Lib, val: i32, mode: Buffering) {
+    // Guard: a full comparison of an overflow-region input would materialize
+    // ~2e9 lines (~23 GB). Fail fast instead of filling the disk.
+    assert!(
+        is_cheap(val),
+        "assert_same({val}) would emit {:?} lines; use assert_same_prefix",
+        line_count(val)
+    );
+    let out_c""")
+open(p,'w').write(s)
+
+p='tests/valid_paths.rs'
+s=open(p).read()
+# row03: 2_147_483_640 overflows (target 2147483649 > INT_MAX)
+s=s.replace("for val in [0, 10, 100, 1000, 1_000_000, 2_147_483_640] {",
+            "for val in [0, 10, 100, 1000, 1_000_000, 2_147_483_630] {")
+# row06 digit-width list
+s=s.replace("""99_999_995, 999_999_995,
+        2_147_483_640,
+    ] {""","""99_999_995, 999_999_995,
+        2_147_483_635,
+    ] {""")
+open(p,'w').write(s)
+EOF
+grep -n "2_147_483_6" tests/valid_paths.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix overflow-region test values and add a guard in assert_same
+
+17:    for val in [9, 19, 29, 109, 999_999_999, 2_147_483_639 /* == (INT_MAX/10)*10+9 - 10, the largest int ending in 9 */] {
+43:    for val in [0, 10, 100, 1000, 1_000_000, 2_147_483_630] {
+81:        2_147_483_635,
+[38;5;244m - Completed in 0.332s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test valid_paths -- --test-threads=1 2>&1 | tail -40; echo "leftover temp files:"; ls /tmp/sieve_cap_* 2>/dev/null | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run Phase B tests
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.44s
+     Running tests/valid_paths.rs (target/release/deps/valid_paths-2a3a23170e5bd833)
+
+running 17 tests
+test row01_residue_nine_single_iteration ... ok
+test row02_residue_nine_randomized ... ok
+test row03_residue_zero_full_run ... ok
+test row04_every_residue_partial_runs ... ok
+test row05_randomized_small_positive ... ok
+test row06_digit_width_transitions ... FAILED
+test row07_negative_magnitude_ends_in_nine ... ok
+test row08_negative_crossing_zero ... ok
+test row09_randomized_negative ... ok
+test row10_randomized_full_range ... ok
+test row11_int_min_prefix ... ok
+test row12_int_max_overflow_prefix ... ok
+test row13_15_buffering_modes ... ok
+test row16_shared_pending_buffer ... ok
+test row17_repeated_calls_are_stateless ... ok
+test row18_argument_width_truncation ... ok
+test row19_interleaved_c_and_rust ... ok
+
+failures:
+
+---- row06_digit_width_transitions stdout ----
+
+thread 'row06_digit_width_transitions' (3830966) panicked at tests/valid_paths.rs:87:5:
+assertion `left == right` failed
+  left: [57, 53, 10, 57, 54, 10, 57, 55, 10, 57, 56, 10, 57, 57, 10]
+ right: [57, 53, 10, 57, 54, 10, 57, 55, 10, 57, 56, 10, 57, 57, 10, 49, 48, 48, 10, 49, 48, 49, 10, 49, 48, 50, 10, 49, 48, 51, 10, 49, 48, 52, 10, 49, 48, 53, 10, 49, 48, 54, 10, 49, 48, 55, 10, 49, 48, 56, 10, 49, 48, 57, 10]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    row06_digit_width_transitions
+
+test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+error: test failed, to rerun pass `--test valid_paths`
+leftover temp files:
+0
+[38;5;244m - Completed in 1.850s[0m
+
+[?25l[0m[38;5;141m> [0mThe C is right and my hand-written expectation was wrong: a positive run always ends inside its own decade, so it never changes digit width. Only negative runs (and the overflow wrap) do. Correcting the test and the CONFIGS row.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/valid_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Correct row06 to match actual C behavior
+
+[49m[38;5;9m- 74     [0m:[38;5;9m[49m /// Row 6 — the run crosses a decimal-width boundary, so `printf("%d")` changes
+[0m[49m[38;5;9m- 75     [0m:[38;5;9m[49m /// the number of bytes it emits partway through.
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m /// Row 6 — decade boundaries and mid-run `printf` width changes.
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m /// Note derived from the C, not assumed: a *positive* run can never change
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m /// width, because it always ends at the next value ending in 9, which is
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m /// inside the same decade (`95` → `99`, not `109`). Width only changes mid-run
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m /// for negative starts (`-100` → `-99`, `-1` → `0`) and across the overflow
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m /// wrap. Both cases are asserted here.
+[0m[49m[39m  76,  81[0m:[39m[49m #[test]
+[0m[49m[39m  77,  82[0m:[39m[49m fn row06_digit_width_transitions() {
+[0m[49m[39m  78,  83[0m:[39m[49m     let (c, r) = both();
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m     // Decade-boundary starts (positive): each stays inside one decade.
+[0m[49m[39m  79,  85[0m:[39m[49m     for val in [
+[0m[49m[39m  80,  86[0m:[39m[49m         5, 8, 95, 98, 995, 998, 9995, 99_995, 999_995, 9_999_995, 99_999_995, 999_999_995,
+[0m[49m[39m  81,  87[0m:[39m[49m         2_147_483_635,
+[0m[49m[39m  82,  88[0m:[39m[49m     ] {
+[0m[49m[39m  83,  89[0m:[39m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[39m  84,  90[0m:[39m[49m     }
+[0m[49m[38;5;9m- 85     [0m:[38;5;9m[49m     // Spot-check that the width really does change mid-run.
+[0m[49m[38;5;9m- 86     [0m:[38;5;9m[49m     let out = run_capture(&c, 95, Buffering::Default);
+[0m[49m[38;5;9m- 87     [0m:[38;5;9m[49m     assert_eq!(out, b"95\n96\n97\n98\n99\n100\n101\n102\n103\n104\n105\n106\n107\n108\n109\n");
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m         run_capture(&c, 95, Buffering::Default),
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m         b"95\n96\n97\n98\n99\n",
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m         "a positive run must stay inside its decade"
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m     // Negative starts: these really do change width mid-run.
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m     for val in [-1, -10, -100, -1000, -105, -1005, -10_005] {
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m         assert_same(&c, &r, val, Buffering::Default);
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m     let out = run_capture(&c, -12, Buffering::Default);
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m     let expected: Vec<u8> = (-12..=9)
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m         .flat_map(|v: i32| format!("{v}\n").into_bytes())
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m     assert_eq!(out, expected);
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m         out.windows(6).any(|w| w == b"-10\n-9"),
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m         "expected a 3->2 char width change mid-run"
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m         out.windows(5).any(|w| w == b"-1\n0\n"),
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m         "expected the -1 -> 0 width change mid-run"
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m     );
+[0m[49m[39m  88, 114[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/valid_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Correct CONFIGS row 6 description
+
+[49m[38;5;9m- 0   [0m:[38;5;9m[49m | 6 | `sieve` | digit-width transition inside a single run: starts at `5`, `8`, `95`, `98`, `995`, `998`, `9995`, `99995` so the run crosses 9→10 / 99→100 / 999→1000 and `printf` output width changes mid-run | [x] |
+[0m[49m[38;5;10m+    0[0m:[38;5;10m[49m | 6 | `sieve` | decade boundaries + mid-run `printf` width changes. Derived from the C, not assumed: a **positive** run can never change width, because it ends at the next value ending in 9, which is always inside the same decade (`95`→`99`, never `109`). Width changes mid-run only for **negative** starts (`-100`→`-99`, `-1`→`0`) and across the overflow wrap. Covers `5, 8, 95, 998, 9995, …, 2147483635` and `-1, -10, -100, -1000, -105, -1005, -10005, -12` | [x] |
+[0m[K
+Updating: [38;5;141mtranslation/CONFIGS.md[0m
+ ⋮ 
+[1m[38;5;9m ● Execution failed after 0.0s:
+[0m[38;5;9mno occurrences of "| 6 | `sieve` | digit-width transition inside a single run: starts at `5`, `8`, `95`, `98`, `995`, `998`, `9995`, `99995` so the run crosses 9→10 / 99→100 / 999→1000 and `printf` output width changes mid-run | [x] |" were found[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'PY'
+p='CONFIGS.md'
+s=open(p).read()
+old=[l for l in s.split('\n') if l.startswith('| 6 |')][0]
+new=("| 6 | `sieve` | decade boundaries + mid-run `printf` width changes. Derived from the C, "
+"not assumed: a **positive** run can never change width, because it ends at the next value "
+"ending in 9, which is always inside the same decade (`95`->`99`, never `109`). Width changes "
+"mid-run only for **negative** starts (`-100`->`-99`, `-1`->`0`) and across the overflow wrap. "
+"Covers `5, 8, 95, 98, 995, 998, 9995, ..., 2147483635` and `-1, -10, -100, -1000, -105, -1005, "
+"-10005, -12` | [x] |")
+s=s.replace(old,new)
+# also add an explicit note in the axes section
+s=s.replace("""   * digit-width transitions (9→10, 99→100, …) because `printf("%d")`
+     lengthens its output there;""","""   * digit-width transitions, because `printf("%d")` changes the number of
+     bytes it emits. Reading the C shows these can only happen mid-run for
+     negative starts (`-100`→`-99`, `-1`→`0`) or across the overflow wrap: a
+     positive run always terminates inside its own decade;""")
+open(p,'w').write(s)
+print(new[:120])
+PY
+grep -n "^| 6 |" CONFIGS.md | cut -c1-100[0m[38;5;244m (using tool: shell)[0m
+Purpose: Correct CONFIGS.md row 6 and the axes note
+
+| 6 | `sieve` | decade boundaries + mid-run `printf` width changes. Derived from the C, not assumed: a **positive** run 
+50:| 6 | `sieve` | decade boundaries + mid-run `printf` width changes. Derived from the C, not assum
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --test valid_paths -- --test-threads=1 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run Phase B tests
+
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.49s
+     Running tests/valid_paths.rs (target/release/deps/valid_paths-2a3a23170e5bd833)
+
+running 17 tests
+test row01_residue_nine_single_iteration ... ok
+test row02_residue_nine_randomized ... ok
+test row03_residue_zero_full_run ... ok
+test row04_every_residue_partial_runs ... ok
+test row05_randomized_small_positive ... ok
+test row06_digit_width_transitions ... ok
+test row07_negative_magnitude_ends_in_nine ... ok
+test row08_negative_crossing_zero ... ok
+test row09_randomized_negative ... ok
+test row10_randomized_full_range ... ok
+test row11_int_min_prefix ... ok
+test row12_int_max_overflow_prefix ... ok
+test row13_15_buffering_modes ... ok
+test row16_shared_pending_buffer ... ok
+test row17_repeated_calls_are_stateless ... ok
+test row18_argument_width_truncation ... ok
+test row19_interleaved_c_and_rust ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+
+[38;5;244m - Completed in 1.975s[0m
+
+[?25l[0m[38;5;141m> [0mAll Phase B and C rows pass. Now automate the configuration matrix (features, plus the debug profile where Rust's overflow checks are live).[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/verify.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create configuration-matrix verification script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Runs the full differential suite across every buildable configuration.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #   * every cargo feature combination declared in Cargo.toml (there are none,
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #     so this reduces to default + --no-default-features), and
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #   * both cargo profiles, because the debug profile enables overflow checks
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #     that the release profile does not — the INT_MAX wrap must not panic in
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #     either.
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m # Usage: ./verify.sh
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m cd "$(dirname "$0")"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m C_SO_PATH="$(cd .. && pwd)/c_src/build/libSieve.so"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m if [[ ! -f "$C_SO_PATH" ]]; then
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     echo "building the C library first"
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     (cd ../c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m         && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         && cmake --build . >/dev/null) || exit 1
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m # --- enumerate feature combinations mechanically from Cargo.toml -------------
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m mapfile -t FEATURES < <(
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /=/ {split($0,a,"="); gsub(/ /,"",a[1]); if (a[1]!="default") print a[1]}' Cargo.toml
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m COMBOS=("default")
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m if (( ${#FEATURES[@]} > 0 )); then
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     COMBOS+=("--no-default-features")
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     for f in "${FEATURES[@]}"; do
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         COMBOS+=("--no-default-features --features $f")
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     # all features together
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     COMBOS+=("--all-features")
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     echo "Cargo.toml declares no [features]; the only configurations are the"
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     echo "default one (identical to --no-default-features) and the two profiles."
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     COMBOS+=("--no-default-features")
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m FAIL=0
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m for profile in release debug; do
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m   for combo in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     flags=""
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     [[ "$combo" != "default" ]] && flags="$combo"
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     profile_flag=""
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     [[ "$profile" == "release" ]] && profile_flag="--release"
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     echo "=============================================================="
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     echo "profile=$profile  features=$combo"
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     echo "=============================================================="
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     # shellcheck disable=SC2086
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     timeout 300 cargo build $profile_flag $flags >/dev/null 2>&1 || {
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         echo "BUILD FAILED"; FAIL=1; continue; }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     RUST_SO="$(pwd)/target/$profile/libSieve.so"
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     [[ -f "$RUST_SO" ]] || { echo "missing $RUST_SO"; FAIL=1; continue; }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     # Symbol parity for this exact artifact.
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     missing=$(comm -23 \
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         <(nm -D --defined-only "$C_SO_PATH"  | awk '{print $NF}' | grep -v '^_ITM_\|^__gmon_start__$\|^__cxa_finalize' | sort -u) \
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         <(nm -D --defined-only "$RUST_SO"    | awk '{print $NF}' | sed 's/@.*//' | sort -u))
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     if [[ -n "$missing" ]]; then
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m         echo "SYMBOL DIFF NOT EMPTY: $missing"; FAIL=1
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         echo "symbol diff: empty"
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     # The tests themselves always run optimized (they are the harness, not the
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     # subject); RUST_SO selects which artifact is under test.
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     # shellcheck disable=SC2086
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     C_SO="$C_SO_PATH" RUST_SO="$RUST_SO" \
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         timeout 600 cargo test --release $flags -- --test-threads=1 2>&1 \
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m         | grep -E '^(test |test result|error|running)' | tail -45
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     # shellcheck disable=SC2181
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     if [[ ${PIPESTATUS[0]} -ne 0 ]]; then FAIL=1; fi
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m if (( FAIL == 0 )); then
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     echo "ALL CONFIGURATIONS PASSED"
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m     echo "SOME CONFIGURATIONS FAILED"
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m exit $FAIL
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation/verify.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x verify.sh && timeout 600 ./verify.sh 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full verification matrix
+
+test row06_digit_width_transitions ... ok
+test row07_negative_magnitude_ends_in_nine ... ok
+test row08_negative_crossing_zero ... ok
+test row09_randomized_negative ... ok
+test row10_randomized_full_range ... ok
+test row11_int_min_prefix ... ok
+test row12_int_max_overflow_prefix ... ok
+test row13_15_buffering_modes ... ok
+test row16_shared_pending_buffer ... ok
+test row17_repeated_calls_are_stateless ... ok
+test row18_argument_width_truncation ... ok
+test row19_interleaved_c_and_rust ... ok
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+==============================================================
+profile=debug  features=--no-default-features
+==============================================================
+symbol diff: empty
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 13 tests
+test err01_zero ... ok
+test err02_int_min ... ok
+test err03_int_max_overflow ... ok
+test err04_just_below_int_max ... ok
+test err05_negative_nine_no_early_stop ... ok
+test err06_minus_one_sentinel ... ok
+test err07_immediate_termination_still_prints ... ok
+test err08_around_terminating_residue ... ok
+test err09_arbitrary_bit_patterns ... ok
+test err10_upper_bits_ignored ... ok
+test err11_printf_failure_is_ignored ... ok
+test err12_dense_boundary_sweep ... ok
+test err13_surface_has_no_pointer_or_length_parameters ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.09s
+running 3 tests
+test no_unverified_feature_configurations ... ok
+test rust_so_resolves_only_against_libc_and_libgcc ... ok
+test symbol_parity_c_to_rust ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+running 17 tests
+test row01_residue_nine_single_iteration ... ok
+test row02_residue_nine_randomized ... ok
+test row03_residue_zero_full_run ... ok
+test row04_every_residue_partial_runs ... ok
+test row05_randomized_small_positive ... ok
+test row06_digit_width_transitions ... ok
+test row07_negative_magnitude_ends_in_nine ... ok
+test row08_negative_crossing_zero ... ok
+test row09_randomized_negative ... ok
+test row10_randomized_full_range ... ok
+test row11_int_min_prefix ... ok
+test row12_int_max_overflow_prefix ... ok
+test row13_15_buffering_modes ... ok
+test row16_shared_pending_buffer ... ok
+test row17_repeated_calls_are_stateless ... ok
+test row18_argument_width_truncation ... ok
+test row19_interleaved_c_and_rust ... ok
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+
+ALL CONFIGURATIONS PASSED
+[38;5;244m - Completed in 86.944s[0m
+
+[?25l[0m[38;5;141m> [0mAll 4 configurations pass. Now a mutation check to prove the harness actually has teeth.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && python3 - <<'PY'
+p='src/lib.rs'
+s=open(p).read()
+s=s.replace("if val % 10 == 9 {","if val.rem_euclid(10) == 9 {")
+open(p,'w').write(s)
+PY
+grep -n "rem_euclid" src/lib.rs && timeout 300 cargo build --release >/dev/null 2>&1 && echo "--- MUTANT 1: Euclidean remainder ---" && timeout 300 cargo test --release --test error_paths -- --test-threads=1 --skip err03 --skip err11 2>&1 | grep -E "^test |test result" | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test 1: Euclidean remainder must be caught
+
+47:        if val.rem_euclid(10) == 9 {
+--- MUTANT 1: Euclidean remainder ---
+test err01_zero ... ok
+test err02_int_min ... FAILED
+test err04_just_below_int_max ... FAILED
+test err05_negative_nine_no_early_stop ... FAILED
+test err06_minus_one_sentinel ... FAILED
+test err07_immediate_termination_still_prints ... ok
+test err08_around_terminating_residue ... ok
+test err09_arbitrary_bit_patterns ... FAILED
+test err10_upper_bits_ignored ... FAILED
+test err12_dense_boundary_sweep ... FAILED
+test err13_surface_has_no_pointer_or_length_parameters ... ok
+test result: FAILED. 4 passed; 7 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.01s
+[38;5;244m - Completed in 0.157s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp /tmp/lib.rs.bak src/lib.rs && python3 - <<'PY'
+p='src/lib.rs'
+s=open(p).read()
+# Mutant 2: check before print (drops the terminating line)
+s=s.replace("""        unsafe {
+            printf(FMT.as_ptr() as *const std::ffi::c_char, val);
+        }
+
+        // if (val % 10 == 9) break;""","""        if val % 10 == 9 { break; }
+        unsafe {
+            printf(FMT.as_ptr() as *const std::ffi::c_char, val);
+        }
+
+        // if (val % 10 == 9) break;""")
+open(p,'w').write(s)
+PY
+timeout 300 cargo build --release >/dev/null 2>&1 && echo "--- MUTANT 2: check-before-print ---" && timeout 300 cargo test --release --test valid_paths -- --test-threads=1 2>&1 | grep -E "^test |test result" | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test 2: reordered print/check must be caught
+
+--- MUTANT 2: check-before-print ---
+test row01_residue_nine_single_iteration ... FAILED
+test row02_residue_nine_randomized ... FAILED
+test row03_residue_zero_full_run ... FAILED
+test row04_every_residue_partial_runs ... FAILED
+test row05_randomized_small_positive ... FAILED
+test row06_digit_width_transitions ... FAILED
+test row07_negative_magnitude_ends_in_nine ... FAILED
+test row08_negative_crossing_zero ... FAILED
+test row09_randomized_negative ... FAILED
+test row10_randomized_full_range ... FAILED
+test row11_int_min_prefix ... ok
+test row12_int_max_overflow_prefix ... ok
+test row13_15_buffering_modes ... FAILED
+test row16_shared_pending_buffer ... FAILED
+test row17_repeated_calls_are_stateless ... FAILED
+test row18_argument_width_truncation ... FAILED
+test row19_interleaved_c_and_rust ... FAILED
+test result: FAILED. 2 passed; 15 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+[38;5;244m - Completed in 0.185s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp /tmp/lib.rs.bak src/lib.rs && python3 - <<'PY'
+p='src/lib.rs'
+s=open(p).read()
+s=s.replace("val = val.wrapping_add(1);","val = val.saturating_add(1);")
+open(p,'w').write(s)
+PY
+grep -n saturating_add src/lib.rs && timeout 300 cargo build --release >/dev/null 2>&1 && echo "--- MUTANT 3: saturating overflow ---" && timeout 300 cargo test --release -- --test-threads=1 2>&1 | grep -E "^test row1[12]|^test err0[34]|test result" | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test 3: saturating overflow must be caught
+
+55:        val = val.saturating_add(1);
+--- MUTANT 3: saturating overflow ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test err03_int_max_overflow ... FAILED
+test err04_just_below_int_max ... FAILED
+test result: FAILED. 10 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+[38;5;244m - Completed in 0.265s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo test --release --test valid_paths -- --test-threads=1 2>&1 | grep -E "^test row1[12]|test result" ; echo "--- restoring pristine translation ---"; cp /tmp/lib.rs.bak src/lib.rs && diff <(cat /tmp/lib.rs.bak) src/lib.rs && echo "lib.rs restored byte-identical" && timeout 300 cargo build --release 2>&1 | tail -2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm row12 catches mutant 3, then restore pristine lib.rs
+
+test row11_int_min_prefix ... ok
+test row12_int_max_overflow_prefix ... FAILED
+test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+--- restoring pristine translation ---
+lib.rs restored byte-identical
+   Compiling sieve v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+[38;5;244m - Completed in 1.514s[0m
+
+[?25l[0m[38;5;141m> [0mHarness has teeth on all three mutants. Now correcting the inaccurate undefined-symbols claim in SYMBOLS.md and recording the evidence.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'PY'
+p='SYMBOLS.md'
+s=open(p).read()
+old_start = s.index("## Undefined (imported) symbols")
+old_end = s.index("## Feature combinations")
+new = """## Undefined (imported) symbols
+
+Measured, not assumed (`nm -D --undefined-only`):
+
+| `.so` | needed libraries (`objdump -p`) | notable imports |
+|-------|--------------------------------|-----------------|
+| C | `libc.so.6` | `printf` |
+| Rust | `libgcc_s.so.1`, `libc.so.6` | `printf`, plus the Rust standard library's own runtime needs: `_Unwind_*` (libgcc), `dl_iterate_phdr`, `mmap64`/`munmap`, `pthread_key_*`, `__tls_get_addr`, `open64`/`read`/`close`/`stat64`, `malloc`/`free`, `memcpy`/`memset`/`bcmp`, `abort` |
+
+Every undefined symbol in the Rust `.so` carries a `@GLIBC_*` or `@GCC_*`
+version tag (the only exceptions being the unversioned ELF placeholders
+`_ITM_registerTMCloneTable`, `_ITM_deregisterTMCloneTable`, `__gmon_start__`,
+which the C `.so` has too). So the Rust artifact resolves entirely against
+glibc and libgcc — no third-party `.so` a consumer of the C library would not
+already have. This is asserted by
+`tests/symbols.rs::rust_so_resolves_only_against_libc_and_libgcc`.
+
+The extra libgcc/std imports are the unavoidable cost of linking Rust's
+standard library into a `cdylib`; they are not a behavioural difference. Note
+that `_Unwind_*` is present even though `[profile.release] panic = "abort"` is
+set, because the shipped `std` is precompiled with unwinding.
+
+Importantly, the Rust `.so` **does** import libc `printf` — it does not use
+Rust's `println!`. That is what makes the two libraries share one `stdout`
+FILE, one buffer and one set of flush points, which the differential tests rely
+on and verify directly (`tests/valid_paths.rs::row16_shared_pending_buffer`,
+`row19_interleaved_c_and_rust`).
+
+"""
+s = s[:old_start] + new + s[old_end:]
+s = s.replace("""- [x] `nm -D` shows 0 missing symbols and 0 undefined non-libc symbols in the
+      Rust `.so`.""","""- [x] `nm -D` shows 0 missing symbols in the Rust `.so`, and 0 undefined
+      symbols that resolve outside glibc/libgcc.
+
+## Harness credibility (mutation check)
+
+A differential suite that never fails proves nothing, so the harness was
+validated against three deliberate mutants of `src/lib.rs`, each reverted
+afterwards (`src/lib.rs` restored byte-identical):
+
+| mutant | what it breaks | caught by |
+|--------|----------------|-----------|
+| `val % 10` → `val.rem_euclid(10)` | negative-input residue sign | 7 of 13 error-path tests, incl. `err05_negative_nine_no_early_stop` |
+| move the check before the `printf` | drops the terminating line | 15 of 17 config rows |
+| `wrapping_add` → `saturating_add` | the `INT_MAX` overflow wrap | `err03`, `err04`, `row12` |
+""")
+open(p,'w').write(s)
+PY
+echo "--- SYMBOLS.md now ---" && wc -l SYMBOLS.md ERRORS.md CONFIGS.md verify.sh tests/common/mod.rs tests/valid_paths.rs tests/error_paths.rs tests/symbols.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Correct SYMBOLS.md undefined-symbol section and add mutation-check record
+
+--- SYMBOLS.md now ---
+   97 SYMBOLS.md
+   59 ERRORS.md
+   63 CONFIGS.md
+   86 verify.sh
+  504 tests/common/mod.rs
+  371 tests/valid_paths.rs
+  269 tests/error_paths.rs
+  143 tests/symbols.rs
+ 1592 total
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[38;5;141m> [0mNow my own independent verification of every claim.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-efNuf0
+echo "=== 1. artifacts exist ==="
+for f in translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md; do printf "%-28s %s lines\n" "$f" "$(wc -l < $f)"; done
+echo
+echo "=== 2. symbol diff C -> Rust (must be empty) ==="
+comm -23 <(nm -D --defined-only c_src/build/libSieve.so | awk '{print $NF}' | grep -vE '^_ITM_|^__gmon_start__$|^__cxa_finalize' | sort -u) \
+         <(nm -D --defined-only translation/target/release/libSieve.so | awk '{print $NF}' | sed 's/@.*//' | sort -u)
+echo "(end of diff)"
+echo
+echo "=== 3. exported symbols, both sides ==="
+echo -n "C:    "; nm -D --defined-only c_src/build/libSieve.so | awk '{print $NF}' | grep -vE '^_ITM_|^__gmon|^__cxa' | tr '\n' ' '; echo
+echo -n "Rust: "; nm -D --defined-only translation/target/release/libSieve.so | awk '{print $NF}' | grep -vE '^_ITM_|^__gmon|^__cxa' | tr '\n' ' '; echo
+echo
+echo "=== 4. c_src unmodified ==="
+cd c_src && git status --porcelain 2>/dev/null | grep -v '^?? build/' || echo "(no git, or no tracked modifications)"
+ls include src[0m[38;5;244m (using tool: shell)[0m
+Purpose: Independently verify artifacts, symbol diff, and c_src integrity
+
+=== 1. artifacts exist ===
+translation/SYMBOLS.md       97 lines
+translation/ERRORS.md        59 lines
+translation/CONFIGS.md       63 lines
+
+=== 2. symbol diff C -> Rust (must be empty) ===
+(end of diff)
+
+=== 3. exported symbols, both sides ===
+C:    sieve 
+Rust: sieve 
+
+=== 4. c_src unmodified ===
+(no git, or no tracked modifications)
+include:
+sieve.h
+
+src:
+sieve.c
+[38;5;244m - Completed in 0.58s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-efNuf0/translation
+echo "=== CONFIGS.md rows vs valid_paths tests ==="
+echo "rows in CONFIGS.md:  $(grep -cE '^\| [0-9]+ \|' CONFIGS.md)"
+echo "unchecked rows:      $(grep -E '^\| [0-9]+ \|' CONFIGS.md | grep -vc '\[x\]')"
+echo "row numbers:         $(grep -oE '^\| [0-9]+ ' CONFIGS.md | tr -d '| ' | tr '\n' ' ')"
+echo "tests present:       $(grep -oE 'fn row[0-9_]+' tests/valid_paths.rs | tr '\n' ' ')"
+echo
+echo "=== ERRORS.md rows vs error_paths tests ==="
+echo "rows in ERRORS.md:   $(grep -cE '^\| [0-9]+ \|' ERRORS.md)"
+echo "unchecked rows:      $(grep -E '^\| [0-9]+ \|' ERRORS.md | grep -vc '\[x\]')"
+echo "tests present:       $(grep -oE 'fn err[0-9]+_[a-z_0-9]+' tests/error_paths.rs | tr '\n' ' ')"
+echo
+echo "=== no stubs / fakes in the translation ==="
+grep -nE 'unimplemented!|todo!|panic!\(|unreachable!' src/lib.rs || echo "(none)"
+echo
+echo "=== the translation is still the pristine one ==="
+md5sum src/lib.rs /tmp/lib.rs.bak[0m[38;5;244m (using tool: shell)[0m
+Purpose: Cross-check table rows against test coverage and confirm no stubs
+
+=== CONFIGS.md rows vs valid_paths tests ===
+rows in CONFIGS.md:  19
+unchecked rows:      0
+row numbers:         1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 
+tests present:       fn row01_ fn row02_ fn row03_ fn row04_ fn row05_ fn row06_ fn row07_ fn row08_ fn row09_ fn row10_ fn row11_ fn row12_ fn row13_15_ fn row16_ fn row17_ fn row18_ fn row19_ 
+
+=== ERRORS.md rows vs error_paths tests ===
+rows in ERRORS.md:   11
+unchecked rows:      0
+tests present:       fn err01_zero fn err02_int_min fn err03_int_max_overflow fn err04_just_below_int_max fn err05_negative_nine_no_early_stop fn err06_minus_one_sentinel fn err07_immediate_termination_still_prints fn err08_around_terminating_residue fn err09_arbitrary_bit_patterns fn err10_upper_bits_ignored fn err11_printf_failure_is_ignored fn err12_dense_boundary_sweep fn err13_surface_has_no_pointer_or_length_parameters 
+
+=== no stubs / fakes in the translation ===
+(none)
+
+=== the translation is still the pristine one ===
+327f2f05e0789ecbd6be6b7f0909e8ec  src/lib.rs
+327f2f05e0789ecbd6be6b7f0909e8ec  /tmp/lib.rs.bak
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[38;5;141m> [0mAll rows mapped, no stubs, translation pristine. Final clean run of the whole matrix.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rm -rf target/debug/libSieve.so && timeout 600 ./verify.sh 2>&1 | grep -E "^(profile=|symbol diff|test result|ALL |SOME |BUILD )" [0m[38;5;244m (using tool: shell)[0m
+Purpose: Final full verification matrix run
+
+profile=release  features=default
+symbol diff: empty
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.09s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+profile=release  features=--no-default-features
+symbol diff: empty
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.09s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.40s
+profile=debug  features=default
+symbol diff: empty
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.09s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+profile=debug  features=--no-default-features
+symbol diff: empty
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.08s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+ALL CONFIGURATIONS PASSED
+[38;5;244m - Completed in 86.603s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-efNuf0 && rm -f /tmp/lib.rs.bak /tmp/sieve_cap_*.out && ls /tmp/sieve_cap_* 2>/dev/null | wc -l && echo "temp files cleaned" && find translation -type f -not -path '*/target/*' -not -name Cargo.lock | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temporary files and list final deliverables
+
+0
+temp files cleaned
+translation/CONFIGS.md
+translation/Cargo.toml
+translation/ERRORS.md
+translation/SYMBOLS.md
+translation/src/lib.rs
+translation/tests/common/mod.rs
+translation/tests/error_paths.rs
+translation/tests/symbols.rs
+translation/tests/valid_paths.rs
+translation/verify.sh
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. The Rust translation matches the C byte-for-byte in every configuration tested; [38;5;10msrc/lib.rs[0m needed no changes.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+The whole C library is one function in one translation unit: [38;5;10mvoid sieve(int val)[0m — print [38;5;10mval[0m, stop if [38;5;10mval % 10 == 9[0m, else increment. That makes the surface small but the [3mquirks[23m load-bearing, and those are where a translation goes wrong.[0m[0m
+[0m[0m
+[38;5;252m[1m## Results[0m[0m
+[0m[0m
+| | |[0m[0m
+|---|---|[0m[0m
+| Symbol diff (C → Rust) | empty — both export exactly [38;5;10msieve[0m |[0m[0m
+| [38;5;10mCONFIGS.md[0m rows | 19/19 passing |[0m[0m
+| [38;5;10mERRORS.md[0m rows | 11/11 passing (+2 extra tests) |[0m[0m
+| Configurations | 4/4 (release/debug × default/[38;5;10m--no-default-features[0m) |[0m[0m
+| Tests per configuration | 33 |[0m[0m
+[0m[0m
+No [38;5;10m[features][0m table exists, so the feature axis collapses to one configuration; I added the debug profile to the matrix instead, since it enables the overflow checks release does not — that is where the [38;5;10mINT_MAX[0m wrap could have panicked.[0m[0m
+[0m[0m
+[38;5;252m[1m## Notable findings[0m[0m
+[0m[0m
+The C's two behavioral traps are both correctly reproduced, and I confirmed the tests actually detect violations rather than passing vacuously:[0m[0m
+[0m[0m
+- **Truncating remainder.** [38;5;10m-9 % 10 == -9[0m, never [38;5;10m9[0m, so negative inputs do [3mnot[23m stop early — they count up to [38;5;10m+9[0m. Swapping in [38;5;10mrem_euclid[0m broke 7 of 13 error-path tests.[0m[0m
+- **Signed overflow at [38;5;10mINT_MAX[0m.** [38;5;10m2147483647 % 10 == 7[0m, so [38;5;10mval++[0m overflows (UB in C); the [38;5;10m-O0[0m build wraps to [38;5;10mINT_MIN[0m and the run continues for ~2.1e9 lines. Swapping [38;5;10mwrapping_add[0m for [38;5;10msaturating_add[0m was caught by [38;5;10merr03[0m, [38;5;10merr04[0m, [38;5;10mrow12[0m. Since a full run would emit ~23 GB, these inputs are compared as bounded stdout prefixes captured from a forked child.[0m[0m
+[0m[0m
+Two corrections I made to my own Phase A work rather than to the C:[0m[0m
+[0m[0m
+- I initially asserted a positive run crosses a digit-width boundary ([38;5;10m95[0m → [38;5;10m109[0m). It does not — a run always ends at the next value ending in 9, inside the same decade. Only negative runs ([38;5;10m-100[0m→[38;5;10m-99[0m, [38;5;10m-1[0m→[38;5;10m0[0m) and the overflow wrap change [38;5;10mprintf[0m width. [38;5;10mCONFIGS.md[0m row 6 and its test now reflect what the C does.[0m[0m
+- [38;5;10m2147483640[0m is in the overflow region, not a cheap 10-line input; using it in a full-output comparison tried to write ~23 GB and the test process took [38;5;10mSIGXFSZ[0m. [38;5;10massert_same[0m now refuses non-cheap inputs so this fails loudly.[0m[0m
+[0m[0m
+I also relaxed one over-strict assertion of mine: a Rust [38;5;10mcdylib[0m legitimately imports libgcc [38;5;10m_Unwind_*[0m and std's TLS/backtrace symbols. The check now verifies every import resolves against glibc or libgcc (which it does), and that the Rust [38;5;10m.so[0m imports libc [38;5;10mprintf[0m rather than using [38;5;10mprintln![0m — that shared [38;5;10mstdout[0m FILE is what makes byte-level comparison meaningful, and [38;5;10mrow16[0m/[38;5;10mrow19[0m verify the two libraries really do share one buffer.[0m[0m
+[0m[0m
+[38;5;252m[1m## Deliverables[0m[0m
+[0m[0m
+[38;5;10mSYMBOLS.md[0m, [38;5;10mERRORS.md[0m, [38;5;10mCONFIGS.md[0m, [38;5;10mverify.sh[0m (runs the whole matrix), and [38;5;10mtests/{common/mod.rs,valid_paths.rs,error_paths.rs,symbols.rs}[0m. All tests load both [38;5;10m.so[0ms via [38;5;10mlibloading[0m and call only exported symbols. [38;5;10mc_src/[0m is unmodified apart from the [38;5;10mbuild/[0m directory produced by cmake.[0m[0m
+[38;5;8m
+ ▸ Credits: 26.01 • Time: 17m 29s
+
+[0m[1G[0m[0m[?25h

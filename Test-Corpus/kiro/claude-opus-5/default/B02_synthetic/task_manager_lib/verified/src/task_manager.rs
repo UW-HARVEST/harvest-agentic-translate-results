@@ -1,10 +1,36 @@
-//! Translation of `c_src/src/task_manager.c` / `c_src/include/task_manager.h`.
+/*
+ * Copyright 2025 MIT Lincoln Laboratory
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software
+ * and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,
+ * including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice
+ * shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ * THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+ * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+ * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
-use crate::cstdio::print_stdout;
-use crate::cutil::{c_atoi, c_str_bytes, getenv_bytes, strncpy};
-use crate::logger::{log_error_str, log_info_str, log_warning_str};
-use std::alloc::{alloc, dealloc, Layout};
-use std::ffi::{c_char, c_int};
+//! Translation of `c_src/src/task_manager.c` and `c_src/include/task_manager.h`.
+
+use core::ffi::{c_char, c_int, c_void};
+use core::mem::size_of;
+use core::ptr::{self, addr_of, addr_of_mut};
+
+use crate::cbind::{atoi, free, getenv, malloc, printf, strncpy};
+use crate::logger::{log_error, log_info, log_warning};
 
 /// ```c
 /// typedef struct {
@@ -32,57 +58,44 @@ pub struct TaskManager {
     pub task_count: c_int,
 }
 
-/// `malloc(max_tasks * sizeof(Task))`.
-///
-/// The C expression converts the `int` count to `size_t` (sign extension) and
-/// multiplies modulo 2^64, so a negative or absurdly large `MAX_TASKS`
-/// produces a request that `malloc` refuses.  `malloc(0)` returns a valid,
-/// non-NULL pointer under glibc.
-fn tasks_layout(max_tasks: c_int) -> Option<Layout> {
-    let size = (max_tasks as usize).wrapping_mul(std::mem::size_of::<Task>());
-    if size == 0 {
-        // Stand-in for glibc's minimum allocation for malloc(0).
-        let align = std::mem::align_of::<Task>();
-        Some(Layout::from_size_align(align, align).unwrap())
-    } else {
-        Layout::from_size_align(size, std::mem::align_of::<Task>()).ok()
-    }
-}
+// Layout must match the C structs exactly; the ABI depends on it.
+const _: () = assert!(size_of::<Task>() == 260);
+const _: () = assert!(size_of::<TaskManager>() == 16);
 
+/// `TaskManager *create_task_manager();`
 #[unsafe(no_mangle)]
-pub extern "C" fn create_task_manager() -> *mut TaskManager {
-    let manager_layout = Layout::new::<TaskManager>();
-    let manager = unsafe { alloc(manager_layout) } as *mut TaskManager;
+pub unsafe extern "C" fn create_task_manager() -> *mut TaskManager {
+    let manager = malloc(size_of::<TaskManager>()) as *mut TaskManager;
     if manager.is_null() {
-        log_error_str(c"Failed to allocate memory for TaskManager.");
-        return std::ptr::null_mut();
+        log_error(c"Failed to allocate memory for TaskManager.".as_ptr());
+        return ptr::null_mut();
     }
 
-    unsafe {
-        let max_tasks_env = getenv_bytes("MAX_TASKS");
-        (*manager).max_tasks = match max_tasks_env {
-            Some(v) => c_atoi(&v),
-            None => 10,
-        };
-        (*manager).task_count = 0;
+    let max_tasks_env: *const c_char = getenv(c"MAX_TASKS".as_ptr());
+    let max_tasks: c_int = if !max_tasks_env.is_null() {
+        atoi(max_tasks_env)
+    } else {
+        10
+    };
+    addr_of_mut!((*manager).max_tasks).write(max_tasks);
+    addr_of_mut!((*manager).task_count).write(0);
 
-        let tasks = match tasks_layout((*manager).max_tasks) {
-            Some(layout) => alloc(layout) as *mut Task,
-            None => std::ptr::null_mut(),
-        };
-        (*manager).tasks = tasks;
-
-        if tasks.is_null() {
-            log_error_str(c"Failed to allocate memory for tasks.");
-            dealloc(manager as *mut u8, manager_layout);
-            return std::ptr::null_mut();
-        }
+    // `manager->max_tasks * sizeof(Task)` in C promotes the (possibly negative)
+    // int to size_t and then multiplies with wrap-around; reproduce that.
+    let bytes = (max_tasks as isize as usize).wrapping_mul(size_of::<Task>());
+    let tasks = malloc(bytes) as *mut Task;
+    addr_of_mut!((*manager).tasks).write(tasks);
+    if tasks.is_null() {
+        log_error(c"Failed to allocate memory for tasks.".as_ptr());
+        free(manager as *mut c_void);
+        return ptr::null_mut();
     }
 
-    log_info_str(c"TaskManager created successfully.");
+    log_info(c"TaskManager created successfully.".as_ptr());
     manager
 }
 
+/// `void add_task(TaskManager *manager, const char *description, int priority);`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn add_task(
     manager: *mut TaskManager,
@@ -90,59 +103,43 @@ pub unsafe extern "C" fn add_task(
     priority: c_int,
 ) {
     if (*manager).task_count >= (*manager).max_tasks {
-        log_warning_str(c"Cannot add task: Maximum task limit reached.");
+        log_warning(c"Cannot add task: Maximum task limit reached.".as_ptr());
         return;
     }
 
     let index = (*manager).task_count;
-    (*manager).task_count = index.wrapping_add(1);
+    (*manager).task_count = index + 1;
+    let task: *mut Task = (*manager).tasks.offset(index as isize);
 
-    let task = (*manager).tasks.add(index as usize);
-    let desc = std::ptr::addr_of_mut!((*task).description) as *mut u8;
-    // strncpy(task->description, description, sizeof(task->description) - 1);
+    let desc = addr_of_mut!((*task).description) as *mut c_char;
     strncpy(desc, description, 256 - 1);
-    // task->description[sizeof(task->description) - 1] = '\0';
-    *desc.add(255) = 0;
-    (*task).priority = priority;
+    *desc.add(256 - 1) = 0;
+    addr_of_mut!((*task).priority).write(priority);
 
-    log_info_str(c"Task added successfully.");
+    log_info(c"Task added successfully.".as_ptr());
 }
 
+/// `void print_tasks(const TaskManager *manager);`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn print_tasks(manager: *const TaskManager) {
-    // printf("Tasks:\n");
-    print_stdout(b"Tasks:\n");
-
-    let count = (*manager).task_count;
+    printf(c"Tasks:\n".as_ptr());
     let mut i: c_int = 0;
-    while i < count {
-        let task = (*manager).tasks.add(i as usize);
-        // printf("  [%d] %s (Priority: %d)\n", i + 1, description, priority);
-        let mut line: Vec<u8> = Vec::new();
-        line.extend_from_slice(b"  [");
-        line.extend_from_slice(i.wrapping_add(1).to_string().as_bytes());
-        line.extend_from_slice(b"] ");
-        line.extend_from_slice(&c_str_bytes(
-            std::ptr::addr_of!((*task).description) as *const c_char
-        ));
-        line.extend_from_slice(b" (Priority: ");
-        line.extend_from_slice((*task).priority.to_string().as_bytes());
-        line.extend_from_slice(b")\n");
-        print_stdout(&line);
-        i = i.wrapping_add(1);
+    while i < (*manager).task_count {
+        let task: *const Task = (*manager).tasks.offset(i as isize);
+        printf(
+            c"  [%d] %s (Priority: %d)\n".as_ptr(),
+            i + 1,
+            addr_of!((*task).description) as *const c_char,
+            (*task).priority,
+        );
+        i += 1;
     }
 }
 
+/// `void destroy_task_manager(TaskManager *manager);`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_task_manager(manager: *mut TaskManager) {
-    // free(manager->tasks);
-    if !(*manager).tasks.is_null() {
-        if let Some(layout) = tasks_layout((*manager).max_tasks) {
-            dealloc((*manager).tasks as *mut u8, layout);
-        }
-    }
-    // free(manager);
-    dealloc(manager as *mut u8, Layout::new::<TaskManager>());
-
-    log_info_str(c"TaskManager destroyed successfully.");
+    free((*manager).tasks as *mut c_void);
+    free(manager as *mut c_void);
+    log_info(c"TaskManager destroyed successfully.".as_ptr());
 }

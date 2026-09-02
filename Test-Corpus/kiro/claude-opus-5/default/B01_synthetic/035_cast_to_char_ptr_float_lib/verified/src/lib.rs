@@ -1,4 +1,4 @@
-// Rust translation of c_src/src/driver.c
+// Rust translation of c_src/src/driver.c and c_src/include/driver.h
 //
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
@@ -23,36 +23,73 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::c_char;
-use std::ffi::c_int;
-use std::ffi::c_uchar;
+use core::ffi::{c_char, c_float, c_int, c_uchar};
 
-extern "C" {
-    // Use the C library's printf so that output ordering/buffering matches
-    // the original C implementation exactly (same stdout FILE stream).
-    fn printf(format: *const c_char, ...) -> c_int;
+unsafe extern "C" {
+    /// C library `printf`. Used directly (rather than Rust's `print!`) so that
+    /// output goes through the very same `stdout` FILE stream, with the same
+    /// buffering semantics, as the original C library. This is what makes the
+    /// emitted bytes and their flush ordering identical.
+    #[link_name = "printf"]
+    fn c_printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// Mirrors the C `static void print_hex(unsigned char *p, int len)`.
+/// Format string `"%02x"`, NUL terminated.
+static FMT_02X: [c_char; 5] = [b'%' as c_char, b'0' as c_char, b'2' as c_char, b'x' as c_char, 0];
+
+/// Format string `"\n"`, NUL terminated.
+static FMT_NEWLINE: [c_char; 2] = [b'\n' as c_char, 0];
+
+/// Translation of:
+///
+/// ```c
+/// static void print_hex(unsigned char *p, int len) {
+///     for (int i = 0; i < len; i++) {
+///         printf("%02x", p[i]);
+///     }
+///     printf("\n");
+/// }
+/// ```
+///
+/// `static` in C, so it is deliberately NOT exported here either.
 ///
 /// # Safety
-/// `p` must point to at least `len` readable bytes.
+///
+/// `p` must point to at least `len` readable bytes, exactly as required by the
+/// original C function.
 unsafe fn print_hex(p: *const c_uchar, len: c_int) {
     let mut i: c_int = 0;
     while i < len {
-        // "%02x" with an `unsigned char` argument, which is promoted to `int`.
-        printf(b"%02x\0".as_ptr() as *const c_char, *p.offset(i as isize) as c_int);
+        // p[i] : unsigned char, promoted to int by the default argument
+        // promotions when passed to the variadic printf.
+        let byte = unsafe { *p.offset(i as isize) };
+        unsafe {
+            c_printf(FMT_02X.as_ptr(), byte as c_int);
+        }
         i += 1;
     }
-    printf(b"\n\0".as_ptr() as *const c_char);
+    unsafe {
+        c_printf(FMT_NEWLINE.as_ptr());
+    }
 }
 
-/// void driver(float x);
+/// Translation of:
+///
+/// ```c
+/// void driver(float x) {
+///     print_hex((unsigned char *)&x, sizeof(x));
+/// }
+/// ```
+///
+/// Prints the object representation of `x` as lowercase, zero padded, two digit
+/// hex bytes in memory order, followed by a newline.
 #[unsafe(no_mangle)]
-pub extern "C" fn driver(x: f32) {
-    // print_hex((unsigned char *)&x, sizeof(x));
-    let bytes = x.to_ne_bytes();
+pub extern "C" fn driver(x: c_float) {
+    // `&x` aliased as `unsigned char *`; `sizeof(float)` bytes are printed.
     unsafe {
-        print_hex(bytes.as_ptr() as *const c_uchar, core::mem::size_of::<f32>() as c_int);
+        print_hex(
+            core::ptr::addr_of!(x) as *const c_uchar,
+            core::mem::size_of::<c_float>() as c_int,
+        );
     }
 }

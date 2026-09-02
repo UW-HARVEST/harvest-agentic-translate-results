@@ -1,0 +1,3 @@
+#ifndef COMPAT_OPENSSL_CONF_H
+#define COMPAT_OPENSSL_CONF_H
+#endif

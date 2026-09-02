@@ -1,5 +1,7 @@
 // Rust translation of c_src/src/driver.c
 //
+// Original copyright notice from the C source is reproduced below.
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -23,21 +25,28 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int};
 
-unsafe extern "C" {
-    /// The platform `printf`. Calling it (rather than Rust's `println!`) keeps
-    /// stdout buffering semantics and interleaving with a C caller's own
-    /// output identical to the original library.
+extern "C" {
+    /// The C implementation writes through the C runtime's `stdout`. Calling the
+    /// very same `printf` keeps the emitted bytes *and* the stream buffering /
+    /// interleaving behaviour identical to the original library.
     fn printf(format: *const c_char, ...) -> c_int;
 }
 
-/// Format string equivalent to the C literal `"%d %d\n"` (NUL-terminated).
+/// Format string used by the original `printf("%d %d\n", i, j)` call,
+/// NUL-terminated exactly as the C string literal is.
 const FMT: &[u8; 7] = b"%d %d\n\0";
 
-/// void driver(int x);
+/// Translation of:
 ///
-/// for (int i = 0, j = 0; i < x; i++, j += 2) printf("%d %d\n", i, j);
+/// ```c
+/// void driver(int x) {
+///     for (int i = 0, j = 0; i < x; i++, j += 2) {
+///         printf("%d %d\n", i, j);
+///     }
+/// }
+/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
     let mut i: c_int = 0;
@@ -46,8 +55,9 @@ pub extern "C" fn driver(x: c_int) {
         unsafe {
             printf(FMT.as_ptr() as *const c_char, i, j);
         }
-        // `i++, j += 2` — wrapping mirrors the machine behaviour of the C code
-        // without introducing a panic that the original would not have.
+        // `i++, j += 2` — wrapping arithmetic mirrors the two's-complement
+        // wrap-around that the compiled C exhibits (signed overflow is UB in C,
+        // so no defined behaviour is being "fixed" here).
         i = i.wrapping_add(1);
         j = j.wrapping_add(2);
     }

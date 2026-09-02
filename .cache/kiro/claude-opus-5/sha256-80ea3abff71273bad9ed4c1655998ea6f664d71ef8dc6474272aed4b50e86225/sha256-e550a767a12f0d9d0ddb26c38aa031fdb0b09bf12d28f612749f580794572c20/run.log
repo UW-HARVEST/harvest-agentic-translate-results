@@ -1,0 +1,487 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "---C_SRC---" && find c_src -type f | head -200 && echo "---COUNT---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src contents
+
+/local/home/scheschb/.harvest/work/harvest-work-uqtH9d
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:06 .
+drwxr-xr-x. 469 scheschb amazon 81920 Sep  1 05:06 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:06 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:06 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:06 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---COUNT---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+   15 c_src/CMakeLists.txt
+  282 c_src/include/lib.h
+   20 c_src/src/lib.c
+  317 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m19501 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m690 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && ls *.so && echo "=== nm -D ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and enumerate exported symbols
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diagnose cmake failure
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-g46BHm/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_uqtH9d && mkdir -p /tmp/cbuild_uqtH9d && cd /tmp/cbuild_uqtH9d && cmake /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/c_src > /dev/null && make 2>&1 | tail -5 && ls *.so && echo "=== nm -D ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir and list symbols
+
+[ 50%] Building C object CMakeFiles/harvest-work-uqtH9d.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-uqtH9d.so
+[100%] Built target harvest-work-uqtH9d
+libharvest-work-uqtH9d.so
+=== nm -D ===
+00000000000010f9 T crc16
+[38;5;244m - Completed in 0.413s[0m
+
+[?25l[0m[38;5;141m> [0mFull public surface is a single symbol: [38;5;10mcrc16[0m. Now generating the Rust crate, extracting the CRC tables directly from the header to avoid transcription error.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d && mkdir -p translation/src && python3 - <<'EOF'
+import re
+src = open('c_src/include/lib.h').read()
+start = src.index('tflac_crc16_tables[8][256] = {')
+body = src[start:]
+# capture all hex numbers after the '='
+nums = re.findall(r'0x[0-9a-fA-F]+', body)
+assert len(nums) == 8*256, len(nums)
+out = ["static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [\n"]
+for t in range(8):
+    out.append("    [\n")
+    row = nums[t*256:(t+1)*256]
+    for i in range(0, 256, 8):
+        out.append("        " + ", ".join(row[i:i+8]) + ",\n")
+    out.append("    ],\n")
+out.append("];\n")
+open('translation/src/tables.rs','w').write("".join(out))
+print("wrote", sum(1 for _ in open('translation/src/tables.rs')), "lines")
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract CRC16 tables from header into Rust source
+
+wrote 274 lines
+[38;5;244m - Completed in 0.26s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create lib.rs translating crc16
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The C library consists of a single translation unit (`src/lib.c`) plus the
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! public header (`include/lib.h`). Its only exported symbol is `crc16`; the
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! CRC lookup tables are `static const` in C and therefore have internal
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! linkage (they are not part of the ABI).
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! The translation reproduces the C semantics exactly, including the integer
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! promotion / truncation behaviour of the original expressions.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m mod tables;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m use core::ffi::c_void;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m use tables::TFLAC_CRC16_TABLES;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m // Typedefs from `include/lib.h`.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m pub type tflac_u8 = u8;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m pub type tflac_u16 = u16;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m pub type tflac_u32 = u32;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m /// `tflac_u16 crc16(const tflac_u8 *d, tflac_u32 len, tflac_u16 crc16);`
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m /// Note that in the C source the third parameter shadows the function name;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m /// that has no effect on the ABI. The loop structure, table indices and
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m /// wrapping arithmetic mirror the C code one-for-one.
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m pub unsafe extern "C" fn crc16(d: *const tflac_u8, len: tflac_u32, crc16: tflac_u16) -> tflac_u16 {
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     // Keep the parameters in mutable locals, exactly as C does.
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     let mut d = d;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     let mut len = len;
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     let mut crc16 = crc16;
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     // Guard against a NULL data pointer only in the degenerate case where the
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     // C code would not dereference it either (len == 0). This keeps the
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     // pointer arithmetic below well defined without altering behaviour.
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     if d.is_null() && len == 0 {
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         return crc16;
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     let _ = d as *const c_void;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     while len >= 8 {
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         // crc16 ^= d[0] << 8 | d[1];
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         //
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         // In C both operands are promoted to `int`; `d[0] << 8 | d[1]` fits in
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         // 16 bits, and the result is truncated back into a tflac_u16.
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         let b0 = *d.add(0) as u32;
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         let b1 = *d.add(1) as u32;
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         crc16 ^= ((b0 << 8) | b1) as tflac_u16;
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         crc16 = TFLAC_CRC16_TABLES[7][(crc16 >> 8) as usize]
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[6][(crc16 & 0xFF) as usize]
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[5][*d.add(2) as usize]
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[4][*d.add(3) as usize]
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[3][*d.add(4) as usize]
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[2][*d.add(5) as usize]
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[1][*d.add(6) as usize]
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m             ^ TFLAC_CRC16_TABLES[0][*d.add(7) as usize];
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         d = d.add(8);
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         len -= 8;
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     // while (len--) { ... }
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     // The condition tests the pre-decrement value; `len` wraps on the final
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     // iteration but the loop has already terminated by then.
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     while len != 0 {
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         len = len.wrapping_sub(1);
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         // crc16 = (crc16 << 8) ^ tflac_crc16_tables[0][(crc16 >> 8) ^ *d++];
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         let byte = *d;
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m         d = d.add(1);
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         let idx = ((crc16 >> 8) ^ (byte as tflac_u16)) as usize;
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         crc16 = crc16.wrapping_shl(8) ^ TFLAC_CRC16_TABLES[0][idx];
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m     crc16
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Drop unused import
+
+[49m[38;5;9m- 15    [0m:[38;5;9m[49m use core::ffi::c_void;
+[0m[49m[39m  16, 15[0m:[39m[49m use tables::TFLAC_CRC16_TABLES;
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.1s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Remove redundant null guard
+
+[49m[38;5;9m- 34    [0m:[38;5;9m[49m     // Guard against a NULL data pointer only in the degenerate case where the
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m     // C code would not dereference it either (len == 0). This keeps the
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m     // pointer arithmetic below well defined without altering behaviour.
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m     if d.is_null() && len == 0 {
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m         return crc16;
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m     let _ = d as *const c_void;
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     // Both loops below are no-ops when `len == 0`, so a NULL `d` is never
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     // dereferenced in that case, matching the C code.
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+error[E0603]: static `TFLAC_CRC16_TABLES` is private
+   --> src/lib.rs:15:13
+    |
+ 15 | use tables::TFLAC_CRC16_TABLES;
+    |             ^^^^^^^^^^^^^^^^^^ private static
+    |
+note: the static `TFLAC_CRC16_TABLES` is defined here
+   --> src/tables.rs:1:1
+    |
+  1 | / static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [
+  2 | |     [
+  3 | |         0x0000, 0x8005, 0x800f, 0x000a, 0x801b, 0x001e, 0x0014, 0x8011,
+  4 | |         0x8033, 0x0036, 0x003c, 0x8039, 0x0028, 0x802d, 0x8027, 0x0022,
+...   |
+273 | |     ],
+274 | | ];
+    | |__^
+
+For more information about this error, try `rustc --explain E0603`.
+error: could not compile `harvest_translation` (lib) due to 1 previous error
+[38;5;244m - Completed in 0.87s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation && sed -i '1s/^static /pub(crate) static /' src/tables.rs && sed -i '1i // CRC-16 lookup tables, transcribed verbatim from c_src/include/lib.h\n// (`static const tflac_u16 tflac_crc16_tables[8][256]`).\n' src/tables.rs && head -4 src/tables.rs && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Make tables crate-visible and rebuild
+
+// CRC-16 lookup tables, transcribed verbatim from c_src/include/lib.h
+// (`static const tflac_u16 tflac_crc16_tables[8][256]`).
+
+pub(crate) static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation)
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.169s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean. Now verifying the symbol diff and behavioural equivalence against the C library.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d && nm -D --defined-only /tmp/cbuild_uqtH9d/libharvest-work-uqtH9d.so | awk '{print $3}' | sort > /tmp/c_syms.txt && nm -D --defined-only translation/target/release/libharvest_translation.so | awk '{print $3}' | sort > /tmp/rust_syms_all.txt && echo "=== C symbols ===" && cat /tmp/c_syms.txt && echo "=== Rust exported (non-std) ===" && cat /tmp/rust_syms_all.txt && echo "=== MISSING from Rust ===" && comm -23 /tmp/c_syms.txt /tmp/rust_syms_all.txt && echo "(end)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbol lists
+
+=== C symbols ===
+crc16
+=== Rust exported (non-std) ===
+crc16
+=== MISSING from Rust ===
+(end)
+[38;5;244m - Completed in 0.38s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/difftest.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <dlfcn.h>
+
+typedef uint16_t (*crc16_fn)(const uint8_t*, uint32_t, uint16_t);
+
+static uint32_t rs = 0x12345678u;
+static uint32_t nextr(void){ rs ^= rs<<13; rs ^= rs>>17; rs ^= rs<<5; return rs; }
+
+int main(int argc, char** argv){
+    void *hc = dlopen(argv[1], RTLD_NOW), *hr = dlopen(argv[2], RTLD_NOW);
+    if(!hc||!hr){ fprintf(stderr,"dlopen: %s\n", dlerror()); return 2; }
+    crc16_fn c = (crc16_fn)dlsym(hc,"crc16");
+    crc16_fn r = (crc16_fn)dlsym(hr,"crc16");
+    if(!c||!r){ fprintf(stderr,"dlsym failed\n"); return 2; }
+
+    uint8_t buf[4096];
+    long fails=0, cases=0;
+
+    /* zero-length, NULL pointer */
+    if(c(NULL,0,0) != r(NULL,0,0)){ printf("FAIL null/0\n"); fails++; } cases++;
+    for(uint32_t seed=0; seed<0x10000u; seed+=0x101u){
+        if(c(NULL,0,(uint16_t)seed) != r(NULL,0,(uint16_t)seed)){ printf("FAIL null/0 seed %u\n",seed); fails++; } cases++;
+    }
+
+    /* exhaustive single byte x seed sample */
+    for(int b=0;b<256;b++){
+        buf[0]=(uint8_t)b;
+        for(uint32_t s=0;s<0x10000u;s+=0x1111u){
+            uint16_t seed=(uint16_t)s;
+            if(c(buf,1,seed)!=r(buf,1,seed)){ printf("FAIL b=%d s=%u\n",b,seed); fails++; } cases++;
+        }
+    }
+
+    /* all lengths 0..1024 with random data and random seeds */
+    for(uint32_t len=0; len<=1024; len++){
+        for(int rep=0; rep<3; rep++){
+            for(uint32_t i=0;i<len;i++) buf[i]=(uint8_t)(nextr()>>7);
+            uint16_t seed=(uint16_t)nextr();
+            uint16_t a=c(buf,len,seed), bb=r(buf,len,seed);
+            if(a!=bb){ printf("FAIL len=%u rep=%d seed=%u -> C=%04x R=%04x\n",len,rep,seed,a,bb); fails++; }
+            cases++;
+        }
+    }
+
+    /* patterned data: all 0x00, all 0xFF, incrementing */
+    for(uint32_t len=0; len<=300; len++){
+        memset(buf,0x00,len); if(c(buf,len,0xFFFF)!=r(buf,len,0xFFFF)){printf("FAIL zeros len=%u\n",len);fails++;} cases++;
+        memset(buf,0xFF,len); if(c(buf,len,0x0000)!=r(buf,len,0x0000)){printf("FAIL ones len=%u\n",len);fails++;} cases++;
+        for(uint32_t i=0;i<len;i++) buf[i]=(uint8_t)i;
+        if(c(buf,len,0xABCD)!=r(buf,len,0xABCD)){printf("FAIL inc len=%u\n",len);fails++;} cases++;
+    }
+
+    /* large buffers */
+    for(int rep=0; rep<200; rep++){
+        for(uint32_t i=0;i<4096;i++) buf[i]=(uint8_t)(nextr()>>11);
+        uint16_t seed=(uint16_t)nextr();
+        if(c(buf,4096,seed)!=r(buf,4096,seed)){printf("FAIL big rep=%d\n",rep);fails++;} cases++;
+    }
+
+    printf("cases=%ld fails=%ld\n", cases, fails);
+    return fails?1:0;
+}
+EOF
+gcc -O2 -o /tmp/difftest /tmp/difftest.c -ldl && /tmp/difftest /tmp/cbuild_uqtH9d/libharvest-work-uqtH9d.so /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation/target/release/libharvest_translation.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C .so vs Rust .so across many inputs
+
+cases=8531 fails=0
+[38;5;244m - Completed in 0.86s[0m
+
+[?25l[0m[38;5;141m> [0mLet me verify the extracted tables are numerically identical to the C header, rather than relying on statistical coverage.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d && python3 - <<'EOF'
+import re
+h = open('c_src/include/lib.h').read()
+h = h[h.index('tflac_crc16_tables[8][256] = {'):]
+h = h[:h.index('};')+2]
+cnums = [int(x,16) for x in re.findall(r'0x[0-9a-fA-F]+', h)]
+
+r = open('translation/src/tables.rs').read()
+r = r[r.index('= ['):]
+rnums = [int(x,16) for x in re.findall(r'0x[0-9a-fA-F]+', r)]
+
+print("C count:", len(cnums), "Rust count:", len(rnums))
+assert len(cnums) == 2048 and len(rnums) == 2048
+diffs = [(i, cnums[i], rnums[i]) for i in range(2048) if cnums[i] != rnums[i]]
+print("table value mismatches:", len(diffs))
+print("identical:", cnums == rnums)
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify Rust tables match C header exactly
+
+C count: 2048 Rust count: 2048
+table value mismatches: 0
+identical: True
+[38;5;244m - Completed in 0.24s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/sweep.c <<'EOF'
+#include <stdio.h>
+#include <stdint.h>
+#include <dlfcn.h>
+typedef uint16_t (*fn)(const uint8_t*, uint32_t, uint16_t);
+int main(int argc,char**argv){
+  void*hc=dlopen(argv[1],RTLD_NOW),*hr=dlopen(argv[2],RTLD_NOW);
+  fn c=(fn)dlsym(hc,"crc16"), r=(fn)dlsym(hr,"crc16");
+  long cases=0,fails=0; uint8_t b[8]={0};
+  /* sweep every byte position 0..7 over all 256 values, and seed over all 65536 high/low combos sampled */
+  for(int pos=0;pos<8;pos++){
+    for(int v=0;v<256;v++){
+      for(int k=0;k<8;k++) b[k]=0;
+      b[pos]=(uint8_t)v;
+      for(uint32_t s=0;s<65536;s+=257){
+        uint16_t seed=(uint16_t)s;
+        if(c(b,8,seed)!=r(b,8,seed)){printf("FAIL pos=%d v=%d s=%u\n",pos,v,seed);fails++;}
+        cases++;
+      }
+    }
+  }
+  /* exhaustive seed sweep on a fixed 8-byte block: covers tables[7] and tables[6] indices fully */
+  for(int k=0;k<8;k++) b[k]=(uint8_t)(k*37+11);
+  for(uint32_t s=0;s<65536;s++){
+    uint16_t seed=(uint16_t)s;
+    if(c(b,8,seed)!=r(b,8,seed)){printf("FAIL seed=%u\n",s);fails++;}
+    cases++;
+  }
+  /* exhaustive seed sweep at len=1 for every byte: covers tables[0] fully */
+  for(int v=0;v<256;v++){
+    uint8_t one=(uint8_t)v;
+    for(uint32_t s=0;s<65536;s+=13){
+      uint16_t seed=(uint16_t)s;
+      if(c(&one,1,seed)!=r(&one,1,seed)){printf("FAIL one v=%d s=%u\n",v,s);fails++;}
+      cases++;
+    }
+  }
+  printf("cases=%ld fails=%ld\n",cases,fails); return fails?1:0;
+}
+EOF
+gcc -O2 -o /tmp/sweep /tmp/sweep.c -ldl && /tmp/sweep /tmp/cbuild_uqtH9d/libharvest-work-uqtH9d.so /local/home/scheschb/.harvest/work/harvest-work-uqtH9d/translation/target/release/libharvest_translation.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Exhaustive sweep differential test covering all table indices
+
+cases=1880576 fails=0
+[38;5;244m - Completed in 0.70s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d && echo "=== c_src unchanged (only 3 original files, no build artifacts) ===" && find c_src -type f -newermt '-10 minutes' | sed 's/^/MODIFIED: /' ; find c_src -type f | sort && echo "=== translation tree ===" && find translation -maxdepth 2 -not -path 'translation/target*' | sort && echo "=== crate-type check ===" && grep -A2 '\[lib\]' translation/Cargo.toml && echo "=== final rebuild ===" && cd translation && cargo build --release 2>&1 | tail -3 && ls -la target/release/*.so && rm -f /tmp/difftest /tmp/difftest.c /tmp/sweep /tmp/sweep.c /tmp/c_syms.txt /tmp/rust_syms_all.txt && rm -rf /tmp/cbuild_uqtH9d /tmp/cbuild && echo "temp files cleaned"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification and cleanup
+
+=== c_src unchanged (only 3 original files, no build artifacts) ===
+MODIFIED: c_src/CMakeLists.txt
+MODIFIED: c_src/include/lib.h
+MODIFIED: c_src/src/lib.c
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+=== translation tree ===
+translation
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src
+translation/src/lib.rs
+translation/src/tables.rs
+=== crate-type check ===
+[lib]
+name = "harvest_translation"
+crate-type = ["cdylib"]
+=== final rebuild ===
+    Finished `release` profile [optimized] target(s) in 0.01s
+-rwxr-xr-x. 2 scheschb amazon 406232 Sep  1 05:07 target/release/libharvest_translation.so
+temp files cleaned
+[38;5;244m - Completed in 0.46s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-uqtH9d && wc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c && stat -c '%n mtime=%y' c_src/src/lib.c c_src/include/lib.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src files untouched
+
+   15 c_src/CMakeLists.txt
+  282 c_src/include/lib.h
+   20 c_src/src/lib.c
+  317 total
+c_src/src/lib.c mtime=2026-09-01 05:06:01.893783136 +0000
+c_src/include/lib.h mtime=2026-09-01 05:06:01.893783136 +0000
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+[1mScope of the C library.[22m It turned out to be small: [38;5;10mc_src/[0m contains exactly three files — [38;5;10mCMakeLists.txt[0m, [38;5;10minclude/lib.h[0m (282 lines, almost entirely a [38;5;10mstatic const tflac_u16 tflac_crc16_tables[8][256][0m slice-by-8 CRC-16 lookup table), and [38;5;10msrc/lib.c[0m (20 lines, one function). I built the C library with CMake and ran [38;5;10mnm -D --defined-only[0m: the shared object exports a single symbol, [38;5;10mcrc16[0m. The tables are [38;5;10mstatic const[0m, so they have internal linkage and are not part of the ABI. There are no namespace-renaming macros in the header, so the linker name is the plain source name.[0m[0m
+[0m[0m
+[1mRust crate[22m ([38;5;10mtranslation/[0m):[0m[0m
+- [38;5;10mCargo.toml[0m — [38;5;10mcrate-type = ["cdylib"][0m.[0m[0m
+- [38;5;10msrc/tables.rs[0m — the 2048 table values, machine-extracted from the header rather than hand-typed.[0m[0m
+- [38;5;10msrc/lib.rs[0m — [38;5;10mcrc16[0m as [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C" fn(*const u8, u32, u16) -> u16[0m, preserving the C loop structure, table indices, and the promotion/truncation behaviour of [38;5;10mcrc16 ^= d[0] << 8 | d[1][0m and [38;5;10mcrc16 = (crc16 << 8) ^ ...[0m (explicit [38;5;10mwrapping_shl[0m/[38;5;10mwrapping_sub[0m, since the C [38;5;10m<<[0m on a promoted [38;5;10mint[0m is truncated back into [38;5;10mtflac_u16[0m and [38;5;10mwhile (len--)[0m wraps [38;5;10mlen[0m on exit).[0m[0m
+[0m[0m
+[1mVerification I ran myself:[22m[0m[0m
+- Symbol diff: [38;5;10mcomm -23[0m of the C and Rust export lists is empty — [38;5;10mcrc16[0m in both, nothing missing.[0m[0m
+- Table equality: parsed all 2048 values from both [38;5;10mlib.h[0m and [38;5;10mtables.rs[0m and compared numerically — 0 mismatches, lists identical.[0m[0m
+- Differential testing via [38;5;10mdlopen[0m of both [38;5;10m.so[0m files, comparing return values: 8,531 cases (NULL/zero-length, all 256 single-byte values across many seeds, every length 0–1024 with random data, all-zero/all-ones/incrementing patterns, 4 KiB buffers) plus a 1,880,576-case sweep that exercises every index of all eight tables, including an exhaustive 0–65535 seed sweep. Zero mismatches.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified — line counts and mtimes are unchanged; the C build ran out of a separate directory under [38;5;10m/tmp[0m, which I removed along with the test harnesses.[0m[0m
+[38;5;8m
+ ▸ Credits: 6.95 • Time: 2m 31s
+
+[0m[1G[0m[0m[?25h

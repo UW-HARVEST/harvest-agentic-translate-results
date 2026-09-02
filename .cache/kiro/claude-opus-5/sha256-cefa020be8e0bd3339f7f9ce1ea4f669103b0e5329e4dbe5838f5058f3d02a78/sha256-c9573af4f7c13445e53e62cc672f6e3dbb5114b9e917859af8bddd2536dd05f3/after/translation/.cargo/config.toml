@@ -1,0 +1,9 @@
+# The differential harness captures file descriptor 1 to observe what the two
+# `.so`s print. `dup2` on fd 1 is process-global, so the test runner's own
+# progress lines ("test foo ... ok"), written from the runner's thread, would
+# otherwise land inside a capture window and be mistaken for library output.
+# Running the tests on a single thread keeps runner output strictly outside every
+# capture window. `tests/common/mod.rs` additionally detects and retries any
+# capture that still comes back contaminated.
+[env]
+RUST_TEST_THREADS = "1"

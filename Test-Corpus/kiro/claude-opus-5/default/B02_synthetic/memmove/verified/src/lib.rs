@@ -23,37 +23,32 @@
  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! Faithful Rust translation of `c_src/src/lib.c`.
+//! Direct translation of `c_src/src/lib.c`.
 //!
-//! The C code operates on a raw `uint8_t *`. `compact_runs` can legitimately
-//! grow the logical length past the caller's 256-byte array (when the run
-//! threshold is 1, every single-element run expands to two bytes), which is a
-//! buffer overflow in the original program. To keep that path deterministic and
-//! memory-safe here, callers hand in an over-allocated, zero-filled slice (see
-//! `BUFFER_CAPACITY`); the algorithms themselves are reproduced verbatim,
-//! including the behaviours that are bugs in the original:
+//! Every quirk of the original implementation (including behaviour that looks
+//! like a bug, e.g. the two rotation branches rotating in opposite directions,
+//! or `interleave_halves` dropping the last element of an odd-length buffer) is
+//! reproduced verbatim.
 //!
-//! * `rotate_buffer` rotates *left* on the small-offset path but *right* on the
-//!   large-offset path.
-//! * `compact_runs` caps a run at 255 but still advances by the capped amount.
-//! * `interleave_halves` reads second-half bytes that earlier iterations of the
-//!   same loop have already overwritten, and the odd-length fixup copies the
-//!   already-overwritten `buf[half]`.
-
-/// Upper bound on how far the C code can index past the start of the buffer.
-///
-/// `main` declares `uint8_t buffer[256]`, but `compact_runs` can at most double
-/// the logical length (each growing iteration adds one byte while consuming two
-/// read positions), so 512 bytes are reachable. 1024 leaves head room.
-pub const BUFFER_CAPACITY: usize = 1024;
+//! Note on buffer sizing: `compact_runs` in the C original can *grow* the
+//! logical length (a threshold of 1 turns every single-byte run into a
+//! `value, count` pair), which makes the C code write past the end of the
+//! caller's 256-byte array. The growth is bounded by `2 * length`, so callers
+//! here pass a slice with room for `2 * length` bytes and the extra writes land
+//! in real storage instead of clobbering unrelated memory.
 
 /// Main entrance function - processes buffer based on operation flags
 ///
-/// * bit 0: rotate buffer
-/// * bit 1: compact runs
-/// * bit 2: remove duplicates
-/// * bit 3: interleave halves
-/// * bit 4: reverse segments
+/// * `buffer` - Input/output buffer
+/// * `length` - Buffer length
+/// * `flags`  - Bit flags:
+///   - bit 0: rotate buffer
+///   - bit 1: compact runs
+///   - bit 2: remove duplicates
+///   - bit 3: interleave halves
+///   - bit 4: reverse segments
+/// * `param1` - Operation-specific parameter (rotation offset, run threshold, segment size)
+/// * `param2` - Secondary parameter (preserve order flag, etc)
 ///
 /// Returns the new buffer length after processing.
 pub fn process_buffer(
@@ -65,8 +60,9 @@ pub fn process_buffer(
 ) -> usize {
     let mut new_len = length;
 
-    /* buffer == NULL is not representable here; length == 0 is. */
-    if length == 0 {
+    // `buffer == NULL` cannot happen with a slice; the `length == 0` half of the
+    // original guard is kept, and an empty slice is treated the same way.
+    if buffer.is_empty() || length == 0 {
         return 0;
     }
 
@@ -96,12 +92,12 @@ pub fn process_buffer(
     }
 
     /* Conditional chaining based on length */
-    if flags & 0x08 != 0 && new_len >= 2 {
+    if (flags & 0x08 != 0) && new_len >= 2 {
         /* Interleave */
         interleave_halves(buffer, new_len);
     }
 
-    if flags & 0x10 != 0 && new_len >= 4 {
+    if (flags & 0x10 != 0) && new_len >= 4 {
         /* Reverse segments */
         let seg_size: usize = if param1 > 0 { param1 as usize } else { 4 };
         if seg_size <= new_len {
@@ -113,60 +109,64 @@ pub fn process_buffer(
 }
 
 /// Rotate buffer by offset positions (positive = right, negative = left)
+/// Uses multiple memmove operations with different patterns
 ///
-/// Reproduces the original asymmetry: the small-offset path performs a left
-/// rotation while the large-offset path performs a right rotation.
-fn rotate_buffer(buf: &mut [u8], len: usize, offset: i32) {
+/// (The doc comment above is the original's; the small-offset branch actually
+/// rotates left while the large-offset branch rotates right. Preserved as-is.)
+fn rotate_buffer(buf: &mut [u8], len: usize, offset_in: i32) {
     if len <= 1 {
         return;
     }
 
     /* Normalize offset */
-    let mut offset = offset.wrapping_rem(len as i32);
+    let mut offset = offset_in.wrapping_rem(len as i32);
     if offset < 0 {
-        /* C: `offset += len` with size_t promotion, which lands back on
-         * offset + len for the ranges reachable here. */
-        offset = offset.wrapping_add(len as i32);
+        // C: `offset += len;` (unsigned arithmetic truncated back to int)
+        offset = (offset as i64 + len as i64) as i32;
     }
     if offset == 0 {
         return;
     }
-    let offset = offset as usize;
 
     /* Use reversal algorithm with memmove */
     let mut temp = [0u8; 256];
-    let chunk = if offset < 256 { offset } else { 256 };
+    let offset_u = offset as usize;
+    let chunk: usize = if offset < 256 { offset as usize } else { 256 };
 
-    if offset < len / 2 {
+    if offset_u < len / 2 {
         /* Small offset: move prefix aside, shift main part, restore prefix */
-        let mut i = 0usize;
-        while i < offset {
-            let copy_len = if offset - i < chunk { offset - i } else { chunk };
-            /* memmove(temp, buf + i, copy_len) */
+        let mut i: usize = 0;
+        while i < offset_u {
+            let copy_len = if offset_u - i < chunk {
+                offset_u - i
+            } else {
+                chunk
+            };
             temp[..copy_len].copy_from_slice(&buf[i..i + copy_len]);
-            /* memmove(buf + i, buf + offset, len - offset) */
-            buf.copy_within(offset..len, i);
-            /* memmove(buf + len - offset, temp, copy_len) */
-            buf[len - offset..len - offset + copy_len].copy_from_slice(&temp[..copy_len]);
+            buf.copy_within(offset_u..len, i);
+            let dst = len - offset_u;
+            buf[dst..dst + copy_len].copy_from_slice(&temp[..copy_len]);
             i += chunk;
         }
     } else {
         /* Large offset: work from the right */
-        let shift = len - offset;
+        let shift = len - offset_u;
         temp[..shift].copy_from_slice(&buf[..shift]);
-        buf.copy_within(shift..shift + offset, 0);
-        buf[offset..offset + shift].copy_from_slice(&temp[..shift]);
+        buf.copy_within(shift..shift + offset_u, 0);
+        buf[offset_u..offset_u + shift].copy_from_slice(&temp[..shift]);
     }
 }
 
 /// Compact consecutive runs of same value if run length >= threshold
-fn compact_runs(buf: &mut [u8], mut len: usize, threshold: u8) -> usize {
-    let mut read = 0usize;
-    let mut write = 0usize;
+/// Complex nested loops with multiple data paths
+fn compact_runs(buf: &mut [u8], len_in: usize, threshold: u8) -> usize {
+    let mut len = len_in;
+    let mut read: usize = 0;
+    let mut write: usize = 0;
 
     while read < len {
         let current = buf[read];
-        let mut run_len = 1usize;
+        let mut run_len: usize = 1;
 
         /* Count run length */
         while read + run_len < len && buf[read + run_len] == current {
@@ -212,9 +212,9 @@ fn remove_duplicates(buf: &mut [u8], len: usize, preserve_order: bool) -> usize 
 
     if preserve_order {
         /* Preserve order: O(n^2) but maintains sequence */
-        let mut write = 1usize;
+        let mut write: usize = 1;
         for i in 1..len {
-            let mut j = 0usize;
+            let mut j: usize = 0;
             while j < write {
                 if buf[i] == buf[j] {
                     break;
@@ -230,9 +230,9 @@ fn remove_duplicates(buf: &mut [u8], len: usize, preserve_order: bool) -> usize 
         }
         write
     } else {
-        /* Don't preserve order: sort-like approach with swaps */
+        /* Don't preserve order: sort-like approach with memmove */
         let mut seen = [0u8; 256];
-        let mut write = 0usize;
+        let mut write: usize = 0;
 
         for i in 0..len {
             if seen[buf[i] as usize] == 0 {
@@ -251,6 +251,7 @@ fn remove_duplicates(buf: &mut [u8], len: usize, preserve_order: bool) -> usize 
 }
 
 /// Interleave first and second halves of buffer
+/// Complex memmove pattern with temporary storage
 fn interleave_halves(buf: &mut [u8], len: usize) {
     if len < 2 {
         return;
@@ -265,8 +266,6 @@ fn interleave_halves(buf: &mut [u8], len: usize) {
         temp[..half].copy_from_slice(&buf[..half]);
 
         for i in 0..half {
-            /* memmove(buf + i * 2 + 1, buf + half + i, 1) -- note this reads
-             * bytes that previous iterations may already have clobbered. */
             buf[i * 2 + 1] = buf[half + i];
             buf[i * 2] = temp[i];
         }
@@ -280,7 +279,6 @@ fn interleave_halves(buf: &mut [u8], len: usize) {
             let dst = i * 2 + 1;
             if dst < src {
                 let val = buf[src];
-                /* memmove(buf + dst + 1, buf + dst, src - dst) */
                 buf.copy_within(dst..src, dst + 1);
                 buf[dst] = val;
             }
@@ -289,6 +287,7 @@ fn interleave_halves(buf: &mut [u8], len: usize) {
 }
 
 /// Reverse buffer in fixed-size segments
+/// Nested loops with conditional memmove operations
 fn reverse_segments(buf: &mut [u8], len: usize, seg_size: usize) {
     if seg_size <= 1 || len < seg_size {
         return;
@@ -301,7 +300,7 @@ fn reverse_segments(buf: &mut [u8], len: usize, seg_size: usize) {
     for seg in 0..num_segments {
         let base = seg * seg_size;
 
-        /* Reverse within segment */
+        /* Reverse within segment using memmove */
         for i in 0..(seg_size / 2) {
             let left = base + i;
             let right = base + seg_size - 1 - i;

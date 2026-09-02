@@ -1,26 +1,23 @@
-//! Shared helpers corresponding to `libsodium/include/sodium/private/common.h`.
-//!
-//! `NATIVE_LITTLE_ENDIAN` / `NATIVE_BIG_ENDIAN` are *not* defined by the
-//! reference build, so the portable byte-shuffling variants are reproduced.
+//! Translation of `include/sodium/private/common.h` helpers.
 
 #[inline(always)]
 pub fn rotl32(x: u32, b: i32) -> u32 {
-    x.rotate_left(b as u32)
+    (x << b) | (x >> (32 - b))
 }
 
 #[inline(always)]
 pub fn rotl64(x: u64, b: i32) -> u64 {
-    x.rotate_left(b as u32)
+    (x << b) | (x >> (64 - b))
 }
 
 #[inline(always)]
 pub fn rotr32(x: u32, b: i32) -> u32 {
-    x.rotate_right(b as u32)
+    (x >> b) | (x << (32 - b))
 }
 
 #[inline(always)]
 pub fn rotr64(x: u64, b: i32) -> u64 {
-    x.rotate_right(b as u32)
+    (x >> b) | (x << (64 - b))
 }
 
 #[inline(always)]
@@ -134,5 +131,39 @@ pub unsafe fn xor_buf(out: *mut u8, inp: *const u8, n: usize) {
     }
 }
 
-/// `SODIUM_SIZE_MAX` == min(UINT64_MAX, SIZE_MAX) == usize::MAX on 64-bit.
+/// `SODIUM_SIZE_MAX` = min(UINT64_MAX, SIZE_MAX)
 pub const SODIUM_SIZE_MAX: usize = usize::MAX;
+
+/// C `memcpy` equivalent for byte buffers.
+#[inline(always)]
+pub unsafe fn memcpy(dst: *mut u8, src: *const u8, n: usize) {
+    if n != 0 {
+        core::ptr::copy_nonoverlapping(src, dst, n);
+    }
+}
+
+#[inline(always)]
+pub unsafe fn memmove(dst: *mut u8, src: *const u8, n: usize) {
+    if n != 0 {
+        core::ptr::copy(src, dst, n);
+    }
+}
+
+#[inline(always)]
+pub unsafe fn memset(dst: *mut u8, v: u8, n: usize) {
+    if n != 0 {
+        core::ptr::write_bytes(dst, v, n);
+    }
+}
+
+#[inline(always)]
+pub unsafe fn memcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
+    for i in 0..n {
+        let x = *a.add(i);
+        let y = *b.add(i);
+        if x != y {
+            return if x < y { -1 } else { 1 };
+        }
+    }
+    0
+}

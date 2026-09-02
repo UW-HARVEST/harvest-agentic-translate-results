@@ -1,50 +1,44 @@
-// Translation of c_src/src/jsintern.c
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
+//! Translation of src/jsintern.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
 
-use crate::common::*;
-use crate::jsrun::*;
-use crate::types::*;
-use crate::js_rangeerror;
-use std::ffi::{c_char, c_int, c_void};
-use std::ptr;
+use crate::jsi::*;
+use crate::jsrun::{js_free, js_malloc, js_realloc};
+use core::ptr::null_mut;
 
 /* Dynamically grown string buffer */
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_putc(J: *mut js_State, sbp: *mut *mut js_Buffer, c: c_int) {
     unsafe {
-        let mut sb = *sbp;
+        let mut sb: *mut js_Buffer = *sbp;
         if sb.is_null() {
-            sb = js_malloc(J, std::mem::size_of::<js_Buffer>() as c_int) as *mut js_Buffer;
+            sb = js_malloc(J, core::mem::size_of::<js_Buffer>() as c_int) as *mut js_Buffer;
             (*sb).n = 0;
-            (*sb).m = 64; /* sizeof sb->s */
+            (*sb).m = core::mem::size_of::<[c_char; 64]>() as c_int;
             *sbp = sb;
         } else if (*sb).n == (*sb).m {
             (*sb).m *= 2;
             sb = js_realloc(
                 J,
                 sb as *mut c_void,
-                (*sb).m + std::mem::offset_of!(js_Buffer, s) as c_int,
+                (*sb).m + JS_BUFFER_SOFF,
             ) as *mut js_Buffer;
             *sbp = sb;
         }
-        let s = (&raw mut (*sb).s) as *mut c_char;
-        *s.offset((*sb).n as isize) = c as c_char;
+        *sbs(sb).offset((*sb).n as isize) = c as c_char;
         (*sb).n += 1;
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn js_puts(
-    J: *mut js_State,
-    sb: *mut *mut js_Buffer,
-    s: *const c_char,
-) {
+pub unsafe extern "C-unwind" fn js_puts(J: *mut js_State, sb: *mut *mut js_Buffer, mut s: *const c_char) {
     unsafe {
-        let mut s = s;
         while *s != 0 {
             js_putc(J, sb, *s as c_int);
-            s = s.add(1);
+            s = s.offset(1);
         }
     }
 }
@@ -53,36 +47,43 @@ pub unsafe extern "C-unwind" fn js_puts(
 pub unsafe extern "C-unwind" fn js_putm(
     J: *mut js_State,
     sb: *mut *mut js_Buffer,
-    s: *const c_char,
+    mut s: *const c_char,
     e: *const c_char,
 ) {
     unsafe {
-        let mut s = s;
         while s < e {
             js_putc(J, sb, *s as c_int);
-            s = s.add(1);
+            s = s.offset(1);
         }
     }
 }
 
 /* Use an AA-tree to quickly look up interned strings. */
 
-static mut JSS_SENTINEL: js_StringNode = js_StringNode {
-    left: ptr::null_mut(),
-    right: ptr::null_mut(),
+/* struct js_StringNode is declared in crate::jsi (fields left, right, level, string). */
+
+static mut jsS_sentinel: js_StringNode = js_StringNode {
+    left: null_mut(),
+    right: null_mut(),
     level: 0,
     string: [0],
 };
 
-#[inline]
-unsafe fn jsS_sentinel() -> *mut js_StringNode {
+/* The C file declares a self-referential file-scope sentinel:
+ *   static js_StringNode jsS_sentinel = { &jsS_sentinel, &jsS_sentinel, 0, "" };
+ * Rust cannot express the self reference in a `static` initialiser, so we lazily
+ * fix up left/right to point at the sentinel itself on first use and return its
+ * address.  jsS_skew/jsS_split dereference node->left->level and
+ * node->right->right->level, so the sentinel's left and right MUST point at the
+ * sentinel itself. */
+unsafe fn sentinel() -> *mut js_StringNode {
     unsafe {
-        let p = &raw mut JSS_SENTINEL;
-        if (*p).left.is_null() {
-            (*p).left = p;
-            (*p).right = p;
+        let s = &raw mut jsS_sentinel;
+        if (*s).left.is_null() {
+            (*s).left = s;
+            (*s).right = s;
         }
-        p
+        s
     }
 }
 
@@ -92,30 +93,24 @@ unsafe fn jsS_newstringnode(
     result: *mut *const c_char,
 ) -> *mut js_StringNode {
     unsafe {
-        let n = strlen(string);
-        if n > JS_STRLIMIT {
-            js_rangeerror!(J, c"invalid string length");
+        let n: size_t = strlen(string);
+        if n as c_int > JS_STRLIMIT {
+            js_rangeerror!(J, c"invalid string length".as_ptr());
         }
-        let node = js_malloc(
-            J,
-            std::mem::offset_of!(js_StringNode, string) as c_int + n as c_int + 1,
-        ) as *mut js_StringNode;
-        (*node).left = jsS_sentinel();
-        (*node).right = jsS_sentinel();
+        let node: *mut js_StringNode =
+            js_malloc(J, JS_STRINGNODE_STROFF + n as c_int + 1) as *mut js_StringNode;
+        (*node).left = sentinel();
+        (*node).right = sentinel();
         (*node).level = 1;
-        memcpy(
-            (&raw mut (*node).string) as *mut c_void,
-            string as *const c_void,
-            n + 1,
-        );
-        *result = (&raw const (*node).string) as *const c_char;
+        let nodestr = (&raw mut (*node).string) as *mut c_char;
+        memcpy(nodestr as *mut c_void, string as *const c_void, n + 1);
+        *result = nodestr;
         node
     }
 }
 
-unsafe fn jsS_skew(node: *mut js_StringNode) -> *mut js_StringNode {
+unsafe fn jsS_skew(mut node: *mut js_StringNode) -> *mut js_StringNode {
     unsafe {
-        let mut node = node;
         if (*(*node).left).level == (*node).level {
             let temp = node;
             node = (*node).left;
@@ -126,9 +121,8 @@ unsafe fn jsS_skew(node: *mut js_StringNode) -> *mut js_StringNode {
     }
 }
 
-unsafe fn jsS_split(node: *mut js_StringNode) -> *mut js_StringNode {
+unsafe fn jsS_split(mut node: *mut js_StringNode) -> *mut js_StringNode {
     unsafe {
-        let mut node = node;
         if (*(*(*node).right).right).level == (*node).level {
             let temp = node;
             node = (*node).right;
@@ -142,13 +136,12 @@ unsafe fn jsS_split(node: *mut js_StringNode) -> *mut js_StringNode {
 
 unsafe fn jsS_insert(
     J: *mut js_State,
-    node: *mut js_StringNode,
+    mut node: *mut js_StringNode,
     string: *const c_char,
     result: *mut *const c_char,
 ) -> *mut js_StringNode {
     unsafe {
-        if node != jsS_sentinel() {
-            let mut node = node;
+        if node != sentinel() {
             let c = strcmp(string, (&raw const (*node).string) as *const c_char);
             if c < 0 {
                 (*node).left = jsS_insert(J, (*node).left, string, result);
@@ -168,20 +161,18 @@ unsafe fn jsS_insert(
 
 unsafe fn dumpstringnode(node: *mut js_StringNode, level: c_int) {
     unsafe {
-        if (*node).left != jsS_sentinel() {
+        let mut i: c_int;
+        if (*node).left != sentinel() {
             dumpstringnode((*node).left, level + 1);
         }
         printf(c"%d: ".as_ptr(), (*node).level);
-        let mut i = 0;
+        i = 0;
         while i < level {
-            putchar(b'\t' as c_int);
+            putchar('\t' as c_int);
             i += 1;
         }
-        printf(
-            c"'%s'\n".as_ptr(),
-            (&raw const (*node).string) as *const c_char,
-        );
-        if (*node).right != jsS_sentinel() {
+        printf(c"'%s'\n".as_ptr(), (&raw const (*node).string) as *const c_char);
+        if (*node).right != sentinel() {
             dumpstringnode((*node).right, level + 1);
         }
     }
@@ -190,9 +181,9 @@ unsafe fn dumpstringnode(node: *mut js_StringNode, level: c_int) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn jsS_dumpstrings(J: *mut js_State) {
     unsafe {
-        let root = (*J).strings;
+        let root: *mut js_StringNode = (*J).strings;
         printf(c"interned strings {\n".as_ptr());
-        if !root.is_null() && root != jsS_sentinel() {
+        if !root.is_null() && root != sentinel() {
             dumpstringnode(root, 1);
         }
         printf(c"}\n".as_ptr());
@@ -201,10 +192,10 @@ pub unsafe extern "C-unwind" fn jsS_dumpstrings(J: *mut js_State) {
 
 unsafe fn jsS_freestringnode(J: *mut js_State, node: *mut js_StringNode) {
     unsafe {
-        if (*node).left != jsS_sentinel() {
+        if (*node).left != sentinel() {
             jsS_freestringnode(J, (*node).left);
         }
-        if (*node).right != jsS_sentinel() {
+        if (*node).right != sentinel() {
             jsS_freestringnode(J, (*node).right);
         }
         js_free(J, node as *mut c_void);
@@ -214,7 +205,7 @@ unsafe fn jsS_freestringnode(J: *mut js_State, node: *mut js_StringNode) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn jsS_freestrings(J: *mut js_State) {
     unsafe {
-        if !(*J).strings.is_null() && (*J).strings != jsS_sentinel() {
+        if !(*J).strings.is_null() && (*J).strings != sentinel() {
             jsS_freestringnode(J, (*J).strings);
         }
     }
@@ -223,11 +214,11 @@ pub unsafe extern "C-unwind" fn jsS_freestrings(J: *mut js_State) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_intern(J: *mut js_State, s: *const c_char) -> *const c_char {
     unsafe {
-        let mut result: *const c_char = ptr::null();
+        let mut result: *const c_char = core::ptr::null();
         if (*J).strings.is_null() {
-            (*J).strings = jsS_sentinel();
+            (*J).strings = sentinel();
         }
-        (*J).strings = jsS_insert(J, (*J).strings, s, &mut result);
+        (*J).strings = jsS_insert(J, (*J).strings, s, &raw mut result);
         result
     }
 }

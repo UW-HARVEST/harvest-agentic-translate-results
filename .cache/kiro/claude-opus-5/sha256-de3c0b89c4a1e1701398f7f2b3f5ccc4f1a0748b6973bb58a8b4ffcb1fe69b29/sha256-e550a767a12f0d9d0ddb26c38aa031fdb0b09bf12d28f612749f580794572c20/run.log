@@ -1,0 +1,601 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory and C source files
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 06:34 .
+drwxr-xr-x. 525 scheschb amazon 81920 Sep  1 06:34 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 06:34 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 06:34 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 06:34 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  15 c_src/CMakeLists.txt
+  22 c_src/include/lib.h
+  52 c_src/src/lib.c
+  89 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1608 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 3 files. Let me build the C version to enumerate the exact ABI.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Y4lu45 && mkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && find . -name "*.so"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library with cmake
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: See cmake error
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-4E6CTX/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_y4 && mkdir -p /tmp/cbuild_y4 && cd /tmp/cbuild_y4 && cmake /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SO ===" && find . -name "*.so"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fresh cmake build of C library
+
+[ 50%] Building C object CMakeFiles/harvest-work-Y4lu45.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-Y4lu45.so
+[100%] Built target harvest-work-Y4lu45
+=== SO ===
+./libharvest-work-Y4lu45.so
+[38;5;244m - Completed in 0.397s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_y4 && nm -D --defined-only libharvest-work-Y4lu45.so | sort | tee /tmp/c_syms_raw.txt && echo "=== filtered (T/D/B) ===" && nm -D --defined-only libharvest-work-Y4lu45.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort | tee /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate exported symbols from C .so
+
+0000000000001119 T tflac_pack_u64le
+00000000000011c7 T tflac_md5_addsample
+0000000000001286 T update_md5
+=== filtered (T/D/B) ===
+tflac_md5_addsample
+tflac_pack_u64le
+update_md5
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[38;5;141m> [0mThree exports, no namespace macros. Let me verify the struct layout the C compiler uses.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && cat > lay.c <<'EOF'
+#include <stdio.h>
+#include <stddef.h>
+#include "lib.h"
+int main(void){
+  printf("md5: size=%zu pos=%zu total=%zu buffer=%zu\n", sizeof(tflac_md5), offsetof(tflac_md5,pos), offsetof(tflac_md5,total), offsetof(tflac_md5,buffer));
+  printf("tflac: size=%zu md5_ctx=%zu cur_blocksize=%zu channels=%zu\n", sizeof(tflac), offsetof(tflac,md5_ctx), offsetof(tflac,cur_blocksize), offsetof(tflac,channels));
+  return 0;
+}
+EOF
+gcc -I/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/c_src/include lay.c -o lay && ./lay[0m[38;5;244m (using tool: shell)[0m
+Purpose: Determine C struct layout/offsets
+
+md5: size=88 pos=0 total=8 buffer=16
+tflac: size=96 md5_ctx=0 cur_blocksize=88 channels=92
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_y4 && objdump -d --no-show-raw-insn libharvest-work-Y4lu45.so | sed -n '/<tflac_md5_addsample>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble tflac_md5_addsample to confirm OOB read behavior
+
+00000000000011c7 <tflac_md5_addsample>:
+    11c7:	push   %rbp
+    11c8:	mov    %rsp,%rbp
+    11cb:	sub    $0x30,%rsp
+    11cf:	mov    %rdi,-0x18(%rbp)
+    11d3:	mov    %esi,-0x1c(%rbp)
+    11d6:	mov    %rdx,-0x28(%rbp)
+    11da:	mov    -0x18(%rbp),%rax
+    11de:	mov    0x8(%rax),%rdx
+    11e2:	mov    -0x1c(%rbp),%eax
+    11e5:	add    %rax,%rdx
+    11e8:	mov    -0x18(%rbp),%rax
+    11ec:	mov    %rdx,0x8(%rax)
+    11f0:	mov    -0x1c(%rbp),%eax
+    11f3:	shr    $0x3,%eax
+    11f6:	mov    %eax,-0x4(%rbp)
+    11f9:	mov    -0x18(%rbp),%rax
+    11fd:	mov    (%rax),%eax
+    11ff:	and    $0x3f,%eax
+    1202:	mov    %eax,-0x8(%rbp)
+    1205:	mov    -0x8(%rbp),%eax
+    1208:	lea    0x10(%rax),%rdx
+    120c:	mov    -0x18(%rbp),%rax
+    1210:	add    %rax,%rdx
+    1213:	mov    -0x28(%rbp),%rax
+    1217:	mov    %rax,%rsi
+    121a:	mov    %rdx,%rdi
+    121d:	call   1040 <tflac_pack_u64le@plt>
+    1222:	mov    -0x18(%rbp),%rax
+    1226:	mov    (%rax),%edx
+    1228:	mov    -0x4(%rbp),%eax
+    122b:	add    %eax,%edx
+    122d:	mov    -0x18(%rbp),%rax
+    1231:	mov    %edx,(%rax)
+    1233:	mov    -0x18(%rbp),%rax
+    1237:	mov    (%rax),%eax
+    1239:	cmp    $0x3f,%eax
+    123c:	jbe    1283 <tflac_md5_addsample+0xbc>
+    123e:	mov    -0x18(%rbp),%rax
+    1242:	mov    (%rax),%eax
+    1244:	and    $0x3f,%eax
+    1247:	mov    %eax,%edx
+    1249:	mov    -0x18(%rbp),%rax
+    124d:	mov    %edx,(%rax)
+    124f:	mov    -0x18(%rbp),%rax
+    1253:	mov    (%rax),%eax
+    1255:	mov    %eax,-0x4(%rbp)
+    1258:	jmp    1276 <tflac_md5_addsample+0xaf>
+    125a:	mov    -0x4(%rbp),%eax
+    125d:	lea    0x40(%rax),%edx
+    1260:	mov    -0x18(%rbp),%rax
+    1264:	mov    %edx,%edx
+    1266:	movzbl 0x10(%rax,%rdx,1),%ecx
+    126b:	mov    -0x18(%rbp),%rdx
+    126f:	mov    -0x4(%rbp),%eax
+    1272:	mov    %cl,0x10(%rdx,%rax,1)
+    1276:	mov    -0x4(%rbp),%eax
+    1279:	lea    -0x1(%rax),%edx
+    127c:	mov    %edx,-0x4(%rbp)
+    127f:	test   %eax,%eax
+    1281:	jne    125a <tflac_md5_addsample+0x93>
+    1283:	nop
+    1284:	leave
+    1285:	ret
+
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: plain unchecked byte loads/stores at [38;5;10mm+0x10+idx[0m — I'll reproduce with raw pointer arithmetic. Now the crate:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-Y4lu45"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_Y4lu45"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Simplify Cargo.toml naming
+
+[49m[39m   1, 1[0m:[39m[49m [package]
+[0m[49m[38;5;9m-  2   [0m:[38;5;9m[49m name = "harvest-work-Y4lu45"
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[39m   3, 3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4, 4[0m:[39m[49m edition = "2024"
+[0m[49m[39m   5, 5[0m:[39m[49m 
+[0m[49m[39m   6, 6[0m:[39m[49m [lib]
+[0m[49m[38;5;9m-  7   [0m:[38;5;9m[49m name = "harvest_work_Y4lu45"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_y4lu45"
+[0m[49m[39m   8, 8[0m:[39m[49m crate-type = ["cdylib"]
+[0m[49m[39m   9, 9[0m:[39m[49m path = "src/lib.rs"
+[0m[49m[38;5;9m- 10   [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 11   [0m:[38;5;9m[49m [profile.release]
+[0m[49m[38;5;9m- 12   [0m:[38;5;9m[49m panic = "abort"
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate the full C library to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Public ABI reproduced (from `nm -D` on the C shared object):
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!   * `tflac_pack_u64le`
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!   * `tflac_md5_addsample`
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!   * `update_md5`
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! The C code contains several genuine defects (an out-of-bounds carry-down
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! copy in `tflac_md5_addsample`, and a `samples` pointer that advances by
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! `8 * sizeof(tflac_s32)` *elements* instead of 8 in `update_md5`). Per the
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! translation contract these are reproduced verbatim rather than fixed, so
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //! the observable byte-level behaviour matches the C build exactly.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // include/lib.h
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m pub type tflac_u8 = u8;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m pub type tflac_s32 = i32;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m pub type tflac_u32 = u32;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m pub type tflac_u64 = u64;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// `typedef tflac_u64 tflac_uint;` from src/lib.c
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m type tflac_uint = tflac_u64;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// Byte offset of `tflac_md5::buffer` within `struct tflac_md5`.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// Verified against the C ABI: `sizeof(tflac_md5) == 88`,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// `offsetof(pos) == 0`, `offsetof(total) == 8`, `offsetof(buffer) == 16`.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m const MD5_BUFFER_OFFSET: usize = 16;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m pub struct tflac_md5 {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     pub pos: tflac_u32,
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     pub total: tflac_u64,
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     pub buffer: [tflac_u8; 64 + 8],
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m pub struct tflac {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     pub md5_ctx: tflac_md5,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     pub cur_blocksize: tflac_u32,
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     pub channels: tflac_u32,
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m // src/lib.c
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// void tflac_pack_u64le(tflac_u8 *d, tflac_u64 n);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// Stores `n` as eight little-endian bytes at `d[0..8]`.
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m pub unsafe extern "C" fn tflac_pack_u64le(d: *mut tflac_u8, n: tflac_u64) {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         *d.add(0) = n as tflac_u8;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         *d.add(1) = (n >> 8) as tflac_u8;
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         *d.add(2) = (n >> 16) as tflac_u8;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         *d.add(3) = (n >> 24) as tflac_u8;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         *d.add(4) = (n >> 32) as tflac_u8;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         *d.add(5) = (n >> 40) as tflac_u8;
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         *d.add(6) = (n >> 48) as tflac_u8;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         *d.add(7) = (n >> 56) as tflac_u8;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// void tflac_md5_addsample(tflac_md5 *m, tflac_u32 bits, tflac_uint val);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// The trailing carry-down loop is a transcription of `while (bytes--)`, whose
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// condition tests the pre-decrement value while the body uses the
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// post-decrement one; indices therefore run `pos-1 .. 0`. Because `pos` can be
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// as large as 63 while `buffer` is only 72 bytes long, `buffer[64 + bytes]`
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// reads past the end of the array. The C compiler emits a plain unchecked
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// `movzbl 0x10(%rax,%rdx,1)`, so the read is reproduced here with raw pointer
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// arithmetic rooted at `m` rather than at the `buffer` field.
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m pub unsafe extern "C" fn tflac_md5_addsample(m: *mut tflac_md5, bits: tflac_u32, val: tflac_uint) {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         let mut bytes: tflac_u32;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         // ((m->total) += (tflac_u64)(bits));
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let total = core::ptr::addr_of_mut!((*m).total);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         core::ptr::write_unaligned(
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             total,
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             core::ptr::read_unaligned(total).wrapping_add(bits as tflac_u64),
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         // bytes = bits / 8;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         bytes = bits / 8;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         let pos = core::ptr::addr_of_mut!((*m).pos);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         // tflac_u32 pos2 = m->pos % 64;
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let pos2: tflac_u32 = core::ptr::read_unaligned(pos) % 64;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         // &m->buffer[0], reached through the whole-struct pointer so that the
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         // deliberately out-of-bounds accesses below keep `m`'s provenance.
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         let buffer: *mut tflac_u8 = (m as *mut tflac_u8).add(MD5_BUFFER_OFFSET);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         // tflac_pack_u64le(&m->buffer[pos2], val);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         tflac_pack_u64le(buffer.add(pos2 as usize), val);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         // m->pos += bytes;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         core::ptr::write_unaligned(pos, core::ptr::read_unaligned(pos).wrapping_add(bytes));
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         // if (m->pos >= 64) {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         if core::ptr::read_unaligned(pos) >= 64 {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             // m->pos %= 64;
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             core::ptr::write_unaligned(pos, core::ptr::read_unaligned(pos) % 64);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             // bytes = m->pos;
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             bytes = core::ptr::read_unaligned(pos);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             // while (bytes--) { m->buffer[bytes] = m->buffer[64 + bytes]; }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             while bytes != 0 {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                 bytes = bytes.wrapping_sub(1);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m                 *buffer.add(bytes as usize) = *buffer.add(64usize + bytes as usize);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m /// tflac_u32 update_md5(tflac *t, const tflac_s32 *samples);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// Five fixed iterations. Each reads eight consecutive samples, keeps the low
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m /// byte of each (the `(tflac_uint)` cast sign-extends before the `& 0xFF`) and
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m /// packs them little-endian into a 64-bit word. `samples` then advances by
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m /// `8 * sizeof(tflac_s32) == 32` *elements*, not 8 — reproduced as written.
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m pub unsafe extern "C" fn update_md5(t: *mut tflac, samples: *const tflac_s32) -> tflac_u32 {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         let mut samples = samples;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         // tflac_u32 b = t->cur_blocksize * t->channels;
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         let cur_blocksize = core::ptr::read_unaligned(core::ptr::addr_of!((*t).cur_blocksize));
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         let channels = core::ptr::read_unaligned(core::ptr::addr_of!((*t).channels));
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         let mut b: tflac_u32 = cur_blocksize.wrapping_mul(channels);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         // const tflac_u32 step = sizeof(tflac_uint);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         const STEP: tflac_u32 = core::mem::size_of::<tflac_uint>() as tflac_u32;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let md5_ctx: *mut tflac_md5 = core::ptr::addr_of_mut!((*t).md5_ctx);
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         let mut i: core::ffi::c_int = 0;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         while i <= 4 {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m             let mut v: tflac_uint = ((*samples.add(0) as tflac_uint) & 0xFF) << 0;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m             v |= ((*samples.add(1) as tflac_uint) & 0xFF) << 8;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             v |= ((*samples.add(2) as tflac_uint) & 0xFF) << 16;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             v |= ((*samples.add(3) as tflac_uint) & 0xFF) << 24;
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             v |= ((*samples.add(4) as tflac_uint) & 0xFF) << 32;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             v |= ((*samples.add(5) as tflac_uint) & 0xFF) << 40;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m             v |= ((*samples.add(6) as tflac_uint) & 0xFF) << 48;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m             v |= ((*samples.add(7) as tflac_uint) & 0xFF) << 56;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             // tflac_md5_addsample(&t->md5_ctx, (8 * sizeof(tflac_uint)), v);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             tflac_md5_addsample(
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                 md5_ctx,
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                 (8 * core::mem::size_of::<tflac_uint>()) as tflac_u32,
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                 v,
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m             // b -= step;
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m             b = b.wrapping_sub(STEP);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             // samples += (8 * sizeof(tflac_s32));
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             samples = samples.add(8 * core::mem::size_of::<tflac_s32>());
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         b
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.177s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — symbol diff:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation && SO=$(ls target/release/*.so) && echo "Rust so: $SO" && nm -D --defined-only "$SO" | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/rust_syms.txt && cat /tmp/rust_syms.txt && echo "=== DIFF (C-only '<' / Rust-only '>') ===" && diff /tmp/c_syms.txt /tmp/rust_syms.txt && echo "EMPTY DIFF - all C symbols present"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+Rust so: target/release/libharvest_work_y4lu45.so
+tflac_md5_addsample
+tflac_pack_u64le
+update_md5
+=== DIFF (C-only '<' / Rust-only '>') ===
+EMPTY DIFF - all C symbols present
+[38;5;244m - Completed in 0.24s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now a differential behavior test against the real C [38;5;10m.so[0m:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest_y4.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust shared objects
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential harness: dlopens the C .so and the Rust .so, feeds both
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // bit-identical randomized memory, and memcmp's the full arena afterwards.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #define ARENA 512
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m #define NSAMP 1024
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef uint32_t (*fn_update_md5)(void *, const int32_t *);
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m typedef void (*fn_addsample)(void *, uint32_t, uint64_t);
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m typedef void (*fn_pack)(uint8_t *, uint64_t);
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m static uint64_t rs = 0x12345678deadbeefULL;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m static uint64_t rnd(void) {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     rs ^= rs << 13; rs ^= rs >> 7; rs ^= rs << 17; return rs;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m struct api {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     fn_update_md5 update_md5;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     fn_addsample  addsample;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     fn_pack       pack;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m static void load(const char *path, struct api *a) {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     a->update_md5 = (fn_update_md5)dlsym(h, "update_md5");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     a->addsample  = (fn_addsample)dlsym(h, "tflac_md5_addsample");
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     a->pack       = (fn_pack)dlsym(h, "tflac_pack_u64le");
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     if (!a->update_md5 || !a->addsample || !a->pack) {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         fprintf(stderr, "missing symbol in %s\n", path); exit(2);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m static int fails = 0;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m static void report(const char *what, long it,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m                    unsigned char *ca, unsigned char *ra,
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m                    unsigned long long cr, unsigned long long rr) {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     if (cr != rr) {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         printf("MISMATCH ret  %s iter=%ld C=%llu Rust=%llu\n", what, it, cr, rr);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         if (++fails > 10) exit(1);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     if (memcmp(ca, ra, ARENA) != 0) {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         printf("MISMATCH mem  %s iter=%ld\n", what, it);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         for (int i = 0; i < ARENA; i++)
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             if (ca[i] != ra[i])
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m                 printf("   byte %3d: C=%02x Rust=%02x\n", i, ca[i], ra[i]);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         if (++fails > 10) exit(1);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     if (argc != 3) { fprintf(stderr, "usage: %s c.so rust.so\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     struct api C, R;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     load(argv[1], &C);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     load(argv[2], &R);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     static unsigned char ca[ARENA] __attribute__((aligned(64)));
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     static unsigned char ra[ARENA] __attribute__((aligned(64)));
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     static int32_t samples[NSAMP];
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     // ---- tflac_pack_u64le ----
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     for (long it = 0; it < 20000; it++) {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         memset(ca, 0, ARENA); memset(ra, 0, ARENA);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         for (int i = 0; i < ARENA; i++) ca[i] = ra[i] = (unsigned char)rnd();
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         uint64_t n = rnd();
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         unsigned off = (unsigned)(rnd() % 64);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         C.pack(ca + off, n);
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         R.pack(ra + off, n);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         report("pack_u64le", it, ca, ra, 0, 0);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     // ---- tflac_md5_addsample ----
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     for (long it = 0; it < 200000; it++) {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         for (int i = 0; i < ARENA; i++) ca[i] = ra[i] = (unsigned char)rnd();
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         // exercise every pos residue plus wild values
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         uint32_t pos = (it < 128) ? (uint32_t)it : (uint32_t)rnd();
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         memcpy(ca, &pos, 4); memcpy(ra, &pos, 4);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         uint32_t bits = (it % 3 == 0) ? 64 : (uint32_t)(rnd() % 4096);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         uint64_t val = rnd();
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         C.addsample(ca, bits, val);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         R.addsample(ra, bits, val);
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         report("md5_addsample", it, ca, ra, 0, 0);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     // ---- update_md5 ----
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     for (long it = 0; it < 200000; it++) {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         for (int i = 0; i < ARENA; i++) ca[i] = ra[i] = (unsigned char)rnd();
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         for (int i = 0; i < NSAMP; i++) samples[i] = (int32_t)rnd();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         uint32_t pos = (it < 128) ? (uint32_t)it : (uint32_t)rnd();
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         memcpy(ca, &pos, 4); memcpy(ra, &pos, 4);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         // cur_blocksize @88, channels @92
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         uint32_t cb = (uint32_t)rnd(), ch = (uint32_t)rnd();
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         if (it % 4 == 0) { cb = (uint32_t)(rnd() % 5000); ch = (uint32_t)(rnd() % 9); }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         memcpy(ca + 88, &cb, 4); memcpy(ra + 88, &cb, 4);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         memcpy(ca + 92, &ch, 4); memcpy(ra + 92, &ch, 4);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         uint32_t cr = C.update_md5(ca, samples);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         uint32_t rr = R.update_md5(ra, samples);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         report("update_md5", it, ca, ra, cr, rr);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     if (fails) { printf("FAILED: %d mismatches\n", fails); return 1; }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     printf("ALL DIFFERENTIAL TESTS PASSED (pack=20000, addsample=200000, update_md5=200000)\n");
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest_y4.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest_y4 difftest_y4.c -ldl 2>&1 | tail -20 && ./difftest_y4 /tmp/cbuild_y4/libharvest-work-Y4lu45.so /local/home/scheschb/.harvest/work/harvest-work-Y4lu45/translation/target/release/libharvest_work_y4lu45.so 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
+
+ALL DIFFERENTIAL TESTS PASSED (pack=20000, addsample=200000, update_md5=200000)
+[38;5;244m - Completed in 1.561s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Y4lu45 && echo "=== c_src untouched (mtimes) ===" && ls -la --time-style=full-iso c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c && echo "=== full nm -D on C ===" && nm -D /tmp/cbuild_y4/libharvest-work-Y4lu45.so | grep -v ' U ' && echo "=== full nm -D on Rust ===" && nm -D translation/target/release/libharvest_work_y4lu45.so | grep -v ' U ' && echo "=== tree ===" && find translation -type f -not -path '*/target/*'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification of artifacts and symbol tables
+
+=== c_src untouched (mtimes) ===
+-rw-r--r--. 1 scheschb amazon  440 2026-09-01 06:34:38.982309791 +0000 c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon  462 2026-09-01 06:34:38.982309791 +0000 c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 1661 2026-09-01 06:34:38.982309791 +0000 c_src/src/lib.c
+=== full nm -D on C ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+00000000000011c7 T tflac_md5_addsample
+0000000000001119 T tflac_pack_u64le
+0000000000001286 T update_md5
+=== full nm -D on Rust ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 w __gmon_start__
+                 w gettid@GLIBC_2.30
+                 w statx@GLIBC_2.28
+00000000000118d0 T tflac_md5_addsample
+00000000000119a0 T tflac_pack_u64le
+00000000000119b0 T update_md5
+=== tree ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library turned out to be small (3 files, 89 lines), so no delegation was needed.[0m[0m
+[0m[0m
+[1mSurface enumerated from the built C [38;5;10m.so[0m[22m — exactly three exports, no namespace-renaming macros in [38;5;10minclude/lib.h[0m:[0m[0m
+[0m[0m
+[38;5;10mtflac_pack_u64le
+tflac_md5_addsample
+update_md5
+[0m[0m[0m
+[0m[0m
+[1mCompletion gate:[22m [38;5;10mdiff[0m of the [38;5;10mnm -D[0m defined-symbol lists (C vs Rust) is empty. The only difference in the full dynamic tables is Rust's weak glibc references ([38;5;10mgettid[0m, [38;5;10mstatx[0m, [38;5;10m__cxa_thread_atexit_impl[0m), which are undefined weak imports, not exports.[0m[0m
+[0m[0m
+[1mBehavioral verification[22m — I built a [38;5;10mdlopen[0m harness that loads both shared objects, hands each a bit-identical 512-byte arena plus identical sample data, then compares return values and the whole arena byte-for-byte. 420,000 randomized cases across all three functions pass with zero mismatches.[0m[0m
+[0m[0m
+Three C defects were deliberately preserved rather than fixed:[0m[0m
+[0m[0m
+- [38;5;10mwhile (bytes--)[0m in [38;5;10mtflac_md5_addsample[0m reads [38;5;10mbuffer[64 + bytes][0m with [38;5;10mbytes[0m up to 62, while [38;5;10mbuffer[0m is only 72 bytes — an out-of-bounds read past the struct. I confirmed via [38;5;10mobjdump[0m that gcc emits a plain unchecked [38;5;10mmovzbl 0x10(%rax,%rdx,1)[0m, so I reproduced it with raw pointer arithmetic rooted at [38;5;10mm[0m (offset 16, matching the verified C layout) instead of at the [38;5;10mbuffer[0m field, keeping whole-struct provenance. The differential test covers this: the arena is large enough that both sides read the same real memory, and the results match.[0m[0m
+- [38;5;10msamples += (8 * sizeof(tflac_s32))[0m advances by 32 [3melements[23m, not 8, so iterations read [38;5;10msamples[0..8][0m, [38;5;10m[32..40][0m, [38;5;10m[64..72][0m, [38;5;10m[96..104][0m, [38;5;10m[128..136][0m.[0m[0m
+- The [38;5;10m(tflac_uint)samples[k][0m cast sign-extends [38;5;10mi32[0m→[38;5;10mu64[0m before [38;5;10m& 0xFF[0m; Rust's [38;5;10mas[0m does the same, so no explicit handling was required.[0m[0m
+[0m[0m
+Struct offsets were taken from the C compiler itself ([38;5;10moffsetof[0m: [38;5;10mpos[0m=0, [38;5;10mtotal[0m=8, [38;5;10mbuffer[0m=16, [38;5;10msizeof[0m=88; [38;5;10mcur_blocksize[0m=88, [38;5;10mchannels[0m=92, [38;5;10msizeof(tflac)[0m=96) rather than assumed. [38;5;10mc_src/[0m is unmodified — mtimes are unchanged from checkout.[0m[0m
+[38;5;8m
+ ▸ Credits: 7.02 • Time: 3m 41s
+
+[0m[1G[0m[0m[?25h

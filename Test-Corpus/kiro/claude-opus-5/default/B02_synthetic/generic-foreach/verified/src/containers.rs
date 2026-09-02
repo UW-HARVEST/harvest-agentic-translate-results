@@ -1,27 +1,31 @@
-//! Translation of `generic_containers.h`.
-//!
-//! The C header uses token-pasting macros (`DECLARE_ARRAY`/`DEFINE_ARRAY`,
-//! `DECLARE_LIST`/`DEFINE_LIST`) to stamp out a dynamic array and a singly
-//! linked list for each element type. Rust generics express the same thing
-//! once, so `Array<T>` stands in for every `array_TYPE_t` and `List<T>` for
-//! every `list_TYPE_t`.
-//!
-//! `ARRAY_FOREACH` / `LIST_FOREACH` become plain `for` loops over `iter()`,
-//! which visit elements in the same order (index 0..size for the array,
-//! head->tail for the list).
+// containers.rs
+//
+// Safe-Rust translation of the DECLARE_ARRAY / DEFINE_ARRAY and
+// DECLARE_LIST / DEFINE_LIST macro families from
+// c_src/include/generic_containers.h.
+//
+// The C macros generate, for every type `T`:
+//   * a growable array (`data`, `size`, `capacity`) with doubling growth,
+//   * a singly linked list (`head`, `tail`, `size`).
+//
+// Rust generics replace the token-pasting macros. `Array<T>` keeps an explicit
+// `capacity` field so that the C growth bookkeeping is mirrored exactly, and
+// `List<T>` is a node arena with `head`/`tail` indices so that the linked
+// structure (and therefore iteration order) is preserved without `unsafe`.
 
-/// Equivalent of `array_TYPE_t`.
-///
-/// The C version tracks `data`/`size`/`capacity` by hand; `Vec` tracks exactly
-/// the same three things. `capacity` is never observable in the program output,
-/// so growth policy differences are irrelevant, but `create` still honours the
-/// C default of 16 for a zero initial capacity.
+#![allow(dead_code)]
+
+// ============================================================================
+// GENERIC DYNAMIC ARRAY
+// ============================================================================
+
 pub struct Array<T> {
     data: Vec<T>,
+    capacity: usize,
 }
 
-impl<T> Array<T> {
-    /// `array_TYPE_create(initial_capacity)`
+impl<T: Copy> Array<T> {
+    /// `array_TYPE_create`: a zero initial capacity is bumped to 16.
     pub fn create(initial_capacity: usize) -> Array<T> {
         let capacity = if initial_capacity > 0 {
             initial_capacity
@@ -30,82 +34,137 @@ impl<T> Array<T> {
         };
         Array {
             data: Vec::with_capacity(capacity),
+            capacity,
         }
     }
 
-    /// `array_TYPE_push(arr, value)`
+    /// `array_TYPE_push`: doubles the capacity once `size >= capacity`.
     pub fn push(&mut self, value: T) {
+        if self.data.len() >= self.capacity {
+            let new_capacity = self.capacity * 2;
+            self.data.reserve_exact(new_capacity - self.data.len());
+            self.capacity = new_capacity;
+        }
         self.data.push(value);
     }
 
-    /// `arr->size` / `array_TYPE_size(arr)`
+    /// `array_TYPE_get`: unchecked in C; indexing panics in Rust instead.
+    pub fn get(&self, index: usize) -> T {
+        self.data[index]
+    }
+
+    /// `array_TYPE_size`
     pub fn size(&self) -> usize {
         self.data.len()
     }
 
-    /// `arr->data[index]` / `array_TYPE_get(arr, index)`
-    #[allow(dead_code)]
-    pub fn get(&self, index: usize) -> &T {
-        &self.data[index]
+    /// `array_TYPE_clear`: resets `size`, keeps the buffer.
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+
+    /// Backing storage, equivalent to reading `arr->data` in C.
+    pub fn as_slice(&self) -> &[T] {
+        &self.data
     }
 
     /// `ARRAY_FOREACH(TYPE, var, arr)`
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.data.iter()
     }
-
-    /// `array_TYPE_clear(arr)`
-    #[allow(dead_code)]
-    pub fn clear(&mut self) {
-        self.data.clear();
-    }
-
-    /// `array_TYPE_destroy(arr)`; Rust frees on drop, this is the explicit form.
-    pub fn destroy(self) {}
 }
 
-/// Equivalent of `list_TYPE_t`, a singly linked list with head/tail/size.
-///
-/// The C list is only ever appended to and walked front-to-back in this
-/// program. A `Vec` reproduces that observable behaviour (and `prepend`'s
-/// insert-at-front semantics) without raw pointers.
+// ============================================================================
+// GENERIC LINKED LIST
+// ============================================================================
+
+struct ListNode<T> {
+    data: T,
+    next: Option<usize>,
+}
+
 pub struct List<T> {
-    data: Vec<T>,
+    nodes: Vec<ListNode<T>>,
+    head: Option<usize>,
+    tail: Option<usize>,
 }
 
-impl<T> List<T> {
-    /// `list_TYPE_create()`
+impl<T: Copy> List<T> {
+    /// `list_TYPE_create`
     pub fn create() -> List<T> {
-        List { data: Vec::new() }
+        List {
+            nodes: Vec::new(),
+            head: None,
+            tail: None,
+        }
     }
 
-    /// `list_TYPE_append(list, value)` - link onto the tail.
+    /// `list_TYPE_append`
     pub fn append(&mut self, value: T) {
-        self.data.push(value);
+        let idx = self.nodes.len();
+        self.nodes.push(ListNode {
+            data: value,
+            next: None,
+        });
+        match self.tail {
+            None => {
+                self.head = Some(idx);
+                self.tail = Some(idx);
+            }
+            Some(tail) => {
+                self.nodes[tail].next = Some(idx);
+                self.tail = Some(idx);
+            }
+        }
     }
 
-    /// `list_TYPE_prepend(list, value)` - link onto the head.
-    #[allow(dead_code)]
+    /// `list_TYPE_prepend`
     pub fn prepend(&mut self, value: T) {
-        self.data.insert(0, value);
+        let idx = self.nodes.len();
+        let old_head = self.head;
+        self.nodes.push(ListNode {
+            data: value,
+            next: old_head,
+        });
+        self.head = Some(idx);
+        if self.tail.is_none() {
+            self.tail = Some(idx);
+        }
     }
 
-    /// `list->size` / `list_TYPE_size(list)`
+    /// `list_TYPE_size`
     pub fn size(&self) -> usize {
-        self.data.len()
+        self.nodes.len()
     }
 
-    /// `LIST_FOREACH(TYPE, var, list)` - head to tail.
-    pub fn iter(&self) -> std::slice::Iter<'_, T> {
-        self.data.iter()
-    }
-
-    /// `list_TYPE_clear(list)`
-    #[allow(dead_code)]
+    /// `list_TYPE_clear`
     pub fn clear(&mut self) {
-        self.data.clear();
+        self.nodes.clear();
+        self.head = None;
+        self.tail = None;
     }
 
-    /// `list_TYPE_destroy(list)`; Rust frees on drop, this is the explicit form.
-    pub fn destroy(self) {}
+    /// `LIST_FOREACH(TYPE, var, list)`: walks the `next` chain from `head`.
+    pub fn iter(&self) -> ListIter<'_, T> {
+        ListIter {
+            list: self,
+            current: self.head,
+        }
+    }
+}
+
+pub struct ListIter<'a, T> {
+    list: &'a List<T>,
+    current: Option<usize>,
+}
+
+impl<'a, T> Iterator for ListIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<&'a T> {
+        let idx = self.current?;
+        let node = &self.list.nodes[idx];
+        self.current = node.next;
+        Some(&node.data)
+    }
 }

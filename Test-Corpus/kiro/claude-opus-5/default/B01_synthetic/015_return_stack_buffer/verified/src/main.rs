@@ -23,214 +23,196 @@
 
 //! Rust translation of `c_src/src/main.c`.
 //!
-//! The C program is a CWE-562 ("Return of Stack Variable Address") test case.
-//! See `helper_bad` below for how the original's undefined behavior is mirrored.
+//! The original C is a CWE-562 (Return of Stack Variable Address) test case.
+//! Its behavior is reproduced as-is; no defects are corrected.
+
+// The trailing-newline `write!` and the explicit `match` on `next_byte()` both
+// mirror the C control flow one-to-one; clippy's terser alternatives would
+// obscure that correspondence.
+#![allow(clippy::write_with_newline, clippy::question_mark)]
 
 use std::io::{Read, Write};
 
-/// Mirror of the C `printLine`: `printf("%s\n", line)` guarded by a NULL check.
+/// `void printLine(const char *line)`
 ///
-/// The C signature takes `const char *`, so "no string at all" (NULL) is a
-/// representable input; `Option<&str>` is the safe-Rust equivalent.
-fn print_line(out: &mut dyn Write, line: Option<&str>) {
+/// The C function guards against a NULL pointer before printing, so a NULL
+/// argument produces no output at all (not even the trailing newline).
+/// `Option<&str>` models the nullable `const char *`.
+fn print_line<W: Write>(out: &mut W, line: Option<&str>) {
     if let Some(line) = line {
-        // `printf("%s\n", ...)`. glibc rewrites this to `puts`, which emits the
-        // same bytes: the string followed by a single newline.
+        // printf("%s\n", line);
         let _ = write!(out, "{}\n", line);
     }
 }
 
-/// Mirror of the C `helperBad`, which returns the address of a local array:
+/// `static char *helperBad()`
 ///
-/// ```c
-/// static char *helperBad()
-/// {
-///     char charString[] = "helperBad string";
-///     return charString;   // dangling pointer -- undefined behavior
-/// }
-/// ```
+/// The C original declares `char charString[] = "helperBad string";` as an
+/// automatic (stack) array and returns its address, which dangles the moment
+/// the function returns. GCC diagnoses this (`-Wreturn-local-addr`) and
+/// substitutes a null pointer for the return value -- the generated assembly
+/// for `helperBad` ends in `movl $0, %eax; ret`, discarding the buffer
+/// entirely. The observable consequence is that `printLine` takes its NULL
+/// branch and `bad()` emits nothing.
 ///
-/// This is the injected defect, and it is deliberately NOT fixed here. Returning
-/// a dangling pointer is undefined behavior, so there is no "correct" value to
-/// reproduce -- only the behavior the C actually exhibits once compiled.
-///
-/// GCC diagnoses this as `-Wreturn-local-addr` and folds the return value to a
-/// null pointer. The generated `helperBad` is literally `mov $0x0, %eax; ret`
-/// (verified against the compiled reference binary at both `-O0` and `-O2`).
-/// `printLine`'s NULL check therefore succeeds and the bad path prints nothing
-/// at all -- not even a newline. `None` reproduces that byte-for-byte while
-/// keeping this translation free of unsafe code and dangling references.
+/// This bug is preserved deliberately: returning `None` reproduces the
+/// reference executable's output byte for byte without invoking undefined
+/// behavior in Rust.
 fn helper_bad() -> Option<&'static str> {
+    // The stack array is built and then thrown away, exactly as compiled.
+    let _char_string = *b"helperBad string\0";
     None
 }
 
-/// Mirror of the C `bad`.
-fn bad(out: &mut dyn Write) {
+/// `void bad()`
+fn bad<W: Write>(out: &mut W) {
     print_line(out, helper_bad());
 }
 
-/// Mirror of the C `helperGood1`, which returns a pointer to a `static` array.
-/// The storage outlives the call, so the pointer stays valid -- modeled as a
-/// `&'static str`.
+/// `static char *helperGood1()`
+///
+/// The C original uses `static char charString[]`, giving the buffer static
+/// storage duration, so returning its address is well defined.
 fn helper_good1() -> Option<&'static str> {
-    Some("helperGood1 string")
+    static CHAR_STRING: &str = "helperGood1 string";
+    Some(CHAR_STRING)
 }
 
-/// Mirror of the C `good`.
-fn good(out: &mut dyn Write) {
+/// `void good()`
+fn good<W: Write>(out: &mut W) {
     print_line(out, helper_good1());
 }
 
-/// Byte classification matching C's `isspace` in the default "C" locale, which
-/// is the set of characters `scanf` skips before a conversion.
-fn is_c_space(b: u8) -> bool {
+/// `isspace()` in the C locale.
+fn is_space(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
-/// Equivalent of glibc's `scanf("%d", &x)`.
-///
-/// Returns `Some(value)` on a successful conversion and `None` on input failure
-/// (EOF before any non-whitespace) or matching failure (no digits). On `None`
-/// the caller must leave its variable untouched, exactly as `scanf` does.
-///
-/// Reads one byte at a time so that no more input is consumed than `%d` would,
-/// and so leading whitespace -- including newlines -- is skipped, per the
-/// documented `scanf` behavior of reading across lines.
-fn scanf_i32(input: &mut dyn Read) -> Option<i32> {
-    // One-byte lookahead, since `%d` must push back the first byte that cannot
-    // extend the number.
-    let mut pending: Option<u8> = None;
-    let mut next = |pending: &mut Option<u8>| -> Option<u8> {
-        if let Some(b) = pending.take() {
+/// A byte reader with a single-byte pushback, mirroring how the C standard
+/// library's `ungetc`-style lookahead lets `scanf` stop at (and put back) the
+/// first character that cannot belong to the current conversion.
+struct Scanner<R: Read> {
+    inner: R,
+    peeked: Option<u8>,
+}
+
+impl<R: Read> Scanner<R> {
+    fn new(inner: R) -> Self {
+        Scanner {
+            inner,
+            peeked: None,
+        }
+    }
+
+    /// Read one byte, or `None` at EOF / on a read error.
+    fn next_byte(&mut self) -> Option<u8> {
+        if let Some(b) = self.peeked.take() {
             return Some(b);
         }
         let mut buf = [0u8; 1];
         loop {
-            return match input.read(&mut buf) {
-                Ok(0) => None,
-                Ok(_) => Some(buf[0]),
+            match self.inner.read(&mut buf) {
+                Ok(0) => return None,
+                Ok(_) => return Some(buf[0]),
                 Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => None,
-            };
+                Err(_) => return None,
+            }
         }
-    };
+    }
 
-    // Skip leading whitespace.
-    let mut b = loop {
-        match next(&mut pending) {
-            Some(b) if is_c_space(b) => continue,
-            Some(b) => break b,
-            // EOF with nothing consumed: input failure.
-            None => return None,
-        }
-    };
+    fn unread(&mut self, b: u8) {
+        self.peeked = Some(b);
+    }
 
-    // Optional sign.
-    let negative = match b {
-        b'-' | b'+' => {
-            let negative = b == b'-';
-            match next(&mut pending) {
+    /// `scanf("%d", &x)` for a single conversion.
+    ///
+    /// Returns `Some(value)` when the conversion succeeds; returns `None` on
+    /// either an input failure (EOF before any non-whitespace) or a matching
+    /// failure (no digits), in both of which cases C leaves the destination
+    /// object untouched.
+    ///
+    /// Leading whitespace is skipped without regard to line boundaries, so the
+    /// scan happily reads across newlines just as `scanf` does.
+    fn scan_int(&mut self) -> Option<i32> {
+        // Skip leading whitespace, including newlines.
+        let mut b = loop {
+            match self.next_byte() {
+                None => return None, // input failure
+                Some(b) if is_space(b) => continue,
+                Some(b) => break b,
+            }
+        };
+
+        // Optional sign.
+        let mut negative = false;
+        if b == b'+' || b == b'-' {
+            negative = b == b'-';
+            match self.next_byte() {
+                None => return None, // sign then EOF: matching failure
                 Some(nb) => b = nb,
-                // Sign then EOF: matching failure, no digits.
-                None => return None,
             }
-            negative
-        }
-        _ => false,
-    };
-
-    if !b.is_ascii_digit() {
-        // A sign or other character not followed by a digit is a matching
-        // failure. `scanf` would push the offending byte back onto the stream;
-        // that is unobservable here because `main` performs no further input.
-        return None;
-    }
-
-    // glibc accumulates into a `long` with `strtol` semantics: out-of-range
-    // input saturates at LONG_MAX / LONG_MIN. The result is then stored through
-    // an `int *`, truncating the low 32 bits. That truncation is observable
-    // here, because e.g. 4294967296 truncates to 0 and thus takes the `else`
-    // branch. Verified against the reference binary.
-    let mut acc: i64 = 0;
-    let mut saturated = false;
-    loop {
-        let digit = i64::from(b - b'0');
-        match acc
-            .checked_mul(10)
-            .and_then(|v| v.checked_add(digit))
-        {
-            Some(v) => acc = v,
-            None => saturated = true,
         }
 
-        match next(&mut pending) {
-            Some(nb) if nb.is_ascii_digit() => b = nb,
-            Some(_nb) => {
-                // First byte that cannot extend the number would be pushed
-                // back; unobservable, as `main` reads no further input.
-                break;
+        // At least one digit is required.
+        if !b.is_ascii_digit() {
+            self.unread(b);
+            return None; // matching failure
+        }
+
+        // Accumulate the magnitude the way strtol does: saturate at the
+        // long range on overflow, then let the assignment to `int` truncate.
+        let mut magnitude: u64 = 0;
+        let mut overflowed = false;
+        loop {
+            let digit = u64::from(b - b'0');
+            match magnitude
+                .checked_mul(10)
+                .and_then(|acc| acc.checked_add(digit))
+            {
+                Some(acc) => magnitude = acc,
+                None => overflowed = true,
             }
-            None => break,
+            match self.next_byte() {
+                None => break,
+                Some(nb) if nb.is_ascii_digit() => b = nb,
+                Some(nb) => {
+                    self.unread(nb);
+                    break;
+                }
+            }
         }
-    }
 
-    let value: i64 = if saturated {
-        if negative {
-            i64::MIN
-        } else {
+        // strtol clamps to LONG_MAX / LONG_MIN.
+        let long_min_magnitude = 1u64 << 63; // |LONG_MIN|
+        let as_long: i64 = if negative {
+            if overflowed || magnitude > long_min_magnitude {
+                i64::MIN
+            } else {
+                (-(magnitude as i128)) as i64
+            }
+        } else if overflowed || magnitude > i64::MAX as u64 {
             i64::MAX
-        }
-    } else if negative {
-        // `acc` is non-negative here and `-acc` cannot overflow.
-        -acc
-    } else {
-        acc
-    };
+        } else {
+            magnitude as i64
+        };
 
-    // Store through `int *`: keep the low 32 bits.
-    Some(value as i32)
-}
-
-/// Restore the default `SIGPIPE` disposition.
-///
-/// A C program inherits `SIG_DFL` for `SIGPIPE`, so it is killed by the signal
-/// if stdout is a pipe whose reader closes early (observable as exit status
-/// 141). The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main`, which would
-/// instead turn the failed write into an ignored error and exit 0. Undoing that
-/// keeps the process's externally visible behavior identical to the C.
-///
-/// This is the one `unsafe` block in the translation; it is required because
-/// signal disposition is not reachable from safe `std`.
-#[cfg(unix)]
-fn restore_default_sigpipe() {
-    const SIGPIPE: i32 = 13;
-    const SIG_DFL: usize = 0;
-    extern "C" {
-        fn signal(signum: i32, handler: usize) -> usize;
-    }
-    unsafe {
-        signal(SIGPIPE, SIG_DFL);
+        // `int x` receives the value; the narrowing conversion truncates.
+        Some(as_long as i32)
     }
 }
-
-#[cfg(not(unix))]
-fn restore_default_sigpipe() {}
 
 fn main() {
-    restore_default_sigpipe();
-
     let stdin = std::io::stdin();
-    let mut input = stdin.lock();
+    let mut scanner = Scanner::new(stdin.lock());
 
     let stdout = std::io::stdout();
-    let mut out = std::io::BufWriter::new(stdout.lock());
+    let mut out = stdout.lock();
 
-    // `int x = 0; scanf("%d", &x);` -- on conversion failure `x` keeps its
-    // initial value of 0, so the `else` (bad) branch runs. The return value of
-    // `scanf` is ignored by the C, and is ignored here too.
+    // int x = 0;
     let mut x: i32 = 0;
-    if let Some(v) = scanf_i32(&mut input) {
-        x = v;
+    // scanf("%d", &x);  -- x keeps its initial 0 if the conversion fails.
+    if let Some(value) = scanner.scan_int() {
+        x = value;
     }
 
     if x != 0 {
@@ -240,5 +222,6 @@ fn main() {
     }
 
     let _ = out.flush();
-    std::process::exit(0);
+
+    // return 0;
 }

@@ -1,0 +1,562 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l; echo "---"; find c_src -type f -name '*.c' | wc -l; find c_src -type f -name '*.h' | wc -l; echo "---"; wc -l $(find c_src -type f -name '*.c' -o -name '*.h') | tail -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate C source files
+
+c_src/CMakeLists.txt
+c_src/include/pow.h
+c_src/src/pow.c
+---
+3
+---
+1
+1
+---
+  29 c_src/include/pow.h
+  50 c_src/src/pow.c
+  79 total
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — let me read everything.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src/include/pow.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src/src/pow.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1231 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src/include/pow.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1806 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src/src/pow.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1416 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mOne function, one header. Let me build the C library and enumerate its exported symbols.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Gneeaa && mkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src > /dev/null 2>&1 && make 2>&1 | tail -5; echo "=== nm -D ==="; nm -D --defined-only libpow.so | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+=== nm -D ===
+nm: 'libpow.so': No such file
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && ls -la; which cmake gcc cargo rustc; [0m[38;5;244m (using tool: shell)[0m
+Purpose: Check build dir and available tools
+
+total 68
+drwxr-xr-x.    3 scheschb amazon   180 Sep  1 06:55 .
+drwxrwxrwt. 1054 root     root   82620 Sep  1 07:08 ..
+-rw-r--r--.    1 scheschb amazon 14491 Sep  1 06:53 CMakeCache.txt
+drwxr-xr-x.    5 scheschb amazon   240 Sep  1 06:59 CMakeFiles
+-rw-r--r--.    1 scheschb amazon  7657 Sep  1 06:53 Makefile
+-rw-r--r--.    1 scheschb amazon   279 Sep  1 06:59 cm.log
+-rw-r--r--.    1 scheschb amazon  2938 Sep  1 06:53 cmake_install.cmake
+-rwxr-xr-x.    1 scheschb amazon 16856 Sep  1 06:55 driver_c
+-rwxr-xr-x.    1 scheschb amazon 15784 Sep  1 06:53 libSieve.so
+/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin/cmake
+/usr/bin/gcc
+/home/scheschb/.cargo/bin/cargo
+/home/scheschb/.cargo/bin/rustc
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0m/tmp/cbuild had a stale cache from another project. Using a fresh directory.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/powbuild && mkdir -p /tmp/powbuild && cd /tmp/powbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/c_src > cm.log 2>&1 && make 2>&1 | tail -5; echo "=== ls ==="; ls; echo "=== nm -D defined ==="; nm -D --defined-only libpow.so | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in clean dir and list symbols
+
+[ 50%] Building C object CMakeFiles/pow.dir/src/pow.c.o
+[100%] Linking C shared library libpow.so
+[100%] Built target pow
+=== ls ===
+CMakeCache.txt
+CMakeFiles
+Makefile
+cm.log
+cmake_install.cmake
+libpow.so
+=== nm -D defined ===
+0000000000001129 T my_pow
+[38;5;244m - Completed in 0.445s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/powbuild && echo "=== full nm -D ==="; nm -D libpow.so; echo "=== rustc/cargo versions ==="; rustc --version; cargo --version; echo "=== errno vals ==="; echo -e '#include <errno.h>\n#include <stdio.h>\nint main(){printf("EDOM=%d ERANGE=%d\\n", EDOM, ERANGE);}' > /tmp/e.c && gcc /tmp/e.c -o /tmp/e && /tmp/e[0m[38;5;244m (using tool: shell)[0m
+Purpose: Full symbol table, toolchain versions, errno constants
+
+=== full nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U fprintf@GLIBC_2.2.5
+0000000000001129 T my_pow
+                 U pow@GLIBC_2.29
+                 U stderr@GLIBC_2.2.5
+=== rustc/cargo versions ===
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+=== errno vals ===
+EDOM=33 ERANGE=34
+[38;5;244m - Completed in 0.81s[0m
+
+[?25l[0m[38;5;141m> [0mDefinition of done is precise: the C [38;5;10m.so[0m exports exactly one public symbol, [38;5;10mmy_pow[0m, and depends on glibc's [38;5;10mpow[0m, [38;5;10mfprintf[0m, [38;5;10mstderr[0m, and [38;5;10m__errno_location[0m.[0m[0m
+[0m[0m
+The subtle part is fidelity, not size: the C reads [38;5;10merrno[0m after calling glibc's [38;5;10mpow[0m, and prints with [38;5;10m%.2f[0m. To be byte-identical I must call the [3msame[23m libm [38;5;10mpow[0m (Rust's [38;5;10mf64::powf[0m lowers to an LLVM intrinsic that is explicitly allowed not to set [38;5;10merrno[0m) and format via C's [38;5;10mfprintf[0m (Rust's [38;5;10m{:.2}[0m prints [38;5;10mNaN[0m, C prints [38;5;10mnan[0m/[38;5;10m-nan[0m).[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "pow"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "pow"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create crate root
+
+[49m[38;5;10m+    1[0m:[38;5;10m[49m //! Rust translation of the `pow` C library (`c_src/`).
+[0m[49m[38;5;10m+    2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    3[0m:[38;5;10m[49m //! The C library exports exactly one public symbol, `my_pow`, and links
+[0m[49m[38;5;10m+    4[0m:[38;5;10m[49m //! against glibc's `pow`, `fprintf`, `stderr` and `__errno_location`.
+[0m[49m[38;5;10m+    5[0m:[38;5;10m[49m //! This crate reproduces that ABI exactly.
+[0m[49m[38;5;10m+    6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    7[0m:[38;5;10m[49m mod ffi;
+[0m[49m[38;5;10m+    8[0m:[38;5;10m[49m mod pow;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/src/ffi.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libc bindings (pow, fprintf, stderr, errno) and an optimizer barrier
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Declarations for the exact C library entities the original translation
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! unit referenced: `<errno.h>`, `<math.h>` and `<stdio.h>`.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! We bind libc directly rather than using Rust's standard-library
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! equivalents because the observable behaviour of the C code depends on
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! details that Rust's own facilities do not reproduce:
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! * `f64::powf` lowers to `llvm.pow.f64`, which is explicitly permitted not
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //!   to set `errno`; only a real call to libm's `pow` sets it.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! * Rust's `{:.2}` formatting prints `NaN`/`inf`, whereas C's `%.2f` prints
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //!   `nan`/`-nan`/`inf`/`-inf`.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //! * Writes must go to the same `stderr` `FILE` stream the C code used.
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m use std::ffi::{c_char, c_double, c_int};
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m /// `EDOM` on Linux/glibc.
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m pub const EDOM: c_int = 33;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m /// `ERANGE` on Linux/glibc.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m pub const ERANGE: c_int = 34;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m /// Opaque stand-in for C's `FILE`.
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m pub struct FILE {
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     _opaque: [u8; 0],
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     /// glibc's `stderr` global.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     pub static mut stderr: *mut FILE;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     pub fn fprintf(stream: *mut FILE, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     /// libm's `pow`. Called through this declaration (rather than via
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     /// `f64::powf`) so that `errno` is set just as it is for the C code.
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     pub fn pow(base: c_double, exponent: c_double) -> c_double;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     /// glibc's thread-local `errno` accessor; `errno` is a macro expanding to
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     /// `(*__errno_location())`.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     pub fn __errno_location() -> *mut c_int;
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m /// Reads `errno`.
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m pub fn errno() -> c_int {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     // SAFETY: `__errno_location` always returns a valid pointer to the
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     // calling thread's `errno`.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     unsafe { *__errno_location() }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m /// Performs `errno = value`.
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m pub fn set_errno(value: c_int) {
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     // SAFETY: as above.
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     unsafe { *__errno_location() = value }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// Optimisation barrier.
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m /// The C code's control flow depends on `pow` writing `errno` as a side
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m /// effect. LLVM knows `pow` as a library call and, depending on the
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m /// attributes it infers, could in principle sink the `pow` call past the
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m /// `errno` load or hoist that load above it. Interposing an empty `asm!`
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m /// block — which, absent `options(nomem)`, is assumed to read and write
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m /// memory and has side effects — pins the two operations in source order.
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m pub fn barrier() {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     // SAFETY: the asm block is empty; it only constrains the optimiser.
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     unsafe { std::arch::asm!("", options(nostack, preserves_flags)) }
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/src/ffi.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/src/pow.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate my_pow
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translation of `c_src/src/pow.c`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m use std::ffi::c_double;
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m use crate::ffi::{self, EDOM, ERANGE};
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m /// Takes two arguments, a base and an exponent, and returns base^exponent.
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m /// Mirrors the C original exactly, including the order of the `errno` checks
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m /// and the `-1` returned on either error.
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m pub extern "C" fn my_pow(base: c_double, exponent: c_double) -> c_double {
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     // Calculate power
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     ffi::set_errno(0);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     ffi::barrier();
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     // SAFETY: calling libm's `pow` with two `double` arguments.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     let result = unsafe { ffi::pow(base, exponent) };
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     ffi::barrier();
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     if ffi::errno() == EDOM {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         // SAFETY: `stderr` is a valid stream and the variadic arguments match
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         // the two `%.2f` conversions in the format string.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m             ffi::fprintf(
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m                 ffi::stderr,
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m                 c"Domain error: pow(%.2f, %.2f) is undefined in the real number domain.\n"
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m                     .as_ptr(),
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m                 base,
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m                 exponent,
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         return -1.0;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     } else if ffi::errno() == ERANGE {
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m         // SAFETY: as above.
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m             ffi::fprintf(
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m                 ffi::stderr,
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m                 c"Range error: pow(%.2f, %.2f) caused overflow or underflow.\n".as_ptr(),
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m                 base,
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m                 exponent,
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         return -1.0;
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/src/pow.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling pow v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.142s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Gneeaa && nm -D --defined-only /tmp/powbuild/libpow.so | awk '{print $3}' | sort > /tmp/c_syms.txt && nm -D --defined-only translation/target/release/libpow.so | awk '{print $3}' | sort > /tmp/rs_syms.txt && echo "C symbols:"; cat /tmp/c_syms.txt; echo "Rust symbols:"; cat /tmp/rs_syms.txt; echo "=== MISSING FROM RUST (C minus Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt; echo "=== (end; empty above means gate passed) ==="; echo "=== Rust undefined deps ==="; nm -D --undefined-only translation/target/release/libpow.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+C symbols:
+my_pow
+Rust symbols:
+my_pow
+=== MISSING FROM RUST (C minus Rust) ===
+=== (end; empty above means gate passed) ===
+=== Rust undefined deps ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U fprintf@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pow@GLIBC_2.29
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U stderr@GLIBC_2.2.5
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+[38;5;244m - Completed in 0.49s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol gate passed. Now verifying byte-identical behavior — comparing return bit patterns and stderr bytes between the two [38;5;10m.so[0m files via a [38;5;10mdlopen[0m harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/powdiff/driver.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential harness: dlopen a libpow.so, call my_pow over a fixed corpus
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // plus a deterministic random fuzz, and emit the exact return bit patterns on
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // stdout. The library's own diagnostics go to stderr untouched, so both
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // streams can be byte-compared between the C and Rust builds.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef double (*my_pow_t)(double, double);
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m static my_pow_t fn;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m static void probe(double b, double e) {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m   fflush(stdout);
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m   fflush(stderr);
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m   double r = fn(b, e);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   uint64_t bits;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m   memcpy(&bits, &r, sizeof bits);
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m   printf("my_pow(%.17g, %.17g) = %.17g [0x%016llx]\n", b, e, r,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m          (unsigned long long)bits);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m   fflush(stdout);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m // xorshift64*, so both runs see an identical input sequence.
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m static uint64_t s = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m static uint64_t nextr(void) {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m   s ^= s >> 12;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m   s ^= s << 25;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m   s ^= s >> 27;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m   return s * 2685821657736338717ULL;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m   if (argc < 2) {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     fprintf(stderr, "usage: %s <libpow.so>\n", argv[0]);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     return 2;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m   void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m   if (!h) {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     fprintf(stderr, "dlopen: %s\n", dlerror());
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     return 2;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m   fn = (my_pow_t)dlsym(h, "my_pow");
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m   if (!fn) {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     fprintf(stderr, "dlsym my_pow: %s\n", dlerror());
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     return 2;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m   // Interesting scalar values, exercised as a full cross product.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m   static const double v[] = {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m       0.0,      -0.0,     1.0,      -1.0,     2.0,       -2.0,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m       0.5,      -0.5,     3.0,      -3.0,     10.0,      -10.0,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m       1e-300,   -1e-300,  1e300,    -1e300,   1e-308,    2.2250738585072014e-308,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m       4.9e-324, 0.1,      -0.1,     1.5,      -1.5,      2.5,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m       -2.5,     100.0,    -100.0,   1024.0,   -1024.0,   0.9999999999999999,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m       1.0000000000000002, 709.0,    -709.0,   1e15,      -1e15,
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m       3.0000000000000004, 1e-15,    123.456,  -123.456,  1.7976931348623157e308,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m       -1.7976931348623157e308,      INFINITY, -INFINITY, NAN,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m       -NAN,     0.3333333333333333, 6.0,      -6.0,      0.25,
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m       -0.25,    7.0,      -7.0,     1e-5,     -1e-5,     1e5,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m       -1e5,
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m   };
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m   const size_t n = sizeof v / sizeof v[0];
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m   for (size_t i = 0; i < n; i++)
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     for (size_t j = 0; j < n; j++) probe(v[i], v[j]);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m   // Deterministic random doubles (all bit patterns, including NaNs/denormals).
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m   for (int i = 0; i < 4000; i++) {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     uint64_t a = nextr(), b = nextr();
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     double x, y;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     memcpy(&x, &a, sizeof x);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     memcpy(&y, &b, sizeof y);
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     probe(x, y);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m   // Random values in "reasonable" ranges, where errno paths are common.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m   for (int i = 0; i < 4000; i++) {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     double x = ((double)(int64_t)(nextr() % 4000001) - 2000000.0) / 1000.0;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     double y = ((double)(int64_t)(nextr() % 2000001) - 1000000.0) / 1000.0;
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     probe(x, y);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m   // Values straddling the overflow/underflow boundaries.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m   for (int i = -40; i <= 40; i++) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     probe(10.0, (double)i * 100.0);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     probe(-10.0, (double)i * 100.0);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     probe(2.0, (double)i * 40.0);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     probe(0.5, (double)i * 40.0);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     probe((double)i, 0.5);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     probe((double)i, 1.0 / 3.0);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     probe((double)i, -2.0);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     probe(0.0, (double)i);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m   fflush(NULL);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m   return 0;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/powdiff/driver.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/powdiff && gcc -O2 -o driver driver.c -ldl -lm 2>&1 | tail -20 && echo BUILT[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile the harness
+
+BUILT
+[38;5;244m - Completed in 0.81s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/powdiff && ./driver /tmp/powbuild/libpow.so > c.out 2> c.err; echo "c exit=$?"; ./driver /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/target/release/libpow.so > r.out 2> r.err; echo "rust exit=$?"; wc -l c.out c.err r.out r.err; echo "=== stdout diff ==="; diff c.out r.out > /dev/null && echo "IDENTICAL" || diff c.out r.out | head -20; echo "=== stderr diff ==="; diff c.err r.err > /dev/null && echo "IDENTICAL" || diff c.err r.err | head -20; echo "=== md5 ==="; md5sum c.out r.out c.err r.err[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential comparison
+
+c exit=0
+rust exit=0
+  11784 c.out
+   8316 c.err
+  11784 r.out
+   8316 r.err
+  40200 total
+=== stdout diff ===
+IDENTICAL
+=== stderr diff ===
+IDENTICAL
+=== md5 ===
+42e0a719638f894cdec394f9fe508c3e  c.out
+42e0a719638f894cdec394f9fe508c3e  r.out
+000217dfe230791bb834554ab316f696  c.err
+000217dfe230791bb834554ab316f696  r.err
+[38;5;244m - Completed in 0.154s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/powdiff && echo "=== error branch coverage ==="; grep -c "^Domain error" c.err; grep -c "^Range error" c.err; echo "=== samples ==="; grep -m2 "^Domain error" c.err; grep -m2 "^Range error" c.err; grep -m3 "nan\|inf" c.err | head -5; echo "=== interleaved (2>&1) comparison ==="; ./driver /tmp/powbuild/libpow.so > c.both 2>&1; ./driver /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/target/release/libpow.so > r.both 2>&1; cmp c.both r.both && echo "INTERLEAVED IDENTICAL ($(wc -l < c.both) lines)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm both error branches covered and interleaved streams match
+
+=== error branch coverage ===
+3685
+4631
+=== samples ===
+Domain error: pow(-1.00, 0.50) is undefined in the real number domain.
+Domain error: pow(-1.00, -0.50) is undefined in the real number domain.
+Range error: pow(0.00, -1.00) caused overflow or underflow.
+Range error: pow(0.00, -2.00) caused overflow or underflow.
+=== interleaved (2>&1) comparison ===
+INTERLEAVED IDENTICAL (20100 lines)
+[38;5;244m - Completed in 0.153s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation && rm -rf target && cargo build --release 2>&1 | tail -15; echo "=== exit=$? ==="; echo "=== warnings ==="; cargo build --release 2>&1 | grep -ci warning || echo "0 warnings"; echo "=== final exported symbols ==="; nm -D --defined-only target/release/libpow.so; echo "=== files written ==="; find . -path ./target -prune -o -type f -print | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean rebuild, check warnings and final symbols
+
+   Compiling pow v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+=== exit=0 ===
+=== warnings ===
+0
+0 warnings
+=== final exported symbols ===
+0000000000011810 T my_pow
+=== files written ===
+./Cargo.lock
+./Cargo.toml
+./src/ffi.rs
+./src/lib.rs
+./src/pow.rs
+[38;5;244m - Completed in 0.189s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/powdiff && ./driver /local/home/scheschb/.harvest/work/harvest-work-Gneeaa/translation/target/release/libpow.so > r2.out 2> r2.err; cmp c.out r2.out && cmp c.err r2.err && echo "POST-CLEAN-REBUILD: stdout+stderr byte-identical to C"; echo "=== c_src unmodified ==="; cd /local/home/scheschb/.harvest/work/harvest-work-Gneeaa && (git status --porcelain c_src 2>/dev/null || echo "(no git)"); md5sum c_src/src/pow.c c_src/include/pow.h c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-verify after clean rebuild and confirm c_src untouched
+
+POST-CLEAN-REBUILD: stdout+stderr byte-identical to C
+=== c_src unmodified ===
+(no git)
+86c25ad5ad7adac47bb6f87ddc7a5a2a  c_src/src/pow.c
+33c0f358229f90353e31bfd375f4c4fe  c_src/include/pow.h
+87653e80226d70b73f8f72020b248ce5  c_src/CMakeLists.txt
+[38;5;244m - Completed in 0.80s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+[1mScope.[22m The library in [38;5;10mc_src/[0m turned out to be genuinely small: [38;5;10mCMakeLists.txt[0m, [38;5;10minclude/pow.h[0m, [38;5;10msrc/pow.c[0m (79 lines total including license headers). I built it and enumerated the surface rather than assuming — [38;5;10mnm -D --defined-only libpow.so[0m exports exactly one public symbol, [38;5;10mmy_pow[0m, with no namespace-renaming macros in the header. That single symbol is the definition of done.[0m[0m
+[0m[0m
+[1mCompletion gate.[22m Empty diff:[0m[0m
+[38;5;10mC:    my_pow          Rust: my_pow
+comm -23 c_syms rs_syms → (empty)
+[0m[0m[0m
+[0m[0m
+[1mThe real difficulty was fidelity, not coverage.[22m Three naive-translation traps, each of which would have produced diverging output:[0m[0m
+[0m[0m
+- [38;5;10mpow[0m must be glibc's, not [38;5;10mf64::powf[0m. Rust's [38;5;10mpowf[0m lowers to [38;5;10mllvm.pow.f64[0m, which is explicitly permitted not to set [38;5;10merrno[0m — the C function's entire control flow reads [38;5;10merrno[0m after the call, so the error branches would have become dead code. I bind [38;5;10mpow[0m via [38;5;10mextern "C"[0m; the Rust [38;5;10m.so[0m links the identical [38;5;10mpow@GLIBC_2.29[0m.[0m[0m
+- [38;5;10merrno[0m is a macro for [38;5;10m(*__errno_location())[0m, bound directly. I also placed empty [38;5;10masm![0m barriers around the [38;5;10mpow[0m call so the optimizer cannot reorder the [38;5;10merrno[0m load across it.[0m[0m
+- Formatting must go through C's [38;5;10mfprintf[0m/[38;5;10m%.2f[0m to glibc's [38;5;10mstderr[0m. Rust's [38;5;10m{:.2}[0m prints [38;5;10mNaN[0m where C prints [38;5;10mnan[0m/[38;5;10m-nan[0m.[0m[0m
+[0m[0m
+Return value is [38;5;10m-1.0[0m on either branch, with the [38;5;10mEDOM[0m-then-[38;5;10mERANGE[0m check order preserved.[0m[0m
+[0m[0m
+[1mDifferential verification[22m (a [38;5;10mdlopen[0m harness comparing both builds over the same inputs): 11,784 calls — full cross product of 57 edge-case doubles (±0, denormals, [38;5;10mDBL_MAX[0m, ±inf, ±nan, overflow/underflow boundaries), 4,000 random raw bit patterns, 4,000 random in-range values, plus boundary sweeps. Return values compared as exact 64-bit patterns.[0m[0m
+[0m[0m
+- stdout: byte-identical ([38;5;10mmd5 42e0a719…[0m)[0m[0m
+- stderr: byte-identical ([38;5;10mmd5 000217df…[0m), 8,316 diagnostic lines — 3,685 domain errors and 4,631 range errors, so both branches are exercised heavily[0m[0m
+- combined [38;5;10m2>&1[0m stream: identical across all 20,100 lines, confirming stream-interleaving matches[0m[0m
+- re-verified after [38;5;10mrm -rf target[0m clean rebuild; zero warnings[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified (checksums recorded above). Files written: [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m), [38;5;10msrc/lib.rs[0m, [38;5;10msrc/ffi.rs[0m, [38;5;10msrc/pow.rs[0m.[0m[0m
+[0m[0m
+One caveat worth stating explicitly: [38;5;10mEDOM[0m/[38;5;10mERANGE[0m are hardcoded as 33/34, correct for Linux/glibc but not portable to other platforms — matching the C library, which is also built here against glibc. I delegated nothing to sub-agents, as the task was small enough to read in full directly.[0m[0m
+[38;5;8m
+ ▸ Credits: 6.86 • Time: 3m 45s
+
+[0m[1G[0m[0m[?25h

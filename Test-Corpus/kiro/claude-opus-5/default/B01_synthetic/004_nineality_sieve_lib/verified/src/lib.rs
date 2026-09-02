@@ -1,46 +1,57 @@
-// Rust translation of c_src/src/sieve.c
+// Rust translation of c_src/src/sieve.c (MIT Lincoln Laboratory, 2025).
 //
-// Original copyright 2025 MIT Lincoln Laboratory (MIT license); see c_src for
-// the full notice.
+// Public ABI mirrored from c_src/include/sieve.h:
+//     void sieve(int start);
 //
-// Behaviour is reproduced exactly, including the fact that the function is
-// named `sieve` but does not actually implement a sieve: it counts upwards
-// from `val`, printing each value, and stops once a value ends in 9 (base 10).
+// Behavior is reproduced exactly as written in the C, including its quirks:
+//   * The counter is printed *before* the terminating check, so the value
+//     ending in 9 is printed too.
+//   * The check is `val % 10 == 9` using C's truncating remainder, which is
+//     negative for negative operands. Negative inputs therefore never match
+//     and the loop keeps counting up through zero until it reaches 9.
+//   * Output goes through C `printf` with the "%d\n" format so stdout
+//     buffering, interleaving and byte layout match the C library exactly.
 
-// The crate/library is named `Sieve` to match the `libSieve` artifact produced
-// by the original CMake build.
+// The crate/library name is `Sieve` so the produced artifact is `libSieve.so`,
+// matching the C build's output name.
 #![allow(non_snake_case)]
 
-use std::ffi::{c_char, c_int};
+use std::ffi::c_int;
 
 unsafe extern "C" {
-    // Use the platform's `printf` so that formatting *and* stdio buffering
-    // semantics are identical to the C original.
-    #[link_name = "printf"]
-    safe fn c_printf(fmt: *const c_char, ...) -> c_int;
+    /// C standard library `printf`. Used directly (rather than Rust's
+    /// `println!`) so that the shared `stdout` FILE buffer, its flush
+    /// semantics and the emitted bytes are identical to the C original.
+    fn printf(fmt: *const std::ffi::c_char, ...) -> c_int;
 }
+
+/// Format string `"%d\n"` as a NUL-terminated byte string.
+const FMT: &[u8; 4] = b"%d\n\0";
 
 /// Count from a starting point, stopping when the count ends in 9 (base 10).
 ///
-/// C signature: `void sieve(int val)`
+/// Direct translation of the C `sieve` function. The parameter is named `val`
+/// here to match the C definition (the header declares it as `start`).
 #[unsafe(no_mangle)]
 pub extern "C" fn sieve(val: c_int) {
-    // `%d\n` as a NUL-terminated C string literal.
-    const FMT: &[u8; 4] = b"%d\n\0";
-
     let mut val = val;
     loop {
-        c_printf(FMT.as_ptr() as *const c_char, val);
+        // printf("%d\n", val);
+        unsafe {
+            printf(FMT.as_ptr() as *const std::ffi::c_char, val);
+        }
 
-        // C's `%` truncates toward zero, and so does Rust's, so negative
-        // inputs behave identically (e.g. -19 % 10 == -9, which is not 9).
+        // if (val % 10 == 9) break;
+        // Rust's `%` on integers truncates toward zero exactly like C's,
+        // so negative values yield negative remainders here as well.
         if val % 10 == 9 {
             break;
         }
 
-        // `val++` in C; wrapping matches the usual compiled behaviour of the
-        // original's signed overflow (unreachable in practice, since counting
-        // upwards always hits a value ending in 9 first).
+        // val++;
+        // Signed overflow is undefined in C; the emitted code wraps in
+        // practice, so wrapping arithmetic reproduces the observable
+        // behavior without panicking in debug builds.
         val = val.wrapping_add(1);
     }
 }

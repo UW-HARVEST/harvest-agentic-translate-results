@@ -1,29 +1,24 @@
-//! Shared harness for the C-vs-Rust FFI differential tests.
+//! Shared harness for the C-vs-Rust differential tests.
 //!
-//! Both implementations are loaded as shared objects with `libloading` and
-//! every call goes through `dlsym`, so the tests exercise exactly the same
-//! entry points an external C caller would use — including the `#[no_mangle]`
-//! export wrappers of the Rust crate.
+//! Both implementations are loaded as shared objects through `libloading` and
+//! driven exclusively through their exported C symbols, so the `#[no_mangle]`
+//! wrappers are part of what is under test.
 //!
-//! * C   : `cbuild/<backend>_<secpar>_<thash>/lib/<backend>/lib<backend>.so`
-//!         plus `.../app/libsphincs_core_det.so`
-//! * Rust: `translation/target/{debug,release}/libsphincsplus.so`
-//!
-//! The parameter constants below are transcribed independently from
-//! `c_src/app/params/params-sphincs-*.h` so that a mistake in the crate's
-//! `src/params.rs` shows up as a test failure rather than being papered over.
+//! Load order matters: the C `libsphincs_core*.so` has *undefined* references to
+//! the backend (`SPX_thash`, `SPX_prf_addr`, …) and, for `rng.c`, to OpenSSL's
+//! `EVP_*`.  So `libcrypto` and `lib<backend>.so` are opened `RTLD_GLOBAL`
+//! first, then the C core, and only then the Rust `cdylib` — which is opened
+//! `RTLD_LOCAL` so that it can never satisfy (or be satisfied by) a C symbol.
 
 #![allow(dead_code)]
-#![allow(non_snake_case)]
 
-use libloading::os::unix::{Library, Symbol, RTLD_LOCAL, RTLD_NOW};
-use std::path::{Path, PathBuf};
+use libloading::os::unix::{Library as UnixLibrary, Symbol as UnixSymbol, RTLD_GLOBAL, RTLD_LAZY, RTLD_LOCAL};
+use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
-// Build-time configuration, mirrored from the Cargo features.
+// Build configuration, resolved exactly the way translation/build.rs resolves it
 // ---------------------------------------------------------------------------
 
-/// `HASH_BACKEND`.  The precedence matches `src/tree.rs`.
 pub const BACKEND: &str = if cfg!(feature = "blake") {
     "blake"
 } else if cfg!(feature = "shake") {
@@ -34,14 +29,12 @@ pub const BACKEND: &str = if cfg!(feature = "blake") {
     "haraka"
 };
 
-/// `THASH`.
 pub const THASH: &str = if cfg!(feature = "simple") {
     "simple"
 } else {
     "robust"
 };
 
-/// `SECPAR`.  The precedence matches `src/params.rs`.
 pub const SECPAR: &str = if cfg!(feature = "256f") {
     "256f"
 } else if cfg!(feature = "256s") {
@@ -56,27 +49,40 @@ pub const SECPAR: &str = if cfg!(feature = "256f") {
     "128s"
 };
 
+pub const URANDOM: bool = cfg!(feature = "urandom");
+
+pub const IS_BLAKE: bool = cfg!(feature = "blake");
+pub const IS_SHAKE: bool = !IS_BLAKE && cfg!(feature = "shake");
+pub const IS_SHA2: bool = !IS_BLAKE && !cfg!(feature = "shake") && cfg!(feature = "sha2");
+pub const IS_HARAKA: bool =
+    !IS_BLAKE && !cfg!(feature = "shake") && !cfg!(feature = "sha2");
+
 // ---------------------------------------------------------------------------
-// Parameters, transcribed from c_src/app/params/params-sphincs-<b>-<secpar>.h.
-// The five primary values are identical across all four hash backends.
+// Parameters, re-derived from app/params/params-sphincs-<backend>-<SECPAR>.h
 // ---------------------------------------------------------------------------
 
-/// `(SPX_N, SPX_FULL_HEIGHT, SPX_D, SPX_FORS_HEIGHT, SPX_FORS_TREES)`
-const PRIMARY: (usize, usize, usize, usize, usize) = match SECPAR.as_bytes() {
-    b"128s" => (16, 63, 7, 12, 14),
-    b"128f" => (16, 66, 22, 6, 33),
-    b"192s" => (24, 63, 7, 14, 17),
-    b"192f" => (24, 66, 22, 8, 33),
-    b"256s" => (32, 64, 8, 14, 22),
-    b"256f" => (32, 68, 17, 9, 35),
-    _ => panic!("unknown SECPAR"),
-};
+const fn secpar_params() -> (usize, usize, usize, usize, usize) {
+    // (SPX_N, SPX_FULL_HEIGHT, SPX_D, SPX_FORS_HEIGHT, SPX_FORS_TREES)
+    if cfg!(feature = "256f") {
+        (32, 68, 17, 9, 35)
+    } else if cfg!(feature = "256s") {
+        (32, 64, 8, 14, 22)
+    } else if cfg!(feature = "192f") {
+        (24, 66, 22, 8, 33)
+    } else if cfg!(feature = "192s") {
+        (24, 63, 7, 14, 17)
+    } else if cfg!(feature = "128f") {
+        (16, 66, 22, 6, 33)
+    } else {
+        (16, 63, 7, 12, 14)
+    }
+}
 
-pub const SPX_N: usize = PRIMARY.0;
-pub const SPX_FULL_HEIGHT: usize = PRIMARY.1;
-pub const SPX_D: usize = PRIMARY.2;
-pub const SPX_FORS_HEIGHT: usize = PRIMARY.3;
-pub const SPX_FORS_TREES: usize = PRIMARY.4;
+pub const SPX_N: usize = secpar_params().0;
+pub const SPX_FULL_HEIGHT: usize = secpar_params().1;
+pub const SPX_D: usize = secpar_params().2;
+pub const SPX_FORS_HEIGHT: usize = secpar_params().3;
+pub const SPX_FORS_TREES: usize = secpar_params().4;
 
 pub const SPX_ADDR_BYTES: usize = 32;
 pub const SPX_WOTS_W: usize = 16;
@@ -91,106 +97,85 @@ pub const SPX_WOTS_LEN2: usize = if SPX_N <= 8 {
 };
 pub const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
 pub const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
-pub const SPX_WOTS_PK_BYTES: usize = SPX_WOTS_BYTES;
-
 pub const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
-
 pub const SPX_FORS_MSG_BYTES: usize = (SPX_FORS_HEIGHT * SPX_FORS_TREES + 7) / 8;
 pub const SPX_FORS_BYTES: usize = (SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES * SPX_N;
-pub const SPX_FORS_PK_BYTES: usize = SPX_N;
-
+pub const SPX_PK_BYTES: usize = 2 * SPX_N;
+pub const SPX_SK_BYTES: usize = 4 * SPX_N;
 pub const SPX_BYTES: usize =
     SPX_N + SPX_FORS_BYTES + SPX_D * SPX_WOTS_BYTES + SPX_FULL_HEIGHT * SPX_N;
-pub const SPX_PK_BYTES: usize = 2 * SPX_N;
-pub const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
+pub const CRYPTO_SEEDBYTES: usize = 3 * SPX_N;
 
-pub const SPX_TREE_BITS: usize = SPX_TREE_HEIGHT * (SPX_D - 1);
-pub const SPX_TREE_BYTES: usize = (SPX_TREE_BITS + 7) / 8;
-pub const SPX_LEAF_BITS: usize = SPX_TREE_HEIGHT;
-pub const SPX_LEAF_BYTES: usize = (SPX_LEAF_BITS + 7) / 8;
-pub const SPX_DGST_BYTES: usize = SPX_FORS_MSG_BYTES + SPX_TREE_BYTES + SPX_LEAF_BYTES;
+/// `SPX_BLAKE512` / `SPX_SHA512`
+pub const WIDE: bool = SPX_N >= 24;
 
-/// `SPX_SHA512` / `SPX_BLAKE512` from the parameter headers.
-pub const USES_512: bool = SPX_N >= 24;
+// `<backend>_offsets.h`
+pub const OFF_LAYER: usize = if IS_SHA2 { 0 } else { 3 };
+pub const OFF_TREE: usize = if IS_SHA2 { 1 } else { 8 };
+pub const OFF_TYPE: usize = if IS_SHA2 { 9 } else { 19 };
+pub const OFF_KP_ADDR: usize = if IS_SHA2 { 10 } else { 20 };
+pub const OFF_CHAIN_ADDR: usize = if IS_SHA2 { 17 } else { 27 };
+pub const OFF_HASH_ADDR: usize = if IS_SHA2 { 21 } else { 31 };
+pub const OFF_TREE_HGT: usize = if IS_SHA2 { 17 } else { 27 };
+pub const OFF_TREE_INDEX: usize = if IS_SHA2 { 18 } else { 28 };
 
-/* Address offsets, transcribed from lib/<backend>/include/<backend>_offsets.h. */
-/// `(LAYER, TREE, TYPE, KP_ADDR, CHAIN_ADDR, HASH_ADDR, TREE_HGT, TREE_INDEX)`
-const OFFSETS: (usize, usize, usize, usize, usize, usize, usize, usize) =
-    if matches!(BACKEND.as_bytes(), b"sha2") {
-        (0, 1, 9, 10, 17, 21, 17, 18)
-    } else {
-        (3, 8, 19, 20, 27, 31, 27, 28)
-    };
-
-pub const SPX_OFFSET_LAYER: usize = OFFSETS.0;
-pub const SPX_OFFSET_TREE: usize = OFFSETS.1;
-pub const SPX_OFFSET_TYPE: usize = OFFSETS.2;
-pub const SPX_OFFSET_KP_ADDR: usize = OFFSETS.3;
-pub const SPX_OFFSET_CHAIN_ADDR: usize = OFFSETS.4;
-pub const SPX_OFFSET_HASH_ADDR: usize = OFFSETS.5;
-pub const SPX_OFFSET_TREE_HGT: usize = OFFSETS.6;
-pub const SPX_OFFSET_TREE_INDEX: usize = OFFSETS.7;
-
-/* Address type constants (app/include/address.h). */
-pub const SPX_ADDR_TYPE_WOTS: u32 = 0;
-pub const SPX_ADDR_TYPE_WOTSPK: u32 = 1;
-pub const SPX_ADDR_TYPE_HASHTREE: u32 = 2;
-pub const SPX_ADDR_TYPE_FORSTREE: u32 = 3;
-pub const SPX_ADDR_TYPE_FORSPK: u32 = 4;
-pub const SPX_ADDR_TYPE_WOTSPRF: u32 = 5;
-pub const SPX_ADDR_TYPE_FORSPRF: u32 = 6;
-
-// ---------------------------------------------------------------------------
-// `spx_ctx` (app/include/context.h) as an opaque, correctly sized byte buffer.
-// ---------------------------------------------------------------------------
-
-/// Size of the backend-specific tail of `spx_ctx`.
-pub const CTX_TAIL_BYTES: usize = match BACKEND.as_bytes() {
-    // uint8_t state_seeded[40] (+ uint8_t state_seeded_512[72] if SPX_SHA512)
-    b"sha2" => 40 + if USES_512 { 72 } else { 0 },
-    // uint64_t tweaked512_rc64[10][8]; uint32_t tweaked256_rc32[10][8];
-    b"haraka" => 10 * 8 * 8 + 10 * 8 * 4,
-    _ => 0,
+/// Size of the `spx_ctx` struct as laid out by `app/include/context.h`.
+pub const CTX_BYTES: usize = if IS_SHA2 {
+    2 * SPX_N + 40 + if WIDE { 72 } else { 0 }
+} else if IS_HARAKA {
+    // uint64_t member forces 8-byte alignment/padding after the two seeds.
+    let head = 2 * SPX_N;
+    let pad = (8 - head % 8) % 8;
+    head + pad + 10 * 8 * 8 + 10 * 8 * 4
+} else {
+    2 * SPX_N
 };
 
-pub const CTX_BYTES: usize = 2 * SPX_N + CTX_TAIL_BYTES;
+/// Blake writes its full digest into `R` from `gen_message_random`.
+pub const GEN_MSG_RANDOM_OUT: usize = if IS_BLAKE {
+    if WIDE {
+        64
+    } else {
+        32
+    }
+} else {
+    SPX_N
+};
 
-/// A heap allocation holding an `spx_ctx`, aligned to 8 bytes (the strictest
-/// alignment any member of the C struct requires).
+// ---------------------------------------------------------------------------
+// spx_ctx as an opaque, correctly aligned byte blob
+// ---------------------------------------------------------------------------
+
+/// `spx_ctx` seen as raw bytes.  Over-aligned to 8 so that the haraka layout is
+/// valid for both implementations.
 #[repr(C, align(8))]
-pub struct Ctx {
-    pub bytes: [u8; CTX_BYTES],
-}
+#[derive(Clone)]
+pub struct Ctx(pub [u8; CTX_BYTES]);
 
 impl Ctx {
-    pub fn new() -> Box<Ctx> {
-        Box::new(Ctx {
-            bytes: [0u8; CTX_BYTES],
-        })
+    pub fn zeroed() -> Self {
+        Ctx([0u8; CTX_BYTES])
     }
-
-    /// Builds a context with `pub_seed`/`sk_seed` filled from a seed byte.
-    pub fn seeded(tag: u8) -> Box<Ctx> {
-        let mut c = Ctx::new();
-        for i in 0..SPX_N {
-            c.bytes[i] = tag ^ (0x40 + i as u8);
-            c.bytes[SPX_N + i] = tag ^ (0x90 + i as u8);
-        }
+    /// Fills `pub_seed` and `sk_seed` (the first `2*SPX_N` bytes) and leaves the
+    /// rest zero, matching a freshly declared `spx_ctx` whose seeds were
+    /// `memcpy`d in by `sign.c`.
+    pub fn with_seeds(pub_seed: &[u8], sk_seed: &[u8]) -> Self {
+        let mut c = Self::zeroed();
+        c.0[..SPX_N].copy_from_slice(&pub_seed[..SPX_N]);
+        c.0[SPX_N..2 * SPX_N].copy_from_slice(&sk_seed[..SPX_N]);
         c
     }
-
     pub fn as_ptr(&self) -> *const u8 {
-        self.bytes.as_ptr()
+        self.0.as_ptr()
     }
-
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.bytes.as_mut_ptr()
+        self.0.as_mut_ptr()
     }
 }
 
 /// `leaf_info_x1` from `app/include/wotsx1.h`.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct LeafInfoX1 {
     pub wots_sig: *mut u8,
     pub wots_sign_leaf: u32,
@@ -199,27 +184,39 @@ pub struct LeafInfoX1 {
     pub pk_addr: [u32; 8],
 }
 
+impl LeafInfoX1 {
+    pub fn zeroed() -> Self {
+        LeafInfoX1 {
+            wots_sig: std::ptr::null_mut(),
+            wots_sign_leaf: 0,
+            wots_steps: std::ptr::null_mut(),
+            leaf_addr: [0; 8],
+            pk_addr: [0; 8],
+        }
+    }
+}
+
 /// `fors_gen_leaf_info` from `app/include/fors.h`.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ForsGenLeafInfo {
     pub leaf_addrx: [u32; 8],
 }
 
 /// `AES_XOF_struct` from `app/include/rng.h`.
 #[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AesXofStruct {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct AesXof {
     pub buffer: [u8; 16],
-    pub buffer_pos: std::os::raw::c_ulong,
-    pub length_remaining: std::os::raw::c_ulong,
+    pub buffer_pos: u64,
+    pub length_remaining: u64,
     pub key: [u8; 32],
     pub ctr: [u8; 16],
 }
 
-impl AesXofStruct {
+impl AesXof {
     pub fn zeroed() -> Self {
-        AesXofStruct {
+        AesXof {
             buffer: [0; 16],
             buffer_pos: 0,
             length_remaining: 0,
@@ -231,218 +228,426 @@ impl AesXofStruct {
 
 /// `AES256_CTR_DRBG_struct` from `app/include/rng.h`.
 #[repr(C)]
-#[derive(Clone, Copy)]
-pub struct Drbg {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct DrbgCtx {
     pub key: [u8; 32],
     pub v: [u8; 16],
-    pub reseed_counter: std::os::raw::c_int,
+    pub reseed_counter: i32,
 }
 
-// ---------------------------------------------------------------------------
-// Library loading.
-// ---------------------------------------------------------------------------
-
-fn workspace_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR points at translation/.
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("translation/ has a parent")
-        .to_path_buf()
+/// `blakestate256`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BlakeState256 {
+    pub h: [u32; 8],
+    pub s: [u32; 4],
+    pub t: [u32; 2],
+    pub buflen: i32,
+    pub nullt: i32,
+    pub buf: [u8; 64],
 }
 
-fn c_build_dir() -> PathBuf {
-    workspace_root()
-        .join("cbuild")
-        .join(format!("{BACKEND}_{SECPAR}_{THASH}"))
-}
-
-fn rust_so_path() -> PathBuf {
-    if let Ok(p) = std::env::var("SPHINCS_RUST_SO") {
-        return PathBuf::from(p);
-    }
-    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
-    for profile in ["debug", "release"] {
-        let p = target.join(profile).join("libsphincsplus.so");
-        if p.exists() {
-            return p;
-        }
-    }
-    panic!(
-        "libsphincsplus.so not found under {}; run `cargo build` with the same \
-         features before `cargo test`",
-        target.display()
-    );
-}
-
-/// Holds the two implementations.  `Symbol`s borrow from these libraries, so
-/// the struct is leaked into a `'static` reference by [`libs`].
-pub struct Libs {
-    /// `libsphincs_all.so`: an empty stub whose `DT_NEEDED` list pulls in
-    /// `libsphincs_core_det.so`, `lib<backend>.so` and `libcrypto.so.3`.  It is
-    /// opened `RTLD_LOCAL`, so the C definitions never reach the global scope
-    /// and cannot interpose on the Rust cdylib's own exported globals.
-    pub c_all: Library,
-    /// The Rust cdylib, also `RTLD_LOCAL` for the same reason.
-    pub rust: Library,
-    /// `libsphincs_all_urandom.so`: the same stub built around
-    /// `libsphincs_core.so` (`randombytes.c`) instead of the deterministic
-    /// core.  Only used by the `urandom` tests.
-    pub c_urandom: Library,
-}
-
-impl Libs {
-    /// Looks a C symbol up through the combined stub.  `dlsym` searches the
-    /// stub's dependencies in `DT_NEEDED` order, i.e. `libsphincs_core_det.so`
-    /// before `lib<backend>.so`, which is the order the CMake `driver` target
-    /// links them in.
-    pub unsafe fn c<T>(&self, name: &str) -> Symbol<T> {
-        let cname = std::ffi::CString::new(name).unwrap();
-        unsafe {
-            self.c_all
-                .get::<T>(cname.as_bytes_with_nul())
-                .unwrap_or_else(|e| panic!("C symbol {name} not found: {e}"))
-        }
-    }
-
-    /// Backend-only symbols resolve through the same handle.
-    pub unsafe fn c_backend<T>(&self, name: &str) -> Symbol<T> {
-        unsafe { self.c(name) }
-    }
-
-    pub unsafe fn r<T>(&self, name: &str) -> Symbol<T> {
-        let cname = std::ffi::CString::new(name).unwrap();
-        unsafe {
-            self.rust
-                .get::<T>(cname.as_bytes_with_nul())
-                .unwrap_or_else(|e| panic!("Rust symbol {name} not found: {e}"))
-        }
-    }
-
-    /// Looks a symbol up in the C library built around `randombytes.c`.
-    pub unsafe fn c_urandom<T>(&self, name: &str) -> Symbol<T> {
-        let cname = std::ffi::CString::new(name).unwrap();
-        unsafe {
-            self.c_urandom
-                .get::<T>(cname.as_bytes_with_nul())
-                .unwrap_or_else(|e| panic!("C (urandom) symbol {name} not found: {e}"))
+impl BlakeState256 {
+    pub fn zeroed() -> Self {
+        BlakeState256 {
+            h: [0; 8],
+            s: [0; 4],
+            t: [0; 2],
+            buflen: 0,
+            nullt: 0,
+            buf: [0; 64],
         }
     }
 }
 
-static LIBS: std::sync::OnceLock<&'static Libs> = std::sync::OnceLock::new();
-
-/// Loads (once) and returns both implementations.
-pub fn libs() -> &'static Libs {
-    LIBS.get_or_init(|| {
-        let cdir = c_build_dir();
-        let all_so = cdir.join("libsphincs_all.so");
-        assert!(
-            all_so.exists(),
-            "missing {}; run ./build_c.sh {BACKEND} {SECPAR} {THASH}",
-            all_so.display()
-        );
-        let c_all = unsafe { Library::open(Some(&all_so), RTLD_NOW | RTLD_LOCAL) }
-            .unwrap_or_else(|e| panic!("dlopen {}: {e}", all_so.display()));
-        let ur_so = cdir.join("libsphincs_all_urandom.so");
-        let c_urandom = unsafe { Library::open(Some(&ur_so), RTLD_NOW | RTLD_LOCAL) }
-            .unwrap_or_else(|e| panic!("dlopen {}: {e}", ur_so.display()));
-        let rso = rust_so_path();
-        let rust = unsafe { Library::open(Some(&rso), RTLD_NOW | RTLD_LOCAL) }
-            .unwrap_or_else(|e| panic!("dlopen {}: {e}", rso.display()));
-        Box::leak(Box::new(Libs {
-            c_all,
-            rust,
-            c_urandom,
-        }))
-    })
+/// `blakestate512`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BlakeState512 {
+    pub h: [u64; 8],
+    pub s: [u64; 4],
+    pub t: [u64; 2],
+    pub buflen: i32,
+    pub nullt: i32,
+    pub buf: [u8; 128],
 }
 
-/// `urandom`: the exported `randombytes` comes from `randombytes.c`
-/// (`/dev/urandom`) rather than the `rng.c` DRBG.  On the C side that is the
-/// difference between the `sphincs_core` and `sphincs_core_det` libraries.
-pub const URANDOM: bool = cfg!(feature = "urandom");
-
-// ---------------------------------------------------------------------------
-// DRBG helpers.
-//
-// `crypto_sign_signature` and `crypto_sign_keypair` draw from the global
-// `randombytes` DRBG, so the C and the Rust library only agree when their
-// `DRBG_ctx` is in the same state at the moment of the call.  Tests that touch
-// the DRBG take `drbg_lock()` (the harness runs tests in parallel threads
-// inside one process) and re-seed both libraries with `reseed_drbgs` before
-// each call.
-// ---------------------------------------------------------------------------
-
-static DRBG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Serialises access to the two libraries' global DRBG state.
-pub fn drbg_lock() -> std::sync::MutexGuard<'static, ()> {
-    DRBG_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-type FnRandombytesInit = unsafe extern "C" fn(*mut u8, *mut u8);
-
-/// Puts both libraries' `DRBG_ctx` into the same state.
-pub fn reseed_drbgs(entropy: &[u8; 48]) {
-    let l = libs();
-    let c = unsafe { l.c::<FnRandombytesInit>("randombytes_init") };
-    let r = unsafe { l.r::<FnRandombytesInit>("randombytes_init") };
-    let mut e = *entropy;
-    unsafe {
-        c(e.as_mut_ptr(), core::ptr::null_mut());
-        r(e.as_mut_ptr(), core::ptr::null_mut());
+impl BlakeState512 {
+    pub fn zeroed() -> Self {
+        BlakeState512 {
+            h: [0; 8],
+            s: [0; 4],
+            t: [0; 2],
+            buflen: 0,
+            nullt: 0,
+            buf: [0; 128],
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic pseudo-random test inputs (xorshift64*, no crate needed).
+// Deterministic PRNG (xoshiro256**), so every row is reproducible
 // ---------------------------------------------------------------------------
 
-pub struct Rng(u64);
+pub struct Rng {
+    s: [u64; 4],
+}
 
 impl Rng {
     pub fn new(seed: u64) -> Self {
-        Rng(seed | 1)
+        // splitmix64 expansion
+        let mut x = seed;
+        let mut s = [0u64; 4];
+        for slot in s.iter_mut() {
+            x = x.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = x;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            *slot = z ^ (z >> 31);
+        }
+        Rng { s }
     }
     pub fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        let result = self.s[1].wrapping_mul(5).rotate_left(7).wrapping_mul(9);
+        let t = self.s[1] << 17;
+        self.s[2] ^= self.s[0];
+        self.s[3] ^= self.s[1];
+        self.s[1] ^= self.s[2];
+        self.s[0] ^= self.s[3];
+        self.s[2] ^= t;
+        self.s[3] = self.s[3].rotate_left(45);
+        result
     }
     pub fn next_u32(&mut self) -> u32 {
         (self.next_u64() >> 32) as u32
     }
     pub fn fill(&mut self, buf: &mut [u8]) {
-        for b in buf.iter_mut() {
-            *b = (self.next_u64() >> 24) as u8;
+        for chunk in buf.chunks_mut(8) {
+            let v = self.next_u64().to_le_bytes();
+            let n = chunk.len();
+            chunk.copy_from_slice(&v[..n]);
         }
     }
-    pub fn vec(&mut self, n: usize) -> Vec<u8> {
+    pub fn bytes(&mut self, n: usize) -> Vec<u8> {
         let mut v = vec![0u8; n];
         self.fill(&mut v);
         v
     }
+    pub fn below(&mut self, n: u32) -> u32 {
+        if n == 0 {
+            0
+        } else {
+            self.next_u32() % n
+        }
+    }
 }
 
-/// Asserts two byte buffers are identical, printing a short diff on failure.
+/// The fixed seed used by every row, so failures reproduce exactly.
+pub const SEED: u64 = 0x5150_5058_2b2b_0001;
+
+/// How many randomized inputs a cheap row uses.
+pub fn iters_cheap() -> usize {
+    env_usize("SPX_ITERS_CHEAP", 32)
+}
+/// How many randomized inputs a per-WOTS-key row uses.
+pub fn iters_mid() -> usize {
+    env_usize("SPX_ITERS_MID", 4)
+}
+/// How many randomized inputs a full-signature row uses.
+pub fn iters_heavy() -> usize {
+    env_usize(
+        "SPX_ITERS_HEAVY",
+        if SECPAR.ends_with('s') { 1 } else { 2 },
+    )
+}
+
+fn env_usize(name: &str, dflt: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(dflt)
+}
+
+// ---------------------------------------------------------------------------
+// Library loading
+// ---------------------------------------------------------------------------
+
+fn workspace_root() -> PathBuf {
+    // translation/ -> ..
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crate has a parent directory")
+        .to_path_buf()
+}
+
+pub struct Libs {
+    pub c: UnixLibrary,
+    pub rs: UnixLibrary,
+    // Kept alive for the lifetime of the process.
+    _crypto: Option<UnixLibrary>,
+    _backend: UnixLibrary,
+    /// Under the `urandom` feature the active C core is `libsphincs_core.so`,
+    /// which links `randombytes.c` and therefore does not contain `rng.c` at
+    /// all.  `rng.c`'s symbols (`seedexpander*`, `AES256_*`, `DRBG_ctx`) are
+    /// identical in both CMake targets, so they are looked up in
+    /// `libsphincs_core_det.so` opened as an auxiliary, non-global handle.
+    _rng: Option<UnixLibrary>,
+}
+
+unsafe impl Send for Libs {}
+unsafe impl Sync for Libs {}
+
+impl Libs {
+    fn open() -> Libs {
+        let root = workspace_root();
+        let cdir = root.join("cbuild").join(format!(
+            "{}_{}_{}",
+            BACKEND, THASH, SECPAR
+        ));
+        assert!(
+            cdir.is_dir(),
+            "C reference build missing: {} — run ./build_c_all.sh",
+            cdir.display()
+        );
+
+        // OpenSSL must be resolvable before libsphincs_core_det.so is opened.
+        let crypto = unsafe {
+            UnixLibrary::open(Some("libcrypto.so.3"), RTLD_LAZY | RTLD_GLOBAL)
+                .or_else(|_| UnixLibrary::open(Some("libcrypto.so"), RTLD_LAZY | RTLD_GLOBAL))
+                .ok()
+        };
+
+        let backend = unsafe {
+            UnixLibrary::open(
+                Some(cdir.join(format!("lib{}.so", BACKEND))),
+                RTLD_LAZY | RTLD_GLOBAL,
+            )
+        }
+        .expect("failed to dlopen the C backend library");
+
+        let core_name = if URANDOM {
+            "libsphincs_core.so"
+        } else {
+            "libsphincs_core_det.so"
+        };
+        let c = unsafe { UnixLibrary::open(Some(cdir.join(core_name)), RTLD_LAZY | RTLD_GLOBAL) }
+            .expect("failed to dlopen the C core library");
+
+        // `rng.c` lives only in `libsphincs_core_det.so`.  When the active core
+        // is the `/dev/urandom` one, open the deterministic core as a *local*
+        // handle purely as a source of the `rng.c` symbols; RTLD_LOCAL keeps its
+        // duplicate `randombytes` out of the global scope.
+        let rng_aux = if URANDOM {
+            Some(
+                unsafe {
+                    UnixLibrary::open(
+                        Some(cdir.join("libsphincs_core_det.so")),
+                        RTLD_LAZY | RTLD_LOCAL,
+                    )
+                }
+                .expect("failed to dlopen libsphincs_core_det.so for the rng.c symbols"),
+            )
+        } else {
+            None
+        };
+
+        // The Rust cdylib is self-contained; open it RTLD_LOCAL so the two
+        // implementations can never resolve into each other.
+        let rs_path = {
+            let a = root.join("translation/target/release/libsphincsplus.so");
+            let b = root.join("translation/target/debug/libsphincsplus.so");
+            if a.is_file() && (!b.is_file() || newer(&a, &b)) {
+                a
+            } else {
+                b
+            }
+        };
+        assert!(
+            rs_path.is_file(),
+            "Rust cdylib missing: {}",
+            rs_path.display()
+        );
+        // The Rust cdylib is self-contained; open it RTLD_LOCAL so the two
+        // implementations can never resolve into each other.  RTLD_DEEPBIND is
+        // essential: the C libraries are in the global scope and define the very
+        // same names (`SPX_thash`, `DRBG_ctx`, …) with default visibility, so
+        // without it the Rust library's *own* GOT/PLT entries would be
+        // interposed by the C definitions and the "differential" test would
+        // silently compare C against C.
+        const RTLD_DEEPBIND: std::ffi::c_int = 0x0000_8;
+        let rs = unsafe {
+            UnixLibrary::open(Some(&rs_path), RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND)
+        }
+        .expect("failed to dlopen the Rust cdylib");
+
+        // Guard against a stale cdylib: `cargo test` does not necessarily
+        // rebuild a `crate-type = ["cdylib"]` artifact, so a leftover .so from a
+        // different feature combination would silently produce nonsense (and
+        // heap corruption, since every buffer size would be wrong).
+        for (which, lib) in [("C", &c), ("Rust", &rs)] {
+            type F = unsafe extern "C" fn() -> u64;
+            let f = unsafe { lib.get::<F>(b"crypto_sign_bytes\0") }
+                .expect("crypto_sign_bytes must be exported");
+            let got = unsafe { f() } as usize;
+            assert_eq!(
+                got, SPX_BYTES,
+                "{which} library was built for a different configuration \
+                 (crypto_sign_bytes() = {got}, expected {SPX_BYTES} for \
+                 {BACKEND}/{THASH}/{SECPAR}). Run `cargo build --release \
+                 --no-default-features --features \"{BACKEND},{THASH},{SECPAR}\"` \
+                 and `./build_c_all.sh` first."
+            );
+        }
+
+        let l = Libs {
+            c,
+            rs,
+            _crypto: crypto,
+            _backend: backend,
+            _rng: rng_aux,
+        };
+
+        // Isolation self-check: the two implementations must be distinct
+        // objects.  If RTLD_DEEPBIND were ineffective these addresses would
+        // coincide and every "differential" assertion would be vacuous.
+        {
+            type F = unsafe extern "C" fn() -> u64;
+            let (a, b) = l.pair::<F>("crypto_sign_bytes");
+            assert_ne!(
+                a.into_raw(),
+                b.into_raw(),
+                "C and Rust resolved crypto_sign_bytes to the same address; \
+                 the two libraries are not isolated"
+            );
+            let (a, b) = l.pair::<F>("SPX_thash");
+            assert_ne!(
+                a.into_raw(),
+                b.into_raw(),
+                "C and Rust resolved SPX_thash to the same address"
+            );
+        }
+
+        l
+    }
+
+    /// `dlsym` on both libraries, returning `(c_fn, rust_fn)`.
+    /// The C core (`libsphincs_core*.so`) has no `DT_NEEDED` entry for the
+    /// backend, so backend symbols (`SPX_thash`, `SPX_prf_addr`, `blake256`, …)
+    /// are not reachable through the core handle; fall back to the backend
+    /// handle for those.
+    pub fn pair<T>(&self, name: &str) -> (UnixSymbol<T>, UnixSymbol<T>) {
+        let key = cname(name);
+        let cs = unsafe { self.c.get::<T>(key.as_bytes()) }
+            .or_else(|_| unsafe { self._backend.get::<T>(key.as_bytes()) })
+            .or_else(|e| match &self._rng {
+                Some(l) => unsafe { l.get::<T>(key.as_bytes()) },
+                None => Err(e),
+            })
+            .unwrap_or_else(|e| panic!("C lib is missing {name}: {e}"));
+        let rss = unsafe { self.rs.get::<T>(key.as_bytes()) }
+            .unwrap_or_else(|e| panic!("Rust lib is missing {name}: {e}"));
+        (cs, rss)
+    }
+}
+
+fn cname(name: &str) -> String {
+    format!("{name}\0")
+}
+
+/// Address of a *data* symbol in both libraries.
+pub fn data_pair<T>(name: &str) -> (*mut T, *mut T) {
+    let l = libs();
+    let key = cname(name);
+    let c = unsafe { l.c.get::<*mut T>(key.as_bytes()) }
+        .or_else(|e| match &l._rng {
+            Some(x) => unsafe { x.get::<*mut T>(key.as_bytes()) },
+            None => Err(e),
+        })
+        .unwrap_or_else(|e| panic!("C lib is missing data symbol {name}: {e}"))
+        .into_raw() as *mut T;
+    let r = unsafe { l.rs.get::<*mut T>(key.as_bytes()) }
+        .unwrap_or_else(|e| panic!("Rust lib is missing data symbol {name}: {e}"))
+        .into_raw() as *mut T;
+    (c, r)
+}
+
+fn newer(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let ma = a.metadata().and_then(|m| m.modified()).ok();
+    let mb = b.metadata().and_then(|m| m.modified()).ok();
+    match (ma, mb) {
+        (Some(x), Some(y)) => x >= y,
+        _ => true,
+    }
+}
+
+static LIBS: std::sync::OnceLock<Libs> = std::sync::OnceLock::new();
+
+pub fn libs() -> &'static Libs {
+    LIBS.get_or_init(Libs::open)
+}
+
+/// Byte-for-byte comparison with a helpful message.
 #[track_caller]
-pub fn assert_bytes_eq(what: &str, c: &[u8], r: &[u8]) {
-    if c == r {
+pub fn same(what: &str, c: &[u8], r: &[u8]) {
+    if c != r {
+        let n = c.len().min(r.len());
+        let mut first = n;
+        for i in 0..n {
+            if c[i] != r[i] {
+                first = i;
+                break;
+            }
+        }
+        panic!(
+            "{what}: C and Rust differ ({BACKEND}/{THASH}/{SECPAR}, urandom={URANDOM})\n\
+             first difference at byte {first} (lens {} vs {})\n  C = {}\n  R = {}",
+            c.len(),
+            r.len(),
+            hex(&c[first.saturating_sub(4)..(first + 12).min(c.len())]),
+            hex(&r[first.saturating_sub(4)..(first + 12).min(r.len())]),
+        );
+    }
+}
+
+#[track_caller]
+pub fn same_val<T: PartialEq + std::fmt::Debug>(what: &str, c: T, r: T) {
+    assert_eq!(
+        c, r,
+        "{what}: C and Rust differ ({BACKEND}/{THASH}/{SECPAR}, urandom={URANDOM})"
+    );
+}
+
+pub fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// A random, plausible 32-byte hash address.
+pub fn rand_addr(rng: &mut Rng) -> [u8; 32] {
+    let mut a = [0u8; 32];
+    rng.fill(&mut a);
+    a
+}
+
+/// Seeds the deterministic DRBG in *both* libraries identically.  No-op under
+/// the `urandom` feature, where `randombytes()` has no seedable state.
+pub fn seed_both_drbgs(entropy: &[u8; 48], personalization: Option<&[u8; 48]>) {
+    if URANDOM {
         return;
     }
-    let first = c
-        .iter()
-        .zip(r.iter())
-        .position(|(a, b)| a != b)
-        .unwrap_or(c.len().min(r.len()));
-    panic!(
-        "{what} mismatch ({BACKEND}/{THASH}/{SECPAR}): lengths {}/{}, first difference at byte {first}\n  C   : {:02x?}\n  Rust: {:02x?}",
-        c.len(),
-        r.len(),
-        &c[first.saturating_sub(4)..(first + 12).min(c.len())],
-        &r[first.saturating_sub(4)..(first + 12).min(r.len())],
-    );
+    type Init = unsafe extern "C" fn(*mut u8, *mut u8);
+    let (cf, rf) = libs().pair::<Init>("randombytes_init");
+    let mut e1 = *entropy;
+    let mut e2 = *entropy;
+    let mut p1 = personalization.copied();
+    let mut p2 = personalization.copied();
+    unsafe {
+        cf(
+            e1.as_mut_ptr(),
+            p1.as_mut().map_or(std::ptr::null_mut(), |p| p.as_mut_ptr()),
+        );
+        rf(
+            e2.as_mut_ptr(),
+            p2.as_mut().map_or(std::ptr::null_mut(), |p| p.as_mut_ptr()),
+        );
+    }
 }

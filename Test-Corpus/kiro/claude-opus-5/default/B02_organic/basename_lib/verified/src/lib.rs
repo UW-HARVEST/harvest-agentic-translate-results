@@ -1,50 +1,57 @@
-//! Rust translation of `c_src/src/lib.c`.
+//! Rust translation of the C library in `c_src/`.
 //!
-//! Provides `tool_basename`, which returns a pointer into the caller-owned
-//! string just past the last `/` or `\` separator (whichever comes later).
-//! The behaviour, including the original code's quirks, is reproduced exactly.
+//! Public ABI (from `c_src/include/lib.h`):
+//!   char *tool_basename(char *path);
+//!
+//! The header contains no namespace/renaming macros, so the linker symbol is
+//! `tool_basename` verbatim.
 
 use std::ffi::c_char;
+use std::ptr;
 
-/// Equivalent of C's `strrchr`: returns a pointer to the last occurrence of
-/// `needle` in the NUL-terminated string starting at `s`, or null if absent.
+/// Faithful re-implementation of C `strrchr`.
+///
+/// Returns a pointer to the last occurrence of `c` in the NUL-terminated string
+/// `s`, or NULL if `c` does not occur. As in C, the terminating NUL is part of
+/// the searched string, so `c == 0` yields a pointer to the terminator.
 ///
 /// # Safety
-///
-/// `s` must point to a NUL-terminated string, exactly as the C code requires.
-unsafe fn strrchr(s: *const c_char, needle: c_char) -> *mut c_char {
-    let mut found: *mut c_char = std::ptr::null_mut();
+/// `s` must point to a NUL-terminated string.
+unsafe fn strrchr(s: *const c_char, c: c_char) -> *mut c_char {
+    let mut last: *mut c_char = ptr::null_mut();
     let mut p = s as *mut c_char;
 
-    // Walk the whole string; the terminating NUL itself is never a match here
-    // because the callers only search for '/' and '\\'.
     loop {
-        let c = unsafe { *p };
-        if c == 0 {
-            return found;
+        let ch = unsafe { *p };
+        if ch == c {
+            last = p;
         }
-        if c == needle {
-            found = p;
+        if ch == 0 {
+            break;
         }
         p = unsafe { p.add(1) };
     }
+
+    last
 }
 
-/// Returns the file-name component of `path`.
+/// Return the final path component of `path`, treating both `/` and `\` as
+/// separators.
 ///
-/// Both `/` and `\` are accepted as separators; when both are present the one
-/// that occurs later in the string wins. If neither is present the input
-/// pointer is returned unchanged.
+/// Translated verbatim from `c_src/src/lib.c`. The original performs no NULL
+/// check on `path`; that behaviour (a crash on NULL) is preserved rather than
+/// "fixed". The `s1 > s2` pointer comparison picks whichever separator occurs
+/// later in the string.
 ///
 /// # Safety
-///
-/// `path` must point to a NUL-terminated string, matching the C contract.
+/// `path` must point to a NUL-terminated string, exactly as the C version
+/// requires.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tool_basename(path: *mut c_char) -> *mut c_char {
     let mut path = path;
 
-    let s1 = unsafe { strrchr(path, b'/' as c_char) };
-    let s2 = unsafe { strrchr(path, b'\\' as c_char) };
+    let s1: *mut c_char = unsafe { strrchr(path, b'/' as c_char) };
+    let s2: *mut c_char = unsafe { strrchr(path, b'\\' as c_char) };
 
     if !s1.is_null() && !s2.is_null() {
         path = if s1 > s2 {

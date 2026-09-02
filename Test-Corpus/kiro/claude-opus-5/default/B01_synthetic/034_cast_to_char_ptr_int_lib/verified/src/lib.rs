@@ -1,5 +1,7 @@
 // Rust translation of c_src/src/driver.c
 //
+// Original copyright notice from the C sources:
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -23,45 +25,44 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int, c_uchar};
+use core::ffi::{c_char, c_int, c_uchar};
 
-unsafe extern "C" {
-    /// C `printf` from the platform libc. Used instead of Rust's `std::io::stdout`
-    /// so that output goes through the exact same C stdio stream (and buffering)
-    /// as the original implementation.
-    #[link_name = "printf"]
-    unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
+// The C code writes with printf(3). Go through libc's printf so that the
+// output shares the exact same stdout FILE buffer, flush points and
+// interleaving behaviour as the original library.
+extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// Translation of the C `static void print_hex(unsigned char *p, int len)`.
+/// `static void print_hex(unsigned char *p, int len)`
 ///
-/// Static in C, so it is not exported from the shared object; here it is a
-/// private Rust function taking the byte slice the caller would have pointed at.
-fn print_hex(p: &[c_uchar], len: c_int) {
-    // `for (int i = 0; i < len; i++) printf("%02x", p[i]);`
+/// Not exported by the C shared object (it is `static`), so it stays private
+/// here as well.
+unsafe fn print_hex(p: *const c_uchar, len: c_int) {
     let mut i: c_int = 0;
     while i < len {
-        // `p[i]` is an `unsigned char`, promoted to `int` for the variadic call.
-        let byte: c_uchar = p[i as usize];
-        unsafe {
-            c_printf(c"%02x".as_ptr(), byte as c_int);
-        }
+        // printf("%02x", p[i]) -- the unsigned char argument is promoted to int.
+        printf(
+            b"%02x\0".as_ptr() as *const c_char,
+            *p.offset(i as isize) as c_int,
+        );
         i += 1;
     }
-    // `printf("\n");`
-    unsafe {
-        c_printf(c"\n".as_ptr());
-    }
+    printf(b"\n\0".as_ptr() as *const c_char);
 }
 
-/// Translation of the C `void driver(int x)`.
+/// `void driver(int x)`
 ///
-/// The C code reinterprets the storage of the `int` parameter as
-/// `unsigned char[sizeof(int)]`, so the output is the native-endian byte
-/// representation of `x` (little-endian on x86-64/aarch64).
+/// Prints the object representation of `x` (4 bytes on the target ABI, in the
+/// host's byte order) as lowercase hex, followed by a newline.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
-    // `print_hex((unsigned char *)&x, sizeof(x));`
-    let bytes: [c_uchar; size_of::<c_int>()] = x.to_ne_bytes();
-    print_hex(&bytes, size_of::<c_int>() as c_int);
+    // print_hex((unsigned char *)&x, sizeof(x));
+    let x = x;
+    unsafe {
+        print_hex(
+            &x as *const c_int as *const c_uchar,
+            core::mem::size_of::<c_int>() as c_int,
+        );
+    }
 }

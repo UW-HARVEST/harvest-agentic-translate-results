@@ -1,0 +1,988 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "---C_SRC---" && find c_src -type f | head -200 && echo "---COUNT---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src structure
+
+/local/home/scheschb/.harvest/work/harvest-work-jeryAG
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 16:44 .
+drwxr-xr-x. 860 scheschb amazon 81920 Sep  1 16:44 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 16:44 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 16:44 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 16:44 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/logger.h
+c_src/include/task_manager.h
+c_src/src/driver.c
+c_src/src/logger.c
+c_src/src/task_manager.c
+---COUNT---
+6
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && wc -l CMakeLists.txt include/*.h src/*.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+   38 CMakeLists.txt
+   35 include/logger.h
+   45 include/task_manager.h
+   74 src/driver.c
+   70 src/logger.c
+   78 src/task_manager.c
+  340 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m6[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources and headers
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/include/logger.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/include/task_manager.h[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/src/driver.c[0m, all lines
+↱ Operation 5: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/src/logger.c[0m, all lines
+↱ Operation 6: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/src/task_manager.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1447 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1350 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/include/logger.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1574 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/include/task_manager.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2308 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/src/driver.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2093 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/src/logger.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2780 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src/src/task_manager.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 6 operations processed, 6 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild && mkdir cbuild && cd cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-jeryAG/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SYMBOLS ===" && nm -D libdriver.so | grep -i ' T \| D \| B ' [0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and enumerate exported symbols
+
+[ 25%] Building C object CMakeFiles/driver.dir/src/task_manager.c.o
+[ 50%] Building C object CMakeFiles/driver.dir/src/logger.c.o
+[ 75%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+=== SYMBOLS ===
+000000000000133b T add_task
+0000000000001259 T create_task_manager
+0000000000001480 T destroy_task_manager
+000000000000163f T driver
+000000000000160e T finalize_logger
+00000000000014b9 T initialize_logger
+00000000000015d1 T log_error
+0000000000001557 T log_info
+0000000000001594 T log_warning
+00000000000013e2 T print_tasks
+[38;5;244m - Completed in 0.494s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; ls -la /local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+total 0
+drwxr-xr-x. 2 scheschb amazon  6 Sep  1 16:44 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 16:44 ..
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 3 C files, 10 exported symbols. Writing the Rust crate now.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/cbind.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libc bindings module
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /*
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m  * Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m  * Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m  * to any person obtaining a copy of this software
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m  * and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m  * to deal in the Software without restriction,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m  * including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m  * modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m  * and/or sell copies of the Software,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m  * and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m  * subject to the following conditions:
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m  * The above copyright notice and this permission notice
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m  * shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m  * THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m  * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m  */
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m //! Minimal bindings to the platform C library.
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m //! The original library relies on `stdio` streams, `malloc`/`free` and the
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m //! `str*` family. Re-using the very same C entry points (instead of Rust
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m //! equivalents) keeps the observable behaviour - buffering, interleaving with a
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m //! caller's own stdio writes, allocator identity, `atoi`/`getenv` semantics -
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m //! bit-for-bit identical to the C implementation.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m /// Opaque `FILE`.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m pub struct FILE {
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     _private: [u8; 0],
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m pub const EXIT_FAILURE: c_int = 1;
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     pub static mut stderr: *mut FILE;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     pub fn fopen(path: *const c_char, mode: *const c_char) -> *mut FILE;
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     pub fn fclose(stream: *mut FILE) -> c_int;
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     pub fn fprintf(stream: *mut FILE, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     pub fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     pub fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     pub fn free(ptr: *mut c_void);
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     pub fn getenv(name: *const c_char) -> *mut c_char;
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     pub fn atoi(s: *const c_char) -> c_int;
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     pub fn strlen(s: *const c_char) -> usize;
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     pub fn strchr(s: *const c_char, c: c_int) -> *mut c_char;
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     pub fn strncpy(dst: *mut c_char, src: *const c_char, n: usize) -> *mut c_char;
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/cbind.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/logger.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate logger.c
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /*
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m  * Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m  * Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m  * to any person obtaining a copy of this software
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m  * and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m  * to deal in the Software without restriction,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m  * including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m  * modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m  * and/or sell copies of the Software,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m  * and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m  * subject to the following conditions:
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m  * The above copyright notice and this permission notice
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m  * shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m  * THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m  * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m  */
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m //! Translation of `c_src/src/logger.c`.
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m use core::ptr;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m use crate::cbind::{fclose, fopen, fprintf, getenv, FILE};
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m /// `static FILE *log_file = NULL;`
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m static mut LOG_FILE: *mut FILE = ptr::null_mut();
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m /// `int initialize_logger();`
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m /// Opens `$LOG_FILE` (or `default.log`) for appending. Note that, exactly like
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m /// the C original, a second call simply overwrites the stored handle without
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m /// closing the previous one.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m pub unsafe extern "C" fn initialize_logger() -> c_int {
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     let log_file_env: *const c_char = getenv(c"LOG_FILE".as_ptr());
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     let log_file_path: *const c_char = if !log_file_env.is_null() {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         log_file_env
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         c"default.log".as_ptr()
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     LOG_FILE = fopen(log_file_path, c"a".as_ptr());
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     if LOG_FILE.is_null() {
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         fprintf(
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             crate::cbind::stderr,
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m             c"Failed to open log file: %s\n".as_ptr(),
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             log_file_path,
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     log_info(c"Logger initialized.".as_ptr());
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m /// `void log_info(const char *message);`
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m pub unsafe extern "C" fn log_info(message: *const c_char) {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     if !LOG_FILE.is_null() {
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m         fprintf(LOG_FILE, c"[INFO] %s\n".as_ptr(), message);
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m /// `void log_warning(const char *message);`
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m pub unsafe extern "C" fn log_warning(message: *const c_char) {
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     if !LOG_FILE.is_null() {
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         fprintf(LOG_FILE, c"[WARNING] %s\n".as_ptr(), message);
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m /// `void log_error(const char *message);`
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m pub unsafe extern "C" fn log_error(message: *const c_char) {
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     if !LOG_FILE.is_null() {
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m         fprintf(LOG_FILE, c"[ERROR] %s\n".as_ptr(), message);
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m /// `void finalize_logger();`
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m /// Mirrors the C original: the handle is closed but *not* reset to `NULL`, so
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m /// subsequent logging calls still see a non-NULL (now dangling) handle.
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m pub unsafe extern "C" fn finalize_logger() {
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m     if !LOG_FILE.is_null() {
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m         log_info(c"Logger finalized.".as_ptr());
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m         fclose(LOG_FILE);
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    98[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/logger.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/task_manager.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate task_manager.c
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m /*
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m  * Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m  * Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m  * to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m  * and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m  * to deal in the Software without restriction,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m  * including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m  * modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m  * and/or sell copies of the Software,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m  * and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m  * subject to the following conditions:
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m  * The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m  * shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m  * THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m  * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m  */
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! Translation of `c_src/src/task_manager.c` and `c_src/include/task_manager.h`.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m use core::mem::size_of;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m use core::ptr::{self, addr_of, addr_of_mut};
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m use crate::cbind::{atoi, free, getenv, malloc, printf, strncpy};
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m use crate::logger::{log_error, log_info, log_warning};
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m ///     char description[256];
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m ///     int priority;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// } Task;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m pub struct Task {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     pub description: [c_char; 256],
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     pub priority: c_int,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m ///     Task *tasks;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m ///     int max_tasks;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m ///     int task_count;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// } TaskManager;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m pub struct TaskManager {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     pub tasks: *mut Task,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     pub max_tasks: c_int,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     pub task_count: c_int,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m // Layout must match the C structs exactly; the ABI depends on it.
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m const _: () = assert!(size_of::<Task>() == 260);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m const _: () = assert!(size_of::<TaskManager>() == 16);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// `TaskManager *create_task_manager();`
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m pub unsafe extern "C" fn create_task_manager() -> *mut TaskManager {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let manager = malloc(size_of::<TaskManager>()) as *mut TaskManager;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     if manager.is_null() {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         log_error(c"Failed to allocate memory for TaskManager.".as_ptr());
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         return ptr::null_mut();
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     let max_tasks_env: *const c_char = getenv(c"MAX_TASKS".as_ptr());
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let max_tasks: c_int = if !max_tasks_env.is_null() {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         atoi(max_tasks_env)
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         10
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     addr_of_mut!((*manager).max_tasks).write(max_tasks);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     addr_of_mut!((*manager).task_count).write(0);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     // `manager->max_tasks * sizeof(Task)` in C promotes the (possibly negative)
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     // int to size_t and then multiplies with wrap-around; reproduce that.
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     let bytes = (max_tasks as isize as usize).wrapping_mul(size_of::<Task>());
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let tasks = malloc(bytes) as *mut Task;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     addr_of_mut!((*manager).tasks).write(tasks);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     if tasks.is_null() {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         log_error(c"Failed to allocate memory for tasks.".as_ptr());
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         free(manager as *mut c_void);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         return ptr::null_mut();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     log_info(c"TaskManager created successfully.".as_ptr());
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     manager
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// `void add_task(TaskManager *manager, const char *description, int priority);`
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m pub unsafe extern "C" fn add_task(
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     manager: *mut TaskManager,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     description: *const c_char,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     priority: c_int,
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     if (*manager).task_count >= (*manager).max_tasks {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         log_warning(c"Cannot add task: Maximum task limit reached.".as_ptr());
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let index = (*manager).task_count;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     (*manager).task_count = index + 1;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     let task: *mut Task = (*manager).tasks.offset(index as isize);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let desc = addr_of_mut!((*task).description) as *mut c_char;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     strncpy(desc, description, 256 - 1);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     *desc.add(256 - 1) = 0;
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     addr_of_mut!((*task).priority).write(priority);
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     log_info(c"Task added successfully.".as_ptr());
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// `void print_tasks(const TaskManager *manager);`
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m pub unsafe extern "C" fn print_tasks(manager: *const TaskManager) {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     printf(c"Tasks:\n".as_ptr());
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     while i < (*manager).task_count {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         let task: *const Task = (*manager).tasks.offset(i as isize);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         printf(
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             c"  [%d] %s (Priority: %d)\n".as_ptr(),
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             i + 1,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             addr_of!((*task).description) as *const c_char,
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m             (*task).priority,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m /// `void destroy_task_manager(TaskManager *manager);`
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m pub unsafe extern "C" fn destroy_task_manager(manager: *mut TaskManager) {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     free((*manager).tasks as *mut c_void);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     free(manager as *mut c_void);
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     log_info(c"TaskManager destroyed successfully.".as_ptr());
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/task_manager.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/driver.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /*
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m  * Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m  * Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m  * to any person obtaining a copy of this software
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m  * and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m  * to deal in the Software without restriction,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m  * including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m  * modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m  * and/or sell copies of the Software,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m  * and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m  * subject to the following conditions:
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m  * The above copyright notice and this permission notice
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m  * shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m  * THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m  * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m  */
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m //! Translation of `c_src/src/driver.c`.
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m use crate::cbind::{fprintf, free, malloc, strchr, strlen, strncpy, EXIT_FAILURE};
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m use crate::logger::{finalize_logger, initialize_logger};
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m use crate::task_manager::{add_task, create_task_manager, destroy_task_manager, print_tasks};
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m /// `int driver(const char *tasks);`
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m /// Splits `tasks` on `'\n'` and registers every line - including empty ones -
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m /// with an incrementing priority starting at 1, then prints the task list.
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(tasks: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     let res = initialize_logger();
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     if res != 0 {
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         return EXIT_FAILURE;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     let manager = create_task_manager();
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     if manager.is_null() {
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         return EXIT_FAILURE;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     let mut start: *const c_char = tasks;
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     let mut priority: c_int = 1;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     while *start != 0 {
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         let mut end: *const c_char = strchr(start, b'\n' as c_int);
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         if end.is_null() {
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             end = start.add(strlen(start));
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         // Extract the current task
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         let length = end.offset_from(start) as usize;
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m         let task = malloc(length + 1) as *mut c_char;
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         if task.is_null() {
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m             fprintf(
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m                 crate::cbind::stderr,
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m                 c"Error: Failed to allocate memory for task.\n".as_ptr(),
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m             destroy_task_manager(manager);
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m             finalize_logger();
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m             return EXIT_FAILURE;
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         strncpy(task, start, length);
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         *task.add(length) = 0;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         add_task(manager, task, priority);
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m         priority += 1;
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         free(task as *mut c_void);
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         start = if *end == b'\n' as c_char {
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m             end.add(1)
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m             end
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     print_tasks(manager);
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m     destroy_task_manager(manager);
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     finalize_logger();
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/driver.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add lib.rs root module
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /*
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m  * Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m  * Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m  * to any person obtaining a copy of this software
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m  * and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m  * to deal in the Software without restriction,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m  * including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m  * modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m  * and/or sell copies of the Software,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m  * and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m  * subject to the following conditions:
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m  * The above copyright notice and this permission notice
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m  * shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m  *
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m  * THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m  * FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m  */
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m //! Rust translation of the `driver` C shared library (`c_src/`).
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m //! Exported ABI (matches `nm -D libdriver.so` of the C build):
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m //! * `task_manager.h`: `create_task_manager`, `add_task`, `print_tasks`,
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m //!   `destroy_task_manager`
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m //! * `logger.h`: `initialize_logger`, `log_info`, `log_warning`, `log_error`,
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m //!   `finalize_logger`
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m //! * `driver.c`: `driver`
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m //! Behaviour - including the original's quirks (unchecked `MAX_TASKS`,
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m //! `NULL`-unsafe `add_task`/`print_tasks`/`destroy_task_manager`, the
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m //! non-reset `log_file` handle) - is reproduced as-is rather than corrected.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m pub mod cbind;
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m pub mod driver;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m pub mod logger;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m pub mod task_manager;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation && cargo build --release 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation)
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.160s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Now the symbol diff against the C [38;5;10m.so[0m:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-jeryAG
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '$2=="T"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/rust_syms.txt
+echo "C symbols: $(wc -l < /tmp/c_syms.txt)   Rust symbols: $(wc -l < /tmp/rust_syms.txt)"
+echo "=== MISSING FROM RUST (C-only) ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== RUST-ONLY ==="; comm -13 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== COMMON ==="; comm -12 /tmp/c_syms.txt /tmp/rust_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbol lists between C and Rust .so
+
+C symbols: 10   Rust symbols: 10
+=== MISSING FROM RUST (C-only) ===
+=== RUST-ONLY ===
+=== COMMON ===
+add_task
+create_task_manager
+destroy_task_manager
+driver
+finalize_logger
+initialize_logger
+log_error
+log_info
+log_warning
+print_tasks
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol lists are identical. Now verifying byte-identical behavior with a differential harness:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Differential harness: dlopen a libdriver.so and exercise the full public ABI.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef struct { char description[256]; int priority; } Task;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m typedef struct { Task *tasks; int max_tasks; int task_count; } TaskManager;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     const char *so = argv[1];
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     int scenario = atoi(argv[2]);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     void *h = dlopen(so, RTLD_NOW);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 99; }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     int (*driver)(const char *) = dlsym(h, "driver");
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     int (*initialize_logger)(void) = dlsym(h, "initialize_logger");
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     void (*log_info)(const char *) = dlsym(h, "log_info");
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     void (*log_warning)(const char *) = dlsym(h, "log_warning");
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     void (*log_error)(const char *) = dlsym(h, "log_error");
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     void (*finalize_logger)(void) = dlsym(h, "finalize_logger");
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     TaskManager *(*create_task_manager)(void) = dlsym(h, "create_task_manager");
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     void (*add_task)(TaskManager *, const char *, int) = dlsym(h, "add_task");
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     void (*print_tasks)(const TaskManager *) = dlsym(h, "print_tasks");
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     void (*destroy_task_manager)(TaskManager *) = dlsym(h, "destroy_task_manager");
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     if (!driver || !initialize_logger || !log_info || !log_warning || !log_error ||
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         !finalize_logger || !create_task_manager || !add_task || !print_tasks ||
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         !destroy_task_manager) { fprintf(stderr, "dlsym failed\n"); return 98; }
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     char big[600];
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     memset(big, 'x', sizeof(big) - 1); big[sizeof(big) - 1] = '\0';
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     switch (scenario) {
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     case 0: printf("rc=%d\n", driver("alpha\nbeta\ngamma")); break;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     case 1: printf("rc=%d\n", driver("")); break;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     case 2: printf("rc=%d\n", driver("one")); break;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     case 3: printf("rc=%d\n", driver("trailing\n")); break;
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     case 4: printf("rc=%d\n", driver("a\n\nb\n\n")); break;
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     case 5: printf("rc=%d\n", driver("\n\n\n")); break;
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     case 6: printf("rc=%d\n", driver("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13")); break;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     case 7: printf("rc=%d\n", driver(big)); break;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     case 8: { // long line mixed with short ones
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         char buf[900];
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         snprintf(buf, sizeof(buf), "short\n%s\nend", big);
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         printf("rc=%d\n", driver(buf)); break;
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     case 9: { // manual API drive, incl. struct field inspection
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         printf("init=%d\n", initialize_logger());
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         TaskManager *m = create_task_manager();
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         printf("m=%s\n", m ? "nonnull" : "null");
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         if (m) {
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             printf("max=%d count=%d tasks=%s\n", m->max_tasks, m->task_count,
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m                    m->tasks ? "nonnull" : "null");
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             add_task(m, "first", 7);
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m             add_task(m, "", -1);
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m             add_task(m, big, 2147483647);
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m             printf("count=%d\n", m->task_count);
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m             printf("d0=[%s] p0=%d\n", m->tasks[0].description, m->tasks[0].priority);
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m             printf("len2=%zu p2=%d\n", strlen(m->tasks[2].description), m->tasks[2].priority);
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m             print_tasks(m);
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m             destroy_task_manager(m);
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m         log_info("info-msg"); log_warning("warn-msg"); log_error("error-msg");
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         finalize_logger();
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     case 10: // logging before init: must be silent no-ops
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         log_info("pre"); log_warning("pre"); log_error("pre");
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         printf("survived\n");
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     case 11: { // double init, then finalize
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         printf("init1=%d\n", initialize_logger());
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m         printf("init2=%d\n", initialize_logger());
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         log_info("after-double-init");
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         finalize_logger();
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m     case 12: { // percent signs / format-specifier-looking payloads
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         printf("rc=%d\n", driver("%s%d%n\n100%% done\n%p"));
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     case 13: { // unicode / high bytes
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m         printf("rc=%d\n", driver("caf\xc3\xa9\n\xff\xfe\ntab\there"));
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m     case 14: { // exactly 255 and 256 char lines (strncpy truncation boundary)
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m         char a[256], b[257], buf[600];
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m         memset(a, 'A', 255); a[255] = '\0';
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m         memset(b, 'B', 256); b[256] = '\0';
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m         snprintf(buf, sizeof(buf), "%s\n%s", a, b);
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m         printf("rc=%d\n", driver(buf));
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m     default: fprintf(stderr, "bad scenario\n"); return 97;
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m     fflush(stdout);
+[0m[49m[38;5;10m+    98[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    99[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/harness/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness/run.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential runner script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Differential runner: C .so vs Rust .so across scenarios x env matrix.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m set -u
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m C_SO=/tmp/cbuild/libdriver.so
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m R_SO=/local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/target/release/libdriver.so
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m H=/tmp/harness/harness
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m fails=0; total=0
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m run_one() { # $1=so $2=scenario $3=outdir ; env MAX_TASKS/LOG_FILE preset by caller
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   local so=$1 sc=$2 out=$3
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m   rm -rf "$out"; mkdir -p "$out"
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   ( cd "$out" && LOG_FILE="${LF:-}" MAX_TASKS="${MT:-}" \
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m       env $( [ -z "${LF:-}" ] && echo -u LOG_FILE ) \
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m           $( [ -z "${MT:-}" ] && echo -u MAX_TASKS ) \
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m       "$H" "$so" "$sc" > stdout.txt 2> stderr.txt; echo "exit=$?" > exit.txt )
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m compare() { # $1=label
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   local label=$1
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   total=$((total+1))
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   # normalize: sort file listing + contents of every produced file
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   for d in /tmp/harness/c_out /tmp/harness/r_out; do
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     ( cd "$d" && for f in $(ls -A | sort); do echo "--- $f ---"; cat "$f"; done ) > "$d.flat"
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   if diff -u /tmp/harness/c_out.flat /tmp/harness/r_out.flat > /tmp/harness/diff.txt 2>&1; then
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     echo "PASS  $label"
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     fails=$((fails+1))
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     echo "FAIL  $label"
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     head -40 /tmp/harness/diff.txt
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m for sc in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   for cfg in "::" "app.log:" "app.log:0" "app.log:1" "app.log:3" "app.log:-1" \
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m              "app.log:abc" "app.log:12x" "app.log: 5 " "app.log:99999999999999999999" \
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m              "app.log:2147483647" "app.log:100" "sub/nope.log:5"; do
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     LF="${cfg%%:*}"; MT="${cfg#*:}"
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     export LF MT
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     run_one "$C_SO" "$sc" /tmp/harness/c_out
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     run_one "$R_SO" "$sc" /tmp/harness/r_out
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     compare "scenario=$sc LOG_FILE='${LF:-<unset>}' MAX_TASKS='${MT:-<unset>}'"
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m echo "===== $((total-fails))/$total configurations byte-identical ====="
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m [ "$fails" -eq 0 ] || exit 1
+[0m[K
+Creating: [38;5;141m/tmp/harness/run.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness && gcc -O2 -o harness harness.c -ldl && chmod +x run.sh && ./run.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile harness and run differential comparison
+
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='<unset>'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='0'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='1'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='3'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='-1'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='abc'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='12x'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS=' 5 '
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='99999999999999999999'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='2147483647'
+PASS  scenario=12 LOG_FILE='app.log' MAX_TASKS='100'
+PASS  scenario=12 LOG_FILE='sub/nope.log' MAX_TASKS='5'
+PASS  scenario=13 LOG_FILE='<unset>' MAX_TASKS=':'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='<unset>'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='0'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='1'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='3'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='-1'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='abc'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='12x'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS=' 5 '
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='99999999999999999999'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='2147483647'
+PASS  scenario=13 LOG_FILE='app.log' MAX_TASKS='100'
+PASS  scenario=13 LOG_FILE='sub/nope.log' MAX_TASKS='5'
+PASS  scenario=14 LOG_FILE='<unset>' MAX_TASKS=':'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='<unset>'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='0'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='1'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='3'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='-1'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='abc'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='12x'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS=' 5 '
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='99999999999999999999'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='2147483647'
+PASS  scenario=14 LOG_FILE='app.log' MAX_TASKS='100'
+PASS  scenario=14 LOG_FILE='sub/nope.log' MAX_TASKS='5'
+
+===== 195/195 configurations byte-identical =====
+[38;5;244m - Completed in 7.260s[0m
+
+[?25l[0m[38;5;141m> [0mAll 195 configurations byte-identical. Sanity-checking that the harness produces real output and that the diff actually detects differences (negative control):[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness
+echo "===== sample: scenario 9, MAX_TASKS=3 ====="
+rm -rf s && mkdir s && (cd s && LOG_FILE=app.log MAX_TASKS=3 /tmp/harness/harness /tmp/cbuild/libdriver.so 9 > stdout.txt 2>stderr.txt; echo "exit=$?")
+for f in s/*; do echo "--- $f ---"; cat "$f"; done
+echo "===== sample: scenario 0 (default env), rust ====="
+rm -rf r && mkdir r && (cd r && env -u LOG_FILE -u MAX_TASKS /tmp/harness/harness /local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/target/release/libdriver.so 0 > stdout.txt 2>stderr.txt)
+for f in r/*; do echo "--- $f ---"; cat "$f"; done
+echo "===== negative control: does the comparator catch a real diff? ====="
+printf 'x' >> r/stdout.txt
+( cd s && for f in $(ls -A|sort); do echo "--- $f ---"; cat $f; done ) > a.flat
+( cd r && for f in $(ls -A|sort); do echo "--- $f ---"; cat $f; done ) > b.flat
+diff -q a.flat b.flat && echo "BAD: comparator blind" || echo "OK: comparator detects differences"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect sample outputs and validate comparator sensitivity
+
+===== sample: scenario 9, MAX_TASKS=3 =====
+exit=0
+--- s/app.log ---
+[INFO] Logger initialized.
+[INFO] TaskManager created successfully.
+[INFO] Task added successfully.
+[INFO] Task added successfully.
+[INFO] Task added successfully.
+[INFO] TaskManager destroyed successfully.
+[INFO] info-msg
+[WARNING] warn-msg
+[ERROR] error-msg
+[INFO] Logger finalized.
+--- s/stderr.txt ---
+--- s/stdout.txt ---
+init=0
+m=nonnull
+max=3 count=0 tasks=nonnull
+count=3
+d0=[first] p0=7
+len2=255 p2=2147483647
+Tasks:
+  [1] first (Priority: 7)
+  [2]  (Priority: -1)
+  [3] xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (Priority: 2147483647)
+===== sample: scenario 0 (default env), rust =====
+--- r/default.log ---
+[INFO] Logger initialized.
+[INFO] TaskManager created successfully.
+[INFO] Task added successfully.
+[INFO] Task added successfully.
+[INFO] Task added successfully.
+[INFO] TaskManager destroyed successfully.
+[INFO] Logger finalized.
+--- r/stderr.txt ---
+--- r/stdout.txt ---
+Tasks:
+  [1] alpha (Priority: 1)
+  [2] beta (Priority: 2)
+  [3] gamma (Priority: 3)
+rc=0
+===== negative control: does the comparator catch a real diff? =====
+Files a.flat and b.flat differ
+OK: comparator detects differences
+[38;5;244m - Completed in 0.43s[0m
+
+[?25l[0m[?25l[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness
+for lib in /tmp/cbuild/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-jeryAG/translation/target/release/libdriver.so; do
+  echo "===== $(basename $(dirname $lib))/$(basename $lib) ====="
+  rm -rf t && mkdir t
+  echo "-- fopen failure path (LOG_FILE=sub/nope.log) --"
+  (cd t && LOG_FILE=sub/nope.log /tmp/harness/harness $lib 0 2>&1)
+  echo "-- negative MAX_TASKS path --"
+  (cd t && LOG_FILE=app.log MAX_TASKS=-1 /tmp/harness/harness $lib 0 2>&1; echo "log:"; cat app.log)
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify error paths are exercised identically
+
+===== cbuild/libdriver.so =====
+-- fopen failure path (LOG_FILE=sub/nope.log) --
+Failed to open log file: sub/nope.log
+rc=1
+-- negative MAX_TASKS path --
+rc=1
+log:
+[INFO] Logger initialized.
+[ERROR] Failed to allocate memory for tasks.
+===== release/libdriver.so =====
+-- fopen failure path (LOG_FILE=sub/nope.log) --
+Failed to open log file: sub/nope.log
+rc=1
+-- negative MAX_TASKS path --
+rc=1
+log:
+[INFO] Logger initialized.
+[ERROR] Failed to allocate memory for tasks.
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-jeryAG
+echo "=== translation tree ==="; find translation -maxdepth 2 -not -path '*/target/*' -not -name target | sort
+echo "=== line counts ==="; wc -l translation/Cargo.toml translation/src/*.rs
+echo "=== c_src unmodified? ==="; ls -la --time-style=+%H:%M c_src/src c_src/include | grep -v '^total'
+echo "=== final build ==="; cd translation && cargo build --release 2>&1 | tail -3
+echo "=== final symbol diff ==="
+nm -D --defined-only target/release/libdriver.so | awk '$2=="T"{print $3}' | sort > /tmp/r.txt
+diff /tmp/c_syms.txt /tmp/r.txt && echo "EMPTY DIFF: all 10 C exports present"
+rm -rf /tmp/harness /tmp/cbuild /tmp/c_syms.txt /tmp/rust_syms.txt /tmp/r.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification and cleanup
+
+=== translation tree ===
+translation
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src
+translation/src/cbind.rs
+translation/src/driver.rs
+translation/src/lib.rs
+translation/src/logger.rs
+translation/src/task_manager.rs
+=== line counts ===
+   12 translation/Cargo.toml
+   63 translation/src/cbind.rs
+   89 translation/src/driver.rs
+   43 translation/src/lib.rs
+   98 translation/src/logger.rs
+  145 translation/src/task_manager.rs
+  450 total
+=== c_src unmodified? ===
+c_src/include:
+drwxr-xr-x. 2 scheschb amazon   44 16:44 .
+drwxr-xr-x. 4 scheschb amazon   54 16:44 ..
+-rw-r--r--. 1 scheschb amazon 1351 16:44 logger.h
+-rw-r--r--. 1 scheschb amazon 1575 16:44 task_manager.h
+
+c_src/src:
+drwxr-xr-x. 2 scheschb amazon   60 16:44 .
+drwxr-xr-x. 4 scheschb amazon   54 16:44 ..
+-rw-r--r--. 1 scheschb amazon 2309 16:44 driver.c
+-rw-r--r--. 1 scheschb amazon 2094 16:44 logger.c
+-rw-r--r--. 1 scheschb amazon 2781 16:44 task_manager.c
+=== final build ===
+    Finished `release` profile [optimized] target(s) in 0.01s
+=== final symbol diff ===
+EMPTY DIFF: all 10 C exports present
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
+[0m[0m
+[1mScope.[22m The library turned out to be small and fully enumerable: 3 C sources ([38;5;10mtask_manager.c[0m, [38;5;10mlogger.c[0m, [38;5;10mdriver.c[0m) plus 2 public headers, globbed by CMake into one [38;5;10mlibdriver.so[0m. Building the C library and running [38;5;10mnm -D[0m gave exactly 10 exported symbols. No namespace-renaming macros exist in the headers, so linker names equal source names.[0m[0m
+[0m[0m
+[1mSymbol parity (the completion gate).[22m [38;5;10mnm -D[0m on the Rust [38;5;10m.so[0m exports exactly the same 10 symbols, no more, no fewer — the diff is empty: [38;5;10madd_task[0m, [38;5;10mcreate_task_manager[0m, [38;5;10mdestroy_task_manager[0m, [38;5;10mdriver[0m, [38;5;10mfinalize_logger[0m, [38;5;10minitialize_logger[0m, [38;5;10mlog_error[0m, [38;5;10mlog_info[0m, [38;5;10mlog_warning[0m, [38;5;10mprint_tasks[0m.[0m[0m
+[0m[0m
+[1mDesign choice worth knowing.[22m Rather than reimplement the I/O and allocation in Rust, I call through to the same C library entry points ([38;5;10mfopen[0m/[38;5;10mfprintf[0m/[38;5;10mfclose[0m, [38;5;10mprintf[0m, [38;5;10mmalloc[0m/[38;5;10mfree[0m, [38;5;10mgetenv[0m/[38;5;10matoi[0m, [38;5;10mstrchr[0m/[38;5;10mstrlen[0m/[38;5;10mstrncpy[0m) via a small [38;5;10mcbind[0m module. This makes stdio buffering, interleaving with a caller's own writes, allocator identity, and [38;5;10matoi[0m parsing semantics identical by construction instead of by approximation. No external crates, so the build works offline. [38;5;10mTask[0m (260 bytes) and [38;5;10mTaskManager[0m (16 bytes) are [38;5;10m#[repr(C)][0m with compile-time size assertions.[0m[0m
+[0m[0m
+[1mOriginal bugs preserved, not fixed:[22m [38;5;10madd_task[0m, [38;5;10mprint_tasks[0m, and [38;5;10mdestroy_task_manager[0m still dereference a NULL [38;5;10mmanager[0m; [38;5;10minitialize_logger[0m still leaks the previous handle when called twice; [38;5;10mfinalize_logger[0m still leaves [38;5;10mlog_file[0m non-NULL after [38;5;10mfclose[0m; unvalidated [38;5;10mMAX_TASKS[0m still reaches [38;5;10mmalloc[0m through the C signed-to-[38;5;10msize_t[0m wrap-around (so [38;5;10mMAX_TASKS=-1[0m requests ~2^64-260 bytes and fails); and the [38;5;10mmanager == NULL[0m path in [38;5;10mdriver[0m still returns without calling [38;5;10mfinalize_logger[0m.[0m[0m
+[0m[0m
+[1mBehavioral verification.[22m I built a [38;5;10mdlopen[0m-based differential harness covering all 10 functions across 15 scenarios (empty input, no trailing newline, trailing/consecutive newlines, over-capacity task lists, 255/256-char [38;5;10mstrncpy[0m truncation boundary, format-specifier payloads like [38;5;10m%s%d%n[0m, high/non-UTF-8 bytes, direct struct-field inspection, logging before init, double init) crossed with 13 env configurations ([38;5;10mLOG_FILE[0m unset/set/unopenable; [38;5;10mMAX_TASKS[0m unset, [38;5;10m0[0m, [38;5;10m1[0m, [38;5;10m3[0m, [38;5;10m-1[0m, [38;5;10mabc[0m, [38;5;10m12x[0m, [38;5;10m" 5 "[0m, overflowing, [38;5;10mINT_MAX[0m). Each run compared stdout, stderr, exit code, and the full log file contents. All 195 configurations were byte-identical. I also confirmed the comparator is not blind by injecting a one-byte difference, and confirmed both error paths ([38;5;10mFailed to open log file:[0m on stderr, and the negative-[38;5;10mMAX_TASKS[0m allocation failure returning 1 with [38;5;10m[ERROR] Failed to allocate memory for tasks.[0m) produce matching output.[0m[0m
+[0m[0m
+I did all the work directly rather than delegating — at 340 lines of C, dispatching sub-agents would have added verification overhead without saving effort. [38;5;10mc_src/[0m is untouched (timestamps unchanged), and temporary build and harness artifacts were removed from [38;5;10m/tmp[0m.[0m[0m
+[38;5;8m
+ ▸ Credits: 9.58 • Time: 4m 39s
+
+[0m[1G[0m[0m[?25h

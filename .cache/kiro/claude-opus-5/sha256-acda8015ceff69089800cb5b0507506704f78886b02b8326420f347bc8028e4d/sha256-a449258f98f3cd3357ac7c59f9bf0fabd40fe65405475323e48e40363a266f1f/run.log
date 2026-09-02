@@ -1,0 +1,2255 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m.[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m.[0m [38;5;244m(11 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m./c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m./c_src/CMakeLists.txt[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m./translation/src/main.rs[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m./translation/Cargo.toml[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1533 bytes[0m from ./c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from ./c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3590 bytes[0m from ./translation/src/main.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m154 bytes[0m from ./translation/Cargo.toml
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE= > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && echo OK && ls -l driver; tail -5 /tmp/cmake.log[0m (in [38;5;141mc_src[0m)[38;5;244m (using tool: shell)[0m
+
+OK
+-rwxr-xr-x. 1 scheschb amazon 16896 Sep  1 10:02 driver
+-- Generating done (0.0s)
+-- Build files have been written to: /local/home/scheschb/.harvest/work/harvest-work-QspNJI/c_src/build
+[ 50%] Building C object CMakeFiles/driver.dir/src/main.c.o
+[100%] Linking C executable driver
+[100%] Built target driver
+[38;5;244m - Completed in 0.421s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-QspNJI/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+[38;5;244m - Completed in 0.190s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/cmp.sh <<'EOF'
+#!/bin/bash
+C=./c_src/build/driver
+R=./translation/target/release/driver
+run() {
+  local name="$1"; shift
+  local f="$1"
+  co=$("$C" < "$f" 2>/tmp/ce); cs=$?
+  ro=$("$R" < "$f" 2>/tmp/re); rs=$?
+  if [ "$co" == "$ro" ] && [ "$cs" == "$rs" ] && cmp -s /tmp/ce /tmp/re; then
+    echo "PASS $name  [$cs] $(echo "$co" | tr '\n' '|')"
+  else
+    echo "FAIL $name  C[$cs]=$(echo "$co"|tr '\n' '|') R[$rs]=$(echo "$ro"|tr '\n' '|')"
+    echo "   C-err: $(cat /tmp/ce | head -c 100)"; echo "   R-err: $(cat /tmp/re | head -c 100)"
+  fi
+}
+mk() { printf "$1" > /tmp/in.bin; run "$2" /tmp/in.bin; }
+mk '' empty
+mk 'A' single-A
+mk 'x' single-x
+mk 'Ax' Ax
+mk 'aX' lowercase-only
+mk 'A\nx\nAAxx\n' newlines
+mk 'A\0x' embedded-nul-first
+mk '\0Ax' leading-nul
+mk 'AAAAAAAAAA' ten-A
+mk '\xff\xfeA\x80x' high-bytes
+python3 -c "import sys; sys.stdout.buffer.write(b'A'*999)" > /tmp/in.bin; run 999-A /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(b'A'*1000)" > /tmp/in.bin; run 1000-A /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(b'A'*1001)" > /tmp/in.bin; run 1001-A /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(b'A'*2000)" > /tmp/in.bin; run 2000-A /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(b'x'*500+b'A'*500)" > /tmp/in.bin; run 500x500A /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(b'A'*999+b'\x00'+b'A'*50)" > /tmp/in.bin; run 999A-nul-more /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(bytes(range(1,256)))" > /tmp/in.bin; run all-bytes /tmp/in.bin
+python3 -c "import sys; sys.stdout.buffer.write(b'')" > /tmp/in.bin; run zero-len /tmp/in.bin
+EOF
+chmod +x /tmp/cmp.sh && /tmp/cmp.sh[0m[38;5;244m (using tool: shell)[0m
+
+PASS empty  [0] A: 0|x: 0|
+PASS single-A  [0] A: 1|x: 0|
+PASS single-x  [0] A: 0|x: 1|
+PASS Ax  [0] A: 1|x: 1|
+PASS lowercase-only  [0] A: 0|x: 0|
+PASS newlines  [0] A: 3|x: 3|
+PASS embedded-nul-first  [0] A: 1|x: 0|
+PASS leading-nul  [0] A: 0|x: 0|
+PASS ten-A  [0] A: 10|x: 0|
+PASS high-bytes  [0] A: 1|x: 1|
+PASS 999-A  [0] A: 999|x: 0|
+PASS 1000-A  [0] A: 1000|x: 0|
+PASS 1001-A  [0] A: 1000|x: 0|
+PASS 2000-A  [0] A: 1000|x: 0|
+PASS 500x500A  [0] A: 500|x: 500|
+PASS 999A-nul-more  [0] A: 999|x: 0|
+PASS all-bytes  [0] A: 1|x: 1|
+PASS zero-len  [0] A: 0|x: 0|
+[38;5;244m - Completed in 0.227s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=./c_src/build/driver; R=./translation/target/release/driver
+echo "--- stdin = directory"; $C < /tmp > /tmp/co 2>/tmp/ce; echo "C=$?"; $R < /tmp > /tmp/ro 2>/tmp/re; echo "R=$?"; diff /tmp/co /tmp/ro && diff /tmp/ce /tmp/re && echo same; cat /tmp/co
+echo "--- stdin closed"; $C 0<&- >/tmp/co 2>/tmp/ce; echo "C=$?"; $R 0<&- >/tmp/ro 2>/tmp/re; echo "R=$?"; diff /tmp/co /tmp/ro && diff /tmp/ce /tmp/re && echo same; cat /tmp/co
+echo "--- stdout closed"; $C </dev/null >&- 2>/tmp/ce; echo "C=$?"; $R </dev/null >&- 2>/tmp/re; echo "R=$?"; diff /tmp/ce /tmp/re && echo same-err
+echo "--- stdout to full pipe (SIGPIPE)"; $C < /tmp/in.bin 2>/tmp/ce | head -c 0; echo "C=${PIPESTATUS[0]}"; $R < /tmp/in.bin 2>/tmp/re | head -c 0; echo "R=${PIPESTATUS[0]}"
+echo "--- args ignored"; $C foo bar </dev/null; echo $?; $R foo bar </dev/null; echo $?[0m[38;5;244m (using tool: shell)[0m
+
+--- stdin = directory
+C=0
+R=0
+same
+A: 0
+x: 0
+--- stdin closed
+C=0
+R=0
+same
+A: 0
+x: 0
+--- stdout closed
+C=0
+R=0
+same-err
+--- stdout to full pipe (SIGPIPE)
+C=0
+R=0
+--- args ignored
+A: 0
+x: 0
+0
+A: 0
+x: 0
+0
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/fuzz.py <<'EOF'
+import random, subprocess, sys
+C="./c_src/build/driver"; R="./translation/target/release/driver"
+random.seed(1234)
+fails=0
+cases=[]
+for i in range(400):
+    n=random.choice([0,1,2,3,5,17,99,255,256,511,512,998,999,1000,1001,1023,1024,2048,4096])
+    alpha=random.choice([b'Ax', b'Axa X\n\0', bytes(range(256)), b'A', b'\0Ax', b'\xffA\x80x'])
+    data=bytes(random.choice(alpha) for _ in range(n))
+    cases.append(data)
+for data in cases:
+    c=subprocess.run([C],input=data,capture_output=True)
+    r=subprocess.run([R],input=data,capture_output=True)
+    if (c.stdout,c.stderr,c.returncode)!=(r.stdout,r.stderr,r.returncode):
+        fails+=1
+        print("MISMATCH len",len(data),repr(data[:60]),c.stdout,r.stdout,c.returncode,r.returncode)
+        if fails>5: break
+print("fuzz done, fails=",fails)
+EOF
+python3 /tmp/fuzz.py[0m[38;5;244m (using tool: shell)[0m
+
+fuzz done, fails= 0
+[38;5;244m - Completed in 0.710s[0m
+
+[?25l[0m[38;5;141m> [0mBoth binaries build and match on every probe I've run so far, including a 400-case seeded fuzz. Now writing the differential test suite.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m./translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Test harness: locates/builds both binaries, runs them as subprocesses, compares stdout/stderr/status.
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Shared harness for the differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Both programs are driven as SUBPROCESSES, exactly the way a shell would run
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // them: bytes on stdin, bytes compared on stdout/stderr, plus exit status.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // Nothing here links the Rust crate as a library.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::process::{Command, Output, Stdio};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::sync::OnceLock;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Workspace root: the directory that holds both `c_src/` and `translation/`.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m pub fn repo_root() -> PathBuf {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         .expect("translation/ must have a parent directory")
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// Path to the Rust binary produced by this crate.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m pub fn rust_bin() -> PathBuf {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_BIN_EXE_driver"))
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// Path to the C binary, building it with CMake on first use if needed.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m pub fn c_bin() -> &'static Path {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     static C_BIN: OnceLock<PathBuf> = OnceLock::new();
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     C_BIN.get_or_init(|| {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         let c_src = repo_root().join("c_src");
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         let build = c_src.join("build");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         let bin = build.join("driver");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         if !bin.exists() {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m             std::fs::create_dir_all(&build).expect("create c_src/build");
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             let conf = Command::new("cmake")
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m                 .arg("..")
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m                 .current_dir(&build)
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m                 .output()
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m                 .expect("run cmake (is cmake installed?)");
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             assert!(
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m                 conf.status.success(),
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m                 "cmake configure failed:\n{}\n{}",
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m                 String::from_utf8_lossy(&conf.stdout),
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m                 String::from_utf8_lossy(&conf.stderr)
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             let built = Command::new("cmake")
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 .args(["--build", "."])
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m                 .current_dir(&build)
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                 .output()
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 .expect("run cmake --build");
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             assert!(
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                 built.status.success(),
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                 "cmake build failed:\n{}\n{}",
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m                 String::from_utf8_lossy(&built.stdout),
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m                 String::from_utf8_lossy(&built.stderr)
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         assert!(bin.exists(), "C binary missing at {}", bin.display());
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         bin
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     .as_path()
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// How the child's exit status is reported, comparably across both programs.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[derive(Debug, PartialEq, Eq)]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m pub struct Status {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     pub code: Option<i32>,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     pub signal: Option<i32>,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m fn status_of(out: &Output) -> Status {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         use std::os::unix::process::ExitStatusExt;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         Status {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m             code: out.status.code(),
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m             signal: out.status.signal(),
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     #[cfg(not(unix))]
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         Status {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             code: out.status.code(),
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             signal: None,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// Run one program with `stdin_bytes` on stdin and `args` on the command line.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m /// stdin is written from a helper thread so that inputs larger than a pipe
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// buffer cannot deadlock against the child's own writes.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m fn run(bin: &Path, args: &[&str], stdin_bytes: &[u8]) -> Output {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     let mut child = Command::new(bin)
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         .args(args)
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("spawn {}: {e}", bin.display()));
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     let mut sink = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let data = stdin_bytes.to_vec();
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     let writer = std::thread::spawn(move || {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         // Ignore EPIPE: the C program may stop reading (it only ever reads
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         // 1000 bytes) and close stdin while we are still writing.
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         let _ = sink.write_all(&data);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let _ = sink.flush();
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         drop(sink);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("collect child output");
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     let _ = writer.join();
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// Assert the C and Rust programs agree on stdout, stderr and exit status.
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m pub fn assert_same_with_args(name: &str, args: &[&str], stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     let c = run(c_bin(), args, stdin_bytes);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let r = run(&rust_bin(), args, stdin_bytes);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     let (cs, rs) = (status_of(&c), status_of(&r));
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         c.stdout,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         r.stdout,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         "[{name}] stdout differs\n  input ({} bytes): {}\n  C    : {:?}\n  Rust : {:?}",
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         stdin_bytes.len(),
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         preview(stdin_bytes),
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stdout),
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stdout),
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         c.stderr,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         r.stderr,
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         "[{name}] stderr differs\n  input ({} bytes): {}\n  C    : {:?}\n  Rust : {:?}",
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         stdin_bytes.len(),
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         preview(stdin_bytes),
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stderr),
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stderr),
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         cs,
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         rs,
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         "[{name}] exit status differs\n  input ({} bytes): {}",
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         stdin_bytes.len(),
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         preview(stdin_bytes),
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// Assert agreement for the no-arguments case (how the program is normally run).
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m pub fn assert_same(name: &str, stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     assert_same_with_args(name, &[], stdin_bytes);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m /// Short, escaped rendering of an input for failure messages.
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m pub fn preview(bytes: &[u8]) -> String {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     let head: String = bytes
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         .take(48)
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         .flat_map(|&b| std::ascii::escape_default(b))
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         .map(char::from)
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     if bytes.len() > 48 {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         format!("\"{head}\"... (+{} bytes)", bytes.len() - 48)
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         format!("\"{head}\"")
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m /// Deterministic pseudo-random byte generator (xorshift64*), so fuzz cases are
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m /// reproducible and need no external crates.
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     pub fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         Rng(seed | 1)
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         x ^= x >> 12;
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         x ^= x << 25;
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         x ^= x >> 27;
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     pub fn below(&mut self, n: usize) -> usize {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         (self.next_u64() % n as u64) as usize
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m./translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m./translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential integration tests covering every input class the C branches on.
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential tests: the C program in `c_src/` is the ground truth, and the
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Rust program in `translation/` must produce byte-identical stdout, stderr and
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // the same exit status for the same stdin.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // Both are executed as subprocesses. See `common/mod.rs` for the harness.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // Input classes enumerated from `c_src/src/main.c`:
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //   main()   char in[1000] = "";        -> whole buffer zero filled
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //            fread(in, 1, 1000, stdin); -> up to 1000 bytes, newlines are NOT
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //                                          delimiters (unlike fgets/scanf)
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //     * EOF immediately            -> 0 bytes read, buffer stays empty
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //     * 1..999 bytes               -> zero fill supplies the terminator
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //     * exactly 1000 bytes         -> buffer completely filled, no terminator
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //     * more than 1000 bytes       -> tail silently discarded
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //     * input containing a NUL     -> the C string ends at that NUL
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //   foo(in, c)  for (s = in; s = strchr(s, c); s++) res++;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //     * no match at all            -> strchr returns NULL on the first pass
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //     * match at index 0           -> loop entered immediately
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //     * match at the final byte    -> s++ lands on the NUL, next strchr NULLs
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //     * adjacent / repeated matches
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //     * bytes >= 0x80 present      -> plain `char` is signed on x86-64, but the
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //                                     searched-for 'A'/'x' are positive
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //   driver()  printf("A: %d\n") then printf("x: %d\n") -- fixed order/format.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m // There is no error path in this program: it never writes to stderr and always
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m // returns 0. The tests assert that too, since an "exit 1 vs exit 0" difference
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // is exactly what a stdout-only check would miss.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m use common::{assert_same, assert_same_with_args, Rng};
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m const BUF: usize = 1000; // sizeof(in) in main()
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m // Empty / minimal inputs
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m fn empty_input() {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     // fread returns 0; `in` is still the zero-filled "" -> A: 0 / x: 0.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     assert_same("empty", b"");
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m fn single_byte_inputs() {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     assert_same("single-A", b"A");
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     assert_same("single-x", b"x");
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     assert_same("single-newline", b"\n");
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     assert_same("single-space", b" ");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     assert_same("single-nul", b"\0");
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     assert_same("single-0xff", b"\xff");
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m fn no_match_at_all() {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     // strchr returns NULL on the very first evaluation for both characters.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     assert_same("no-match", b"bcdefg");
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     assert_same("lowercase-a-uppercase-X", b"aX aX aX");
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m // Match position / multiplicity inside foo()
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m fn match_positions() {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     assert_same("match-first-byte", b"Azzz");
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     assert_same("match-last-byte", b"zzzA");
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     assert_same("match-only-byte", b"A");
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     assert_same("x-first-byte", b"xzzz");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     assert_same("x-last-byte", b"zzzx");
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     assert_same("both-at-ends", b"A......x");
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     assert_same("both-reversed", b"x......A");
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m fn adjacent_and_repeated_matches() {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     assert_same("AA", b"AA");
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     assert_same("xx", b"xx");
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     assert_same("AAAA-xxxx", b"AAAAxxxx");
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     assert_same("alternating", b"AxAxAxAxAx");
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     assert_same("ten-A", b"AAAAAAAAAA");
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m fn case_sensitivity() {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     // 'a' and 'X' must not be counted.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     assert_same("mixed-case", b"aAxXaAxX");
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m // fread does not stop at newlines (the fgets/scanf distinction)
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m fn reads_across_newlines() {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     assert_same("two-lines", b"A\nx\n");
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     assert_same("many-lines", b"A\nx\nAAxx\n");
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     assert_same("crlf", b"A\r\nx\r\n");
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     assert_same("blank-lines-then-match", b"\n\n\n\nAx\n\n");
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     assert_same("trailing-newline-only", b"Ax\n");
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     assert_same("no-trailing-newline", b"Ax");
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     assert_same("whitespace-separated", b"A \t x \t A\nx");
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m // NUL bytes: the C string ends at the first NUL, the rest is ignored
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m fn nul_terminates_the_string() {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     assert_same("leading-nul", b"\0Ax");
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     assert_same("nul-in-middle", b"A\0x");
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     assert_same("nul-after-both", b"Ax\0AAAAxxxx");
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     assert_same("many-nuls", b"A\0\0\0x\0\0A");
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     assert_same("nul-then-nothing", b"Ax\0");
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m fn nul_at_buffer_boundary() {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     let mut v = vec![b'A'; BUF - 1];
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     v.push(0);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     v.extend(std::iter::repeat(b'A').take(50));
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     assert_same("999A-nul-then-more", &v);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     let mut v = vec![b'x'; BUF];
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     v[BUF - 1] = 0;
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     assert_same("999x-then-nul-fills-buffer", &v);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m // Buffer-size boundaries: 999 / 1000 / 1001 / far beyond
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m fn length_boundaries_all_a() {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     for n in [BUF - 2, BUF - 1, BUF, BUF + 1, BUF + 2, 2 * BUF, 8 * BUF] {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         assert_same(&format!("{n}xA"), &vec![b'A'; n]);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m fn length_boundaries_all_x() {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     for n in [BUF - 2, BUF - 1, BUF, BUF + 1, BUF + 2, 2 * BUF] {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         assert_same(&format!("{n}xX"), &vec![b'x'; n]);
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m fn truncation_discards_the_tail() {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     // Matches beyond byte 1000 must not be counted.
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     let mut v = vec![b'.'; BUF];
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     v.extend(std::iter::repeat(b'A').take(500));
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     v.extend(std::iter::repeat(b'x').take(500));
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     assert_same("matches-only-past-1000", &v);
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     // The 1000th byte is the last one read; the 1001st is not.
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let mut v = vec![b'.'; BUF - 1];
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     v.push(b'A');
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     v.push(b'x');
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     assert_same("A-at-1000-x-at-1001", &v);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let mut v = vec![b'.'; BUF - 1];
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     v.push(b'x');
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     v.push(b'A');
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     assert_same("x-at-1000-A-at-1001", &v);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m fn exactly_full_buffer_mixed() {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     // Buffer completely filled, so the C string is not NUL terminated inside
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     // `in`. Recorded in ERRORS.md; the Rust code reproduces the built C
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     // program's observed behaviour.
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     let mut v: Vec<u8> = Vec::with_capacity(BUF);
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     while v.len() < BUF {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         v.extend_from_slice(b"Ax.");
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     v.truncate(BUF);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     assert_same("full-buffer-mixed", &v);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     let mut v = vec![b'.'; BUF];
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     v[0] = b'A';
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     v[BUF - 1] = b'x';
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     assert_same("full-buffer-ends-with-x", &v);
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     let mut v = vec![b'.'; BUF];
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     v[BUF - 1] = b'A';
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     assert_same("full-buffer-ends-with-A", &v);
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m fn halves_of_the_buffer() {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     let mut v = vec![b'x'; BUF / 2];
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     v.extend(std::iter::repeat(b'A').take(BUF / 2));
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     assert_same("500x-then-500A", &v);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m // Non-ASCII / signed-char territory
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m fn high_bit_bytes() {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     assert_same("high-bytes-around-matches", b"\xff\xfeA\x80x\x7f");
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     assert_same("utf8-text", "héllo À xylophone ✓".as_bytes());
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     // Every byte value except NUL, once.
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     let all: Vec<u8> = (1u8..=255).collect();
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     assert_same("all-nonzero-bytes", &all);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     // Every byte value including NUL: truncates at the first byte.
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     let mut all0: Vec<u8> = vec![0];
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     all0.extend(1u8..=255);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     assert_same("nul-then-all-bytes", &all0);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m // Invocation shape: arguments are ignored, stdin may be unreadable
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m fn arguments_are_ignored() {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     // main() takes no arguments, so argv must make no difference.
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     assert_same_with_args("args-empty-stdin", &["foo", "bar"], b"");
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     assert_same_with_args("args-with-stdin", &["-h", "--help", "1000"], b"AAx");
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m // Deterministic fuzz across the same input classes
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m fn seeded_fuzz() {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     const ALPHABETS: &[&[u8]] = &[
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         b"Ax",
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         b"AxaX .\n",
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         b"Ax\0",
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         b"A",
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m         b"x",
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         b".",
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         b"\xffA\x80x\x00",
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     const LENGTHS: &[usize] = &[
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         0, 1, 2, 3, 7, 31, 255, 256, 511, 512, 997, 998, 999, 1000, 1001, 1002, 1023, 1024, 1999,
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         2000, 4096,
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC0FF_EE12_3456_789A);
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     for i in 0..300 {
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         let n = LENGTHS[rng.below(LENGTHS.len())];
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         let alpha = ALPHABETS[rng.below(ALPHABETS.len())];
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         let data: Vec<u8> = (0..n).map(|_| alpha[rng.below(alpha.len())]).collect();
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         assert_same(&format!("fuzz-{i}-len-{n}"), &data);
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m./translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  150, 150[0m:[39m[49m /// Assert agreement for the no-arguments case (how the program is normally run).
+[0m[49m[39m  151, 151[0m:[39m[49m pub fn assert_same(name: &str, stdin_bytes: &[u8]) {
+[0m[49m[39m  152, 152[0m:[39m[49m     assert_same_with_args(name, &[], stdin_bytes);
+[0m[49m[38;5;10m+      153[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      155[0m:[38;5;10m[49m /// Run one program while feeding stdin in small, separated chunks, so a single
+[0m[49m[38;5;10m+      156[0m:[38;5;10m[49m /// `read(2)` cannot return everything. This exercises `fread`'s internal
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m /// looping (and the equivalent read loop in the Rust program).
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m fn run_chunked(bin: &Path, stdin_bytes: &[u8], chunk: usize) -> Output {
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m     let mut child = Command::new(bin)
+[0m[49m[38;5;10m+      160[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+      162[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+      163[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+      164[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("spawn {}: {e}", bin.display()));
+[0m[49m[38;5;10m+      165[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      166[0m:[38;5;10m[49m     let mut sink = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+      167[0m:[38;5;10m[49m     let data = stdin_bytes.to_vec();
+[0m[49m[38;5;10m+      168[0m:[38;5;10m[49m     let writer = std::thread::spawn(move || {
+[0m[49m[38;5;10m+      169[0m:[38;5;10m[49m         for part in data.chunks(chunk.max(1)) {
+[0m[49m[38;5;10m+      170[0m:[38;5;10m[49m             if sink.write_all(part).is_err() {
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+      172[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m             let _ = sink.flush();
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m             std::thread::sleep(std::time::Duration::from_millis(2));
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      176[0m:[38;5;10m[49m         drop(sink);
+[0m[49m[38;5;10m+      177[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      179[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("collect child output");
+[0m[49m[38;5;10m+      180[0m:[38;5;10m[49m     let _ = writer.join();
+[0m[49m[38;5;10m+      181[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+      182[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m /// Assert agreement when stdin arrives in dribbles rather than one block.
+[0m[49m[38;5;10m+      185[0m:[38;5;10m[49m pub fn assert_same_chunked(name: &str, stdin_bytes: &[u8], chunk: usize) {
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m     let c = run_chunked(c_bin(), stdin_bytes, chunk);
+[0m[49m[38;5;10m+      187[0m:[38;5;10m[49m     let r = run_chunked(&rust_bin(), stdin_bytes, chunk);
+[0m[49m[38;5;10m+      188[0m:[38;5;10m[49m     let (cs, rs) = (status_of(&c), status_of(&r));
+[0m[49m[38;5;10m+      189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      190[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      191[0m:[38;5;10m[49m         c.stdout,
+[0m[49m[38;5;10m+      192[0m:[38;5;10m[49m         r.stdout,
+[0m[49m[38;5;10m+      193[0m:[38;5;10m[49m         "[{name}] stdout differs (chunked by {chunk})\n  input: {}\n  C    : {:?}\n  Rust : {:?}",
+[0m[49m[38;5;10m+      194[0m:[38;5;10m[49m         preview(stdin_bytes),
+[0m[49m[38;5;10m+      195[0m:[38;5;10m[49m         String::from_utf8_lossy(&c.stdout),
+[0m[49m[38;5;10m+      196[0m:[38;5;10m[49m         String::from_utf8_lossy(&r.stdout),
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      198[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m         c.stderr,
+[0m[49m[38;5;10m+      200[0m:[38;5;10m[49m         r.stderr,
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m         "[{name}] stderr differs (chunked by {chunk})",
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m     assert_eq!(cs, rs, "[{name}] exit status differs (chunked by {chunk})");
+[0m[49m[39m  153, 204[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  232, 232[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  233, 233[0m:[39m[49m // Deterministic fuzz across the same input classes
+[0m[49m[38;5;9m- 234     [0m:[38;5;9m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 34    [0m:[38;5;9m[49m use common::{assert_same, assert_same_with_args, Rng};
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m use common::{assert_same, assert_same_chunked, assert_same_with_args, Rng};
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  232, 232[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m // Slowly arriving stdin: fread must keep reading until the buffer is full
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+      235[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m fn stdin_delivered_in_chunks() {
+[0m[49m[38;5;10m+      238[0m:[38;5;10m[49m     assert_same_chunked("chunked-short", b"A\nx\nAAxx\n", 1);
+[0m[49m[38;5;10m+      239[0m:[38;5;10m[49m     assert_same_chunked("chunked-999", &vec![b'A'; BUF - 1], 137);
+[0m[49m[38;5;10m+      240[0m:[38;5;10m[49m     assert_same_chunked("chunked-exact-1000", &vec![b'x'; BUF], 250);
+[0m[49m[38;5;10m+      241[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      242[0m:[38;5;10m[49m     // More than the buffer holds, arriving in pieces: the tail is discarded and
+[0m[49m[38;5;10m+      243[0m:[38;5;10m[49m     // the writer may see EPIPE once the child exits.
+[0m[49m[38;5;10m+      244[0m:[38;5;10m[49m     let mut v = vec![b'A'; BUF];
+[0m[49m[38;5;10m+      245[0m:[38;5;10m[49m     v.extend(std::iter::repeat(b'x').take(BUF));
+[0m[49m[38;5;10m+      246[0m:[38;5;10m[49m     assert_same_chunked("chunked-2000", &v, 300);
+[0m[49m[38;5;10m+      247[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      248[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      249[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  233, 250[0m:[39m[49m // Deterministic fuzz across the same input classes
+[0m[49m[39m  234, 251[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --release 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-QspNJI/translation)
+    Finished `release` profile [optimized] target(s) in 0.39s
+     Running unittests src/main.rs (target/release/deps/driver-45ff9ae7f29076f4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-6f5586eaa2bc1355)
+
+running 18 tests
+test empty_input ... ok
+test case_sensitivity ... ok
+test halves_of_the_buffer ... ok
+test arguments_are_ignored ... ok
+test no_match_at_all ... ok
+test nul_at_buffer_boundary ... ok
+test exactly_full_buffer_mixed ... ok
+test truncation_discards_the_tail ... ok
+test high_bit_bytes ... ok
+test adjacent_and_repeated_matches ... ok
+test nul_terminates_the_string ... ok
+test length_boundaries_all_x ... ok
+test single_byte_inputs ... ok
+test match_positions ... ok
+test length_boundaries_all_a ... ok
+test reads_across_newlines ... ok
+test stdin_delivered_in_chunks ... ok
+test seeded_fuzz ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+
+[38;5;244m - Completed in 2.162s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test 2>&1 | tail -12[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+  Rust : "A: 1000\nx: 0\n"
+  left: [65, 58, 32, 49, 48, 48, 48, 10, 120, 58, 32, 49, 10]
+ right: [65, 58, 32, 49, 48, 48, 48, 10, 120, 58, 32, 48, 10]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    length_boundaries_all_a
+
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+
+error: test failed, to rerun pass `--test differential`
+[38;5;244m - Completed in 2.91s[0m
+
+[?25l[0m[38;5;141m> [0mA real mismatch appeared under [38;5;10mcargo test[0m (different environment) — the exactly-1000-byte case. Investigating.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI
+C=./c_src/build/driver
+python3 -c "import sys;sys.stdout.buffer.write(b'A'*1000)" > /tmp/a1000.bin
+echo "--- plain"; $C < /tmp/a1000.bin
+echo "--- env -i"; env -i $C < /tmp/a1000.bin
+echo "--- env with x"; env -i FOO=xxxxx $C < /tmp/a1000.bin
+echo "--- env with A"; env -i FOO=AAAAA $C < /tmp/a1000.bin
+echo "--- argv"; $C xxxx AAAA < /tmp/a1000.bin
+echo "--- big env"; env -i $(python3 -c "print(' '.join('V%d=%s'%(i,'x'*20) for i in range(50)))") $C < /tmp/a1000.bin[0m[38;5;244m (using tool: shell)[0m
+
+--- plain
+A: 1000
+x: 0
+--- env -i
+A: 1000
+x: 0
+--- env with x
+A: 1000
+x: 0
+--- env with A
+A: 1000
+x: 0
+--- argv
+A: 1000
+x: 0
+--- big env
+A: 1000
+x: 0
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI
+C=./c_src/build/driver
+echo "--- pipe cat"; cat /tmp/a1000.bin | $C
+echo "--- pipe python one write"; python3 -c "
+import subprocess
+p=subprocess.run(['$C'],input=b'A'*1000,capture_output=True); print(p.stdout.decode())"
+echo "--- cwd translation, pipe"; (cd translation && cat /tmp/a1000.bin | ../c_src/build/driver)
+echo "--- run 10x pipe"; for i in $(seq 10); do cat /tmp/a1000.bin | $C | tr '\n' ' '; echo; done[0m[38;5;244m (using tool: shell)[0m
+
+--- pipe cat
+A: 1000
+x: 0
+--- pipe python one write
+A: 1000
+x: 0
+
+--- cwd translation, pipe
+A: 1000
+x: 0
+--- run 10x pipe
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+A: 1000 x: 0 
+[38;5;244m - Completed in 0.53s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test --test differential length_boundaries_all_a -- --nocapture 2>&1 | tail -25[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running tests/differential.rs (target/debug/deps/differential-9d9dba5439844661)
+
+running 1 test
+test length_boundaries_all_a ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.04s
+
+[38;5;244m - Completed in 0.79s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI
+python3 - <<'EOF'
+import subprocess, collections
+C="./c_src/build/driver"
+tal=collections.Counter()
+for i in range(3000):
+    p=subprocess.run([C],input=b'A'*1000,capture_output=True)
+    tal[p.stdout]+=1
+for k,v in tal.items(): print(v, k)
+EOF[0m[38;5;244m (using tool: shell)[0m
+
+3000 b'A: 1000\nx: 0\n'
+[38;5;244m - Completed in 2.521s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mobjdump -d --no-show-raw-insn ./c_src/build/driver | sed -n '/<main>:/,/^$/p'; echo ===; objdump -d --no-show-raw-insn ./c_src/build/driver | sed -n '/<driver>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+
+00000000004011e6 <main>:
+  4011e6:	push   %rbp
+  4011e7:	mov    %rsp,%rbp
+  4011ea:	sub    $0x3f0,%rsp
+  4011f1:	movq   $0x0,-0x3f0(%rbp)
+  4011fc:	movq   $0x0,-0x3e8(%rbp)
+  401207:	lea    -0x3e0(%rbp),%rdx
+  40120e:	mov    $0x0,%eax
+  401213:	mov    $0x7b,%ecx
+  401218:	mov    %rdx,%rdi
+  40121b:	rep stos %rax,%es:(%rdi)
+  40121e:	mov    0x2dfb(%rip),%rdx        # 404020 <stdin@GLIBC_2.2.5>
+  401225:	lea    -0x3f0(%rbp),%rax
+  40122c:	mov    %rdx,%rcx
+  40122f:	mov    $0x3e8,%edx
+  401234:	mov    $0x1,%esi
+  401239:	mov    %rax,%rdi
+  40123c:	call   401030 <fread@plt>
+  401241:	lea    -0x3f0(%rbp),%rax
+  401248:	mov    %rax,%rdi
+  40124b:	call   401193 <driver>
+  401250:	mov    $0x0,%eax
+  401255:	leave
+  401256:	ret
+
+===
+0000000000401193 <driver>:
+  401193:	push   %rbp
+  401194:	mov    %rsp,%rbp
+  401197:	sub    $0x10,%rsp
+  40119b:	mov    %rdi,-0x8(%rbp)
+  40119f:	mov    -0x8(%rbp),%rax
+  4011a3:	mov    $0x41,%esi
+  4011a8:	mov    %rax,%rdi
+  4011ab:	call   401146 <foo>
+  4011b0:	mov    %eax,%esi
+  4011b2:	mov    $0x402010,%edi
+  4011b7:	mov    $0x0,%eax
+  4011bc:	call   401050 <printf@plt>
+  4011c1:	mov    -0x8(%rbp),%rax
+  4011c5:	mov    $0x78,%esi
+  4011ca:	mov    %rax,%rdi
+  4011cd:	call   401146 <foo>
+  4011d2:	mov    %eax,%esi
+  4011d4:	mov    $0x402017,%edi
+  4011d9:	mov    $0x0,%eax
+  4011de:	call   401050 <printf@plt>
+  4011e3:	nop
+  4011e4:	leave
+  4011e5:	ret
+
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m./translation/tests/probe_full_buffer.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Temporary diagnostic probe to characterize the C program's out-of-bounds read on a full buffer.
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Diagnostic probe (not part of the test suite's assertions): spawn the C
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m // program many times with a completely full 1000-byte buffer and tally the
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // distinct outputs. Used to characterise the out-of-bounds read documented in
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m // ERRORS.md. Run with:  cargo test --test probe_full_buffer -- --nocapture
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m use std::collections::BTreeMap;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m use std::process::{Command, Stdio};
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m fn tally(bin: &std::path::Path, n: usize, runs: usize) -> BTreeMap<String, usize> {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     let mut t = BTreeMap::new();
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     for _ in 0..runs {
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m         let mut ch = Command::new(bin)
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m             .stdin(Stdio::piped())
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m             .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m             .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m             .spawn()
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m             .unwrap();
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m         let mut si = ch.stdin.take().unwrap();
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         let data = vec![b'A'; n];
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         let w = std::thread::spawn(move || {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m             let _ = si.write_all(&data);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         let out = ch.wait_with_output().unwrap();
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         let _ = w.join();
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         *t.entry(String::from_utf8_lossy(&out.stdout).to_string())
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m             .or_insert(0) += 1;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     t
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m fn probe() {
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     let runs: usize = std::env::var("PROBE_RUNS")
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m         .ok()
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         .and_then(|v| v.parse().ok())
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         .unwrap_or(400);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     for n in [999usize, 1000, 1001] {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         println!("== n = {n}");
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         println!("   C   : {:?}", tally(common::c_bin(), n, runs));
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         println!("   Rust: {:?}", tally(&common::rust_bin(), n, runs));
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m./translation/tests/probe_full_buffer.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mPROBE_RUNS=600 cargo test --test probe_full_buffer -- --nocapture 2>&1 | grep -E "^   |== |warning: unused" [0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-QspNJI/translation)
+   |
+   |            ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   |
+   |    ^^^^^^^^^
+   |
+   |    ^^^
+   --> tests/common/mod.rs:117:8
+    |
+    |        ^^^^^^^^^^^^^^^^^^^^^
+   --> tests/common/mod.rs:151:8
+    |
+    |        ^^^^^^^^^^^
+   --> tests/common/mod.rs:158:4
+    |
+    |    ^^^^^^^^^^^
+   --> tests/common/mod.rs:185:8
+    |
+    |        ^^^^^^^^^^^^^^^^^^^
+   --> tests/common/mod.rs:207:8
+    |
+    |        ^^^^^^^
+   --> tests/common/mod.rs:223:12
+    |
+    |            ^^^
+   --> tests/common/mod.rs:226:12
+    |
+    | -------- associated items in this implementation
+    |            ^^^
+    |            ^^^^^^^^
+    |            ^^^^^
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests/probe_full_buffer.rs (target/debug/deps/probe_full_buffer-25328b0248fb8cad)
+== n = 999
+   C   : {"A: 999\nx: 0\n": 600}
+   Rust: {"A: 999\nx: 0\n": 600}
+== n = 1000
+   C   : {"A: 1000\nx: 0\n": 590, "A: 1000\nx: 1\n": 7, "A: 1001\nx: 0\n": 3}
+   Rust: {"A: 1000\nx: 0\n": 600}
+== n = 1001
+   C   : {"A: 1000\nx: 0\n": 590, "A: 1000\nx: 1\n": 8, "A: 1001\nx: 0\n": 2}
+   Rust: {"A: 1000\nx: 0\n": 600}
+[38;5;244m - Completed in 10.635s[0m
+
+[?25l[0m[38;5;141m> [0mCharacterized: for inputs ≥1000 bytes the C reads past its buffer (uninitialized stack + a randomized saved [38;5;10mrbp[0m), so its own output is nondeterministic — ~98% [38;5;10mx: 0[0m, ~1.2% [38;5;10mx: 1[0m, ~0.5% [38;5;10mA: 1001[0m. Let me confirm the mechanism from the disassembly offsets before deciding how to test it.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI
+# frame: in at rbp-0x3f0, size 0x3e8 -> 8 bytes padding at rbp-8..rbp-1, then saved rbp at [rbp]
+python3 -c "print('buffer end offset from rbp:', hex(-0x3f0+0x3e8))"
+which gdb 2>/dev/null || echo "no gdb"[0m[38;5;244m (using tool: shell)[0m
+
+buffer end offset from rbp: -0x8
+no gdb
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  184, 184[0m:[39m[49m /// Assert agreement when stdin arrives in dribbles rather than one block.
+[0m[49m[39m  185, 185[0m:[39m[49m pub fn assert_same_chunked(name: &str, stdin_bytes: &[u8], chunk: usize) {
+[0m[49m[39m  186, 186[0m:[39m[49m     let c = run_chunked(c_bin(), stdin_bytes, chunk);
+[0m[49m[39m  187, 187[0m:[39m[49m     let r = run_chunked(&rust_bin(), stdin_bytes, chunk);
+[0m[49m[39m  188, 188[0m:[39m[49m     let (cs, rs) = (status_of(&c), status_of(&r));
+[0m[49m[39m  189, 189[0m:[39m[49m 
+[0m[49m[39m  190, 190[0m:[39m[49m     assert_eq!(
+[0m[49m[39m  191, 191[0m:[39m[49m         c.stdout,
+[0m[49m[39m  192, 192[0m:[39m[49m         r.stdout,
+[0m[49m[39m  193, 193[0m:[39m[49m         "[{name}] stdout differs (chunked by {chunk})\n  input: {}\n  C    : {:?}\n  Rust : {:?}",
+[0m[49m[39m  194, 194[0m:[39m[49m         preview(stdin_bytes),
+[0m[49m[39m  195, 195[0m:[39m[49m         String::from_utf8_lossy(&c.stdout),
+[0m[49m[39m  196, 196[0m:[39m[49m         String::from_utf8_lossy(&r.stdout),
+[0m[49m[39m  197, 197[0m:[39m[49m     );
+[0m[49m[39m  198, 198[0m:[39m[49m     assert_eq!(
+[0m[49m[39m  199, 199[0m:[39m[49m         c.stderr,
+[0m[49m[39m  200, 200[0m:[39m[49m         r.stderr,
+[0m[49m[39m  201, 201[0m:[39m[49m         "[{name}] stderr differs (chunked by {chunk})",
+[0m[49m[39m  202, 202[0m:[39m[49m     );
+[0m[49m[39m  203, 203[0m:[39m[49m     assert_eq!(cs, rs, "[{name}] exit status differs (chunked by {chunk})");
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m /// Number of C runs used to establish the modal output for an input that makes
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m /// the C program read out of bounds. See `assert_same_modal`.
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m const MODAL_RUNS: usize = 15;
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m /// Comparison for inputs of >= 1000 bytes, where the C program fills `in[1000]`
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m /// completely and `strchr` then runs off the end of the buffer (see ERRORS.md).
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m /// The bytes it reads there are 8 uninitialised stack padding bytes followed by
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m /// the saved `rbp`, i.e. a randomised stack address, so the C program's own
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m /// output is not a function of its input: repeated runs on identical input
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m /// disagree a small fraction of the time.
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      217[0m:[38;5;10m[49m /// The Rust program must reproduce the C program's *stable* behaviour, so this
+[0m[49m[38;5;10m+      218[0m:[38;5;10m[49m /// asserts:
+[0m[49m[38;5;10m+      219[0m:[38;5;10m[49m ///   * Rust is deterministic over the same number of runs, and
+[0m[49m[38;5;10m+      220[0m:[38;5;10m[49m ///   * Rust's output equals the C program's modal output,
+[0m[49m[38;5;10m+      221[0m:[38;5;10m[49m ///   * stderr and exit status match on every single run.
+[0m[49m[38;5;10m+      222[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      223[0m:[38;5;10m[49m /// A plain byte-for-byte assert here would fail a couple of percent of the time
+[0m[49m[38;5;10m+      224[0m:[38;5;10m[49m /// because of the C program's own nondeterminism, not because of a translation
+[0m[49m[38;5;10m+      225[0m:[38;5;10m[49m /// defect.
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m pub fn assert_same_modal(name: &str, stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m     let mut counts: std::collections::BTreeMap<Vec<u8>, usize> = Default::default();
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m     for _ in 0..MODAL_RUNS {
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m         let c = run(c_bin(), &[], stdin_bytes);
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m         let r = run(&rust_bin(), &[], stdin_bytes);
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m             c.stderr,
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m             r.stderr,
+[0m[49m[38;5;10m+      235[0m:[38;5;10m[49m             "[{name}] stderr differs\n  input: {}",
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m             preview(stdin_bytes)
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      238[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+      239[0m:[38;5;10m[49m             status_of(&c),
+[0m[49m[38;5;10m+      240[0m:[38;5;10m[49m             status_of(&r),
+[0m[49m[38;5;10m+      241[0m:[38;5;10m[49m             "[{name}] exit status differs\n  input: {}",
+[0m[49m[38;5;10m+      242[0m:[38;5;10m[49m             preview(stdin_bytes)
+[0m[49m[38;5;10m+      243[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      244[0m:[38;5;10m[49m         *counts.entry(c.stdout).or_insert(0) += 1;
+[0m[49m[38;5;10m+      245[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      247[0m:[38;5;10m[49m     let modal = counts
+[0m[49m[38;5;10m+      248[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+      249[0m:[38;5;10m[49m         .max_by_key(|(_, &n)| n)
+[0m[49m[38;5;10m+      250[0m:[38;5;10m[49m         .map(|(out, _)| out.clone())
+[0m[49m[38;5;10m+      251[0m:[38;5;10m[49m         .expect("at least one C run");
+[0m[49m[38;5;10m+      252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      253[0m:[38;5;10m[49m     // The Rust program must be deterministic on a fixed input.
+[0m[49m[38;5;10m+      254[0m:[38;5;10m[49m     let mut rust_outputs = std::collections::BTreeSet::new();
+[0m[49m[38;5;10m+      255[0m:[38;5;10m[49m     for _ in 0..MODAL_RUNS {
+[0m[49m[38;5;10m+      256[0m:[38;5;10m[49m         rust_outputs.insert(run(&rust_bin(), &[], stdin_bytes).stdout);
+[0m[49m[38;5;10m+      257[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      258[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      259[0m:[38;5;10m[49m         rust_outputs.len(),
+[0m[49m[38;5;10m+      260[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+      261[0m:[38;5;10m[49m         "[{name}] Rust output is not deterministic: {:?}",
+[0m[49m[38;5;10m+      262[0m:[38;5;10m[49m         rust_outputs
+[0m[49m[38;5;10m+      263[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+      264[0m:[38;5;10m[49m             .map(|o| String::from_utf8_lossy(o).to_string())
+[0m[49m[38;5;10m+      265[0m:[38;5;10m[49m             .collect::<Vec<_>>()
+[0m[49m[38;5;10m+      266[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      267[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      268[0m:[38;5;10m[49m     let rust_out = rust_outputs.into_iter().next().unwrap();
+[0m[49m[38;5;10m+      269[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      270[0m:[38;5;10m[49m         modal,
+[0m[49m[38;5;10m+      271[0m:[38;5;10m[49m         rust_out,
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m         "[{name}] Rust does not match the C program's modal stdout\n  \
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m          input ({} bytes): {}\n  C tally: {:?}\n  Rust   : {:?}",
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m         stdin_bytes.len(),
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m         preview(stdin_bytes),
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m         counts
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m             .map(|(o, n)| (String::from_utf8_lossy(o).to_string(), *n))
+[0m[49m[38;5;10m+      279[0m:[38;5;10m[49m             .collect::<Vec<_>>(),
+[0m[49m[38;5;10m+      280[0m:[38;5;10m[49m         String::from_utf8_lossy(&rust_out),
+[0m[49m[38;5;10m+      281[0m:[38;5;10m[49m     );
+[0m[49m[39m  204, 282[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow updating the tests to route the ≥1000-byte (out-of-bounds) class through the modal comparison.[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  139, 139[0m:[39m[49m #[test]
+[0m[49m[39m  140, 140[0m:[39m[49m fn length_boundaries_all_a() {
+[0m[49m[38;5;9m- 141     [0m:[38;5;9m[49m     for n in [BUF - 2, BUF - 1, BUF, BUF + 1, BUF + 2, 2 * BUF, 8 * BUF] {
+[0m[49m[38;5;10m+      141[0m:[38;5;10m[49m     // Deterministic in C: a NUL from the zero fill always terminates `in`.
+[0m[49m[38;5;10m+      142[0m:[38;5;10m[49m     for n in [BUF - 2, BUF - 1] {
+[0m[49m[39m  142, 143[0m:[39m[49m         assert_same(&format!("{n}xA"), &vec![b'A'; n]);
+[0m[49m[39m  143, 144[0m:[39m[49m     }
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m     // Buffer completely filled -> C reads past the end (see ERRORS.md).
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m     for n in [BUF, BUF + 1, BUF + 2, 2 * BUF, 8 * BUF] {
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m         assert_same_modal(&format!("{n}xA"), &vec![b'A'; n]);
+[0m[49m[38;5;10m+      148[0m:[38;5;10m[49m     }
+[0m[49m[39m  144, 149[0m:[39m[49m }
+[0m[49m[39m  145, 150[0m:[39m[49m 
+[0m[49m[39m  146, 151[0m:[39m[49m #[test]
+[0m[49m[39m  147, 152[0m:[39m[49m fn length_boundaries_all_x() {
+[0m[49m[38;5;9m- 148     [0m:[38;5;9m[49m     for n in [BUF - 2, BUF - 1, BUF, BUF + 1, BUF + 2, 2 * BUF] {
+[0m[49m[38;5;10m+      153[0m:[38;5;10m[49m     for n in [BUF - 2, BUF - 1] {
+[0m[49m[39m  149, 154[0m:[39m[49m         assert_same(&format!("{n}xX"), &vec![b'x'; n]);
+[0m[49m[39m  150, 155[0m:[39m[49m     }
+[0m[49m[38;5;10m+      156[0m:[38;5;10m[49m     for n in [BUF, BUF + 1, BUF + 2, 2 * BUF] {
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m         assert_same_modal(&format!("{n}xX"), &vec![b'x'; n]);
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m     }
+[0m[49m[39m  151, 159[0m:[39m[49m }
+[0m[49m[39m  152, 160[0m:[39m[49m 
+[0m[49m[39m  153, 161[0m:[39m[49m #[test]
+[0m[49m[39m  154, 162[0m:[39m[49m fn truncation_discards_the_tail() {
+[0m[49m[39m  155, 163[0m:[39m[49m     // Matches beyond byte 1000 must not be counted.
+[0m[49m[39m  156, 164[0m:[39m[49m     let mut v = vec![b'.'; BUF];
+[0m[49m[39m  157, 165[0m:[39m[49m     v.extend(std::iter::repeat(b'A').take(500));
+[0m[49m[39m  158, 166[0m:[39m[49m     v.extend(std::iter::repeat(b'x').take(500));
+[0m[49m[38;5;9m- 159     [0m:[38;5;9m[49m     assert_same("matches-only-past-1000", &v);
+[0m[49m[38;5;10m+      167[0m:[38;5;10m[49m     assert_same_modal("matches-only-past-1000", &v);
+[0m[49m[39m  160, 168[0m:[39m[49m 
+[0m[49m[39m  161, 169[0m:[39m[49m     // The 1000th byte is the last one read; the 1001st is not.
+[0m[49m[39m  162, 170[0m:[39m[49m     let mut v = vec![b'.'; BUF - 1];
+[0m[49m[39m  163, 171[0m:[39m[49m     v.push(b'A');
+[0m[49m[39m  164, 172[0m:[39m[49m     v.push(b'x');
+[0m[49m[38;5;9m- 165     [0m:[38;5;9m[49m     assert_same("A-at-1000-x-at-1001", &v);
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m     assert_same_modal("A-at-1000-x-at-1001", &v);
+[0m[49m[39m  166, 174[0m:[39m[49m 
+[0m[49m[39m  167, 175[0m:[39m[49m     let mut v = vec![b'.'; BUF - 1];
+[0m[49m[39m  168, 176[0m:[39m[49m     v.push(b'x');
+[0m[49m[39m  169, 177[0m:[39m[49m     v.push(b'A');
+[0m[49m[38;5;9m- 170     [0m:[38;5;9m[49m     assert_same("x-at-1000-A-at-1001", &v);
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m     assert_same_modal("x-at-1000-A-at-1001", &v);
+[0m[49m[39m  171, 179[0m:[39m[49m }
+[0m[49m[39m  172, 180[0m:[39m[49m 
+[0m[49m[39m  173, 181[0m:[39m[49m #[test]
+[0m[49m[39m  174, 182[0m:[39m[49m fn exactly_full_buffer_mixed() {
+[0m[49m[39m  175, 183[0m:[39m[49m     // Buffer completely filled, so the C string is not NUL terminated inside
+[0m[49m[38;5;9m- 176     [0m:[38;5;9m[49m     // `in`. Recorded in ERRORS.md; the Rust code reproduces the built C
+[0m[49m[38;5;9m- 177     [0m:[38;5;9m[49m     // program's observed behaviour.
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m     // `in` and strchr walks into the 8 uninitialised padding bytes above it and
+[0m[49m[38;5;10m+      185[0m:[38;5;10m[49m     // then the saved frame pointer. Recorded in ERRORS.md; compared against the
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m     // C program's modal (stable) output.
+[0m[49m[39m  178, 187[0m:[39m[49m     let mut v: Vec<u8> = Vec::with_capacity(BUF);
+[0m[49m[39m  179, 188[0m:[39m[49m     while v.len() < BUF {
+[0m[49m[39m  180, 189[0m:[39m[49m         v.extend_from_slice(b"Ax.");
+[0m[49m[39m  181, 190[0m:[39m[49m     }
+[0m[49m[39m  182, 191[0m:[39m[49m     v.truncate(BUF);
+[0m[49m[38;5;9m- 183     [0m:[38;5;9m[49m     assert_same("full-buffer-mixed", &v);
+[0m[49m[38;5;10m+      192[0m:[38;5;10m[49m     assert_same_modal("full-buffer-mixed", &v);
+[0m[49m[39m  184, 193[0m:[39m[49m 
+[0m[49m[39m  185, 194[0m:[39m[49m     let mut v = vec![b'.'; BUF];
+[0m[49m[39m  186, 195[0m:[39m[49m     v[0] = b'A';
+[0m[49m[39m  187, 196[0m:[39m[49m     v[BUF - 1] = b'x';
+[0m[49m[38;5;9m- 188     [0m:[38;5;9m[49m     assert_same("full-buffer-ends-with-x", &v);
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m     assert_same_modal("full-buffer-ends-with-x", &v);
+[0m[49m[39m  189, 198[0m:[39m[49m 
+[0m[49m[39m  190, 199[0m:[39m[49m     let mut v = vec![b'.'; BUF];
+[0m[49m[39m  191, 200[0m:[39m[49m     v[BUF - 1] = b'A';
+[0m[49m[38;5;9m- 192     [0m:[38;5;9m[49m     assert_same("full-buffer-ends-with-A", &v);
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m     assert_same_modal("full-buffer-ends-with-A", &v);
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m fn full_buffer_with_a_nul_inside_is_deterministic() {
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m     // 1000 bytes read, but a NUL inside the buffer stops strchr before the end,
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m     // so there is no out-of-bounds read and the comparison is exact.
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m     let mut v = vec![b'A'; BUF];
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m     v[BUF - 1] = 0;
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m     assert_same("full-buffer-last-byte-nul", &v);
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m     let mut v = vec![b'x'; BUF];
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m     v[BUF / 2] = 0;
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m     assert_same("full-buffer-nul-midway", &v);
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m     // Over-long input whose first 1000 bytes contain a NUL: also exact.
+[0m[49m[38;5;10m+      217[0m:[38;5;10m[49m     let mut v = vec![b'A'; 3 * BUF];
+[0m[49m[38;5;10m+      218[0m:[38;5;10m[49m     v[500] = 0;
+[0m[49m[38;5;10m+      219[0m:[38;5;10m[49m     assert_same("3000-bytes-nul-at-500", &v);
+[0m[49m[39m  193, 220[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  226, 226[0m:[39m[49m pub fn assert_same_modal(name: &str, stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m     assert_same_modal_runs(name, stdin_bytes, MODAL_RUNS)
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m /// True when the C program's `strchr` will run off the end of `in[1000]`:
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m /// the buffer gets completely filled and none of those 1000 bytes is a NUL, so
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m /// nothing inside the buffer terminates the string.
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m pub fn reads_out_of_bounds(stdin_bytes: &[u8]) -> bool {
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m     stdin_bytes.len() >= 1000 && !stdin_bytes[..1000].contains(&0)
+[0m[49m[38;5;10m+      235[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m /// Exact comparison for well-defined inputs, modal comparison for the inputs
+[0m[49m[38;5;10m+      238[0m:[38;5;10m[49m /// that make the C program read out of bounds.
+[0m[49m[38;5;10m+      239[0m:[38;5;10m[49m pub fn assert_same_auto(name: &str, stdin_bytes: &[u8], modal_runs: usize) {
+[0m[49m[38;5;10m+      240[0m:[38;5;10m[49m     if reads_out_of_bounds(stdin_bytes) {
+[0m[49m[38;5;10m+      241[0m:[38;5;10m[49m         assert_same_modal_runs(name, stdin_bytes, modal_runs);
+[0m[49m[38;5;10m+      242[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      243[0m:[38;5;10m[49m         assert_same(name, stdin_bytes);
+[0m[49m[38;5;10m+      244[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      245[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      247[0m:[38;5;10m[49m pub fn assert_same_modal_runs(name: &str, stdin_bytes: &[u8], runs: usize) {
+[0m[49m[38;5;10m+      248[0m:[38;5;10m[49m     let runs = runs.max(1);
+[0m[49m[39m  227, 249[0m:[39m[49m     let mut counts: std::collections::BTreeMap<Vec<u8>, usize> = Default::default();
+[0m[49m[39m  228, 250[0m:[39m[49m 
+[0m[49m[38;5;9m- 229     [0m:[38;5;9m[49m     for _ in 0..MODAL_RUNS {
+[0m[49m[38;5;10m+      251[0m:[38;5;10m[49m     for _ in 0..runs {
+[0m[49m[39m  230, 252[0m:[39m[49m         let c = run(c_bin(), &[], stdin_bytes);
+[0m[49m[39m  231, 253[0m:[39m[49m         let r = run(&rust_bin(), &[], stdin_bytes);
+[0m[49m[39m  232, 254[0m:[39m[49m         assert_eq!(
+[0m[49m[39m  233, 255[0m:[39m[49m             c.stderr,
+[0m[49m[39m  234, 256[0m:[39m[49m             r.stderr,
+[0m[49m[39m  235, 257[0m:[39m[49m             "[{name}] stderr differs\n  input: {}",
+[0m[49m[39m  236, 258[0m:[39m[49m             preview(stdin_bytes)
+[0m[49m[39m  237, 259[0m:[39m[49m         );
+[0m[49m[39m  238, 260[0m:[39m[49m         assert_eq!(
+[0m[49m[39m  239, 261[0m:[39m[49m             status_of(&c),
+[0m[49m[39m  240, 262[0m:[39m[49m             status_of(&r),
+[0m[49m[39m  241, 263[0m:[39m[49m             "[{name}] exit status differs\n  input: {}",
+[0m[49m[39m  242, 264[0m:[39m[49m             preview(stdin_bytes)
+[0m[49m[39m  243, 265[0m:[39m[49m         );
+[0m[49m[39m  244, 266[0m:[39m[49m         *counts.entry(c.stdout).or_insert(0) += 1;
+[0m[49m[39m  245, 267[0m:[39m[49m     }
+[0m[49m[39m  246, 268[0m:[39m[49m 
+[0m[49m[39m  247, 269[0m:[39m[49m     let modal = counts
+[0m[49m[39m  248, 270[0m:[39m[49m         .iter()
+[0m[49m[39m  249, 271[0m:[39m[49m         .max_by_key(|(_, &n)| n)
+[0m[49m[39m  250, 272[0m:[39m[49m         .map(|(out, _)| out.clone())
+[0m[49m[39m  251, 273[0m:[39m[49m         .expect("at least one C run");
+[0m[49m[39m  252, 274[0m:[39m[49m 
+[0m[49m[39m  253, 275[0m:[39m[49m     // The Rust program must be deterministic on a fixed input.
+[0m[49m[39m  254, 276[0m:[39m[49m     let mut rust_outputs = std::collections::BTreeSet::new();
+[0m[49m[38;5;9m- 255     [0m:[38;5;9m[49m     for _ in 0..MODAL_RUNS {
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m     for _ in 0..runs {
+[0m[49m[39m  256, 278[0m:[39m[49m         rust_outputs.insert(run(&rust_bin(), &[], stdin_bytes).stdout);
+[0m[49m[39m  257, 279[0m:[39m[49m     }
+[0m[49m[39m  258, 280[0m:[39m[49m     assert_eq!(
+[0m[49m[39m  259, 281[0m:[39m[49m         rust_outputs.len(),
+[0m[49m[39m  260, 282[0m:[39m[49m         1,
+[0m[49m[39m  261, 283[0m:[39m[49m         "[{name}] Rust output is not deterministic: {:?}",
+[0m[49m[39m  262, 284[0m:[39m[49m         rust_outputs
+[0m[49m[39m  263, 285[0m:[39m[49m             .iter()
+[0m[49m[39m  264, 286[0m:[39m[49m             .map(|o| String::from_utf8_lossy(o).to_string())
+[0m[49m[39m  265, 287[0m:[39m[49m             .collect::<Vec<_>>()
+[0m[49m[39m  266, 288[0m:[39m[49m     );
+[0m[49m[39m  267, 289[0m:[39m[49m 
+[0m[49m[39m  268, 290[0m:[39m[49m     let rust_out = rust_outputs.into_iter().next().unwrap();
+[0m[49m[39m  269, 291[0m:[39m[49m     assert_eq!(
+[0m[49m[39m  270, 292[0m:[39m[49m         modal,
+[0m[49m[39m  271, 293[0m:[39m[49m         rust_out,
+[0m[49m[39m  272, 294[0m:[39m[49m         "[{name}] Rust does not match the C program's modal stdout\n  \
+[0m[49m[39m  273, 295[0m:[39m[49m          input ({} bytes): {}\n  C tally: {:?}\n  Rust   : {:?}",
+[0m[49m[39m  274, 296[0m:[39m[49m         stdin_bytes.len(),
+[0m[49m[39m  275, 297[0m:[39m[49m         preview(stdin_bytes),
+[0m[49m[39m  276, 298[0m:[39m[49m         counts
+[0m[49m[39m  277, 299[0m:[39m[49m             .iter()
+[0m[49m[39m  278, 300[0m:[39m[49m             .map(|(o, n)| (String::from_utf8_lossy(o).to_string(), *n))
+[0m[49m[39m  279, 301[0m:[39m[49m             .collect::<Vec<_>>(),
+[0m[49m[39m  280, 302[0m:[39m[49m         String::from_utf8_lossy(&rust_out),
+[0m[49m[39m  281, 303[0m:[39m[49m     );
+[0m[49m[39m  282, 304[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the chunked and fuzz tests need the same routing.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  263, 263[0m:[39m[49m #[test]
+[0m[49m[39m  264, 264[0m:[39m[49m fn stdin_delivered_in_chunks() {
+[0m[49m[39m  265, 265[0m:[39m[49m     assert_same_chunked("chunked-short", b"A\nx\nAAxx\n", 1);
+[0m[49m[39m  266, 266[0m:[39m[49m     assert_same_chunked("chunked-999", &vec![b'A'; BUF - 1], 137);
+[0m[49m[38;5;9m- 267     [0m:[38;5;9m[49m     assert_same_chunked("chunked-exact-1000", &vec![b'x'; BUF], 250);
+[0m[49m[39m  268, 267[0m:[39m[49m 
+[0m[49m[38;5;10m+      268[0m:[38;5;10m[49m     // Exactly 1000 bytes with a NUL inside, so the comparison stays exact while
+[0m[49m[38;5;10m+      269[0m:[38;5;10m[49m     // still proving the read loop keeps going until the buffer is full.
+[0m[49m[38;5;10m+      270[0m:[38;5;10m[49m     let mut v = vec![b'x'; BUF];
+[0m[49m[38;5;10m+      271[0m:[38;5;10m[49m     v[BUF - 1] = 0;
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m     assert_same_chunked("chunked-exact-1000", &v, 250);
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m 
+[0m[49m[39m  269, 274[0m:[39m[49m     // More than the buffer holds, arriving in pieces: the tail is discarded and
+[0m[49m[38;5;9m- 270     [0m:[38;5;9m[49m     // the writer may see EPIPE once the child exits.
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m     // the writer may see EPIPE once the child exits. A NUL at 900 keeps the C
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m     // program inside its buffer.
+[0m[49m[39m  271, 277[0m:[39m[49m     let mut v = vec![b'A'; BUF];
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m     v[900] = 0;
+[0m[49m[39m  272, 279[0m:[39m[49m     v.extend(std::iter::repeat(b'x').take(BUF));
+[0m[49m[39m  273, 280[0m:[39m[49m     assert_same_chunked("chunked-2000", &v, 300);
+[0m[49m[39m  274, 281[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  302, 302[0m:[39m[49m     let mut rng = Rng::new(0xC0FF_EE12_3456_789A);
+[0m[49m[39m  303, 303[0m:[39m[49m     for i in 0..300 {
+[0m[49m[39m  304, 304[0m:[39m[49m         let n = LENGTHS[rng.below(LENGTHS.len())];
+[0m[49m[39m  305, 305[0m:[39m[49m         let alpha = ALPHABETS[rng.below(ALPHABETS.len())];
+[0m[49m[39m  306, 306[0m:[39m[49m         let data: Vec<u8> = (0..n).map(|_| alpha[rng.below(alpha.len())]).collect();
+[0m[49m[38;5;9m- 307     [0m:[38;5;9m[49m         assert_same(&format!("fuzz-{i}-len-{n}"), &data);
+[0m[49m[38;5;10m+      307[0m:[38;5;10m[49m         // Exact comparison, except for inputs that fill all 1000 bytes without a
+[0m[49m[38;5;10m+      308[0m:[38;5;10m[49m         // NUL: those make the C program read out of bounds (see ERRORS.md), so
+[0m[49m[38;5;10m+      309[0m:[38;5;10m[49m         // they are compared against its modal output.
+[0m[49m[38;5;10m+      310[0m:[38;5;10m[49m         assert_same_auto(&format!("fuzz-{i}-len-{n}"), &data, 5);
+[0m[49m[39m  308, 311[0m:[39m[49m     }
+[0m[49m[39m  309, 312[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 34    [0m:[38;5;9m[49m use common::{assert_same, assert_same_chunked, assert_same_with_args, Rng};
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m use common::{
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     assert_same, assert_same_auto, assert_same_chunked, assert_same_modal, assert_same_with_args,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     Rng,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m };
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -f translation/tests/probe_full_buffer.rs && ls translation/tests translation/tests/common[0m[38;5;244m (using tool: shell)[0m
+
+translation/tests:
+common
+differential.rs
+
+translation/tests/common:
+mod.rs
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m./translation/tests/oob_characterization.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Characterization test pinning down the C's out-of-bounds nondeterminism and what Rust must do.
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Characterisation of the one place where the C program is not a function of
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // its input: a completely full `in[1000]` with no NUL byte inside it.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // `main` declares `char in[1000] = "";` and the compiler lays it out at
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // `rbp-0x3f0` with size `0x3e8`, so the buffer ends exactly at `rbp-8`. The
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // initialiser zeroes precisely those 1000 bytes; the 8 bytes at `rbp-8..rbp-1`
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // are frame padding that is never written, and `[rbp]` holds the saved frame
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // pointer, i.e. a stack address that ASLR randomises on every run.
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // When `fread` fills all 1000 bytes and none of them is NUL, `strchr` keeps
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // scanning into that padding and into the saved `rbp`, so `foo` can report one
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // extra 'A' or 'x' depending on bytes the input does not control. Repeated runs
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // of the *same* C binary on the *same* input disagree a couple of percent of the
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // time.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // This test pins down what the Rust program must do about it: reproduce the
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // stable, in-bounds answer, and never vary.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m use common::{c_bin, rust_bin};
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m use std::process::{Command, Stdio};
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m const BUF: usize = 1000;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m const RUNS: usize = 60;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m fn stdout_of(bin: &std::path::Path, input: &[u8]) -> Vec<u8> {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     let mut child = Command::new(bin)
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         .expect("spawn");
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     let mut sink = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     let data = input.to_vec();
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     let w = std::thread::spawn(move || {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         let _ = sink.write_all(&data);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("wait");
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let _ = w.join();
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     out.stdout
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// Parse "A: <n>\nx: <m>\n".
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m fn counts(out: &[u8]) -> (i64, i64) {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let s = String::from_utf8_lossy(out);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let mut it = s.lines();
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let a = it.next().expect("A line");
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let x = it.next().expect("x line");
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let a = a.strip_prefix("A: ").expect("A prefix").parse().expect("int");
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let x = x.strip_prefix("x: ").expect("x prefix").parse().expect("int");
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     (a, x)
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m fn full_buffer_rust_is_stable_and_matches_the_in_bounds_answer() {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     // 1000 'A', no NUL anywhere: the in-bounds answer is A: 1000 / x: 0.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     let input = vec![b'A'; BUF];
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let expected = b"A: 1000\nx: 0\n".to_vec();
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     // The Rust program never varies.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     for _ in 0..RUNS {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             stdout_of(&rust_bin(), &input),
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             expected,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             "Rust must always print the in-bounds answer for a full buffer"
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     // The C program agrees most of the time, and when it does not, it only ever
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     // over-counts: the out-of-bounds bytes can add matches, never remove them.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     let mut agree = 0usize;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     for _ in 0..RUNS {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         let got = stdout_of(c_bin(), &input);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         if got == expected {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m             agree += 1;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             let (a, x) = counts(&got);
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             assert!(
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m                 a >= 1000 && x >= 0 && a <= 1000 + 16 && x <= 16,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m                 "unexpected C output for a full buffer: {:?}",
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m                 String::from_utf8_lossy(&got)
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         agree * 2 > RUNS,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         "the in-bounds answer should be the C program's usual output, got it \
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m          {agree}/{RUNS} times"
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m fn under_full_buffer_the_c_program_is_deterministic() {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     // 999 bytes: in[999] is still the zero fill, so there is no out-of-bounds
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     // read and the C program's output never varies.
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let input = vec![b'A'; BUF - 1];
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let first = stdout_of(c_bin(), &input);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     assert_eq!(first, b"A: 999\nx: 0\n".to_vec());
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     for _ in 0..RUNS {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             stdout_of(c_bin(), &input),
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             first,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             "C output must be stable when it stays inside its buffer"
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         assert_eq!(stdout_of(&rust_bin(), &input), first);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m./translation/tests/oob_characterization.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test 2>&1 | tail -35[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-9d9dba5439844661)
+
+running 19 tests
+test case_sensitivity ... ok
+test empty_input ... ok
+test halves_of_the_buffer ... ok
+test arguments_are_ignored ... ok
+test no_match_at_all ... ok
+test nul_at_buffer_boundary ... ok
+test full_buffer_with_a_nul_inside_is_deterministic ... ok
+test high_bit_bytes ... ok
+test adjacent_and_repeated_matches ... ok
+test nul_terminates_the_string ... ok
+test single_byte_inputs ... ok
+test reads_across_newlines ... ok
+test match_positions ... ok
+test stdin_delivered_in_chunks ... ok
+test exactly_full_buffer_mixed ... ok
+test truncation_discards_the_tail ... ok
+test length_boundaries_all_x ... ok
+test length_boundaries_all_a ... ok
+test seeded_fuzz ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.47s
+
+     Running tests/oob_characterization.rs (target/debug/deps/oob_characterization-e854e4a45818c468)
+
+running 2 tests
+test full_buffer_rust_is_stable_and_matches_the_in_bounds_answer ... ok
+test under_full_buffer_the_c_program_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+[38;5;244m - Completed in 6.184s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  1, 1[0m:[39m[49m // Shared harness for the differential tests.
+[0m[49m[39m  2, 2[0m:[39m[49m //
+[0m[49m[39m  3, 3[0m:[39m[49m // Both programs are driven as SUBPROCESSES, exactly the way a shell would run
+[0m[49m[39m  4, 4[0m:[39m[49m // them: bytes on stdin, bytes compared on stdout/stderr, plus exit status.
+[0m[49m[38;5;9m- 5   [0m:[38;5;9m[49m // Nothing here links the Rust crate as a library.
+[0m[49m[38;5;10m+    5[0m:[38;5;10m[49m // Nothing here links the Rust crate as a library.
+[0m[49m[38;5;10m+    6[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    7[0m:[38;5;10m[49m // Each integration test binary includes this module separately and uses a
+[0m[49m[38;5;10m+    8[0m:[38;5;10m[49m // different subset of it, so unused-item warnings are not meaningful here.
+[0m[49m[38;5;10m+    9[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test 2>&1 | grep -E "^(warning|error)" | sort | uniq -c; echo "--- repeat stability (8 runs)"; for i in $(seq 8); do cargo test -q 2>&1 | grep -E "test result: FAILED|^test result: ok" | tr '\n' ' '; echo; done[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+--- repeat stability (8 runs)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.44s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.46s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.46s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.48s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.49s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.50s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.81s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s 
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.76s test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s 
+[38;5;244m - Completed in 53.770s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI
+python3 - <<'EOF'
+import os, subprocess, collections
+for prog in ["./c_src/build/driver","./translation/target/release/driver"]:
+    tal=collections.Counter()
+    for _ in range(20):
+        r,w=os.pipe()
+        p=subprocess.Popen([prog],stdin=subprocess.DEVNULL,stdout=w,stderr=subprocess.PIPE)
+        os.close(w); os.close(r)   # reader gone -> writes get SIGPIPE/EPIPE
+        err=p.communicate()[1]
+        tal[(p.returncode, err)]+=1
+    print(prog, dict(tal))
+EOF[0m[38;5;244m (using tool: shell)[0m
+
+./c_src/build/driver {(-13, b''): 20}
+./translation/target/release/driver {(0, b''): 20}
+[38;5;244m - Completed in 0.64s[0m
+
+[?25l[0m[38;5;141m> [0mFound a genuine, deterministic mismatch: when stdout's reader is gone, C dies from SIGPIPE (status −13) while Rust exits 0 — Rust's runtime sets [38;5;10mSIGPIPE[0m to [38;5;10mSIG_IGN[0m before [38;5;10mmain[0m. Fixing the Rust program.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  62,  62[0m:[39m[49m /// Mirrors the C `driver`, including printf formatting.
+[0m[49m[39m  63,  63[0m:[39m[49m fn driver<W: Write>(out: &mut W, in_str: &[u8]) {
+[0m[49m[39m  64,  64[0m:[39m[49m     let _ = write!(out, "A: {}\n", foo(in_str, b'A'));
+[0m[49m[39m  65,  65[0m:[39m[49m     let _ = write!(out, "x: {}\n", foo(in_str, b'x'));
+[0m[49m[39m  66,  66[0m:[39m[49m }
+[0m[49m[39m  67,  67[0m:[39m[49m 
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m /// Restore the default disposition of `SIGPIPE`.
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m /// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, so a failed
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m /// write to a pipe whose reader is gone merely returns `EPIPE` and the process
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m /// exits 0. A C program inherits the default disposition and is *killed* by
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m /// `SIGPIPE` instead, which shows up as a different exit status. Restoring
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m /// `SIG_DFL` makes this program die exactly the way `c_src/build/driver` does.
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m fn restore_default_sigpipe() {
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m     const SIGPIPE: i32 = 13;
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m     const SIG_DFL: usize = 0;
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m     extern "C" {
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m         fn signal(signum: i32, handler: usize) -> usize;
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m     // SAFETY: `signal` is the POSIX libc function; SIG_DFL is a valid handler
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m     // value and SIGPIPE is a valid signal number.
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m         signal(SIGPIPE, SIG_DFL);
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m #[cfg(not(unix))]
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m fn restore_default_sigpipe() {}
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m 
+[0m[49m[39m  68,  92[0m:[39m[49m fn main() {
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m     restore_default_sigpipe();
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m 
+[0m[49m[39m  69,  95[0m:[39m[49m     // char in[1000] = "";  -> fully zero-initialized
+[0m[49m[39m  70,  96[0m:[39m[49m     let mut buf = [0u8; BUF_LEN];
+[0m[49m[39m  71,  97[0m:[39m[49m 
+[0m[49m[39m  72,  98[0m:[39m[49m     // fread(in, 1, sizeof(in), stdin): read up to 1000 bytes, looping until
+[0m[49m[39m  73,  99[0m:[39m[49m     // the buffer is full or EOF/error. Newlines are not delimiters.
+[0m[49m[39m  74, 100[0m:[39m[49m     let mut stdin = std::io::stdin();
+[0m[49m[39m  75, 101[0m:[39m[49m     let mut filled = 0usize;
+[0m[49m[39m  76, 102[0m:[39m[49m     while filled < BUF_LEN {
+[0m[49m[39m  77, 103[0m:[39m[49m         match stdin.read(&mut buf[filled..]) {
+[0m[49m[39m  78, 104[0m:[39m[49m             Ok(0) => break,
+[0m[49m[39m  79, 105[0m:[39m[49m             Ok(n) => filled += n,
+[0m[49m[39m  80, 106[0m:[39m[49m             Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+[0m[49m[39m  81, 107[0m:[39m[49m             Err(_) => break,
+[0m[49m[39m  82, 108[0m:[39m[49m         }
+[0m[49m[39m  83, 109[0m:[39m[49m     }
+[0m[49m[39m  84, 110[0m:[39m[49m 
+[0m[49m[39m  85, 111[0m:[39m[49m     // The C code then treats `in` as a NUL-terminated string. If fewer than
+[0m[49m[39m  86, 112[0m:[39m[49m     // 1000 bytes were read the remaining zero fill terminates it; if the input
+[0m[49m[39m  87, 113[0m:[39m[49m     // itself contains a NUL byte the string ends there.
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m     // If all 1000 bytes were filled and none of them is NUL, the C `strchr`
+[0m[49m[38;5;10m+     116[0m:[38;5;10m[49m     // walks off the end of the buffer into uninitialized stack padding and the
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m     // saved frame pointer. That is undefined behaviour whose result the input
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m     // does not determine (see ERRORS.md); this program produces the in-bounds
+[0m[49m[38;5;10m+     119[0m:[38;5;10m[49m     // answer, which is what the C program prints on the overwhelming majority
+[0m[49m[38;5;10m+     120[0m:[38;5;10m[49m     // of runs.
+[0m[49m[39m  88, 121[0m:[39m[49m     let end = buf[..filled]
+[0m[49m[39m  89, 122[0m:[39m[49m         .iter()
+[0m[49m[39m  90, 123[0m:[39m[49m         .position(|&b| b == 0)
+[0m[49m[39m  91, 124[0m:[39m[49m         .unwrap_or(filled);
+[0m[49m[39m  92, 125[0m:[39m[49m     let in_str = &buf[..end];
+[0m[49m[39m  93, 126[0m:[39m[49m 
+[0m[49m[38;5;10m+     127[0m:[38;5;10m[49m     // C's stdout is fully buffered when it is not a terminal, so both lines
+[0m[49m[38;5;10m+     128[0m:[38;5;10m[49m     // leave the process together rather than one write per line.
+[0m[49m[38;5;10m+     129[0m:[38;5;10m[49m     let mut out = Vec::with_capacity(32);
+[0m[49m[38;5;10m+     130[0m:[38;5;10m[49m     driver(&mut out, in_str);
+[0m[49m[38;5;10m+     131[0m:[38;5;10m[49m 
+[0m[49m[39m  94, 132[0m:[39m[49m     let stdout = std::io::stdout();
+[0m[49m[39m  95, 133[0m:[39m[49m     let mut lock = stdout.lock();
+[0m[49m[38;5;9m- 96     [0m:[38;5;9m[49m     driver(&mut lock, in_str);
+[0m[49m[38;5;10m+     134[0m:[38;5;10m[49m     let _ = lock.write_all(&out);
+[0m[49m[39m  97, 135[0m:[39m[49m     let _ = lock.flush();
+[0m[49m[39m  98, 136[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -5 && cd .. && python3 - <<'EOF'
+import os, subprocess, collections
+for prog in ["./c_src/build/driver","./translation/target/release/driver"]:
+    tal=collections.Counter()
+    for _ in range(20):
+        r,w=os.pipe()
+        p=subprocess.Popen([prog],stdin=subprocess.DEVNULL,stdout=w,stderr=subprocess.PIPE)
+        os.close(w); os.close(r)
+        err=p.communicate()[1]
+        tal[(p.returncode, err)]+=1
+    print(prog, dict(tal))
+EOF[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-QspNJI/translation)
+    Finished `release` profile [optimized] target(s) in 0.15s
+./c_src/build/driver {(-13, b''): 20}
+./translation/target/release/driver {(-13, b''): 20}
+[38;5;244m - Completed in 0.231s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  325, 325[0m:[39m[49m /// Deterministic pseudo-random byte generator (xorshift64*), so fuzz cases are
+[0m[49m[39m  326, 326[0m:[39m[49m /// reproducible and need no external crates.
+[0m[49m[38;5;9m- 327     [0m:[38;5;9m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+      327[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  310, 310[0m:[39m[49m /// Short, escaped rendering of an input for failure messages.
+[0m[49m[39m  311, 311[0m:[39m[49m pub fn preview(bytes: &[u8]) -> String {
+[0m[49m[39m  312, 312[0m:[39m[49m     let head: String = bytes
+[0m[49m[39m  313, 313[0m:[39m[49m         .iter()
+[0m[49m[39m  314, 314[0m:[39m[49m         .take(48)
+[0m[49m[39m  315, 315[0m:[39m[49m         .flat_map(|&b| std::ascii::escape_default(b))
+[0m[49m[39m  316, 316[0m:[39m[49m         .map(char::from)
+[0m[49m[39m  317, 317[0m:[39m[49m         .collect();
+[0m[49m[39m  318, 318[0m:[39m[49m     if bytes.len() > 48 {
+[0m[49m[39m  319, 319[0m:[39m[49m         format!("\"{head}\"... (+{} bytes)", bytes.len() - 48)
+[0m[49m[39m  320, 320[0m:[39m[49m     } else {
+[0m[49m[39m  321, 321[0m:[39m[49m         format!("\"{head}\"")
+[0m[49m[39m  322, 322[0m:[39m[49m     }
+[0m[49m[38;5;10m+      323[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      324[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      325[0m:[38;5;10m[49m /// Run `bin` with its stdout connected to a pipe whose reader has already
+[0m[49m[38;5;10m+      326[0m:[38;5;10m[49m /// exited, so the very first write to stdout fails.
+[0m[49m[38;5;10m+      327[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      328[0m:[38;5;10m[49m /// The read end is closed before `bin` is even spawned (a throwaway `true`
+[0m[49m[38;5;10m+      329[0m:[38;5;10m[49m /// process supplies the pipe and then exits), so there is no race.
+[0m[49m[38;5;10m+      330[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      331[0m:[38;5;10m[49m fn run_with_dead_stdout_reader(bin: &Path, stdin_bytes: &[u8]) -> Output {
+[0m[49m[38;5;10m+      332[0m:[38;5;10m[49m     let mut donor = Command::new("true")
+[0m[49m[38;5;10m+      333[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+      334[0m:[38;5;10m[49m         .stdout(Stdio::null())
+[0m[49m[38;5;10m+      335[0m:[38;5;10m[49m         .stderr(Stdio::null())
+[0m[49m[38;5;10m+      336[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+      337[0m:[38;5;10m[49m         .expect("spawn `true` to donate a pipe");
+[0m[49m[38;5;10m+      338[0m:[38;5;10m[49m     let write_end = donor.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+      339[0m:[38;5;10m[49m     donor.wait().expect("wait for `true`"); // reader is now gone
+[0m[49m[38;5;10m+      340[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      341[0m:[38;5;10m[49m     let mut child = Command::new(bin)
+[0m[49m[38;5;10m+      342[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+      343[0m:[38;5;10m[49m         .stdout(Stdio::from(write_end))
+[0m[49m[38;5;10m+      344[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+      345[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+      346[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("spawn {}: {e}", bin.display()));
+[0m[49m[38;5;10m+      347[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      348[0m:[38;5;10m[49m     let mut sink = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+      349[0m:[38;5;10m[49m     let data = stdin_bytes.to_vec();
+[0m[49m[38;5;10m+      350[0m:[38;5;10m[49m     let w = std::thread::spawn(move || {
+[0m[49m[38;5;10m+      351[0m:[38;5;10m[49m         let _ = sink.write_all(&data);
+[0m[49m[38;5;10m+      352[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+      353[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("collect child output");
+[0m[49m[38;5;10m+      354[0m:[38;5;10m[49m     let _ = w.join();
+[0m[49m[38;5;10m+      355[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+      356[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      357[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      358[0m:[38;5;10m[49m /// Both programs must react identically to a stdout whose reader has vanished.
+[0m[49m[38;5;10m+      359[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      360[0m:[38;5;10m[49m pub fn assert_same_dead_stdout_reader(name: &str, stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+      361[0m:[38;5;10m[49m     let c = run_with_dead_stdout_reader(c_bin(), stdin_bytes);
+[0m[49m[38;5;10m+      362[0m:[38;5;10m[49m     let r = run_with_dead_stdout_reader(&rust_bin(), stdin_bytes);
+[0m[49m[38;5;10m+      363[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      364[0m:[38;5;10m[49m         c.stderr, r.stderr,
+[0m[49m[38;5;10m+      365[0m:[38;5;10m[49m         "[{name}] stderr differs with a dead stdout reader"
+[0m[49m[38;5;10m+      366[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      367[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      368[0m:[38;5;10m[49m         status_of(&c),
+[0m[49m[38;5;10m+      369[0m:[38;5;10m[49m         status_of(&r),
+[0m[49m[38;5;10m+      370[0m:[38;5;10m[49m         "[{name}] exit status differs with a dead stdout reader \
+[0m[49m[38;5;10m+      371[0m:[38;5;10m[49m          (C's printf is killed by SIGPIPE; Rust must not silently ignore it)"
+[0m[49m[38;5;10m+      372[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      373[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      374[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      375[0m:[38;5;10m[49m /// Run `bin` through `sh` with file descriptor 1 closed outright, so `printf`
+[0m[49m[38;5;10m+      376[0m:[38;5;10m[49m /// fails with `EBADF` rather than `EPIPE`.
+[0m[49m[38;5;10m+      377[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      378[0m:[38;5;10m[49m fn run_with_closed_stdout(bin: &Path, stdin_bytes: &[u8]) -> Output {
+[0m[49m[38;5;10m+      379[0m:[38;5;10m[49m     let mut child = Command::new("sh")
+[0m[49m[38;5;10m+      380[0m:[38;5;10m[49m         .arg("-c")
+[0m[49m[38;5;10m+      381[0m:[38;5;10m[49m         .arg("exec \"$0\" >&-")
+[0m[49m[38;5;10m+      382[0m:[38;5;10m[49m         .arg(bin)
+[0m[49m[38;5;10m+      383[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+      384[0m:[38;5;10m[49m         .stdout(Stdio::null())
+[0m[49m[38;5;10m+      385[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+      386[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+      387[0m:[38;5;10m[49m         .expect("spawn sh");
+[0m[49m[38;5;10m+      388[0m:[38;5;10m[49m     let mut sink = child.stdin.take().expect("piped stdin");
+[0m[49m[38;5;10m+      389[0m:[38;5;10m[49m     let data = stdin_bytes.to_vec();
+[0m[49m[38;5;10m+      390[0m:[38;5;10m[49m     let w = std::thread::spawn(move || {
+[0m[49m[38;5;10m+      391[0m:[38;5;10m[49m         let _ = sink.write_all(&data);
+[0m[49m[38;5;10m+      392[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+      393[0m:[38;5;10m[49m     let out = child.wait_with_output().expect("collect child output");
+[0m[49m[38;5;10m+      394[0m:[38;5;10m[49m     let _ = w.join();
+[0m[49m[38;5;10m+      395[0m:[38;5;10m[49m     out
+[0m[49m[38;5;10m+      396[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      397[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      398[0m:[38;5;10m[49m /// Both programs must react identically to a closed stdout.
+[0m[49m[38;5;10m+      399[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      400[0m:[38;5;10m[49m pub fn assert_same_closed_stdout(name: &str, stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+      401[0m:[38;5;10m[49m     let c = run_with_closed_stdout(c_bin(), stdin_bytes);
+[0m[49m[38;5;10m+      402[0m:[38;5;10m[49m     let r = run_with_closed_stdout(&rust_bin(), stdin_bytes);
+[0m[49m[38;5;10m+      403[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      404[0m:[38;5;10m[49m         c.stderr, r.stderr,
+[0m[49m[38;5;10m+      405[0m:[38;5;10m[49m         "[{name}] stderr differs with stdout closed"
+[0m[49m[38;5;10m+      406[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      407[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      408[0m:[38;5;10m[49m         status_of(&c),
+[0m[49m[38;5;10m+      409[0m:[38;5;10m[49m         status_of(&r),
+[0m[49m[38;5;10m+      410[0m:[38;5;10m[49m         "[{name}] exit status differs with stdout closed"
+[0m[49m[38;5;10m+      411[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      412[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      413[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      414[0m:[38;5;10m[49m /// Run `bin` with an unreadable stdin (a directory), so `fread` fails instead of
+[0m[49m[38;5;10m+      415[0m:[38;5;10m[49m /// reaching EOF.
+[0m[49m[38;5;10m+      416[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      417[0m:[38;5;10m[49m pub fn assert_same_unreadable_stdin(name: &str, dir: &Path) {
+[0m[49m[38;5;10m+      418[0m:[38;5;10m[49m     let go = |bin: &Path| {
+[0m[49m[38;5;10m+      419[0m:[38;5;10m[49m         Command::new(bin)
+[0m[49m[38;5;10m+      420[0m:[38;5;10m[49m             .stdin(Stdio::from(
+[0m[49m[38;5;10m+      421[0m:[38;5;10m[49m                 std::fs::File::open(dir).expect("open directory as stdin"),
+[0m[49m[38;5;10m+      422[0m:[38;5;10m[49m             ))
+[0m[49m[38;5;10m+      423[0m:[38;5;10m[49m             .stdout(Stdio::piped())
+[0m[49m[38;5;10m+      424[0m:[38;5;10m[49m             .stderr(Stdio::piped())
+[0m[49m[38;5;10m+      425[0m:[38;5;10m[49m             .output()
+[0m[49m[38;5;10m+      426[0m:[38;5;10m[49m             .expect("run with directory stdin")
+[0m[49m[38;5;10m+      427[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+      428[0m:[38;5;10m[49m     let c = go(c_bin());
+[0m[49m[38;5;10m+      429[0m:[38;5;10m[49m     let r = go(&rust_bin());
+[0m[49m[38;5;10m+      430[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      431[0m:[38;5;10m[49m         c.stdout, r.stdout,
+[0m[49m[38;5;10m+      432[0m:[38;5;10m[49m         "[{name}] stdout differs with an unreadable stdin"
+[0m[49m[38;5;10m+      433[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      434[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      435[0m:[38;5;10m[49m         c.stderr, r.stderr,
+[0m[49m[38;5;10m+      436[0m:[38;5;10m[49m         "[{name}] stderr differs with an unreadable stdin"
+[0m[49m[38;5;10m+      437[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      438[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+      439[0m:[38;5;10m[49m         status_of(&c),
+[0m[49m[38;5;10m+      440[0m:[38;5;10m[49m         status_of(&r),
+[0m[49m[38;5;10m+      441[0m:[38;5;10m[49m         "[{name}] exit status differs with an unreadable stdin"
+[0m[49m[38;5;10m+      442[0m:[38;5;10m[49m     );
+[0m[49m[39m  323, 443[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  255, 255[0m:[39m[49m #[test]
+[0m[49m[39m  256, 256[0m:[39m[49m fn arguments_are_ignored() {
+[0m[49m[39m  257, 257[0m:[39m[49m     // main() takes no arguments, so argv must make no difference.
+[0m[49m[39m  258, 258[0m:[39m[49m     assert_same_with_args("args-empty-stdin", &["foo", "bar"], b"");
+[0m[49m[39m  259, 259[0m:[39m[49m     assert_same_with_args("args-with-stdin", &["-h", "--help", "1000"], b"AAx");
+[0m[49m[38;5;10m+      260[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      261[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      262[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+      263[0m:[38;5;10m[49m // Failing I/O: the paths where fread or printf cannot do their job
+[0m[49m[38;5;10m+      264[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+      265[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      266[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      267[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      268[0m:[38;5;10m[49m fn stdout_reader_gone() {
+[0m[49m[38;5;10m+      269[0m:[38;5;10m[49m     // printf's write fails with EPIPE. The C program inherits the default
+[0m[49m[38;5;10m+      270[0m:[38;5;10m[49m     // SIGPIPE disposition and is killed by the signal; the Rust program must do
+[0m[49m[38;5;10m+      271[0m:[38;5;10m[49m     // the same rather than exiting 0 (see ERRORS.md).
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m     common::assert_same_dead_stdout_reader("dead-stdout-reader-empty", b"");
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m     common::assert_same_dead_stdout_reader("dead-stdout-reader-matches", b"AAAxxx\n");
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m fn stdout_closed() {
+[0m[49m[38;5;10m+      279[0m:[38;5;10m[49m     // printf fails with EBADF; no signal is raised and main still returns 0.
+[0m[49m[38;5;10m+      280[0m:[38;5;10m[49m     common::assert_same_closed_stdout("closed-stdout-empty", b"");
+[0m[49m[38;5;10m+      281[0m:[38;5;10m[49m     common::assert_same_closed_stdout("closed-stdout-matches", b"Ax");
+[0m[49m[38;5;10m+      282[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      283[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      284[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+      285[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+      286[0m:[38;5;10m[49m fn stdin_not_readable() {
+[0m[49m[38;5;10m+      287[0m:[38;5;10m[49m     // fread on a directory fails immediately: `in` keeps its zero fill, so the
+[0m[49m[38;5;10m+      288[0m:[38;5;10m[49m     // program still prints A: 0 / x: 0 and returns 0.
+[0m[49m[38;5;10m+      289[0m:[38;5;10m[49m     common::assert_same_unreadable_stdin("stdin-is-a-directory", &common::repo_root());
+[0m[49m[39m  260, 290[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo test 2>&1 | tail -35[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+
+running 22 tests
+test case_sensitivity ... ok
+test empty_input ... ok
+test halves_of_the_buffer ... ok
+test stdin_not_readable ... ok
+test arguments_are_ignored ... ok
+test nul_at_buffer_boundary ... ok
+test no_match_at_all ... ok
+test full_buffer_with_a_nul_inside_is_deterministic ... ok
+test high_bit_bytes ... ok
+test stdout_reader_gone ... ok
+test adjacent_and_repeated_matches ... ok
+test stdout_closed ... ok
+test nul_terminates_the_string ... ok
+test single_byte_inputs ... ok
+test stdin_delivered_in_chunks ... ok
+test match_positions ... ok
+test reads_across_newlines ... ok
+test exactly_full_buffer_mixed ... ok
+test truncation_discards_the_tail ... ok
+test length_boundaries_all_x ... ok
+test length_boundaries_all_a ... ok
+test seeded_fuzz ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.50s
+
+     Running tests/oob_characterization.rs (target/debug/deps/oob_characterization-e854e4a45818c468)
+
+running 2 tests
+test full_buffer_rust_is_stable_and_matches_the_in_bounds_answer ... ok
+test under_full_buffer_the_c_program_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+[38;5;244m - Completed in 6.151s[0m
+
+[?25l[0m[38;5;141m> [0mVerifying the new test actually catches the regression it was written for.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/main.rs /tmp/main.rs.bak && sed -i 's/^    restore_default_sigpipe();/    \/\/ TEMP-DISABLED restore_default_sigpipe();/' src/main.rs && cargo test --test differential stdout_reader_gone 2>&1 | grep -E "^test |test result|exit status differs" | head -8; cp /tmp/main.rs.bak src/main.rs && grep -n "restore_default_sigpipe();" src/main.rs[0m[38;5;244m (using tool: shell)[0m
+
+test stdout_reader_gone ... FAILED
+assertion `left == right` failed: [dead-stdout-reader-empty] exit status differs with a dead stdout reader (C's printf is killed by SIGPIPE; Rust must not silently ignore it)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.01s
+93:    restore_default_sigpipe();
+[38;5;244m - Completed in 0.144s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && diff /tmp/main.rs.bak src/main.rs && echo "main.rs restored" && cargo build --release 2>&1 | tail -2; cd .. && ls -l --time-style=full-iso c_src/src/main.c c_src/CMakeLists.txt && md5sum c_src/src/main.c[0m[38;5;244m (using tool: shell)[0m
+
+main.rs restored
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-QspNJI/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+-rw-r--r--. 1 scheschb amazon 1200 2026-09-01 10:02:06.192388869 +0000 c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon 1534 2026-09-01 10:02:06.192388869 +0000 c_src/src/main.c
+1037fda1d94defba24356920ad3ca041  c_src/src/main.c
+[38;5;244m - Completed in 0.189s[0m
+
+[?25l[0m[38;5;141m> [0mNow recording the findings in [38;5;10mERRORS.md[0m.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m./translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: ERRORS.md documenting both mismatches found, their causes, fixes, and verified-correct behaviors.
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m # Differential-testing log: `c_src` (ground truth) vs `translation`
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m Programs compared as executables, never as libraries:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m - C: `c_src/build/driver` — built with `cd c_src && mkdir -p build && cd build && cmake .. && cmake --build .`
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m - Rust: `translation/target/release/driver` — built with `cd translation && cargo build --release`
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m - Tests: `cd translation && cargo test` (`tests/differential.rs`, `tests/oob_characterization.rs`,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m   harness in `tests/common/mod.rs`; each case runs both binaries as subprocesses and
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m   compares stdout, stderr and exit status)
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m The C program under test:
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m int foo(const char *in, char c) {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     int res = 0;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     for (const char *s = in; s = strchr(s, c); s++) res++;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     return res;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m void driver(const char *in) {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     printf("A: %d\n", foo(in, 'A'));
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     printf("x: %d\n", foo(in, 'x'));
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m int main() {
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     char in[1000] = "";
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     fread(in, 1, sizeof(in), stdin);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     driver(in);
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m It has no error path: it never writes to stderr, and `main` always returns 0. The
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m only ways its observable behaviour varies are the two entries below.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m ---
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m ## Mismatch 1 — exit status when stdout's reader is gone (FIXED)
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m **Symptom.** With stdout connected to a pipe whose read end is already closed:
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m | program | exit status | stdout | stderr |
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m |---|---|---|---|
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m | C | killed by signal 13 (`SIGPIPE`) | empty | empty |
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m | Rust (before fix) | exited 0 | empty | empty |
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m Reproduced 20/20 runs in both directions, so this was deterministic, not a race.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m **Cause.** The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs. A
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m failed write therefore returns `EPIPE`, the return value is discarded exactly as
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m C discards `printf`'s, and the process exits 0. The C program inherits the
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m default disposition and is killed by the signal instead.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m This is precisely the failure the task description warns about: stdout was
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m byte-identical (empty in both cases), so a stdout-only comparison passed while
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m the exit status disagreed.
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m **Fix.** `translation/src/main.rs` now calls `restore_default_sigpipe()` as the
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m first statement of `main`, declaring `signal` from libc directly (no new
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m dependency) and installing `SIG_DFL` for `SIGPIPE`.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m **Related check, no change needed.** With file descriptor 1 *closed* rather than
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m piped (`exec ./driver >&-`), `printf` fails with `EBADF`, no signal is raised and
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m both programs exit 0 — already matching.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m **Also changed while fixing this.** The Rust program now formats both lines into
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m one buffer and issues a single `write_all`, matching C stdio's full buffering on
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m a non-terminal stdout (glibc flushes both lines together at exit). Previously the
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m line-buffered `Stdout` wrapper emitted `A: …` and `x: …` as separate writes, so a
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m reader that disappeared between the two lines would have received different bytes
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m from the two programs.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m **Regression check.** Commenting out the `restore_default_sigpipe()` call makes
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m `differential::stdout_reader_gone` fail with "exit status differs with a dead
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m stdout reader"; restoring it makes it pass. Verified, then reverted.
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ---
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ## Mismatch 2 — the C program reads out of bounds on a completely full buffer (not fixable in Rust; test strategy documented)
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m **Symptom.** For any input of >= 1000 bytes whose first 1000 bytes contain no NUL,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m the C program's output is not a function of its input. Tallying 600 runs of the C
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m binary on the same 1000-byte input (`'A' * 1000`):
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m A: 1000  x: 0   -> 590 runs   (the in-bounds answer)
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m A: 1000  x: 1   ->   7 runs
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m A: 1001  x: 0   ->   3 runs
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m The Rust program prints `A: 1000 / x: 0` on 100% of runs.
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m This is why the suite was briefly flaky: `length_boundaries_all_a` failed once
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m with C reporting `x: 1`, then passed on re-run.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m **Cause.** From the disassembly of the built binary:
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m main:  sub $0x3f0,%rsp          ; frame is 1008 bytes
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m        ...                      ; zero-fills exactly 0x3e8 = 1000 bytes at rbp-0x3f0
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m        mov $0x3e8,%edx ; call fread
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m `in` lives at `rbp-0x3f0` and is 1000 bytes long, so it ends exactly at `rbp-8`.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m `char in[1000] = ""` zero-fills precisely those 1000 bytes. When `fread` fills all
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m of them and none is NUL, nothing inside the buffer terminates the string, so
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m `strchr` keeps scanning into:
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 1. the 8 bytes of frame padding at `rbp-8 .. rbp-1`, which are never written by
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m    this program (leftovers from the dynamic loader and libc startup), and then
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 2. the saved frame pointer at `[rbp]` — a stack address, randomised by ASLR on
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m    every execution.
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m The scan stops at the first zero byte it finds there. Whether an `0x41` ('A') or
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m `0x78` ('x') appears first depends on those bytes, i.e. on ASLR and on residue the
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m input does not control. The observed ~1.2% rate for one extra match matches what
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m you would expect from roughly three random bytes (3/256).
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m **Why the Rust program cannot reproduce it.** The extra matches come from
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m uninitialised memory and a randomised address inside the C process. No
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m deterministic Rust program can predict them, and the C binary does not agree with
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m *itself* across runs.
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m **What the Rust program does instead.** It produces the in-bounds answer, which is
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m the C program's output on ~98% of runs and its only stable behaviour.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m **How this is tested.** Inputs are split by whether the C program stays inside its
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m buffer (`common::reads_out_of_bounds`):
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m - fewer than 1000 bytes read, or a NUL inside the first 1000 bytes → strict
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m   byte-for-byte comparison of stdout, stderr and exit status
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m   (`assert_same`)
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m - 1000+ bytes with no NUL → `assert_same_modal`, which runs the C program 15 times,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m   takes its modal stdout, and requires the Rust program to equal it and to be
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m   deterministic; stderr and exit status are still compared strictly on every run
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m `tests/oob_characterization.rs` pins the finding down directly: the Rust output
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m never varies over 60 runs, the C program's modal output is the in-bounds answer,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m and its deviations only ever *over*-count (out-of-bounds bytes can add matches,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m never remove them). It also asserts that a 999-byte input is fully deterministic
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m in the C, confirming the buffer boundary is the trigger.
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m ---
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m ## Checked and already correct (no change required)
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m Verified over the enumerated cases plus a 300-case seeded fuzz and a separate
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 3000-run ad-hoc sweep:
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m - **`fread` is not line oriented.** `A\nx\nAAxx\n` yields `A: 3 / x: 3`; the read
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m   continues across newlines, unlike `fgets`/`scanf`.
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m - **Zero fill supplies the terminator.** For 0..999 bytes read, `in[filled]` is
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m   still 0, so the C string is exactly the bytes read.
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m - **Embedded NUL truncates.** `A\0x` gives `A: 1 / x: 0`; everything from the first
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m   NUL on is invisible to `strchr`, including a NUL at byte 0.
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m - **Truncation at 1000 bytes.** Input beyond `sizeof(in)` is discarded: matches at
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m   byte 1001 and later are never counted, and the writer's `EPIPE` when the child
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m   exits early is harmless.
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m - **`s++` after each hit.** Adjacent matches (`AA`, `AxAxAx`) and a match on the
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m   final byte are counted correctly; after the last match `s` lands on the NUL and
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m   the next `strchr` returns NULL.
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m - **Case and byte sensitivity.** `a` and `X` are not counted; bytes >= 0x80 are
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m   irrelevant because the searched-for `'A'`/`'x'` are positive in a signed `char`.
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m - **Output format.** `"A: %d\n"` then `"x: %d\n"`, in that order, with a trailing
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m   newline and no stderr output.
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m - **`argv` is ignored.** `main` takes no parameters; extra arguments change nothing.
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m - **Unreadable stdin.** With a directory as stdin, `fread` fails, `in` keeps its
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m   zero fill, and both programs print `A: 0 / x: 0` and exit 0.
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m - **Slowly arriving stdin.** Feeding input in 1-, 137-, 250- and 300-byte chunks
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m   keeps both programs' read loops going until the buffer is full or EOF.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m - **Integer width.** `res` is a C `int`, but it is bounded by 1000, so no overflow
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m   is reachable; the Rust side still uses a wrapping `i32` add.
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m ## Completion status
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m - both programs build without errors
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m - `cargo test` in `translation/`: 24 tests, all passing; 8 consecutive full-suite
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m   runs were green (checked after the flakiness in Mismatch 2 was understood)
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m - no test is `#[ignore]`d, skipped or disabled; the two `#[cfg(unix)]` tests gate
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m   Unix-only fd manipulation and do run on this platform
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m - nothing in `c_src/` was modified (only the untracked `c_src/build/` output
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m   directory required by the documented build command was created)
+[0m[K
+Creating: [38;5;141m./translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation
+echo "=== cargo test (debug)"; cargo test 2>&1 | grep -E "^test result|^error|warning:" 
+echo "=== cargo test --release"; cargo test --release 2>&1 | grep -E "^test result|^error"
+echo "=== ignore/skip audit"; grep -rn "ignore\]\|#\[should_panic\|return;" tests/ src/ || echo "none"
+echo "=== files"; wc -l src/main.rs tests/differential.rs tests/common/mod.rs tests/oob_characterization.rs ERRORS.md
+echo "=== test count"; grep -c "^#\[test\]" tests/differential.rs tests/oob_characterization.rs
+echo "=== binaries"; ls -l target/release/driver ../c_src/build/driver
+echo "=== c_src integrity"; md5sum ../c_src/src/main.c ../c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+=== cargo test (debug)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.35s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+=== cargo test --release
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.09s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+=== ignore/skip audit
+none
+=== files
+  136 src/main.rs
+  345 tests/differential.rs
+  463 tests/common/mod.rs
+  109 tests/oob_characterization.rs
+  180 ERRORS.md
+ 1233 total
+=== test count
+tests/differential.rs:22
+tests/oob_characterization.rs:2
+=== binaries
+-rwxr-xr-x. 1 scheschb amazon  16896 Sep  1 10:02 ../c_src/build/driver
+-rwxr-xr-x. 2 scheschb amazon 448432 Sep  1 10:14 target/release/driver
+=== c_src integrity
+1037fda1d94defba24356920ad3ca041  ../c_src/src/main.c
+02ba3005fed9b6d7d46c4fe335ac00d8  ../c_src/CMakeLists.txt
+[38;5;244m - Completed in 13.981s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI && /tmp/cmp.sh | grep -c PASS && /tmp/cmp.sh | grep FAIL || echo "no shell-level failures"; python3 /tmp/fuzz.py[0m[38;5;244m (using tool: shell)[0m
+
+18
+no shell-level failures
+fuzz mismatches: 0
+[38;5;244m - Completed in 5.383s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mtail -6 /tmp/fuzz.py; md5sum /tmp/fuzz.py /tmp/cmp.sh[0m[38;5;244m (using tool: shell)[0m
+
+        bad+=1
+        print("DIFF trial",trial,repr(data[:120]))
+        print("  C:",a[0][:160],a[1][:80],a[2])
+        print("  R:",b[0][:160],b[1][:80],b[2])
+        if bad>5: break
+print("fuzz mismatches:",bad)
+f81faaea4aa26a48344f1458cc542e66  /tmp/fuzz.py
+402f73fb5d15c3b8bd5deeb01813bee0  /tmp/cmp.sh
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10m/tmp/fuzz.py[0m no longer matches what I wrote (shared [38;5;10m/tmp[0m was clobbered), so that last line isn't valid evidence. Re-running the independent sweep inline instead.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-QspNJI && python3 - <<'PYEOF'
+import random, subprocess, collections
+C="./c_src/build/driver"; R="./translation/target/release/driver"
+def run(p,d):
+    r=subprocess.run([p],input=d,capture_output=True)
+    return (r.stdout,r.stderr,r.returncode)
+def oob(d): return len(d)>=1000 and 0 not in d[:1000]
+random.seed(99)
+strict_bad=oob_bad=0; strict_n=oob_n=0
+lens=[0,1,2,3,5,17,99,255,256,511,512,997,998,999,1000,1001,1002,1023,2048,4096]
+alphas=[b'Ax',b'AxaX \n\x00',bytes(range(256)),b'A',b'x',b'.',b'\xffA\x80x\x00']
+for t in range(500):
+    n=random.choice(lens); a=random.choice(alphas)
+    d=bytes(random.choice(a) for _ in range(n))
+    if oob(d):
+        oob_n+=1
+        tal=collections.Counter(run(C,d) for _ in range(9))
+        modal=tal.most_common(1)[0][0]
+        got=run(R,d)
+        if got!=modal:
+            oob_bad+=1; print("OOB DIFF len",n,modal,got)
+    else:
+        strict_n+=1
+        c,r=run(C,d),run(R,d)
+        if c!=r:
+            strict_bad+=1; print("STRICT DIFF len",n,repr(d[:40]),c,r)
+print(f"strict cases={strict_n} mismatches={strict_bad}; oob cases={oob_n} modal-mismatches={oob_bad}")
+PYEOF[0m[38;5;244m (using tool: shell)[0m
+
+strict cases=421 mismatches=0; oob cases=79 modal-mismatches=0
+[38;5;244m - Completed in 1.406s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -f /tmp/cmp.sh /tmp/fuzz.py /tmp/in.bin /tmp/a1000.bin /tmp/co /tmp/ro /tmp/ce /tmp/re /tmp/cmake.log /tmp/main.rs.bak; ls /local/home/scheschb/.harvest/work/harvest-work-QspNJI/translation[0m[38;5;244m (using tool: shell)[0m
+
+Cargo.lock
+Cargo.toml
+ERRORS.md
+src
+target
+tests
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mAll four phases are complete and independently verified. Two real mismatches surfaced; one was a translation defect I fixed, the other is nondeterminism inside the C program itself.[0m[0m
+[0m[0m
+[1mMismatch 1 — exit status on a dead stdout reader (fixed).[22m With stdout piped to a reader that has already exited, the C program is killed by [38;5;10mSIGPIPE[0m (status −13) while the Rust program exited 0, because Rust's runtime installs [38;5;10mSIG_IGN[0m for [38;5;10mSIGPIPE[0m before [38;5;10mmain[0m. stdout was empty in both cases, so this is exactly the failure a stdout-only check misses. [38;5;10mtranslation/src/main.rs[0m now restores [38;5;10mSIG_DFL[0m for [38;5;10mSIGPIPE[0m (declaring [38;5;10msignal[0m from libc, no new dependency). I confirmed the new test catches the regression by disabling the call, watching [38;5;10mstdout_reader_gone[0m fail, and reverting. While there, I also made the Rust program emit both lines in a single [38;5;10mwrite_all[0m to match glibc's full buffering on a non-terminal stdout, so a reader vanishing between the two lines sees the same bytes from both programs.[0m[0m
+[0m[0m
+[1mMismatch 2 — the C reads out of bounds (cannot be replicated).[22m [38;5;10min[0m sits at [38;5;10mrbp-0x3f0[0m with size [38;5;10m0x3e8[0m, ending exactly at [38;5;10mrbp-8[0m, and [38;5;10mchar in[1000] = ""[0m zeroes precisely those 1000 bytes. When [38;5;10mfread[0m fills all of them with no NUL, [38;5;10mstrchr[0m walks into 8 bytes of never-written frame padding and then the saved [38;5;10mrbp[0m — a stack address randomised by ASLR. Over 600 runs on identical input the C printed the in-bounds [38;5;10mA: 1000 / x: 0[0m 590 times, [38;5;10mx: 1[0m 7 times, and [38;5;10mA: 1001[0m 3 times. So for inputs of ≥1000 bytes with no NUL, the C is not a function of its input; this is what made the suite flaky once before I understood it. The Rust program produces the stable in-bounds answer, and those inputs are compared against the C's modal output (stderr and exit status still compared strictly on every run), with [38;5;10mtests/oob_characterization.rs[0m pinning down that the C's deviations only ever over-count and that a 999-byte input is fully deterministic.[0m[0m
+[0m[0m
+Everything else already matched: [38;5;10mfread[0m reading across newlines, zero-fill termination, embedded-NUL truncation, discard past byte 1000, [38;5;10ms++[0m after each hit, case/high-bit sensitivity, [38;5;10mprintf[0m format and order, ignored [38;5;10margv[0m, unreadable stdin, chunked stdin, and closed ([38;5;10mEBADF[0m) stdout.[0m[0m
+[0m[0m
+Verification: both binaries build clean; [38;5;10mcargo test[0m passes 24 tests in debug and release with no warnings and nothing [38;5;10m#[ignore][0md; 8 consecutive full-suite runs green; an independent 500-case sweep outside the harness found 0 mismatches (421 strict, 79 modal). [38;5;10mc_src/[0m is unmodified — [38;5;10msrc/main.c[0m still hashes to [38;5;10m1037fda1…[0m with its original timestamp, and only the [38;5;10mbuild/[0m directory from the documented cmake step was added. Details are in [38;5;10mtranslation/ERRORS.md[0m.[0m[0m
+[0m[0m
+One caveat worth stating: the [38;5;10mSIGPIPE[0m fix assumes the parent leaves [38;5;10mSIGPIPE[0m at its default disposition, which is what shells and test harnesses do. If a parent explicitly ignored [38;5;10mSIGPIPE[0m, the C would inherit that and exit 0 while the Rust program would still die — Rust's runtime overwrites the inherited value before [38;5;10mmain[0m, so it cannot be recovered on stable.[0m[0m
+[38;5;8m
+ ▸ Credits: 28.00 • Time: 13m 54s
+
+[0m[1G[0m[0m[?25h

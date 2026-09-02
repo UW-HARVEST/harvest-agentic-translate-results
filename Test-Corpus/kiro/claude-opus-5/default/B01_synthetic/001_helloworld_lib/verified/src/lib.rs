@@ -1,5 +1,7 @@
 // Rust translation of c_src/src/hello.c
 //
+// Original copyright notice from the C sources:
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -23,23 +25,36 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+use std::ffi::c_char;
 use std::ffi::c_int;
-use std::io::Write;
 
-/// Mirrors `int helloworld()` from `c_src/src/hello.c`.
+extern "C" {
+    /// C library `printf`, used instead of Rust's `std::io::stdout` so that the
+    /// bytes land in the very same libc `stdout` FILE stream (and buffer) the C
+    /// implementation used. This keeps output byte-identical and correctly
+    /// interleaved with any other C-side stdio writes.
+    fn printf(format: *const c_char, ...) -> c_int;
+}
+
+/// Translation of:
 ///
-/// The C implementation calls `printf("Hello World!\n")` and returns 0. The
-/// return value of `printf` is discarded there, so any write failure is
-/// likewise ignored here in order to reproduce the original behaviour exactly.
+/// ```c
+/// int helloworld() {
+///     printf("Hello World!\n");
+///     return 0;
+/// }
+/// ```
+///
+/// The header declares `int helloworld();` (no prototype / no parameters), so
+/// the exported symbol is plain `helloworld` — there are no namespace-renaming
+/// macros in `hello.h`.
 #[unsafe(no_mangle)]
 pub extern "C" fn helloworld() -> c_int {
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-    // Write the exact byte sequence produced by the C `printf` call.
-    let _ = handle.write_all(b"Hello World!\n");
-    // C stdio would flush this at process exit (or immediately when stdout is a
-    // TTY); flushing here keeps the emitted bytes and their ordering identical
-    // without depending on Rust's buffering policy.
-    let _ = handle.flush();
+    // The C source passes a plain string literal to printf; the return value of
+    // printf is discarded there, so it is discarded here too.
+    const MESSAGE: &[u8; 14] = b"Hello World!\n\0";
+    unsafe {
+        printf(MESSAGE.as_ptr() as *const c_char);
+    }
     0
 }

@@ -1,0 +1,415 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working dir and c_src contents
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:35 .
+drwxr-xr-x. 483 scheschb amazon 81920 Sep  1 05:35 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:35 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:35 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:35 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; echo "==="; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and CMakeLists
+
+ 15 c_src/CMakeLists.txt
+  3 c_src/include/lib.h
+ 13 c_src/src/lib.c
+ 31 total
+===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read the header and source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m75 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-bwYHBu/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m473 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-bwYHBu/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mTiny library — one function. Let me build the C side to get the ground-truth symbol list.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && cmake -S . -B /tmp/cbuild -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && cmake --build /tmp/cbuild >> /tmp/cmake.log 2>&1 && echo OK && find /tmp/cbuild -name "*.so" ; tail -5 /tmp/cmake.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-NhqQBp/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_bwYHBu && cd c_src && cmake -S . -B /tmp/cbuild_bwYHBu -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && cmake --build /tmp/cbuild_bwYHBu >> /tmp/cmake.log 2>&1 && echo BUILD_OK && find /tmp/cbuild_bwYHBu -name "*.so"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild C library in fresh dir
+
+BUILD_OK
+/tmp/cbuild_bwYHBu/libharvest-work-bwYHBu.so
+[38;5;244m - Completed in 0.405s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only /tmp/cbuild_bwYHBu/libharvest-work-bwYHBu.so | sort > /tmp/c_syms.txt; cat /tmp/c_syms.txt; echo "=== count ==="; wc -l < /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols of the C .so
+
+0000000000001100 T hdr_compare
+=== count ===
+1
+[38;5;244m - Completed in 0.22s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version for #[unsafe(no_mangle)] support
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-bwYHBu"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest-work-bwYHBu"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Public ABI surface (from `nm -D` on the C shared object):
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!   - `hdr_compare`
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! The translation reproduces the C semantics exactly, including short-circuit
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! evaluation order of `&&` (so `h1` is never dereferenced unless `h2` passes
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! the validity check) and the C integer-promotion behaviour of the bit tests.
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// Translation of the file-local `static int hdr_valid(const uint8_t *h)`.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// C source:
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// static int hdr_valid(const uint8_t *h) {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m ///     return h[0] == 0xff && ((h[1] & 0xF0) == 0xf0 || (h[1] & 0xFE) == 0xe2) &&
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m ///            ((((h[1]) >> 1) & 3) != 0) && (((h[2]) >> 4) != 15) &&
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m ///            ((((h[2]) >> 2) & 3) != 3);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// `uint8_t` operands are promoted to `int` in C; because every operand here is
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// a non-negative byte and the masks/shifts are small, performing the arithmetic
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// on `u8` widened to `i32` is bit-for-bit equivalent.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// `h` must point to at least 3 readable bytes, exactly as the C code requires.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m unsafe fn hdr_valid(h: *const u8) -> bool {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     // Byte 0 is read first, matching the C evaluation order.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     let h0 = i32::from(unsafe { *h });
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     if h0 != 0xff {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     let h1 = i32::from(unsafe { *h.add(1) });
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     if !((h1 & 0xF0) == 0xf0 || (h1 & 0xFE) == 0xe2) {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     if ((h1 >> 1) & 3) == 0 {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let h2 = i32::from(unsafe { *h.add(2) });
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     if (h2 >> 4) == 15 {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     if ((h2 >> 2) & 3) == 3 {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     true
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// Translation of `int hdr_compare(const uint8_t *h1, const uint8_t *h2)`.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// C source:
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// int hdr_compare(const uint8_t *h1, const uint8_t *h2) {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m ///     return hdr_valid(h2) && ((h1[1] ^ h2[1]) & 0xFE) == 0 &&
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m ///            ((h1[2] ^ h2[2]) & 0x0C) == 0 &&
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m ///            !((((h1[2]) & 0xF0) == 0) ^ (((h2[2]) & 0xF0) == 0));
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// The final term applies bitwise `^` to two `int` values that are each `0` or
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// `1`, then logically negates the result: that is exactly an equality test
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// between the two "high nibble is zero" predicates.
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// Returns the C `int` values `1` (true) or `0` (false).
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// `h2` must point to at least 3 readable bytes. `h1` must point to at least 3
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// readable bytes whenever `hdr_valid(h2)` holds — the C code only dereferences
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// `h1` in that case, and this translation preserves that.
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m pub unsafe extern "C" fn hdr_compare(h1: *const u8, h2: *const u8) -> c_int {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     // `&&` short-circuits in C: if h2 is not a valid header, h1 is never read.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     if !unsafe { hdr_valid(h2) } {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let a1 = i32::from(unsafe { *h1.add(1) });
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let b1 = i32::from(unsafe { *h2.add(1) });
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     if ((a1 ^ b1) & 0xFE) != 0 {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let a2 = i32::from(unsafe { *h1.add(2) });
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     let b2 = i32::from(unsafe { *h2.add(2) });
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     if ((a2 ^ b2) & 0x0C) != 0 {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     // !( ((h1[2] & 0xF0) == 0) ^ ((h2[2] & 0xF0) == 0) )
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     if ((a2 & 0xF0) == 0) != ((b2 & 0xF0) == 0) {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -20; echo "=== artifacts ==="; ls -la target/release/*.so 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+error: failed to parse manifest at `/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/translation/Cargo.toml`
+
+Caused by:
+  library target names cannot contain hyphens: harvest-work-bwYHBu
+=== artifacts ===
+[38;5;244m - Completed in 0.28s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Drop invalid hyphenated lib target name
+
+[49m[39m  6, 6[0m:[39m[49m [lib]
+[0m[49m[38;5;9m- 7   [0m:[38;5;9m[49m name = "harvest-work-bwYHBu"
+[0m[49m[39m  8, 7[0m:[39m[49m crate-type = ["cdylib"]
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -20; echo "=== artifacts ==="; ls -la target/release/*.so 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild the Rust cdylib
+
+   Compiling harvest-work-bwYHBu v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-bwYHBu/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+=== artifacts ===
+-rwxr-xr-x. 2 scheschb amazon 401888 Sep  1 05:37 target/release/libharvest_work_bwYHBu.so
+[38;5;244m - Completed in 0.153s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && nm -D --defined-only target/release/libharvest_work_bwYHBu.so | awk '{print $3}' | grep -v '^_' | sort -u > /tmp/rust_syms.txt
+awk '{print $3}' /tmp/c_syms.txt | sort -u > /tmp/c_names.txt
+echo "=== C exports ==="; cat /tmp/c_names.txt
+echo "=== Rust exports (non-underscore) ==="; cat /tmp/rust_syms.txt
+echo "=== MISSING from Rust (C minus Rust) ==="; comm -23 /tmp/c_names.txt /tmp/rust_syms.txt
+echo "=== (end diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
+
+awk: fatal: cannot open file `/tmp/c_syms.txt' for reading: No such file or directory
+=== C exports ===
+=== Rust exports (non-underscore) ===
+hdr_compare
+=== MISSING from Rust (C minus Rust) ===
+=== (end diff) ===
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only /tmp/cbuild_bwYHBu/libharvest-work-bwYHBu.so | awk '$2 ~ /^[TtWwDdBbRr]$/ {print $3}' | sort -u > /tmp/c_names.txt
+nm -D --defined-only translation/target/release/libharvest_work_bwYHBu.so | awk '$2 ~ /^[TtWwDdBbRr]$/ {print $3}' | sort -u > /tmp/rust_names.txt
+echo "=== C exports ($(wc -l < /tmp/c_names.txt)) ==="; cat /tmp/c_names.txt
+echo "=== MISSING from Rust ==="; comm -23 /tmp/c_names.txt /tmp/rust_names.txt; echo "--- end ---"
+echo "=== Rust exports matching C set ==="; comm -12 /tmp/c_names.txt /tmp/rust_names.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Regenerate and diff both symbol lists in one shell
+
+=== C exports (1) ===
+hdr_compare
+=== MISSING from Rust ===
+--- end ---
+=== Rust exports matching C set ===
+hdr_compare
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now let me verify behavioral equivalence with a differential test that dlopens both shared objects.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+D=$(mktemp -d)
+cat > "$D/diff.c" <<'EOF'
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+typedef int (*cmp_fn)(const uint8_t *, const uint8_t *);
+
+static long long mismatches = 0, checks = 0;
+
+static void chk(cmp_fn c, cmp_fn r, const uint8_t *h1, const uint8_t *h2) {
+    int a = c(h1, h2), b = r(h1, h2);
+    checks++;
+    if (a != b) {
+        if (mismatches < 10)
+            fprintf(stderr, "MISMATCH h1=%02x%02x%02x h2=%02x%02x%02x C=%d Rust=%d\n",
+                    h1[0], h1[1], h1[2], h2[0], h2[1], h2[2], a, b);
+        mismatches++;
+    }
+}
+
+int main(int argc, char **argv) {
+    void *hc = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+    if (!hc) { fprintf(stderr, "dlopen C: %s\n", dlerror()); return 2; }
+    void *hr = dlopen(argv[2], RTLD_NOW | RTLD_LOCAL);
+    if (!hr) { fprintf(stderr, "dlopen Rust: %s\n", dlerror()); return 2; }
+    cmp_fn c = (cmp_fn)dlsym(hc, "hdr_compare");
+    cmp_fn r = (cmp_fn)dlsym(hr, "hdr_compare");
+    if (!c || !r) { fprintf(stderr, "dlsym failed (C=%p Rust=%p)\n", (void*)c, (void*)r); return 2; }
+
+    uint8_t h1[3], h2[3];
+
+    /* Phase 1: every possible 3-byte h2 (2^24) against a spread of h1 values. */
+    static const uint8_t h1set[][3] = {
+        {0x00,0x00,0x00}, {0xff,0xfb,0x90}, {0xff,0xe3,0x44},
+        {0x12,0xff,0xff}, {0xaa,0x55,0x0c}, {0x00,0xfa,0xf0},
+    };
+    for (unsigned b0 = 0; b0 < 256; b0++)
+      for (unsigned b1 = 0; b1 < 256; b1++)
+        for (unsigned b2 = 0; b2 < 256; b2++) {
+            h2[0]=b0; h2[1]=b1; h2[2]=b2;
+            for (unsigned k = 0; k < sizeof(h1set)/sizeof(h1set[0]); k++) {
+                h1[0]=h1set[k][0]; h1[1]=h1set[k][1]; h1[2]=h1set[k][2];
+                chk(c, r, h1, h2);
+            }
+        }
+
+    /* Phase 2: exhaustive over the bytes hdr_compare actually reads:
+       h2[0]=0xff (only value that can pass validation) x all h2[1],h2[2]
+       x all h1[1],h1[2]. h1[0] is stirred since C never reads it. */
+    h2[0] = 0xff;
+    for (unsigned b1 = 0; b1 < 256; b1++)
+      for (unsigned b2 = 0; b2 < 256; b2++) {
+        h2[1]=b1; h2[2]=b2;
+        for (unsigned a1 = 0; a1 < 256; a1++)
+          for (unsigned a2 = 0; a2 < 256; a2++) {
+            h1[0] = (uint8_t)(a1 * 31u + a2 * 7u + b1);
+            h1[1]=a1; h1[2]=a2;
+            chk(c, r, h1, h2);
+          }
+      }
+
+    printf("checks=%lld mismatches=%lld\n", checks, mismatches);
+    return mismatches ? 1 : 0;
+}
+EOF
+gcc -O2 -o "$D/diff" "$D/diff.c" -ldl
+"$D/diff" /tmp/cbuild_bwYHBu/libharvest-work-bwYHBu.so \
+          "$PWD/translation/target/release/libharvest_work_bwYHBu.so" && echo "DIFFERENTIAL TEST: PASS"
+rm -rf "$D"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Exhaustive differential test between C and Rust shared objects
+
+checks=4395630592 mismatches=0
+DIFFERENTIAL TEST: PASS
+[38;5;244m - Completed in 28.25s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== c_src unmodified check ==="; find c_src -newermt '-30 minutes' -type f | grep -v '^$' && echo "(files above were touched)" || echo "no c_src files modified"
+echo "=== translation tree ==="; find translation -maxdepth 2 -not -path '*/target/*' -not -name target
+echo "=== final symbol check ==="
+nm -D --defined-only translation/target/release/libharvest_work_bwYHBu.so | grep -w hdr_compare
+rm -rf /tmp/cbuild_bwYHBu /tmp/c_names.txt /tmp/rust_names.txt /tmp/rust_syms.txt /tmp/cmake.log
+echo cleaned[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src untouched, list translation files, clean temps
+
+=== c_src unmodified check ===
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+(files above were touched)
+=== translation tree ===
+translation
+translation/Cargo.toml
+translation/src
+translation/src/lib.rs
+translation/Cargo.lock
+=== final symbol check ===
+0000000000011690 T hdr_compare
+cleaned
+[38;5;244m - Completed in 0.26s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mstat -c '%y  %n' c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; echo "(all match the 05:35 checkout time -> untouched)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src mtimes are the original checkout time
+
+2026-09-01 05:35:57.496729633 +0000  c_src/CMakeLists.txt
+2026-09-01 05:35:57.496729633 +0000  c_src/include/lib.h
+2026-09-01 05:35:57.496729633 +0000  c_src/src/lib.c
+(all match the 05:35 checkout time -> untouched)
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
+[0m[0m
+[1mScope:[22m The C library turned out to be genuinely small — [38;5;10mc_src/[0m contains exactly three files (CMakeLists.txt, [38;5;10minclude/lib.h[0m, [38;5;10msrc/lib.c[0m, 31 lines total). I did not assume this; I built the C library with CMake and ran [38;5;10mnm -D[0m on the resulting [38;5;10mlibharvest-work-bwYHBu.so[0m, which exports exactly one public symbol: [38;5;10mhdr_compare[0m. There are no namespace-renaming macros in the header. [38;5;10mhdr_valid[0m is [38;5;10mstatic[0m and therefore not part of the ABI, so it became a private Rust [38;5;10mfn[0m.[0m[0m
+[0m[0m
+[1mCompletion gate:[22m [38;5;10mcomm -23[0m between the C export list and the Rust export list is empty — [38;5;10mhdr_compare[0m is the full C surface and the Rust [38;5;10m.so[0m exports it.[0m[0m
+[0m[0m
+[1mBehavioral verification:[22m I wrote a C driver that [38;5;10mdlopen[0ms both shared objects with [38;5;10mRTLD_LOCAL[0m and compares return values. [38;5;10mhdr_compare[0m reads only 5 bytes ([38;5;10mh2[0..2][0m, [38;5;10mh1[1..2][0m), so I tested exhaustively over that space: all 2^24 values of [38;5;10mh2[0m against a spread of [38;5;10mh1[0m values, plus the full cross product of [38;5;10mh2[1],h2[2][0m × [38;5;10mh1[1],h1[2][0m with [38;5;10mh2[0]=0xff[0m (the only byte-0 value that can pass validation). Result: [1m4,395,630,592 checks, 0 mismatches.[22m[0m[0m
+[0m[0m
+Two semantics worth calling out, since both are places a translation could silently drift:[0m[0m
+- C's [38;5;10m&&[0m short-circuits, so [38;5;10mh1[0m is never dereferenced when [38;5;10mh2[0m fails validation. The Rust returns early on that path rather than reading both pointers up front.[0m[0m
+- The last term, [38;5;10m!(((h1[2] & 0xF0) == 0) ^ ((h2[2] & 0xF0) == 0))[0m, applies [3mbitwise[23m XOR to two [38;5;10mint[0m comparison results that are each 0 or 1 — equivalent to an equality test between the two predicates, which is how I expressed it.[0m[0m
+[0m[0m
+I ran the bit arithmetic on [38;5;10mi32[0m-widened bytes to mirror C's integer promotion, and left the C code's behavior intact (no bounds checks or null guards added — the C has none, and adding them would change behavior on inputs the C would fault on).[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is untouched; all three files still carry the original 05:35 checkout mtime. Build artifacts are at [38;5;10mtranslation/target/release/libharvest_work_bwYHBu.so[0m. One note: Cargo rejects hyphens in [38;5;10m[lib] name[0m, so the artifact is [38;5;10mlibharvest_work_bwYHBu.so[0m (underscores) rather than the C library's [38;5;10mlibharvest-work-bwYHBu.so[0m — if your harness looks for the hyphenated filename specifically rather than globbing [38;5;10m*.so[0m, that's the one thing to check.[0m[0m
+[38;5;8m
+ ▸ Credits: 5.49 • Time: 3m 8s
+
+[0m[1G[0m[0m[?25h

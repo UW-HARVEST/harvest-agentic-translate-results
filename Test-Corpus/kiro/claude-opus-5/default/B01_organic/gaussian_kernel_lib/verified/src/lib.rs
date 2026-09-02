@@ -1,27 +1,25 @@
-//! Rust translation of `c_src/src/lib.c`.
+//! Rust translation of c_src/src/lib.c
 //!
-//! Behaviour is reproduced exactly, including the original's quirks:
-//!  * the first loop always writes `2 * (size / 2) + 1` elements, which is one
-//!    element past `size` when `size` is even (an out-of-bounds write in the C
-//!    original — kept as-is on purpose),
-//!  * the reciprocal-of-`expf` formulation (`1/expf(x*x)`) is preserved rather
-//!    than being rewritten as `expf(-x*x)`, since the two differ in the last
-//!    bits,
-//!  * `float` (`f32`) precision is used for every intermediate value.
+//! Public ABI (from `nm -D` on the C shared library):
+//!   - gaussian_kernel
+//!
+//! The translation is a literal one: the same arithmetic in the same order,
+//! the same libm `expf`, and the same (out of bounds for even `size`) memory
+//! writes performed by the original loop `for (r = -hsize; r <= hsize; r++)`.
 
-use std::ffi::c_int;
+use core::ffi::c_int;
 
 unsafe extern "C" {
-    /// Single-precision exponential from the platform math library, so that the
-    /// results match the C build bit-for-bit.
+    /// Use the platform libm `expf` so results match the C build bit for bit.
     fn expf(x: f32) -> f32;
 }
 
-/// `void gaussian_kernel(float *dest, int size, float radius);`
+/// void gaussian_kernel(float *dest, int size, float radius);
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn gaussian_kernel(dest: *mut f32, size: c_int, radius: f32) {
     let sigma: f32 = 1.6f32;
     let tetha: f32 = 2.25f32;
+    // int hsize = size / 2;  (C integer division truncates toward zero)
     let hsize: c_int = size / 2;
 
     let s2: f32 = 1.0f32 / unsafe { expf(sigma * sigma * tetha) };
@@ -34,6 +32,7 @@ pub unsafe extern "C" fn gaussian_kernel(dest: *mut f32, size: c_int, radius: f3
     while r <= hsize {
         let x: f32 = (r as f32) * rs;
         let mut v: f32 = (1.0f32 / unsafe { expf(x * x) }) - s2;
+        // v = ((v) > (0)) ? (v) : (0);  -- NaN compares false, so yields 0.0
         v = if v > 0.0f32 { v } else { 0.0f32 };
         unsafe {
             *k = v;

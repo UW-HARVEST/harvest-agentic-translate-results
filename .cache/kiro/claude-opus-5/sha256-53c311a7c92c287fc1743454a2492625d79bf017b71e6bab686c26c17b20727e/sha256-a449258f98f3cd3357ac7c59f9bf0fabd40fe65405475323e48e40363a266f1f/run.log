@@ -1,0 +1,1795 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -50 && echo "--- translation ---" && find translation -type f -not -path '*/target/*' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory contents
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 06:46 .
+drwxr-xr-x. 537 scheschb amazon 81920 Sep  1 06:46 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 06:46 .claude
+drwxr-xr-x.   3 scheschb amazon    39 Sep  1 06:46 c_src
+drwxr-xr-x.   3 scheschb amazon    53 Sep  1 06:46 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/src/main.c
+--- translation ---
+translation/Cargo.toml
+translation/src/main.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C source, CMakeLists, and Rust translation
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/c_src/src/main.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/Cargo.toml[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/src/main.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1204 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DgqgeS/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1345 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DgqgeS/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m154 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/Cargo.toml
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3163 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/src/main.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. > /tmp/cmake.log 2>&1 && cmake --build . > /tmp/cbuild.log 2>&1 && echo "C BUILD OK" && ls -la driver; tail -5 /tmp/cmake.log /tmp/cbuild.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C program
+
+C BUILD OK
+-rwxr-xr-x. 1 scheschb amazon 16832 Sep  1 06:47 driver
+tail: option used in invalid context -- 5
+[38;5;244m - Completed in 0.418s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -n 30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust program
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.177s[0m
+
+[?25l[0m[38;5;141m> [0mC builds, Rust builds. Now let me enumerate the branch points and write the differential harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add differential integration tests comparing C and Rust binaries
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential tests: run the C binary and the Rust binary as subprocesses,
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! feed both the same stdin, and compare stdout, stderr and exit status byte
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! for byte.
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! The Rust code is never called as a library. Both programs are driven exactly
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! the way a shell would drive them.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! Input classes exercised (derived from reading c_src/src/main.c):
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! ```c
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! int main() {
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!     char text[128];
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //!     while (fgets(text, 128, stdin)) {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //!         fputs(text, stdout);
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!     }
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //!     return 0;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //! }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //! ```
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //! Branches / edges in that code:
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //!   * `fgets` returns NULL immediately            -> empty stdin, no output
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //!   * `fgets` returns a full line                 -> newline retained
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //!   * `fgets` hits EOF with no trailing newline    -> last chunk has no '\n'
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //!   * `fgets` fills the buffer (127 bytes read)    -> line split across calls
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!   * `fputs` stops at the first NUL byte          -> embedded NUL truncates
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //!   * argv is ignored entirely                     -> args must not change output
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //!   * return 0                                     -> exit status is always 0
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m use std::process::{Command, Output, Stdio};
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// Path to the C reference binary produced by `c_src/build`.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m fn c_binary() -> PathBuf {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     let root = manifest
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         .expect("translation/ must have a parent directory");
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     let candidates = [
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         root.join("c_src/build/driver"),
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         root.join("c_src/build/Debug/driver"),
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         root.join("c_src/build/Release/driver"),
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         root.join("c_src/build/driver.exe"),
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     for c in candidates.iter() {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         if c.is_file() {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             return c.clone();
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         "C reference binary not found. Build it first:\n  \
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m          cd {} && mkdir -p build && cd build && cmake .. && cmake --build .",
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         root.join("c_src").display()
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// Path to the Rust binary under test. Cargo hands us the real built artifact,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// so this is the binary a shell would invoke.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m fn rust_binary() -> PathBuf {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_BIN_EXE_driver"))
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// Run one program with the given stdin bytes and argv, capturing everything.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m fn run(bin: &Path, args: &[&str], stdin_bytes: &[u8]) -> Output {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     let mut child = Command::new(bin)
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         .args(args)
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", bin.display()));
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         let mut sink = child.stdin.take().expect("stdin was piped");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         // The child may exit before consuming all input; a broken pipe here is
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         // not a test failure.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         let _ = sink.write_all(stdin_bytes);
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         let _ = sink.flush();
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     child
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         .wait_with_output()
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to wait for {}: {e}", bin.display()))
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m fn render(bytes: &[u8]) -> String {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let mut s = String::new();
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     for &b in bytes.iter().take(400) {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         match b {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             b'\n' => s.push_str("\\n"),
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             b'\r' => s.push_str("\\r"),
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             b'\t' => s.push_str("\\t"),
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             b'\\' => s.push_str("\\\\"),
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             0x20..=0x7e => s.push(b as char),
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             _ => s.push_str(&format!("\\x{b:02x}")),
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     if bytes.len() > 400 {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         s.push_str(&format!("... ({} bytes total)", bytes.len()));
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     s
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// Compare stdout, stderr and exit status of both programs for one input.
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m fn assert_same(case: &str, args: &[&str], stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     let c = run(&c_binary(), args, stdin_bytes);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     let r = run(&rust_binary(), args, stdin_bytes);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         c.stdout,
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         r.stdout,
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         "stdout mismatch [{case}]\n  args:      {args:?}\n  stdin:     {}\n  C stdout:  {}\n  Rust stdout: {}",
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         render(stdin_bytes),
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         render(&c.stdout),
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         render(&r.stdout)
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         c.stderr,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         r.stderr,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         "stderr mismatch [{case}]\n  args:      {args:?}\n  stdin:     {}\n  C stderr:  {}\n  Rust stderr: {}",
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         render(stdin_bytes),
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         render(&c.stderr),
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         render(&r.stderr)
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         r.status.code(),
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         "exit code mismatch [{case}]: C {:?} vs Rust {:?} (stdin: {})",
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         r.status.code(),
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         render(stdin_bytes)
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         use std::os::unix::process::ExitStatusExt;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             c.status.signal(),
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             r.status.signal(),
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m             "termination signal mismatch [{case}]: C {:?} vs Rust {:?}",
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             c.status.signal(),
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             r.status.signal()
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m fn check(case: &str, stdin_bytes: &[u8]) {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     assert_same(case, &[], stdin_bytes);
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m // Phase A sanity: both binaries exist and are runnable.
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m fn both_binaries_exist_and_run() {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     let c = c_binary();
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     let r = rust_binary();
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     assert!(c.is_file(), "missing C binary at {}", c.display());
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     assert!(r.is_file(), "missing Rust binary at {}", r.display());
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let co = run(&c, &[], b"ping\n");
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let ro = run(&r, &[], b"ping\n");
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     assert_eq!(co.stdout, b"ping\n");
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     assert_eq!(ro.stdout, b"ping\n");
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     assert_eq!(co.status.code(), Some(0));
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     assert_eq!(ro.status.code(), Some(0));
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m // Phase B: the input classes the C code branches on.
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m fn empty_input() {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     // fgets returns NULL on the very first call: loop body never runs.
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     check("empty stdin", b"");
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m fn single_newline_only() {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     check("just a newline", b"\n");
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m fn single_line_with_newline() {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     check("one line, terminated", b"hello\n");
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m fn single_line_without_newline() {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     // EOF reached with a partial buffer: fgets still returns the buffer.
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     check("one line, unterminated", b"hello");
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m fn single_byte_no_newline() {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     check("single byte", b"x");
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m fn multiple_lines() {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     check("three lines", b"alpha\nbeta\ngamma\n");
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m fn multiple_lines_last_unterminated() {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     check("three lines, last unterminated", b"alpha\nbeta\ngamma");
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m fn many_blank_lines() {
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     let input = "\n".repeat(50);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     check("50 blank lines", input.as_bytes());
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m // Buffer-boundary behavior: fgets(text, 128, ...) reads at most 127 bytes.
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m fn lengths_around_buffer_boundary_with_newline() {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     for len in [0usize, 1, 125, 126, 127, 128, 129, 253, 254, 255, 256, 257] {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         let mut input = vec![b'a'; len];
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         input.push(b'\n');
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         check(&format!("{len} 'a's + newline"), &input);
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m fn lengths_around_buffer_boundary_without_newline() {
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     for len in [1usize, 126, 127, 128, 129, 254, 255, 256] {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         let input = vec![b'b'; len];
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         check(&format!("{len} 'b's, no newline"), &input);
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m fn exactly_127_bytes_then_newline_then_more() {
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     // First fgets fills the buffer without seeing '\n'; the '\n' arrives on the
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     // next call, then a further line follows.
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     let mut input = vec![b'c'; 127];
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     input.extend_from_slice(b"\nnext\n");
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     check("127 bytes, newline on next fgets, then a line", &input);
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m fn very_long_single_line() {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     let mut input = vec![b'z'; 5000];
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     input.push(b'\n');
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     check("5000-byte line", &input);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m fn very_long_single_line_unterminated() {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     let input = vec![b'y'; 5000];
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     check("5000-byte unterminated line", &input);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m fn long_lines_of_increasing_length() {
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     let mut input = Vec::new();
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     for len in 0..300 {
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         input.extend(std::iter::repeat(b'#').take(len));
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         input.push(b'\n');
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     check("lines of length 0..300", &input);
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m // Phase C: paths reached only by unusual bytes.
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m // fputs writes a C string, so it stops at the first NUL in the buffer even
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m // though fgets happily read past it.
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m fn embedded_nul_truncates_output() {
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     check("NUL in the middle of a line", b"abc\0def\ntail\n");
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m fn leading_nul_suppresses_whole_line() {
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     check("NUL first", b"\0abc\ndef\n");
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m fn nul_only() {
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     check("a lone NUL byte", b"\0");
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m fn nul_then_newline() {
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m     check("NUL then newline", b"\0\n");
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m fn nul_at_end_of_line() {
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     check("NUL right before the newline", b"abc\0\nxyz\n");
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m fn many_nuls() {
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     check("run of NULs", b"\0\0\0\0\nafter\n");
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m fn nul_past_buffer_boundary() {
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m     // The NUL lands in the second fgets chunk, so the first chunk echoes fully
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m     // and the second is truncated.
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m     let mut input = vec![b'a'; 127];
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     input.extend_from_slice(b"bb\0cc\n");
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     check("NUL in the second chunk", &input);
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m fn nul_exactly_at_last_buffer_slot() {
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     let mut input = vec![b'a'; 126];
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     input.push(0);
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     input.extend_from_slice(b"rest\n");
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     check("NUL as the 127th byte read", &input);
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m fn all_byte_values_one_per_line() {
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     let mut input = Vec::new();
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     for b in 0u16..=255 {
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m         input.push(b as u8);
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m         input.push(b'\n');
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     check("every byte value, one per line", &input);
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m fn all_byte_values_one_chunk() {
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m     let mut input: Vec<u8> = (0u16..=255).map(|b| b as u8).collect();
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m     input.push(b'\n');
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     check("every byte value in one blob", &input);
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m fn crlf_line_endings() {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     check("CRLF", b"one\r\ntwo\r\n");
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m fn lone_carriage_returns() {
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     check("bare CR", b"one\rtwo\rthree");
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m fn invalid_utf8_bytes() {
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     // A UTF-8-validating implementation would choke here; the C code does not.
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m     check("invalid UTF-8", b"\xff\xfe\x80\x81 tail\n");
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m fn truncated_utf8_sequence_across_buffer_boundary() {
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     // Split a multi-byte UTF-8 character across two fgets chunks.
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m     let mut input = vec![b'q'; 126];
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m     input.extend_from_slice("é".as_bytes()); // 0xC3 0xA9
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m     input.extend_from_slice(b"\n");
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m     check("UTF-8 char straddling the 127-byte boundary", &input);
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m fn utf8_text() {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m     check(
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         "multibyte text",
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         "héllo wörld — ünïcodé ✓ 日本語\n".as_bytes(),
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m fn binary_blob_no_newlines() {
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m     let input: Vec<u8> = (0..4096).map(|i| (i * 7 % 256) as u8).collect();
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m     check("4096 bytes of binary, no newlines", &input);
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m fn control_characters() {
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m     check("control chars", b"\x01\x02\x03\x07\x08\x0b\x0c\x1b[31m\x7f\n");
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m fn vertical_tab_and_form_feed_are_not_line_breaks() {
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m     check("VT/FF", b"a\x0bb\x0cc\n");
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m fn trailing_newlines_preserved_exactly() {
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m     check("trailing blank lines", b"a\n\n\n\n");
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m fn no_trailing_newline_after_blank_lines() {
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m     check("blank lines then unterminated text", b"\n\n\nz");
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m // argv is ignored by the C program.
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m fn arguments_are_ignored() {
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m     assert_same("one arg", &["ignored"], b"data\n");
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m     assert_same("several args", &["-h", "--help", "file.txt"], b"data\n");
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m     assert_same("args with empty input", &["whatever"], b"");
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m     assert_same("arg that looks like a flag", &["--version"], b"x");
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m // Volume / buffering.
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m fn large_multiline_input() {
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m     let mut input = String::new();
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m     for i in 0..20_000 {
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m         input.push_str(&format!("line {i}\n"));
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m     check("20000 lines", input.as_bytes());
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m fn large_input_mixed_lengths_and_nuls() {
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m     let mut input = Vec::new();
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m     for i in 0..2000usize {
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m         let len = i % 300;
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m         input.extend(std::iter::repeat(b'm').take(len));
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m         if i % 17 == 0 {
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m             input.push(0);
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m             input.extend_from_slice(b"hidden");
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m         input.push(b'\n');
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m     check("2000 varied lines with NULs", &input);
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m // stdin closed immediately (no bytes at all, pipe shut) and stdin from
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m // /dev/null - both must behave like empty input.
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m fn stdin_from_dev_null() {
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m     let dev_null = || std::fs::File::open("/dev/null").expect("open /dev/null");
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m     let c = Command::new(c_binary())
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m         .stdin(Stdio::from(dev_null()))
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m         .expect("run C with /dev/null stdin");
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m     let r = Command::new(rust_binary())
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m         .stdin(Stdio::from(dev_null()))
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m         .expect("run Rust with /dev/null stdin");
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m     assert_eq!(c.stdout, r.stdout, "stdout mismatch with /dev/null stdin");
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m     assert_eq!(c.stderr, r.stderr, "stderr mismatch with /dev/null stdin");
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m         c.status.code(),
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m         r.status.code(),
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m         "exit code mismatch with /dev/null stdin"
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m fn stdin_closed() {
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m     // File descriptor 0 is closed outright: fgets fails, the loop never runs,
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m     // and the program still returns 0.
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m     let c = Command::new(c_binary())
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m         .stdin(Stdio::null())
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m         .expect("run C with null stdin");
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m     let r = Command::new(rust_binary())
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m         .stdin(Stdio::null())
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m         .stdout(Stdio::piped())
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m         .stderr(Stdio::piped())
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m         .expect("run Rust with null stdin");
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m     assert_eq!(c.stdout, r.stdout);
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m     assert_eq!(c.stderr, r.stderr);
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m     assert_eq!(c.status.code(), r.status.code());
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mThe large-input tests would deadlock (parent blocks writing stdin while child blocks writing stdout). Let me feed stdin from a thread.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 73    [0m:[38;5;9m[49m     {
+[0m[49m[38;5;9m- 74    [0m:[38;5;9m[49m         let mut sink = child.stdin.take().expect("stdin was piped");
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     // Feed stdin from a separate thread. Writing inline would deadlock on large
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     // inputs: the parent blocks filling the stdin pipe while the child blocks
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     // filling the stdout pipe that nobody is draining yet.
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     let mut sink = child.stdin.take().expect("stdin was piped");
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     let payload = stdin_bytes.to_vec();
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     let feeder = std::thread::spawn(move || {
+[0m[49m[39m  75, 79[0m:[39m[49m         // The child may exit before consuming all input; a broken pipe here is
+[0m[49m[39m  76, 80[0m:[39m[49m         // not a test failure.
+[0m[49m[38;5;9m- 77    [0m:[38;5;9m[49m         let _ = sink.write_all(stdin_bytes);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         let _ = sink.write_all(&payload);
+[0m[49m[39m  78, 82[0m:[39m[49m         let _ = sink.flush();
+[0m[49m[38;5;9m- 79    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         drop(sink);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     });
+[0m[49m[39m  80, 85[0m:[39m[49m 
+[0m[49m[38;5;9m- 81    [0m:[38;5;9m[49m     child
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let out = child
+[0m[49m[39m  82, 87[0m:[39m[49m         .wait_with_output()
+[0m[49m[38;5;9m- 83    [0m:[38;5;9m[49m         .unwrap_or_else(|e| panic!("failed to wait for {}: {e}", bin.display()))
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to wait for {}: {e}", bin.display()));
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     feeder.join().expect("stdin feeder thread panicked");
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     out
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release 2>&1 | tail -n 60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run the differential test suite
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation)
+    Finished `release` profile [optimized] target(s) in 0.43s
+     Running unittests src/main.rs (target/release/deps/driver-45ff9ae7f29076f4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-6f5586eaa2bc1355)
+
+running 40 tests
+test multiple_lines_last_unterminated ... ok
+test binary_blob_no_newlines ... ok
+test crlf_line_endings ... ok
+test no_trailing_newline_after_blank_lines ... ok
+test all_byte_values_one_per_line ... ok
+test lone_carriage_returns ... ok
+test many_nuls ... ok
+test large_input_mixed_lengths_and_nuls ... ok
+test arguments_are_ignored ... ok
+test lengths_around_buffer_boundary_with_newline ... ok
+test leading_nul_suppresses_whole_line ... ok
+test embedded_nul_truncates_output ... ok
+test empty_input ... ok
+test many_blank_lines ... ok
+test all_byte_values_one_chunk ... ok
+test long_lines_of_increasing_length ... ok
+test control_characters ... ok
+test exactly_127_bytes_then_newline_then_more ... ok
+test nul_at_end_of_line ... ok
+test both_binaries_exist_and_run ... ok
+test invalid_utf8_bytes ... ok
+test nul_then_newline ... ok
+test very_long_single_line_unterminated ... ok
+test single_byte_no_newline ... ok
+test single_newline_only ... ok
+test vertical_tab_and_form_feed_are_not_line_breaks ... ok
+test single_line_without_newline ... ok
+test truncated_utf8_sequence_across_buffer_boundary ... ok
+test nul_only ... ok
+test nul_exactly_at_last_buffer_slot ... ok
+test multiple_lines ... ok
+test very_long_single_line ... ok
+test single_line_with_newline ... ok
+test stdin_from_dev_null ... ok
+test stdin_closed ... ok
+test nul_past_buffer_boundary ... ok
+test trailing_newlines_preserved_exactly ... ok
+test utf8_text ... ok
+test large_multiline_input ... ok
+test lengths_around_buffer_boundary_without_newline ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+[38;5;244m - Completed in 0.747s[0m
+
+[?25l[0m[38;5;141m> [0mAll 40 pass. Now probing the edges my suite can't reach through piped stdin — SIGPIPE, unwritable stdout, and unreadable stdin.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+C=c_src/build/driver; R=translation/target/release/driver
+
+probe() {
+  desc="$1"; shift
+  co=$( { "$C" "$@" 2>/tmp/ce; } | od -An -c | head -3 ); cs=$?
+  # capture status properly
+  "$C" "$@" >/tmp/co 2>/tmp/ce </dev/null; cst=$?
+  "$R" "$@" >/tmp/ro 2>/tmp/re </dev/null; rst=$?
+  echo "$desc: Cstat=$cst Rstat=$rst  out=$(cmp -s /tmp/co /tmp/ro && echo same || echo DIFF)  err=$(cmp -s /tmp/ce /tmp/re && echo same || echo DIFF)"
+}
+
+echo "=== SIGPIPE (yes | driver | head -1) ==="
+for b in "$C" "$R"; do
+  ( yes hello | "$b" | head -1 ) >/tmp/hp 2>/tmp/hpe
+  echo "$b -> pipestatus=${PIPESTATUS[*]} out=$(cat /tmp/hp)"
+done
+
+echo "=== SIGPIPE explicit: driver writing to closed reader ==="
+for b in "$C" "$R"; do
+  yes hello | timeout 5 bash -c "\"$b\" | head -c 1 >/dev/null"; echo "$b exit=$?"
+done
+
+echo "=== stdout closed (>&-) ==="
+printf 'abc\n' | "$C" >&- 2>/tmp/ce1; echo "C exit=$? stderr=$(od -An -c /tmp/ce1|head -2)"
+printf 'abc\n' | "$R" >&- 2>/tmp/re1; echo "R exit=$? stderr=$(od -An -c /tmp/re1|head -2)"
+
+echo "=== stdout to /dev/full ==="
+if [ -w /dev/full ]; then
+printf 'abc\n' | "$C" >/dev/full 2>/tmp/ce2; echo "C exit=$? stderr=$(cat /tmp/ce2)"
+printf 'abc\n' | "$R" >/dev/full 2>/tmp/re2; echo "R exit=$? stderr=$(cat /tmp/re2)"
+else echo "no /dev/full"; fi
+
+echo "=== stdin is a directory ==="
+"$C" < /tmp >/tmp/co3 2>/tmp/ce3; echo "C exit=$? out=$(wc -c </tmp/co3) err=$(cat /tmp/ce3)"
+"$R" < /tmp >/tmp/ro3 2>/tmp/re3; echo "R exit=$? out=$(wc -c </tmp/ro3) err=$(cat /tmp/re3)"
+
+echo "=== stdin closed (<&-) ==="
+"$C" <&- >/tmp/co4 2>/tmp/ce4; echo "C exit=$? out=$(wc -c </tmp/co4) err=$(cat /tmp/ce4)"
+"$R" <&- >/tmp/ro4 2>/tmp/re4; echo "R exit=$? out=$(wc -c </tmp/ro4) err=$(cat /tmp/re4)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe SIGPIPE, unwritable stdout, unreadable stdin edge cases
+
+=== SIGPIPE (yes | driver | head -1) ===
+c_src/build/driver -> pipestatus=0 out=hello
+translation/target/release/driver -> pipestatus=0 out=hello
+=== SIGPIPE explicit: driver writing to closed reader ===
+c_src/build/driver exit=0
+translation/target/release/driver exit=0
+=== stdout closed (>&-) ===
+C exit=0 stderr=
+R exit=0 stderr=
+=== stdout to /dev/full ===
+C exit=0 stderr=
+R exit=0 stderr=
+=== stdin is a directory ===
+C exit=0 out=0 err=
+R exit=0 out=0 err=
+=== stdin closed (<&-) ===
+C exit=0 out=0 err=
+R exit=0 out=0 err=
+[38;5;244m - Completed in 0.60s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+C=$PWD/c_src/build/driver; R=$PWD/translation/target/release/driver
+
+echo "=== direct SIGPIPE death signal ==="
+for b in "$C" "$R"; do
+  yes hello | timeout 10 bash -c 'exec 3>&1; "$1" > >(head -c 5 >/dev/null); echo "status=$?" >&3' _ "$b"
+done
+
+echo "=== SIGPIPE via closed read end (perl-free) ==="
+for b in "$C" "$R"; do
+  st=$( yes hello | timeout 10 bash -c '"$1" 2>/dev/null | { read -r _; exec 0<&-; sleep 0.3; }; echo ${PIPESTATUS[0]}' _ "$b" )
+  echo "$(basename $b) producer status=$st  (141 = 128+SIGPIPE)"
+done
+
+echo "=== stdin from regular file, no trailing newline ==="
+printf 'abc' > /tmp/f1
+"$C" < /tmp/f1 | od -An -c; "$R" < /tmp/f1 | od -An -c
+
+echo "=== 127-char boundary, file-backed stdin ==="
+python3 -c "import sys; sys.stdout.write('a'*127+'\n'+'b'*200)" > /tmp/f2
+"$C" < /tmp/f2 > /tmp/o1; "$R" < /tmp/f2 > /tmp/o2; cmp /tmp/o1 /tmp/o2 && echo "same ($(wc -c </tmp/o1) bytes)"
+
+echo "=== huge stream 5MB ==="
+python3 -c "
+import sys
+for i in range(60000): sys.stdout.buffer.write(b'x'*(i%400)+b'\n')" > /tmp/big
+"$C" < /tmp/big > /tmp/bc; ec=$?; "$R" < /tmp/big > /tmp/br; er=$?
+echo "exit C=$ec R=$er; $(cmp -s /tmp/bc /tmp/br && echo same || echo DIFF) sizes $(wc -c </tmp/bc) $(wc -c </tmp/br)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test SIGPIPE death signal and large/file-backed stdin
+
+=== direct SIGPIPE death signal ===
+status=141
+status=141
+=== SIGPIPE via closed read end (perl-free) ===
+driver producer status=141  (141 = 128+SIGPIPE)
+driver producer status=141  (141 = 128+SIGPIPE)
+=== stdin from regular file, no trailing newline ===
+   a   b   c
+   a   b   c
+=== 127-char boundary, file-backed stdin ===
+same (328 bytes)
+=== huge stream 5MB ===
+exit C=0 R=0; same sizes 12030000 12030000
+[38;5;244m - Completed in 0.932s[0m
+
+[?25l[0m[38;5;141m> [0mLet me test one buffering scenario I suspect differs: output flushed before an external signal kills the process.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+C=$PWD/c_src/build/driver; R=$PWD/translation/target/release/driver
+
+test_sig() {
+  b="$1"; name="$2"
+  rm -f /tmp/fifo_in; mkfifo /tmp/fifo_in
+  "$b" < /tmp/fifo_in > /tmp/sigout_$name 2>/dev/null &
+  pid=$!
+  exec 9>/tmp/fifo_in
+  printf 'hello\nworld\n' >&9
+  sleep 0.5
+  kill -TERM $pid 2>/dev/null
+  wait $pid 2>/dev/null; st=$?
+  exec 9>&-
+  echo "$name: exit=$st  captured=[$(od -An -c /tmp/sigout_$name | tr -s ' ')]  bytes=$(wc -c < /tmp/sigout_$name)"
+}
+test_sig "$C" C
+test_sig "$R" R[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test buffered output loss when killed by SIGTERM
+
+C: exit=143  captured=[]  bytes=0
+R: exit=143  captured=[ h e l l o \n w o r l d \n]  bytes=12
+[38;5;244m - Completed in 1.26s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed a real mismatch: C fully buffers stdout to a non-tty (12 bytes lost on SIGTERM), Rust line-buffers. Let me measure C's actual buffer size.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+C=$PWD/c_src/build/driver
+
+# Feed N bytes slowly via fifo, observe when output file first grows
+measure() {
+  target="$1"; label="$2"
+  rm -f /tmp/mf; mkfifo /tmp/mf
+  "$C" < /tmp/mf > "$target" 2>/dev/null &
+  pid=$!
+  exec 9>/tmp/mf
+  prev=0
+  for i in $(seq 1 300); do
+    printf '%s\n' "$(head -c 99 /dev/zero | tr '\0' 'a')" >&9   # 100 bytes each
+    sz=$(stat -c %s "$target" 2>/dev/null || echo 0)
+    if [ "$sz" != "$prev" ]; then echo "$label: after $((i*100)) bytes written, file size -> $sz"; prev=$sz; fi
+    [ "$i" -gt 90 ] && break
+  done
+  exec 9>&-
+  kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null
+}
+measure /tmp/outfile "regular file"
+echo "--- st_blksize of /tmp file: $(stat -c %o /tmp/outfile) ---"
+echo "--- BUFSIZ: ---"; printf '#include <stdio.h>\n#include <stdlib.h>\nint main(){printf("BUFSIZ=%%d\\n",BUFSIZ);return 0;}\n' > /tmp/b.c && gcc /tmp/b.c -o /tmp/b && /tmp/b[0m[38;5;244m (using tool: shell)[0m
+Purpose: Measure C stdio buffer size for a regular file
+
+regular file: after 4100 bytes written, file size -> 4096
+regular file: after 8200 bytes written, file size -> 8192
+--- st_blksize of /tmp file: 4096 ---
+--- BUFSIZ: ---
+BUFSIZ=8192
+[38;5;244m - Completed in 0.487s[0m
+
+[?25l[0m[38;5;141m> [0mRoot cause found. Now I'll make Rust's stdout buffering match glibc's (block-buffered to non-tty in exact [38;5;10mst_blksize[0m units, line-buffered to a tty), and ignore write errors the way C ignores [38;5;10mfputs[0m's return.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Rewrite translation to match C stdio buffering and fputs error handling
+
+[49m[39m    1,   1[0m:[39m[49m // Rust translation of c_src/src/main.c
+[0m[49m[39m    2,   2[0m:[39m[49m //
+[0m[49m[39m    3,   3[0m:[39m[49m // Original C:
+[0m[49m[38;5;10m+        4[0m:[38;5;10m[49m //     #include <stdio.h>
+[0m[49m[38;5;10m+        5[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+        6[0m:[38;5;10m[49m //     /* interactive echo; ignores arguments, copies stdin to stdout */
+[0m[49m[39m    4,   7[0m:[39m[49m //     int main() {
+[0m[49m[39m    5,   8[0m:[39m[49m //         char text[128];
+[0m[49m[38;5;10m+        9[0m:[38;5;10m[49m //
+[0m[49m[39m    6,  10[0m:[39m[49m //         while (fgets(text, 128, stdin)) {
+[0m[49m[39m    7,  11[0m:[39m[49m //             fputs(text, stdout);
+[0m[49m[39m    8,  12[0m:[39m[49m //         }
+[0m[49m[39m    9,  13[0m:[39m[49m //         return 0;
+[0m[49m[39m   10,  14[0m:[39m[49m //     }
+[0m[49m[39m   11,  15[0m:[39m[49m //
+[0m[49m[38;5;9m-  12     [0m:[38;5;9m[49m // interactive echo; ignores arguments, copies stdin to stdout
+[0m[49m[38;5;10m+       16[0m:[38;5;10m[49m // The program echoes stdin to stdout, ignores argv, and always exits 0.
+[0m[49m[38;5;10m+       17[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       18[0m:[38;5;10m[49m // Behaviors that must be reproduced exactly:
+[0m[49m[38;5;10m+       19[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       20[0m:[38;5;10m[49m //   * `fgets(text, 128, stdin)` reads at most 127 bytes, stopping early after a
+[0m[49m[38;5;10m+       21[0m:[38;5;10m[49m //     newline (which is kept in the buffer). A line longer than 127 bytes is
+[0m[49m[38;5;10m+       22[0m:[38;5;10m[49m //     therefore echoed in several chunks; the concatenation is unchanged.
+[0m[49m[38;5;10m+       23[0m:[38;5;10m[49m //   * `fgets` returns NULL only when it managed to read nothing at all (EOF or
+[0m[49m[38;5;10m+       24[0m:[38;5;10m[49m //     error on the first byte). If bytes were read and *then* an error occurred,
+[0m[49m[38;5;10m+       25[0m:[38;5;10m[49m //     glibc still returns the buffer, so those bytes are echoed.
+[0m[49m[38;5;10m+       26[0m:[38;5;10m[49m //   * `fputs` writes a NUL-terminated C string, so an embedded NUL byte in the
+[0m[49m[38;5;10m+       27[0m:[38;5;10m[49m //     input truncates whatever remains of that chunk, even though `fgets` read
+[0m[49m[38;5;10m+       28[0m:[38;5;10m[49m //     past it.
+[0m[49m[38;5;10m+       29[0m:[38;5;10m[49m //   * `fputs`'s return value is discarded, so a write failure does not stop the
+[0m[49m[38;5;10m+       30[0m:[38;5;10m[49m //     loop: the program keeps draining stdin and still returns 0.
+[0m[49m[38;5;10m+       31[0m:[38;5;10m[49m //   * C stdio buffers stdout: line-buffered when it is a terminal, otherwise
+[0m[49m[38;5;10m+       32[0m:[38;5;10m[49m //     block-buffered in `st_blksize` units. This is observable when the process
+[0m[49m[38;5;10m+       33[0m:[38;5;10m[49m //     is killed by a signal, because unflushed bytes are lost.
+[0m[49m[38;5;10m+       34[0m:[38;5;10m[49m //   * The default SIGPIPE disposition is in effect, so writing to a pipe with no
+[0m[49m[38;5;10m+       35[0m:[38;5;10m[49m //     reader kills the process with SIGPIPE (exit status 141 via a shell).
+[0m[49m[39m   13,  36[0m:[39m[49m 
+[0m[49m[38;5;9m-  14     [0m:[38;5;9m[49m use std::io::{self, BufRead, Write};
+[0m[49m[38;5;10m+       37[0m:[38;5;10m[49m use std::fs::File;
+[0m[49m[38;5;10m+       38[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+       39[0m:[38;5;10m[49m use std::mem::ManuallyDrop;
+[0m[49m[39m   15,  40[0m:[39m[49m use std::process::ExitCode;
+[0m[49m[39m   16,  41[0m:[39m[49m 
+[0m[49m[38;5;9m-  17     [0m:[38;5;9m[49m /// Buffer size passed to fgets in the C original (`char text[128]`).
+[0m[49m[38;5;10m+       42[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+       43[0m:[38;5;10m[49m use std::os::unix::fs::MetadataExt;
+[0m[49m[38;5;10m+       44[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+       45[0m:[38;5;10m[49m use std::os::unix::io::FromRawFd;
+[0m[49m[38;5;10m+       46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       47[0m:[38;5;10m[49m /// Size of `char text[128]` in the C original.
+[0m[49m[39m   18,  48[0m:[39m[49m const BUF_SIZE: usize = 128;
+[0m[49m[39m   19,  49[0m:[39m[49m 
+[0m[49m[38;5;9m-  20     [0m:[38;5;9m[49m /// Emulate `fgets(buf, BUF_SIZE, stdin)`.
+[0m[49m[38;5;10m+       50[0m:[38;5;10m[49m /// glibc's `BUFSIZ`, used as the fallback when `st_blksize` is unavailable.
+[0m[49m[38;5;10m+       51[0m:[38;5;10m[49m const FALLBACK_BUFSIZ: usize = 8192;
+[0m[49m[38;5;10m+       52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       53[0m:[38;5;10m[49m const STDIN_FD: i32 = 0;
+[0m[49m[38;5;10m+       54[0m:[38;5;10m[49m const STDOUT_FD: i32 = 1;
+[0m[49m[38;5;10m+       55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       56[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+       57[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+       58[0m:[38;5;10m[49m     fn isatty(fd: i32) -> i32;
+[0m[49m[38;5;10m+       59[0m:[38;5;10m[49m     fn signal(signum: i32, handler: usize) -> usize;
+[0m[49m[38;5;10m+       60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       62[0m:[38;5;10m[49m /// Borrow an inherited file descriptor as a `File` without ever closing it.
+[0m[49m[38;5;10m+       63[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+       64[0m:[38;5;10m[49m fn borrow_fd(fd: i32) -> ManuallyDrop<File> {
+[0m[49m[38;5;10m+       65[0m:[38;5;10m[49m     // SAFETY: `fd` is one of the standard descriptors this process inherited. It
+[0m[49m[38;5;10m+       66[0m:[38;5;10m[49m     // stays valid for the whole run, and `ManuallyDrop` prevents the returned
+[0m[49m[38;5;10m+       67[0m:[38;5;10m[49m     // `File` from closing it when dropped.
+[0m[49m[38;5;10m+       68[0m:[38;5;10m[49m     ManuallyDrop::new(unsafe { File::from_raw_fd(fd) })
+[0m[49m[38;5;10m+       69[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       71[0m:[38;5;10m[49m /// The buffer size C stdio picks for a stream: `st_blksize`, or `BUFSIZ` when
+[0m[49m[38;5;10m+       72[0m:[38;5;10m[49m /// that is unusable (0, or the descriptor cannot be stat'ed).
+[0m[49m[38;5;10m+       73[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+       74[0m:[38;5;10m[49m fn stdio_buffer_size(fd: i32) -> usize {
+[0m[49m[38;5;10m+       75[0m:[38;5;10m[49m     let file = borrow_fd(fd);
+[0m[49m[38;5;10m+       76[0m:[38;5;10m[49m     match file.metadata() {
+[0m[49m[38;5;10m+       77[0m:[38;5;10m[49m         Ok(meta) => {
+[0m[49m[38;5;10m+       78[0m:[38;5;10m[49m             let blksize = meta.blksize() as usize;
+[0m[49m[38;5;10m+       79[0m:[38;5;10m[49m             if blksize == 0 {
+[0m[49m[38;5;10m+       80[0m:[38;5;10m[49m                 FALLBACK_BUFSIZ
+[0m[49m[38;5;10m+       81[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+       82[0m:[38;5;10m[49m                 blksize
+[0m[49m[38;5;10m+       83[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+       84[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+       85[0m:[38;5;10m[49m         Err(_) => FALLBACK_BUFSIZ,
+[0m[49m[38;5;10m+       86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+       87[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       89[0m:[38;5;10m[49m #[cfg(not(unix))]
+[0m[49m[38;5;10m+       90[0m:[38;5;10m[49m fn stdio_buffer_size(_fd: i32) -> usize {
+[0m[49m[38;5;10m+       91[0m:[38;5;10m[49m     FALLBACK_BUFSIZ
+[0m[49m[38;5;10m+       92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       94[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+       95[0m:[38;5;10m[49m fn fd_is_tty(fd: i32) -> bool {
+[0m[49m[38;5;10m+       96[0m:[38;5;10m[49m     // SAFETY: `isatty` only inspects the descriptor; it touches no memory.
+[0m[49m[38;5;10m+       97[0m:[38;5;10m[49m     unsafe { isatty(fd) == 1 }
+[0m[49m[38;5;10m+       98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      100[0m:[38;5;10m[49m #[cfg(not(unix))]
+[0m[49m[38;5;10m+      101[0m:[38;5;10m[49m fn fd_is_tty(_fd: i32) -> bool {
+[0m[49m[38;5;10m+      102[0m:[38;5;10m[49m     false
+[0m[49m[38;5;10m+      103[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      105[0m:[38;5;10m[49m /// Rust's runtime ignores SIGPIPE; a C program keeps the default disposition and
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m /// is killed when the reader of its stdout goes away. Restore that.
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m fn restore_default_sigpipe() {
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+      110[0m:[38;5;10m[49m         const SIGPIPE: i32 = 13;
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m         const SIG_DFL: usize = 0;
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m         // SAFETY: installing the default disposition for a signal is a simple
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m         // libc call with no memory involved.
+[0m[49m[38;5;10m+      114[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+      115[0m:[38;5;10m[49m             signal(SIGPIPE, SIG_DFL);
+[0m[49m[38;5;10m+      116[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      117[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      118[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      120[0m:[38;5;10m[49m /// A buffered reader over a raw descriptor, filling in the same `st_blksize`
+[0m[49m[38;5;10m+      121[0m:[38;5;10m[49m /// units C stdio uses so that the amount consumed from stdin matches.
+[0m[49m[38;5;10m+      122[0m:[38;5;10m[49m struct CStdin {
+[0m[49m[38;5;10m+      123[0m:[38;5;10m[49m     file: ManuallyDrop<File>,
+[0m[49m[38;5;10m+      124[0m:[38;5;10m[49m     buf: Vec<u8>,
+[0m[49m[38;5;10m+      125[0m:[38;5;10m[49m     pos: usize,
+[0m[49m[38;5;10m+      126[0m:[38;5;10m[49m     len: usize,
+[0m[49m[38;5;10m+      127[0m:[38;5;10m[49m     /// Sticky: no more bytes will ever arrive (EOF or a hard read error).
+[0m[49m[38;5;10m+      128[0m:[38;5;10m[49m     done: bool,
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m impl CStdin {
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+      133[0m:[38;5;10m[49m         let cap = stdio_buffer_size(STDIN_FD);
+[0m[49m[38;5;10m+      134[0m:[38;5;10m[49m         Self {
+[0m[49m[38;5;10m+      135[0m:[38;5;10m[49m             file: borrow_fd(STDIN_FD),
+[0m[49m[38;5;10m+      136[0m:[38;5;10m[49m             buf: vec![0u8; cap],
+[0m[49m[38;5;10m+      137[0m:[38;5;10m[49m             pos: 0,
+[0m[49m[38;5;10m+      138[0m:[38;5;10m[49m             len: 0,
+[0m[49m[38;5;10m+      139[0m:[38;5;10m[49m             done: false,
+[0m[49m[38;5;10m+      140[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      141[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      143[0m:[38;5;10m[49m     /// Return the next byte of input, or `None` at EOF / on a read error.
+[0m[49m[38;5;10m+      144[0m:[38;5;10m[49m     fn next_byte(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m         if self.pos == self.len {
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m             if self.done {
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m                 return None;
+[0m[49m[38;5;10m+      148[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      149[0m:[38;5;10m[49m             loop {
+[0m[49m[38;5;10m+      150[0m:[38;5;10m[49m                 match self.file.read(&mut self.buf) {
+[0m[49m[38;5;10m+      151[0m:[38;5;10m[49m                     Ok(0) => {
+[0m[49m[38;5;10m+      152[0m:[38;5;10m[49m                         self.done = true;
+[0m[49m[38;5;10m+      153[0m:[38;5;10m[49m                         return None;
+[0m[49m[38;5;10m+      154[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+      155[0m:[38;5;10m[49m                     Ok(n) => {
+[0m[49m[38;5;10m+      156[0m:[38;5;10m[49m                         self.pos = 0;
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m                         self.len = n;
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+      160[0m:[38;5;10m[49m                     Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m                     Err(_) => {
+[0m[49m[38;5;10m+      162[0m:[38;5;10m[49m                         // C stdio sets the error flag; fgets then reports failure
+[0m[49m[38;5;10m+      163[0m:[38;5;10m[49m                         // for this call.
+[0m[49m[38;5;10m+      164[0m:[38;5;10m[49m                         self.done = true;
+[0m[49m[38;5;10m+      165[0m:[38;5;10m[49m                         return None;
+[0m[49m[38;5;10m+      166[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+      167[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+      168[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      169[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      170[0m:[38;5;10m[49m         let byte = self.buf[self.pos];
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m         self.pos += 1;
+[0m[49m[38;5;10m+      172[0m:[38;5;10m[49m         Some(byte)
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      176[0m:[38;5;10m[49m /// Emulate `fgets(text, BUF_SIZE, stdin)`.
+[0m[49m[39m   21, 177[0m:[39m[49m ///
+[0m[49m[38;5;9m-  22     [0m:[38;5;9m[49m /// Reads at most `BUF_SIZE - 1` bytes, stopping early after a newline (which is
+[0m[49m[38;5;9m-  23     [0m:[38;5;9m[49m /// retained). Returns `None` when no bytes could be read before EOF, matching
+[0m[49m[38;5;9m-  24     [0m:[38;5;9m[49m /// fgets returning NULL. The returned Vec holds the raw bytes read, without the
+[0m[49m[38;5;9m-  25     [0m:[38;5;9m[49m /// implicit NUL terminator that C appends.
+[0m[49m[38;5;9m-  26     [0m:[38;5;9m[49m fn fgets<R: BufRead>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
+[0m[49m[38;5;9m-  27     [0m:[38;5;9m[49m     let mut out: Vec<u8> = Vec::with_capacity(BUF_SIZE);
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m /// Reads at most `BUF_SIZE - 1` bytes, stopping after a newline (kept in the
+[0m[49m[38;5;10m+      179[0m:[38;5;10m[49m /// result). Returns `None` when nothing at all could be read, which is the only
+[0m[49m[38;5;10m+      180[0m:[38;5;10m[49m /// case in which glibc's `fgets` yields NULL. The result holds the raw bytes,
+[0m[49m[38;5;10m+      181[0m:[38;5;10m[49m /// without the NUL terminator C appends.
+[0m[49m[38;5;10m+      182[0m:[38;5;10m[49m fn fgets(input: &mut CStdin) -> Option<Vec<u8>> {
+[0m[49m[39m   28, 183[0m:[39m[49m     let limit = BUF_SIZE - 1;
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m     let mut out: Vec<u8> = Vec::with_capacity(limit);
+[0m[49m[39m   29, 185[0m:[39m[49m 
+[0m[49m[39m   30, 186[0m:[39m[49m     while out.len() < limit {
+[0m[49m[38;5;9m-  31     [0m:[38;5;9m[49m         let mut byte = [0u8; 1];
+[0m[49m[38;5;9m-  32     [0m:[38;5;9m[49m         match reader.read(&mut byte) {
+[0m[49m[38;5;9m-  33     [0m:[38;5;9m[49m             Ok(0) => break, // EOF
+[0m[49m[38;5;9m-  34     [0m:[38;5;9m[49m             Ok(_) => {
+[0m[49m[38;5;9m-  35     [0m:[38;5;9m[49m                 out.push(byte[0]);
+[0m[49m[38;5;9m-  36     [0m:[38;5;9m[49m                 if byte[0] == b'\n' {
+[0m[49m[38;5;10m+      187[0m:[38;5;10m[49m         match input.next_byte() {
+[0m[49m[38;5;10m+      188[0m:[38;5;10m[49m             Some(byte) => {
+[0m[49m[38;5;10m+      189[0m:[38;5;10m[49m                 out.push(byte);
+[0m[49m[38;5;10m+      190[0m:[38;5;10m[49m                 if byte == b'\n' {
+[0m[49m[39m   37, 191[0m:[39m[49m                     break;
+[0m[49m[39m   38, 192[0m:[39m[49m                 }
+[0m[49m[39m   39, 193[0m:[39m[49m             }
+[0m[49m[38;5;9m-  40     [0m:[38;5;9m[49m             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;9m-  41     [0m:[38;5;9m[49m             Err(e) => return Err(e),
+[0m[49m[38;5;10m+      194[0m:[38;5;10m[49m             None => break,
+[0m[49m[39m   42, 195[0m:[39m[49m         }
+[0m[49m[39m   43, 196[0m:[39m[49m     }
+[0m[49m[39m   44, 197[0m:[39m[49m 
+[0m[49m[39m   45, 198[0m:[39m[49m     if out.is_empty() {
+[0m[49m[38;5;9m-  46     [0m:[38;5;9m[49m         // Nothing read: EOF (or error) with an empty buffer -> fgets returns NULL.
+[0m[49m[38;5;9m-  47     [0m:[38;5;9m[49m         Ok(None)
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m         None
+[0m[49m[39m   48, 200[0m:[39m[49m     } else {
+[0m[49m[38;5;9m-  49     [0m:[38;5;9m[49m         Ok(Some(out))
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m         Some(out)
+[0m[49m[39m   50, 202[0m:[39m[49m     }
+[0m[49m[39m   51, 203[0m:[39m[49m }
+[0m[49m[39m   52, 204[0m:[39m[49m 
+[0m[49m[38;5;9m-  53     [0m:[38;5;9m[49m fn restore_default_sigpipe() {
+[0m[49m[38;5;9m-  54     [0m:[38;5;9m[49m     #[cfg(unix)]
+[0m[49m[38;5;9m-  55     [0m:[38;5;9m[49m     {
+[0m[49m[38;5;9m-  56     [0m:[38;5;9m[49m         const SIGPIPE: i32 = 13;
+[0m[49m[38;5;9m-  57     [0m:[38;5;9m[49m         const SIG_DFL: usize = 0;
+[0m[49m[38;5;9m-  58     [0m:[38;5;9m[49m         extern "C" {
+[0m[49m[38;5;9m-  59     [0m:[38;5;9m[49m             fn signal(signum: i32, handler: usize) -> usize;
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m /// A stdout writer that buffers the way C stdio does, so that output surviving a
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m /// signal-triggered death matches the C program byte for byte.
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m struct CStdout {
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m     file: ManuallyDrop<File>,
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m     buf: Vec<u8>,
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m     cap: usize,
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m     line_buffered: bool,
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m impl CStdout {
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m         let cap = stdio_buffer_size(STDOUT_FD);
+[0m[49m[38;5;10m+      217[0m:[38;5;10m[49m         Self {
+[0m[49m[38;5;10m+      218[0m:[38;5;10m[49m             file: borrow_fd(STDOUT_FD),
+[0m[49m[38;5;10m+      219[0m:[38;5;10m[49m             buf: Vec::with_capacity(cap),
+[0m[49m[38;5;10m+      220[0m:[38;5;10m[49m             cap,
+[0m[49m[38;5;10m+      221[0m:[38;5;10m[49m             line_buffered: fd_is_tty(STDOUT_FD),
+[0m[49m[39m   60, 222[0m:[39m[49m         }
+[0m[49m[38;5;9m-  61     [0m:[38;5;9m[49m         // SAFETY: installing the default disposition for SIGPIPE is a simple,
+[0m[49m[38;5;9m-  62     [0m:[38;5;9m[49m         // well-defined libc call with no memory involved.
+[0m[49m[38;5;9m-  63     [0m:[38;5;9m[49m         unsafe {
+[0m[49m[38;5;9m-  64     [0m:[38;5;9m[49m             signal(SIGPIPE, SIG_DFL);
+[0m[49m[38;5;10m+      223[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      225[0m:[38;5;10m[49m     /// Push bytes out to the descriptor, retrying short writes and EINTR.
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m     /// Errors are swallowed: the C original discards `fputs`'s return value.
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m     fn write_out(&mut self, mut data: &[u8]) {
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m         while !data.is_empty() {
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m             match self.file.write(data) {
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m                 Ok(0) => break,
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m                 Ok(n) => data = &data[n..],
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m                 Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m                 Err(_) => break,
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      235[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      238[0m:[38;5;10m[49m     /// Emit `count` leading bytes of the buffer and drop them.
+[0m[49m[38;5;10m+      239[0m:[38;5;10m[49m     fn flush_prefix(&mut self, count: usize) {
+[0m[49m[38;5;10m+      240[0m:[38;5;10m[49m         if count == 0 {
+[0m[49m[38;5;10m+      241[0m:[38;5;10m[49m             return;
+[0m[49m[39m   65, 242[0m:[39m[49m         }
+[0m[49m[38;5;10m+      243[0m:[38;5;10m[49m         let prefix: Vec<u8> = self.buf[..count].to_vec();
+[0m[49m[38;5;10m+      244[0m:[38;5;10m[49m         self.write_out(&prefix);
+[0m[49m[38;5;10m+      245[0m:[38;5;10m[49m         self.buf.drain(..count);
+[0m[49m[38;5;10m+      246[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      248[0m:[38;5;10m[49m     fn flush_all(&mut self) {
+[0m[49m[38;5;10m+      249[0m:[38;5;10m[49m         let count = self.buf.len();
+[0m[49m[38;5;10m+      250[0m:[38;5;10m[49m         self.flush_prefix(count);
+[0m[49m[39m   66, 251[0m:[39m[49m     }
+[0m[49m[38;5;10m+      252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      253[0m:[38;5;10m[49m     /// Equivalent of `fputs(s, stdout)` for an already NUL-trimmed slice.
+[0m[49m[38;5;10m+      254[0m:[38;5;10m[49m     fn puts(&mut self, data: &[u8]) {
+[0m[49m[38;5;10m+      255[0m:[38;5;10m[49m         if self.line_buffered {
+[0m[49m[38;5;10m+      256[0m:[38;5;10m[49m             self.buf.extend_from_slice(data);
+[0m[49m[38;5;10m+      257[0m:[38;5;10m[49m             // C stdio flushes a line-buffered stream through the last newline.
+[0m[49m[38;5;10m+      258[0m:[38;5;10m[49m             if let Some(idx) = self.buf.iter().rposition(|&b| b == b'\n') {
+[0m[49m[38;5;10m+      259[0m:[38;5;10m[49m                 self.flush_prefix(idx + 1);
+[0m[49m[38;5;10m+      260[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      261[0m:[38;5;10m[49m             if self.buf.len() >= self.cap {
+[0m[49m[38;5;10m+      262[0m:[38;5;10m[49m                 self.flush_all();
+[0m[49m[38;5;10m+      263[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      264[0m:[38;5;10m[49m             return;
+[0m[49m[38;5;10m+      265[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      267[0m:[38;5;10m[49m         // Block buffered: fill to an exact buffer boundary, flush the full
+[0m[49m[38;5;10m+      268[0m:[38;5;10m[49m         // buffer, then carry on. This reproduces C stdio's flush boundaries.
+[0m[49m[38;5;10m+      269[0m:[38;5;10m[49m         let mut rest = data;
+[0m[49m[38;5;10m+      270[0m:[38;5;10m[49m         while !rest.is_empty() {
+[0m[49m[38;5;10m+      271[0m:[38;5;10m[49m             let space = self.cap - self.buf.len();
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m             let take = space.min(rest.len());
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m             self.buf.extend_from_slice(&rest[..take]);
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m             rest = &rest[take..];
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m             if self.buf.len() >= self.cap {
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m                 self.flush_all();
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      279[0m:[38;5;10m[49m     }
+[0m[49m[39m   67, 280[0m:[39m[49m }
+[0m[49m[39m   68, 281[0m:[39m[49m 
+[0m[49m[39m   69, 282[0m:[39m[49m fn main() -> ExitCode {
+[0m[49m[38;5;9m-  70     [0m:[38;5;9m[49m     // Rust's runtime masks SIGPIPE, whereas a C program keeps the default
+[0m[49m[38;5;9m-  71     [0m:[38;5;9m[49m     // disposition and is killed by SIGPIPE when its stdout reader goes away
+[0m[49m[38;5;9m-  72     [0m:[38;5;9m[49m     // (e.g. `driver | head -1`). Restore the default so termination behavior
+[0m[49m[38;5;9m-  73     [0m:[38;5;9m[49m     // matches the C original.
+[0m[49m[39m   74, 283[0m:[39m[49m     restore_default_sigpipe();
+[0m[49m[39m   75, 284[0m:[39m[49m 
+[0m[49m[38;5;9m-  76     [0m:[38;5;9m[49m     let stdin = io::stdin();
+[0m[49m[38;5;9m-  77     [0m:[38;5;9m[49m     let mut reader = stdin.lock();
+[0m[49m[38;5;9m-  78     [0m:[38;5;9m[49m     let stdout = io::stdout();
+[0m[49m[38;5;9m-  79     [0m:[38;5;9m[49m     let mut writer = stdout.lock();
+[0m[49m[38;5;10m+      285[0m:[38;5;10m[49m     let mut input = CStdin::new();
+[0m[49m[38;5;10m+      286[0m:[38;5;10m[49m     let mut output = CStdout::new();
+[0m[49m[39m   80, 287[0m:[39m[49m 
+[0m[49m[38;5;9m-  81     [0m:[38;5;9m[49m     loop {
+[0m[49m[38;5;9m-  82     [0m:[38;5;9m[49m         match fgets(&mut reader) {
+[0m[49m[38;5;9m-  83     [0m:[38;5;9m[49m             Ok(Some(text)) => {
+[0m[49m[38;5;9m-  84     [0m:[38;5;9m[49m                 // fputs writes the C string, i.e. bytes up to the first NUL.
+[0m[49m[38;5;9m-  85     [0m:[38;5;9m[49m                 // A NUL byte in the input therefore truncates what is echoed
+[0m[49m[38;5;9m-  86     [0m:[38;5;9m[49m                 // for that chunk; reproduce that behavior exactly.
+[0m[49m[38;5;9m-  87     [0m:[38;5;9m[49m                 let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+[0m[49m[38;5;9m-  88     [0m:[38;5;9m[49m                 if writer.write_all(&text[..end]).is_err() {
+[0m[49m[38;5;9m-  89     [0m:[38;5;9m[49m                     // fputs failure is ignored by the C original.
+[0m[49m[38;5;9m-  90     [0m:[38;5;9m[49m                     break;
+[0m[49m[38;5;9m-  91     [0m:[38;5;9m[49m                 }
+[0m[49m[38;5;9m-  92     [0m:[38;5;9m[49m             }
+[0m[49m[38;5;9m-  93     [0m:[38;5;9m[49m             Ok(None) => break,
+[0m[49m[38;5;9m-  94     [0m:[38;5;9m[49m             Err(_) => break, // fgets returns NULL on read error as well
+[0m[49m[38;5;9m-  95     [0m:[38;5;9m[49m         }
+[0m[49m[38;5;10m+      288[0m:[38;5;10m[49m     while let Some(text) = fgets(&mut input) {
+[0m[49m[38;5;10m+      289[0m:[38;5;10m[49m         // fputs writes a C string: bytes up to the first NUL. `fgets` may have
+[0m[49m[38;5;10m+      290[0m:[38;5;10m[49m         // read past an embedded NUL, and those bytes are silently dropped.
+[0m[49m[38;5;10m+      291[0m:[38;5;10m[49m         let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+[0m[49m[38;5;10m+      292[0m:[38;5;10m[49m         output.puts(&text[..end]);
+[0m[49m[39m   96, 293[0m:[39m[49m     }
+[0m[49m[39m   97, 294[0m:[39m[49m 
+[0m[49m[38;5;9m-  98     [0m:[38;5;9m[49m     let _ = writer.flush();
+[0m[49m[38;5;10m+      295[0m:[38;5;10m[49m     // exit(0) flushes C stdio's streams.
+[0m[49m[38;5;10m+      296[0m:[38;5;10m[49m     output.flush_all();
+[0m[49m[39m   99, 297[0m:[39m[49m     ExitCode::from(0)
+[0m[49m[39m  100, 298[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -n 20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild the Rust program
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+[38;5;244m - Completed in 0.199s[0m
+
+[?25l[0m[38;5;141m> [0mNow let me re-run the signal-truncation probe and the buffer-boundary measurement against the fixed binary.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+C=$PWD/c_src/build/driver; R=$PWD/translation/target/release/driver
+
+test_sig() {
+  b="$1"; name="$2"
+  rm -f /tmp/fifo_in; mkfifo /tmp/fifo_in
+  "$b" < /tmp/fifo_in > /tmp/sigout_$name 2>/dev/null &
+  pid=$!
+  exec 9>/tmp/fifo_in
+  printf 'hello\nworld\n' >&9
+  sleep 0.4
+  kill -TERM $pid 2>/dev/null; wait $pid 2>/dev/null; st=$?
+  exec 9>&-
+  echo "$name: exit=$st bytes=$(wc -c < /tmp/sigout_$name)"
+}
+echo "=== SIGTERM mid-stream, stdout to file ==="
+test_sig "$C" C; test_sig "$R" R
+cmp /tmp/sigout_C /tmp/sigout_R && echo "  -> identical"
+
+echo "=== flush boundary measurement ==="
+measure() {
+  bin="$1"; label="$2"; target="/tmp/mo_$label"
+  rm -f /tmp/mf "$target"; mkfifo /tmp/mf
+  "$bin" < /tmp/mf > "$target" 2>/dev/null &
+  pid=$!; exec 9>/tmp/mf; prev=0; sizes=""
+  for i in $(seq 1 60); do
+    printf '%s\n' "$(head -c 99 /dev/zero | tr '\0' 'a')" >&9
+    sz=$(stat -c %s "$target" 2>/dev/null || echo 0)
+    if [ "$sz" != "$prev" ]; then sizes="$sizes ${i}00->$sz"; prev=$sz; fi
+  done
+  exec 9>&-; kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null
+  echo "$label:$sizes"
+}
+measure "$C" C; measure "$R" R[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify buffering fix matches C
+
+=== SIGTERM mid-stream, stdout to file ===
+C: exit=143 bytes=0
+R: exit=143 bytes=0
+  -> identical
+=== flush boundary measurement ===
+C: 4100->4096
+R: 4100->4096
+[38;5;244m - Completed in 1.407s[0m
+
+[?25l[0m[38;5;141m> [0mNow adding tests for the buffering behavior I just fixed, so it stays covered.[0m[0m
+[?25l[0m[0mI'll append content to file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+    499[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m // Phase C: stdout buffering. C stdio block-buffers stdout when it is not a
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m // terminal, so bytes still sitting in the buffer are lost if the process is
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m // killed by a signal, and visible output only appears at buffer boundaries.
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m // A line-buffered Rust `io::stdout()` would differ on both counts.
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m /// Start the program with stdin on a pipe we keep open and stdout on `out_path`,
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m /// write `payload`, then return the child so the caller can poke at it.
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m fn spawn_with_stdout_file(bin: &Path, out_path: &Path) -> std::process::Child {
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m     let out = std::fs::File::create(out_path).expect("create stdout capture file");
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m     Command::new(bin)
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m         .stdin(Stdio::piped())
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m         .stdout(Stdio::from(out))
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m         .stderr(Stdio::null())
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m         .spawn()
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", bin.display()))
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m fn tmp_path(name: &str) -> PathBuf {
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m     let mut p = std::env::temp_dir();
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m     p.push(format!("driver_difftest_{}_{}", std::process::id(), name));
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m     p
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m /// Bytes visible on stdout while the program is still running (stdin held open).
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m fn bytes_flushed_so_far(bin: &Path, payload: &[u8]) -> u64 {
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m     let out_path = tmp_path(&format!("flush_{}", bin.file_name().unwrap().to_string_lossy()));
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     let mut child = spawn_with_stdout_file(bin, &out_path);
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m         let sink = child.stdin.as_mut().expect("stdin piped");
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m         sink.write_all(payload).expect("write payload");
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m         sink.flush().expect("flush payload");
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m     // Give the child time to consume and buffer everything sent so far.
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m     std::thread::sleep(std::time::Duration::from_millis(400));
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m     let visible = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m     let _ = child.kill();
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m     let _ = child.wait();
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m     let _ = std::fs::remove_file(&out_path);
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m     visible
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m fn flush_boundaries_match() {
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m     // 5000 bytes of complete lines: more than one 4096-byte block, less than two.
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m     let payload: Vec<u8> = std::iter::repeat(b"aaaaaaaaa\n")
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m         .take(500)
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m         .flat_map(|s| s.iter().copied())
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m     assert_eq!(payload.len(), 5000);
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m     let c = bytes_flushed_so_far(&c_binary(), &payload);
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m     let r = bytes_flushed_so_far(&rust_binary(), &payload);
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m         c, r,
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m         "stdout flush boundary mismatch: C had written {c} bytes while still \
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m          running, Rust had written {r}. The Rust program must buffer stdout the \
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m          way C stdio does instead of line-buffering."
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m fn buffered_output_lost_on_signal_identically() {
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m     fn survive_sigterm(bin: &Path) -> Vec<u8> {
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m         let out_path = tmp_path(&format!(
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m             "sigterm_{}",
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m             bin.file_name().unwrap().to_string_lossy()
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m         ));
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m         let mut child = spawn_with_stdout_file(bin, &out_path);
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m             let sink = child.stdin.as_mut().expect("stdin piped");
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m             sink.write_all(b"hello\nworld\n").expect("write payload");
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m             sink.flush().expect("flush payload");
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m         std::thread::sleep(std::time::Duration::from_millis(400));
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m         // SIGTERM: whatever is still in the stdio buffer never reaches the file.
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m         let pid = child.id() as i32;
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m         extern "C" {
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m             fn kill(pid: i32, sig: i32) -> i32;
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m         // SAFETY: signalling a child process we spawned; no memory involved.
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m             kill(pid, 15);
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m         let _ = child.wait();
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m         let data = std::fs::read(&out_path).unwrap_or_default();
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m         let _ = std::fs::remove_file(&out_path);
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m         data
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m     let c = survive_sigterm(&c_binary());
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m     let r = survive_sigterm(&rust_binary());
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m         render(&c),
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m         render(&r),
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m         "output surviving SIGTERM differs: C left {} bytes on stdout, Rust left {}",
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m         c.len(),
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m         r.len()
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m // Phase C: stdout that cannot be written. `fputs`'s return value is discarded
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m // by the C program, so the loop keeps draining stdin and still returns 0.
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m // --------------------------------------------------------------------------
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m #[cfg(unix)]
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m fn unwritable_stdout_still_exits_zero() {
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m     fn run_with_stdout(bin: &Path, dest: &str) -> Option<i32> {
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m         let out = match std::fs::OpenOptions::new().write(true).open(dest) {
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m             Ok(f) => f,
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m             Err(_) => return None,
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m         let mut child = Command::new(bin)
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m             .stdin(Stdio::piped())
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m             .stdout(Stdio::from(out))
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m             .stderr(Stdio::null())
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m             .spawn()
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m             .expect("spawn");
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m             let sink = child.stdin.as_mut().expect("stdin piped");
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m             let _ = sink.write_all(b"abc\ndef\n");
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m         drop(child.stdin.take());
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m         child.wait().expect("wait").code()
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m     // /dev/full accepts opens but fails every write with ENOSPC.
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m     let c = run_with_stdout(&c_binary(), "/dev/full");
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m     let r = run_with_stdout(&rust_binary(), "/dev/full");
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m     assert_eq!(c, r, "exit code mismatch when stdout writes fail");
+[0m[49m[38;5;10m+    639[0m:[38;5;10m[49m }
+[0m[K
+Appending to: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 900 cargo test --release 2>&1 | tail -n 60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full test suite including buffering tests
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation)
+    Finished `release` profile [optimized] target(s) in 0.50s
+     Running unittests src/main.rs (target/release/deps/driver-45ff9ae7f29076f4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-6f5586eaa2bc1355)
+
+running 43 tests
+test multiple_lines ... ok
+test all_byte_values_one_per_line ... ok
+test both_binaries_exist_and_run ... ok
+test all_byte_values_one_chunk ... ok
+test embedded_nul_truncates_output ... ok
+test binary_blob_no_newlines ... ok
+test large_input_mixed_lengths_and_nuls ... ok
+test large_multiline_input ... ok
+test multiple_lines_last_unterminated ... ok
+test nul_at_end_of_line ... ok
+test single_newline_only ... ok
+test single_line_with_newline ... ok
+test many_blank_lines ... ok
+test exactly_127_bytes_then_newline_then_more ... ok
+test leading_nul_suppresses_whole_line ... ok
+test empty_input ... ok
+test lone_carriage_returns ... ok
+test control_characters ... ok
+test crlf_line_endings ... ok
+test invalid_utf8_bytes ... ok
+test no_trailing_newline_after_blank_lines ... ok
+test many_nuls ... ok
+test long_lines_of_increasing_length ... ok
+test vertical_tab_and_form_feed_are_not_line_breaks ... ok
+test single_byte_no_newline ... ok
+test nul_exactly_at_last_buffer_slot ... ok
+test nul_past_buffer_boundary ... ok
+test very_long_single_line_unterminated ... ok
+test very_long_single_line ... ok
+test truncated_utf8_sequence_across_buffer_boundary ... ok
+test stdin_from_dev_null ... ok
+test stdin_closed ... ok
+test unwritable_stdout_still_exits_zero ... ok
+test utf8_text ... ok
+test single_line_without_newline ... ok
+test trailing_newlines_preserved_exactly ... ok
+test nul_only ... ok
+test nul_then_newline ... ok
+test arguments_are_ignored ... ok
+test lengths_around_buffer_boundary_without_newline ... ok
+test lengths_around_buffer_boundary_with_newline ... ok
+test buffered_output_lost_on_signal_identically ... ok
+test flush_boundaries_match ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+[38;5;244m - Completed in 1.329s[0m
+
+[?25l[0m[38;5;141m> [0mAll 43 pass. Let me verify these tests are actually load-bearing and run a randomized fuzz sweep plus a tty check.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+C=$PWD/c_src/build/driver; R=$PWD/translation/target/release/driver
+
+echo "=== randomized fuzz: 400 cases of arbitrary bytes ==="
+python3 - "$C" "$R" <<'PY'
+import os, random, subprocess, sys
+c, r = sys.argv[1], sys.argv[2]
+random.seed(1234)
+bad = 0
+for i in range(400):
+    n = random.choice([0,1,2,126,127,128,129,255,256,257,random.randint(0,3000)])
+    # bias toward newline/NUL rich data
+    alphabet = bytes([0,10,13,65,97,255,128,9,32])
+    data = bytes(random.choice(alphabet) if random.random()<0.6 else random.randint(0,255) for _ in range(n))
+    outs=[]
+    for b in (c, r):
+        p = subprocess.run([b], input=data, capture_output=True)
+        outs.append((p.stdout, p.stderr, p.returncode))
+    if outs[0] != outs[1]:
+        bad += 1
+        print("MISMATCH case", i, "len", n, repr(data[:60]))
+        print("  C:", outs[0][:1], outs[0][2], " R:", outs[1][:1], outs[1][2])
+        if bad > 3: break
+print("fuzz done, mismatches =", bad)
+PY
+
+echo "=== tty (pty) line-buffering check, if 'script' exists ==="
+if command -v script >/dev/null; then
+  for b in "$C" "$R"; do
+    o=$(printf 'tty-line\n' | script -q -c "$b" /dev/null | od -An -c | tr -s ' ')
+    echo "$(basename $b) pty out: $o"
+  done
+else echo "script not available"; fi
+
+echo "=== confirm flush test is load-bearing: measure raw visible bytes ==="
+python3 - "$C" "$R" <<'PY'
+import os, subprocess, sys, tempfile, time, signal
+payload = b"aaaaaaaaa\n"*500
+for b in sys.argv[1:]:
+    f = tempfile.NamedTemporaryFile(delete=False)
+    p = subprocess.Popen([b], stdin=subprocess.PIPE, stdout=f, stderr=subprocess.DEVNULL)
+    p.stdin.write(payload); p.stdin.flush()
+    time.sleep(0.4)
+    print(os.path.basename(b), "visible bytes while running =", os.path.getsize(f.name))
+    p.kill(); p.wait()
+    os.unlink(f.name)
+PY[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fuzz differential test, pty check, verify flush test sensitivity
+
+=== randomized fuzz: 400 cases of arbitrary bytes ===
+fuzz done, mismatches = 0
+=== tty (pty) line-buffering check, if 'script' exists ===
+driver pty out:  t t y - l i n e \r \n t t y - l i
+ n e \r \n
+driver pty out:  t t y - l i n e \r \n t t y - l i
+ n e \r \n
+=== confirm flush test is load-bearing: measure raw visible bytes ===
+driver visible bytes while running = 4096
+driver visible bytes while running = 4096
+[38;5;244m - Completed in 2.67s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 900 cargo test 2>&1 | tail -n 12
+echo "=== c_src integrity ==="
+cd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+ls -la --time-style=full-iso c_src/CMakeLists.txt c_src/src/main.c
+git -C c_src status --porcelain 2>&1 | head -5 || echo "(not a git repo)"
+git status --porcelain 2>&1 | head -20 || true
+md5sum c_src/src/main.c c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run debug cargo test and verify c_src unmodified
+
+test stdin_closed ... ok
+test nul_exactly_at_last_buffer_slot ... ok
+test utf8_text ... ok
+test nul_past_buffer_boundary ... ok
+test large_input_mixed_lengths_and_nuls ... ok
+test arguments_are_ignored ... ok
+test lengths_around_buffer_boundary_without_newline ... ok
+test flush_boundaries_match ... ok
+test buffered_output_lost_on_signal_identically ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+=== c_src integrity ===
+-rw-r--r--. 1 scheschb amazon 1205 2026-09-01 06:46:35.343392343 +0000 c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon 1346 2026-09-01 06:46:35.343392343 +0000 c_src/src/main.c
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+4975497de39fd545f46d1ddffc6d5d07  c_src/src/main.c
+4fdd0b4c6c59a1168f1e689a19c52f28  c_src/CMakeLists.txt
+[38;5;244m - Completed in 1.165s[0m
+
+[?25l[0m[38;5;141m> [0mBoth debug and release suites pass. Writing up the findings.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Document mismatches found and fixed
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m # Differential verification: C vs. Rust `driver`
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m The C original (`c_src/src/main.c`) is the ground truth:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m /* interactive echo; ignores arguments, copies stdin to stdout */
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m int main() {
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m     char text[128];
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     while (fgets(text, 128, stdin)) {
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m         fputs(text, stdout);
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m ## How it was verified
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m Both programs are built and run as subprocesses; stdout, stderr and exit status
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m (plus termination signal on Unix) are compared byte for byte.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m - C: `cd c_src && mkdir -p build && cd build && cmake .. && cmake --build .`
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m   produces `c_src/build/driver`.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m - Rust: `cd translation && cargo build --release` produces
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m   `translation/target/release/driver`.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m - Tests: `cd translation && cargo test` — 43 tests in `tests/differential.rs`,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m   none `#[ignore]`d, none skipped.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m The Rust code is never loaded as a library; the built binary is invoked the way a
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m shell would invoke it.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m ## Mismatches found and fixed
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m ### 1. stdout was line-buffered instead of block-buffered
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m **Severity: real, observable.** This was the only behavioral divergence found.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m The first translation wrote through `io::stdout()`, which is a `LineWriter`: it
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m flushes on every `\n`. C stdio picks the buffering mode from the descriptor —
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m line-buffered only when stdout is a terminal, otherwise fully buffered in
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m `st_blksize`-sized blocks (4096 here; `BUFSIZ` is 8192 but glibc prefers
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m `st_blksize`).
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m Two distinct observable consequences:
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m *Output lost when the process is killed by a signal.* With stdin on a fifo,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m stdout on a file, and a `SIGTERM` arriving after `hello\nworld\n` was echoed:
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m | | exit status | bytes on stdout |
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m |---|---|---|
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m | C | 143 (SIGTERM) | 0 — the 12 bytes died in the stdio buffer |
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m | Rust (before) | 143 (SIGTERM) | 12 — `LineWriter` had already flushed |
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m *Flush boundaries visible to a concurrent reader.* Feeding 5000 bytes of
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m complete lines and inspecting stdout while the program is still running: C has
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m written exactly 4096 bytes (one full block), the old Rust had written all 5000.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m **Cause.** `io::stdout()`'s buffering policy is a Rust convention, not C's. The
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m translation adopted Rust's policy rather than reproducing C stdio's.
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m **Fix.** `src/main.rs` now implements a `CStdout` that mirrors C stdio:
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m `isatty(1)` selects line buffering (flush through the last newline), otherwise it
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m block-buffers with capacity taken from `fstat(1).st_blksize` (falling back to
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m `BUFSIZ` = 8192 when that is 0 or unavailable). Crucially it fills to an *exact*
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m buffer boundary and flushes the full buffer, then continues with the remainder.
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m Rust's `BufWriter` does not do this — it flushes whatever partial content it
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m holds when the next write would not fit, so it would emit e.g. 4050-byte chunks
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m where C emits 4096-byte chunks.
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m Both now report 4096 bytes visible mid-run and 0 bytes surviving `SIGTERM`.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m Covered by `flush_boundaries_match` and
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m `buffered_output_lost_on_signal_identically`.
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ### 2. A failed write aborted the echo loop
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m **Severity: latent — no output difference observed, but the C semantics differ.**
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m C discards `fputs`'s return value, so a write failure does not end the loop: the
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m program keeps calling `fgets` and draining stdin, and still returns 0. The first
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m translation did `if writer.write_all(..).is_err() { break; }`.
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m Exit status matched (0 either way) and neither program produces visible output on
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m a dead stdout, so no test caught this directly. It is still a divergence: the
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m amount consumed from stdin differs, which is observable when stdin is a pipe
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m shared with another reader.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m **Fix.** `CStdout::write_out` swallows write errors and the loop runs to EOF,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m matching the discarded `fputs` return. `unwritable_stdout_still_exits_zero`
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m exercises the path via `/dev/full`.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m ### 3. stdin refill granularity
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m **Severity: latent, defensive.** `StdinLock` uses a fixed 8 KiB `BufReader`;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m glibc refills in `st_blksize` units (4096 for pipes and files here). As with #2
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m this is only observable if the process dies mid-stream while another process
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m reads the same pipe. `CStdin` now takes its capacity from `fstat(0).st_blksize`
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m so the consumption pattern matches.
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m ## Behaviors that were already correct and are now pinned by tests
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m These are the parts of the C that look like bugs but are the specification:
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m - **`fgets` reads at most 127 bytes**, not a whole line. `char text[128]` with
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m   `fgets(text, 128, ...)` means a 200-byte line is echoed as a 127-byte chunk
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m   then a 73-byte chunk. The concatenation is unchanged, so this is only visible
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m   through flush timing — but the 127-byte limit must be exact, because it decides
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m   where an embedded NUL lands. Covered by
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m   `lengths_around_buffer_boundary_with_newline` (0, 1, 125, 126, 127, 128, 129,
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m   253–257), `exactly_127_bytes_then_newline_then_more`, and
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m   `nul_exactly_at_last_buffer_slot`.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m - **A 127-byte line plus its newline takes two `fgets` calls.** The first fills
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m   the buffer without seeing `\n`; the newline is returned by the next call.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m - **An embedded NUL silently truncates the chunk.** `fgets` reads past NUL bytes,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m   but `fputs` writes a C string and stops at the first one. Input `abc\0def\n`
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m   echoes `abc` — the `def\n` is discarded, not echoed later. Input `\0\n` echoes
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m   nothing at all. This is data loss and it is correct behavior. Covered by
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m   `embedded_nul_truncates_output`, `leading_nul_suppresses_whole_line`,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m   `nul_only`, `nul_then_newline`, `nul_at_end_of_line`, `many_nuls`,
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m   `nul_past_buffer_boundary`, `nul_exactly_at_last_buffer_slot`.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m - **`fgets` returns NULL only when it read nothing.** glibc's `fgets` returns the
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m   buffer whenever `count > 0`, even if a read error followed, and returns NULL
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m   only for `count == 0 && ferror`. So a partial final line at EOF *is* echoed.
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m   Covered by the `*_without_newline` / `*_unterminated` cases.
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m - **No trailing newline is added.** Input `hello` produces exactly `hello`.
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m - **argv is ignored**, including things that look like flags (`--help`,
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m   `--version`). Covered by `arguments_are_ignored`.
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m - **Exit status is always 0**, including empty stdin, closed stdin, stdin
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m   pointing at a directory (`EISDIR`), and unwritable stdout. Covered by
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m   `empty_input`, `stdin_closed`, `stdin_from_dev_null`,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m   `unwritable_stdout_still_exits_zero`.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m - **No UTF-8 validation.** Arbitrary bytes including `0xFF`, lone continuation
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m   bytes, and multi-byte characters split across the 127-byte boundary pass
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m   through untouched. A `String`-based translation would corrupt these. Covered by
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m   `invalid_utf8_bytes`, `truncated_utf8_sequence_across_buffer_boundary`,
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m   `all_byte_values_one_per_line`, `all_byte_values_one_chunk`,
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m   `binary_blob_no_newlines`.
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m - **Only `\n` ends a line.** `\r`, `\v`, `\f` do not. Covered by
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m   `crlf_line_endings`, `lone_carriage_returns`,
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m   `vertical_tab_and_form_feed_are_not_line_breaks`.
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m - **SIGPIPE keeps its default disposition**, so `driver` writing into a closed
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m   pipe dies with signal 13 (status 141 through a shell). Rust's runtime masks
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m   SIGPIPE at startup, which would have made the Rust program exit 0 where the C
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m   program is killed. `restore_default_sigpipe()` reinstates `SIG_DFL`; verified
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m   manually — both report 141.
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m ## Additional verification beyond the test suite
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m - 400 randomized inputs (seeded, lengths 0–3000, alphabets biased toward `\n`,
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m   NUL and high bytes): 0 mismatches across stdout, stderr and exit status.
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m - 12 MB / 60 000-line stream through a file-backed stdin: byte-identical output,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m   both exit 0.
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m - Under a pty (`script -q`): identical output, confirming both line-buffer when
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m   stdout is a terminal.
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m - `c_src/` sources unmodified — `c_src/src/main.c` md5 `4975497de39fd545f46d1dd
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m   ffc6d5d07`, `c_src/CMakeLists.txt` md5 `4fdd0b4c6c59a1168f1e689a19c52f28`,
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m   both with their original mtimes. Only `c_src/build/` was added, by the
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m   documented cmake invocation.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m ## Known limits of this verification
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m Terminal-interactive behavior is only checked through `script`; a real
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m interactive session (partial reads with no EOF, `\x04` handling by the tty
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m driver) is not exercised. The buffer size is read from `st_blksize` at runtime
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m rather than hardcoded, so this tracks glibc on other filesystems, but a C library
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m that chooses buffer sizes differently from glibc would diverge on flush
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m boundaries.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal gate verification.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-DgqgeS
+echo "=== no disabled tests ==="
+grep -rn "ignore\]\|#\[should_panic\|return;\s*//\s*skip" translation/tests/ || echo "none found"
+echo "#[test] count: $(grep -c '^#\[test\]' translation/tests/differential.rs)"
+echo "=== clean rebuild both ==="
+rm -rf c_src/build && (cd c_src && mkdir -p build && cd build && cmake .. >/dev/null 2>&1 && cmake --build . >/dev/null 2>&1) && echo "C: OK $(ls -la c_src/build/driver | awk '{print $5}') bytes"
+(cd translation && cargo clean -q && cargo build --release 2>&1 | tail -n 3)
+echo "=== cargo test (release) ==="
+(cd translation && timeout 900 cargo test --release 2>&1 | grep -E "^test result|warning: unused|error")
+echo "=== cargo test (debug) ==="
+(cd translation && timeout 900 cargo test 2>&1 | grep -E "^test result")
+echo "=== c_src integrity ==="
+md5sum c_src/src/main.c c_src/CMakeLists.txt
+echo "=== artifacts ==="
+ls -la translation/ERRORS.md translation/tests/differential.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final Phase D completion gate verification
+
+=== no disabled tests ===
+none found
+#[test] count: 43
+=== clean rebuild both ===
+C: OK 16832 bytes
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DgqgeS/translation)
+    Finished `release` profile [optimized] target(s) in 0.20s
+=== cargo test (release) ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+=== cargo test (debug) ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+=== c_src integrity ===
+4975497de39fd545f46d1ddffc6d5d07  c_src/src/main.c
+4fdd0b4c6c59a1168f1e689a19c52f28  c_src/CMakeLists.txt
+=== artifacts ===
+-rw-r--r--. 1 scheschb amazon  8273 Sep  1 06:53 translation/ERRORS.md
+-rw-r--r--. 1 scheschb amazon 20046 Sep  1 06:52 translation/tests/differential.rs
+[38;5;244m - Completed in 3.160s[0m
+
+[?25l[0m[38;5;141m> [0mAll four phases pass. The translation now matches the C byte for byte.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the C program does[0m[0m
+[0m[0m
+[1mc
+[0m[38;5;10mchar text[128];
+while (fgets(text, 128, stdin)) fputs(text, stdout);
+return 0;
+[0m[0m[0m
+[0m[0m
+An echo loop — but with three quirks that drive everything: [38;5;10mfgets[0m reads at most [1m127[22m bytes (so long lines are echoed in chunks), [38;5;10mfputs[0m writes a C string and therefore [1mstops at the first NUL[22m (embedded NULs silently discard the rest of that chunk), and the exit status is [1malways 0[22m regardless of what fails.[0m[0m
+[0m[0m
+[38;5;252m[1m## The one real mismatch[0m[0m
+[0m[0m
+[1mRust line-buffered stdout where C block-buffers it.[22m The original translation wrote through [38;5;10mio::stdout()[0m, a [38;5;10mLineWriter[0m that flushes on every [38;5;10m\n[0m. C stdio line-buffers only to a terminal; to a pipe or file it buffers in 4096-byte [38;5;10mst_blksize[0m blocks. Two observable effects, both confirmed by running the binaries:[0m[0m
+[0m[0m
+| scenario | C | Rust (before) |[0m[0m
+|---|---|---|[0m[0m
+| [38;5;10mSIGTERM[0m after echoing [38;5;10mhello\nworld\n[0m to a file | 0 bytes written | 12 bytes written |[0m[0m
+| 5000 bytes fed in, inspected mid-run | 4096 bytes visible | 5000 bytes visible |[0m[0m
+[0m[0m
+Fixed with a [38;5;10mCStdout[0m that reads its mode from [38;5;10misatty(1)[0m and its capacity from [38;5;10mfstat(1).st_blksize[0m. It fills to an [3mexact[23m buffer boundary before flushing — [38;5;10mBufWriter[0m would not have been enough, since it flushes whatever partial content it holds when the next write won't fit, emitting ~4050-byte chunks where C emits exactly 4096.[0m[0m
+[0m[0m
+Two latent divergences went with it: the loop used to [38;5;10mbreak[0m on a write error, where C discards [38;5;10mfputs[0m's return and keeps draining stdin; and stdin refilled in [38;5;10mStdinLock[0m's fixed 8 KiB units rather than glibc's [38;5;10mst_blksize[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Behaviors already correct, now pinned[0m[0m
+[0m[0m
+SIGPIPE was the notable one — Rust masks it at startup, so without the existing [38;5;10mrestore_default_sigpipe()[0m the Rust program would exit 0 where C dies with signal 13. Verified both report 141 through a shell. Also locked down: the 127-byte boundary (a 127-byte line needs two [38;5;10mfgets[0m calls to pick up its newline), NUL truncation in all positions including the 127th slot, no UTF-8 validation (a [38;5;10mString[0m-based translation would corrupt [38;5;10m0xFF[0m and characters split across the chunk boundary), [38;5;10m\r[0m/[38;5;10m\v[0m/[38;5;10m\f[0m not being line breaks, and argv being ignored.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+[0m[0m
+43 tests in [38;5;10mtranslation/tests/differential.rs[0m, all spawning both binaries as subprocesses and comparing stdout, stderr, exit code and termination signal. None ignored or skipped; passing in both debug and release after a clean rebuild. Beyond the suite: 400 seeded random inputs (0 mismatches), a 12 MB stream, and a pty run via [38;5;10mscript[0m. [38;5;10mc_src/[0m is untouched — md5s and mtimes unchanged, only [38;5;10mc_src/build/[0m added.[0m[0m
+[0m[0m
+Details are in [38;5;10mtranslation/ERRORS.md[0m. One caveat worth noting: buffer size is read from [38;5;10mst_blksize[0m at runtime rather than hardcoded, so this tracks glibc across filesystems, but a C library choosing buffer sizes differently would diverge on flush boundaries.[0m[0m
+[38;5;8m
+ ▸ Credits: 13.79 • Time: 7m 42s
+
+[0m[1G[0m[0m[?25h

@@ -1,154 +1,167 @@
 // Rust translation of c_src/src/lib.c
 //
-// Copyright 2025 MIT Lincoln Laboratory
-// Permission is hereby granted, free of charge,
-// to any person obtaining a copy of this software
-// and associated documentation files (the "Software"),
-// to deal in the Software without restriction,
-// including without limitation the rights to use, copy,
-// modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software,
-// and to permit persons to whom the Software is furnished to do so,
-// subject to the following conditions:
+// Original C source:
+//   Copyright 2025 MIT Lincoln Laboratory
+//   Permission is hereby granted, free of charge,
+//   to any person obtaining a copy of this software
+//   and associated documentation files (the "Software"),
+//   to deal in the Software without restriction,
+//   including without limitation the rights to use, copy,
+//   modify, merge, publish, distribute, sublicense,
+//   and/or sell copies of the Software,
+//   and to permit persons to whom the Software is furnished to do so,
+//   subject to the following conditions:
 //
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions of the Software.
+//   The above copyright notice and this permission notice
+//   shall be included in all copies or substantial portions of the Software.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+//   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+//   THE WARRANTIES OF MERCHANTABILITY,
+//   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+//   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+//   FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+//   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+//   OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// The public ABI of the C library consists of a single exported symbol:
+//   int jumpnode(int, int, int, int);
+// Everything else in the translation unit is `static` (internal linkage) and is
+// reproduced here as private Rust items so that the observable behaviour of
+// `jumpnode` is identical, including the fact that `initialize_test_data()` is
+// never called (so `node_count` stays 0 for the lifetime of the process).
 
-use std::ffi::{c_char, c_double, c_int};
-use std::ptr;
+#![allow(dead_code)]
+// `int result = 0;` in the C original is overwritten on every switch arm; the
+// initialiser is kept for fidelity with the source.
+#![allow(unused_assignments)]
 
-// typedef struct { int id; int parent_id; double value; int data[4]; } Node;
+use core::ffi::{c_char, c_int};
+
+/// C: typedef struct { int id; int parent_id; double value; int data[4]; } Node;
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 struct Node {
     id: c_int,
     parent_id: c_int,
-    value: c_double,
+    value: f64,
     data: [c_int; 4],
 }
 
+impl Node {
+    const fn zeroed() -> Self {
+        Node {
+            id: 0,
+            parent_id: 0,
+            value: 0.0,
+            data: [0; 4],
+        }
+    }
+}
+
+/// C: #define MAX_NODES 100
 const MAX_NODES: usize = 100;
 
-// static Node node_storage[MAX_NODES];  (zero-initialized, file scope)
-static mut NODE_STORAGE: [Node; MAX_NODES] = [Node {
-    id: 0,
-    parent_id: 0,
-    value: 0.0,
-    data: [0; 4],
-}; MAX_NODES];
-
-// static int node_count = 0;
+/// C: static Node node_storage[MAX_NODES];
+static mut NODE_STORAGE: [Node; MAX_NODES] = [Node::zeroed(); MAX_NODES];
+/// C: static int node_count = 0;
 static mut NODE_COUNT: c_int = 0;
 
+/// C: #define STATUS_OK       0000
 const STATUS_OK: c_int = 0o0;
-#[allow(dead_code)]
+/// C: #define STATUS_WARNING  0001
 const STATUS_WARNING: c_int = 0o1;
+/// C: #define STATUS_ERROR    0002
 const STATUS_ERROR: c_int = 0o2;
-#[allow(dead_code)]
+/// C: #define STATUS_CRITICAL 0377
 const STATUS_CRITICAL: c_int = 0o377;
 
-/// Base pointer for `node_storage`, matching the C array decay.
-#[inline]
-fn node_storage_ptr() -> *mut Node {
-    ptr::addr_of_mut!(NODE_STORAGE) as *mut Node
-}
-
-#[inline]
-fn node_count_get() -> c_int {
-    unsafe { ptr::read(ptr::addr_of!(NODE_COUNT)) }
-}
-
-#[inline]
-fn node_count_set(v: c_int) {
-    unsafe { ptr::write(ptr::addr_of_mut!(NODE_COUNT), v) }
-}
-
-// static Node* find_node_by_id(int id)
-fn find_node_by_id(id: c_int) -> *mut Node {
-    let base = node_storage_ptr();
-    let count = node_count_get();
+/// C: static Node* find_node_by_id(int id)
+///
+/// Returns a raw pointer into `NODE_STORAGE`, or null, exactly like the C code.
+unsafe fn find_node_by_id(id: c_int) -> *mut Node {
+    let storage: *mut Node = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+    let count = NODE_COUNT;
     let mut i: c_int = 0;
     while i < count {
-        unsafe {
-            let elem = base.offset(i as isize);
-            if (*elem).id == id {
-                return elem;
-            }
+        let elem = storage.offset(i as isize);
+        if (*elem).id == id {
+            return elem;
         }
         i += 1;
     }
-    ptr::null_mut()
+    core::ptr::null_mut()
 }
 
-// static int add_node(int id, int parent_id, double value)
-#[allow(dead_code)]
-fn add_node(id: c_int, parent_id: c_int, value: c_double) -> c_int {
-    let count = node_count_get();
-    if count as usize >= MAX_NODES {
+/// C: static int add_node(int id, int parent_id, double value)
+unsafe fn add_node(id: c_int, parent_id: c_int, value: f64) -> c_int {
+    if NODE_COUNT as usize >= MAX_NODES {
         return STATUS_ERROR;
     }
 
-    unsafe {
-        let slot = node_storage_ptr().offset(count as isize);
-        (*slot).id = id;
-        (*slot).parent_id = parent_id;
-        (*slot).value = value;
+    let storage: *mut Node = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+    let slot = storage.offset(NODE_COUNT as isize);
 
-        (*slot).data[0] = 0o100;
-        (*slot).data[1] = 0o200;
-        (*slot).data[2] = 0o300;
-        (*slot).data[3] = 0o400;
-    }
+    (*slot).id = id;
+    (*slot).parent_id = parent_id;
+    (*slot).value = value;
 
-    node_count_set(count.wrapping_add(1));
+    (*slot).data[0] = 0o100;
+    (*slot).data[1] = 0o200;
+    (*slot).data[2] = 0o300;
+    (*slot).data[3] = 0o400;
+
+    NODE_COUNT += 1;
     STATUS_OK
 }
 
-// static int process_backward(int *array, size_t size, int start_offset)
-//
-// Walks backward from `array + size` down to (exclusive) `array + start_offset`.
-// The C code performs no bounds validation on `start_offset`, so the pointer
-// arithmetic is reproduced verbatim.
+/// C: static int process_backward(int *array, size_t size, int start_offset)
+///
+/// Walks backwards from `array + size` down to (exclusive) `array + start_offset`
+/// summing the elements. Pointer arithmetic and the `int` accumulator wrap-around
+/// are reproduced literally.
 unsafe fn process_backward(array: *mut c_int, size: usize, start_offset: c_int) -> c_int {
     let mut sum: c_int = 0;
 
-    let mut p = array.offset(size as isize);
-    let start = array.offset(start_offset as isize);
+    let mut ptr: *mut c_int = array.wrapping_add(size);
+    let start: *mut c_int = array.wrapping_offset(start_offset as isize);
 
-    while p > start {
-        p = p.offset(-1);
-        sum = sum.wrapping_add(*p);
+    while ptr > start {
+        ptr = ptr.wrapping_sub(1);
+        sum = sum.wrapping_add(*ptr);
     }
 
     sum
 }
 
-// static int compute_size_metric(const char *str)
-unsafe fn compute_size_metric(s: *const c_char) -> c_int {
-    // strlen
-    let mut len: usize = 0;
-    while *s.add(len) != 0 {
-        len += 1;
+/// C: size_t strlen(const char *)
+unsafe fn c_strlen(str: *const c_char) -> usize {
+    let mut n: usize = 0;
+    while *str.add(n) != 0 {
+        n += 1;
     }
+    n
+}
 
-    let mut metric: c_int = len as c_int;
+/// C: static int compute_size_metric(const char *str)
+unsafe fn compute_size_metric(str: *const c_char) -> c_int {
+    let len: usize = c_strlen(str);
+    let mut metric: c_int;
+
+    metric = len as c_int;
 
     metric = metric.wrapping_mul(2).wrapping_add(0o10);
 
     metric
 }
 
-// static int safe_double_to_int(double value)
-fn safe_double_to_int(value: c_double) -> c_int {
+/// C: static int safe_double_to_int(double value)
+///
+/// After the two clamps the value always fits in `int`, so the C cast is a plain
+/// truncation towards zero. NaN is handled the way the x86-64 `cvttsd2si`
+/// instruction behaves (the "integer indefinite" value, i.e. INT_MIN), matching
+/// what the compiled C does for that otherwise-undefined input.
+fn safe_double_to_int(value: f64) -> c_int {
     let mut value = value;
 
     if value > 2147483647.0 {
@@ -158,10 +171,6 @@ fn safe_double_to_int(value: c_double) -> c_int {
         value = -2147483648.0;
     }
 
-    // NaN compares false against both bounds above, so it survives the clamp
-    // and reaches C's `(int)value`. That cast lowers to `cvttsd2si` on x86-64,
-    // which returns the "integer indefinite" value INT_MIN for NaN, whereas
-    // Rust's `as` would saturate it to 0. Reproduce the C result.
     if value.is_nan() {
         return c_int::MIN;
     }
@@ -169,8 +178,8 @@ fn safe_double_to_int(value: c_double) -> c_int {
     value as c_int
 }
 
+/// C: int jumpnode(int operation_mode, int node_id, int depth, int flags)
 #[unsafe(no_mangle)]
-#[allow(unused_assignments)]
 pub unsafe extern "C" fn jumpnode(
     operation_mode: c_int,
     node_id: c_int,
@@ -178,15 +187,17 @@ pub unsafe extern "C" fn jumpnode(
     flags: c_int,
 ) -> c_int {
     let mut current_node: *mut Node;
-    let mut parent_node: *mut Node;
     let mut result: c_int = 0;
     let mut i: c_int;
-    let mut accumulated_value: c_double;
+    let mut accumulated_value: f64;
+    // C: int temp_array[20];  (uninitialised; indices 0..15 are written before use)
     let mut temp_array: [c_int; 20] = [0; 20];
     let array_size: usize;
+    // C: char buffer[50];
     let mut buffer: [c_char; 50] = [0; 50];
 
     match operation_mode {
+        // case 0001:
         0o1 => {
             current_node = find_node_by_id(node_id);
             if current_node.is_null() {
@@ -197,19 +208,21 @@ pub unsafe extern "C" fn jumpnode(
 
             i = 0;
             while i < depth && (*current_node).parent_id != -1 {
-                parent_node = find_node_by_id((*current_node).parent_id);
+                let parent_node = find_node_by_id((*current_node).parent_id);
                 if parent_node.is_null() {
                     break;
                 }
 
                 accumulated_value += (*parent_node).value * 1.5;
                 current_node = parent_node;
+
                 i += 1;
             }
 
             result = safe_double_to_int(accumulated_value);
         }
 
+        // case 0002:
         0o2 => {
             current_node = find_node_by_id(node_id);
             if current_node.is_null() {
@@ -235,14 +248,16 @@ pub unsafe extern "C" fn jumpnode(
             result = result.wrapping_add((array_size as c_int).wrapping_mul(flags));
         }
 
+        // case 0003:
         0o3 => {
-            sprintf_node_depth(&mut buffer, node_id, depth);
+            c_sprintf_node_depth(buffer.as_mut_ptr(), node_id, depth);
 
             result = compute_size_metric(buffer.as_ptr());
 
             result = result.wrapping_add(flags & 0o177); /* Mask with octal 0177 */
         }
 
+        // case 0004:
         0o4 => {
             current_node = find_node_by_id(node_id);
             if current_node.is_null() {
@@ -253,23 +268,22 @@ pub unsafe extern "C" fn jumpnode(
             i = 0;
             while i < 4 {
                 accumulated_value +=
-                    ((*current_node).data[i as usize] as c_double).sqrt() * 2.718281828;
+                    ((*current_node).data[i as usize] as f64).sqrt() * 2.718281828;
                 i += 1;
             }
 
-            accumulated_value *= 1.0 + (depth as c_double) * 0.1;
+            accumulated_value *= 1.0 + depth as f64 * 0.1;
 
             result = safe_double_to_int(accumulated_value);
 
-            let count = node_count_get();
-            if count > 2 {
-                let base = node_storage_ptr();
-                let end_ptr = base.offset(count as isize);
-                let mut iter = end_ptr;
+            if NODE_COUNT > 2 {
+                let storage: *mut Node = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+                let end_ptr: *mut Node = storage.offset(NODE_COUNT as isize);
+                let mut iter: *mut Node = end_ptr;
                 let mut backward_sum: c_int = 0;
 
                 i = 0;
-                while i < 3 && iter > base {
+                while i < 3 && iter > storage {
                     iter = iter.offset(-1);
                     backward_sum = backward_sum.wrapping_add(safe_double_to_int((*iter).value));
                     i += 1;
@@ -279,6 +293,7 @@ pub unsafe extern "C" fn jumpnode(
             }
         }
 
+        // default:
         _ => {
             result = STATUS_ERROR | 0o200;
         }
@@ -287,26 +302,83 @@ pub unsafe extern "C" fn jumpnode(
     result
 }
 
-/// Reproduces `sprintf(buffer, "Node_%d_Depth_%d", node_id, depth)`.
+/// C: sprintf(buffer, "Node_%d_Depth_%d", node_id, depth);
 ///
-/// The formatted result is at most 34 bytes (`"Node_"` + 11 + `"_Depth_"` + 11)
-/// plus the terminating NUL, so it always fits the 50-byte C buffer.
-fn sprintf_node_depth(buffer: &mut [c_char; 50], node_id: c_int, depth: c_int) {
-    let s = format!("Node_{}_Depth_{}", node_id, depth);
-    let bytes = s.as_bytes();
-    for (dst, &b) in buffer.iter_mut().zip(bytes.iter()) {
-        *dst = b as c_char;
+/// Writes the formatted text plus a terminating NUL into `buffer`, which the C
+/// code sizes at 50 bytes (the widest possible result is 34 characters plus the
+/// NUL, so it always fits).
+unsafe fn c_sprintf_node_depth(buffer: *mut c_char, node_id: c_int, depth: c_int) -> c_int {
+    let mut bytes: [u8; 64] = [0; 64];
+    let mut len: usize = 0;
+
+    write_bytes_str(&mut bytes, &mut len, b"Node_");
+    write_bytes_int(&mut bytes, &mut len, node_id);
+    write_bytes_str(&mut bytes, &mut len, b"_Depth_");
+    write_bytes_int(&mut bytes, &mut len, depth);
+
+    let mut k: usize = 0;
+    while k < len {
+        *buffer.add(k) = bytes[k] as c_char;
+        k += 1;
     }
-    buffer[bytes.len()] = 0;
+    *buffer.add(len) = 0;
+
+    len as c_int
 }
 
-// static void initialize_test_data(void)
-//
-// Present in the C source but never called (it is `static`), so `node_count`
-// remains 0 at runtime. Kept for fidelity.
-#[allow(dead_code)]
-fn initialize_test_data() {
-    node_count_set(0);
+fn write_bytes_str(out: &mut [u8; 64], len: &mut usize, s: &[u8]) {
+    for &b in s {
+        out[*len] = b;
+        *len += 1;
+    }
+}
+
+/// Formats an `int` the way printf's `%d` conversion does.
+fn write_bytes_int(out: &mut [u8; 64], len: &mut usize, value: c_int) {
+    let negative = value < 0;
+    // Use the unsigned magnitude so INT_MIN is handled correctly.
+    let mut magnitude: u32 = if negative {
+        (value as i64).unsigned_abs() as u32
+    } else {
+        value as u32
+    };
+
+    let mut digits: [u8; 10] = [0; 10];
+    let mut n: usize = 0;
+    if magnitude == 0 {
+        digits[0] = b'0';
+        n = 1;
+    } else {
+        while magnitude > 0 {
+            digits[n] = b'0' + (magnitude % 10) as u8;
+            magnitude /= 10;
+            n += 1;
+        }
+    }
+
+    if negative {
+        out[*len] = b'-';
+        *len += 1;
+    }
+    while n > 0 {
+        n -= 1;
+        out[*len] = digits[n];
+        *len += 1;
+    }
+}
+
+// The C function declares `Node *parent_node;` at block scope; the Rust
+// translation scopes that variable to `case 0001`, where it is the only place it
+// is ever assigned or read.
+
+/// C: static void initialize_test_data(void)
+///
+/// Present in the C translation unit but never called from anywhere, so
+/// `node_count` remains 0 for the life of the process and every
+/// `find_node_by_id` lookup in `jumpnode` fails. Translated for completeness;
+/// like the C original it has internal linkage and no callers.
+unsafe fn initialize_test_data() {
+    NODE_COUNT = 0;
 
     add_node(1, -1, 100.5);
     add_node(2, 1, 50.25);

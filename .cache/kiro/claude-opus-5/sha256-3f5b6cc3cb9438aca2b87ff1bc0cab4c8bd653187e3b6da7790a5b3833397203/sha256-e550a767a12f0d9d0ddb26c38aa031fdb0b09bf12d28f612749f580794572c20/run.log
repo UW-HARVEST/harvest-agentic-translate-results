@@ -1,0 +1,2526 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -100; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 12:07 .
+drwxr-xr-x. 725 scheschb amazon 81920 Sep  1 12:07 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 12:07 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 12:07 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 12:07 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; echo "==="; cat c_src/CMakeLists.txt; echo "==="; cat c_src/include/lib.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists and header
+
+  17 c_src/CMakeLists.txt
+  15 c_src/include/lib.h
+ 340 c_src/src/lib.c
+ 372 total
+===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+target_link_libraries(${project_name} PRIVATE m)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+===
+typedef struct c2v {
+        float x;
+        float y;
+} c2v;
+
+typedef struct c2Raycast {
+        float t;
+        c2v n;
+} c2Raycast;
+
+int gen_ray(c2Raycast *cast1, c2Raycast *cast2, c2Raycast *cast3,
+                float mp_x, float mp_y, float r_p_x, float r_p_y,
+                float c_p_x, float c_p_y, float c_r,
+                float cap_a_x, float cap_a_y, float cap_b_x, float cap_b_y, float cap_r,
+                float bb_min_x, float bb_min_y, float bb_max_x, float bb_max_y);
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-u2NK85/c_src/src/lib.c[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m7449 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-u2NK85/c_src/src/lib.c
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-u2NK85 && ls .claude && cat .claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check .claude dir for test harness hints
+
+settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-u2NK85"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-u2NK85"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild_u2NK85 && mkdir cbuild_u2NK85 && cd cbuild_u2NK85 && cmake /local/home/scheschb/.harvest/work/harvest-work-u2NK85/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+[ 50%] Building C object CMakeFiles/harvest-work-u2NK85.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-u2NK85.so
+[100%] Built target harvest-work-u2NK85
+libharvest-work-u2NK85.so
+[38;5;244m - Completed in 0.431s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && nm -D --defined-only libharvest-work-u2NK85.so | sort | tee /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols from C .so
+
+0000000000001259 T c2V
+0000000000001286 T c2Dot
+00000000000012b6 T c2Len
+00000000000012e9 T c2Add
+0000000000001328 T c2Sub
+0000000000001367 T c2Mulvs
+000000000000139e T c2Div
+00000000000013da T c2Norm
+0000000000001417 T c2Minv
+0000000000001473 T c2Maxv
+00000000000014cf T c2Skew
+0000000000001502 T c2Absv
+0000000000001573 T c2RaytoCircle
+0000000000001704 T c2AABBtoAABB
+000000000000184a T c2RaytoAABB
+0000000000001ee6 T c2CCW90
+0000000000001f19 T c2MulmvT
+0000000000001f8d T c2AABBtoPoint
+000000000000201a T c2CircleToPoint
+0000000000002090 T c2RaytoCapsule
+000000000000263c T c2CastRay
+000000000000274d T gen_ray
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<c2CastRay>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect c2CastRay codegen for missing default return
+
+000000000000263c <c2CastRay>:
+    263c:	push   %rbp
+    263d:	mov    %rsp,%rbp
+    2640:	sub    $0x20,%rsp
+    2644:	mov    %rdi,-0x8(%rbp)
+    2648:	mov    %esi,-0xc(%rbp)
+    264b:	mov    %rdx,-0x18(%rbp)
+    264f:	cmpl   $0x2,-0xc(%rbp)
+    2653:	je     2701 <c2CastRay+0xc5>
+    2659:	cmpl   $0x2,-0xc(%rbp)
+    265d:	ja     274b <c2CastRay+0x10f>
+    2663:	cmpl   $0x0,-0xc(%rbp)
+    2667:	je     2674 <c2CastRay+0x38>
+    2669:	cmpl   $0x1,-0xc(%rbp)
+    266d:	je     26ba <c2CastRay+0x7e>
+    266f:	jmp    274b <c2CastRay+0x10f>
+    2674:	mov    -0x18(%rbp),%rsi
+    2678:	mov    -0x8(%rbp),%rax
+    267c:	mov    (%rax),%r8
+    267f:	movss  0x8(%rax),%xmm1
+    2684:	sub    $0x8,%rsp
+    2688:	sub    $0x18,%rsp
+    268c:	mov    %rsp,%rcx
+    268f:	mov    0x10(%rbp),%rax
+    2693:	mov    0x18(%rbp),%rdx
+    2697:	mov    %rax,(%rcx)
+    269a:	mov    %rdx,0x8(%rcx)
+    269e:	mov    0x20(%rbp),%eax
+    26a1:	mov    %eax,0x10(%rcx)
+    26a4:	mov    %rsi,%rdi
+    26a7:	movq   %r8,%xmm0
+    26ac:	call   10d0 <c2RaytoCircle@plt>
+    26b1:	add    $0x20,%rsp
+    26b5:	jmp    274b <c2CastRay+0x10f>
+    26ba:	mov    -0x18(%rbp),%rsi
+    26be:	mov    -0x8(%rbp),%rax
+    26c2:	mov    (%rax),%r8
+    26c5:	mov    0x8(%rax),%r9
+    26c9:	sub    $0x8,%rsp
+    26cd:	sub    $0x18,%rsp
+    26d1:	mov    %rsp,%rcx
+    26d4:	mov    0x10(%rbp),%rax
+    26d8:	mov    0x18(%rbp),%rdx
+    26dc:	mov    %rax,(%rcx)
+    26df:	mov    %rdx,0x8(%rcx)
+    26e3:	mov    0x20(%rbp),%eax
+    26e6:	mov    %eax,0x10(%rcx)
+    26e9:	mov    %rsi,%rdi
+    26ec:	movq   %r8,%xmm0
+    26f1:	movq   %r9,%xmm1
+    26f6:	call   1180 <c2RaytoAABB@plt>
+    26fb:	add    $0x20,%rsp
+    26ff:	jmp    274b <c2CastRay+0x10f>
+    2701:	mov    -0x18(%rbp),%rdi
+    2705:	mov    -0x8(%rbp),%rcx
+    2709:	sub    $0x18,%rsp
+    270d:	mov    %rsp,%rsi
+    2710:	mov    (%rcx),%rax
+    2713:	mov    0x8(%rcx),%rdx
+    2717:	mov    %rax,(%rsi)
+    271a:	mov    %rdx,0x8(%rsi)
+    271e:	mov    0x10(%rcx),%eax
+    2721:	mov    %eax,0x10(%rsi)
+    2724:	sub    $0x18,%rsp
+    2728:	mov    %rsp,%rcx
+    272b:	mov    0x10(%rbp),%rax
+    272f:	mov    0x18(%rbp),%rdx
+    2733:	mov    %rax,(%rcx)
+    2736:	mov    %rdx,0x8(%rcx)
+    273a:	mov    0x20(%rbp),%eax
+    273d:	mov    %eax,0x10(%rcx)
+    2740:	call   1070 <c2RaytoCapsule@plt>
+    2745:	add    $0x30,%rsp
+    2749:	jmp    274b <c2CastRay+0x10f>
+    274b:	leave
+    274c:	ret
+
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 22 exported symbols, single translation unit. Writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest-work-u2NK85"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Simplify Cargo.toml (cargo forbids hyphens in lib target names)
+
+[49m[39m   1, 1[0m:[39m[49m [package]
+[0m[49m[39m   2, 2[0m:[39m[49m name = "translation"
+[0m[49m[39m   3, 3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4, 4[0m:[39m[49m edition = "2021"
+[0m[49m[39m   5, 5[0m:[39m[49m 
+[0m[49m[39m   6, 6[0m:[39m[49m [lib]
+[0m[49m[38;5;9m-  7   [0m:[38;5;9m[49m name = "harvest-work-u2NK85"
+[0m[49m[39m   8, 7[0m:[39m[49m crate-type = ["cdylib"]
+[0m[49m[39m   9, 8[0m:[39m[49m path = "src/lib.rs"
+[0m[49m[38;5;9m- 10   [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 11   [0m:[38;5;9m[49m [profile.release]
+[0m[49m[38;5;9m- 12   [0m:[38;5;9m[49m panic = "abort"
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Full Rust translation of c_src/src/lib.c
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/` (a cute_c2-style 2D raycast library).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every public C function is re-exported here with the identical linker symbol,
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `extern "C"` calling convention and `#[repr(C)]` layouts, so the resulting
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! cdylib is ABI compatible with the original shared object.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! Behaviour is reproduced *exactly*, including the original code's quirks:
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!   * the ternary based `min`/`max`/`abs` idioms (which differ from Rust's
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //!     `f32::min`/`f32::max`/`f32::abs` for NaN and `-0.0` inputs),
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!   * `c2Div` performing a reciprocal followed by a multiply,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //!   * `c2Norm` of a zero vector producing NaN/inf rather than being guarded,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!   * `c2CastRay`'s switch statement having no `default` arm.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // Public types (from include/lib.h)
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// `typedef struct c2v { float x; float y; } c2v;`
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m pub struct c2v {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     pub x: f32,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     pub y: f32,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// `typedef struct c2Raycast { float t; c2v n; } c2Raycast;`
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m pub struct c2Raycast {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     pub t: f32,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     pub n: c2v,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m // Internal types (from src/lib.c)
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m // The C `C2_TYPE` enum. A C enum is passed as `int`, so the FFI boundary uses
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m // `c_int` and these constants are compared against it.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m const C2_TYPE_CIRCLE: c_int = 0;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m const C2_TYPE_AABB: c_int = 1;
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m const C2_TYPE_CAPSULE: c_int = 2;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m pub struct c2Circle {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     pub p: c2v,
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     pub r: f32,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m pub struct c2AABB {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     pub min: c2v,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     pub max: c2v,
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m pub struct c2Capsule {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     pub a: c2v,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     pub b: c2v,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     pub r: f32,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m pub struct c2Ray {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     pub p: c2v,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     pub d: c2v,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     pub t: f32,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m pub struct c2m {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     pub x: c2v,
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     pub y: c2v,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m // Faithful re-implementations of the C ternary idioms.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m // The C source open-codes `min`, `max` and `abs` as conditional expressions.
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m // These are *not* equivalent to `f32::min` / `f32::max` / `f32::abs`:
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m //   * `a < b ? a : b` yields `b` when either operand is NaN;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m //   * `a < 0 ? -a : a` yields `-0.0` for an input of `-0.0`.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m // Keeping the exact form preserves bit-identical results.
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m /// `a < b ? a : b`
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m fn sel_lt(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     if a < b {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         a
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         b
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m /// `a > b ? a : b`
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m fn sel_gt(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     if a > b {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         a
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         b
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// `a < 0 ? -a : a`
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m fn sel_abs(a: f32) -> f32 {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     if a < 0.0 {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         -a
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         a
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m // Vector math
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     c2v { x, y }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     a.x * b.x + a.y * b.y
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m pub extern "C" fn c2Len(a: c2v) -> f32 {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     // sqrtf(c2Dot(a, a))
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     c2Dot(a, a).sqrt()
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     a.x += b.x;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     a.y += b.y;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     a.x -= b.x;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     a.y -= b.y;
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     a.x *= b;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     a.y *= b;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     // Reciprocal first, then multiply -- exactly as the C does.
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     c2Mulvs(a, 1.0f32 / b)
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m pub extern "C" fn c2Norm(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     c2Div(a, c2Len(a))
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     c2V(sel_lt(a.x, b.x), sel_lt(a.y, b.y))
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     c2V(sel_gt(a.x, b.x), sel_gt(a.y, b.y))
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m pub extern "C" fn c2Skew(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     c2v { x: -a.y, y: a.x }
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m pub extern "C" fn c2Absv(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     c2V(sel_abs(a.x), sel_abs(a.y))
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m pub extern "C" fn c2CCW90(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     c2v { x: a.y, y: -a.x }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m pub extern "C" fn c2MulmvT(a: c2m, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     c2v {
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         x: a.x.x * b.x + a.x.y * b.y,
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         y: a.y.x * b.x + a.y.y * b.y,
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m // Collision / raycast routines
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m pub unsafe extern "C" fn c2RaytoCircle(A: c2Ray, B: c2Circle, out: *mut c2Raycast) -> c_int {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     let p = B.p;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     let m = c2Sub(A.p, p);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     let c = c2Dot(m, m) - B.r * B.r;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let b = c2Dot(m, A.d);
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     let disc = b * b - c;
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     if disc < 0.0 {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     let t = -b - disc.sqrt();
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     if t >= 0.0 && t <= A.t {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         (*out).t = t;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         let impact = c2Add(A.p, c2Mulvs(A.d, t));
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         (*out).n = c2Norm(c2Sub(impact, p));
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     let d0 = (B.max.x < A.min.x) as c_int;
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     let d1 = (A.max.x < B.min.x) as c_int;
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     let d2 = (B.max.y < A.min.y) as c_int;
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     let d3 = (A.max.y < B.min.y) as c_int;
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     ((d0 | d1 | d2 | d3) == 0) as c_int
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m /// `static inline float c2SignedDistPointToPlane_OneDimensional(float, float, float)`
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m fn c2SignedDistPointToPlane_OneDimensional(p: f32, n: f32, d: f32) -> f32 {
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     p * n - d * n
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m /// `static inline float c2RayToPlane_OneDimensional(float da, float db)`
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m fn c2RayToPlane_OneDimensional(da: f32, db: f32) -> f32 {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     if da < 0.0 {
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         0.0
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     } else if da * db > 0.0 {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         1.0f32
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         let d = da - db;
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         if d != 0.0 {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             da / d
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m             0.0
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m pub unsafe extern "C" fn c2RaytoAABB(A: c2Ray, B: c2AABB, out: *mut c2Raycast) -> c_int {
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     let p0 = A.p;
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     let p1 = c2Add(A.p, c2Mulvs(A.d, A.t));
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m     let a_box = c2AABB {
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         min: c2Minv(p0, p1),
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         max: c2Maxv(p0, p1),
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     if c2AABBtoAABB(a_box, B) == 0 {
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     let ab = c2Sub(p1, p0);
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     let n = c2Skew(ab);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     let abs_n = c2Absv(n);
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     let half_extents = c2Mulvs(c2Sub(B.max, B.min), 0.5f32);
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     let center_of_b_box = c2Mulvs(c2Add(B.min, B.max), 0.5f32);
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m     let d = sel_abs(c2Dot(n, c2Sub(p0, center_of_b_box))) - c2Dot(abs_n, half_extents);
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     if d > 0.0 {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     let da0 = c2SignedDistPointToPlane_OneDimensional(p0.x, -1.0f32, B.min.x);
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m     let db0 = c2SignedDistPointToPlane_OneDimensional(p1.x, -1.0f32, B.min.x);
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     let da1 = c2SignedDistPointToPlane_OneDimensional(p0.x, 1.0f32, B.max.x);
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     let db1 = c2SignedDistPointToPlane_OneDimensional(p1.x, 1.0f32, B.max.x);
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     let da2 = c2SignedDistPointToPlane_OneDimensional(p0.y, -1.0f32, B.min.y);
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m     let db2 = c2SignedDistPointToPlane_OneDimensional(p1.y, -1.0f32, B.min.y);
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     let da3 = c2SignedDistPointToPlane_OneDimensional(p0.y, 1.0f32, B.max.y);
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m     let db3 = c2SignedDistPointToPlane_OneDimensional(p1.y, 1.0f32, B.max.y);
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m     let mut t0 = c2RayToPlane_OneDimensional(da0, db0);
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m     let mut t1 = c2RayToPlane_OneDimensional(da1, db1);
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     let mut t2 = c2RayToPlane_OneDimensional(da2, db2);
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     let mut t3 = c2RayToPlane_OneDimensional(da3, db3);
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     let hit0 = (t0 <= 1.0f32) as c_int;
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     let hit1 = (t1 <= 1.0f32) as c_int;
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     let hit2 = (t2 <= 1.0f32) as c_int;
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     let hit3 = (t3 <= 1.0f32) as c_int;
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     let hit = hit0 | hit1 | hit2 | hit3;
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     if hit != 0 {
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m         t0 = (hit0 as f32) * t0;
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m         t1 = (hit1 as f32) * t1;
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m         t2 = (hit2 as f32) * t2;
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m         t3 = (hit3 as f32) * t3;
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m         if t0 >= t1 && t0 >= t2 && t0 >= t3 {
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m             (*out).t = t0 * A.t;
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m             (*out).n = c2V(-1.0, 0.0);
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m         } else if t1 >= t0 && t1 >= t2 && t1 >= t3 {
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m             (*out).t = t1 * A.t;
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m             (*out).n = c2V(1.0, 0.0);
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m         } else if t2 >= t0 && t2 >= t1 && t2 >= t3 {
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m             (*out).t = t2 * A.t;
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m             (*out).n = c2V(0.0, -1.0);
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m             (*out).t = t3 * A.t;
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m             (*out).n = c2V(0.0, 1.0);
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m         1
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m pub extern "C" fn c2AABBtoPoint(A: c2AABB, B: c2v) -> c_int {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m     let d0 = (B.x < A.min.x) as c_int;
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m     let d1 = (B.y < A.min.y) as c_int;
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m     let d2 = (B.x > A.max.x) as c_int;
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     let d3 = (B.y > A.max.y) as c_int;
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m     ((d0 | d1 | d2 | d3) == 0) as c_int
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m pub extern "C" fn c2CircleToPoint(A: c2Circle, B: c2v) -> c_int {
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     let n = c2Sub(A.p, B);
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m     let d2 = c2Dot(n, n);
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     (d2 < A.r * A.r) as c_int
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Raycast) -> c_int {
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     let mut M = c2m {
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m         x: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m         y: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m     M.y = c2Norm(c2Sub(B.b, B.a));
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     M.x = c2CCW90(M.y);
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m     let cap_n = c2Sub(B.b, B.a);
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m     let yBb = c2MulmvT(M, cap_n);
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m     let yAp = c2MulmvT(M, c2Sub(A.p, B.a));
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m     let yAd = c2MulmvT(M, A.d);
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m     let yAe = c2Add(yAp, c2Mulvs(yAd, A.t));
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     let capsule_bb = c2AABB {
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m         min: c2V(-B.r, 0.0),
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m         max: c2V(B.r, yBb.y),
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m     (*out).n = c2Norm(cap_n);
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m     (*out).t = 0.0;
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m     if c2AABBtoPoint(capsule_bb, yAp) != 0 {
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         let capsule_a = c2Circle { p: B.a, r: B.r };
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         let capsule_b = c2Circle { p: B.b, r: B.r };
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         if c2CircleToPoint(capsule_a, A.p) != 0 {
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m             return 1;
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m         } else if c2CircleToPoint(capsule_b, A.p) != 0 {
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m             return 1;
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m     if yAe.x * yAp.x < 0.0 || sel_lt(sel_abs(yAe.x), sel_abs(yAp.x)) < B.r {
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m         let Ca = c2Circle { p: B.a, r: B.r };
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m         let Cb = c2Circle { p: B.b, r: B.r };
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m         if sel_abs(yAp.x) < B.r {
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m             if yAp.y < 0.0 {
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m                 return c2RaytoCircle(A, Ca, out);
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m                 return c2RaytoCircle(A, Cb, out);
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m             let c = if yAp.x > 0.0 { B.r } else { -B.r };
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m             let d = yAe.x - yAp.x;
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m             let t = (c - yAp.x) / d;
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m             let y = yAp.y + (yAe.y - yAp.y) * t;
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m             if y <= 0.0 {
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m                 return c2RaytoCircle(A, Ca, out);
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m             if y >= yBb.y {
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m                 return c2RaytoCircle(A, Cb, out);
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m                 (*out).n = if c > 0.0 { M.x } else { c2Skew(M.y) };
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m                 (*out).t = t * A.t;
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m                 return 1;
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m pub unsafe extern "C" fn c2CastRay(
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m     A: c2Ray,
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m     B: *const core::ffi::c_void,
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m     typeB: c_int,
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m     out: *mut c2Raycast,
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m     match typeB {
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m         C2_TYPE_CIRCLE => c2RaytoCircle(A, *(B as *const c2Circle), out),
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m         C2_TYPE_AABB => c2RaytoAABB(A, *(B as *const c2AABB), out),
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m         C2_TYPE_CAPSULE => c2RaytoCapsule(A, *(B as *const c2Capsule), out),
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m         // The C switch has no `default` arm and the function falls off the end,
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m         // which is undefined behaviour. Return 0 as the benign stand-in.
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m         _ => 0,
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m // Public entry point (from include/lib.h)
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m pub unsafe extern "C" fn gen_ray(
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m     cast1: *mut c2Raycast,
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m     cast2: *mut c2Raycast,
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m     cast3: *mut c2Raycast,
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m     mp_x: f32,
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m     mp_y: f32,
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m     r_p_x: f32,
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m     r_p_y: f32,
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     c_p_x: f32,
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m     c_p_y: f32,
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m     c_r: f32,
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m     cap_a_x: f32,
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m     cap_a_y: f32,
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m     cap_b_x: f32,
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m     cap_b_y: f32,
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m     cap_r: f32,
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m     bb_min_x: f32,
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m     bb_min_y: f32,
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m     bb_max_x: f32,
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m     bb_max_y: f32,
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m     let mut hit: c_int = 0;
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m     let mp = c2V(mp_x, mp_y);
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m     let mut ray = c2Ray {
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m         p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m         d: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m         t: 0.0,
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m     ray.p = c2V(r_p_x, r_p_y);
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m     ray.d = c2Norm(c2Sub(mp, ray.p));
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m     ray.t = c2Dot(mp, ray.d) - c2Dot(ray.p, ray.d);
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m     let c = c2Circle {
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m         p: c2V(c_p_x, c_p_y),
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m         r: c_r,
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m     hit += c2CastRay(
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m         ray,
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m         &c as *const c2Circle as *const core::ffi::c_void,
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m         C2_TYPE_CIRCLE,
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m         cast1,
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m     let cap = c2Capsule {
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m         a: c2V(cap_a_x, cap_a_y),
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m         b: c2V(cap_b_x, cap_b_y),
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m         r: cap_r,
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m     hit += c2CastRay(
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m         ray,
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m         &cap as *const c2Capsule as *const core::ffi::c_void,
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m         C2_TYPE_CAPSULE,
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m         cast2,
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m     ) << 1;
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m     let bb = c2AABB {
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m         min: c2V(bb_min_x, bb_min_y),
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m         max: c2V(bb_max_x, bb_max_y),
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m     hit += c2CastRay(
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m         ray,
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m         &bb as *const c2AABB as *const core::ffi::c_void,
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m         C2_TYPE_AABB,
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m         cast3,
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m     ) << 2;
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m     hit
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+[38;5;244m - Completed in 0.192s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation && ls target/release/*.so && nm -D --defined-only target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rust_syms.txt && awk '{print $3}' /tmp/c_syms.txt | sort > /tmp/c_names.txt && echo "=== C count: $(wc -l < /tmp/c_names.txt)  Rust count: $(wc -l < /tmp/rust_syms.txt)" && echo "=== MISSING FROM RUST:" && comm -23 /tmp/c_names.txt /tmp/rust_syms.txt && echo "=== EXTRA IN RUST:" && comm -13 /tmp/c_names.txt /tmp/rust_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+target/release/libtranslation.so
+=== C count: 22  Rust count: 22
+=== MISSING FROM RUST:
+=== EXTRA IN RUST:
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now verifying byte-identical behavior with a differential harness against the C [38;5;10m.so[0m.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write differential test harness comparing C and Rust .so bit-for-bit
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m /* Differential tester: dlopen the C .so and the Rust .so, call every exported
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m  * symbol with identical inputs, compare results bit-for-bit. */
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m typedef struct c2v { float x, y; } c2v;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m typedef struct c2Raycast { float t; c2v n; } c2Raycast;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef struct c2Circle { c2v p; float r; } c2Circle;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m typedef struct c2AABB { c2v min, max; } c2AABB;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m typedef struct c2Capsule { c2v a, b; float r; } c2Capsule;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m typedef struct c2Ray { c2v p, d; float t; } c2Ray;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m typedef struct c2m { c2v x, y; } c2m;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m typedef c2v (*f_vff)(float, float);
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m typedef float (*f_fvv)(c2v, c2v);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m typedef float (*f_fv)(c2v);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m typedef c2v (*f_vvv)(c2v, c2v);
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m typedef c2v (*f_vvf)(c2v, float);
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m typedef c2v (*f_vv)(c2v);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m typedef int (*f_iRayCircle)(c2Ray, c2Circle, c2Raycast *);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m typedef int (*f_iAABBAABB)(c2AABB, c2AABB);
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m typedef int (*f_iRayAABB)(c2Ray, c2AABB, c2Raycast *);
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m typedef c2v (*f_vmv)(c2m, c2v);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m typedef int (*f_iAABBv)(c2AABB, c2v);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m typedef int (*f_iCirclev)(c2Circle, c2v);
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m typedef int (*f_iRayCapsule)(c2Ray, c2Capsule, c2Raycast *);
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m typedef int (*f_iCast)(c2Ray, const void *, int, c2Raycast *);
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m typedef int (*f_gen)(c2Raycast *, c2Raycast *, c2Raycast *,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m                      float, float, float, float, float, float, float,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m                      float, float, float, float, float,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m                      float, float, float, float);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m static void *ha, *hb;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m static long fails = 0, checks = 0;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m static void *sym(void *h, const char *n) {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 	void *p = dlsym(h, n);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 	if (!p) { fprintf(stderr, "missing symbol %s\n", n); exit(2); }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 	return p;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m static void cmp(const char *what, const void *a, const void *b, size_t n) {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 	checks++;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 	if (memcmp(a, b, n) != 0) {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 		if (fails < 25) {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 			fprintf(stderr, "MISMATCH %s: C=", what);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 			for (size_t i = 0; i < n; i++) fprintf(stderr, "%02x", ((const unsigned char *)a)[i]);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 			fprintf(stderr, " R=");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 			for (size_t i = 0; i < n; i++) fprintf(stderr, "%02x", ((const unsigned char *)b)[i]);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 			fprintf(stderr, "\n");
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 		fails++;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m static uint64_t st = 0x12345678abcdefULL;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 	st = st * 6364136223846793005ULL + 1442695040888963407ULL;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 	return (uint32_t)(st >> 33);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /* Random float: mostly "reasonable" magnitudes, sometimes specials. */
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m static float rf(void) {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 	uint32_t k = rnd() % 100;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 	if (k == 0) return 0.0f;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 	if (k == 1) return -0.0f;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 	if (k == 2) return INFINITY;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 	if (k == 3) return -INFINITY;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 	if (k == 4) return NAN;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 	if (k == 5) { uint32_t u = rnd(); float f; memcpy(&f, &u, 4); return f; }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 	if (k < 15) return (float)((int32_t)(rnd() % 21) - 10);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 	double m = ((double)rnd() / 4294967296.0) * 2.0 - 1.0;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 	int e = (int)(rnd() % 24) - 12;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 	return (float)(m * pow(2.0, e));
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m static c2v rv(void) { c2v v; v.x = rf(); v.y = rf(); return v; }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 	if (argc < 3) { fprintf(stderr, "usage: %s c.so rust.so\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 	ha = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 	if (!ha) { fprintf(stderr, "dlopen A: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 	hb = dlopen(argv[2], RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 	if (!hb) { fprintf(stderr, "dlopen B: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 	long N = 200000;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 	if (argc > 3) N = atol(argv[3]);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m #define P(T, name) T name##_a = (T)sym(ha, #name), name##_b = (T)sym(hb, #name)
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 	P(f_vff, c2V);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 	P(f_fvv, c2Dot);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 	P(f_fv, c2Len);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 	P(f_vvv, c2Add);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 	P(f_vvv, c2Sub);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 	P(f_vvf, c2Mulvs);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 	P(f_vvf, c2Div);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 	P(f_vv, c2Norm);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 	P(f_vvv, c2Minv);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 	P(f_vvv, c2Maxv);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 	P(f_vv, c2Skew);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 	P(f_vv, c2Absv);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 	P(f_iRayCircle, c2RaytoCircle);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 	P(f_iAABBAABB, c2AABBtoAABB);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 	P(f_iRayAABB, c2RaytoAABB);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 	P(f_vv, c2CCW90);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 	P(f_vmv, c2MulmvT);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 	P(f_iAABBv, c2AABBtoPoint);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 	P(f_iCirclev, c2CircleToPoint);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 	P(f_iRayCapsule, c2RaytoCapsule);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 	P(f_iCast, c2CastRay);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 	P(f_gen, gen_ray);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m #undef P
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 	for (long i = 0; i < N; i++) {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 		c2v u = rv(), v = rv();
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 		float s = rf();
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 		c2v ra, rb;
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 		float fa, fb;
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 		int ia, ib;
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 		ra = c2V_a(u.x, u.y);      rb = c2V_b(u.x, u.y);      cmp("c2V", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 		fa = c2Dot_a(u, v);        fb = c2Dot_b(u, v);        cmp("c2Dot", &fa, &fb, 4);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 		fa = c2Len_a(u);           fb = c2Len_b(u);           cmp("c2Len", &fa, &fb, 4);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 		ra = c2Add_a(u, v);        rb = c2Add_b(u, v);        cmp("c2Add", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 		ra = c2Sub_a(u, v);        rb = c2Sub_b(u, v);        cmp("c2Sub", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 		ra = c2Mulvs_a(u, s);      rb = c2Mulvs_b(u, s);      cmp("c2Mulvs", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 		ra = c2Div_a(u, s);        rb = c2Div_b(u, s);        cmp("c2Div", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 		ra = c2Norm_a(u);          rb = c2Norm_b(u);          cmp("c2Norm", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 		ra = c2Minv_a(u, v);       rb = c2Minv_b(u, v);       cmp("c2Minv", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 		ra = c2Maxv_a(u, v);       rb = c2Maxv_b(u, v);       cmp("c2Maxv", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 		ra = c2Skew_a(u);          rb = c2Skew_b(u);          cmp("c2Skew", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 		ra = c2Absv_a(u);          rb = c2Absv_b(u);          cmp("c2Absv", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 		ra = c2CCW90_a(u);         rb = c2CCW90_b(u);         cmp("c2CCW90", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 		c2m M; M.x = rv(); M.y = rv();
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 		ra = c2MulmvT_a(M, v);     rb = c2MulmvT_b(M, v);     cmp("c2MulmvT", &ra, &rb, sizeof ra);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 		c2AABB A1, B1;
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 		A1.min = rv(); A1.max = rv(); B1.min = rv(); B1.max = rv();
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 		ia = c2AABBtoAABB_a(A1, B1); ib = c2AABBtoAABB_b(A1, B1); cmp("c2AABBtoAABB", &ia, &ib, 4);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 		ia = c2AABBtoPoint_a(A1, v);  ib = c2AABBtoPoint_b(A1, v);  cmp("c2AABBtoPoint", &ia, &ib, 4);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 		c2Circle C1; C1.p = rv(); C1.r = rf();
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 		ia = c2CircleToPoint_a(C1, v); ib = c2CircleToPoint_b(C1, v); cmp("c2CircleToPoint", &ia, &ib, 4);
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 		c2Ray R; R.p = rv(); R.d = rv(); R.t = rf();
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 		/* also exercise normalized rays, the realistic case */
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 		if (i & 1) { c2v dd = R.d; float l = sqrtf(dd.x*dd.x + dd.y*dd.y); R.d.x = dd.x/l; R.d.y = dd.y/l; }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 		c2Raycast oa, ob;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 		memset(&oa, 0x5a, sizeof oa); memset(&ob, 0x5a, sizeof ob);
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 		ia = c2RaytoCircle_a(R, C1, &oa); ib = c2RaytoCircle_b(R, C1, &ob);
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 		cmp("c2RaytoCircle:ret", &ia, &ib, 4); cmp("c2RaytoCircle:out", &oa, &ob, sizeof oa);
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 		memset(&oa, 0x5a, sizeof oa); memset(&ob, 0x5a, sizeof ob);
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 		ia = c2RaytoAABB_a(R, B1, &oa); ib = c2RaytoAABB_b(R, B1, &ob);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 		cmp("c2RaytoAABB:ret", &ia, &ib, 4); cmp("c2RaytoAABB:out", &oa, &ob, sizeof oa);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 		c2Capsule K; K.a = rv(); K.b = rv(); K.r = rf();
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 		memset(&oa, 0x5a, sizeof oa); memset(&ob, 0x5a, sizeof ob);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 		ia = c2RaytoCapsule_a(R, K, &oa); ib = c2RaytoCapsule_b(R, K, &ob);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 		cmp("c2RaytoCapsule:ret", &ia, &ib, 4); cmp("c2RaytoCapsule:out", &oa, &ob, sizeof oa);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 		int ty = (int)(rnd() % 3);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 		const void *shape = (ty == 0) ? (const void *)&C1 : (ty == 1) ? (const void *)&B1 : (const void *)&K;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 		memset(&oa, 0x5a, sizeof oa); memset(&ob, 0x5a, sizeof ob);
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 		ia = c2CastRay_a(R, shape, ty, &oa); ib = c2CastRay_b(R, shape, ty, &ob);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 		cmp("c2CastRay:ret", &ia, &ib, 4); cmp("c2CastRay:out", &oa, &ob, sizeof oa);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 		c2Raycast g1a, g2a, g3a, g1b, g2b, g3b;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 		memset(&g1a, 0x33, sizeof g1a); memset(&g2a, 0x33, sizeof g2a); memset(&g3a, 0x33, sizeof g3a);
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 		memset(&g1b, 0x33, sizeof g1b); memset(&g2b, 0x33, sizeof g2b); memset(&g3b, 0x33, sizeof g3b);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 		float a1 = rf(), a2 = rf(), a3 = rf(), a4 = rf(), a5 = rf(), a6 = rf(), a7 = rf(),
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 		      a8 = rf(), a9 = rf(), a10 = rf(), a11 = rf(), a12 = rf(),
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 		      a13 = rf(), a14 = rf(), a15 = rf(), a16 = rf();
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 		ia = gen_ray_a(&g1a, &g2a, &g3a, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 		ib = gen_ray_b(&g1b, &g2b, &g3b, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 		cmp("gen_ray:ret", &ia, &ib, 4);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 		cmp("gen_ray:cast1", &g1a, &g1b, sizeof g1a);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 		cmp("gen_ray:cast2", &g2a, &g2b, sizeof g2a);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 		cmp("gen_ray:cast3", &g3a, &g3b, sizeof g3a);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 	printf("checks=%ld fails=%ld\n", checks, fails);
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 	return fails ? 1 : 0;
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest difftest.c -ldl -lm 2>&1 | head -20 && ./difftest /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 200000 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run differential test
+
+MISMATCH gen_ray:cast2: C=00000000d418eb7f0000c07f R=000000000000c07f0000c07f
+MISMATCH c2MulmvT: C=0000c07f0000c07f R=0000c0ff0000c07f
+MISMATCH c2MulmvT: C=0000c0ff0000c07f R=0000c07f0000c07f
+MISMATCH c2MulmvT: C=0000c0ff0000c07f R=0000c07f0000c07f
+MISMATCH c2MulmvT: C=0000c07f000080ff R=0000c0ff000080ff
+MISMATCH c2Dot: C=0000c07f R=0000c0ff
+MISMATCH c2Dot: C=0000c0ff R=0000c07f
+MISMATCH c2MulmvT: C=0000c0ff0000c07f R=0000c07f0000c07f
+MISMATCH c2Dot: C=0000c0ff R=0000c07f
+MISMATCH c2RaytoCapsule:out: C=000000000000c0ff0000c07f R=000000000000c07f0000c07f
+MISMATCH c2CastRay:out: C=000000000000c0ff0000c07f R=000000000000c07f0000c07f
+MISMATCH c2Dot: C=0000c0ff R=0000c07f
+MISMATCH c2Dot: C=0000c07f R=0000c0ff
+MISMATCH c2MulmvT: C=0000c07f0000c07f R=0000c0ff0000c07f
+MISMATCH c2MulmvT: C=c5c9dd7f80932246 R=0000c07f80932246
+MISMATCH c2RaytoCapsule:out: C=000000000000c07f0000c0ff R=000000000000c0ff0000c0ff
+MISMATCH c2CastRay:out: C=000000000000c07f0000c0ff R=000000000000c0ff0000c0ff
+MISMATCH c2Dot: C=0000c0ff R=0000c07f
+checks=5800000 fails=18
+[38;5;244m - Completed in 0.524s[0m
+
+[?25l[0m[38;5;141m> [0mAll 18 mismatches involve NaN sign/payload. Let me look at the exact cases and codegen.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<c2Dot>:/,/^$/p'; echo "=== RUST ==="; objdump -d --no-show-raw-insn /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so | sed -n '/<c2Dot>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare c2Dot disassembly
+
+0000000000001286 <c2Dot>:
+    1286:	push   %rbp
+    1287:	mov    %rsp,%rbp
+    128a:	movq   %xmm0,-0x8(%rbp)
+    128f:	movq   %xmm1,-0x10(%rbp)
+    1294:	movss  -0x8(%rbp),%xmm1
+    1299:	movss  -0x10(%rbp),%xmm0
+    129e:	mulss  %xmm0,%xmm1
+    12a2:	movss  -0x4(%rbp),%xmm2
+    12a7:	movss  -0xc(%rbp),%xmm0
+    12ac:	mulss  %xmm2,%xmm0
+    12b0:	addss  %xmm1,%xmm0
+    12b4:	pop    %rbp
+    12b5:	ret
+
+=== RUST ===
+00000000000120e0 <c2Dot>:
+   120e0:	movq   %xmm0,%rax
+   120e5:	shr    $0x20,%rax
+   120e9:	movd   %eax,%xmm2
+   120ed:	movq   %xmm1,%rax
+   120f2:	shr    $0x20,%rax
+   120f6:	movd   %eax,%xmm3
+   120fa:	mulss  %xmm2,%xmm3
+   120fe:	mulss  %xmm1,%xmm0
+   12102:	addss  %xmm3,%xmm0
+   12106:	ret
+   12107:	int3
+   12108:	int3
+   12109:	int3
+   1210a:	int3
+   1210b:	int3
+   1210c:	int3
+   1210d:	int3
+   1210e:	int3
+   1210f:	int3
+
+[38;5;244m - Completed in 0.74s[0m
+
+[?25l[0m[38;5;141m> [0mC's [38;5;10maddss[0m takes the y-product as destination (so it wins NaN propagation); Rust's takes the x-product. Let me test whether reordering the source fixes it.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/fpexp/src && cd /tmp/fpexp && cat > Cargo.toml <<'EOF'
+[package]
+name = "fpexp"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib"]
+EOF
+cat > src/lib.rs <<'EOF'
+#[repr(C)] #[derive(Copy,Clone)] pub struct V { pub x: f32, pub y: f32 }
+#[no_mangle] pub extern "C" fn v1(a: V, b: V) -> f32 { a.x*b.x + a.y*b.y }
+#[no_mangle] pub extern "C" fn v2(a: V, b: V) -> f32 { a.y*b.y + a.x*b.x }
+#[no_mangle] pub extern "C" fn v3(a: V, b: V) -> f32 { let p=a.x*b.x; let q=a.y*b.y; q+p }
+EOF
+cargo build --release 2>&1 | tail -3; objdump -d --no-show-raw-insn target/release/libfpexp.so | sed -n '/<v[123]>:/,/ret/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Experiment with fadd operand ordering in Rust codegen
+
+   Compiling fpexp v0.1.0 (/tmp/fpexp)
+    Finished `release` profile [optimized] target(s) in 0.11s
+0000000000011880 <v1>:
+   11880:	movq   %xmm0,%rax
+   11885:	shr    $0x20,%rax
+   11889:	movd   %eax,%xmm2
+   1188d:	movq   %xmm1,%rax
+   11892:	shr    $0x20,%rax
+   11896:	movd   %eax,%xmm3
+   1189a:	mulss  %xmm2,%xmm3
+   1189e:	mulss  %xmm1,%xmm0
+   118a2:	addss  %xmm3,%xmm0
+   118a6:	ret
+00000000000118b0 <v2>:
+   118b0:	movq   %xmm0,%rax
+   118b5:	shr    $0x20,%rax
+   118b9:	movd   %eax,%xmm2
+   118bd:	movq   %xmm1,%rax
+   118c2:	shr    $0x20,%rax
+   118c6:	movd   %eax,%xmm3
+   118ca:	mulss  %xmm2,%xmm3
+   118ce:	mulss  %xmm1,%xmm0
+   118d2:	addss  %xmm3,%xmm0
+   118d6:	ret
+[38;5;244m - Completed in 0.196s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && for f in c2MulmvT c2Add c2Mulvs c2Absv; do echo "### C $f"; objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n "/<$f>:/,/ret/p"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble C c2MulmvT, c2Add, c2Mulvs, c2Absv
+
+### C c2MulmvT
+0000000000001f19 <c2MulmvT>:
+    1f19:	push   %rbp
+    1f1a:	mov    %rsp,%rbp
+    1f1d:	movq   %xmm0,%rax
+    1f22:	movdqa %xmm1,%xmm0
+    1f26:	movq   %xmm0,%rdx
+    1f2b:	mov    %rax,-0x20(%rbp)
+    1f2f:	mov    %rdx,-0x18(%rbp)
+    1f33:	movq   %xmm2,-0x28(%rbp)
+    1f38:	movss  -0x20(%rbp),%xmm1
+    1f3d:	movss  -0x28(%rbp),%xmm0
+    1f42:	mulss  %xmm0,%xmm1
+    1f46:	movss  -0x1c(%rbp),%xmm2
+    1f4b:	movss  -0x24(%rbp),%xmm0
+    1f50:	mulss  %xmm2,%xmm0
+    1f54:	addss  %xmm1,%xmm0
+    1f58:	movss  %xmm0,-0x8(%rbp)
+    1f5d:	movss  -0x18(%rbp),%xmm1
+    1f62:	movss  -0x28(%rbp),%xmm0
+    1f67:	mulss  %xmm0,%xmm1
+    1f6b:	movss  -0x14(%rbp),%xmm2
+    1f70:	movss  -0x24(%rbp),%xmm0
+    1f75:	mulss  %xmm2,%xmm0
+    1f79:	addss  %xmm1,%xmm0
+    1f7d:	movss  %xmm0,-0x4(%rbp)
+    1f82:	mov    -0x8(%rbp),%rax
+    1f86:	movq   %rax,%xmm0
+    1f8b:	pop    %rbp
+    1f8c:	ret
+### C c2Add
+00000000000012e9 <c2Add>:
+    12e9:	push   %rbp
+    12ea:	mov    %rsp,%rbp
+    12ed:	movq   %xmm0,-0x8(%rbp)
+    12f2:	movq   %xmm1,-0x10(%rbp)
+    12f7:	movss  -0x8(%rbp),%xmm1
+    12fc:	movss  -0x10(%rbp),%xmm0
+    1301:	addss  %xmm1,%xmm0
+    1305:	movss  %xmm0,-0x8(%rbp)
+    130a:	movss  -0x4(%rbp),%xmm1
+    130f:	movss  -0xc(%rbp),%xmm0
+    1314:	addss  %xmm1,%xmm0
+    1318:	movss  %xmm0,-0x4(%rbp)
+    131d:	mov    -0x8(%rbp),%rax
+    1321:	movq   %rax,%xmm0
+    1326:	pop    %rbp
+    1327:	ret
+### C c2Mulvs
+0000000000001367 <c2Mulvs>:
+    1367:	push   %rbp
+    1368:	mov    %rsp,%rbp
+    136b:	movq   %xmm0,-0x8(%rbp)
+    1370:	movss  %xmm1,-0xc(%rbp)
+    1375:	movss  -0x8(%rbp),%xmm0
+    137a:	mulss  -0xc(%rbp),%xmm0
+    137f:	movss  %xmm0,-0x8(%rbp)
+    1384:	movss  -0x4(%rbp),%xmm0
+    1389:	mulss  -0xc(%rbp),%xmm0
+    138e:	movss  %xmm0,-0x4(%rbp)
+    1393:	mov    -0x8(%rbp),%rax
+    1397:	movq   %rax,%xmm0
+    139c:	pop    %rbp
+    139d:	ret
+### C c2Absv
+0000000000001502 <c2Absv>:
+    1502:	push   %rbp
+    1503:	mov    %rsp,%rbp
+    1506:	sub    $0x10,%rsp
+    150a:	movq   %xmm0,-0x8(%rbp)
+    150f:	movss  -0x4(%rbp),%xmm1
+    1514:	pxor   %xmm0,%xmm0
+    1518:	comiss %xmm1,%xmm0
+    151b:	jbe    152f <c2Absv+0x2d>
+    151d:	movss  -0x4(%rbp),%xmm0
+    1522:	movss  0x1ae6(%rip),%xmm1        # 3010 <_fini+0x648>
+    152a:	xorps  %xmm1,%xmm0
+    152d:	jmp    1534 <c2Absv+0x32>
+    152f:	movss  -0x4(%rbp),%xmm0
+    1534:	movss  -0x8(%rbp),%xmm2
+    1539:	pxor   %xmm1,%xmm1
+    153d:	comiss %xmm2,%xmm1
+    1540:	jbe    1558 <c2Absv+0x56>
+    1542:	movss  -0x8(%rbp),%xmm1
+    1547:	movss  0x1ac1(%rip),%xmm2        # 3010 <_fini+0x648>
+    154f:	xorps  %xmm2,%xmm1
+    1552:	movd   %xmm1,%eax
+    1556:	jmp    155b <c2Absv+0x59>
+    1558:	mov    -0x8(%rbp),%eax
+    155b:	movaps %xmm0,%xmm1
+    155e:	movd   %eax,%xmm0
+    1562:	call   1050 <c2V@plt>
+    1567:	movq   %xmm0,%rax
+    156c:	movq   %rax,%xmm0
+    1571:	leave
+    1572:	ret
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[38;5;141m> [0mLet me quantify: are mismatches exclusively NaN-related, or do finite inputs diverge too?[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && sed 's|uint32_t k = rnd() % 100;|uint32_t k = 50;|' difftest.c > difftest_finite.c && gcc -O1 -o difftest_finite difftest_finite.c -ldl -lm && ./difftest_finite /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 400000 2>&1 | tail -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test with finite-only inputs
+
+checks=11600000 fails=0
+[38;5;244m - Completed in 0.883s[0m
+
+[?25l[0m[38;5;141m> [0mFinite inputs: 11.6M checks, 0 failures. Divergence is purely NaN payload/sign. But NaN is reachable from finite inputs (e.g. [38;5;10mc2Norm[0m of a zero-length vector), so let me confirm that matters.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/degtest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Degenerate finite-input test for gen_ray
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /* Degenerate-but-finite input test: exercises paths where the C code itself
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m  * manufactures NaN/inf (c2Norm of a zero vector, division by zero, etc.). */
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m typedef struct c2v { float x, y; } c2v;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m typedef struct c2Raycast { float t; c2v n; } c2Raycast;
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m typedef int (*f_gen)(c2Raycast *, c2Raycast *, c2Raycast *,
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m                      float, float, float, float, float, float, float,
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m                      float, float, float, float, float,
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m                      float, float, float, float);
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m static long fails = 0, checks = 0;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 	void *ha = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 	void *hb = dlopen(argv[2], RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 	if (!ha || !hb) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 	f_gen ga = (f_gen)dlsym(ha, "gen_ray"), gb = (f_gen)dlsym(hb, "gen_ray");
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 	/* pool of plain finite values, including duplicates so points coincide */
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 	float pool[] = { 0.f, 1.f, -1.f, 2.f, 3.f, -2.5f, 0.5f, 10.f, -10.f, 100.f };
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 	int n = sizeof pool / sizeof pool[0];
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 	for (long it = 0; it < 3000000; it++) {
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 		float a[16];
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 		for (int i = 0; i < 16; i++) a[i] = pool[rand() % n];
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 		/* force degeneracies often */
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 		if (it % 3 == 0) { a[2] = a[0]; a[3] = a[1]; }          /* ray.p == mp   -> c2Norm(0) */
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 		if (it % 5 == 0) { a[9] = a[11]; a[10] = a[12]; }       /* cap.a == cap.b -> c2Norm(0) */
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 		if (it % 7 == 0) { a[6] = 0.f; a[13] = 0.f; }           /* zero radii     */
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 		c2Raycast x1, x2, x3, y1, y2, y3;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 		memset(&x1, 0x33, sizeof x1); memset(&x2, 0x33, sizeof x2); memset(&x3, 0x33, sizeof x3);
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 		memcpy(&y1, &x1, sizeof x1); memcpy(&y2, &x2, sizeof x2); memcpy(&y3, &x3, sizeof x3);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 		int ra = ga(&x1, &x2, &x3, a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 		int rb = gb(&y1, &y2, &y3, a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 		checks++;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 		if (ra != rb || memcmp(&x1,&y1,sizeof x1) || memcmp(&x2,&y2,sizeof x2) || memcmp(&x3,&y3,sizeof x3)) {
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 			if (fails < 10) {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 				fprintf(stderr, "DIFF ret %d/%d args:", ra, rb);
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 				for (int i = 0; i < 16; i++) fprintf(stderr, " %g", a[i]);
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 				fprintf(stderr, "\n  C: ");
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 				unsigned char *p = (unsigned char*)&x1; for (size_t i=0;i<sizeof x1;i++) fprintf(stderr,"%02x",p[i]);
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 				fprintf(stderr, " "); p=(unsigned char*)&x2; for (size_t i=0;i<sizeof x2;i++) fprintf(stderr,"%02x",p[i]);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 				fprintf(stderr, " "); p=(unsigned char*)&x3; for (size_t i=0;i<sizeof x3;i++) fprintf(stderr,"%02x",p[i]);
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 				fprintf(stderr, "\n  R: ");
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 				p = (unsigned char*)&y1; for (size_t i=0;i<sizeof y1;i++) fprintf(stderr,"%02x",p[i]);
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 				fprintf(stderr, " "); p=(unsigned char*)&y2; for (size_t i=0;i<sizeof y2;i++) fprintf(stderr,"%02x",p[i]);
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m 				fprintf(stderr, " "); p=(unsigned char*)&y3; for (size_t i=0;i<sizeof y3;i++) fprintf(stderr,"%02x",p[i]);
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 				fprintf(stderr, "\n");
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 			}
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 			fails++;
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 	printf("checks=%ld fails=%ld\n", checks, fails);
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 	return fails ? 1 : 0;
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/degtest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o degtest degtest.c -ldl -lm && ./degtest /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run degenerate finite-input test
+
+checks=3000000 fails=0
+[38;5;244m - Completed in 2.519s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && sed 's|pool\[\] = { 0.f, 1.f, -1.f, 2.f, 3.f, -2.5f, 0.5f, 10.f, -10.f, 100.f }|pool[] = { 0.f, -0.f, 1.f, -1.f, 2.f, -2.5f, 0.5f, 10.f, INFINITY, -INFINITY, NAN, -NAN, 1e38f, -1e38f, 1e-40f }|' degtest.c > degtest2.c && gcc -O1 -o degtest2 degtest2.c -ldl -lm && ./degtest2 /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 2>&1 | tail -12[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test gen_ray with NaN/inf inputs
+
+  C: 333333333333333333333333 000000000000c0ff0000c07f 0000c0ff000000000000803f
+  R: 333333333333333333333333 000000000000c07f0000c07f 0000c0ff000000000000803f
+DIFF ret 2/2 args: -0 -nan 0 2 -1 10 inf -2.5 -inf -nan nan -nan nan -nan -nan -1
+  C: 333333333333333333333333 000000000000c0ff0000c07f 333333333333333333333333
+  R: 333333333333333333333333 000000000000c07f0000c07f 333333333333333333333333
+DIFF ret 6/6 args: 1 -nan 2 -2.5 10 -2.5 nan inf -nan nan -0 nan -0 0 0.5 -2.5
+  C: 333333333333333333333333 000000000000c07f0000c0ff 0000c0ff000000000000803f
+  R: 333333333333333333333333 000000000000c0ff0000c0ff 0000c0ff000000000000803f
+DIFF ret 6/6 args: inf -2.5 0.5 -2.5 -nan 10 -1e+38 -nan nan -1e+38 9.99995e-41 -0 inf nan -1 1e+38
+  C: 333333333333333333333333 000000000000c0ff0000c07f 0000c0ff000000000000803f
+  R: 333333333333333333333333 000000000000c07f0000c07f 0000c0ff000000000000803f
+checks=3000000 fails=100119
+[38;5;244m - Completed in 2.592s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: NaN/inf inputs to the public [38;5;10mgen_ray[0m diverge in ~3% of cases (NaN sign bit). That's reachable through the public API, so I'll pin the exact SSE operand order. Let me get the C codegen for every commutative float op.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<c2Len>:/,/^$/p;/<c2Sub>:/,/^$/p;/<c2Div>:/,/^$/p;/<c2Norm>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble c2Len, c2Sub, c2Div, c2Norm
+
+00000000000012b6 <c2Len>:
+    12b6:	push   %rbp
+    12b7:	mov    %rsp,%rbp
+    12ba:	sub    $0x10,%rsp
+    12be:	movq   %xmm0,-0x8(%rbp)
+    12c3:	mov    -0x8(%rbp),%rdx
+    12c7:	mov    -0x8(%rbp),%rax
+    12cb:	movq   %rdx,%xmm1
+    12d0:	movq   %rax,%xmm0
+    12d5:	call   10b0 <c2Dot@plt>
+    12da:	movd   %xmm0,%eax
+    12de:	movd   %eax,%xmm0
+    12e2:	call   10f0 <sqrtf@plt>
+    12e7:	leave
+    12e8:	ret
+
+0000000000001328 <c2Sub>:
+    1328:	push   %rbp
+    1329:	mov    %rsp,%rbp
+    132c:	movq   %xmm0,-0x8(%rbp)
+    1331:	movq   %xmm1,-0x10(%rbp)
+    1336:	movss  -0x8(%rbp),%xmm0
+    133b:	movss  -0x10(%rbp),%xmm1
+    1340:	subss  %xmm1,%xmm0
+    1344:	movss  %xmm0,-0x8(%rbp)
+    1349:	movss  -0x4(%rbp),%xmm0
+    134e:	movss  -0xc(%rbp),%xmm1
+    1353:	subss  %xmm1,%xmm0
+    1357:	movss  %xmm0,-0x4(%rbp)
+    135c:	mov    -0x8(%rbp),%rax
+    1360:	movq   %rax,%xmm0
+    1365:	pop    %rbp
+    1366:	ret
+
+000000000000139e <c2Div>:
+    139e:	push   %rbp
+    139f:	mov    %rsp,%rbp
+    13a2:	sub    $0x10,%rsp
+    13a6:	movq   %xmm0,-0x8(%rbp)
+    13ab:	movss  %xmm1,-0xc(%rbp)
+    13b0:	movss  0x1c48(%rip),%xmm0        # 3000 <_fini+0x638>
+    13b8:	divss  -0xc(%rbp),%xmm0
+    13bd:	mov    -0x8(%rbp),%rax
+    13c1:	movaps %xmm0,%xmm1
+    13c4:	movq   %rax,%xmm0
+    13c9:	call   1130 <c2Mulvs@plt>
+    13ce:	movq   %xmm0,%rax
+    13d3:	movq   %rax,%xmm0
+    13d8:	leave
+    13d9:	ret
+
+00000000000013da <c2Norm>:
+    13da:	push   %rbp
+    13db:	mov    %rsp,%rbp
+    13de:	sub    $0x10,%rsp
+    13e2:	movq   %xmm0,-0x8(%rbp)
+    13e7:	mov    -0x8(%rbp),%rax
+    13eb:	movq   %rax,%xmm0
+    13f0:	call   1160 <c2Len@plt>
+    13f5:	movd   %xmm0,%eax
+    13f9:	mov    -0x8(%rbp),%rdx
+    13fd:	movd   %eax,%xmm1
+    1401:	movq   %rdx,%xmm0
+    1406:	call   1030 <c2Div@plt>
+    140b:	movq   %xmm0,%rax
+    1410:	movq   %rax,%xmm0
+    1415:	leave
+    1416:	ret
+
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<c2RaytoCircle>:/,/^$/p' | grep -n 'ss \|comiss\|xorps\|call'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract float ops from c2RaytoCircle
+
+10:    158c:	movss  %xmm0,-0x48(%rbp)
+16:    15a7:	call   1090 <c2Sub@plt>
+23:    15c7:	call   10b0 <c2Dot@plt>
+25:    15d0:	movss  -0x48(%rbp),%xmm1
+26:    15d5:	movss  -0x48(%rbp),%xmm0
+27:    15da:	mulss  %xmm0,%xmm1
+29:    15e2:	subss  %xmm1,%xmm0
+30:    15e6:	movss  %xmm0,-0x14(%rbp)
+35:    15fd:	call   10b0 <c2Dot@plt>
+38:    1609:	movss  -0x18(%rbp),%xmm0
+39:    160e:	mulss  %xmm0,%xmm0
+40:    1612:	subss  -0x14(%rbp),%xmm0
+41:    1617:	movss  %xmm0,-0x1c(%rbp)
+43:    1620:	comiss -0x1c(%rbp),%xmm0
+47:    1630:	movss  -0x18(%rbp),%xmm0
+48:    1635:	movss  0x19d3(%rip),%xmm1        # 3010 <_fini+0x648>
+49:    163d:	xorps  %xmm1,%xmm0
+50:    1640:	movss  %xmm0,-0x5c(%rbp)
+53:    164c:	call   10f0 <sqrtf@plt>
+55:    1654:	movss  -0x5c(%rbp),%xmm0
+56:    1659:	subss  %xmm1,%xmm0
+57:    165d:	movss  %xmm0,-0x20(%rbp)
+58:    1662:	movss  -0x20(%rbp),%xmm0
+60:    166b:	comiss %xmm1,%xmm0
+62:    1674:	movss  0x20(%rbp),%xmm0
+63:    1679:	comiss -0x20(%rbp),%xmm0
+66:    1683:	movss  -0x20(%rbp),%xmm0
+67:    1688:	movss  %xmm0,(%rax)
+68:    168c:	movss  -0x20(%rbp),%xmm0
+72:    169d:	call   1130 <c2Mulvs@plt>
+76:    16b1:	call   1150 <c2Add@plt>
+83:    16d1:	call   1090 <c2Sub@plt>
+87:    16e4:	call   1110 <c2Norm@plt>
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<c2RaytoAABB>:/,/^$/p' | grep -n 'ss \|xorps\|call' ; echo "=== locals ==="; nm libharvest-work-u2NK85.so | grep -i ' t \| d ' | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract float ops from c2RaytoAABB and list local symbols
+
+14:    1881:	movss  0x20(%rbp),%xmm0
+18:    1892:	call   1130 <c2Mulvs@plt>
+22:    18a6:	call   1150 <c2Add@plt>
+29:    18c6:	call   10a0 <c2Minv@plt>
+36:    18e6:	call   10e0 <c2Maxv@plt>
+47:    191e:	call   1170 <c2AABBtoAABB@plt>
+56:    1943:	call   1090 <c2Sub@plt>
+61:    1960:	call   1060 <c2Skew@plt>
+66:    197d:	call   1080 <c2Absv@plt>
+73:    19a6:	call   1090 <c2Sub@plt>
+75:    19b0:	movss  0x166c(%rip),%xmm1        # 3024 <_fini+0x65c>
+77:    19bd:	call   1130 <c2Mulvs@plt>
+84:    19e6:	call   1150 <c2Add@plt>
+86:    19f0:	movss  0x162c(%rip),%xmm1        # 3024 <_fini+0x65c>
+88:    19fd:	call   1130 <c2Mulvs@plt>
+95:    1a23:	call   1090 <c2Sub@plt>
+100:    1a3e:	call   10b0 <c2Dot@plt>
+102:    1a47:	comiss %xmm0,%xmm1
+108:    1a61:	call   1090 <c2Sub@plt>
+113:    1a7c:	call   10b0 <c2Dot@plt>
+115:    1a85:	movss  0x1583(%rip),%xmm0        # 3010 <_fini+0x648>
+117:    1a91:	xorps  %xmm0,%xmm4
+124:    1aaf:	call   1090 <c2Sub@plt>
+129:    1aca:	call   10b0 <c2Dot@plt>
+135:    1aeb:	call   10b0 <c2Dot@plt>
+138:    1af7:	subss  %xmm1,%xmm0
+139:    1afb:	movss  %xmm0,-0x14(%rbp)
+140:    1b00:	movss  -0x14(%rbp),%xmm0
+142:    1b09:	comiss %xmm1,%xmm0
+146:    1b18:	movss  -0xc0(%rbp),%xmm0
+149:    1b26:	movss  0x14fa(%rip),%xmm1        # 3028 <_fini+0x660>
+151:    1b32:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+154:    1b3e:	movss  -0xc0(%rbp),%xmm0
+157:    1b4c:	movss  0x14d4(%rip),%xmm1        # 3028 <_fini+0x660>
+159:    1b58:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+162:    1b64:	movss  -0xb8(%rbp),%xmm0
+165:    1b72:	movss  0x1486(%rip),%xmm1        # 3000 <_fini+0x638>
+167:    1b7e:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+170:    1b8a:	movss  -0xb8(%rbp),%xmm0
+173:    1b98:	movss  0x1460(%rip),%xmm1        # 3000 <_fini+0x638>
+175:    1ba4:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+178:    1bb0:	movss  -0xbc(%rbp),%xmm0
+181:    1bbe:	movss  0x1462(%rip),%xmm1        # 3028 <_fini+0x660>
+183:    1bca:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+186:    1bd6:	movss  -0xbc(%rbp),%xmm0
+189:    1be4:	movss  0x143c(%rip),%xmm1        # 3028 <_fini+0x660>
+191:    1bf0:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+194:    1bfc:	movss  -0xb4(%rbp),%xmm0
+197:    1c0a:	movss  0x13ee(%rip),%xmm1        # 3000 <_fini+0x638>
+199:    1c16:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+202:    1c22:	movss  -0xb4(%rbp),%xmm0
+205:    1c30:	movss  0x13c8(%rip),%xmm1        # 3000 <_fini+0x638>
+207:    1c3c:	call   17ad <c2SignedDistPointToPlane_OneDimensional>
+210:    1c48:	movss  -0x1c(%rbp),%xmm0
+214:    1c57:	call   17da <c2RayToPlane_OneDimensional>
+217:    1c63:	movss  -0x24(%rbp),%xmm0
+221:    1c72:	call   17da <c2RayToPlane_OneDimensional>
+224:    1c7e:	movss  -0x2c(%rbp),%xmm0
+228:    1c8d:	call   17da <c2RayToPlane_OneDimensional>
+231:    1c99:	movss  -0x34(%rbp),%xmm0
+235:    1ca8:	call   17da <c2RayToPlane_OneDimensional>
+238:    1cb4:	movss  0x1344(%rip),%xmm0        # 3000 <_fini+0x638>
+239:    1cbc:	comiss -0x38(%rbp),%xmm0
+243:    1cc9:	movss  0x132f(%rip),%xmm0        # 3000 <_fini+0x638>
+244:    1cd1:	comiss -0x3c(%rbp),%xmm0
+248:    1cde:	movss  0x131a(%rip),%xmm0        # 3000 <_fini+0x638>
+249:    1ce6:	comiss -0x40(%rbp),%xmm0
+253:    1cf3:	movss  0x1305(%rip),%xmm0        # 3000 <_fini+0x638>
+254:    1cfb:	comiss -0x44(%rbp),%xmm0
+267:    1d2a:	movss  -0x38(%rbp),%xmm1
+268:    1d2f:	mulss  %xmm1,%xmm0
+269:    1d33:	movss  %xmm0,-0x38(%rbp)
+272:    1d41:	movss  -0x3c(%rbp),%xmm1
+273:    1d46:	mulss  %xmm1,%xmm0
+274:    1d4a:	movss  %xmm0,-0x3c(%rbp)
+277:    1d58:	movss  -0x40(%rbp),%xmm1
+278:    1d5d:	mulss  %xmm1,%xmm0
+279:    1d61:	movss  %xmm0,-0x40(%rbp)
+282:    1d6f:	movss  -0x44(%rbp),%xmm1
+283:    1d74:	mulss  %xmm1,%xmm0
+284:    1d78:	movss  %xmm0,-0x44(%rbp)
+285:    1d7d:	movss  -0x38(%rbp),%xmm0
+286:    1d82:	comiss -0x3c(%rbp),%xmm0
+288:    1d88:	movss  -0x38(%rbp),%xmm0
+289:    1d8d:	comiss -0x40(%rbp),%xmm0
+291:    1d93:	movss  -0x38(%rbp),%xmm0
+292:    1d98:	comiss -0x44(%rbp),%xmm0
+294:    1d9e:	movss  0x20(%rbp),%xmm0
+295:    1da3:	mulss  -0x38(%rbp),%xmm0
+297:    1daf:	movss  %xmm0,(%rax)
+302:    1dc8:	call   1050 <c2V@plt>
+306:    1ddb:	movss  -0x3c(%rbp),%xmm0
+307:    1de0:	comiss -0x38(%rbp),%xmm0
+309:    1de6:	movss  -0x3c(%rbp),%xmm0
+310:    1deb:	comiss -0x40(%rbp),%xmm0
+312:    1df1:	movss  -0x3c(%rbp),%xmm0
+313:    1df6:	comiss -0x44(%rbp),%xmm0
+315:    1dfc:	movss  0x20(%rbp),%xmm0
+316:    1e01:	mulss  -0x3c(%rbp),%xmm0
+318:    1e0d:	movss  %xmm0,(%rax)
+323:    1e26:	call   1050 <c2V@plt>
+327:    1e39:	movss  -0x40(%rbp),%xmm0
+328:    1e3e:	comiss -0x38(%rbp),%xmm0
+330:    1e44:	movss  -0x40(%rbp),%xmm0
+331:    1e49:	comiss -0x3c(%rbp),%xmm0
+333:    1e4f:	movss  -0x40(%rbp),%xmm0
+334:    1e54:	comiss -0x44(%rbp),%xmm0
+336:    1e5a:	movss  0x20(%rbp),%xmm0
+337:    1e5f:	mulss  -0x40(%rbp),%xmm0
+339:    1e6b:	movss  %xmm0,(%rax)
+341:    1e76:	movss  0x11aa(%rip),%xmm1        # 3028 <_fini+0x660>
+344:    1e88:	call   1050 <c2V@plt>
+348:    1e98:	movss  0x20(%rbp),%xmm0
+349:    1e9d:	mulss  -0x44(%rbp),%xmm0
+351:    1ea9:	movss  %xmm0,(%rax)
+353:    1eb4:	movss  0x1144(%rip),%xmm1        # 3000 <_fini+0x638>
+356:    1ec6:	call   1050 <c2V@plt>
+=== locals ===
+0000000000001000 t _init
+00000000000011a0 t deregister_tm_clones
+00000000000011d0 t register_tm_clones
+0000000000001210 t __do_global_dtors_aux
+0000000000001250 t frame_dummy
+0000000000001259 T c2V
+0000000000001286 T c2Dot
+00000000000012b6 T c2Len
+00000000000012e9 T c2Add
+0000000000001328 T c2Sub
+0000000000001367 T c2Mulvs
+000000000000139e T c2Div
+00000000000013da T c2Norm
+0000000000001417 T c2Minv
+0000000000001473 T c2Maxv
+00000000000014cf T c2Skew
+0000000000001502 T c2Absv
+0000000000001573 T c2RaytoCircle
+0000000000001704 T c2AABBtoAABB
+00000000000017ad t c2SignedDistPointToPlane_OneDimensional
+00000000000017da t c2RayToPlane_OneDimensional
+000000000000184a T c2RaytoAABB
+0000000000001ee6 T c2CCW90
+0000000000001f19 T c2MulmvT
+0000000000001f8d T c2AABBtoPoint
+000000000000201a T c2CircleToPoint
+0000000000002090 T c2RaytoCapsule
+000000000000263c T c2CastRay
+000000000000274d T gen_ray
+00000000000029c8 t _fini
+0000000000004dd0 d __frame_dummy_init_array_entry
+0000000000004dd8 d __do_global_dtors_aux_fini_array_entry
+0000000000004de0 d __dso_handle
+0000000000004de8 d _DYNAMIC
+0000000000004fe8 d _GLOBAL_OFFSET_TABLE_
+00000000000050b8 d __TMC_END__
+[38;5;244m - Completed in 0.26s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn --start-address=0x17ad --stop-address=0x184a libharvest-work-u2NK85.so | tail -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble the two static inline helpers
+
+
+
+Disassembly of section .text:
+
+00000000000017ad <c2SignedDistPointToPlane_OneDimensional>:
+    17ad:	push   %rbp
+    17ae:	mov    %rsp,%rbp
+    17b1:	movss  %xmm0,-0x4(%rbp)
+    17b6:	movss  %xmm1,-0x8(%rbp)
+    17bb:	movss  %xmm2,-0xc(%rbp)
+    17c0:	movss  -0x4(%rbp),%xmm0
+    17c5:	mulss  -0x8(%rbp),%xmm0
+    17ca:	movss  -0xc(%rbp),%xmm1
+    17cf:	mulss  -0x8(%rbp),%xmm1
+    17d4:	subss  %xmm1,%xmm0
+    17d8:	pop    %rbp
+    17d9:	ret
+
+00000000000017da <c2RayToPlane_OneDimensional>:
+    17da:	push   %rbp
+    17db:	mov    %rsp,%rbp
+    17de:	movss  %xmm0,-0x14(%rbp)
+    17e3:	movss  %xmm1,-0x18(%rbp)
+    17e8:	pxor   %xmm0,%xmm0
+    17ec:	comiss -0x14(%rbp),%xmm0
+    17f0:	jbe    17f8 <c2RayToPlane_OneDimensional+0x1e>
+    17f2:	pxor   %xmm0,%xmm0
+    17f6:	jmp    1848 <c2RayToPlane_OneDimensional+0x6e>
+    17f8:	movss  -0x14(%rbp),%xmm0
+    17fd:	mulss  -0x18(%rbp),%xmm0
+    1802:	pxor   %xmm1,%xmm1
+    1806:	comiss %xmm1,%xmm0
+    1809:	jbe    1815 <c2RayToPlane_OneDimensional+0x3b>
+    180b:	movss  0x17ed(%rip),%xmm0        # 3000 <_fini+0x638>
+    1813:	jmp    1848 <c2RayToPlane_OneDimensional+0x6e>
+    1815:	movss  -0x14(%rbp),%xmm0
+    181a:	subss  -0x18(%rbp),%xmm0
+    181f:	movss  %xmm0,-0x4(%rbp)
+    1824:	pxor   %xmm0,%xmm0
+    1828:	ucomiss -0x4(%rbp),%xmm0
+    182c:	jp     1838 <c2RayToPlane_OneDimensional+0x5e>
+    182e:	pxor   %xmm0,%xmm0
+    1832:	ucomiss -0x4(%rbp),%xmm0
+    1836:	je     1844 <c2RayToPlane_OneDimensional+0x6a>
+    1838:	movss  -0x14(%rbp),%xmm0
+    183d:	divss  -0x4(%rbp),%xmm0
+    1842:	jmp    1848 <c2RayToPlane_OneDimensional+0x6e>
+    1844:	pxor   %xmm0,%xmm0
+    1848:	pop    %rbp
+    1849:	ret
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<c2RaytoCapsule>:/,/^$/p' | grep -n 'ss \|xorps\|call ' [0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract float ops from c2RaytoCapsule
+
+11:    20b5:	call   1090 <c2Sub@plt>
+14:    20c4:	call   1110 <c2Norm@plt>
+19:    20db:	call   10c0 <c2CCW90@plt>
+26:    20fb:	call   1090 <c2Sub@plt>
+35:    2124:	call   1120 <c2MulmvT@plt>
+41:    2140:	call   1090 <c2Sub@plt>
+48:    2161:	call   1120 <c2MulmvT@plt>
+57:    218a:	call   1120 <c2MulmvT@plt>
+60:    2198:	movss  0x20(%rbp),%xmm0
+64:    21a9:	call   1130 <c2Mulvs@plt>
+69:    21c1:	call   1150 <c2Add@plt>
+72:    21cf:	movss  0x38(%rbp),%xmm0
+73:    21d4:	movss  0xe34(%rip),%xmm1        # 3010 <_fini+0x648>
+74:    21dc:	xorps  %xmm1,%xmm0
+78:    21eb:	call   1050 <c2V@plt>
+81:    21f9:	movss  -0x3c(%rbp),%xmm0
+85:    2208:	call   1050 <c2V@plt>
+91:    2226:	call   1110 <c2Norm@plt>
+96:    223f:	movss  %xmm0,(%rax)
+103:    225e:	call   1140 <c2AABBtoPoint@plt>
+110:    2279:	movss  0x38(%rbp),%xmm0
+111:    227e:	movss  %xmm0,-0x74(%rbp)
+114:    228e:	movss  0x38(%rbp),%xmm0
+115:    2293:	movss  %xmm0,-0x80(%rbp)
+117:    229c:	movss  -0x74(%rbp),%xmm1
+120:    22ab:	call   1040 <c2CircleToPoint@plt>
+126:    22c5:	movss  -0x80(%rbp),%xmm1
+129:    22d4:	call   1040 <c2CircleToPoint@plt>
+134:    22e7:	movss  -0x58(%rbp),%xmm1
+135:    22ec:	movss  -0x48(%rbp),%xmm0
+136:    22f1:	mulss  %xmm0,%xmm1
+138:    22f9:	comiss %xmm1,%xmm0
+140:    2302:	movss  -0x58(%rbp),%xmm1
+142:    230b:	comiss %xmm1,%xmm0
+144:    2310:	movss  -0x58(%rbp),%xmm0
+145:    2315:	movss  0xcf3(%rip),%xmm1        # 3010 <_fini+0x648>
+146:    231d:	xorps  %xmm0,%xmm1
+148:    2322:	movss  -0x58(%rbp),%xmm1
+149:    2327:	movss  -0x48(%rbp),%xmm2
+151:    2330:	comiss %xmm2,%xmm0
+153:    2335:	movss  -0x48(%rbp),%xmm0
+154:    233a:	movss  0xcce(%rip),%xmm2        # 3010 <_fini+0x648>
+155:    2342:	xorps  %xmm2,%xmm0
+157:    2347:	movss  -0x48(%rbp),%xmm0
+158:    234c:	comiss %xmm1,%xmm0
+160:    2351:	movss  -0x58(%rbp),%xmm1
+162:    235a:	comiss %xmm1,%xmm0
+164:    235f:	movss  -0x58(%rbp),%xmm0
+165:    2364:	movss  0xca4(%rip),%xmm1        # 3010 <_fini+0x648>
+166:    236c:	xorps  %xmm1,%xmm0
+168:    2371:	movss  -0x58(%rbp),%xmm0
+170:    2378:	movss  -0x48(%rbp),%xmm1
+172:    2381:	comiss %xmm1,%xmm0
+174:    2386:	movss  -0x48(%rbp),%xmm0
+175:    238b:	movss  0xc7d(%rip),%xmm1        # 3010 <_fini+0x648>
+176:    2393:	xorps  %xmm1,%xmm0
+178:    2398:	movss  -0x48(%rbp),%xmm0
+179:    239d:	movss  0x38(%rbp),%xmm1
+180:    23a2:	comiss %xmm0,%xmm1
+184:    23b6:	movss  0x38(%rbp),%xmm0
+185:    23bb:	movss  %xmm0,-0x8c(%rbp)
+188:    23ce:	movss  0x38(%rbp),%xmm0
+189:    23d3:	movss  %xmm0,-0x98(%rbp)
+190:    23db:	movss  -0x48(%rbp),%xmm1
+192:    23e4:	comiss %xmm1,%xmm0
+194:    23e9:	movss  -0x48(%rbp),%xmm0
+195:    23ee:	movss  0xc1a(%rip),%xmm1        # 3010 <_fini+0x648>
+196:    23f6:	xorps  %xmm1,%xmm0
+198:    23fb:	movss  -0x48(%rbp),%xmm0
+199:    2400:	movss  0x38(%rbp),%xmm1
+200:    2405:	comiss %xmm0,%xmm1
+202:    240e:	movss  -0x44(%rbp),%xmm1
+204:    2417:	comiss %xmm1,%xmm0
+208:    242a:	movss  -0x8c(%rbp),%xmm1
+220:    245a:	call   10d0 <c2RaytoCircle@plt>
+225:    2476:	movss  -0x98(%rbp),%xmm1
+237:    24a6:	call   10d0 <c2RaytoCircle@plt>
+240:    24b4:	movss  -0x48(%rbp),%xmm0
+242:    24bd:	comiss %xmm1,%xmm0
+244:    24c2:	movss  0x38(%rbp),%xmm0
+246:    24c9:	movss  0x38(%rbp),%xmm0
+247:    24ce:	movss  0xb3a(%rip),%xmm1        # 3010 <_fini+0x648>
+248:    24d6:	xorps  %xmm1,%xmm0
+249:    24d9:	movss  %xmm0,-0x14(%rbp)
+250:    24de:	movss  -0x58(%rbp),%xmm0
+251:    24e3:	movss  -0x48(%rbp),%xmm1
+252:    24e8:	subss  %xmm1,%xmm0
+253:    24ec:	movss  %xmm0,-0x18(%rbp)
+254:    24f1:	movss  -0x48(%rbp),%xmm1
+255:    24f6:	movss  -0x14(%rbp),%xmm0
+256:    24fb:	subss  %xmm1,%xmm0
+257:    24ff:	divss  -0x18(%rbp),%xmm0
+258:    2504:	movss  %xmm0,-0x1c(%rbp)
+259:    2509:	movss  -0x44(%rbp),%xmm1
+260:    250e:	movss  -0x54(%rbp),%xmm0
+261:    2513:	movss  -0x44(%rbp),%xmm2
+262:    2518:	subss  %xmm2,%xmm0
+263:    251c:	mulss  -0x1c(%rbp),%xmm0
+264:    2521:	addss  %xmm1,%xmm0
+265:    2525:	movss  %xmm0,-0x20(%rbp)
+267:    252e:	comiss -0x20(%rbp),%xmm0
+271:    2542:	movss  -0x8c(%rbp),%xmm1
+283:    2572:	call   10d0 <c2RaytoCircle@plt>
+286:    2580:	movss  -0x3c(%rbp),%xmm1
+287:    2585:	movss  -0x20(%rbp),%xmm0
+288:    258a:	comiss %xmm1,%xmm0
+292:    259d:	movss  -0x98(%rbp),%xmm1
+304:    25cd:	call   10d0 <c2RaytoCircle@plt>
+307:    25d8:	movss  -0x14(%rbp),%xmm0
+309:    25e1:	comiss %xmm1,%xmm0
+318:    2607:	call   1060 <c2Skew@plt>
+321:    2615:	movss  0x20(%rbp),%xmm0
+322:    261a:	mulss  -0x1c(%rbp),%xmm0
+324:    2626:	movss  %xmm0,(%rax)
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_u2NK85 && objdump -d --no-show-raw-insn libharvest-work-u2NK85.so | sed -n '/<gen_ray>:/,/^$/p' | grep -n 'ss \|xorps\|call \|shl\|add.*eax' | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check gen_ray float op order
+
+9:    2765:	movss  %xmm0,-0x7c(%rbp)
+10:    276a:	movss  %xmm1,-0x80(%rbp)
+11:    276f:	movss  %xmm2,-0x84(%rbp)
+12:    2777:	movss  %xmm3,-0x88(%rbp)
+13:    277f:	movss  %xmm4,-0x8c(%rbp)
+14:    2787:	movss  %xmm5,-0x90(%rbp)
+15:    278f:	movss  %xmm6,-0x94(%rbp)
+16:    2797:	movss  %xmm7,-0x98(%rbp)
+18:    27a6:	movss  -0x80(%rbp),%xmm0
+22:    27b5:	call   1050 <c2V@plt>
+25:    27c3:	movss  -0x88(%rbp),%xmm0
+29:    27d8:	call   1050 <c2V@plt>
+36:    27f8:	call   1090 <c2Sub@plt>
+39:    2807:	call   1110 <c2Norm@plt>
+46:    2827:	call   10b0 <c2Dot@plt>
+52:    2842:	call   10b0 <c2Dot@plt>
+55:    284e:	subss  %xmm1,%xmm0
+56:    2852:	movss  %xmm0,-0x20(%rbp)
+57:    2857:	movss  -0x90(%rbp),%xmm0
+61:    286c:	call   1050 <c2V@plt>
+64:    287a:	movss  -0x94(%rbp),%xmm0
+65:    2882:	movss  %xmm0,-0x34(%rbp)
+79:    28b7:	call   1100 <c2CastRay@plt>
+81:    28c0:	add    %eax,-0x14(%rbp)
+83:    28c9:	movss  0x10(%rbp),%xmm1
+85:    28d2:	call   1050 <c2V@plt>
+88:    28e0:	movss  0x20(%rbp),%xmm0
+92:    28ef:	call   1050 <c2V@plt>
+95:    28fd:	movss  0x28(%rbp),%xmm0
+96:    2902:	movss  %xmm0,-0x40(%rbp)
+110:    2937:	call   1100 <c2CastRay@plt>
+112:    2940:	add    %eax,%eax
+113:    2942:	add    %eax,-0x14(%rbp)
+114:    2945:	movss  0x38(%rbp),%xmm0
+118:    2954:	call   1050 <c2V@plt>
+121:    2962:	movss  0x48(%rbp),%xmm0
+125:    2971:	call   1050 <c2V@plt>
+141:    29af:	call   1100 <c2CastRay@plt>
+143:    29b8:	shl    $0x2,%eax
+144:    29bb:	add    %eax,-0x14(%rbp)
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[38;5;141m> [0mNow rewriting with SSE operand order pinned to match GCC exactly (only commutative ops needed pinning).[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Pin SSE operand order for commutative float ops to match GCC bit-for-bit
+
+[49m[38;5;9m-   1     [0m:[38;5;9m[49m //! Rust translation of the C library in `c_src/` (a cute_c2-style 2D raycast library).
+[0m[49m[38;5;10m+        1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/` (a cute_c2-derived 2D raycast library).
+[0m[49m[39m    2,   2[0m:[39m[49m //!
+[0m[49m[38;5;9m-   3     [0m:[38;5;9m[49m //! Every public C function is re-exported here with the identical linker symbol,
+[0m[49m[38;5;9m-   4     [0m:[38;5;9m[49m //! `extern "C"` calling convention and `#[repr(C)]` layouts, so the resulting
+[0m[49m[38;5;10m+        3[0m:[38;5;10m[49m //! Every public C function is re-exported with the identical linker symbol,
+[0m[49m[38;5;10m+        4[0m:[38;5;10m[49m //! `extern "C"` calling convention and `#[repr(C)]` layout, so the resulting
+[0m[49m[39m    5,   5[0m:[39m[49m //! cdylib is ABI compatible with the original shared object.
+[0m[49m[39m    6,   6[0m:[39m[49m //!
+[0m[49m[38;5;9m-   7     [0m:[38;5;9m[49m //! Behaviour is reproduced *exactly*, including the original code's quirks:
+[0m[49m[38;5;9m-   8     [0m:[38;5;9m[49m //!   * the ternary based `min`/`max`/`abs` idioms (which differ from Rust's
+[0m[49m[38;5;9m-   9     [0m:[38;5;9m[49m //!     `f32::min`/`f32::max`/`f32::abs` for NaN and `-0.0` inputs),
+[0m[49m[38;5;9m-  10     [0m:[38;5;9m[49m //!   * `c2Div` performing a reciprocal followed by a multiply,
+[0m[49m[38;5;9m-  11     [0m:[38;5;9m[49m //!   * `c2Norm` of a zero vector producing NaN/inf rather than being guarded,
+[0m[49m[38;5;9m-  12     [0m:[38;5;9m[49m //!   * `c2CastRay`'s switch statement having no `default` arm.
+[0m[49m[38;5;10m+        7[0m:[38;5;10m[49m //! Behaviour is reproduced *bit-exactly*, including the original code's quirks:
+[0m[49m[38;5;10m+        8[0m:[38;5;10m[49m //!   * the ternary based `min`/`max`/`abs` idioms, which differ from Rust's
+[0m[49m[38;5;10m+        9[0m:[38;5;10m[49m //!     `f32::min`/`f32::max`/`f32::abs` for NaN and `-0.0` inputs;
+[0m[49m[38;5;10m+       10[0m:[38;5;10m[49m //!   * `c2Div` performing a reciprocal followed by a multiply;
+[0m[49m[38;5;10m+       11[0m:[38;5;10m[49m //!   * `c2Norm` of a zero vector producing NaN/inf rather than being guarded;
+[0m[49m[38;5;10m+       12[0m:[38;5;10m[49m //!   * `c2CastRay`'s `switch` having no `default` arm.
+[0m[49m[38;5;10m+       13[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+       14[0m:[38;5;10m[49m //! # Why the inline assembly
+[0m[49m[38;5;10m+       15[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+       16[0m:[38;5;10m[49m //! Floating point addition and multiplication are commutative in value but *not*
+[0m[49m[38;5;10m+       17[0m:[38;5;10m[49m //! in NaN propagation: `addss dst, src` returns `dst` quieted when `dst` is NaN,
+[0m[49m[38;5;10m+       18[0m:[38;5;10m[49m //! and only falls back to `src` otherwise. LLVM canonicalises `fadd`/`fmul`
+[0m[49m[38;5;10m+       19[0m:[38;5;10m[49m //! operand order independently of the source text, so a direct transcription of
+[0m[49m[38;5;10m+       20[0m:[38;5;10m[49m //! the C expressions produces the same numbers but occasionally a NaN with the
+[0m[49m[38;5;10m+       21[0m:[38;5;10m[49m //! opposite sign bit or a different payload than GCC's output. Since these NaNs
+[0m[49m[38;5;10m+       22[0m:[38;5;10m[49m //! are reachable through the public `gen_ray` entry point, the commutative
+[0m[49m[38;5;10m+       23[0m:[38;5;10m[49m //! operations are emitted explicitly with the same destination register GCC
+[0m[49m[38;5;10m+       24[0m:[38;5;10m[49m //! chose. Non-commutative operations (`subss`, `divss`, `sqrtss`) and negation
+[0m[49m[38;5;10m+       25[0m:[38;5;10m[49m //! (`xorps` with the sign mask) are unambiguous and use plain Rust operators.
+[0m[49m[39m   13,  26[0m:[39m[49m 
+[0m[49m[39m   14,  27[0m:[39m[49m #![allow(non_snake_case)]
+[0m[49m[39m   15,  28[0m:[39m[49m #![allow(non_camel_case_types)]
+[0m[49m[39m   16,  29[0m:[39m[49m 
+[0m[49m[38;5;9m-  17     [0m:[38;5;9m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+       30[0m:[38;5;10m[49m use std::ffi::{c_int, c_void};
+[0m[49m[39m   18,  31[0m:[39m[49m 
+[0m[49m[39m   19,  32[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   20,  33[0m:[39m[49m // Public types (from include/lib.h)
+[0m[49m[39m   21,  34[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   22,  35[0m:[39m[49m 
+[0m[49m[39m   23,  36[0m:[39m[49m /// `typedef struct c2v { float x; float y; } c2v;`
+[0m[49m[39m   24,  37[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   25,  38[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   26,  39[0m:[39m[49m pub struct c2v {
+[0m[49m[39m   27,  40[0m:[39m[49m     pub x: f32,
+[0m[49m[39m   28,  41[0m:[39m[49m     pub y: f32,
+[0m[49m[39m   29,  42[0m:[39m[49m }
+[0m[49m[39m   30,  43[0m:[39m[49m 
+[0m[49m[39m   31,  44[0m:[39m[49m /// `typedef struct c2Raycast { float t; c2v n; } c2Raycast;`
+[0m[49m[39m   32,  45[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   33,  46[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   34,  47[0m:[39m[49m pub struct c2Raycast {
+[0m[49m[39m   35,  48[0m:[39m[49m     pub t: f32,
+[0m[49m[39m   36,  49[0m:[39m[49m     pub n: c2v,
+[0m[49m[39m   37,  50[0m:[39m[49m }
+[0m[49m[39m   38,  51[0m:[39m[49m 
+[0m[49m[39m   39,  52[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   40,  53[0m:[39m[49m // Internal types (from src/lib.c)
+[0m[49m[39m   41,  54[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   42,  55[0m:[39m[49m 
+[0m[49m[38;5;9m-  43     [0m:[38;5;9m[49m // The C `C2_TYPE` enum. A C enum is passed as `int`, so the FFI boundary uses
+[0m[49m[38;5;9m-  44     [0m:[38;5;9m[49m // `c_int` and these constants are compared against it.
+[0m[49m[38;5;10m+       56[0m:[38;5;10m[49m // The C `C2_TYPE` enum. A C enum argument is passed as `int`.
+[0m[49m[39m   45,  57[0m:[39m[49m const C2_TYPE_CIRCLE: c_int = 0;
+[0m[49m[39m   46,  58[0m:[39m[49m const C2_TYPE_AABB: c_int = 1;
+[0m[49m[39m   47,  59[0m:[39m[49m const C2_TYPE_CAPSULE: c_int = 2;
+[0m[49m[39m   48,  60[0m:[39m[49m 
+[0m[49m[39m   49,  61[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   50,  62[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   51,  63[0m:[39m[49m pub struct c2Circle {
+[0m[49m[39m   52,  64[0m:[39m[49m     pub p: c2v,
+[0m[49m[39m   53,  65[0m:[39m[49m     pub r: f32,
+[0m[49m[39m   54,  66[0m:[39m[49m }
+[0m[49m[39m   55,  67[0m:[39m[49m 
+[0m[49m[39m   56,  68[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   57,  69[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   58,  70[0m:[39m[49m pub struct c2AABB {
+[0m[49m[39m   59,  71[0m:[39m[49m     pub min: c2v,
+[0m[49m[39m   60,  72[0m:[39m[49m     pub max: c2v,
+[0m[49m[39m   61,  73[0m:[39m[49m }
+[0m[49m[39m   62,  74[0m:[39m[49m 
+[0m[49m[39m   63,  75[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   64,  76[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   65,  77[0m:[39m[49m pub struct c2Capsule {
+[0m[49m[39m   66,  78[0m:[39m[49m     pub a: c2v,
+[0m[49m[39m   67,  79[0m:[39m[49m     pub b: c2v,
+[0m[49m[39m   68,  80[0m:[39m[49m     pub r: f32,
+[0m[49m[39m   69,  81[0m:[39m[49m }
+[0m[49m[39m   70,  82[0m:[39m[49m 
+[0m[49m[39m   71,  83[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   72,  84[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   73,  85[0m:[39m[49m pub struct c2Ray {
+[0m[49m[39m   74,  86[0m:[39m[49m     pub p: c2v,
+[0m[49m[39m   75,  87[0m:[39m[49m     pub d: c2v,
+[0m[49m[39m   76,  88[0m:[39m[49m     pub t: f32,
+[0m[49m[39m   77,  89[0m:[39m[49m }
+[0m[49m[39m   78,  90[0m:[39m[49m 
+[0m[49m[39m   79,  91[0m:[39m[49m #[repr(C)]
+[0m[49m[39m   80,  92[0m:[39m[49m #[derive(Copy, Clone)]
+[0m[49m[39m   81,  93[0m:[39m[49m pub struct c2m {
+[0m[49m[39m   82,  94[0m:[39m[49m     pub x: c2v,
+[0m[49m[39m   83,  95[0m:[39m[49m     pub y: c2v,
+[0m[49m[39m   84,  96[0m:[39m[49m }
+[0m[49m[39m   85,  97[0m:[39m[49m 
+[0m[49m[39m   86,  98[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+       99[0m:[38;5;10m[49m // Bit-exact primitives for the commutative operations.
+[0m[49m[38;5;10m+      100[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      101[0m:[38;5;10m[49m // `addss(d, s)` / `mulss(d, s)` compute `d + s` / `d * s` with `d` as the SSE
+[0m[49m[38;5;10m+      102[0m:[38;5;10m[49m // destination operand, which is what decides NaN propagation on x86.
+[0m[49m[38;5;10m+      103[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+      104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      105[0m:[38;5;10m[49m #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m fn addss(dst: f32, src: f32) -> f32 {
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m     let mut d = dst;
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      110[0m:[38;5;10m[49m         core::arch::asm!(
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m             "addss {d}, {s}",
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m             d = inout(xmm_reg) d,
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m             s = in(xmm_reg) src,
+[0m[49m[38;5;10m+      114[0m:[38;5;10m[49m             options(pure, nomem, nostack, preserves_flags),
+[0m[49m[38;5;10m+      115[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      116[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      117[0m:[38;5;10m[49m     d
+[0m[49m[38;5;10m+      118[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      120[0m:[38;5;10m[49m #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[38;5;10m+      121[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      122[0m:[38;5;10m[49m fn addss(dst: f32, src: f32) -> f32 {
+[0m[49m[38;5;10m+      123[0m:[38;5;10m[49m     dst + src
+[0m[49m[38;5;10m+      124[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      126[0m:[38;5;10m[49m #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;10m+      127[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      128[0m:[38;5;10m[49m fn mulss(dst: f32, src: f32) -> f32 {
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m     let mut d = dst;
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m         core::arch::asm!(
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m             "mulss {d}, {s}",
+[0m[49m[38;5;10m+      133[0m:[38;5;10m[49m             d = inout(xmm_reg) d,
+[0m[49m[38;5;10m+      134[0m:[38;5;10m[49m             s = in(xmm_reg) src,
+[0m[49m[38;5;10m+      135[0m:[38;5;10m[49m             options(pure, nomem, nostack, preserves_flags),
+[0m[49m[38;5;10m+      136[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      137[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      138[0m:[38;5;10m[49m     d
+[0m[49m[38;5;10m+      139[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      141[0m:[38;5;10m[49m #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[38;5;10m+      142[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      143[0m:[38;5;10m[49m fn mulss(dst: f32, src: f32) -> f32 {
+[0m[49m[38;5;10m+      144[0m:[38;5;10m[49m     dst * src
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   87, 148[0m:[39m[49m // Faithful re-implementations of the C ternary idioms.
+[0m[49m[39m   88, 149[0m:[39m[49m //
+[0m[49m[38;5;9m-  89     [0m:[38;5;9m[49m // The C source open-codes `min`, `max` and `abs` as conditional expressions.
+[0m[49m[39m   90, 150[0m:[39m[49m // These are *not* equivalent to `f32::min` / `f32::max` / `f32::abs`:
+[0m[49m[39m   91, 151[0m:[39m[49m //   * `a < b ? a : b` yields `b` when either operand is NaN;
+[0m[49m[38;5;9m-  92     [0m:[38;5;9m[49m //   * `a < 0 ? -a : a` yields `-0.0` for an input of `-0.0`.
+[0m[49m[38;5;9m-  93     [0m:[38;5;9m[49m // Keeping the exact form preserves bit-identical results.
+[0m[49m[38;5;10m+      152[0m:[38;5;10m[49m //   * `a < 0 ? -a : a` yields `-0.0` for an input of `-0.0`, and leaves a NaN's
+[0m[49m[38;5;10m+      153[0m:[38;5;10m[49m //     sign bit untouched.
+[0m[49m[39m   94, 154[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   95, 155[0m:[39m[49m 
+[0m[49m[39m   96, 156[0m:[39m[49m /// `a < b ? a : b`
+[0m[49m[39m   97, 157[0m:[39m[49m #[inline]
+[0m[49m[39m   98, 158[0m:[39m[49m fn sel_lt(a: f32, b: f32) -> f32 {
+[0m[49m[39m   99, 159[0m:[39m[49m     if a < b {
+[0m[49m[39m  100, 160[0m:[39m[49m         a
+[0m[49m[39m  101, 161[0m:[39m[49m     } else {
+[0m[49m[39m  102, 162[0m:[39m[49m         b
+[0m[49m[39m  103, 163[0m:[39m[49m     }
+[0m[49m[39m  104, 164[0m:[39m[49m }
+[0m[49m[39m  105, 165[0m:[39m[49m 
+[0m[49m[39m  106, 166[0m:[39m[49m /// `a > b ? a : b`
+[0m[49m[39m  107, 167[0m:[39m[49m #[inline]
+[0m[49m[39m  108, 168[0m:[39m[49m fn sel_gt(a: f32, b: f32) -> f32 {
+[0m[49m[39m  109, 169[0m:[39m[49m     if a > b {
+[0m[49m[39m  110, 170[0m:[39m[49m         a
+[0m[49m[39m  111, 171[0m:[39m[49m     } else {
+[0m[49m[39m  112, 172[0m:[39m[49m         b
+[0m[49m[39m  113, 173[0m:[39m[49m     }
+[0m[49m[39m  114, 174[0m:[39m[49m }
+[0m[49m[39m  115, 175[0m:[39m[49m 
+[0m[49m[39m  116, 176[0m:[39m[49m /// `a < 0 ? -a : a`
+[0m[49m[39m  117, 177[0m:[39m[49m #[inline]
+[0m[49m[39m  118, 178[0m:[39m[49m fn sel_abs(a: f32) -> f32 {
+[0m[49m[39m  119, 179[0m:[39m[49m     if a < 0.0 {
+[0m[49m[39m  120, 180[0m:[39m[49m         -a
+[0m[49m[39m  121, 181[0m:[39m[49m     } else {
+[0m[49m[39m  122, 182[0m:[39m[49m         a
+[0m[49m[39m  123, 183[0m:[39m[49m     }
+[0m[49m[39m  124, 184[0m:[39m[49m }
+[0m[49m[39m  125, 185[0m:[39m[49m 
+[0m[49m[39m  126, 186[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  127, 187[0m:[39m[49m // Vector math
+[0m[49m[39m  128, 188[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  129, 189[0m:[39m[49m 
+[0m[49m[39m  130, 190[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  131, 191[0m:[39m[49m pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
+[0m[49m[39m  132, 192[0m:[39m[49m     c2v { x, y }
+[0m[49m[39m  133, 193[0m:[39m[49m }
+[0m[49m[39m  134, 194[0m:[39m[49m 
+[0m[49m[39m  135, 195[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  136, 196[0m:[39m[49m pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
+[0m[49m[38;5;9m- 137     [0m:[38;5;9m[49m     a.x * b.x + a.y * b.y
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m     // GCC: p1 = mulss(a.x, b.x); p2 = mulss(b.y, a.y); addss(p2, p1)
+[0m[49m[38;5;10m+      198[0m:[38;5;10m[49m     let p1 = mulss(a.x, b.x);
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m     let p2 = mulss(b.y, a.y);
+[0m[49m[38;5;10m+      200[0m:[38;5;10m[49m     addss(p2, p1)
+[0m[49m[39m  138, 201[0m:[39m[49m }
+[0m[49m[39m  139, 202[0m:[39m[49m 
+[0m[49m[39m  140, 203[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  141, 204[0m:[39m[49m pub extern "C" fn c2Len(a: c2v) -> f32 {
+[0m[49m[39m  142, 205[0m:[39m[49m     // sqrtf(c2Dot(a, a))
+[0m[49m[39m  143, 206[0m:[39m[49m     c2Dot(a, a).sqrt()
+[0m[49m[39m  144, 207[0m:[39m[49m }
+[0m[49m[39m  145, 208[0m:[39m[49m 
+[0m[49m[39m  146, 209[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;9m- 147     [0m:[38;5;9m[49m pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;9m- 148     [0m:[38;5;9m[49m     a.x += b.x;
+[0m[49m[38;5;9m- 149     [0m:[38;5;9m[49m     a.y += b.y;
+[0m[49m[38;5;9m- 150     [0m:[38;5;9m[49m     a
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m pub extern "C" fn c2Add(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m     // `a.x += b.x` -- GCC emits `addss` with b as the destination operand.
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m     c2v {
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m         x: addss(b.x, a.x),
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m         y: addss(b.y, a.y),
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m     }
+[0m[49m[39m  151, 216[0m:[39m[49m }
+[0m[49m[39m  152, 217[0m:[39m[49m 
+[0m[49m[39m  153, 218[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  154, 219[0m:[39m[49m pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
+[0m[49m[39m  155, 220[0m:[39m[49m     a.x -= b.x;
+[0m[49m[39m  156, 221[0m:[39m[49m     a.y -= b.y;
+[0m[49m[39m  157, 222[0m:[39m[49m     a
+[0m[49m[39m  158, 223[0m:[39m[49m }
+[0m[49m[39m  159, 224[0m:[39m[49m 
+[0m[49m[39m  160, 225[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;9m- 161     [0m:[38;5;9m[49m pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;9m- 162     [0m:[38;5;9m[49m     a.x *= b;
+[0m[49m[38;5;9m- 163     [0m:[38;5;9m[49m     a.y *= b;
+[0m[49m[38;5;9m- 164     [0m:[38;5;9m[49m     a
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m     // `a.x *= b` -- destination operand is the vector component.
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m     c2v {
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m         x: mulss(a.x, b),
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m         y: mulss(a.y, b),
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m     }
+[0m[49m[39m  165, 232[0m:[39m[49m }
+[0m[49m[39m  166, 233[0m:[39m[49m 
+[0m[49m[39m  167, 234[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  168, 235[0m:[39m[49m pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
+[0m[49m[39m  169, 236[0m:[39m[49m     // Reciprocal first, then multiply -- exactly as the C does.
+[0m[49m[39m  170, 237[0m:[39m[49m     c2Mulvs(a, 1.0f32 / b)
+[0m[49m[39m  171, 238[0m:[39m[49m }
+[0m[49m[39m  172, 239[0m:[39m[49m 
+[0m[49m[39m  173, 240[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  174, 241[0m:[39m[49m pub extern "C" fn c2Norm(a: c2v) -> c2v {
+[0m[49m[39m  175, 242[0m:[39m[49m     c2Div(a, c2Len(a))
+[0m[49m[39m  176, 243[0m:[39m[49m }
+[0m[49m[39m  177, 244[0m:[39m[49m 
+[0m[49m[39m  178, 245[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  179, 246[0m:[39m[49m pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
+[0m[49m[39m  180, 247[0m:[39m[49m     c2V(sel_lt(a.x, b.x), sel_lt(a.y, b.y))
+[0m[49m[39m  181, 248[0m:[39m[49m }
+[0m[49m[39m  182, 249[0m:[39m[49m 
+[0m[49m[39m  183, 250[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  184, 251[0m:[39m[49m pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
+[0m[49m[39m  185, 252[0m:[39m[49m     c2V(sel_gt(a.x, b.x), sel_gt(a.y, b.y))
+[0m[49m[39m  186, 253[0m:[39m[49m }
+[0m[49m[39m  187, 254[0m:[39m[49m 
+[0m[49m[39m  188, 255[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  189, 256[0m:[39m[49m pub extern "C" fn c2Skew(a: c2v) -> c2v {
+[0m[49m[39m  190, 257[0m:[39m[49m     c2v { x: -a.y, y: a.x }
+[0m[49m[39m  191, 258[0m:[39m[49m }
+[0m[49m[39m  192, 259[0m:[39m[49m 
+[0m[49m[39m  193, 260[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  194, 261[0m:[39m[49m pub extern "C" fn c2Absv(a: c2v) -> c2v {
+[0m[49m[39m  195, 262[0m:[39m[49m     c2V(sel_abs(a.x), sel_abs(a.y))
+[0m[49m[39m  196, 263[0m:[39m[49m }
+[0m[49m[39m  197, 264[0m:[39m[49m 
+[0m[49m[39m  198, 265[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  199, 266[0m:[39m[49m pub extern "C" fn c2CCW90(a: c2v) -> c2v {
+[0m[49m[39m  200, 267[0m:[39m[49m     c2v { x: a.y, y: -a.x }
+[0m[49m[39m  201, 268[0m:[39m[49m }
+[0m[49m[39m  202, 269[0m:[39m[49m 
+[0m[49m[39m  203, 270[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  204, 271[0m:[39m[49m pub extern "C" fn c2MulmvT(a: c2m, b: c2v) -> c2v {
+[0m[49m[38;5;9m- 205     [0m:[38;5;9m[49m     c2v {
+[0m[49m[38;5;9m- 206     [0m:[38;5;9m[49m         x: a.x.x * b.x + a.x.y * b.y,
+[0m[49m[38;5;9m- 207     [0m:[38;5;9m[49m         y: a.y.x * b.x + a.y.y * b.y,
+[0m[49m[38;5;9m- 208     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+      272[0m:[38;5;10m[49m     // GCC: for each row, p1 = mulss(row.x, b.x); p2 = mulss(b.y, row.y);
+[0m[49m[38;5;10m+      273[0m:[38;5;10m[49m     //      component = addss(p2, p1)
+[0m[49m[38;5;10m+      274[0m:[38;5;10m[49m     let x = {
+[0m[49m[38;5;10m+      275[0m:[38;5;10m[49m         let p1 = mulss(a.x.x, b.x);
+[0m[49m[38;5;10m+      276[0m:[38;5;10m[49m         let p2 = mulss(b.y, a.x.y);
+[0m[49m[38;5;10m+      277[0m:[38;5;10m[49m         addss(p2, p1)
+[0m[49m[38;5;10m+      278[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+      279[0m:[38;5;10m[49m     let y = {
+[0m[49m[38;5;10m+      280[0m:[38;5;10m[49m         let p1 = mulss(a.y.x, b.x);
+[0m[49m[38;5;10m+      281[0m:[38;5;10m[49m         let p2 = mulss(b.y, a.y.y);
+[0m[49m[38;5;10m+      282[0m:[38;5;10m[49m         addss(p2, p1)
+[0m[49m[38;5;10m+      283[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+      284[0m:[38;5;10m[49m     c2v { x, y }
+[0m[49m[39m  209, 285[0m:[39m[49m }
+[0m[49m[39m  210, 286[0m:[39m[49m 
+[0m[49m[39m  211, 287[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  212, 288[0m:[39m[49m // Collision / raycast routines
+[0m[49m[39m  213, 289[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  214, 290[0m:[39m[49m 
+[0m[49m[39m  215, 291[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  216, 292[0m:[39m[49m pub unsafe extern "C" fn c2RaytoCircle(A: c2Ray, B: c2Circle, out: *mut c2Raycast) -> c_int {
+[0m[49m[39m  217, 293[0m:[39m[49m     let p = B.p;
+[0m[49m[39m  218, 294[0m:[39m[49m     let m = c2Sub(A.p, p);
+[0m[49m[38;5;9m- 219     [0m:[38;5;9m[49m     let c = c2Dot(m, m) - B.r * B.r;
+[0m[49m[38;5;10m+      295[0m:[38;5;10m[49m     let c = c2Dot(m, m) - mulss(B.r, B.r);
+[0m[49m[39m  220, 296[0m:[39m[49m     let b = c2Dot(m, A.d);
+[0m[49m[38;5;9m- 221     [0m:[38;5;9m[49m     let disc = b * b - c;
+[0m[49m[38;5;10m+      297[0m:[38;5;10m[49m     let disc = mulss(b, b) - c;
+[0m[49m[39m  222, 298[0m:[39m[49m     if disc < 0.0 {
+[0m[49m[39m  223, 299[0m:[39m[49m         return 0;
+[0m[49m[39m  224, 300[0m:[39m[49m     }
+[0m[49m[39m  225, 301[0m:[39m[49m     let t = -b - disc.sqrt();
+[0m[49m[39m  226, 302[0m:[39m[49m     if t >= 0.0 && t <= A.t {
+[0m[49m[39m  227, 303[0m:[39m[49m         (*out).t = t;
+[0m[49m[39m  228, 304[0m:[39m[49m         let impact = c2Add(A.p, c2Mulvs(A.d, t));
+[0m[49m[39m  229, 305[0m:[39m[49m         (*out).n = c2Norm(c2Sub(impact, p));
+[0m[49m[39m  230, 306[0m:[39m[49m         return 1;
+[0m[49m[39m  231, 307[0m:[39m[49m     }
+[0m[49m[39m  232, 308[0m:[39m[49m     0
+[0m[49m[39m  233, 309[0m:[39m[49m }
+[0m[49m[39m  234, 310[0m:[39m[49m 
+[0m[49m[39m  235, 311[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  236, 312[0m:[39m[49m pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
+[0m[49m[39m  237, 313[0m:[39m[49m     let d0 = (B.max.x < A.min.x) as c_int;
+[0m[49m[39m  238, 314[0m:[39m[49m     let d1 = (A.max.x < B.min.x) as c_int;
+[0m[49m[39m  239, 315[0m:[39m[49m     let d2 = (B.max.y < A.min.y) as c_int;
+[0m[49m[39m  240, 316[0m:[39m[49m     let d3 = (A.max.y < B.min.y) as c_int;
+[0m[49m[39m  241, 317[0m:[39m[49m     ((d0 | d1 | d2 | d3) == 0) as c_int
+[0m[49m[39m  242, 318[0m:[39m[49m }
+[0m[49m[39m  243, 319[0m:[39m[49m 
+[0m[49m[39m  244, 320[0m:[39m[49m /// `static inline float c2SignedDistPointToPlane_OneDimensional(float, float, float)`
+[0m[49m[38;5;10m+      321[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      322[0m:[38;5;10m[49m /// `p * n - d * n`; GCC uses `p` and `d` as the multiply destinations, so a NaN
+[0m[49m[38;5;10m+      323[0m:[38;5;10m[49m /// `n` does not win against them and `n == -1.0` is a real multiply rather than
+[0m[49m[38;5;10m+      324[0m:[38;5;10m[49m /// the sign flip LLVM would fold it into.
+[0m[49m[39m  245, 325[0m:[39m[49m #[inline]
+[0m[49m[39m  246, 326[0m:[39m[49m fn c2SignedDistPointToPlane_OneDimensional(p: f32, n: f32, d: f32) -> f32 {
+[0m[49m[38;5;9m- 247     [0m:[38;5;9m[49m     p * n - d * n
+[0m[49m[38;5;10m+      327[0m:[38;5;10m[49m     mulss(p, n) - mulss(d, n)
+[0m[49m[39m  248, 328[0m:[39m[49m }
+[0m[49m[39m  249, 329[0m:[39m[49m 
+[0m[49m[39m  250, 330[0m:[39m[49m /// `static inline float c2RayToPlane_OneDimensional(float da, float db)`
+[0m[49m[39m  251, 331[0m:[39m[49m #[inline]
+[0m[49m[39m  252, 332[0m:[39m[49m fn c2RayToPlane_OneDimensional(da: f32, db: f32) -> f32 {
+[0m[49m[39m  253, 333[0m:[39m[49m     if da < 0.0 {
+[0m[49m[39m  254, 334[0m:[39m[49m         0.0
+[0m[49m[38;5;9m- 255     [0m:[38;5;9m[49m     } else if da * db > 0.0 {
+[0m[49m[38;5;10m+      335[0m:[38;5;10m[49m     } else if mulss(da, db) > 0.0 {
+[0m[49m[39m  256, 336[0m:[39m[49m         1.0f32
+[0m[49m[39m  257, 337[0m:[39m[49m     } else {
+[0m[49m[39m  258, 338[0m:[39m[49m         let d = da - db;
+[0m[49m[39m  259, 339[0m:[39m[49m         if d != 0.0 {
+[0m[49m[39m  260, 340[0m:[39m[49m             da / d
+[0m[49m[39m  261, 341[0m:[39m[49m         } else {
+[0m[49m[39m  262, 342[0m:[39m[49m             0.0
+[0m[49m[39m  263, 343[0m:[39m[49m         }
+[0m[49m[39m  264, 344[0m:[39m[49m     }
+[0m[49m[39m  265, 345[0m:[39m[49m }
+[0m[49m[39m  266, 346[0m:[39m[49m 
+[0m[49m[39m  267, 347[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  268, 348[0m:[39m[49m pub unsafe extern "C" fn c2RaytoAABB(A: c2Ray, B: c2AABB, out: *mut c2Raycast) -> c_int {
+[0m[49m[39m  269, 349[0m:[39m[49m     let p0 = A.p;
+[0m[49m[39m  270, 350[0m:[39m[49m     let p1 = c2Add(A.p, c2Mulvs(A.d, A.t));
+[0m[49m[39m  271, 351[0m:[39m[49m     let a_box = c2AABB {
+[0m[49m[39m  272, 352[0m:[39m[49m         min: c2Minv(p0, p1),
+[0m[49m[39m  273, 353[0m:[39m[49m         max: c2Maxv(p0, p1),
+[0m[49m[39m  274, 354[0m:[39m[49m     };
+[0m[49m[39m  275, 355[0m:[39m[49m     if c2AABBtoAABB(a_box, B) == 0 {
+[0m[49m[39m  276, 356[0m:[39m[49m         return 0;
+[0m[49m[39m  277, 357[0m:[39m[49m     }
+[0m[49m[39m  278, 358[0m:[39m[49m     let ab = c2Sub(p1, p0);
+[0m[49m[39m  279, 359[0m:[39m[49m     let n = c2Skew(ab);
+[0m[49m[39m  280, 360[0m:[39m[49m     let abs_n = c2Absv(n);
+[0m[49m[39m  281, 361[0m:[39m[49m     let half_extents = c2Mulvs(c2Sub(B.max, B.min), 0.5f32);
+[0m[49m[39m  282, 362[0m:[39m[49m     let center_of_b_box = c2Mulvs(c2Add(B.min, B.max), 0.5f32);
+[0m[49m[39m  283, 363[0m:[39m[49m     let d = sel_abs(c2Dot(n, c2Sub(p0, center_of_b_box))) - c2Dot(abs_n, half_extents);
+[0m[49m[39m  284, 364[0m:[39m[49m     if d > 0.0 {
+[0m[49m[39m  285, 365[0m:[39m[49m         return 0;
+[0m[49m[39m  286, 366[0m:[39m[49m     }
+[0m[49m[39m  287, 367[0m:[39m[49m     let da0 = c2SignedDistPointToPlane_OneDimensional(p0.x, -1.0f32, B.min.x);
+[0m[49m[39m  288, 368[0m:[39m[49m     let db0 = c2SignedDistPointToPlane_OneDimensional(p1.x, -1.0f32, B.min.x);
+[0m[49m[39m  289, 369[0m:[39m[49m     let da1 = c2SignedDistPointToPlane_OneDimensional(p0.x, 1.0f32, B.max.x);
+[0m[49m[39m  290, 370[0m:[39m[49m     let db1 = c2SignedDistPointToPlane_OneDimensional(p1.x, 1.0f32, B.max.x);
+[0m[49m[39m  291, 371[0m:[39m[49m     let da2 = c2SignedDistPointToPlane_OneDimensional(p0.y, -1.0f32, B.min.y);
+[0m[49m[39m  292, 372[0m:[39m[49m     let db2 = c2SignedDistPointToPlane_OneDimensional(p1.y, -1.0f32, B.min.y);
+[0m[49m[39m  293, 373[0m:[39m[49m     let da3 = c2SignedDistPointToPlane_OneDimensional(p0.y, 1.0f32, B.max.y);
+[0m[49m[39m  294, 374[0m:[39m[49m     let db3 = c2SignedDistPointToPlane_OneDimensional(p1.y, 1.0f32, B.max.y);
+[0m[49m[39m  295, 375[0m:[39m[49m     let mut t0 = c2RayToPlane_OneDimensional(da0, db0);
+[0m[49m[39m  296, 376[0m:[39m[49m     let mut t1 = c2RayToPlane_OneDimensional(da1, db1);
+[0m[49m[39m  297, 377[0m:[39m[49m     let mut t2 = c2RayToPlane_OneDimensional(da2, db2);
+[0m[49m[39m  298, 378[0m:[39m[49m     let mut t3 = c2RayToPlane_OneDimensional(da3, db3);
+[0m[49m[39m  299, 379[0m:[39m[49m     let hit0 = (t0 <= 1.0f32) as c_int;
+[0m[49m[39m  300, 380[0m:[39m[49m     let hit1 = (t1 <= 1.0f32) as c_int;
+[0m[49m[39m  301, 381[0m:[39m[49m     let hit2 = (t2 <= 1.0f32) as c_int;
+[0m[49m[39m  302, 382[0m:[39m[49m     let hit3 = (t3 <= 1.0f32) as c_int;
+[0m[49m[39m  303, 383[0m:[39m[49m     let hit = hit0 | hit1 | hit2 | hit3;
+[0m[49m[39m  304, 384[0m:[39m[49m     if hit != 0 {
+[0m[49m[38;5;9m- 305     [0m:[38;5;9m[49m         t0 = (hit0 as f32) * t0;
+[0m[49m[38;5;9m- 306     [0m:[38;5;9m[49m         t1 = (hit1 as f32) * t1;
+[0m[49m[38;5;9m- 307     [0m:[38;5;9m[49m         t2 = (hit2 as f32) * t2;
+[0m[49m[38;5;9m- 308     [0m:[38;5;9m[49m         t3 = (hit3 as f32) * t3;
+[0m[49m[38;5;10m+      385[0m:[38;5;10m[49m         // `(float)hitN * tN` -- the converted integer is the multiply destination.
+[0m[49m[38;5;10m+      386[0m:[38;5;10m[49m         t0 = mulss(hit0 as f32, t0);
+[0m[49m[38;5;10m+      387[0m:[38;5;10m[49m         t1 = mulss(hit1 as f32, t1);
+[0m[49m[38;5;10m+      388[0m:[38;5;10m[49m         t2 = mulss(hit2 as f32, t2);
+[0m[49m[38;5;10m+      389[0m:[38;5;10m[49m         t3 = mulss(hit3 as f32, t3);
+[0m[49m[38;5;10m+      390[0m:[38;5;10m[49m         // `tN * A.t` -- GCC uses A.t as the multiply destination.
+[0m[49m[39m  309, 391[0m:[39m[49m         if t0 >= t1 && t0 >= t2 && t0 >= t3 {
+[0m[49m[38;5;9m- 310     [0m:[38;5;9m[49m             (*out).t = t0 * A.t;
+[0m[49m[38;5;10m+      392[0m:[38;5;10m[49m             (*out).t = mulss(A.t, t0);
+[0m[49m[39m  311, 393[0m:[39m[49m             (*out).n = c2V(-1.0, 0.0);
+[0m[49m[39m  312, 394[0m:[39m[49m         } else if t1 >= t0 && t1 >= t2 && t1 >= t3 {
+[0m[49m[38;5;9m- 313     [0m:[38;5;9m[49m             (*out).t = t1 * A.t;
+[0m[49m[38;5;10m+      395[0m:[38;5;10m[49m             (*out).t = mulss(A.t, t1);
+[0m[49m[39m  314, 396[0m:[39m[49m             (*out).n = c2V(1.0, 0.0);
+[0m[49m[39m  315, 397[0m:[39m[49m         } else if t2 >= t0 && t2 >= t1 && t2 >= t3 {
+[0m[49m[38;5;9m- 316     [0m:[38;5;9m[49m             (*out).t = t2 * A.t;
+[0m[49m[38;5;10m+      398[0m:[38;5;10m[49m             (*out).t = mulss(A.t, t2);
+[0m[49m[39m  317, 399[0m:[39m[49m             (*out).n = c2V(0.0, -1.0);
+[0m[49m[39m  318, 400[0m:[39m[49m         } else {
+[0m[49m[38;5;9m- 319     [0m:[38;5;9m[49m             (*out).t = t3 * A.t;
+[0m[49m[38;5;10m+      401[0m:[38;5;10m[49m             (*out).t = mulss(A.t, t3);
+[0m[49m[39m  320, 402[0m:[39m[49m             (*out).n = c2V(0.0, 1.0);
+[0m[49m[39m  321, 403[0m:[39m[49m         }
+[0m[49m[39m  322, 404[0m:[39m[49m         1
+[0m[49m[39m  323, 405[0m:[39m[49m     } else {
+[0m[49m[39m  324, 406[0m:[39m[49m         0
+[0m[49m[39m  325, 407[0m:[39m[49m     }
+[0m[49m[39m  326, 408[0m:[39m[49m }
+[0m[49m[39m  327, 409[0m:[39m[49m 
+[0m[49m[39m  328, 410[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  329, 411[0m:[39m[49m pub extern "C" fn c2AABBtoPoint(A: c2AABB, B: c2v) -> c_int {
+[0m[49m[39m  330, 412[0m:[39m[49m     let d0 = (B.x < A.min.x) as c_int;
+[0m[49m[39m  331, 413[0m:[39m[49m     let d1 = (B.y < A.min.y) as c_int;
+[0m[49m[39m  332, 414[0m:[39m[49m     let d2 = (B.x > A.max.x) as c_int;
+[0m[49m[39m  333, 415[0m:[39m[49m     let d3 = (B.y > A.max.y) as c_int;
+[0m[49m[39m  334, 416[0m:[39m[49m     ((d0 | d1 | d2 | d3) == 0) as c_int
+[0m[49m[39m  335, 417[0m:[39m[49m }
+[0m[49m[39m  336, 418[0m:[39m[49m 
+[0m[49m[39m  337, 419[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  338, 420[0m:[39m[49m pub extern "C" fn c2CircleToPoint(A: c2Circle, B: c2v) -> c_int {
+[0m[49m[39m  339, 421[0m:[39m[49m     let n = c2Sub(A.p, B);
+[0m[49m[39m  340, 422[0m:[39m[49m     let d2 = c2Dot(n, n);
+[0m[49m[38;5;9m- 341     [0m:[38;5;9m[49m     (d2 < A.r * A.r) as c_int
+[0m[49m[38;5;10m+      423[0m:[38;5;10m[49m     (d2 < mulss(A.r, A.r)) as c_int
+[0m[49m[39m  342, 424[0m:[39m[49m }
+[0m[49m[39m  343, 425[0m:[39m[49m 
+[0m[49m[39m  344, 426[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  345, 427[0m:[39m[49m pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Raycast) -> c_int {
+[0m[49m[39m  346, 428[0m:[39m[49m     let mut M = c2m {
+[0m[49m[39m  347, 429[0m:[39m[49m         x: c2v { x: 0.0, y: 0.0 },
+[0m[49m[39m  348, 430[0m:[39m[49m         y: c2v { x: 0.0, y: 0.0 },
+[0m[49m[39m  349, 431[0m:[39m[49m     };
+[0m[49m[39m  350, 432[0m:[39m[49m     M.y = c2Norm(c2Sub(B.b, B.a));
+[0m[49m[39m  351, 433[0m:[39m[49m     M.x = c2CCW90(M.y);
+[0m[49m[39m  352, 434[0m:[39m[49m     let cap_n = c2Sub(B.b, B.a);
+[0m[49m[39m  353, 435[0m:[39m[49m     let yBb = c2MulmvT(M, cap_n);
+[0m[49m[39m  354, 436[0m:[39m[49m     let yAp = c2MulmvT(M, c2Sub(A.p, B.a));
+[0m[49m[39m  355, 437[0m:[39m[49m     let yAd = c2MulmvT(M, A.d);
+[0m[49m[39m  356, 438[0m:[39m[49m     let yAe = c2Add(yAp, c2Mulvs(yAd, A.t));
+[0m[49m[39m  357, 439[0m:[39m[49m     let capsule_bb = c2AABB {
+[0m[49m[39m  358, 440[0m:[39m[49m         min: c2V(-B.r, 0.0),
+[0m[49m[39m  359, 441[0m:[39m[49m         max: c2V(B.r, yBb.y),
+[0m[49m[39m  360, 442[0m:[39m[49m     };
+[0m[49m[39m  361, 443[0m:[39m[49m     (*out).n = c2Norm(cap_n);
+[0m[49m[39m  362, 444[0m:[39m[49m     (*out).t = 0.0;
+[0m[49m[39m  363, 445[0m:[39m[49m     if c2AABBtoPoint(capsule_bb, yAp) != 0 {
+[0m[49m[39m  364, 446[0m:[39m[49m         return 1;
+[0m[49m[39m  365, 447[0m:[39m[49m     } else {
+[0m[49m[39m  366, 448[0m:[39m[49m         let capsule_a = c2Circle { p: B.a, r: B.r };
+[0m[49m[39m  367, 449[0m:[39m[49m         let capsule_b = c2Circle { p: B.b, r: B.r };
+[0m[49m[39m  368, 450[0m:[39m[49m         if c2CircleToPoint(capsule_a, A.p) != 0 {
+[0m[49m[39m  369, 451[0m:[39m[49m             return 1;
+[0m[49m[39m  370, 452[0m:[39m[49m         } else if c2CircleToPoint(capsule_b, A.p) != 0 {
+[0m[49m[39m  371, 453[0m:[39m[49m             return 1;
+[0m[49m[39m  372, 454[0m:[39m[49m         }
+[0m[49m[39m  373, 455[0m:[39m[49m     }
+[0m[49m[39m  374, 456[0m:[39m[49m 
+[0m[49m[38;5;9m- 375     [0m:[38;5;9m[49m     if yAe.x * yAp.x < 0.0 || sel_lt(sel_abs(yAe.x), sel_abs(yAp.x)) < B.r {
+[0m[49m[38;5;10m+      457[0m:[38;5;10m[49m     if mulss(yAe.x, yAp.x) < 0.0 || sel_lt(sel_abs(yAe.x), sel_abs(yAp.x)) < B.r {
+[0m[49m[39m  376, 458[0m:[39m[49m         let Ca = c2Circle { p: B.a, r: B.r };
+[0m[49m[39m  377, 459[0m:[39m[49m         let Cb = c2Circle { p: B.b, r: B.r };
+[0m[49m[39m  378, 460[0m:[39m[49m         if sel_abs(yAp.x) < B.r {
+[0m[49m[39m  379, 461[0m:[39m[49m             if yAp.y < 0.0 {
+[0m[49m[39m  380, 462[0m:[39m[49m                 return c2RaytoCircle(A, Ca, out);
+[0m[49m[39m  381, 463[0m:[39m[49m             } else {
+[0m[49m[39m  382, 464[0m:[39m[49m                 return c2RaytoCircle(A, Cb, out);
+[0m[49m[39m  383, 465[0m:[39m[49m             }
+[0m[49m[39m  384, 466[0m:[39m[49m         } else {
+[0m[49m[39m  385, 467[0m:[39m[49m             let c = if yAp.x > 0.0 { B.r } else { -B.r };
+[0m[49m[39m  386, 468[0m:[39m[49m             let d = yAe.x - yAp.x;
+[0m[49m[39m  387, 469[0m:[39m[49m             let t = (c - yAp.x) / d;
+[0m[49m[38;5;9m- 388     [0m:[38;5;9m[49m             let y = yAp.y + (yAe.y - yAp.y) * t;
+[0m[49m[38;5;10m+      470[0m:[38;5;10m[49m             // `yAp.y + (yAe.y - yAp.y) * t` -- GCC makes the product the
+[0m[49m[38;5;10m+      471[0m:[38;5;10m[49m             // addition's destination operand, not `yAp.y`.
+[0m[49m[38;5;10m+      472[0m:[38;5;10m[49m             let y = addss(mulss(yAe.y - yAp.y, t), yAp.y);
+[0m[49m[39m  389, 473[0m:[39m[49m             if y <= 0.0 {
+[0m[49m[39m  390, 474[0m:[39m[49m                 return c2RaytoCircle(A, Ca, out);
+[0m[49m[39m  391, 475[0m:[39m[49m             }
+[0m[49m[39m  392, 476[0m:[39m[49m             if y >= yBb.y {
+[0m[49m[39m  393, 477[0m:[39m[49m                 return c2RaytoCircle(A, Cb, out);
+[0m[49m[39m  394, 478[0m:[39m[49m             } else {
+[0m[49m[39m  395, 479[0m:[39m[49m                 (*out).n = if c > 0.0 { M.x } else { c2Skew(M.y) };
+[0m[49m[38;5;9m- 396     [0m:[38;5;9m[49m                 (*out).t = t * A.t;
+[0m[49m[38;5;10m+      480[0m:[38;5;10m[49m                 // `t * A.t` -- GCC uses A.t as the multiply destination.
+[0m[49m[38;5;10m+      481[0m:[38;5;10m[49m                 (*out).t = mulss(A.t, t);
+[0m[49m[39m  397, 482[0m:[39m[49m                 return 1;
+[0m[49m[39m  398, 483[0m:[39m[49m             }
+[0m[49m[39m  399, 484[0m:[39m[49m         }
+[0m[49m[39m  400, 485[0m:[39m[49m     }
+[0m[49m[39m  401, 486[0m:[39m[49m     0
+[0m[49m[39m  402, 487[0m:[39m[49m }
+[0m[49m[39m  403, 488[0m:[39m[49m 
+[0m[49m[39m  404, 489[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  405, 490[0m:[39m[49m pub unsafe extern "C" fn c2CastRay(
+[0m[49m[39m  406, 491[0m:[39m[49m     A: c2Ray,
+[0m[49m[38;5;9m- 407     [0m:[38;5;9m[49m     B: *const core::ffi::c_void,
+[0m[49m[38;5;10m+      492[0m:[38;5;10m[49m     B: *const c_void,
+[0m[49m[39m  408, 493[0m:[39m[49m     typeB: c_int,
+[0m[49m[39m  409, 494[0m:[39m[49m     out: *mut c2Raycast,
+[0m[49m[39m  410, 495[0m:[39m[49m ) -> c_int {
+[0m[49m[39m  411, 496[0m:[39m[49m     match typeB {
+[0m[49m[39m  412, 497[0m:[39m[49m         C2_TYPE_CIRCLE => c2RaytoCircle(A, *(B as *const c2Circle), out),
+[0m[49m[39m  413, 498[0m:[39m[49m         C2_TYPE_AABB => c2RaytoAABB(A, *(B as *const c2AABB), out),
+[0m[49m[39m  414, 499[0m:[39m[49m         C2_TYPE_CAPSULE => c2RaytoCapsule(A, *(B as *const c2Capsule), out),
+[0m[49m[38;5;9m- 415     [0m:[38;5;9m[49m         // The C switch has no `default` arm and the function falls off the end,
+[0m[49m[38;5;9m- 416     [0m:[38;5;9m[49m         // which is undefined behaviour. Return 0 as the benign stand-in.
+[0m[49m[38;5;10m+      500[0m:[38;5;10m[49m         // The C `switch` has no `default` arm and falls off the end of the
+[0m[49m[38;5;10m+      501[0m:[38;5;10m[49m         // function, which is undefined behaviour. 0 is the benign stand-in.
+[0m[49m[39m  417, 502[0m:[39m[49m         _ => 0,
+[0m[49m[39m  418, 503[0m:[39m[49m     }
+[0m[49m[39m  419, 504[0m:[39m[49m }
+[0m[49m[39m  420, 505[0m:[39m[49m 
+[0m[49m[39m  421, 506[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  422, 507[0m:[39m[49m // Public entry point (from include/lib.h)
+[0m[49m[39m  423, 508[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m  424, 509[0m:[39m[49m 
+[0m[49m[39m  425, 510[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  426, 511[0m:[39m[49m pub unsafe extern "C" fn gen_ray(
+[0m[49m[39m  427, 512[0m:[39m[49m     cast1: *mut c2Raycast,
+[0m[49m[39m  428, 513[0m:[39m[49m     cast2: *mut c2Raycast,
+[0m[49m[39m  429, 514[0m:[39m[49m     cast3: *mut c2Raycast,
+[0m[49m[39m  430, 515[0m:[39m[49m     mp_x: f32,
+[0m[49m[39m  431, 516[0m:[39m[49m     mp_y: f32,
+[0m[49m[39m  432, 517[0m:[39m[49m     r_p_x: f32,
+[0m[49m[39m  433, 518[0m:[39m[49m     r_p_y: f32,
+[0m[49m[39m  434, 519[0m:[39m[49m     c_p_x: f32,
+[0m[49m[39m  435, 520[0m:[39m[49m     c_p_y: f32,
+[0m[49m[39m  436, 521[0m:[39m[49m     c_r: f32,
+[0m[49m[39m  437, 522[0m:[39m[49m     cap_a_x: f32,
+[0m[49m[39m  438, 523[0m:[39m[49m     cap_a_y: f32,
+[0m[49m[39m  439, 524[0m:[39m[49m     cap_b_x: f32,
+[0m[49m[39m  440, 525[0m:[39m[49m     cap_b_y: f32,
+[0m[49m[39m  441, 526[0m:[39m[49m     cap_r: f32,
+[0m[49m[39m  442, 527[0m:[39m[49m     bb_min_x: f32,
+[0m[49m[39m  443, 528[0m:[39m[49m     bb_min_y: f32,
+[0m[49m[39m  444, 529[0m:[39m[49m     bb_max_x: f32,
+[0m[49m[39m  445, 530[0m:[39m[49m     bb_max_y: f32,
+[0m[49m[39m  446, 531[0m:[39m[49m ) -> c_int {
+[0m[49m[39m  447, 532[0m:[39m[49m     let mut hit: c_int = 0;
+[0m[49m[39m  448, 533[0m:[39m[49m 
+[0m[49m[39m  449, 534[0m:[39m[49m     let mp = c2V(mp_x, mp_y);
+[0m[49m[39m  450, 535[0m:[39m[49m 
+[0m[49m[39m  451, 536[0m:[39m[49m     let mut ray = c2Ray {
+[0m[49m[39m  452, 537[0m:[39m[49m         p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[39m  453, 538[0m:[39m[49m         d: c2v { x: 0.0, y: 0.0 },
+[0m[49m[39m  454, 539[0m:[39m[49m         t: 0.0,
+[0m[49m[39m  455, 540[0m:[39m[49m     };
+[0m[49m[39m  456, 541[0m:[39m[49m     ray.p = c2V(r_p_x, r_p_y);
+[0m[49m[39m  457, 542[0m:[39m[49m     ray.d = c2Norm(c2Sub(mp, ray.p));
+[0m[49m[39m  458, 543[0m:[39m[49m     ray.t = c2Dot(mp, ray.d) - c2Dot(ray.p, ray.d);
+[0m[49m[39m  459, 544[0m:[39m[49m 
+[0m[49m[39m  460, 545[0m:[39m[49m     let c = c2Circle {
+[0m[49m[39m  461, 546[0m:[39m[49m         p: c2V(c_p_x, c_p_y),
+[0m[49m[39m  462, 547[0m:[39m[49m         r: c_r,
+[0m[49m[39m  463, 548[0m:[39m[49m     };
+[0m[49m[39m  464, 549[0m:[39m[49m 
+[0m[49m[38;5;9m- 465     [0m:[38;5;9m[49m     hit += c2CastRay(
+[0m[49m[38;5;9m- 466     [0m:[38;5;9m[49m         ray,
+[0m[49m[38;5;9m- 467     [0m:[38;5;9m[49m         &c as *const c2Circle as *const core::ffi::c_void,
+[0m[49m[38;5;9m- 468     [0m:[38;5;9m[49m         C2_TYPE_CIRCLE,
+[0m[49m[38;5;9m- 469     [0m:[38;5;9m[49m         cast1,
+[0m[49m[38;5;9m- 470     [0m:[38;5;9m[49m     );
+[0m[49m[38;5;10m+      550[0m:[38;5;10m[49m     hit += c2CastRay(ray, &c as *const c2Circle as *const c_void, C2_TYPE_CIRCLE, cast1);
+[0m[49m[39m  471, 551[0m:[39m[49m 
+[0m[49m[39m  472, 552[0m:[39m[49m     let cap = c2Capsule {
+[0m[49m[39m  473, 553[0m:[39m[49m         a: c2V(cap_a_x, cap_a_y),
+[0m[49m[39m  474, 554[0m:[39m[49m         b: c2V(cap_b_x, cap_b_y),
+[0m[49m[39m  475, 555[0m:[39m[49m         r: cap_r,
+[0m[49m[39m  476, 556[0m:[39m[49m     };
+[0m[49m[39m  477, 557[0m:[39m[49m 
+[0m[49m[39m  478, 558[0m:[39m[49m     hit += c2CastRay(
+[0m[49m[39m  479, 559[0m:[39m[49m         ray,
+[0m[49m[38;5;9m- 480     [0m:[38;5;9m[49m         &cap as *const c2Capsule as *const core::ffi::c_void,
+[0m[49m[38;5;10m+      560[0m:[38;5;10m[49m         &cap as *const c2Capsule as *const c_void,
+[0m[49m[39m  481, 561[0m:[39m[49m         C2_TYPE_CAPSULE,
+[0m[49m[39m  482, 562[0m:[39m[49m         cast2,
+[0m[49m[39m  483, 563[0m:[39m[49m     ) << 1;
+[0m[49m[39m  484, 564[0m:[39m[49m 
+[0m[49m[39m  485, 565[0m:[39m[49m     let bb = c2AABB {
+[0m[49m[39m  486, 566[0m:[39m[49m         min: c2V(bb_min_x, bb_min_y),
+[0m[49m[39m  487, 567[0m:[39m[49m         max: c2V(bb_max_x, bb_max_y),
+[0m[49m[39m  488, 568[0m:[39m[49m     };
+[0m[49m[39m  489, 569[0m:[39m[49m 
+[0m[49m[38;5;9m- 490     [0m:[38;5;9m[49m     hit += c2CastRay(
+[0m[49m[38;5;9m- 491     [0m:[38;5;9m[49m         ray,
+[0m[49m[38;5;9m- 492     [0m:[38;5;9m[49m         &bb as *const c2AABB as *const core::ffi::c_void,
+[0m[49m[38;5;9m- 493     [0m:[38;5;9m[49m         C2_TYPE_AABB,
+[0m[49m[38;5;9m- 494     [0m:[38;5;9m[49m         cast3,
+[0m[49m[38;5;9m- 495     [0m:[38;5;9m[49m     ) << 2;
+[0m[49m[38;5;10m+      570[0m:[38;5;10m[49m     hit += c2CastRay(ray, &bb as *const c2AABB as *const c_void, C2_TYPE_AABB, cast3) << 2;
+[0m[49m[39m  496, 571[0m:[39m[49m 
+[0m[49m[39m  497, 572[0m:[39m[49m     hit
+[0m[49m[39m  498, 573[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation && cargo build --release 2>&1 | tail -20 && cd /tmp && ./difftest /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 300000 2>&1 | tail -25[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and re-run full differential test
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+checks=8700000 fails=0
+[38;5;244m - Completed in 0.799s[0m
+
+[?25l[0m[38;5;141m> [0mZero failures with NaN/inf/random-bitpattern inputs. Running the remaining suites and more seeds.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && RSO=/local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so; CSO=/tmp/cbuild_u2NK85/libharvest-work-u2NK85.so; echo "-- degenerate finite:"; ./degtest $CSO $RSO 2>&1 | tail -3; echo "-- degenerate specials:"; ./degtest2 $CSO $RSO 2>&1 | tail -3; echo "-- finite random:"; ./difftest_finite $CSO $RSO 400000 2>&1 | tail -3[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run degenerate and finite test suites
+
+-- degenerate finite:
+checks=3000000 fails=0
+-- degenerate specials:
+checks=3000000 fails=0
+-- finite random:
+checks=11600000 fails=0
+[38;5;244m - Completed in 6.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && for s in 1 2 3 4; do sed "s|st = 0x12345678abcdefULL|st = 0x${s}0f0f0f0f0f0f0ULL|" difftest.c > dt_$s.c; gcc -O1 -o dt_$s dt_$s.c -ldl -lm; done; for s in 1 2 3 4; do printf "seed%s: " $s; ./dt_$s /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 200000 2>/dev/null | tail -1; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test with 4 additional RNG seeds
+
+seed1: checks=5800000 fails=0
+seed2: checks=5800000 fails=0
+seed3: checks=5800000 fails=0
+seed4: checks=5800000 fails=0
+[38;5;244m - Completed in 2.140s[0m
+
+[?25l[0m[38;5;141m> [0mLet me confirm the reference build is what a grader would produce, and check optimization sensitivity.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild_o2 && mkdir cbuild_o2 && cd cbuild_o2 && cmake -DCMAKE_BUILD_TYPE=Release /local/home/scheschb/.harvest/work/harvest-work-u2NK85/c_src >/dev/null 2>&1 && make >/dev/null 2>&1 && cd /tmp && echo "-- O2C vs O0C:" && ./difftest cbuild_o2/libharvest-work-u2NK85.so cbuild_u2NK85/libharvest-work-u2NK85.so 100000 2>/dev/null | tail -1 && echo "-- O2C vs Rust:" && ./difftest cbuild_o2/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 100000 2>/dev/null | tail -1 && echo "-- O2C vs Rust (finite):" && ./difftest_finite cbuild_o2/libharvest-work-u2NK85.so /local/home/scheschb/.harvest/work/harvest-work-u2NK85/translation/target/release/libtranslation.so 200000 2>/dev/null | tail -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check whether -O2 C build differs, and compare against Rust
+
+-- O2C vs O0C:
+checks=2900000 fails=76
+-- O2C vs Rust:
+checks=2900000 fails=76
+-- O2C vs Rust (finite):
+checks=5800000 fails=0
+[38;5;244m - Completed in 1.171s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-u2NK85 && echo "== c_src unmodified (mtimes/hashes):" && md5sum c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c && echo && echo "== symbol diff (C .so vs Rust .so):" && nm -D --defined-only /tmp/cbuild_u2NK85/libharvest-work-u2NK85.so | awk '{print $3}' | sort > /tmp/c_names.txt && nm -D --defined-only translation/target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rust_syms.txt && diff /tmp/c_names.txt /tmp/rust_syms.txt && echo "IDENTICAL ($(wc -l < /tmp/c_names.txt) symbols)" && echo && echo "== crate layout:" && ls -R translation/src translation/Cargo.toml && grep -c 'unsafe(no_mangle)' translation/src/lib.rs && echo "== warnings:" && cargo build --release --manifest-path translation/Cargo.toml 2>&1 | grep -c warning[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification: c_src integrity, symbol diff, layout, warnings
+
+== c_src unmodified (mtimes/hashes):
+7856754ef47525158a2550699ae845a3  c_src/CMakeLists.txt
+01dcafcbf3525af8bfd19f2d070b5cd2  c_src/include/lib.h
+f906ac624f964a72c5a08b16c7109ef7  c_src/src/lib.c
+
+== symbol diff (C .so vs Rust .so):
+IDENTICAL (22 symbols)
+
+== crate layout:
+translation/Cargo.toml
+
+translation/src:
+lib.rs
+22
+== warnings:
+0
+[38;5;244m - Completed in 0.68s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-u2NK85 && ls -la . c_src c_src/src c_src/include && rm -rf /tmp/cbuild_u2NK85 /tmp/cbuild_o2 /tmp/fpexp /tmp/difftest* /tmp/degtest* /tmp/dt_[1-4]* /tmp/c_syms.txt /tmp/c_names.txt /tmp/rust_syms.txt && echo "temp artifacts removed"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm no stray files in working dir; clean up temp artifacts
+
+.:
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 12:07 .
+drwxr-xr-x. 725 scheschb amazon 81920 Sep  1 12:14 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 12:07 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 12:07 c_src
+drwxr-xr-x.   4 scheschb amazon    87 Sep  1 12:09 translation
+
+c_src:
+total 4
+drwxr-xr-x. 4 scheschb amazon  70 Sep  1 12:07 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 12:07 ..
+-rw-r--r--. 1 scheschb amazon 490 Sep  1 12:07 CMakeLists.txt
+drwxr-xr-x. 2 scheschb amazon  19 Sep  1 12:07 include
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 12:07 src
+
+c_src/include:
+total 4
+drwxr-xr-x. 2 scheschb amazon  19 Sep  1 12:07 .
+drwxr-xr-x. 4 scheschb amazon  70 Sep  1 12:07 ..
+-rw-r--r--. 1 scheschb amazon 491 Sep  1 12:07 lib.h
+
+c_src/src:
+total 8
+drwxr-xr-x. 2 scheschb amazon   27 Sep  1 12:07 .
+drwxr-xr-x. 4 scheschb amazon   70 Sep  1 12:07 ..
+-rw-r--r--. 1 scheschb amazon 7790 Sep  1 12:07 lib.c
+temp artifacts removed
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library is fully translated and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library turned out to be[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is a single translation unit ([38;5;10msrc/lib.c[0m, 340 lines) — a cut-down derivative of the [38;5;10mcute_c2[0m 2D collision library: vector math, AABB/circle/capsule ray casting, and one [38;5;10mgen_ray[0m entry point in the public header. [38;5;10mnm -D[0m on the C [38;5;10m.so[0m exports [1m22 symbols[22m, no namespace-renaming macros anywhere in the header.[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+Symbol lists are identical — [38;5;10mdiff[0m of [38;5;10mnm -D --defined-only[0m on both [38;5;10m.so[0m files is empty, 22/22:[0m[0m
+[0m[0m
+[38;5;10mc2V c2Dot c2Len c2Add c2Sub c2Mulvs c2Div c2Norm c2Minv c2Maxv c2Skew c2Absv
+c2RaytoCircle c2AABBtoAABB c2RaytoAABB c2CCW90 c2MulmvT c2AABBtoPoint
+c2CircleToPoint c2RaytoCapsule c2CastRay gen_ray
+[0m[0m[0m
+[0m[0m
+Note that 20 of these are not in [38;5;10mlib.h[0m at all — they are non-[38;5;10mstatic[0m definitions in [38;5;10mlib.c[0m that the shared library exports anyway, along with their internal struct types ([38;5;10mc2Circle[0m, [38;5;10mc2AABB[0m, [38;5;10mc2Capsule[0m, [38;5;10mc2Ray[0m, [38;5;10mc2m[0m). The two [38;5;10mstatic inline[0m helpers stay private in Rust, matching their local-symbol status in the C.[0m[0m
+[0m[0m
+[38;5;252m[1m## Bit-exactness[0m[0m
+[0m[0m
+I wrote a differential harness that [38;5;10mdlopen[0ms both [38;5;10m.so[0ms, calls all 22 exports with identical inputs, and [38;5;10mmemcmp[0ms returns plus out-params. Results: [1m0 mismatches across ~50M comparisons[22m — random finite floats, degenerate inputs, NaN/±inf/random bit patterns, and 5 RNG seeds.[0m[0m
+[0m[0m
+Getting there required one non-obvious fix. A direct transcription matched on all finite inputs but diverged on ~3% of NaN inputs to [38;5;10mgen_ray[0m. Cause: [38;5;10maddss dst, src[0m returns [38;5;10mdst[0m quieted when [38;5;10mdst[0m is NaN, so operand order decides NaN sign and payload — and LLVM canonicalises [38;5;10mfadd[0m/[38;5;10mfmul[0m operand order independently of source text, picking the opposite register from GCC in [38;5;10mc2Dot[0m, [38;5;10mc2Add[0m, [38;5;10mc2MulmvT[0m, and a few expressions in [38;5;10mc2RaytoAABB[0m/[38;5;10mc2RaytoCapsule[0m. Those commutative ops now go through tiny [38;5;10maddss[0m/[38;5;10mmulss[0m inline-asm helpers with the destination pinned to GCC's choice (with plain-arithmetic fallbacks under [38;5;10mcfg(not(x86_64))[0m). Non-commutative ops and negation are unambiguous and use normal Rust operators.[0m[0m
+[0m[0m
+Reproduced without "fixing": [38;5;10mc2Div[0m's reciprocal-then-multiply, unguarded [38;5;10mc2Norm[0m of a zero vector, the ternary [38;5;10mmin[0m/[38;5;10mmax[0m/[38;5;10mabs[0m idioms (which differ from [38;5;10mf32::min[0m/[38;5;10mmax[0m/[38;5;10mabs[0m on NaN and [38;5;10m-0.0[0m), and [38;5;10mc2CastRay[0m's missing [38;5;10mdefault[0m arm — that one is genuinely undefined in C (the function falls off the end), so I return 0 as a benign stand-in and documented it.[0m[0m
+[0m[0m
+One thing worth flagging: the C build at [38;5;10m-O0[0m (what the given [38;5;10mCMakeLists.txt[0m produces with no [38;5;10mCMAKE_BUILD_TYPE[0m) is [3mitself[23m not bit-identical to the same C at [38;5;10m-O2[0m — they differ on 76 of 2.9M NaN cases. The Rust matches the default [38;5;10m-O0[0m build exactly and shows precisely the same 76 divergences against [38;5;10m-O2[0m, i.e. it is behaviourally equivalent to the [38;5;10m-O0[0m build rather than approximating both.[0m[0m
+[0m[0m
+Build is clean with zero warnings, and [38;5;10mc_src/[0m is untouched (mtimes unchanged; all writes went to [38;5;10mtranslation/[0m).[0m[0m
+[38;5;8m
+ ▸ Credits: 23.79 • Time: 10m 37s
+
+[0m[1G[0m[0m[?25h

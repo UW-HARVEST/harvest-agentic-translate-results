@@ -1,58 +1,70 @@
-// Rust translation of c_src/src/main.c
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// The original C source is written with ISO 646 digraphs / alternative tokens:
-//   `%:include` == `#include`, `<%` == `{`, `%>` == `}`
-// and, via <iso646.h>:
-//   `bitor` == `|`, `compl` == `~`
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
 //
-// So `int result = x bitor compl y;` is `int result = x | ~y;`
-//
-// Behavior reproduced exactly:
-//   * `x` and `y` are initialized to 0; a failed/EOF `scanf` leaves them at 0
-//     (the C code ignores scanf's return value).
-//   * `scanf("%d", ...)` skips leading whitespace *including newlines* and
-//     stops at the first character that cannot extend the integer, pushing
-//     that character back onto the stream.
-//   * Integer conversion follows glibc: the digit sequence is accumulated with
-//     `long` (i64) saturation, then truncated to `int` (i32) on store.
-//   * Output is `printf("%d", result)` followed by `puts("")`, i.e. the decimal
-//     value and then a single newline, with no trailing space.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+//! Rust translation of `c_src/src/main.c`.
+//!
+//! The original source is written with C digraphs (`%:` = `#`, `<%` = `{`,
+//! `%>` = `}`) and the `<iso646.h>` alternative operator spellings
+//! (`bitor` = `|`, `compl` = `~`), so the computation is `x | ~y`.
 
 use std::io::{self, Read, Write};
 
-/// Byte-oriented view of stdin with one byte of pushback, mirroring the way C's
-/// `scanf` consumes a shared `FILE *` stream across successive calls.
-struct CStdin {
+/// A byte-oriented stdin reader with single-byte "peek" (ungetc) semantics,
+/// mirroring how C's `scanf` consumes characters from the stream.
+struct Stdin {
     inner: io::Stdin,
-    peeked: Option<u8>,
+    buf: [u8; 4096],
+    pos: usize,
+    len: usize,
     eof: bool,
 }
 
-impl CStdin {
+impl Stdin {
     fn new() -> Self {
-        CStdin {
+        Stdin {
             inner: io::stdin(),
-            peeked: None,
+            buf: [0u8; 4096],
+            pos: 0,
+            len: 0,
             eof: false,
         }
     }
 
-    /// Read one byte, or `None` at end of input.
-    fn getc(&mut self) -> Option<u8> {
-        if let Some(b) = self.peeked.take() {
-            return Some(b);
-        }
-        if self.eof {
-            return None;
-        }
-        let mut buf = [0u8; 1];
-        loop {
-            match self.inner.read(&mut buf) {
+    /// Look at the next byte without consuming it. `None` means end-of-input.
+    fn peek(&mut self) -> Option<u8> {
+        while self.pos == self.len {
+            if self.eof {
+                return None;
+            }
+            match self.inner.read(&mut self.buf) {
                 Ok(0) => {
                     self.eof = true;
                     return None;
                 }
-                Ok(_) => return Some(buf[0]),
+                Ok(n) => {
+                    self.pos = 0;
+                    self.len = n;
+                }
                 Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => {
                     self.eof = true;
@@ -60,110 +72,122 @@ impl CStdin {
                 }
             }
         }
+        Some(self.buf[self.pos])
     }
 
-    /// Push a byte back onto the stream (`ungetc`).
-    fn ungetc(&mut self, b: u8) {
-        self.peeked = Some(b);
-    }
-}
-
-/// True for the characters C's `isspace` accepts in the "C" locale, which is
-/// what a `%d` conversion skips over before the number.
-fn is_c_space(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
-}
-
-/// Equivalent of a single `scanf("%d", &out)` conversion.
-///
-/// Returns `Some(value)` when the conversion succeeds, `None` on matching
-/// failure or input failure (in which case the caller leaves its variable
-/// untouched, exactly like the C program does).
-fn scanf_int(stream: &mut CStdin) -> Option<i32> {
-    // Skip leading whitespace, newlines included.
-    let mut c = loop {
-        match stream.getc() {
-            Some(b) if is_c_space(b) => continue,
-            Some(b) => break b,
-            None => return None, // input failure (EOF before any conversion)
+    /// Consume the byte previously returned by `peek`.
+    fn bump(&mut self) {
+        if self.pos < self.len {
+            self.pos += 1;
         }
-    };
+    }
+}
 
-    // Optional sign. glibc consumes the sign into its work buffer and reads the
-    // next character; if that character cannot start a number the conversion is
-    // a matching failure and the *sign* is not pushed back -- only the one
-    // offending character is.
+/// True for the characters C's `isspace` treats as whitespace in the C locale.
+fn is_c_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// Equivalent of `scanf("%d", &out)`.
+///
+/// Returns `Some(value)` on a successful conversion; `None` on matching
+/// failure or end-of-input, in which case the caller's variable is left
+/// untouched (exactly as C does). Leading whitespace is skipped, including
+/// across newlines. Consumed input follows glibc: an optional sign is
+/// consumed even when no digits follow, and only the single offending
+/// non-digit byte is pushed back.
+fn scanf_i32(input: &mut Stdin) -> Option<i32> {
+    // Skip leading whitespace (spans newlines, like scanf).
+    loop {
+        match input.peek() {
+            Some(c) if is_c_space(c) => input.bump(),
+            Some(_) => break,
+            None => return None, // input failure (EOF)
+        }
+    }
+
+    // Optional sign.
     let mut negative = false;
-    if c == b'-' || c == b'+' {
-        negative = c == b'-';
-        match stream.getc() {
-            Some(b) => c = b,
-            None => {
-                // EOF right after the sign. glibc's internal `ungetc` macro is a
-                // no-op for EOF, so nothing is pushed back here.
-                return None;
+    match input.peek() {
+        Some(b'-') => {
+            negative = true;
+            input.bump();
+        }
+        Some(b'+') => {
+            input.bump();
+        }
+        _ => {}
+    }
+
+    // Digit sequence; base 10 only for %d.
+    let mut magnitude: u64 = 0;
+    let mut saw_digit = false;
+    let mut overflowed = false;
+    while let Some(c) = input.peek() {
+        if !c.is_ascii_digit() {
+            break;
+        }
+        input.bump();
+        saw_digit = true;
+        let d = u64::from(c - b'0');
+        if !overflowed {
+            match magnitude.checked_mul(10).and_then(|v| v.checked_add(d)) {
+                Some(v) => magnitude = v,
+                None => overflowed = true,
             }
         }
     }
 
-    if !c.is_ascii_digit() {
-        // Matching failure: the offending character stays in the stream.
-        stream.ungetc(c);
+    if !saw_digit {
+        // Matching failure: the offending byte stays in the stream.
         return None;
     }
 
-    // Accumulate with `long` saturation, as glibc's strtol-based conversion does.
-    let mut acc: i64 = 0;
-    let mut saturated = false;
-    loop {
-        let digit = (c - b'0') as i64;
-        if !saturated {
-            match acc
-                .checked_mul(10)
-                .and_then(|v| if negative { v.checked_sub(digit) } else { v.checked_add(digit) })
-            {
-                Some(v) => acc = v,
-                None => {
-                    saturated = true;
-                    acc = if negative { i64::MIN } else { i64::MAX };
-                }
-            }
+    // glibc converts the digit string with strtol (clamping at LONG_MIN /
+    // LONG_MAX on a 64-bit target) and then narrows the result to `int`.
+    const NEG_LIMIT: u64 = 1u64 << 63; // magnitude of LONG_MIN
+    let as_long: i64 = if negative {
+        if overflowed || magnitude > NEG_LIMIT {
+            i64::MIN
+        } else {
+            (magnitude as i128).wrapping_neg() as i64
         }
-        match stream.getc() {
-            Some(b) if b.is_ascii_digit() => c = b,
-            Some(b) => {
-                stream.ungetc(b);
-                break;
-            }
-            None => break,
-        }
-    }
+    } else if overflowed || magnitude > i64::MAX as u64 {
+        i64::MAX
+    } else {
+        magnitude as i64
+    };
 
-    // Storing a `long` into an `int` truncates.
-    Some(acc as i32)
+    Some(as_long as i32)
 }
 
+/// `void driver(int x, int y)` from the original C.
 fn driver(x: i32, y: i32, out: &mut impl Write) {
-    let result: i32 = x | !y; // x bitor compl y
-    let _ = write!(out, "{}", result); // printf("%d", result)
-    let _ = writeln!(out); // puts("")
+    let result = x | !y;
+    // printf("%d", result);
+    let _ = write!(out, "{}", result);
+    // puts("");
+    let _ = writeln!(out);
 }
 
 fn main() {
-    let mut stream = CStdin::new();
+    let mut input = Stdin::new();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
 
     let mut x: i32 = 0;
     let mut y: i32 = 0;
 
-    if let Some(v) = scanf_int(&mut stream) {
+    // scanf("%d", &x); return value ignored, as in the C.
+    if let Some(v) = scanf_i32(&mut input) {
         x = v;
     }
-    if let Some(v) = scanf_int(&mut stream) {
+    // scanf("%d", &y);
+    if let Some(v) = scanf_i32(&mut input) {
         y = v;
     }
 
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
     driver(x, y, &mut out);
+
     let _ = out.flush();
 }

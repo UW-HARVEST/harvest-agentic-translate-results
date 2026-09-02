@@ -1,5 +1,7 @@
-// Translated from c_src/include/lib.h (tflac_crc16_tables).
-pub static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [
+// CRC-16 lookup tables, transcribed verbatim from c_src/include/lib.h
+// (`static const tflac_u16 tflac_crc16_tables[8][256]`).
+
+pub(crate) static TFLAC_CRC16_TABLES: [[u16; 256]; 8] = [
     [
         0x0000, 0x8005, 0x800f, 0x000a, 0x801b, 0x001e, 0x0014, 0x8011,
         0x8033, 0x0036, 0x003c, 0x8039, 0x0028, 0x802d, 0x8027, 0x0022,

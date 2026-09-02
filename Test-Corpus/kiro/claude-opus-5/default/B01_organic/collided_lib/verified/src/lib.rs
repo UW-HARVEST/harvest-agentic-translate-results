@@ -1,54 +1,132 @@
-//! Rust translation of c_src/src/lib.c (tinyc2-style 2D collision tests).
+//! Rust translation of the C collision library in `c_src/`.
 //!
-//! Behaviour is preserved exactly, including the float comparison semantics
-//! (`a > b ? a : b` rather than `fmax`, which differ for NaN) and the
-//! `default: return 0;` fallbacks for out-of-range `C2_TYPE` values.
+//! The C library compiles `src/lib.c` into a shared object that exports every
+//! non-static function it defines. This crate reproduces that exact public ABI:
+//! `c2V`, `c2Maxv`, `c2Minv`, `c2Clampv`, `c2Sub`, `c2Dot`, `c2CircletoCircle`,
+//! `c2CircletoAABB`, `c2AABBtoAABB` and `collided`.
+//!
+//! Behaviour is preserved bit-for-bit, including the exact ternary comparison
+//! semantics used by `c2Maxv`/`c2Minv` (which differ from `f32::max`/`f32::min`
+//! for NaN operands) and the `int`-based bitwise logic of `c2AABBtoAABB`.
 
-#![allow(non_snake_case, non_camel_case_types)]
+#![allow(non_snake_case)]
 
 use std::ffi::c_int;
-use std::ffi::c_void;
 
 /// `typedef enum { C2_TYPE_CIRCLE, C2_TYPE_AABB } C2_TYPE;`
-const C2_TYPE_CIRCLE: c_int = 0;
-const C2_TYPE_AABB: c_int = 1;
+///
+/// A C enum with these enumerators is `unsigned int`-compatible and is passed
+/// as a 4-byte integer, so the FFI signature uses `c_int` (matching what the C
+/// compiler emits for the `collided` entry point on the SysV ABI).
+pub const C2_TYPE_CIRCLE: c_int = 0;
+pub const C2_TYPE_AABB: c_int = 1;
 
+/// `typedef struct c2v { float x; float y; } c2v;`
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 pub struct c2v {
     pub x: f32,
     pub y: f32,
 }
 
+/// `typedef struct c2Circle { c2v p; float r; } c2Circle;`
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 pub struct c2Circle {
     pub p: c2v,
     pub r: f32,
 }
 
+/// `typedef struct c2AABB { c2v min; c2v max; } c2AABB;`
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 pub struct c2AABB {
     pub min: c2v,
     pub max: c2v,
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
-    c2v { x, y }
+/// The x86 "QNaN floating-point indefinite" value, produced by SSE scalar
+/// arithmetic whenever an invalid operation (`0 * inf`, `inf - inf`) occurs.
+const QNAN_INDEFINITE: u32 = 0xFFC0_0000;
+
+/// Quiet a NaN the way x86 does: set the most significant mantissa bit and
+/// leave the sign and the remaining payload untouched.
+#[inline]
+fn quiet_nan(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// Emulates `mulss dst, src` (result written back to `dst`).
+///
+/// SSE two-operand scalar arithmetic resolves NaN operands by preferring the
+/// *destination* operand: if `dst` is a NaN the result is `dst` quieted,
+/// otherwise if `src` is a NaN the result is `src` quieted. This matters
+/// because the two products in [`c2Dot`] can both be NaN with different
+/// payloads, and the C compiler pins a specific operand order.
+#[inline]
+fn mulss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        return quiet_nan(dst);
+    }
+    if src.is_nan() {
+        return quiet_nan(src);
+    }
+    if (dst == 0.0 && src.is_infinite()) || (dst.is_infinite() && src == 0.0) {
+        return f32::from_bits(QNAN_INDEFINITE);
+    }
+    dst * src
+}
+
+/// Emulates `addss dst, src`. See [`mulss`] for the NaN-priority rules.
+#[inline]
+fn addss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        return quiet_nan(dst);
+    }
+    if src.is_nan() {
+        return quiet_nan(src);
+    }
+    if dst.is_infinite() && src.is_infinite() && dst.is_sign_negative() != src.is_sign_negative() {
+        return f32::from_bits(QNAN_INDEFINITE);
+    }
+    dst + src
+}
+
+/// Emulates `subss dst, src`, i.e. `dst - src`. See [`mulss`].
+#[inline]
+fn subss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        return quiet_nan(dst);
+    }
+    if src.is_nan() {
+        return quiet_nan(src);
+    }
+    if dst.is_infinite() && src.is_infinite() && dst.is_sign_negative() == src.is_sign_negative() {
+        return f32::from_bits(QNAN_INDEFINITE);
+    }
+    dst - src
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
+    let mut a = c2v { x: 0.0, y: 0.0 };
+    a.x = x;
+    a.y = y;
+    a
+}
+
+/// Uses `a > b ? a : b` rather than `f32::max`: when either operand is NaN the
+/// comparison is false and the second operand is returned, matching the C.
+#[unsafe(no_mangle)]
 pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
-    // Deliberately not f32::max: the C ternary yields `b` when the
-    // comparison is false (e.g. when either operand is NaN).
     c2V(
         if a.x > b.x { a.x } else { b.x },
         if a.y > b.y { a.y } else { b.y },
     )
 }
 
+/// Uses `a < b ? a : b` rather than `f32::min`, for the same NaN reason as
+/// [`c2Maxv`].
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
     c2V(
@@ -64,78 +142,40 @@ pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
-    c2v {
-        x: a.x - b.x,
-        y: a.y - b.y,
-    }
+    let mut a = a;
+    a.x = subss(a.x, b.x);
+    a.y = subss(a.y, b.y);
+    a
 }
 
-/// x86 "floating-point indefinite": the QNaN produced by an invalid operation
-/// such as `0 * inf` or `inf + -inf`.
-const F32_INDEFINITE: f32 = f32::from_bits(0xFFC0_0000);
-
-/// Quieting a NaN sets the payload's MSB and leaves the sign and the rest of
-/// the payload untouched, exactly as SSE does when it propagates an operand.
-#[inline]
-fn quiet_nan(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() | 0x0040_0000)
-}
-
-/// One `mulss dest, src` / `addss dest, src`-style NaN propagation rule:
-/// the destination operand's payload wins, then the source operand's, and an
-/// invalid operation yields the indefinite QNaN.
+/// `a.x * b.x + a.y * b.y`.
 ///
-/// Spelling this out (rather than relying on `dest * src` alone) keeps the
-/// result bit-identical to the C build at every optimisation level: plain
-/// float arithmetic lets the compiler choose which operand ends up in the
-/// destination register, and that choice decides the NaN payload.
-#[inline]
-fn propagate(dest: f32, src: f32, op: impl FnOnce(f32, f32) -> f32) -> f32 {
-    if dest.is_nan() {
-        return quiet_nan(dest);
-    }
-    if src.is_nan() {
-        return quiet_nan(src);
-    }
-    let r = op(dest, src);
-    if r.is_nan() {
-        // Neither operand was NaN, so this is an invalid operation
-        // (`0 * inf`, `inf + -inf`).
-        return F32_INDEFINITE;
-    }
-    r
-}
-
+/// The C compiler emits the second product as `mulss dst=b.y, src=a.y` and the
+/// sum as `addss dst=(a.y*b.y), src=(a.x*b.x)`. That operand order is
+/// reproduced here so the NaN payload returned for NaN/infinite inputs is
+/// bit-identical to the C build.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    // C: `return a.x * b.x + a.y * b.y;`
-    //
-    // For every finite/infinite/signed-zero input this is just
-    // `a.x * b.x + a.y * b.y`; multiplication and addition are commutative in
-    // IEEE-754, so operand order cannot change those results. Order only
-    // decides which NaN payload survives, and the reference C build uses `a.x`
-    // as the destination of the x product, `b.y` as the destination of the y
-    // product, and the y product as the destination of the sum.
-    let xx = propagate(a.x, b.x, |d, s| d * s);
-    let yy = propagate(b.y, a.y, |d, s| d * s);
-    propagate(yy, xx, |d, s| d + s)
+    let p = mulss(a.x, b.x);
+    let q = mulss(b.y, a.y);
+    addss(q, p)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
     let c = c2Sub(B.p, A.p);
     let d2 = c2Dot(c, c);
-    let r2 = A.r + B.r;
-    let r2 = r2 * r2;
+    let mut r2 = addss(B.r, A.r);
+    r2 = mulss(r2, r2);
     (d2 < r2) as c_int
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2CircletoAABB(A: c2Circle, B: c2AABB) -> c_int {
-    let l = c2Clampv(A.p, B.min, B.max);
-    let ab = c2Sub(A.p, l);
+    let L = c2Clampv(A.p, B.min, B.max);
+    let ab = c2Sub(A.p, L);
     let d2 = c2Dot(ab, ab);
-    let r2 = A.r * A.r;
+    let r2 = mulss(A.r, A.r);
     (d2 < r2) as c_int
 }
 
@@ -148,15 +188,16 @@ pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
     ((d0 | d1 | d2 | d3) == 0) as c_int
 }
 
-/// # Safety
+/// `int collided(const void *A, C2_TYPE typeA, const void *B, C2_TYPE typeB);`
 ///
-/// `A` and `B` must point to properly aligned, initialised objects of the
-/// type indicated by `typeA` / `typeB`, exactly as the C version requires.
+/// The pointers are dereferenced according to the supplied type tags, exactly
+/// as the C does — including the AABB/CIRCLE case, which reinterprets `B` as
+/// the circle and `A` as the box. Unknown type tags yield `0`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn collided(
-    A: *const c_void,
+    A: *const core::ffi::c_void,
     typeA: c_int,
-    B: *const c_void,
+    B: *const core::ffi::c_void,
     typeB: c_int,
 ) -> c_int {
     match typeA {
@@ -172,7 +213,6 @@ pub unsafe extern "C" fn collided(
             _ => 0,
         },
         C2_TYPE_AABB => match typeB {
-            // Note: arguments are taken from B then A here, matching the C.
             C2_TYPE_CIRCLE => c2CircletoAABB(unsafe { *(B as *const c2Circle) }, unsafe {
                 *(A as *const c2AABB)
             }),

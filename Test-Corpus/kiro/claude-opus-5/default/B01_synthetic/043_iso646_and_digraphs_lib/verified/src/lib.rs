@@ -1,50 +1,61 @@
-// Rust translation of c_src/src/driver.c
+// Rust translation of the C library in `c_src/`.
 //
-// The original C source is written with digraphs and ISO 646 alternative
-// tokens, which the C preprocessor/lexer maps as follows:
+// The C sources are written using ISO C trigraph-era *digraphs* and the
+// `<iso646.h>` alternative operator spellings, which can obscure what the code
+// actually does. Resolving them:
 //
-//   %:      ->  #        (digraph for the stringize/directive introducer)
-//   <%  %>  ->  {  }     (digraphs for braces)
-//   bitor   ->  |        (<iso646.h> alternative operator)
-//   compl   ->  ~        (<iso646.h> alternative operator)
+//   `%:`  -> `#`        (digraph for the preprocessor introducer)
+//   `<%`  -> `{`        (digraph for an opening brace)
+//   `%>`  -> `}`        (digraph for a closing brace)
+//   `bitor` -> `|`      (from <iso646.h>)
+//   `compl` -> `~`      (from <iso646.h>)
 //
-// So the body of `driver` is:
+// So `c_src/src/driver.c` is equivalent to:
 //
-//   int result = x | ~y;
-//   printf("%d", result);
-//   puts("");
+//   #include "driver.h"
+//   #include <stdio.h>
+//   #include <iso646.h>
 //
-// The header declares `driver` with no namespace/renaming macro, so the final
-// linker symbol is simply `driver`.
+//   void driver(int x, int y) {
+//       int result = x | ~y;
+//       printf("%d", result);
+//       puts("");
+//   }
+//
+// and `c_src/include/driver.h` declares exactly `void driver(int x, int y);`
+// behind a `DRIVER_H_` include guard. There are no namespace/renaming macros,
+// so the single exported linker symbol is `driver`.
 
-use std::ffi::c_char;
-use std::ffi::c_int;
+use std::ffi::{c_char, c_int};
 
-unsafe extern "C" {
-    /// C `printf`, declared with the exact fixed-argument prefix we use.
-    #[link_name = "printf"]
-    fn c_printf(fmt: *const c_char, ...) -> c_int;
-
-    /// C `puts`.
-    #[link_name = "puts"]
-    fn c_puts(s: *const c_char) -> c_int;
+// Bind directly to the platform C library's stdio routines rather than using
+// Rust's `std::io::stdout`. The C library writes through `stdout`'s FILE
+// buffer, so reusing the very same buffer keeps the emitted bytes -- and the
+// flush/interleaving behaviour -- identical to the original.
+extern "C" {
+    fn printf(format: *const c_char, ...) -> c_int;
+    fn puts(s: *const c_char) -> c_int;
 }
 
-/// Format string `"%d"` as a NUL-terminated byte string.
-const FMT_D: [u8; 3] = [b'%', b'd', 0];
+/// `%d` format string, NUL terminated, matching the C source literal.
+const FMT_D: &[u8] = b"%d\0";
 
-/// Empty NUL-terminated byte string, the argument to `puts("")`.
-const EMPTY: [u8; 1] = [0];
+/// Empty string literal passed to `puts`, NUL terminated.
+const EMPTY: &[u8] = b"\0";
 
+/// Translation of `void driver(int x, int y)`.
+///
+/// Computes `x | ~y` using wrapping `int` (two's complement 32-bit) semantics,
+/// prints it with `%d` and no trailing newline, then emits a bare newline via
+/// `puts("")` -- exactly as the C does.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int, y: c_int) {
-    // `x bitor compl y` == `x | ~y`
+    // `x bitor compl y` == `x | ~y`. Bitwise operations on `int` cannot
+    // overflow, so a plain `|` / `!` pair reproduces the C result bit for bit.
     let result: c_int = x | !y;
 
-    // Reuse C stdio so that buffering and interleaving with any other C
-    // output in the process is byte-for-byte identical to the original.
     unsafe {
-        c_printf(FMT_D.as_ptr() as *const c_char, result);
-        c_puts(EMPTY.as_ptr() as *const c_char);
+        printf(FMT_D.as_ptr() as *const c_char, result);
+        puts(EMPTY.as_ptr() as *const c_char);
     }
 }

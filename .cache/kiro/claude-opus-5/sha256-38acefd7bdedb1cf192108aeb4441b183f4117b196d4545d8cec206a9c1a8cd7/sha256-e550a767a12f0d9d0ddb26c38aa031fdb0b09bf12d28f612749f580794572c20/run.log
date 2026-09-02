@@ -1,0 +1,561 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
+
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  15 c_src/CMakeLists.txt
+   1 c_src/include/lib.h
+  62 c_src/src/lib.c
+  78 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m76 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1513 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && ls -la *.so && echo "=== SYMBOLS ===" && nm -D *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list symbols
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && tail -30 cm.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake log
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-g46BHm/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild2 && mkdir -p /tmp/cbuild2 && cd /tmp/cbuild2 && cmake /local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && ls *.so && echo "=== nm -D ===" && nm -D *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir
+
+libharvest-work-CuFojj.so
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001100 T encode_quant
+[38;5;244m - Completed in 0.423s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /local/home/scheschb/.harvest/work/harvest-work-CuFojj/; ls -la /local/home/scheschb/.harvest/work/harvest-work-CuFojj/translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect working dir and translation dir
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:06 .
+drwxr-xr-x. 469 scheschb amazon 81920 Sep  1 05:06 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:06 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:06 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:06 translation
+total 0
+drwxr-xr-x. 2 scheschb amazon  6 Sep  1 05:06 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 05:06 ..
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-CuFojj"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_CuFojj"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version; rustc --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version
+
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[38;5;141m> [0mNow the library source. Translating with wrapping arithmetic to match C's two's-complement behavior:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate encode_quant to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of `c_src/src/lib.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C library exports exactly one public symbol: `encode_quant`
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! (verified with `nm -D` on the CMake-built shared object; the public header
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! `include/lib.h` declares only that function and contains no namespace
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! renaming macros).
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! Semantics notes (kept faithful to the C, bugs included):
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! * All arithmetic is on C `int` == `i32`. Additions/subtractions/multiplications
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!   and negations use `wrapping_*` so that signed overflow wraps in two's
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //!   complement exactly like the C compiler's generated code, instead of
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!   panicking in debug or being optimized away.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //! * `/` on `i32` in Rust truncates toward zero, matching C99 integer division.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //! * `>>` on `i32` in Rust is an arithmetic shift, matching the sign-propagating
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!   shift that `d0 >> 31` / `(uni >> 1)` rely on.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //! * The original declares `p3` but never uses it, and the final selection
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //!   compares `d2 < d0` (not against the already-updated best). That behavior is
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //!   reproduced verbatim rather than "fixed".
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// `int encode_quant(int uni, int step, int pred, int tgt, int tgt2, int lsbit);`
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m pub extern "C" fn encode_quant(
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     uni: c_int,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     step: c_int,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     pred: c_int,
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     tgt: c_int,
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     tgt2: c_int,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     lsbit: c_int,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     // C: int uni1, uni2;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     //    int diff, p0, p1, p2, p3, d0, d1, d2, d3;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     let mut uni: i32 = uni;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     let step: i32 = step;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     let pred: i32 = pred;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     let tgt: i32 = tgt;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let tgt2: i32 = tgt2;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let lsbit: i32 = lsbit;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     // uni1 = uni + 1;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let mut uni1: i32 = uni.wrapping_add(1);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     // uni2 = uni - 1;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let mut uni2: i32 = uni.wrapping_sub(1);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     // if ((uni ^ uni1) & (~7)) uni1 = uni;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     if ((uni ^ uni1) & !7i32) != 0 {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         uni1 = uni;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     // if ((uni ^ uni2) & (~7)) uni2 = uni;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     if ((uni ^ uni2) & !7i32) != 0 {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         uni2 = uni;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     if lsbit != 0 {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         if lsbit == 4 {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             uni &= !1i32;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             uni1 &= !1i32;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             uni2 &= !1i32;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             uni |= (uni >> 1) & (uni >> 2) & 1;
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             uni1 |= (uni1 >> 1) & (uni1 >> 2) & 1;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             uni2 |= (uni2 >> 1) & (uni2 >> 2) & 1;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         } else if (lsbit & 1) != 0 {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             uni |= 1;
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             uni1 |= 1;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             uni2 |= 1;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             uni &= !1i32;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             uni1 &= !1i32;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             uni2 &= !1i32;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     // diff = ((2 * (uni & 7) + 1) * step) / 8;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     let mut diff: i32 = 2i32
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         .wrapping_mul(uni & 7)
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         .wrapping_add(1)
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         .wrapping_mul(step)
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         / 8;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     // if (uni & 8) diff = -diff;
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     if (uni & 8) != 0 {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         diff = diff.wrapping_neg();
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let p0: i32 = pred.wrapping_add(diff);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let mut d0: i32 = tgt.wrapping_sub(p0);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     d0 ^= d0 >> 31;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     diff = 2i32
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         .wrapping_mul(uni1 & 7)
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         .wrapping_add(1)
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         .wrapping_mul(step)
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         / 8;
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     if (uni1 & 8) != 0 {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         diff = diff.wrapping_neg();
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let p1: i32 = pred.wrapping_add(diff);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let mut d1: i32 = tgt.wrapping_sub(p1);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     d1 ^= d1 >> 31;
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     diff = 2i32
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         .wrapping_mul(uni2 & 7)
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         .wrapping_add(1)
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         .wrapping_mul(step)
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         / 8;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     if (uni2 & 8) != 0 {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         diff = diff.wrapping_neg();
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let p2: i32 = pred.wrapping_add(diff);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let mut d2: i32 = tgt.wrapping_sub(p2);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     d2 ^= d2 >> 31;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let mut d3: i32 = tgt2.wrapping_sub(p0);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     d3 ^= d3 >> 31;
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     d0 = d0.wrapping_add(d3 >> 5);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     d3 = tgt2.wrapping_sub(p1);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     d3 ^= d3 >> 31;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     d1 = d1.wrapping_add(d3 >> 5);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     d3 = tgt2.wrapping_sub(p2);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     d3 ^= d3 >> 31;
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     d2 = d2.wrapping_add(d3 >> 5);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     // NOTE: reproduces the original comparison chain verbatim (both candidates
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     // are compared against the *original* d0, so uni2 wins ties with uni1).
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     if d1 < d0 {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         uni = uni1;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     if d2 < d0 {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         uni = uni2;
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     uni as c_int
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling harvest-work-CuFojj v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-CuFojj/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.152s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj
+ls translation/target/release/*.so
+echo "=== C exports ==="
+nm -D /tmp/cbuild2/libharvest-work-CuFojj.so | awk '$2=="T"||$2=="D"||$2=="B"{print $3}' | sort | tee /tmp/c_syms.txt
+echo "=== Rust exports ==="
+nm -D translation/target/release/*.so | awk '$2=="T"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/r_syms.txt; cat /tmp/r_syms.txt
+echo "=== MISSING FROM RUST ==="
+comm -23 /tmp/c_syms.txt /tmp/r_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+translation/target/release/libharvest_work_CuFojj.so
+=== C exports ===
+nm: '/tmp/cbuild2/libharvest-work-CuFojj.so': No such file
+=== Rust exports ===
+encode_quant
+=== MISSING FROM RUST ===
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfind /tmp/cbuild2 -name "*.so" ; ls /tmp/cbuild2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Locate built C shared object
+
+/tmp/cbuild2/libharvest-work-7tAxUR.so
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake.log
+cmake_install.cmake
+libharvest-work-7tAxUR.so
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj
+nm -D /tmp/cbuild2/libharvest-work-7tAxUR.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/c_syms.txt
+nm -D translation/target/release/libharvest_work_CuFojj.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/r_syms.txt
+echo "C:"; cat /tmp/c_syms.txt; echo "RUST:"; cat /tmp/r_syms.txt
+echo "MISSING FROM RUST:"; comm -23 /tmp/c_syms.txt /tmp/r_syms.txt; echo "(end)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
+
+C:
+div_euclid
+RUST:
+encode_quant
+MISSING FROM RUST:
+div_euclid
+(end)
+[38;5;244m - Completed in 0.38s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj && pwd -P; readlink -f .; readlink -f c_src; echo "---"; nm -D /tmp/cbuild2/libharvest-work-7tAxUR.so; echo "--- cmake log:"; head -20 /tmp/cbuild2/cmake.log 2>/dev/null || head -20 /tmp/cbuild2/cm.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Investigate path resolution and C .so symbols
+
+/local/home/scheschb/.harvest/work/harvest-work-CuFojj
+/local/home/scheschb/.harvest/work/harvest-work-CuFojj
+/local/home/scheschb/.harvest/work/harvest-work-CuFojj/c_src
+---
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001100 T div_euclid
+--- cmake log:
+-- The C compiler identification is GNU 11.5.0
+-- The CXX compiler identification is GNU 11.5.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cbuild2
+[ 50%] Building C object CMakeFiles/harvest-work-7tAxUR.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-7tAxUR.so
+[100%] Built target harvest-work-7tAxUR
+[38;5;244m - Completed in 0.23s[0m
+
+[?25l[0m[38;5;141m> [0mShared [38;5;10m/tmp[0m is being clobbered by concurrent runs. Rebuilding in an isolated dir:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj
+rm -rf .cbuild && mkdir -p .cbuild && cd .cbuild
+cmake ../c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1 && echo BUILD_OK
+grep -E "Linking|Building" cmake.log
+ls *.so
+echo "=== nm -D (C) ==="; nm -D *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild C library in an isolated local build dir
+
+BUILD_OK
+[ 50%] Building C object CMakeFiles/harvest-work-CuFojj.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-CuFojj.so
+libharvest-work-CuFojj.so
+=== nm -D (C) ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001100 T encode_quant
+[38;5;244m - Completed in 0.443s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj
+nm -D .cbuild/libharvest-work-CuFojj.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"||$2=="W"{print $NF}' | sort -u > /local/home/scheschb/.harvest/work/harvest-work-CuFojj/.cbuild/c_syms.txt
+nm -D translation/target/release/libharvest_work_CuFojj.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"||$2=="W"{print $NF}' | sort -u > .cbuild/r_syms.txt
+echo "C exports:"; cat .cbuild/c_syms.txt
+echo "Rust exports:"; cat .cbuild/r_syms.txt
+echo "MISSING FROM RUST:"; comm -23 .cbuild/c_syms.txt .cbuild/r_syms.txt; echo "<empty above = complete>"
+echo "EXTRA IN RUST:"; comm -13 .cbuild/c_syms.txt .cbuild/r_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff symbol lists
+
+C exports:
+encode_quant
+Rust exports:
+encode_quant
+MISSING FROM RUST:
+<empty above = complete>
+EXTRA IN RUST:
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity confirmed. Now a differential test to verify byte-identical output:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/.cbuild/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust .so
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <limits.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m typedef int (*fn_t)(int, int, int, int, int, int);
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m static unsigned long long s = 0x243F6A8885A308D3ULL;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m static unsigned long long rnd(void) {
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     if (!hc || !hr) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     fn_t c = (fn_t)dlsym(hc, "encode_quant");
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     fn_t r = (fn_t)dlsym(hr, "encode_quant");
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     if (!c || !r) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     long long n = 0, bad = 0;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     /* 1. Exhaustive-ish sweep over the structurally meaningful ranges. */
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     static const int steps[] = {0, 1, 2, 3, 7, 8, 15, 16, 100, 255, 1024, 32767, -1, -8, -1000};
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     static const int preds[] = {0, 1, -1, 5, -5, 100, -100, 32767, -32768};
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     static const int tgts[]  = {0, 1, -1, 3, -3, 50, -50, 1000, -1000, 32767, -32768};
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     for (int uni = -20; uni <= 20; uni++)
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     for (unsigned si = 0; si < sizeof(steps)/sizeof(*steps); si++)
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     for (unsigned pi = 0; pi < sizeof(preds)/sizeof(*preds); pi++)
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     for (unsigned ti = 0; ti < sizeof(tgts)/sizeof(*tgts); ti++)
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     for (unsigned t2 = 0; t2 < sizeof(tgts)/sizeof(*tgts); t2++)
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     for (int lsbit = -2; lsbit <= 8; lsbit++) {
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         int a = c(uni, steps[si], preds[pi], tgts[ti], tgts[t2], lsbit);
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         int b = r(uni, steps[si], preds[pi], tgts[ti], tgts[t2], lsbit);
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m         if (a != b) {
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m             if (bad < 10) printf("MISMATCH uni=%d step=%d pred=%d tgt=%d tgt2=%d lsbit=%d  C=%d Rust=%d\n",
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                                  uni, steps[si], preds[pi], tgts[ti], tgts[t2], lsbit, a, b);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m             bad++;
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     /* 2. Random 32-bit fuzz across the full int domain. */
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     for (long long i = 0; i < 4000000; i++) {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         int uni = (int)rnd(), step = (int)rnd(), pred = (int)rnd();
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         int tgt = (int)rnd(), tgt2 = (int)rnd(), lsbit = (int)(rnd() % 9) - 2;
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         int a = c(uni, step, pred, tgt, tgt2, lsbit);
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         int b = r(uni, step, pred, tgt, tgt2, lsbit);
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         if (a != b) {
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m             if (bad < 20) printf("MISMATCH(fuzz) uni=%d step=%d pred=%d tgt=%d tgt2=%d lsbit=%d  C=%d Rust=%d\n",
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m                                  uni, step, pred, tgt, tgt2, lsbit, a, b);
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             bad++;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     /* 3. Extremes / overflow corners. */
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     static const int ex[] = {INT_MIN, INT_MIN+1, -2, -1, 0, 1, 2, 7, 8, INT_MAX-1, INT_MAX};
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     const unsigned E = sizeof(ex)/sizeof(*ex);
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     for (unsigned a1 = 0; a1 < E; a1++)
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     for (unsigned a2 = 0; a2 < E; a2++)
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     for (unsigned a3 = 0; a3 < E; a3++)
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     for (unsigned a4 = 0; a4 < E; a4++)
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     for (unsigned a5 = 0; a5 < E; a5++)
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     for (int lsbit = 0; lsbit <= 5; lsbit++) {
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         int a = c(ex[a1], ex[a2], ex[a3], ex[a4], ex[a5], lsbit);
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         int b = r(ex[a1], ex[a2], ex[a3], ex[a4], ex[a5], lsbit);
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         if (a != b) {
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m             if (bad < 30) printf("MISMATCH(ex) uni=%d step=%d pred=%d tgt=%d tgt2=%d lsbit=%d  C=%d Rust=%d\n",
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m                                  ex[a1], ex[a2], ex[a3], ex[a4], ex[a5], lsbit, a, b);
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m             bad++;
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     printf("cases=%lld mismatches=%lld\n", n, bad);
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     return bad != 0;
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CuFojj/.cbuild/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj/.cbuild
+cc -O2 -o difftest difftest.c -ldl && ./difftest ./libharvest-work-CuFojj.so ../translation/target/release/libharvest_work_CuFojj.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
+
+cases=12333391 mismatches=0
+[38;5;244m - Completed in 0.309s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj/.cbuild
+for o in 0 1 2 3 s; do cc -O$o -fPIC -shared -I../c_src/include -o libc_O$o.so ../c_src/src/lib.c; done
+for o in 0 1 2 3 s; do printf "O%s: " $o; ./difftest ./libc_O$o.so ../translation/target/release/libharvest_work_CuFojj.so | tail -1; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify against C compiled at every optimization level
+
+O0: cases=12333391 mismatches=0
+O1: cases=12333391 mismatches=0
+O2: cases=12333391 mismatches=0
+O3: cases=12333391 mismatches=0
+Os: cases=12333391 mismatches=0
+[38;5;244m - Completed in 1.466s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CuFojj
+rm -rf .cbuild
+git status --short 2>/dev/null | head; echo "--- tree:"; find . -path ./translation/target -prune -o -type f -print | sort
+echo "--- final rebuild + symbol check:"
+cd translation && cargo build --release 2>&1 | tail -3 && nm -D target/release/libharvest_work_CuFojj.so | grep -v '^ *w '[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up scratch build dir, confirm c_src untouched, final verify
+
+--- tree:
+./.claude/settings.json
+./c_src/CMakeLists.txt
+./c_src/include/lib.h
+./c_src/src/lib.c
+./translation/Cargo.lock
+./translation/Cargo.toml
+./translation/src/lib.rs
+--- final rebuild + symbol check:
+    Finished `release` profile [optimized] target(s) in 0.01s
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 U __errno_location@GLIBC_2.2.5
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+00000000000116d0 T encode_quant
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+[38;5;244m - Completed in 0.51s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
+[0m[0m
+[1mScope[22m: The C library in [38;5;10mc_src/[0m is small — one translation unit ([38;5;10msrc/lib.c[0m, 62 lines) with one public header ([38;5;10minclude/lib.h[0m, 1 line). [38;5;10mnm -D[0m on the CMake-built C [38;5;10m.so[0m exports exactly one defined symbol: [38;5;10mencode_quant[0m. There are no namespace-renaming macros in the header.[0m[0m
+[0m[0m
+[1mSymbol parity[22m: The [38;5;10mnm -D[0m diff between the C [38;5;10m.so[0m and [38;5;10mtranslation/target/release/libharvest_work_CuFojj.so[0m is empty in both directions — [38;5;10mencode_quant[0m is the only defined export on each side. (The [38;5;10mU[0m entries above are Rust runtime imports, not exports.)[0m[0m
+[0m[0m
+[1mBehavioral equivalence[22m: I built a [38;5;10mdlopen[0m-based differential harness and ran 12,333,391 cases — a structured sweep over [38;5;10muni ∈ [-20,20][0m × representative step/pred/tgt/tgt2 values × [38;5;10mlsbit ∈ [-2,8][0m, 4M random full-32-bit fuzz cases, and an exhaustive [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m/small-value corner grid. Zero mismatches against the C compiled at [38;5;10m-O0[0m, [38;5;10m-O1[0m, [38;5;10m-O2[0m, [38;5;10m-O3[0m, and [38;5;10m-Os[0m, so the result doesn't depend on how the compiler treats the signed-overflow UB.[0m[0m
+[0m[0m
+[1mFidelity notes[22m — behavior reproduced rather than fixed:[0m[0m
+- The final selection compares both [38;5;10md1[0m and [38;5;10md2[0m against the [3moriginal[23m [38;5;10md0[0m, so when both beat it, [38;5;10muni2[0m wins regardless of whether [38;5;10md1 < d2[0m. Left as-is.[0m[0m
+- [38;5;10mp3[0m is declared and never used in the C; omitted.[0m[0m
+- All arithmetic uses [38;5;10mwrapping_*[0m on [38;5;10mi32[0m to match two's-complement wrap-around; [38;5;10m/[0m truncates toward zero and [38;5;10m>>[0m is arithmetic on [38;5;10mi32[0m, matching C.[0m[0m
+[0m[0m
+I removed the scratch CMake build directory I created; [38;5;10mc_src/[0m is unmodified. One caution worth noting: [38;5;10m/tmp[0m on this host is shared with concurrent runs, and my first build directory there was silently overwritten by another task's build (it produced a [38;5;10m.so[0m exporting [38;5;10mdiv_euclid[0m). I redid all verification in a local directory.[0m[0m
+[38;5;8m
+ ▸ Credits: 6.19 • Time: 2m 38s
+
+[0m[1G[0m[0m[?25h

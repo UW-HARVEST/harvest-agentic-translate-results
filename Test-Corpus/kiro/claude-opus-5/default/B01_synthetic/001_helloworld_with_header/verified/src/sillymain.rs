@@ -1,7 +1,3 @@
-// Translation of c_src/src/sillymain.c
-//
-// Original copyright notice from the C source:
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -25,18 +21,32 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+//! Translation of `c_src/src/sillymain.c` (declared by `c_src/src/sillymain.h`).
+
 use std::io::Write;
 
-/// Mirrors `int helloworld()` from sillymain.c.
+/// Translation of:
 ///
-/// The C body is `printf("Hello World!\n"); return 0;`. We write the exact
-/// same bytes to stdout and return the same status code.
+/// ```c
+/// int helloworld() {
+///     printf("Hello World!\n");
+///     return 0;
+/// }
+/// ```
+///
+/// Writes exactly the 13 bytes `Hello World!\n` to stdout and returns 0. As in
+/// the C original, the return value of the print is discarded and never checked.
 pub fn helloworld() -> i32 {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    // printf("Hello World!\n");
-    // Ignore write errors, exactly as the C code ignores printf's return value.
+
+    // `printf("Hello World!\n")` — the trailing newline is part of the format
+    // string, so the output is `Hello World!` followed by a single '\n'.
     let _ = out.write_all(b"Hello World!\n");
+
+    // C's stdio flushes at normal process exit; `std::process::exit` in `main`
+    // bypasses Rust's flush-at-exit, so flush here to guarantee the bytes land.
     let _ = out.flush();
+
     0
 }

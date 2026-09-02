@@ -1,0 +1,4635 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory and understanding the scope of the C library.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "---" && find c_src -type f | head -100 && echo "---TOTAL---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 15:07 .
+drwxr-xr-x. 787 scheschb amazon 81920 Sep  1 15:07 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 15:07 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 15:07 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 15:07 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---TOTAL---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+
+  38 c_src/CMakeLists.txt
+  24 c_src/include/lib.h
+ 155 c_src/src/lib.c
+ 217 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1541 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1162 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4492 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && ls -la *.so && echo "=== nm -D ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+
+-rwxr-xr-x. 1 scheschb amazon 16368 Sep  1 15:08 libharvest-work-Cxn9LK.so
+=== nm -D ===
+0000000000001230 T append_to_buffer
+00000000000013d0 T buffapp
+00000000000011d0 T create_buffer
+00000000000012b0 T destroy_buffer
+00000000000012e0 T get_operation_name
+0000000000001330 T perform_operation
+[38;5;244m - Completed in 0.447s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only *.so | awk '{print $3}' | sort > /tmp/c_syms.txt && cat /tmp/c_syms.txt && echo "---" && cargo --version && rustc --version[0m[38;5;244m (using tool: shell)[0m
+
+append_to_buffer
+buffapp
+create_buffer
+destroy_buffer
+get_operation_name
+perform_operation
+---
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+[38;5;244m - Completed in 0.48s[0m
+
+[?25l[0m[38;5;141m> [0mSix exported symbols, one translation unit. Small enough to handle directly — no sub-agents needed.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate-type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_work_translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest-work-Cxn9LK"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/.claude/ && cat /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/.claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  35 Sep  1 15:07 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 15:07 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 15:07 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Cargo.toml with cdylib crate type
+
+[49m[39m   1,  1[0m:[39m[49m [package]
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m name = "harvest_work_translation"
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[39m   3,  3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4,  4[0m:[39m[49m edition = "2021"
+[0m[49m[39m   5,  5[0m:[39m[49m 
+[0m[49m[39m   6,  6[0m:[39m[49m [lib]
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m name = "harvest-work-Cxn9LK"
+[0m[49m[39m   8,  7[0m:[39m[49m crate-type = ["cdylib"]
+[0m[49m[39m   9,  8[0m:[39m[49m path = "src/lib.rs"
+[0m[49m[39m  10,  9[0m:[39m[49m 
+[0m[49m[39m  11, 10[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 11[0m:[39m[49m panic = "abort"
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Full Rust translation of the C library
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // Fidelity notes:
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //  * The C allocator (malloc/realloc/free) is used so that buffers created by
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //    `create_buffer` remain interchangeable with the C library's buffers and so
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //    that allocation-failure behaviour matches exactly.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //  * The C formatted-output routines (`sprintf`, `printf`) are used so that the
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //    emitted bytes and the stdout buffering behaviour are byte-identical.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //  * Integer arithmetic uses wrapping operations. The C code has signed
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m //    overflow / INT_MIN-division paths that are UB in C but wrap on the target
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m //    ABI; Rust would otherwise panic. Bugs in the C (missing NULL check on
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m //    `create_buffer`'s result in `buffapp`, `data[0]` write when
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m //    `initial_capacity == 0`, `int`-typed lengths) are preserved verbatim.
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #![allow(clippy::missing_safety_doc)]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     fn free(ptr: *mut c_void);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     fn strlen(s: *const c_char) -> usize;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     fn strcpy(dest: *mut c_char, src: *const c_char) -> *mut c_char;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     fn strcmp(a: *const c_char, b: *const c_char) -> c_int;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     fn sprintf(s: *mut c_char, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// Mirrors the anonymous C struct:
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m ///     char *data;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ///     int capacity;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m ///     int length;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// } StringBuffer;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m pub struct StringBuffer {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     pub data: *mut c_char,
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     pub capacity: c_int,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     pub length: c_int,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m // StringBuffer* create_buffer(int initial_capacity)
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m pub unsafe extern "C" fn create_buffer(initial_capacity: c_int) -> *mut StringBuffer {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let buffer = malloc(core::mem::size_of::<StringBuffer>()) as *mut StringBuffer;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     if buffer.is_null() {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         return core::ptr::null_mut();
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     // `int` -> `size_t` conversion in C sign-extends; `as usize` does the same.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     let data = malloc(initial_capacity as usize) as *mut c_char;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     (*buffer).data = data;
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     if data.is_null() {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         free(buffer as *mut c_void);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         return core::ptr::null_mut();
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     (*buffer).capacity = initial_capacity;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     (*buffer).length = 0;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     // Reproduced as-is: out of bounds when initial_capacity == 0.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     *(*buffer).data = 0;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     buffer
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m // int append_to_buffer(StringBuffer *buffer, const char *str)
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m pub unsafe extern "C" fn append_to_buffer(buffer: *mut StringBuffer, str_: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     // C truncates size_t -> int here.
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let str_len: c_int = strlen(str_) as c_int;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     let required_capacity: c_int = (*buffer).length.wrapping_add(str_len).wrapping_add(1);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     if required_capacity > (*buffer).capacity {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         let new_capacity: c_int = required_capacity.wrapping_mul(2);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let new_data =
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             realloc((*buffer).data as *mut c_void, new_capacity as usize) as *mut c_char;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         if new_data.is_null() {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             return -1;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         (*buffer).data = new_data;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         (*buffer).capacity = new_capacity;
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     strcpy((*buffer).data.offset((*buffer).length as isize), str_);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     (*buffer).length = (*buffer).length.wrapping_add(str_len);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m // void destroy_buffer(StringBuffer *buffer)
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m pub unsafe extern "C" fn destroy_buffer(buffer: *mut StringBuffer) {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     if !buffer.is_null() {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         if !(*buffer).data.is_null() {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             free((*buffer).data as *mut c_void);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         free(buffer as *mut c_void);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m // const char* get_operation_name(int op_code)
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m const OP_ADD: &[u8] = b"add\0";
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m const OP_SUBTRACT: &[u8] = b"subtract\0";
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m const OP_MULTIPLY: &[u8] = b"multiply\0";
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m const OP_DIVIDE: &[u8] = b"divide\0";
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m const OP_UNKNOWN: &[u8] = b"unknown\0";
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m pub extern "C" fn get_operation_name(op_code: c_int) -> *const c_char {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     let s: &[u8] = match op_code {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         0 => OP_ADD,
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         1 => OP_SUBTRACT,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         2 => OP_MULTIPLY,
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         3 => OP_DIVIDE,
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         _ => OP_UNKNOWN,
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     s.as_ptr() as *const c_char
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m // int perform_operation(int a, int b, const char *operation)
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m pub unsafe extern "C" fn perform_operation(a: c_int, b: c_int, operation: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     if strcmp(operation, OP_ADD.as_ptr() as *const c_char) == 0 {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         a.wrapping_add(b)
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     } else if strcmp(operation, OP_SUBTRACT.as_ptr() as *const c_char) == 0 {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         a.wrapping_sub(b)
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     } else if strcmp(operation, OP_MULTIPLY.as_ptr() as *const c_char) == 0 {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         a.wrapping_mul(b)
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     } else if strcmp(operation, OP_DIVIDE.as_ptr() as *const c_char) == 0 {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         if b != 0 {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m             return a.wrapping_div(b);
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m // int buffapp(int param1, int param2, int param3, int param4)
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m const FMT_STARTING: &[u8] = b"Starting computation with %d parameters\n\0";
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m const FMT_OP1: &[u8] = b"Operation 1: %s(%d, %d)\n\0";
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m const FMT_OP2: &[u8] = b"Operation 2: %s(%d, %d)\n\0";
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m const FMT_OP3: &[u8] = b"Operation 3: %s(%d, %d)\n\0";
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m const FMT_FINAL: &[u8] = b"Final result: %d\n\0";
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m const FMT_LOG: &[u8] = b"Computation Log:\n%s\n\0";
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m pub unsafe extern "C" fn buffapp(
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     param1: c_int,
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     param2: c_int,
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     param3: c_int,
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     param4: c_int,
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     let log_buffer: *mut StringBuffer = create_buffer(32);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     let mut temp = [0 as c_char; 64];
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     let temp_ptr = temp.as_mut_ptr();
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     // Reproduced as-is: the C code does not check `log_buffer` for NULL.
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     (*log_buffer).length = 0;
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     sprintf(temp_ptr, FMT_STARTING.as_ptr() as *const c_char, 4 as c_int);
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     append_to_buffer(log_buffer, temp_ptr);
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let op1: *const c_char = get_operation_name(param1.wrapping_rem(4));
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     sprintf(
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         temp_ptr,
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         FMT_OP1.as_ptr() as *const c_char,
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         op1,
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         param1,
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         param2,
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     append_to_buffer(log_buffer, temp_ptr);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     let intermediate1: c_int = perform_operation(param1, param2, op1);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     result = result.wrapping_add(intermediate1);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let op2: *const c_char = get_operation_name(param3.wrapping_rem(4));
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     sprintf(
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         temp_ptr,
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         FMT_OP2.as_ptr() as *const c_char,
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         op2,
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         param3,
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         param4,
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     append_to_buffer(log_buffer, temp_ptr);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     let intermediate2: c_int = perform_operation(param3, param4, op2);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     result = result.wrapping_add(intermediate2);
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     let op3: *const c_char = OP_MULTIPLY.as_ptr() as *const c_char;
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     sprintf(
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         temp_ptr,
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         FMT_OP3.as_ptr() as *const c_char,
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         op3,
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         intermediate1,
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         intermediate2,
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     append_to_buffer(log_buffer, temp_ptr);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     let intermediate3: c_int = perform_operation(intermediate1, intermediate2, op3);
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     if intermediate3 != 0 {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m         result = result.wrapping_div(intermediate3);
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         result = param1
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m             .wrapping_add(param2)
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m             .wrapping_add(param3)
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m             .wrapping_add(param4);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     sprintf(temp_ptr, FMT_FINAL.as_ptr() as *const c_char, result);
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     append_to_buffer(log_buffer, temp_ptr);
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     printf(FMT_LOG.as_ptr() as *const c_char, (*log_buffer).data);
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     destroy_buffer(log_buffer);
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.152s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles. Now the completion gate — symbol diff:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation && ls target/release/*.so && nm -D --defined-only target/release/libtranslation.so | awk '$2=="T"{print $3}' | grep -v '^_' | sort > /tmp/rust_syms.txt && echo "=== RUST EXPORTS ===" && cat /tmp/rust_syms.txt && echo "=== DIFF (C vs RUST) ===" && diff /tmp/c_syms.txt /tmp/rust_syms.txt && echo "DIFF EMPTY - all C symbols present"[0m[38;5;244m (using tool: shell)[0m
+
+target/release/libtranslation.so
+=== RUST EXPORTS ===
+append_to_buffer
+buffapp
+create_buffer
+destroy_buffer
+get_operation_name
+perform_operation
+=== DIFF (C vs RUST) ===
+DIFF EMPTY - all C symbols present
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness/driver.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test driver comparing C and Rust .so output
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m typedef struct { char *data; int capacity; int length; } SB;
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef int  (*fn_buffapp)(int,int,int,int);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m typedef SB*  (*fn_create)(int);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m typedef int  (*fn_append)(SB*, const char*);
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m typedef void (*fn_destroy)(SB*);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m typedef const char* (*fn_opname)(int);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m typedef int  (*fn_perform)(int,int,const char*);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     fn_buffapp buffapp = (fn_buffapp)dlsym(h, "buffapp");
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     fn_create  create_buffer = (fn_create)dlsym(h, "create_buffer");
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     fn_append  append_to_buffer = (fn_append)dlsym(h, "append_to_buffer");
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     fn_destroy destroy_buffer = (fn_destroy)dlsym(h, "destroy_buffer");
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     fn_opname  get_operation_name = (fn_opname)dlsym(h, "get_operation_name");
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     fn_perform perform_operation = (fn_perform)dlsym(h, "perform_operation");
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     if (!buffapp || !create_buffer || !append_to_buffer || !destroy_buffer
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         || !get_operation_name || !perform_operation) {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         fprintf(stderr, "missing symbol\n"); return 1;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     /* --- get_operation_name --- */
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     for (int i = -6; i <= 8; i++)
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         printf("opname(%d)=%s\n", i, get_operation_name(i));
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     /* --- perform_operation --- */
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     const char *ops[] = {"add","subtract","multiply","divide","unknown","","ADD"};
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     int vals[] = {0,1,-1,2,-2,7,-7,3,100,-100,2147483647,-2147483648,13};
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     for (unsigned o = 0; o < sizeof(ops)/sizeof(ops[0]); o++)
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         for (unsigned i = 0; i < sizeof(vals)/sizeof(vals[0]); i++)
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m             for (unsigned j = 0; j < sizeof(vals)/sizeof(vals[0]); j++)
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m                 printf("perform(%d,%d,%s)=%d\n", vals[i], vals[j], ops[o],
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m                        perform_operation(vals[i], vals[j], ops[o]));
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     /* --- buffer lifecycle --- */
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     for (int cap = 1; cap <= 40; cap += 7) {
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         SB *b = create_buffer(cap);
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         printf("create(%d) -> %p-ish cap=%d len=%d first=%d\n",
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m                cap, (void*)(b != NULL), b?b->capacity:-1, b?b->length:-1,
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m                b?(int)b->data[0]:-1);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         printf("  append rc=%d\n", append_to_buffer(b, "hello"));
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         printf("  cap=%d len=%d data=[%s]\n", b->capacity, b->length, b->data);
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         printf("  append rc=%d\n", append_to_buffer(b, ""));
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         printf("  cap=%d len=%d data=[%s]\n", b->capacity, b->length, b->data);
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         printf("  append rc=%d\n", append_to_buffer(b, "0123456789012345678901234567890123456789"));
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m         printf("  cap=%d len=%d data=[%s]\n", b->capacity, b->length, b->data);
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         destroy_buffer(b);
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     destroy_buffer(NULL);
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     /* --- buffapp: full log output --- */
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     int p[] = {0,1,2,3,4,5,-1,-2,-3,-4,7,-7,100,-100,12,13,
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m                2147483647,-2147483648,65536,-65536};
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     for (unsigned a = 0; a < sizeof(p)/sizeof(p[0]); a++)
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m         for (unsigned b = 0; b < sizeof(p)/sizeof(p[0]); b++) {
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m             int r = buffapp(p[a], p[b], p[(b+3)%20], p[(a+7)%20]);
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m             printf("buffapp(%d,%d,%d,%d)=%d\n", p[a], p[b], p[(b+3)%20], p[(a+7)%20], r);
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     fflush(stdout);
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/harness/driver.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness && gcc -O0 -o driver driver.c -ldl 2>&1 | head -20 && ./driver /tmp/cbuild/libharvest-work-Cxn9LK.so > c_out.txt 2>c_err.txt; echo "C exit=$?"; ./driver /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/target/release/libtranslation.so > rust_out.txt 2>rust_err.txt; echo "RUST exit=$?"; wc -l c_out.txt rust_out.txt; echo "=== DIFF ==="; diff c_out.txt rust_out.txt && echo "BYTE-IDENTICAL"; cmp c_out.txt rust_out.txt && echo "cmp: identical"; cat c_err.txt rust_err.txt[0m[38;5;244m (using tool: shell)[0m
+
+driver.c: In function ‘main’:
+driver.c:48:21: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+   48 |                cap, (void*)(b != NULL), b?b->capacity:-1, b?b->length:-1,
+      |                     ^
+bash: line 1: 2886279 Floating point exception(core dumped) ./driver /tmp/cbuild/libharvest-work-Cxn9LK.so > c_out.txt 2> c_err.txt
+C exit=136
+RUST exit=0
+   566 c_out.txt
+  4440 rust_out.txt
+  5006 total
+=== DIFF ===
+567c567,4440
+< perfo
+\ No newline at end of file
+---
+> perform(2,7,divide)=0
+> perform(2,-7,divide)=0
+> perform(2,3,divide)=0
+> perform(2,100,divide)=0
+> perform(2,-100,divide)=0
+> perform(2,2147483647,divide)=0
+> perform(2,-2147483648,divide)=0
+> perform(2,13,divide)=0
+> perform(-2,0,divide)=0
+> perform(-2,1,divide)=-2
+> perform(-2,-1,divide)=2
+> perform(-2,2,divide)=-1
+> perform(-2,-2,divide)=1
+> perform(-2,7,divide)=0
+> perform(-2,-7,divide)=0
+> perform(-2,3,divide)=0
+> perform(-2,100,divide)=0
+> perform(-2,-100,divide)=0
+> perform(-2,2147483647,divide)=0
+> perform(-2,-2147483648,divide)=0
+> perform(-2,13,divide)=0
+> perform(7,0,divide)=0
+> perform(7,1,divide)=7
+> perform(7,-1,divide)=-7
+> perform(7,2,divide)=3
+> perform(7,-2,divide)=-3
+> perform(7,7,divide)=1
+> perform(7,-7,divide)=-1
+> perform(7,3,divide)=2
+> perform(7,100,divide)=0
+> perform(7,-100,divide)=0
+> perform(7,2147483647,divide)=0
+> perform(7,-2147483648,divide)=0
+> perform(7,13,divide)=0
+> perform(-7,0,divide)=0
+> perform(-7,1,divide)=-7
+> perform(-7,-1,divide)=7
+> perform(-7,2,divide)=-3
+> perform(-7,-2,divide)=3
+> perform(-7,7,divide)=-1
+> perform(-7,-7,divide)=1
+> perform(-7,3,divide)=-2
+> perform(-7,100,divide)=0
+> perform(-7,-100,divide)=0
+> perform(-7,2147483647,divide)=0
+> perform(-7,-2147483648,divide)=0
+> perform(-7,13,divide)=0
+> perform(3,0,divide)=0
+> perform(3,1,divide)=3
+> perform(3,-1,divide)=-3
+> perform(3,2,divide)=1
+> perform(3,-2,divide)=-1
+> perform(3,7,divide)=0
+> perform(3,-7,divide)=0
+> perform(3,3,divide)=1
+> perform(3,100,divide)=0
+> perform(3,-100,divide)=0
+> perform(3,2147483647,divide)=0
+> perform(3,-2147483648,divide)=0
+> perform(3,13,divide)=0
+> perform(100,0,divide)=0
+> perform(100,1,divide)=100
+> perform(100,-1,divide)=-100
+> perform(100,2,divide)=50
+> perform(100,-2,divide)=-50
+> perform(100,7,divide)=14
+> perform(100,-7,divide)=-14
+> perform(100,3,divide)=33
+> perform(100,100,divide)=1
+> perform(100,-100,divide)=-1
+> perform(100,2147483647,divide)=0
+> perform(100,-2147483648,divide)=0
+> perform(100,13,divide)=7
+> perform(-100,0,divide)=0
+> perform(-100,1,divide)=-100
+> perform(-100,-1,divide)=100
+> perform(-100,2,divide)=-50
+> perform(-100,-2,divide)=50
+> perform(-100,7,divide)=-14
+> perform(-100,-7,divide)=14
+> perform(-100,3,divide)=-33
+> perform(-100,100,divide)=-1
+> perform(-100,-100,divide)=1
+> perform(-100,2147483647,divide)=0
+> perform(-100,-2147483648,divide)=0
+> perform(-100,13,divide)=-7
+> perform(2147483647,0,divide)=0
+> perform(2147483647,1,divide)=2147483647
+> perform(2147483647,-1,divide)=-2147483647
+> perform(2147483647,2,divide)=1073741823
+> perform(2147483647,-2,divide)=-1073741823
+> perform(2147483647,7,divide)=306783378
+> perform(2147483647,-7,divide)=-306783378
+> perform(2147483647,3,divide)=715827882
+> perform(2147483647,100,divide)=21474836
+> perform(2147483647,-100,divide)=-21474836
+> perform(2147483647,2147483647,divide)=1
+> perform(2147483647,-2147483648,divide)=0
+> perform(2147483647,13,divide)=165191049
+> perform(-2147483648,0,divide)=0
+> perform(-2147483648,1,divide)=-2147483648
+> perform(-2147483648,-1,divide)=-2147483648
+> perform(-2147483648,2,divide)=-1073741824
+> perform(-2147483648,-2,divide)=1073741824
+> perform(-2147483648,7,divide)=-306783378
+> perform(-2147483648,-7,divide)=306783378
+> perform(-2147483648,3,divide)=-715827882
+> perform(-2147483648,100,divide)=-21474836
+> perform(-2147483648,-100,divide)=21474836
+> perform(-2147483648,2147483647,divide)=-1
+> perform(-2147483648,-2147483648,divide)=1
+> perform(-2147483648,13,divide)=-165191049
+> perform(13,0,divide)=0
+> perform(13,1,divide)=13
+> perform(13,-1,divide)=-13
+> perform(13,2,divide)=6
+> perform(13,-2,divide)=-6
+> perform(13,7,divide)=1
+> perform(13,-7,divide)=-1
+> perform(13,3,divide)=4
+> perform(13,100,divide)=0
+> perform(13,-100,divide)=0
+> perform(13,2147483647,divide)=0
+> perform(13,-2147483648,divide)=0
+> perform(13,13,divide)=1
+> perform(0,0,unknown)=0
+> perform(0,1,unknown)=0
+> perform(0,-1,unknown)=0
+> perform(0,2,unknown)=0
+> perform(0,-2,unknown)=0
+> perform(0,7,unknown)=0
+> perform(0,-7,unknown)=0
+> perform(0,3,unknown)=0
+> perform(0,100,unknown)=0
+> perform(0,-100,unknown)=0
+> perform(0,2147483647,unknown)=0
+> perform(0,-2147483648,unknown)=0
+> perform(0,13,unknown)=0
+> perform(1,0,unknown)=0
+> perform(1,1,unknown)=0
+> perform(1,-1,unknown)=0
+> perform(1,2,unknown)=0
+> perform(1,-2,unknown)=0
+> perform(1,7,unknown)=0
+> perform(1,-7,unknown)=0
+> perform(1,3,unknown)=0
+> perform(1,100,unknown)=0
+> perform(1,-100,unknown)=0
+> perform(1,2147483647,unknown)=0
+> perform(1,-2147483648,unknown)=0
+> perform(1,13,unknown)=0
+> perform(-1,0,unknown)=0
+> perform(-1,1,unknown)=0
+> perform(-1,-1,unknown)=0
+> perform(-1,2,unknown)=0
+> perform(-1,-2,unknown)=0
+> perform(-1,7,unknown)=0
+> perform(-1,-7,unknown)=0
+> perform(-1,3,unknown)=0
+> perform(-1,100,unknown)=0
+> perform(-1,-100,unknown)=0
+> perform(-1,2147483647,unknown)=0
+> perform(-1,-2147483648,unknown)=0
+> perform(-1,13,unknown)=0
+> perform(2,0,unknown)=0
+> perform(2,1,unknown)=0
+> perform(2,-1,unknown)=0
+> perform(2,2,unknown)=0
+> perform(2,-2,unknown)=0
+> perform(2,7,unknown)=0
+> perform(2,-7,unknown)=0
+> perform(2,3,unknown)=0
+> perform(2,100,unknown)=0
+> perform(2,-100,unknown)=0
+> perform(2,2147483647,unknown)=0
+> perform(2,-2147483648,unknown)=0
+> perform(2,13,unknown)=0
+> perform(-2,0,unknown)=0
+> perform(-2,1,unknown)=0
+> perform(-2,-1,unknown)=0
+> perform(-2,2,unknown)=0
+> perform(-2,-2,unknown)=0
+> perform(-2,7,unknown)=0
+> perform(-2,-7,unknown)=0
+> perform(-2,3,unknown)=0
+> perform(-2,100,unknown)=0
+> perform(-2,-100,unknown)=0
+> perform(-2,2147483647,unknown)=0
+> perform(-2,-2147483648,unknown)=0
+> perform(-2,13,unknown)=0
+> perform(7,0,unknown)=0
+> perform(7,1,unknown)=0
+> perform(7,-1,unknown)=0
+> perform(7,2,unknown)=0
+> perform(7,-2,unknown)=0
+> perform(7,7,unknown)=0
+> perform(7,-7,unknown)=0
+> perform(7,3,unknown)=0
+> perform(7,100,unknown)=0
+> perform(7,-100,unknown)=0
+> perform(7,2147483647,unknown)=0
+> perform(7,-2147483648,unknown)=0
+> perform(7,13,unknown)=0
+> perform(-7,0,unknown)=0
+> perform(-7,1,unknown)=0
+> perform(-7,-1,unknown)=0
+> perform(-7,2,unknown)=0
+> perform(-7,-2,unknown)=0
+> perform(-7,7,unknown)=0
+> perform(-7,-7,unknown)=0
+> perform(-7,3,unknown)=0
+> perform(-7,100,unknown)=0
+> perform(-7,-100,unknown)=0
+> perform(-7,2147483647,unknown)=0
+> perform(-7,-2147483648,unknown)=0
+> perform(-7,13,unknown)=0
+> perform(3,0,unknown)=0
+> perform(3,1,unknown)=0
+> perform(3,-1,unknown)=0
+> perform(3,2,unknown)=0
+> perform(3,-2,unknown)=0
+> perform(3,7,unknown)=0
+> perform(3,-7,unknown)=0
+> perform(3,3,unknown)=0
+> perform(3,100,unknown)=0
+> perform(3,-100,unknown)=0
+> perform(3,2147483647,unknown)=0
+> perform(3,-2147483648,unknown)=0
+> perform(3,13,unknown)=0
+> perform(100,0,unknown)=0
+> perform(100,1,unknown)=0
+> perform(100,-1,unknown)=0
+> perform(100,2,unknown)=0
+> perform(100,-2,unknown)=0
+> perform(100,7,unknown)=0
+> perform(100,-7,unknown)=0
+> perform(100,3,unknown)=0
+> perform(100,100,unknown)=0
+> perform(100,-100,unknown)=0
+> perform(100,2147483647,unknown)=0
+> perform(100,-2147483648,unknown)=0
+> perform(100,13,unknown)=0
+> perform(-100,0,unknown)=0
+> perform(-100,1,unknown)=0
+> perform(-100,-1,unknown)=0
+> perform(-100,2,unknown)=0
+> perform(-100,-2,unknown)=0
+> perform(-100,7,unknown)=0
+> perform(-100,-7,unknown)=0
+> perform(-100,3,unknown)=0
+> perform(-100,100,unknown)=0
+> perform(-100,-100,unknown)=0
+> perform(-100,2147483647,unknown)=0
+> perform(-100,-2147483648,unknown)=0
+> perform(-100,13,unknown)=0
+> perform(2147483647,0,unknown)=0
+> perform(2147483647,1,unknown)=0
+> perform(2147483647,-1,unknown)=0
+> perform(2147483647,2,unknown)=0
+> perform(2147483647,-2,unknown)=0
+> perform(2147483647,7,unknown)=0
+> perform(2147483647,-7,unknown)=0
+> perform(2147483647,3,unknown)=0
+> perform(2147483647,100,unknown)=0
+> perform(2147483647,-100,unknown)=0
+> perform(2147483647,2147483647,unknown)=0
+> perform(2147483647,-2147483648,unknown)=0
+> perform(2147483647,13,unknown)=0
+> perform(-2147483648,0,unknown)=0
+> perform(-2147483648,1,unknown)=0
+> perform(-2147483648,-1,unknown)=0
+> perform(-2147483648,2,unknown)=0
+> perform(-2147483648,-2,unknown)=0
+> perform(-2147483648,7,unknown)=0
+> perform(-2147483648,-7,unknown)=0
+> perform(-2147483648,3,unknown)=0
+> perform(-2147483648,100,unknown)=0
+> perform(-2147483648,-100,unknown)=0
+> perform(-2147483648,2147483647,unknown)=0
+> perform(-2147483648,-2147483648,unknown)=0
+> perform(-2147483648,13,unknown)=0
+> perform(13,0,unknown)=0
+> perform(13,1,unknown)=0
+> perform(13,-1,unknown)=0
+> perform(13,2,unknown)=0
+> perform(13,-2,unknown)=0
+> perform(13,7,unknown)=0
+> perform(13,-7,unknown)=0
+> perform(13,3,unknown)=0
+> perform(13,100,unknown)=0
+> perform(13,-100,unknown)=0
+> perform(13,2147483647,unknown)=0
+> perform(13,-2147483648,unknown)=0
+> perform(13,13,unknown)=0
+> perform(0,0,)=0
+> perform(0,1,)=0
+> perform(0,-1,)=0
+> perform(0,2,)=0
+> perform(0,-2,)=0
+> perform(0,7,)=0
+> perform(0,-7,)=0
+> perform(0,3,)=0
+> perform(0,100,)=0
+> perform(0,-100,)=0
+> perform(0,2147483647,)=0
+> perform(0,-2147483648,)=0
+> perform(0,13,)=0
+> perform(1,0,)=0
+> perform(1,1,)=0
+> perform(1,-1,)=0
+> perform(1,2,)=0
+> perform(1,-2,)=0
+> perform(1,7,)=0
+> perform(1,-7,)=0
+> perform(1,3,)=0
+> perform(1,100,)=0
+> perform(1,-100,)=0
+> perform(1,2147483647,)=0
+> perform(1,-2147483648,)=0
+> perform(1,13,)=0
+> perform(-1,0,)=0
+> perform(-1,1,)=0
+> perform(-1,-1,)=0
+> perform(-1,2,)=0
+> perform(-1,-2,)=0
+> perform(-1,7,)=0
+> perform(-1,-7,)=0
+> perform(-1,3,)=0
+> perform(-1,100,)=0
+> perform(-1,-100,)=0
+> perform(-1,2147483647,)=0
+> perform(-1,-2147483648,)=0
+> perform(-1,13,)=0
+> perform(2,0,)=0
+> perform(2,1,)=0
+> perform(2,-1,)=0
+> perform(2,2,)=0
+> perform(2,-2,)=0
+> perform(2,7,)=0
+> perform(2,-7,)=0
+> perform(2,3,)=0
+> perform(2,100,)=0
+> perform(2,-100,)=0
+> perform(2,2147483647,)=0
+> perform(2,-2147483648,)=0
+> perform(2,13,)=0
+> perform(-2,0,)=0
+> perform(-2,1,)=0
+> perform(-2,-1,)=0
+> perform(-2,2,)=0
+> perform(-2,-2,)=0
+> perform(-2,7,)=0
+> perform(-2,-7,)=0
+> perform(-2,3,)=0
+> perform(-2,100,)=0
+> perform(-2,-100,)=0
+> perform(-2,2147483647,)=0
+> perform(-2,-2147483648,)=0
+> perform(-2,13,)=0
+> perform(7,0,)=0
+> perform(7,1,)=0
+> perform(7,-1,)=0
+> perform(7,2,)=0
+> perform(7,-2,)=0
+> perform(7,7,)=0
+> perform(7,-7,)=0
+> perform(7,3,)=0
+> perform(7,100,)=0
+> perform(7,-100,)=0
+> perform(7,2147483647,)=0
+> perform(7,-2147483648,)=0
+> perform(7,13,)=0
+> perform(-7,0,)=0
+> perform(-7,1,)=0
+> perform(-7,-1,)=0
+> perform(-7,2,)=0
+> perform(-7,-2,)=0
+> perform(-7,7,)=0
+> perform(-7,-7,)=0
+> perform(-7,3,)=0
+> perform(-7,100,)=0
+> perform(-7,-100,)=0
+> perform(-7,2147483647,)=0
+> perform(-7,-2147483648,)=0
+> perform(-7,13,)=0
+> perform(3,0,)=0
+> perform(3,1,)=0
+> perform(3,-1,)=0
+> perform(3,2,)=0
+> perform(3,-2,)=0
+> perform(3,7,)=0
+> perform(3,-7,)=0
+> perform(3,3,)=0
+> perform(3,100,)=0
+> perform(3,-100,)=0
+> perform(3,2147483647,)=0
+> perform(3,-2147483648,)=0
+> perform(3,13,)=0
+> perform(100,0,)=0
+> perform(100,1,)=0
+> perform(100,-1,)=0
+> perform(100,2,)=0
+> perform(100,-2,)=0
+> perform(100,7,)=0
+> perform(100,-7,)=0
+> perform(100,3,)=0
+> perform(100,100,)=0
+> perform(100,-100,)=0
+> perform(100,2147483647,)=0
+> perform(100,-2147483648,)=0
+> perform(100,13,)=0
+> perform(-100,0,)=0
+> perform(-100,1,)=0
+> perform(-100,-1,)=0
+> perform(-100,2,)=0
+> perform(-100,-2,)=0
+> perform(-100,7,)=0
+> perform(-100,-7,)=0
+> perform(-100,3,)=0
+> perform(-100,100,)=0
+> perform(-100,-100,)=0
+> perform(-100,2147483647,)=0
+> perform(-100,-2147483648,)=0
+> perform(-100,13,)=0
+> perform(2147483647,0,)=0
+> perform(2147483647,1,)=0
+> perform(2147483647,-1,)=0
+> perform(2147483647,2,)=0
+> perform(2147483647,-2,)=0
+> perform(2147483647,7,)=0
+> perform(2147483647,-7,)=0
+> perform(2147483647,3,)=0
+> perform(2147483647,100,)=0
+> perform(2147483647,-100,)=0
+> perform(2147483647,2147483647,)=0
+> perform(2147483647,-2147483648,)=0
+> perform(2147483647,13,)=0
+> perform(-2147483648,0,)=0
+> perform(-2147483648,1,)=0
+> perform(-2147483648,-1,)=0
+> perform(-2147483648,2,)=0
+> perform(-2147483648,-2,)=0
+> perform(-2147483648,7,)=0
+> perform(-2147483648,-7,)=0
+> perform(-2147483648,3,)=0
+> perform(-2147483648,100,)=0
+> perform(-2147483648,-100,)=0
+> perform(-2147483648,2147483647,)=0
+> perform(-2147483648,-2147483648,)=0
+> perform(-2147483648,13,)=0
+> perform(13,0,)=0
+> perform(13,1,)=0
+> perform(13,-1,)=0
+> perform(13,2,)=0
+> perform(13,-2,)=0
+> perform(13,7,)=0
+> perform(13,-7,)=0
+> perform(13,3,)=0
+> perform(13,100,)=0
+> perform(13,-100,)=0
+> perform(13,2147483647,)=0
+> perform(13,-2147483648,)=0
+> perform(13,13,)=0
+> perform(0,0,ADD)=0
+> perform(0,1,ADD)=0
+> perform(0,-1,ADD)=0
+> perform(0,2,ADD)=0
+> perform(0,-2,ADD)=0
+> perform(0,7,ADD)=0
+> perform(0,-7,ADD)=0
+> perform(0,3,ADD)=0
+> perform(0,100,ADD)=0
+> perform(0,-100,ADD)=0
+> perform(0,2147483647,ADD)=0
+> perform(0,-2147483648,ADD)=0
+> perform(0,13,ADD)=0
+> perform(1,0,ADD)=0
+> perform(1,1,ADD)=0
+> perform(1,-1,ADD)=0
+> perform(1,2,ADD)=0
+> perform(1,-2,ADD)=0
+> perform(1,7,ADD)=0
+> perform(1,-7,ADD)=0
+> perform(1,3,ADD)=0
+> perform(1,100,ADD)=0
+> perform(1,-100,ADD)=0
+> perform(1,2147483647,ADD)=0
+> perform(1,-2147483648,ADD)=0
+> perform(1,13,ADD)=0
+> perform(-1,0,ADD)=0
+> perform(-1,1,ADD)=0
+> perform(-1,-1,ADD)=0
+> perform(-1,2,ADD)=0
+> perform(-1,-2,ADD)=0
+> perform(-1,7,ADD)=0
+> perform(-1,-7,ADD)=0
+> perform(-1,3,ADD)=0
+> perform(-1,100,ADD)=0
+> perform(-1,-100,ADD)=0
+> perform(-1,2147483647,ADD)=0
+> perform(-1,-2147483648,ADD)=0
+> perform(-1,13,ADD)=0
+> perform(2,0,ADD)=0
+> perform(2,1,ADD)=0
+> perform(2,-1,ADD)=0
+> perform(2,2,ADD)=0
+> perform(2,-2,ADD)=0
+> perform(2,7,ADD)=0
+> perform(2,-7,ADD)=0
+> perform(2,3,ADD)=0
+> perform(2,100,ADD)=0
+> perform(2,-100,ADD)=0
+> perform(2,2147483647,ADD)=0
+> perform(2,-2147483648,ADD)=0
+> perform(2,13,ADD)=0
+> perform(-2,0,ADD)=0
+> perform(-2,1,ADD)=0
+> perform(-2,-1,ADD)=0
+> perform(-2,2,ADD)=0
+> perform(-2,-2,ADD)=0
+> perform(-2,7,ADD)=0
+> perform(-2,-7,ADD)=0
+> perform(-2,3,ADD)=0
+> perform(-2,100,ADD)=0
+> perform(-2,-100,ADD)=0
+> perform(-2,2147483647,ADD)=0
+> perform(-2,-2147483648,ADD)=0
+> perform(-2,13,ADD)=0
+> perform(7,0,ADD)=0
+> perform(7,1,ADD)=0
+> perform(7,-1,ADD)=0
+> perform(7,2,ADD)=0
+> perform(7,-2,ADD)=0
+> perform(7,7,ADD)=0
+> perform(7,-7,ADD)=0
+> perform(7,3,ADD)=0
+> perform(7,100,ADD)=0
+> perform(7,-100,ADD)=0
+> perform(7,2147483647,ADD)=0
+> perform(7,-2147483648,ADD)=0
+> perform(7,13,ADD)=0
+> perform(-7,0,ADD)=0
+> perform(-7,1,ADD)=0
+> perform(-7,-1,ADD)=0
+> perform(-7,2,ADD)=0
+> perform(-7,-2,ADD)=0
+> perform(-7,7,ADD)=0
+> perform(-7,-7,ADD)=0
+> perform(-7,3,ADD)=0
+> perform(-7,100,ADD)=0
+> perform(-7,-100,ADD)=0
+> perform(-7,2147483647,ADD)=0
+> perform(-7,-2147483648,ADD)=0
+> perform(-7,13,ADD)=0
+> perform(3,0,ADD)=0
+> perform(3,1,ADD)=0
+> perform(3,-1,ADD)=0
+> perform(3,2,ADD)=0
+> perform(3,-2,ADD)=0
+> perform(3,7,ADD)=0
+> perform(3,-7,ADD)=0
+> perform(3,3,ADD)=0
+> perform(3,100,ADD)=0
+> perform(3,-100,ADD)=0
+> perform(3,2147483647,ADD)=0
+> perform(3,-2147483648,ADD)=0
+> perform(3,13,ADD)=0
+> perform(100,0,ADD)=0
+> perform(100,1,ADD)=0
+> perform(100,-1,ADD)=0
+> perform(100,2,ADD)=0
+> perform(100,-2,ADD)=0
+> perform(100,7,ADD)=0
+> perform(100,-7,ADD)=0
+> perform(100,3,ADD)=0
+> perform(100,100,ADD)=0
+> perform(100,-100,ADD)=0
+> perform(100,2147483647,ADD)=0
+> perform(100,-2147483648,ADD)=0
+> perform(100,13,ADD)=0
+> perform(-100,0,ADD)=0
+> perform(-100,1,ADD)=0
+> perform(-100,-1,ADD)=0
+> perform(-100,2,ADD)=0
+> perform(-100,-2,ADD)=0
+> perform(-100,7,ADD)=0
+> perform(-100,-7,ADD)=0
+> perform(-100,3,ADD)=0
+> perform(-100,100,ADD)=0
+> perform(-100,-100,ADD)=0
+> perform(-100,2147483647,ADD)=0
+> perform(-100,-2147483648,ADD)=0
+> perform(-100,13,ADD)=0
+> perform(2147483647,0,ADD)=0
+> perform(2147483647,1,ADD)=0
+> perform(2147483647,-1,ADD)=0
+> perform(2147483647,2,ADD)=0
+> perform(2147483647,-2,ADD)=0
+> perform(2147483647,7,ADD)=0
+> perform(2147483647,-7,ADD)=0
+> perform(2147483647,3,ADD)=0
+> perform(2147483647,100,ADD)=0
+> perform(2147483647,-100,ADD)=0
+> perform(2147483647,2147483647,ADD)=0
+> perform(2147483647,-2147483648,ADD)=0
+> perform(2147483647,13,ADD)=0
+> perform(-2147483648,0,ADD)=0
+> perform(-2147483648,1,ADD)=0
+> perform(-2147483648,-1,ADD)=0
+> perform(-2147483648,2,ADD)=0
+> perform(-2147483648,-2,ADD)=0
+> perform(-2147483648,7,ADD)=0
+> perform(-2147483648,-7,ADD)=0
+> perform(-2147483648,3,ADD)=0
+> perform(-2147483648,100,ADD)=0
+> perform(-2147483648,-100,ADD)=0
+> perform(-2147483648,2147483647,ADD)=0
+> perform(-2147483648,-2147483648,ADD)=0
+> perform(-2147483648,13,ADD)=0
+> perform(13,0,ADD)=0
+> perform(13,1,ADD)=0
+> perform(13,-1,ADD)=0
+> perform(13,2,ADD)=0
+> perform(13,-2,ADD)=0
+> perform(13,7,ADD)=0
+> perform(13,-7,ADD)=0
+> perform(13,3,ADD)=0
+> perform(13,100,ADD)=0
+> perform(13,-100,ADD)=0
+> perform(13,2147483647,ADD)=0
+> perform(13,-2147483648,ADD)=0
+> perform(13,13,ADD)=0
+> create(1) -> 0x1-ish cap=1 len=0 first=0
+>   append rc=0
+>   cap=12 len=5 data=[hello]
+>   append rc=0
+>   cap=12 len=5 data=[hello]
+>   append rc=0
+>   cap=92 len=45 data=[hello0123456789012345678901234567890123456789]
+> create(8) -> 0x1-ish cap=8 len=0 first=0
+>   append rc=0
+>   cap=8 len=5 data=[hello]
+>   append rc=0
+>   cap=8 len=5 data=[hello]
+>   append rc=0
+>   cap=92 len=45 data=[hello0123456789012345678901234567890123456789]
+> create(15) -> 0x1-ish cap=15 len=0 first=0
+>   append rc=0
+>   cap=15 len=5 data=[hello]
+>   append rc=0
+>   cap=15 len=5 data=[hello]
+>   append rc=0
+>   cap=92 len=45 data=[hello0123456789012345678901234567890123456789]
+> create(22) -> 0x1-ish cap=22 len=0 first=0
+>   append rc=0
+>   cap=22 len=5 data=[hello]
+>   append rc=0
+>   cap=22 len=5 data=[hello]
+>   append rc=0
+>   cap=92 len=45 data=[hello0123456789012345678901234567890123456789]
+> create(29) -> 0x1-ish cap=29 len=0 first=0
+>   append rc=0
+>   cap=29 len=5 data=[hello]
+>   append rc=0
+>   cap=29 len=5 data=[hello]
+>   append rc=0
+>   cap=92 len=45 data=[hello0123456789012345678901234567890123456789]
+> create(36) -> 0x1-ish cap=36 len=0 first=0
+>   append rc=0
+>   cap=36 len=5 data=[hello]
+>   append rc=0
+>   cap=36 len=5 data=[hello]
+>   append rc=0
+>   cap=92 len=45 data=[hello0123456789012345678901234567890123456789]
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 0)
+> Operation 2: divide(3, -2)
+> Operation 3: multiply(0, -1)
+> Final result: 1
+> 
+> buffapp(0,0,3,-2)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 1)
+> Operation 2: add(4, -2)
+> Operation 3: multiply(1, 2)
+> Final result: 1
+> 
+> buffapp(0,1,4,-2)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 2)
+> Operation 2: subtract(5, -2)
+> Operation 3: multiply(2, 7)
+> Final result: 0
+> 
+> buffapp(0,2,5,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 3)
+> Operation 2: unknown(-1, -2)
+> Operation 3: multiply(3, 0)
+> Final result: 0
+> 
+> buffapp(0,3,-1,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 4)
+> Operation 2: unknown(-2, -2)
+> Operation 3: multiply(4, 0)
+> Final result: 0
+> 
+> buffapp(0,4,-2,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 5)
+> Operation 2: unknown(-3, -2)
+> Operation 3: multiply(5, 0)
+> Final result: 0
+> 
+> buffapp(0,5,-3,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -1)
+> Operation 2: add(-4, -2)
+> Operation 3: multiply(-1, -6)
+> Final result: -1
+> 
+> buffapp(0,-1,-4,-2)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -2)
+> Operation 2: divide(7, -2)
+> Operation 3: multiply(-2, -3)
+> Final result: 0
+> 
+> buffapp(0,-2,7,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -3)
+> Operation 2: unknown(-7, -2)
+> Operation 3: multiply(-3, 0)
+> Final result: -12
+> 
+> buffapp(0,-3,-7,-2)=-12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -4)
+> Operation 2: add(100, -2)
+> Operation 3: multiply(-4, 98)
+> Final result: 0
+> 
+> buffapp(0,-4,100,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 7)
+> Operation 2: add(-100, -2)
+> Operation 3: multiply(7, -102)
+> Final result: 0
+> 
+> buffapp(0,7,-100,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -7)
+> Operation 2: add(12, -2)
+> Operation 3: multiply(-7, 10)
+> Final result: 0
+> 
+> buffapp(0,-7,12,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 100)
+> Operation 2: subtract(13, -2)
+> Operation 3: multiply(100, 15)
+> Final result: 0
+> 
+> buffapp(0,100,13,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -100)
+> Operation 2: divide(2147483647, -2)
+> Operation 3: multiply(-100, -1073741823)
+> Final result: 10737419
+> 
+> buffapp(0,-100,2147483647,-2)=10737419
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 12)
+> Operation 2: add(-2147483648, -2)
+> Operation 3: multiply(12, 2147483646)
+> Final result: 89478484
+> 
+> buffapp(0,12,-2147483648,-2)=89478484
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 13)
+> Operation 2: add(65536, -2)
+> Operation 3: multiply(13, 65534)
+> Final result: 0
+> 
+> buffapp(0,13,65536,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 2147483647)
+> Operation 2: add(-65536, -2)
+> Operation 3: multiply(2147483647, -65538)
+> Final result: 32766
+> 
+> buffapp(0,2147483647,-65536,-2)=32766
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -2147483648)
+> Operation 2: add(0, -2)
+> Operation 3: multiply(-2147483648, -2)
+> Final result: 2147483646
+> 
+> buffapp(0,-2147483648,0,-2)=2147483646
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, 65536)
+> Operation 2: subtract(1, -2)
+> Operation 3: multiply(65536, 3)
+> Final result: 0
+> 
+> buffapp(0,65536,1,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(0, -65536)
+> Operation 2: multiply(2, -2)
+> Operation 3: multiply(-65536, -4)
+> Final result: 0
+> 
+> buffapp(0,-65536,2,-2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 0)
+> Operation 2: divide(3, -3)
+> Operation 3: multiply(1, -1)
+> Final result: 0
+> 
+> buffapp(1,0,3,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 1)
+> Operation 2: add(4, -3)
+> Operation 3: multiply(0, 1)
+> Final result: 3
+> 
+> buffapp(1,1,4,-3)=3
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 2)
+> Operation 2: subtract(5, -3)
+> Operation 3: multiply(-1, 8)
+> Final result: 0
+> 
+> buffapp(1,2,5,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 3)
+> Operation 2: unknown(-1, -3)
+> Operation 3: multiply(-2, 0)
+> Final result: 0
+> 
+> buffapp(1,3,-1,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 4)
+> Operation 2: unknown(-2, -3)
+> Operation 3: multiply(-3, 0)
+> Final result: 0
+> 
+> buffapp(1,4,-2,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 5)
+> Operation 2: unknown(-3, -3)
+> Operation 3: multiply(-4, 0)
+> Final result: 0
+> 
+> buffapp(1,5,-3,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -1)
+> Operation 2: add(-4, -3)
+> Operation 3: multiply(2, -7)
+> Final result: 0
+> 
+> buffapp(1,-1,-4,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -2)
+> Operation 2: divide(7, -3)
+> Operation 3: multiply(3, -2)
+> Final result: 0
+> 
+> buffapp(1,-2,7,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -3)
+> Operation 2: unknown(-7, -3)
+> Operation 3: multiply(4, 0)
+> Final result: -12
+> 
+> buffapp(1,-3,-7,-3)=-12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -4)
+> Operation 2: add(100, -3)
+> Operation 3: multiply(5, 97)
+> Final result: 0
+> 
+> buffapp(1,-4,100,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 7)
+> Operation 2: add(-100, -3)
+> Operation 3: multiply(-6, -103)
+> Final result: 0
+> 
+> buffapp(1,7,-100,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -7)
+> Operation 2: add(12, -3)
+> Operation 3: multiply(8, 9)
+> Final result: 0
+> 
+> buffapp(1,-7,12,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 100)
+> Operation 2: subtract(13, -3)
+> Operation 3: multiply(-99, 16)
+> Final result: 0
+> 
+> buffapp(1,100,13,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -100)
+> Operation 2: divide(2147483647, -3)
+> Operation 3: multiply(101, -715827882)
+> Final result: 0
+> 
+> buffapp(1,-100,2147483647,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 12)
+> Operation 2: add(-2147483648, -3)
+> Operation 3: multiply(-11, 2147483645)
+> Final result: -1
+> 
+> buffapp(1,12,-2147483648,-3)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 13)
+> Operation 2: add(65536, -3)
+> Operation 3: multiply(-12, 65533)
+> Final result: 0
+> 
+> buffapp(1,13,65536,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 2147483647)
+> Operation 2: add(-65536, -3)
+> Operation 3: multiply(-2147483646, -65539)
+> Final result: 1
+> 
+> buffapp(1,2147483647,-65536,-3)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -2147483648)
+> Operation 2: add(0, -3)
+> Operation 3: multiply(-2147483647, -3)
+> Final result: 1
+> 
+> buffapp(1,-2147483648,0,-3)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, 65536)
+> Operation 2: subtract(1, -3)
+> Operation 3: multiply(-65535, 4)
+> Final result: 0
+> 
+> buffapp(1,65536,1,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(1, -65536)
+> Operation 2: multiply(2, -3)
+> Operation 3: multiply(65537, -6)
+> Final result: 0
+> 
+> buffapp(1,-65536,2,-3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 0)
+> Operation 2: divide(3, -4)
+> Operation 3: multiply(0, 0)
+> Final result: 1
+> 
+> buffapp(2,0,3,-4)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 1)
+> Operation 2: add(4, -4)
+> Operation 3: multiply(2, 0)
+> Final result: 3
+> 
+> buffapp(2,1,4,-4)=3
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 2)
+> Operation 2: subtract(5, -4)
+> Operation 3: multiply(4, 9)
+> Final result: 0
+> 
+> buffapp(2,2,5,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 3)
+> Operation 2: unknown(-1, -4)
+> Operation 3: multiply(6, 0)
+> Final result: 0
+> 
+> buffapp(2,3,-1,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 4)
+> Operation 2: unknown(-2, -4)
+> Operation 3: multiply(8, 0)
+> Final result: 0
+> 
+> buffapp(2,4,-2,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 5)
+> Operation 2: unknown(-3, -4)
+> Operation 3: multiply(10, 0)
+> Final result: 0
+> 
+> buffapp(2,5,-3,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -1)
+> Operation 2: add(-4, -4)
+> Operation 3: multiply(-2, -8)
+> Final result: 0
+> 
+> buffapp(2,-1,-4,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -2)
+> Operation 2: divide(7, -4)
+> Operation 3: multiply(-4, -1)
+> Final result: -1
+> 
+> buffapp(2,-2,7,-4)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -3)
+> Operation 2: unknown(-7, -4)
+> Operation 3: multiply(-6, 0)
+> Final result: -12
+> 
+> buffapp(2,-3,-7,-4)=-12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -4)
+> Operation 2: add(100, -4)
+> Operation 3: multiply(-8, 96)
+> Final result: 0
+> 
+> buffapp(2,-4,100,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 7)
+> Operation 2: add(-100, -4)
+> Operation 3: multiply(14, -104)
+> Final result: 0
+> 
+> buffapp(2,7,-100,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -7)
+> Operation 2: add(12, -4)
+> Operation 3: multiply(-14, 8)
+> Final result: 0
+> 
+> buffapp(2,-7,12,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 100)
+> Operation 2: subtract(13, -4)
+> Operation 3: multiply(200, 17)
+> Final result: 0
+> 
+> buffapp(2,100,13,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -100)
+> Operation 2: divide(2147483647, -4)
+> Operation 3: multiply(-200, -536870911)
+> Final result: 2684355
+> 
+> buffapp(2,-100,2147483647,-4)=2684355
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 12)
+> Operation 2: add(-2147483648, -4)
+> Operation 3: multiply(24, 2147483644)
+> Final result: 22369621
+> 
+> buffapp(2,12,-2147483648,-4)=22369621
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 13)
+> Operation 2: add(65536, -4)
+> Operation 3: multiply(26, 65532)
+> Final result: 0
+> 
+> buffapp(2,13,65536,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 2147483647)
+> Operation 2: add(-65536, -4)
+> Operation 3: multiply(-2, -65540)
+> Final result: 0
+> 
+> buffapp(2,2147483647,-65536,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -2147483648)
+> Operation 2: add(0, -4)
+> Operation 3: multiply(0, -4)
+> Final result: 2147483646
+> 
+> buffapp(2,-2147483648,0,-4)=2147483646
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, 65536)
+> Operation 2: subtract(1, -4)
+> Operation 3: multiply(131072, 5)
+> Final result: 0
+> 
+> buffapp(2,65536,1,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: multiply(2, -65536)
+> Operation 2: multiply(2, -4)
+> Operation 3: multiply(-131072, -8)
+> Final result: 0
+> 
+> buffapp(2,-65536,2,-4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 0)
+> Operation 2: divide(3, 7)
+> Operation 3: multiply(0, 0)
+> Final result: 13
+> 
+> buffapp(3,0,3,7)=13
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 1)
+> Operation 2: add(4, 7)
+> Operation 3: multiply(3, 11)
+> Final result: 0
+> 
+> buffapp(3,1,4,7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 2)
+> Operation 2: subtract(5, 7)
+> Operation 3: multiply(1, -2)
+> Final result: 0
+> 
+> buffapp(3,2,5,7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 3)
+> Operation 2: unknown(-1, 7)
+> Operation 3: multiply(1, 0)
+> Final result: 12
+> 
+> buffapp(3,3,-1,7)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 4)
+> Operation 2: unknown(-2, 7)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(3,4,-2,7)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 5)
+> Operation 2: unknown(-3, 7)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(3,5,-3,7)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -1)
+> Operation 2: add(-4, 7)
+> Operation 3: multiply(-3, 3)
+> Final result: 0
+> 
+> buffapp(3,-1,-4,7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -2)
+> Operation 2: divide(7, 7)
+> Operation 3: multiply(-1, 1)
+> Final result: 0
+> 
+> buffapp(3,-2,7,7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -3)
+> Operation 2: unknown(-7, 7)
+> Operation 3: multiply(-1, 0)
+> Final result: 0
+> 
+> buffapp(3,-3,-7,7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -4)
+> Operation 2: add(100, 7)
+> Operation 3: multiply(0, 107)
+> Final result: 106
+> 
+> buffapp(3,-4,100,7)=106
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 7)
+> Operation 2: add(-100, 7)
+> Operation 3: multiply(0, -93)
+> Final result: -83
+> 
+> buffapp(3,7,-100,7)=-83
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -7)
+> Operation 2: add(12, 7)
+> Operation 3: multiply(0, 19)
+> Final result: 15
+> 
+> buffapp(3,-7,12,7)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 100)
+> Operation 2: subtract(13, 7)
+> Operation 3: multiply(0, 6)
+> Final result: 123
+> 
+> buffapp(3,100,13,7)=123
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -100)
+> Operation 2: divide(2147483647, 7)
+> Operation 3: multiply(0, 306783378)
+> Final result: 2147483557
+> 
+> buffapp(3,-100,2147483647,7)=2147483557
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 12)
+> Operation 2: add(-2147483648, 7)
+> Operation 3: multiply(0, -2147483641)
+> Final result: -2147483626
+> 
+> buffapp(3,12,-2147483648,7)=-2147483626
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 13)
+> Operation 2: add(65536, 7)
+> Operation 3: multiply(0, 65543)
+> Final result: 65559
+> 
+> buffapp(3,13,65536,7)=65559
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 2147483647)
+> Operation 2: add(-65536, 7)
+> Operation 3: multiply(0, -65529)
+> Final result: 2147418121
+> 
+> buffapp(3,2147483647,-65536,7)=2147418121
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -2147483648)
+> Operation 2: add(0, 7)
+> Operation 3: multiply(0, 7)
+> Final result: -2147483638
+> 
+> buffapp(3,-2147483648,0,7)=-2147483638
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, 65536)
+> Operation 2: subtract(1, 7)
+> Operation 3: multiply(0, -6)
+> Final result: 65547
+> 
+> buffapp(3,65536,1,7)=65547
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(3, -65536)
+> Operation 2: multiply(2, 7)
+> Operation 3: multiply(0, 14)
+> Final result: -65524
+> 
+> buffapp(3,-65536,2,7)=-65524
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 0)
+> Operation 2: divide(3, -7)
+> Operation 3: multiply(4, 0)
+> Final result: 0
+> 
+> buffapp(4,0,3,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 1)
+> Operation 2: add(4, -7)
+> Operation 3: multiply(5, -3)
+> Final result: 0
+> 
+> buffapp(4,1,4,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 2)
+> Operation 2: subtract(5, -7)
+> Operation 3: multiply(6, 12)
+> Final result: 0
+> 
+> buffapp(4,2,5,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 3)
+> Operation 2: unknown(-1, -7)
+> Operation 3: multiply(7, 0)
+> Final result: -1
+> 
+> buffapp(4,3,-1,-7)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 4)
+> Operation 2: unknown(-2, -7)
+> Operation 3: multiply(8, 0)
+> Final result: -1
+> 
+> buffapp(4,4,-2,-7)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 5)
+> Operation 2: unknown(-3, -7)
+> Operation 3: multiply(9, 0)
+> Final result: -1
+> 
+> buffapp(4,5,-3,-7)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -1)
+> Operation 2: add(-4, -7)
+> Operation 3: multiply(3, -11)
+> Final result: 0
+> 
+> buffapp(4,-1,-4,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -2)
+> Operation 2: divide(7, -7)
+> Operation 3: multiply(2, -1)
+> Final result: 0
+> 
+> buffapp(4,-2,7,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -3)
+> Operation 2: unknown(-7, -7)
+> Operation 3: multiply(1, 0)
+> Final result: -13
+> 
+> buffapp(4,-3,-7,-7)=-13
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -4)
+> Operation 2: add(100, -7)
+> Operation 3: multiply(0, 93)
+> Final result: 93
+> 
+> buffapp(4,-4,100,-7)=93
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 7)
+> Operation 2: add(-100, -7)
+> Operation 3: multiply(11, -107)
+> Final result: 0
+> 
+> buffapp(4,7,-100,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -7)
+> Operation 2: add(12, -7)
+> Operation 3: multiply(-3, 5)
+> Final result: 0
+> 
+> buffapp(4,-7,12,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 100)
+> Operation 2: subtract(13, -7)
+> Operation 3: multiply(104, 20)
+> Final result: 0
+> 
+> buffapp(4,100,13,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -100)
+> Operation 2: divide(2147483647, -7)
+> Operation 3: multiply(-96, -306783378)
+> Final result: 0
+> 
+> buffapp(4,-100,2147483647,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 12)
+> Operation 2: add(-2147483648, -7)
+> Operation 3: multiply(16, 2147483641)
+> Final result: 19173961
+> 
+> buffapp(4,12,-2147483648,-7)=19173961
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 13)
+> Operation 2: add(65536, -7)
+> Operation 3: multiply(17, 65529)
+> Final result: 0
+> 
+> buffapp(4,13,65536,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 2147483647)
+> Operation 2: add(-65536, -7)
+> Operation 3: multiply(-2147483645, -65543)
+> Final result: 1
+> 
+> buffapp(4,2147483647,-65536,-7)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -2147483648)
+> Operation 2: add(0, -7)
+> Operation 3: multiply(-2147483644, -7)
+> Final result: 1
+> 
+> buffapp(4,-2147483648,0,-7)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, 65536)
+> Operation 2: subtract(1, -7)
+> Operation 3: multiply(65540, 8)
+> Final result: 0
+> 
+> buffapp(4,65536,1,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(4, -65536)
+> Operation 2: multiply(2, -7)
+> Operation 3: multiply(-65532, -14)
+> Final result: 0
+> 
+> buffapp(4,-65536,2,-7)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 0)
+> Operation 2: divide(3, 100)
+> Operation 3: multiply(5, 0)
+> Final result: 108
+> 
+> buffapp(5,0,3,100)=108
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 1)
+> Operation 2: add(4, 100)
+> Operation 3: multiply(4, 104)
+> Final result: 0
+> 
+> buffapp(5,1,4,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 2)
+> Operation 2: subtract(5, 100)
+> Operation 3: multiply(3, -95)
+> Final result: 0
+> 
+> buffapp(5,2,5,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 3)
+> Operation 2: unknown(-1, 100)
+> Operation 3: multiply(2, 0)
+> Final result: 107
+> 
+> buffapp(5,3,-1,100)=107
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 4)
+> Operation 2: unknown(-2, 100)
+> Operation 3: multiply(1, 0)
+> Final result: 107
+> 
+> buffapp(5,4,-2,100)=107
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 5)
+> Operation 2: unknown(-3, 100)
+> Operation 3: multiply(0, 0)
+> Final result: 107
+> 
+> buffapp(5,5,-3,100)=107
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -1)
+> Operation 2: add(-4, 100)
+> Operation 3: multiply(6, 96)
+> Final result: 0
+> 
+> buffapp(5,-1,-4,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -2)
+> Operation 2: divide(7, 100)
+> Operation 3: multiply(7, 0)
+> Final result: 110
+> 
+> buffapp(5,-2,7,100)=110
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -3)
+> Operation 2: unknown(-7, 100)
+> Operation 3: multiply(8, 0)
+> Final result: 95
+> 
+> buffapp(5,-3,-7,100)=95
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -4)
+> Operation 2: add(100, 100)
+> Operation 3: multiply(9, 200)
+> Final result: 0
+> 
+> buffapp(5,-4,100,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 7)
+> Operation 2: add(-100, 100)
+> Operation 3: multiply(-2, 0)
+> Final result: 12
+> 
+> buffapp(5,7,-100,100)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -7)
+> Operation 2: add(12, 100)
+> Operation 3: multiply(12, 112)
+> Final result: 0
+> 
+> buffapp(5,-7,12,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 100)
+> Operation 2: subtract(13, 100)
+> Operation 3: multiply(-95, -87)
+> Final result: 0
+> 
+> buffapp(5,100,13,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -100)
+> Operation 2: divide(2147483647, 100)
+> Operation 3: multiply(105, 21474836)
+> Final result: 0
+> 
+> buffapp(5,-100,2147483647,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 12)
+> Operation 2: add(-2147483648, 100)
+> Operation 3: multiply(-7, -2147483548)
+> Final result: -1
+> 
+> buffapp(5,12,-2147483648,100)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 13)
+> Operation 2: add(65536, 100)
+> Operation 3: multiply(-8, 65636)
+> Final result: 0
+> 
+> buffapp(5,13,65536,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 2147483647)
+> Operation 2: add(-65536, 100)
+> Operation 3: multiply(-2147483642, -65436)
+> Final result: -5469
+> 
+> buffapp(5,2147483647,-65536,100)=-5469
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -2147483648)
+> Operation 2: add(0, 100)
+> Operation 3: multiply(-2147483643, 100)
+> Final result: -4294967
+> 
+> buffapp(5,-2147483648,0,100)=-4294967
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, 65536)
+> Operation 2: subtract(1, 100)
+> Operation 3: multiply(-65531, -99)
+> Final result: 0
+> 
+> buffapp(5,65536,1,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(5, -65536)
+> Operation 2: multiply(2, 100)
+> Operation 3: multiply(65541, 200)
+> Final result: 0
+> 
+> buffapp(5,-65536,2,100)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 0)
+> Operation 2: divide(3, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -98
+> 
+> buffapp(-1,0,3,-100)=-98
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 1)
+> Operation 2: add(4, -100)
+> Operation 3: multiply(0, -96)
+> Final result: -96
+> 
+> buffapp(-1,1,4,-100)=-96
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 2)
+> Operation 2: subtract(5, -100)
+> Operation 3: multiply(0, 105)
+> Final result: -94
+> 
+> buffapp(-1,2,5,-100)=-94
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 3)
+> Operation 2: unknown(-1, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -99
+> 
+> buffapp(-1,3,-1,-100)=-99
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 4)
+> Operation 2: unknown(-2, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -99
+> 
+> buffapp(-1,4,-2,-100)=-99
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 5)
+> Operation 2: unknown(-3, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -99
+> 
+> buffapp(-1,5,-3,-100)=-99
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -1)
+> Operation 2: add(-4, -100)
+> Operation 3: multiply(0, -104)
+> Final result: -106
+> 
+> buffapp(-1,-1,-4,-100)=-106
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -2)
+> Operation 2: divide(7, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -96
+> 
+> buffapp(-1,-2,7,-100)=-96
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -3)
+> Operation 2: unknown(-7, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -111
+> 
+> buffapp(-1,-3,-7,-100)=-111
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -4)
+> Operation 2: add(100, -100)
+> Operation 3: multiply(0, 0)
+> Final result: -5
+> 
+> buffapp(-1,-4,100,-100)=-5
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 7)
+> Operation 2: add(-100, -100)
+> Operation 3: multiply(0, -200)
+> Final result: -194
+> 
+> buffapp(-1,7,-100,-100)=-194
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -7)
+> Operation 2: add(12, -100)
+> Operation 3: multiply(0, -88)
+> Final result: -96
+> 
+> buffapp(-1,-7,12,-100)=-96
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 100)
+> Operation 2: subtract(13, -100)
+> Operation 3: multiply(0, 113)
+> Final result: 12
+> 
+> buffapp(-1,100,13,-100)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -100)
+> Operation 2: divide(2147483647, -100)
+> Operation 3: multiply(0, -21474836)
+> Final result: 2147483446
+> 
+> buffapp(-1,-100,2147483647,-100)=2147483446
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 12)
+> Operation 2: add(-2147483648, -100)
+> Operation 3: multiply(0, 2147483548)
+> Final result: 2147483559
+> 
+> buffapp(-1,12,-2147483648,-100)=2147483559
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 13)
+> Operation 2: add(65536, -100)
+> Operation 3: multiply(0, 65436)
+> Final result: 65448
+> 
+> buffapp(-1,13,65536,-100)=65448
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 2147483647)
+> Operation 2: add(-65536, -100)
+> Operation 3: multiply(0, -65636)
+> Final result: 2147418010
+> 
+> buffapp(-1,2147483647,-65536,-100)=2147418010
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -2147483648)
+> Operation 2: add(0, -100)
+> Operation 3: multiply(0, -100)
+> Final result: 2147483547
+> 
+> buffapp(-1,-2147483648,0,-100)=2147483547
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, 65536)
+> Operation 2: subtract(1, -100)
+> Operation 3: multiply(0, 101)
+> Final result: 65436
+> 
+> buffapp(-1,65536,1,-100)=65436
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-1, -65536)
+> Operation 2: multiply(2, -100)
+> Operation 3: multiply(0, -200)
+> Final result: -65635
+> 
+> buffapp(-1,-65536,2,-100)=-65635
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 0)
+> Operation 2: divide(3, 12)
+> Operation 3: multiply(0, 0)
+> Final result: 13
+> 
+> buffapp(-2,0,3,12)=13
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 1)
+> Operation 2: add(4, 12)
+> Operation 3: multiply(0, 16)
+> Final result: 15
+> 
+> buffapp(-2,1,4,12)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 2)
+> Operation 2: subtract(5, 12)
+> Operation 3: multiply(0, -7)
+> Final result: 17
+> 
+> buffapp(-2,2,5,12)=17
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 3)
+> Operation 2: unknown(-1, 12)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(-2,3,-1,12)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 4)
+> Operation 2: unknown(-2, 12)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(-2,4,-2,12)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 5)
+> Operation 2: unknown(-3, 12)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(-2,5,-3,12)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -1)
+> Operation 2: add(-4, 12)
+> Operation 3: multiply(0, 8)
+> Final result: 5
+> 
+> buffapp(-2,-1,-4,12)=5
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -2)
+> Operation 2: divide(7, 12)
+> Operation 3: multiply(0, 0)
+> Final result: 15
+> 
+> buffapp(-2,-2,7,12)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -3)
+> Operation 2: unknown(-7, 12)
+> Operation 3: multiply(0, 0)
+> Final result: 0
+> 
+> buffapp(-2,-3,-7,12)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -4)
+> Operation 2: add(100, 12)
+> Operation 3: multiply(0, 112)
+> Final result: 106
+> 
+> buffapp(-2,-4,100,12)=106
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 7)
+> Operation 2: add(-100, 12)
+> Operation 3: multiply(0, -88)
+> Final result: -83
+> 
+> buffapp(-2,7,-100,12)=-83
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -7)
+> Operation 2: add(12, 12)
+> Operation 3: multiply(0, 24)
+> Final result: 15
+> 
+> buffapp(-2,-7,12,12)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 100)
+> Operation 2: subtract(13, 12)
+> Operation 3: multiply(0, 1)
+> Final result: 123
+> 
+> buffapp(-2,100,13,12)=123
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -100)
+> Operation 2: divide(2147483647, 12)
+> Operation 3: multiply(0, 178956970)
+> Final result: 2147483557
+> 
+> buffapp(-2,-100,2147483647,12)=2147483557
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 12)
+> Operation 2: add(-2147483648, 12)
+> Operation 3: multiply(0, -2147483636)
+> Final result: -2147483626
+> 
+> buffapp(-2,12,-2147483648,12)=-2147483626
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 13)
+> Operation 2: add(65536, 12)
+> Operation 3: multiply(0, 65548)
+> Final result: 65559
+> 
+> buffapp(-2,13,65536,12)=65559
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 2147483647)
+> Operation 2: add(-65536, 12)
+> Operation 3: multiply(0, -65524)
+> Final result: 2147418121
+> 
+> buffapp(-2,2147483647,-65536,12)=2147418121
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -2147483648)
+> Operation 2: add(0, 12)
+> Operation 3: multiply(0, 12)
+> Final result: -2147483638
+> 
+> buffapp(-2,-2147483648,0,12)=-2147483638
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, 65536)
+> Operation 2: subtract(1, 12)
+> Operation 3: multiply(0, -11)
+> Final result: 65547
+> 
+> buffapp(-2,65536,1,12)=65547
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-2, -65536)
+> Operation 2: multiply(2, 12)
+> Operation 3: multiply(0, 24)
+> Final result: -65524
+> 
+> buffapp(-2,-65536,2,12)=-65524
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 0)
+> Operation 2: divide(3, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 13
+> 
+> buffapp(-3,0,3,13)=13
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 1)
+> Operation 2: add(4, 13)
+> Operation 3: multiply(0, 17)
+> Final result: 15
+> 
+> buffapp(-3,1,4,13)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 2)
+> Operation 2: subtract(5, 13)
+> Operation 3: multiply(0, -8)
+> Final result: 17
+> 
+> buffapp(-3,2,5,13)=17
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 3)
+> Operation 2: unknown(-1, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(-3,3,-1,13)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 4)
+> Operation 2: unknown(-2, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(-3,4,-2,13)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 5)
+> Operation 2: unknown(-3, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 12
+> 
+> buffapp(-3,5,-3,13)=12
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -1)
+> Operation 2: add(-4, 13)
+> Operation 3: multiply(0, 9)
+> Final result: 5
+> 
+> buffapp(-3,-1,-4,13)=5
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -2)
+> Operation 2: divide(7, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 15
+> 
+> buffapp(-3,-2,7,13)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -3)
+> Operation 2: unknown(-7, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 0
+> 
+> buffapp(-3,-3,-7,13)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -4)
+> Operation 2: add(100, 13)
+> Operation 3: multiply(0, 113)
+> Final result: 106
+> 
+> buffapp(-3,-4,100,13)=106
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 7)
+> Operation 2: add(-100, 13)
+> Operation 3: multiply(0, -87)
+> Final result: -83
+> 
+> buffapp(-3,7,-100,13)=-83
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -7)
+> Operation 2: add(12, 13)
+> Operation 3: multiply(0, 25)
+> Final result: 15
+> 
+> buffapp(-3,-7,12,13)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 100)
+> Operation 2: subtract(13, 13)
+> Operation 3: multiply(0, 0)
+> Final result: 123
+> 
+> buffapp(-3,100,13,13)=123
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -100)
+> Operation 2: divide(2147483647, 13)
+> Operation 3: multiply(0, 165191049)
+> Final result: 2147483557
+> 
+> buffapp(-3,-100,2147483647,13)=2147483557
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 12)
+> Operation 2: add(-2147483648, 13)
+> Operation 3: multiply(0, -2147483635)
+> Final result: -2147483626
+> 
+> buffapp(-3,12,-2147483648,13)=-2147483626
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 13)
+> Operation 2: add(65536, 13)
+> Operation 3: multiply(0, 65549)
+> Final result: 65559
+> 
+> buffapp(-3,13,65536,13)=65559
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 2147483647)
+> Operation 2: add(-65536, 13)
+> Operation 3: multiply(0, -65523)
+> Final result: 2147418121
+> 
+> buffapp(-3,2147483647,-65536,13)=2147418121
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -2147483648)
+> Operation 2: add(0, 13)
+> Operation 3: multiply(0, 13)
+> Final result: -2147483638
+> 
+> buffapp(-3,-2147483648,0,13)=-2147483638
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, 65536)
+> Operation 2: subtract(1, 13)
+> Operation 3: multiply(0, -12)
+> Final result: 65547
+> 
+> buffapp(-3,65536,1,13)=65547
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-3, -65536)
+> Operation 2: multiply(2, 13)
+> Operation 3: multiply(0, 26)
+> Final result: -65524
+> 
+> buffapp(-3,-65536,2,13)=-65524
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 0)
+> Operation 2: divide(3, 2147483647)
+> Operation 3: multiply(-4, 0)
+> Final result: 2147483646
+> 
+> buffapp(-4,0,3,2147483647)=2147483646
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 1)
+> Operation 2: add(4, 2147483647)
+> Operation 3: multiply(-3, -2147483645)
+> Final result: -1
+> 
+> buffapp(-4,1,4,2147483647)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 2)
+> Operation 2: subtract(5, 2147483647)
+> Operation 3: multiply(-2, -2147483642)
+> Final result: 178956970
+> 
+> buffapp(-4,2,5,2147483647)=178956970
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 3)
+> Operation 2: unknown(-1, 2147483647)
+> Operation 3: multiply(-1, 0)
+> Final result: 2147483645
+> 
+> buffapp(-4,3,-1,2147483647)=2147483645
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 4)
+> Operation 2: unknown(-2, 2147483647)
+> Operation 3: multiply(0, 0)
+> Final result: 2147483645
+> 
+> buffapp(-4,4,-2,2147483647)=2147483645
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 5)
+> Operation 2: unknown(-3, 2147483647)
+> Operation 3: multiply(1, 0)
+> Final result: 2147483645
+> 
+> buffapp(-4,5,-3,2147483647)=2147483645
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -1)
+> Operation 2: add(-4, 2147483647)
+> Operation 3: multiply(-5, 2147483643)
+> Final result: -1
+> 
+> buffapp(-4,-1,-4,2147483647)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -2)
+> Operation 2: divide(7, 2147483647)
+> Operation 3: multiply(-6, 0)
+> Final result: -2147483648
+> 
+> buffapp(-4,-2,7,2147483647)=-2147483648
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -3)
+> Operation 2: unknown(-7, 2147483647)
+> Operation 3: multiply(-7, 0)
+> Final result: 2147483633
+> 
+> buffapp(-4,-3,-7,2147483647)=2147483633
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -4)
+> Operation 2: add(100, 2147483647)
+> Operation 3: multiply(-8, -2147483549)
+> Final result: 2711469
+> 
+> buffapp(-4,-4,100,2147483647)=2711469
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 7)
+> Operation 2: add(-100, 2147483647)
+> Operation 3: multiply(3, 2147483547)
+> Final result: 1
+> 
+> buffapp(-4,7,-100,2147483647)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -7)
+> Operation 2: add(12, 2147483647)
+> Operation 3: multiply(-11, -2147483637)
+> Final result: -1
+> 
+> buffapp(-4,-7,12,2147483647)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 100)
+> Operation 2: subtract(13, 2147483647)
+> Operation 3: multiply(96, -2147483634)
+> Final result: -1597830
+> 
+> buffapp(-4,100,13,2147483647)=-1597830
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -100)
+> Operation 2: divide(2147483647, 2147483647)
+> Operation 3: multiply(-104, 1)
+> Final result: 0
+> 
+> buffapp(-4,-100,2147483647,2147483647)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 12)
+> Operation 2: add(-2147483648, 2147483647)
+> Operation 3: multiply(8, -1)
+> Final result: 0
+> 
+> buffapp(-4,12,-2147483648,2147483647)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 13)
+> Operation 2: add(65536, 2147483647)
+> Operation 3: multiply(9, -2147418113)
+> Final result: 1
+> 
+> buffapp(-4,13,65536,2147483647)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 2147483647)
+> Operation 2: add(-65536, 2147483647)
+> Operation 3: multiply(2147483643, 2147418111)
+> Final result: 0
+> 
+> buffapp(-4,2147483647,-65536,2147483647)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -2147483648)
+> Operation 2: add(0, 2147483647)
+> Operation 3: multiply(2147483644, 2147483647)
+> Final result: 0
+> 
+> buffapp(-4,-2147483648,0,2147483647)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, 65536)
+> Operation 2: subtract(1, 2147483647)
+> Operation 3: multiply(65532, -2147483646)
+> Final result: -16384
+> 
+> buffapp(-4,65536,1,2147483647)=-16384
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-4, -65536)
+> Operation 2: multiply(2, 2147483647)
+> Operation 3: multiply(-65540, -2)
+> Final result: 0
+> 
+> buffapp(-4,-65536,2,2147483647)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 0)
+> Operation 2: divide(3, -2147483648)
+> Operation 3: multiply(0, 0)
+> Final result: -2147483638
+> 
+> buffapp(7,0,3,-2147483648)=-2147483638
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 1)
+> Operation 2: add(4, -2147483648)
+> Operation 3: multiply(7, -2147483644)
+> Final result: 1
+> 
+> buffapp(7,1,4,-2147483648)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 2)
+> Operation 2: subtract(5, -2147483648)
+> Operation 3: multiply(3, -2147483643)
+> Final result: 1
+> 
+> buffapp(7,2,5,-2147483648)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 3)
+> Operation 2: unknown(-1, -2147483648)
+> Operation 3: multiply(2, 0)
+> Final result: -2147483639
+> 
+> buffapp(7,3,-1,-2147483648)=-2147483639
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 4)
+> Operation 2: unknown(-2, -2147483648)
+> Operation 3: multiply(1, 0)
+> Final result: -2147483639
+> 
+> buffapp(7,4,-2,-2147483648)=-2147483639
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 5)
+> Operation 2: unknown(-3, -2147483648)
+> Operation 3: multiply(1, 0)
+> Final result: -2147483639
+> 
+> buffapp(7,5,-3,-2147483648)=-2147483639
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -1)
+> Operation 2: add(-4, -2147483648)
+> Operation 3: multiply(-7, 2147483644)
+> Final result: -1
+> 
+> buffapp(7,-1,-4,-2147483648)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -2)
+> Operation 2: divide(7, -2147483648)
+> Operation 3: multiply(-3, 0)
+> Final result: -2147483636
+> 
+> buffapp(7,-2,7,-2147483648)=-2147483636
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -3)
+> Operation 2: unknown(-7, -2147483648)
+> Operation 3: multiply(-2, 0)
+> Final result: 2147483645
+> 
+> buffapp(7,-3,-7,-2147483648)=2147483645
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -4)
+> Operation 2: add(100, -2147483648)
+> Operation 3: multiply(-1, -2147483548)
+> Final result: -1
+> 
+> buffapp(7,-4,100,-2147483648)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 7)
+> Operation 2: add(-100, -2147483648)
+> Operation 3: multiply(1, 2147483548)
+> Final result: 1
+> 
+> buffapp(7,7,-100,-2147483648)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -7)
+> Operation 2: add(12, -2147483648)
+> Operation 3: multiply(-1, -2147483636)
+> Final result: -1
+> 
+> buffapp(7,-7,12,-2147483648)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 100)
+> Operation 2: subtract(13, -2147483648)
+> Operation 3: multiply(0, -2147483635)
+> Final result: -2147483528
+> 
+> buffapp(7,100,13,-2147483648)=-2147483528
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -100)
+> Operation 2: divide(2147483647, -2147483648)
+> Operation 3: multiply(0, 0)
+> Final result: -94
+> 
+> buffapp(7,-100,2147483647,-2147483648)=-94
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 12)
+> Operation 2: add(-2147483648, -2147483648)
+> Operation 3: multiply(0, 0)
+> Final result: 19
+> 
+> buffapp(7,12,-2147483648,-2147483648)=19
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 13)
+> Operation 2: add(65536, -2147483648)
+> Operation 3: multiply(0, -2147418112)
+> Final result: -2147418092
+> 
+> buffapp(7,13,65536,-2147483648)=-2147418092
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 2147483647)
+> Operation 2: add(-65536, -2147483648)
+> Operation 3: multiply(0, 2147418112)
+> Final result: -65530
+> 
+> buffapp(7,2147483647,-65536,-2147483648)=-65530
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -2147483648)
+> Operation 2: add(0, -2147483648)
+> Operation 3: multiply(0, -2147483648)
+> Final result: 7
+> 
+> buffapp(7,-2147483648,0,-2147483648)=7
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, 65536)
+> Operation 2: subtract(1, -2147483648)
+> Operation 3: multiply(0, -2147483647)
+> Final result: -2147418104
+> 
+> buffapp(7,65536,1,-2147483648)=-2147418104
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(7, -65536)
+> Operation 2: multiply(2, -2147483648)
+> Operation 3: multiply(0, 0)
+> Final result: 2147418121
+> 
+> buffapp(7,-65536,2,-2147483648)=2147418121
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 0)
+> Operation 2: divide(3, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 65532
+> 
+> buffapp(-7,0,3,65536)=65532
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 1)
+> Operation 2: add(4, 65536)
+> Operation 3: multiply(0, 65540)
+> Final result: 65534
+> 
+> buffapp(-7,1,4,65536)=65534
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 2)
+> Operation 2: subtract(5, 65536)
+> Operation 3: multiply(0, -65531)
+> Final result: 65536
+> 
+> buffapp(-7,2,5,65536)=65536
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 3)
+> Operation 2: unknown(-1, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 65531
+> 
+> buffapp(-7,3,-1,65536)=65531
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 4)
+> Operation 2: unknown(-2, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 65531
+> 
+> buffapp(-7,4,-2,65536)=65531
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 5)
+> Operation 2: unknown(-3, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 65531
+> 
+> buffapp(-7,5,-3,65536)=65531
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -1)
+> Operation 2: add(-4, 65536)
+> Operation 3: multiply(0, 65532)
+> Final result: 65524
+> 
+> buffapp(-7,-1,-4,65536)=65524
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -2)
+> Operation 2: divide(7, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 65534
+> 
+> buffapp(-7,-2,7,65536)=65534
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -3)
+> Operation 2: unknown(-7, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 65519
+> 
+> buffapp(-7,-3,-7,65536)=65519
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -4)
+> Operation 2: add(100, 65536)
+> Operation 3: multiply(0, 65636)
+> Final result: 65625
+> 
+> buffapp(-7,-4,100,65536)=65625
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 7)
+> Operation 2: add(-100, 65536)
+> Operation 3: multiply(0, 65436)
+> Final result: 65436
+> 
+> buffapp(-7,7,-100,65536)=65436
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -7)
+> Operation 2: add(12, 65536)
+> Operation 3: multiply(0, 65548)
+> Final result: 65534
+> 
+> buffapp(-7,-7,12,65536)=65534
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 100)
+> Operation 2: subtract(13, 65536)
+> Operation 3: multiply(0, -65523)
+> Final result: 65642
+> 
+> buffapp(-7,100,13,65536)=65642
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -100)
+> Operation 2: divide(2147483647, 65536)
+> Operation 3: multiply(0, 32767)
+> Final result: -2147418220
+> 
+> buffapp(-7,-100,2147483647,65536)=-2147418220
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 12)
+> Operation 2: add(-2147483648, 65536)
+> Operation 3: multiply(0, -2147418112)
+> Final result: -2147418107
+> 
+> buffapp(-7,12,-2147483648,65536)=-2147418107
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 13)
+> Operation 2: add(65536, 65536)
+> Operation 3: multiply(0, 131072)
+> Final result: 131078
+> 
+> buffapp(-7,13,65536,65536)=131078
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 2147483647)
+> Operation 2: add(-65536, 65536)
+> Operation 3: multiply(0, 0)
+> Final result: 2147483640
+> 
+> buffapp(-7,2147483647,-65536,65536)=2147483640
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -2147483648)
+> Operation 2: add(0, 65536)
+> Operation 3: multiply(0, 65536)
+> Final result: -2147418119
+> 
+> buffapp(-7,-2147483648,0,65536)=-2147418119
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, 65536)
+> Operation 2: subtract(1, 65536)
+> Operation 3: multiply(0, -65535)
+> Final result: 131066
+> 
+> buffapp(-7,65536,1,65536)=131066
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: unknown(-7, -65536)
+> Operation 2: multiply(2, 65536)
+> Operation 3: multiply(0, 131072)
+> Final result: -5
+> 
+> buffapp(-7,-65536,2,65536)=-5
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 0)
+> Operation 2: divide(3, -65536)
+> Operation 3: multiply(100, 0)
+> Final result: -65433
+> 
+> buffapp(100,0,3,-65536)=-65433
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 1)
+> Operation 2: add(4, -65536)
+> Operation 3: multiply(101, -65532)
+> Final result: 0
+> 
+> buffapp(100,1,4,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 2)
+> Operation 2: subtract(5, -65536)
+> Operation 3: multiply(102, 65541)
+> Final result: 0
+> 
+> buffapp(100,2,5,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 3)
+> Operation 2: unknown(-1, -65536)
+> Operation 3: multiply(103, 0)
+> Final result: -65434
+> 
+> buffapp(100,3,-1,-65536)=-65434
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 4)
+> Operation 2: unknown(-2, -65536)
+> Operation 3: multiply(104, 0)
+> Final result: -65434
+> 
+> buffapp(100,4,-2,-65536)=-65434
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 5)
+> Operation 2: unknown(-3, -65536)
+> Operation 3: multiply(105, 0)
+> Final result: -65434
+> 
+> buffapp(100,5,-3,-65536)=-65434
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -1)
+> Operation 2: add(-4, -65536)
+> Operation 3: multiply(99, -65540)
+> Final result: 0
+> 
+> buffapp(100,-1,-4,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -2)
+> Operation 2: divide(7, -65536)
+> Operation 3: multiply(98, 0)
+> Final result: -65431
+> 
+> buffapp(100,-2,7,-65536)=-65431
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -3)
+> Operation 2: unknown(-7, -65536)
+> Operation 3: multiply(97, 0)
+> Final result: -65446
+> 
+> buffapp(100,-3,-7,-65536)=-65446
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -4)
+> Operation 2: add(100, -65536)
+> Operation 3: multiply(96, -65436)
+> Final result: 0
+> 
+> buffapp(100,-4,100,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 7)
+> Operation 2: add(-100, -65536)
+> Operation 3: multiply(107, -65636)
+> Final result: 0
+> 
+> buffapp(100,7,-100,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -7)
+> Operation 2: add(12, -65536)
+> Operation 3: multiply(93, -65524)
+> Final result: 0
+> 
+> buffapp(100,-7,12,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 100)
+> Operation 2: subtract(13, -65536)
+> Operation 3: multiply(200, 65549)
+> Final result: 0
+> 
+> buffapp(100,100,13,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -100)
+> Operation 2: divide(2147483647, -65536)
+> Operation 3: multiply(0, -32767)
+> Final result: 2147418111
+> 
+> buffapp(100,-100,2147483647,-65536)=2147418111
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 12)
+> Operation 2: add(-2147483648, -65536)
+> Operation 3: multiply(112, 2147418112)
+> Final result: -292
+> 
+> buffapp(100,12,-2147483648,-65536)=-292
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 13)
+> Operation 2: add(65536, -65536)
+> Operation 3: multiply(113, 0)
+> Final result: 113
+> 
+> buffapp(100,13,65536,-65536)=113
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 2147483647)
+> Operation 2: add(-65536, -65536)
+> Operation 3: multiply(-2147483549, -131072)
+> Final result: -165
+> 
+> buffapp(100,2147483647,-65536,-65536)=-165
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -2147483648)
+> Operation 2: add(0, -65536)
+> Operation 3: multiply(-2147483548, -65536)
+> Final result: -327
+> 
+> buffapp(100,-2147483648,0,-65536)=-327
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, 65536)
+> Operation 2: subtract(1, -65536)
+> Operation 3: multiply(65636, 65537)
+> Final result: 0
+> 
+> buffapp(100,65536,1,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(100, -65536)
+> Operation 2: multiply(2, -65536)
+> Operation 3: multiply(-65436, -131072)
+> Final result: 0
+> 
+> buffapp(100,-65536,2,-65536)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 0)
+> Operation 2: divide(3, 0)
+> Operation 3: multiply(-100, 0)
+> Final result: -97
+> 
+> buffapp(-100,0,3,0)=-97
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 1)
+> Operation 2: add(4, 0)
+> Operation 3: multiply(-99, 4)
+> Final result: 0
+> 
+> buffapp(-100,1,4,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 2)
+> Operation 2: subtract(5, 0)
+> Operation 3: multiply(-98, 5)
+> Final result: 0
+> 
+> buffapp(-100,2,5,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 3)
+> Operation 2: unknown(-1, 0)
+> Operation 3: multiply(-97, 0)
+> Final result: -98
+> 
+> buffapp(-100,3,-1,0)=-98
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 4)
+> Operation 2: unknown(-2, 0)
+> Operation 3: multiply(-96, 0)
+> Final result: -98
+> 
+> buffapp(-100,4,-2,0)=-98
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 5)
+> Operation 2: unknown(-3, 0)
+> Operation 3: multiply(-95, 0)
+> Final result: -98
+> 
+> buffapp(-100,5,-3,0)=-98
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -1)
+> Operation 2: add(-4, 0)
+> Operation 3: multiply(-101, -4)
+> Final result: 0
+> 
+> buffapp(-100,-1,-4,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -2)
+> Operation 2: divide(7, 0)
+> Operation 3: multiply(-102, 0)
+> Final result: -95
+> 
+> buffapp(-100,-2,7,0)=-95
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -3)
+> Operation 2: unknown(-7, 0)
+> Operation 3: multiply(-103, 0)
+> Final result: -110
+> 
+> buffapp(-100,-3,-7,0)=-110
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -4)
+> Operation 2: add(100, 0)
+> Operation 3: multiply(-104, 100)
+> Final result: 0
+> 
+> buffapp(-100,-4,100,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 7)
+> Operation 2: add(-100, 0)
+> Operation 3: multiply(-93, -100)
+> Final result: 0
+> 
+> buffapp(-100,7,-100,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -7)
+> Operation 2: add(12, 0)
+> Operation 3: multiply(-107, 12)
+> Final result: 0
+> 
+> buffapp(-100,-7,12,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 100)
+> Operation 2: subtract(13, 0)
+> Operation 3: multiply(0, 13)
+> Final result: 13
+> 
+> buffapp(-100,100,13,0)=13
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -100)
+> Operation 2: divide(2147483647, 0)
+> Operation 3: multiply(-200, 0)
+> Final result: 2147483447
+> 
+> buffapp(-100,-100,2147483647,0)=2147483447
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 12)
+> Operation 2: add(-2147483648, 0)
+> Operation 3: multiply(-88, -2147483648)
+> Final result: 2147483560
+> 
+> buffapp(-100,12,-2147483648,0)=2147483560
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 13)
+> Operation 2: add(65536, 0)
+> Operation 3: multiply(-87, 65536)
+> Final result: 0
+> 
+> buffapp(-100,13,65536,0)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 2147483647)
+> Operation 2: add(-65536, 0)
+> Operation 3: multiply(2147483547, -65536)
+> Final result: 324
+> 
+> buffapp(-100,2147483647,-65536,0)=324
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -2147483648)
+> Operation 2: add(0, 0)
+> Operation 3: multiply(2147483548, 0)
+> Final result: 2147483548
+> 
+> buffapp(-100,-2147483648,0,0)=2147483548
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, 65536)
+> Operation 2: subtract(1, 0)
+> Operation 3: multiply(65436, 1)
+> Final result: 1
+> 
+> buffapp(-100,65536,1,0)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-100, -65536)
+> Operation 2: multiply(2, 0)
+> Operation 3: multiply(-65636, 0)
+> Final result: -65634
+> 
+> buffapp(-100,-65536,2,0)=-65634
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 0)
+> Operation 2: divide(3, 1)
+> Operation 3: multiply(12, 3)
+> Final result: 0
+> 
+> buffapp(12,0,3,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 1)
+> Operation 2: add(4, 1)
+> Operation 3: multiply(13, 5)
+> Final result: 0
+> 
+> buffapp(12,1,4,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 2)
+> Operation 2: subtract(5, 1)
+> Operation 3: multiply(14, 4)
+> Final result: 0
+> 
+> buffapp(12,2,5,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 3)
+> Operation 2: unknown(-1, 1)
+> Operation 3: multiply(15, 0)
+> Final result: 15
+> 
+> buffapp(12,3,-1,1)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 4)
+> Operation 2: unknown(-2, 1)
+> Operation 3: multiply(16, 0)
+> Final result: 15
+> 
+> buffapp(12,4,-2,1)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 5)
+> Operation 2: unknown(-3, 1)
+> Operation 3: multiply(17, 0)
+> Final result: 15
+> 
+> buffapp(12,5,-3,1)=15
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -1)
+> Operation 2: add(-4, 1)
+> Operation 3: multiply(11, -3)
+> Final result: 0
+> 
+> buffapp(12,-1,-4,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -2)
+> Operation 2: divide(7, 1)
+> Operation 3: multiply(10, 7)
+> Final result: 0
+> 
+> buffapp(12,-2,7,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -3)
+> Operation 2: unknown(-7, 1)
+> Operation 3: multiply(9, 0)
+> Final result: 3
+> 
+> buffapp(12,-3,-7,1)=3
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -4)
+> Operation 2: add(100, 1)
+> Operation 3: multiply(8, 101)
+> Final result: 0
+> 
+> buffapp(12,-4,100,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 7)
+> Operation 2: add(-100, 1)
+> Operation 3: multiply(19, -99)
+> Final result: 0
+> 
+> buffapp(12,7,-100,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -7)
+> Operation 2: add(12, 1)
+> Operation 3: multiply(5, 13)
+> Final result: 0
+> 
+> buffapp(12,-7,12,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 100)
+> Operation 2: subtract(13, 1)
+> Operation 3: multiply(112, 12)
+> Final result: 0
+> 
+> buffapp(12,100,13,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -100)
+> Operation 2: divide(2147483647, 1)
+> Operation 3: multiply(-88, 2147483647)
+> Final result: 24403222
+> 
+> buffapp(12,-100,2147483647,1)=24403222
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 12)
+> Operation 2: add(-2147483648, 1)
+> Operation 3: multiply(24, -2147483647)
+> Final result: -89478484
+> 
+> buffapp(12,12,-2147483648,1)=-89478484
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 13)
+> Operation 2: add(65536, 1)
+> Operation 3: multiply(25, 65537)
+> Final result: 0
+> 
+> buffapp(12,13,65536,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 2147483647)
+> Operation 2: add(-65536, 1)
+> Operation 3: multiply(-2147483637, -65535)
+> Final result: 1
+> 
+> buffapp(12,2147483647,-65536,1)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -2147483648)
+> Operation 2: add(0, 1)
+> Operation 3: multiply(-2147483636, 1)
+> Final result: 0
+> 
+> buffapp(12,-2147483648,0,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, 65536)
+> Operation 2: subtract(1, 1)
+> Operation 3: multiply(65548, 0)
+> Final result: 65550
+> 
+> buffapp(12,65536,1,1)=65550
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(12, -65536)
+> Operation 2: multiply(2, 1)
+> Operation 3: multiply(-65524, 2)
+> Final result: 0
+> 
+> buffapp(12,-65536,2,1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 0)
+> Operation 2: divide(3, 2)
+> Operation 3: multiply(13, 1)
+> Final result: 1
+> 
+> buffapp(13,0,3,2)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 1)
+> Operation 2: add(4, 2)
+> Operation 3: multiply(12, 6)
+> Final result: 0
+> 
+> buffapp(13,1,4,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 2)
+> Operation 2: subtract(5, 2)
+> Operation 3: multiply(11, 3)
+> Final result: 0
+> 
+> buffapp(13,2,5,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 3)
+> Operation 2: unknown(-1, 2)
+> Operation 3: multiply(10, 0)
+> Final result: 17
+> 
+> buffapp(13,3,-1,2)=17
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 4)
+> Operation 2: unknown(-2, 2)
+> Operation 3: multiply(9, 0)
+> Final result: 17
+> 
+> buffapp(13,4,-2,2)=17
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 5)
+> Operation 2: unknown(-3, 2)
+> Operation 3: multiply(8, 0)
+> Final result: 17
+> 
+> buffapp(13,5,-3,2)=17
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -1)
+> Operation 2: add(-4, 2)
+> Operation 3: multiply(14, -2)
+> Final result: 0
+> 
+> buffapp(13,-1,-4,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -2)
+> Operation 2: divide(7, 2)
+> Operation 3: multiply(15, 3)
+> Final result: 0
+> 
+> buffapp(13,-2,7,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -3)
+> Operation 2: unknown(-7, 2)
+> Operation 3: multiply(16, 0)
+> Final result: 5
+> 
+> buffapp(13,-3,-7,2)=5
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -4)
+> Operation 2: add(100, 2)
+> Operation 3: multiply(17, 102)
+> Final result: 0
+> 
+> buffapp(13,-4,100,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 7)
+> Operation 2: add(-100, 2)
+> Operation 3: multiply(6, -98)
+> Final result: 0
+> 
+> buffapp(13,7,-100,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -7)
+> Operation 2: add(12, 2)
+> Operation 3: multiply(20, 14)
+> Final result: 0
+> 
+> buffapp(13,-7,12,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 100)
+> Operation 2: subtract(13, 2)
+> Operation 3: multiply(-87, 11)
+> Final result: 0
+> 
+> buffapp(13,100,13,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -100)
+> Operation 2: divide(2147483647, 2)
+> Operation 3: multiply(113, 1073741823)
+> Final result: 1
+> 
+> buffapp(13,-100,2147483647,2)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 12)
+> Operation 2: add(-2147483648, 2)
+> Operation 3: multiply(1, -2147483646)
+> Final result: 0
+> 
+> buffapp(13,12,-2147483648,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 13)
+> Operation 2: add(65536, 2)
+> Operation 3: multiply(0, 65538)
+> Final result: 65564
+> 
+> buffapp(13,13,65536,2)=65564
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 2147483647)
+> Operation 2: add(-65536, 2)
+> Operation 3: multiply(-2147483634, -65534)
+> Final result: -2340
+> 
+> buffapp(13,2147483647,-65536,2)=-2340
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -2147483648)
+> Operation 2: add(0, 2)
+> Operation 3: multiply(-2147483635, 2)
+> Final result: -82595524
+> 
+> buffapp(13,-2147483648,0,2)=-82595524
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, 65536)
+> Operation 2: subtract(1, 2)
+> Operation 3: multiply(-65523, -1)
+> Final result: -1
+> 
+> buffapp(13,65536,1,2)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: subtract(13, -65536)
+> Operation 2: multiply(2, 2)
+> Operation 3: multiply(65549, 4)
+> Final result: 0
+> 
+> buffapp(13,-65536,2,2)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 0)
+> Operation 2: divide(3, 3)
+> Operation 3: multiply(0, 1)
+> Final result: -2147483643
+> 
+> buffapp(2147483647,0,3,3)=-2147483643
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 1)
+> Operation 2: add(4, 3)
+> Operation 3: multiply(2147483647, 7)
+> Final result: -1
+> 
+> buffapp(2147483647,1,4,3)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 2)
+> Operation 2: subtract(5, 3)
+> Operation 3: multiply(1073741823, 2)
+> Final result: 0
+> 
+> buffapp(2147483647,2,5,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 3)
+> Operation 2: unknown(-1, 3)
+> Operation 3: multiply(715827882, 0)
+> Final result: -2147483644
+> 
+> buffapp(2147483647,3,-1,3)=-2147483644
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 4)
+> Operation 2: unknown(-2, 3)
+> Operation 3: multiply(536870911, 0)
+> Final result: -2147483644
+> 
+> buffapp(2147483647,4,-2,3)=-2147483644
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 5)
+> Operation 2: unknown(-3, 3)
+> Operation 3: multiply(429496729, 0)
+> Final result: -2147483644
+> 
+> buffapp(2147483647,5,-3,3)=-2147483644
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -1)
+> Operation 2: add(-4, 3)
+> Operation 3: multiply(-2147483647, -1)
+> Final result: -1
+> 
+> buffapp(2147483647,-1,-4,3)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -2)
+> Operation 2: divide(7, 3)
+> Operation 3: multiply(-1073741823, 2)
+> Final result: 0
+> 
+> buffapp(2147483647,-2,7,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -3)
+> Operation 2: unknown(-7, 3)
+> Operation 3: multiply(-715827882, 0)
+> Final result: 2147483640
+> 
+> buffapp(2147483647,-3,-7,3)=2147483640
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -4)
+> Operation 2: add(100, 3)
+> Operation 3: multiply(-536870911, 103)
+> Final result: 0
+> 
+> buffapp(2147483647,-4,100,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 7)
+> Operation 2: add(-100, 3)
+> Operation 3: multiply(306783378, -97)
+> Final result: 0
+> 
+> buffapp(2147483647,7,-100,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -7)
+> Operation 2: add(12, 3)
+> Operation 3: multiply(-306783378, 15)
+> Final result: 0
+> 
+> buffapp(2147483647,-7,12,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 100)
+> Operation 2: subtract(13, 3)
+> Operation 3: multiply(21474836, 10)
+> Final result: 0
+> 
+> buffapp(2147483647,100,13,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -100)
+> Operation 2: divide(2147483647, 3)
+> Operation 3: multiply(-21474836, 715827882)
+> Final result: 0
+> 
+> buffapp(2147483647,-100,2147483647,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 12)
+> Operation 2: add(-2147483648, 3)
+> Operation 3: multiply(178956970, -2147483645)
+> Final result: -3
+> 
+> buffapp(2147483647,12,-2147483648,3)=-3
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 13)
+> Operation 2: add(65536, 3)
+> Operation 3: multiply(165191049, 65539)
+> Final result: 0
+> 
+> buffapp(2147483647,13,65536,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 2147483647)
+> Operation 2: add(-65536, 3)
+> Operation 3: multiply(1, -65533)
+> Final result: 0
+> 
+> buffapp(2147483647,2147483647,-65536,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -2147483648)
+> Operation 2: add(0, 3)
+> Operation 3: multiply(0, 3)
+> Final result: 2
+> 
+> buffapp(2147483647,-2147483648,0,3)=2
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, 65536)
+> Operation 2: subtract(1, 3)
+> Operation 3: multiply(32767, -2)
+> Final result: 0
+> 
+> buffapp(2147483647,65536,1,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: divide(2147483647, -65536)
+> Operation 2: multiply(2, 3)
+> Operation 3: multiply(-32767, 6)
+> Final result: 0
+> 
+> buffapp(2147483647,-65536,2,3)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 0)
+> Operation 2: divide(3, 4)
+> Operation 3: multiply(-2147483648, 0)
+> Final result: -2147483641
+> 
+> buffapp(-2147483648,0,3,4)=-2147483641
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 1)
+> Operation 2: add(4, 4)
+> Operation 3: multiply(-2147483647, 8)
+> Final result: -268435454
+> 
+> buffapp(-2147483648,1,4,4)=-268435454
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 2)
+> Operation 2: subtract(5, 4)
+> Operation 3: multiply(-2147483646, 1)
+> Final result: 0
+> 
+> buffapp(-2147483648,2,5,4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 3)
+> Operation 2: unknown(-1, 4)
+> Operation 3: multiply(-2147483645, 0)
+> Final result: -2147483642
+> 
+> buffapp(-2147483648,3,-1,4)=-2147483642
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 4)
+> Operation 2: unknown(-2, 4)
+> Operation 3: multiply(-2147483644, 0)
+> Final result: -2147483642
+> 
+> buffapp(-2147483648,4,-2,4)=-2147483642
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 5)
+> Operation 2: unknown(-3, 4)
+> Operation 3: multiply(-2147483643, 0)
+> Final result: -2147483642
+> 
+> buffapp(-2147483648,5,-3,4)=-2147483642
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -1)
+> Operation 2: add(-4, 4)
+> Operation 3: multiply(2147483647, 0)
+> Final result: 2147483647
+> 
+> buffapp(-2147483648,-1,-4,4)=2147483647
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -2)
+> Operation 2: divide(7, 4)
+> Operation 3: multiply(2147483646, 1)
+> Final result: 1
+> 
+> buffapp(-2147483648,-2,7,4)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -3)
+> Operation 2: unknown(-7, 4)
+> Operation 3: multiply(2147483645, 0)
+> Final result: 2147483642
+> 
+> buffapp(-2147483648,-3,-7,4)=2147483642
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -4)
+> Operation 2: add(100, 4)
+> Operation 3: multiply(2147483644, 104)
+> Final result: 5162220
+> 
+> buffapp(-2147483648,-4,100,4)=5162220
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 7)
+> Operation 2: add(-100, 4)
+> Operation 3: multiply(-2147483641, -96)
+> Final result: -3195660
+> 
+> buffapp(-2147483648,7,-100,4)=-3195660
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -7)
+> Operation 2: add(12, 4)
+> Operation 3: multiply(2147483641, 16)
+> Final result: 19173961
+> 
+> buffapp(-2147483648,-7,12,4)=19173961
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 100)
+> Operation 2: subtract(13, 4)
+> Operation 3: multiply(-2147483548, 9)
+> Final result: 1
+> 
+> buffapp(-2147483648,100,13,4)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -100)
+> Operation 2: divide(2147483647, 4)
+> Operation 3: multiply(2147483548, 536870911)
+> Final result: -16106128
+> 
+> buffapp(-2147483648,-100,2147483647,4)=-16106128
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 12)
+> Operation 2: add(-2147483648, 4)
+> Operation 3: multiply(-2147483636, -2147483644)
+> Final result: 0
+> 
+> buffapp(-2147483648,12,-2147483648,4)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 13)
+> Operation 2: add(65536, 4)
+> Operation 3: multiply(-2147483635, 65540)
+> Final result: -2520
+> 
+> buffapp(-2147483648,13,65536,4)=-2520
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 2147483647)
+> Operation 2: add(-65536, 4)
+> Operation 3: multiply(-1, -65532)
+> Final result: -1
+> 
+> buffapp(-2147483648,2147483647,-65536,4)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -2147483648)
+> Operation 2: add(0, 4)
+> Operation 3: multiply(0, 4)
+> Final result: 4
+> 
+> buffapp(-2147483648,-2147483648,0,4)=4
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, 65536)
+> Operation 2: subtract(1, 4)
+> Operation 3: multiply(-2147418112, -3)
+> Final result: -1
+> 
+> buffapp(-2147483648,65536,1,4)=-1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-2147483648, -65536)
+> Operation 2: multiply(2, 4)
+> Operation 3: multiply(2147418112, 8)
+> Final result: -4095
+> 
+> buffapp(-2147483648,-65536,2,4)=-4095
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 0)
+> Operation 2: divide(3, 5)
+> Operation 3: multiply(65536, 0)
+> Final result: 65544
+> 
+> buffapp(65536,0,3,5)=65544
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 1)
+> Operation 2: add(4, 5)
+> Operation 3: multiply(65537, 9)
+> Final result: 0
+> 
+> buffapp(65536,1,4,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 2)
+> Operation 2: subtract(5, 5)
+> Operation 3: multiply(65538, 0)
+> Final result: 65548
+> 
+> buffapp(65536,2,5,5)=65548
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 3)
+> Operation 2: unknown(-1, 5)
+> Operation 3: multiply(65539, 0)
+> Final result: 65543
+> 
+> buffapp(65536,3,-1,5)=65543
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 4)
+> Operation 2: unknown(-2, 5)
+> Operation 3: multiply(65540, 0)
+> Final result: 65543
+> 
+> buffapp(65536,4,-2,5)=65543
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 5)
+> Operation 2: unknown(-3, 5)
+> Operation 3: multiply(65541, 0)
+> Final result: 65543
+> 
+> buffapp(65536,5,-3,5)=65543
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -1)
+> Operation 2: add(-4, 5)
+> Operation 3: multiply(65535, 1)
+> Final result: 1
+> 
+> buffapp(65536,-1,-4,5)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -2)
+> Operation 2: divide(7, 5)
+> Operation 3: multiply(65534, 1)
+> Final result: 1
+> 
+> buffapp(65536,-2,7,5)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -3)
+> Operation 2: unknown(-7, 5)
+> Operation 3: multiply(65533, 0)
+> Final result: 65531
+> 
+> buffapp(65536,-3,-7,5)=65531
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -4)
+> Operation 2: add(100, 5)
+> Operation 3: multiply(65532, 105)
+> Final result: 0
+> 
+> buffapp(65536,-4,100,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 7)
+> Operation 2: add(-100, 5)
+> Operation 3: multiply(65543, -95)
+> Final result: 0
+> 
+> buffapp(65536,7,-100,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -7)
+> Operation 2: add(12, 5)
+> Operation 3: multiply(65529, 17)
+> Final result: 0
+> 
+> buffapp(65536,-7,12,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 100)
+> Operation 2: subtract(13, 5)
+> Operation 3: multiply(65636, 8)
+> Final result: 0
+> 
+> buffapp(65536,100,13,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -100)
+> Operation 2: divide(2147483647, 5)
+> Operation 3: multiply(65436, 429496729)
+> Final result: 0
+> 
+> buffapp(65536,-100,2147483647,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 12)
+> Operation 2: add(-2147483648, 5)
+> Operation 3: multiply(65548, -2147483643)
+> Final result: -6552
+> 
+> buffapp(65536,12,-2147483648,5)=-6552
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 13)
+> Operation 2: add(65536, 5)
+> Operation 3: multiply(65549, 65541)
+> Final result: 0
+> 
+> buffapp(65536,13,65536,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 2147483647)
+> Operation 2: add(-65536, 5)
+> Operation 3: multiply(-2147418113, -65531)
+> Final result: 1
+> 
+> buffapp(65536,2147483647,-65536,5)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -2147483648)
+> Operation 2: add(0, 5)
+> Operation 3: multiply(-2147418112, 5)
+> Final result: 1
+> 
+> buffapp(65536,-2147483648,0,5)=1
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, 65536)
+> Operation 2: subtract(1, 5)
+> Operation 3: multiply(131072, -4)
+> Final result: 0
+> 
+> buffapp(65536,65536,1,5)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(65536, -65536)
+> Operation 2: multiply(2, 5)
+> Operation 3: multiply(0, 10)
+> Final result: 7
+> 
+> buffapp(65536,-65536,2,5)=7
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 0)
+> Operation 2: divide(3, -1)
+> Operation 3: multiply(-65536, -3)
+> Final result: 0
+> 
+> buffapp(-65536,0,3,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 1)
+> Operation 2: add(4, -1)
+> Operation 3: multiply(-65535, 3)
+> Final result: 0
+> 
+> buffapp(-65536,1,4,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 2)
+> Operation 2: subtract(5, -1)
+> Operation 3: multiply(-65534, 6)
+> Final result: 0
+> 
+> buffapp(-65536,2,5,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 3)
+> Operation 2: unknown(-1, -1)
+> Operation 3: multiply(-65533, 0)
+> Final result: -65535
+> 
+> buffapp(-65536,3,-1,-1)=-65535
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 4)
+> Operation 2: unknown(-2, -1)
+> Operation 3: multiply(-65532, 0)
+> Final result: -65535
+> 
+> buffapp(-65536,4,-2,-1)=-65535
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 5)
+> Operation 2: unknown(-3, -1)
+> Operation 3: multiply(-65531, 0)
+> Final result: -65535
+> 
+> buffapp(-65536,5,-3,-1)=-65535
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -1)
+> Operation 2: add(-4, -1)
+> Operation 3: multiply(-65537, -5)
+> Final result: 0
+> 
+> buffapp(-65536,-1,-4,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -2)
+> Operation 2: divide(7, -1)
+> Operation 3: multiply(-65538, -7)
+> Final result: 0
+> 
+> buffapp(-65536,-2,7,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -3)
+> Operation 2: unknown(-7, -1)
+> Operation 3: multiply(-65539, 0)
+> Final result: -65547
+> 
+> buffapp(-65536,-3,-7,-1)=-65547
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -4)
+> Operation 2: add(100, -1)
+> Operation 3: multiply(-65540, 99)
+> Final result: 0
+> 
+> buffapp(-65536,-4,100,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 7)
+> Operation 2: add(-100, -1)
+> Operation 3: multiply(-65529, -101)
+> Final result: 0
+> 
+> buffapp(-65536,7,-100,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -7)
+> Operation 2: add(12, -1)
+> Operation 3: multiply(-65543, 11)
+> Final result: 0
+> 
+> buffapp(-65536,-7,12,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 100)
+> Operation 2: subtract(13, -1)
+> Operation 3: multiply(-65436, 14)
+> Final result: 0
+> 
+> buffapp(-65536,100,13,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -100)
+> Operation 2: divide(2147483647, -1)
+> Operation 3: multiply(-65636, -2147483647)
+> Final result: -32717
+> 
+> buffapp(-65536,-100,2147483647,-1)=-32717
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 12)
+> Operation 2: add(-2147483648, -1)
+> Operation 3: multiply(-65524, 2147483647)
+> Final result: 32773
+> 
+> buffapp(-65536,12,-2147483648,-1)=32773
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 13)
+> Operation 2: add(65536, -1)
+> Operation 3: multiply(-65523, 65535)
+> Final result: 0
+> 
+> buffapp(-65536,13,65536,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 2147483647)
+> Operation 2: add(-65536, -1)
+> Operation 3: multiply(2147418111, -65537)
+> Final result: 0
+> 
+> buffapp(-65536,2147483647,-65536,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -2147483648)
+> Operation 2: add(0, -1)
+> Operation 3: multiply(2147418112, -1)
+> Final result: 0
+> 
+> buffapp(-65536,-2147483648,0,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, 65536)
+> Operation 2: subtract(1, -1)
+> Operation 3: multiply(0, 2)
+> Final result: 0
+> 
+> buffapp(-65536,65536,1,-1)=0
+> Computation Log:
+> Starting computation with 4 parameters
+> Operation 1: add(-65536, -65536)
+> Operation 2: multiply(2, -1)
+> Operation 3: multiply(-131072, -2)
+> Final result: 0
+> 
+> buffapp(-65536,-65536,2,-1)=0
+cmp: EOF on c_out.txt after byte 16384, in line 567
+[38;5;244m - Completed in 0.650s[0m
+
+[?25l[0m[38;5;141m> [0mThe C library crashes with SIGFPE on [38;5;10mINT_MIN / -1[0m (line 567 is a truncated stdout buffer, lost when the process died). My [38;5;10mwrapping_div[0m silently returns [38;5;10mINT_MIN[0m instead. Let me reproduce the C trap faithfully.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add c_div helper reproducing C idiv trap semantics
+
+[49m[38;5;10m+     55[0m:[38;5;10m[49m /// C `int / int`.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// The C code guards against `b == 0`, but not against `INT_MIN / -1`, which is
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// UB in C and raises SIGFPE (#DE) on x86-64 because it is compiled to `idiv`.
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// `i32::wrapping_div` would quietly yield `INT_MIN` instead, so the raw `idiv`
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// is issued directly to keep the observable behaviour identical.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m fn c_div(a: c_int, b: c_int) -> c_int {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         let quot: c_int;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             core::arch::asm!(
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m                 "cdq",
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m                 "idiv {divisor:e}",
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m                 divisor = in(reg) b,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m                 inout("eax") a => quot,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m                 out("edx") _,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m                 options(nomem, nostack),
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         quot
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         a.wrapping_div(b)
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[39m  55, 84[0m:[39m[49m /// Mirrors the anonymous C struct:
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation && python3 - <<'EOF'
+import re,io
+p='src/lib.rs'
+s=open(p).read()
+a=s
+s=s.replace("            return a.wrapping_div(b);","            return c_div(a, b);")
+s=s.replace("        result = result.wrapping_div(intermediate3);","        result = c_div(result, intermediate3);")
+assert s!=a
+assert "c_div(a, b)" in s and "c_div(result, intermediate3)" in s
+open(p,'w').write(s)
+EOF
+grep -n "c_div\|wrapping_div" src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+
+59:/// `i32::wrapping_div` would quietly yield `INT_MIN` instead, so the raw `idiv`
+62:fn c_div(a: c_int, b: c_int) -> c_int {
+80:        a.wrapping_div(b)
+200:            return c_div(a, b);
+275:        result = c_div(result, intermediate3);
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation)
+    Finished `release` profile [optimized] target(s) in 0.10s
+[38;5;244m - Completed in 0.119s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness && sed -i 's|void \*h = dlopen|setvbuf(stdout, NULL, _IONBF, 0);\n    void *h = dlopen|' driver.c && grep -n setvbuf driver.c && gcc -O0 -o driver driver.c -ldl 2>&1 | grep -v Wint | head[0m[38;5;244m (using tool: shell)[0m
+
+16:    setvbuf(stdout, NULL, _IONBF, 0);
+driver.c: In function ‘main’:
+   49 |                cap, (void*)(b != NULL), b?b->capacity:-1, b?b->length:-1,
+      |                     ^
+[38;5;244m - Completed in 0.53s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness && ./driver /tmp/cbuild/libharvest-work-Cxn9LK.so > c_out.txt 2>/dev/null; ce=$?; ./driver /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/target/release/libtranslation.so > rust_out.txt 2>/dev/null; re=$?; echo "C exit=$ce RUST exit=$re"; wc -c c_out.txt rust_out.txt; cmp c_out.txt rust_out.txt && echo "BYTE-IDENTICAL"; echo "--- last 3 lines each ---"; tail -3 c_out.txt; echo "==="; tail -3 rust_out.txt[0m[38;5;244m (using tool: shell)[0m
+
+bash: line 1: 2888528 Floating point exception(core dumped) ./driver /tmp/cbuild/libharvest-work-Cxn9LK.so > c_out.txt 2> /dev/null
+bash: line 1: 2888561 Floating point exception(core dumped) ./driver /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/target/release/libtranslation.so > rust_out.txt 2> /dev/null
+C exit=136 RUST exit=136
+19186 c_out.txt
+19186 rust_out.txt
+38372 total
+BYTE-IDENTICAL
+--- last 3 lines each ---
+perform(2147483647,13,divide)=165191049
+perform(-2147483648,0,divide)=0
+perform(-2147483648,1,divide)=-2147483648
+===
+perform(2147483647,13,divide)=165191049
+perform(-2147483648,0,divide)=0
+perform(-2147483648,1,divide)=-2147483648
+[38;5;244m - Completed in 1.699s[0m
+
+[?25l[0m[38;5;141m> [0mBoth crash at the identical input with identical output — the [38;5;10midiv[0m reproduction is exact. Now let me exclude that one trapping input so the rest of the surface gets compared.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness && sed -i 's|int vals\[\] = {0,1,-1,2,-2,7,-7,3,100,-100,2147483647,-2147483648,13};|int vals[] = {0,1,-1,2,-2,7,-7,3,100,-100,2147483647,13};|' driver.c && grep -n "int vals" driver.c && gcc -O0 -o driver driver.c -ldl 2>&1 | grep -v -e Wint -e '\^' -e 'cap,' -e 'In function'; ./driver /tmp/cbuild/libharvest-work-Cxn9LK.so > c_out.txt 2>/dev/null; ce=$?; ./driver /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/target/release/libtranslation.so > rust_out.txt 2>/dev/null; re=$?; echo "C exit=$ce RUST exit=$re"; wc -l c_out.txt rust_out.txt; cmp c_out.txt rust_out.txt && echo "*** BYTE-IDENTICAL ***"[0m[38;5;244m (using tool: shell)[0m
+
+38:    int vals[] = {0,1,-1,2,-2,7,-7,3,100,-100,2147483647,13};
+C exit=0 RUST exit=0
+  4265 c_out.txt
+  4265 rust_out.txt
+  8530 total
+*** BYTE-IDENTICAL ***
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[38;5;141m> [0mByte-identical across 4265 lines of output. Two more checks: cross-ABI allocator compatibility and the NULL-return path.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness/cross.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Cross-ABI and NULL-path test
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m typedef struct { char *data; int capacity; int length; } SB;
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m typedef SB*  (*fn_create)(int);
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m typedef int  (*fn_append)(SB*, const char*);
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef void (*fn_destroy)(SB*);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m /* argv[1] = lib providing create/destroy, argv[2] = lib providing append */
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     setvbuf(stdout, NULL, _IONBF, 0);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     void *ha = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     void *hb = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     if (!ha || !hb) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     fn_create  create  = (fn_create)dlsym(ha, "create_buffer");
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     fn_destroy destroy = (fn_destroy)dlsym(ha, "destroy_buffer");
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     fn_append  append  = (fn_append)dlsym(hb, "append_to_buffer");
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     printf("sizeof(SB)=%zu\n", sizeof(SB));
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     /* NULL-return paths: (size_t)-1 and huge allocations must fail */
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     int bad[] = {-1, -2, -1000000};
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(bad)/sizeof(bad[0]); i++)
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         printf("create(%d) is_null=%d\n", bad[i], create(bad[i]) == NULL);
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     /* Cross-library buffer handoff (allocator / layout compatibility) */
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     SB *b = create(4);
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     printf("cross: cap=%d len=%d\n", b->capacity, b->length);
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     for (int i = 0; i < 12; i++) {
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         append(b, "abcdefg");
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         printf("  i=%d cap=%d len=%d data=[%s]\n", i, b->capacity, b->length, b->data);
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     destroy(b);
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     printf("cross ok\n");
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/harness/cross.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/harness && gcc -O0 -o cross cross.c -ldl 2>&1|head -5; C=/tmp/cbuild/libharvest-work-Cxn9LK.so; R=/local/home/scheschb/.harvest/work/harvest-work-Cxn9LK/translation/target/release/libtranslation.so
+./cross $C $C > cc.txt 2>&1; echo "CC=$?"
+./cross $R $R > rr.txt 2>&1; echo "RR=$?"
+./cross $C $R > cr.txt 2>&1; echo "C-create/R-append=$?"
+./cross $R $C > rc.txt 2>&1; echo "R-create/C-append=$?"
+echo "--- pure C vs pure Rust ---"; cmp cc.txt rr.txt && echo IDENTICAL
+echo "--- mixed both directions vs pure C ---"; cmp cc.txt cr.txt && echo "CR ok"; cmp cc.txt rc.txt && echo "RC ok"
+echo "--- output ---"; head -8 cc.txt; tail -3 cc.txt[0m[38;5;244m (using tool: shell)[0m
+
+CC=0
+RR=0
+C-create/R-append=0
+R-create/C-append=0
+--- pure C vs pure Rust ---
+IDENTICAL
+--- mixed both directions vs pure C ---
+CR ok
+RC ok
+--- output ---
+sizeof(SB)=16
+create(-1) is_null=1
+create(-2) is_null=1
+create(-1000000) is_null=1
+cross: cap=4 len=0
+  i=0 cap=16 len=7 data=[abcdefg]
+  i=1 cap=16 len=14 data=[abcdefgabcdefg]
+  i=2 cap=44 len=21 data=[abcdefgabcdefgabcdefg]
+  i=10 cap=100 len=77 data=[abcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefg]
+  i=11 cap=100 len=84 data=[abcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefgabcdefg]
+cross ok
+[38;5;244m - Completed in 0.58s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-Cxn9LK
+echo "=== deliverables ==="; find translation -maxdepth 2 -not -path '*/target*' -type f | sort; wc -l translation/src/lib.rs
+echo; echo "=== c_src untouched (mtimes) ==="; ls -la --time-style=+%H:%M:%S c_src/src/lib.c c_src/include/lib.h c_src/CMakeLists.txt
+echo; echo "=== Cargo.toml ==="; cat translation/Cargo.toml
+echo; echo "=== COMPLETION GATE: nm -D symbol diff ==="
+nm -D --defined-only /tmp/cbuild/libharvest-work-Cxn9LK.so | awk '$2=="T"{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libtranslation.so | awk '$2=="T"{print $3}' | sort > /tmp/rust_syms.txt
+echo "C exports:    $(wc -l < /tmp/c_syms.txt)"; echo "Rust exports: $(wc -l < /tmp/rust_syms.txt)"
+paste /tmp/c_syms.txt /tmp/rust_syms.txt
+if diff -q /tmp/c_syms.txt /tmp/rust_syms.txt >/dev/null; then echo "DIFF EMPTY -> gate PASSED"; else echo "GATE FAILED"; diff /tmp/c_syms.txt /tmp/rust_syms.txt; fi
+echo; echo "=== #[unsafe(no_mangle)] count ==="; grep -c 'unsafe(no_mangle)' translation/src/lib.rs
+rm -rf /tmp/harness /tmp/cbuild /tmp/c_syms.txt /tmp/rust_syms.txt[0m[38;5;244m (using tool: shell)[0m
+
+=== deliverables ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+291 translation/src/lib.rs
+
+=== c_src untouched (mtimes) ===
+-rw-r--r--. 1 scheschb amazon 1542 15:07:52 c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon 1163 15:07:52 c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 4648 15:07:52 c_src/src/lib.c
+
+=== Cargo.toml ===
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+=== COMPLETION GATE: nm -D symbol diff ===
+C exports:    6
+Rust exports: 6
+append_to_buffer	append_to_buffer
+buffapp	buffapp
+create_buffer	create_buffer
+destroy_buffer	destroy_buffer
+get_operation_name	get_operation_name
+perform_operation	perform_operation
+DIFF EMPTY -> gate PASSED
+
+=== #[unsafe(no_mangle)] count ===
+6
+[38;5;244m - Completed in 0.56s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+[1mScope.[22m The library turned out to be small — a single translation unit ([38;5;10mc_src/src/lib.c[0m, 155 lines) built by CMake into one shared object. [38;5;10mnm -D[0m on the C [38;5;10m.so[0m exports exactly 6 public symbols. There are no namespace-renaming macros in [38;5;10minclude/lib.h[0m (it declares only [38;5;10mbuffapp[0m; the other five are non-static definitions that CMake exports anyway). Small enough that I did the work directly rather than delegating.[0m[0m
+[0m[0m
+[1mCompletion gate: passed.[22m [38;5;10mnm -D[0m diff between the C and Rust [38;5;10m.so[0m is empty — all 6 symbols ([38;5;10mcreate_buffer[0m, [38;5;10mappend_to_buffer[0m, [38;5;10mdestroy_buffer[0m, [38;5;10mget_operation_name[0m, [38;5;10mperform_operation[0m, [38;5;10mbuffapp[0m), each via [38;5;10m#[unsafe(no_mangle)] extern "C"[0m.[0m[0m
+[0m[0m
+[1mByte-identical output: verified empirically[22m, not just by inspection. I built a [38;5;10mdlopen[0m driver and ran it against both libraries: 4265 lines / ~19 KB covering all six functions (including 400 [38;5;10mbuffapp[0m calls with their full stdout computation logs, boundary values up to [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m, all five operation names, unmatched operation strings, and buffer growth across capacities). [38;5;10mcmp[0m reports the streams identical with matching exit codes.[0m[0m
+[0m[0m
+[1mThe one genuinely interesting finding.[22m The C library traps on [38;5;10mperform_operation(INT_MIN, -1, "divide")[0m — [38;5;10mINT_MIN / -1[0m is UB in C, compiles to [38;5;10midiv[0m, and raises SIGFPE. My first pass used [38;5;10mwrapping_div[0m, which quietly returns [38;5;10mINT_MIN[0m and diverges. Since the brief says to reproduce incorrect behavior rather than fix it, I issue the raw [38;5;10mcdq; idiv[0m via inline asm on x86-64 (with a [38;5;10mwrapping_div[0m fallback for other targets). Both libraries now die at the identical input with identical output bytes and identical exit code 136. This path is reachable from [38;5;10mbuffapp[0m too, via [38;5;10mresult / intermediate3[0m.[0m[0m
+[0m[0m
+Other C quirks preserved deliberately: the missing NULL check on [38;5;10mcreate_buffer[0m's result in [38;5;10mbuffapp[0m, the out-of-bounds [38;5;10mdata[0] = '\0'[0m when [38;5;10minitial_capacity == 0[0m, [38;5;10mint[0m-typed lengths with [38;5;10msize_t[0m→[38;5;10mint[0m truncation, and sign-extending [38;5;10mint[0m→[38;5;10msize_t[0m on the [38;5;10mmalloc[0m/[38;5;10mrealloc[0m sizes (which is what makes [38;5;10mcreate_buffer(-1)[0m return NULL). I also verified [38;5;10msizeof(StringBuffer) == 16[0m and confirmed buffers hand off cleanly in both directions between the C and Rust libraries, so the [38;5;10mrepr(C)[0m layout and C-allocator use are ABI-compatible.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified — original mtimes intact. Temporary build and harness files cleaned up.[0m[0m
+[0m[0m
+One judgment call worth flagging: I named the crate [38;5;10mtranslation[0m, so the artifact is [38;5;10mtarget/release/libtranslation.so[0m rather than matching the C library's directory-derived name ([38;5;10mlibharvest-work-Cxn9LK.so[0m). Nothing in the task specified the filename, and the symbol names are what the gate checks — but say the word if your harness expects a specific [38;5;10m.so[0m filename and I'll rename it.[0m[0m
+[38;5;8m
+ ▸ Credits: 11.66 • Time: 4m 12s
+
+[0m[1G[0m[0m[?25h

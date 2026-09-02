@@ -1,0 +1,1189 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure and understanding the scope of the C library.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd; ls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src contents
+
+/local/home/scheschb/.harvest/work/harvest-work-GFHAAo
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 16:17 .
+drwxr-xr-x. 833 scheschb amazon 81920 Sep  1 16:17 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 16:17 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 16:17 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 16:17 translation
+---
+c_src/CMakeLists.txt
+c_src/include/matrix.h
+c_src/include/write.h
+c_src/src/driver.c
+c_src/src/matrix.c
+c_src/src/write.c
+---
+6
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/*.h c_src/src/*.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+   38 c_src/CMakeLists.txt
+   35 c_src/include/matrix.h
+   26 c_src/include/write.h
+   72 c_src/src/driver.c
+  166 c_src/src/matrix.c
+   56 c_src/src/write.c
+  393 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m6[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources and headers
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/include/matrix.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/include/write.h[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/src/matrix.c[0m, all lines
+↱ Operation 5: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/src/write.c[0m, all lines
+↱ Operation 6: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/src/driver.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1440 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1431 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/include/matrix.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1197 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/include/write.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4909 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/src/matrix.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1906 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/src/write.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2252 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/src/driver.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 6 operations processed, 6 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, well-scoped library (3 .c files). Let me build the C library to get the authoritative symbol list.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src > cmake.log 2>&1 && make >> cmake.log 2>&1; tail -5 cmake.log; ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library with cmake
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-rtD8pc/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+-rwxr-xr-x. 1 scheschb amazon 16504 Sep  1 16:12 libharvest-work-rtD8pc.so
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_gf && mkdir -p /tmp/cbuild_gf && cd /tmp/cbuild_gf && cmake /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/c_src > cmake.log 2>&1 && make >> cmake.log 2>&1; tail -3 cmake.log; ls *.so; echo "=== nm -D ==="; nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C lib in clean dir and list exported symbols
+
+[ 75%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+libdriver.so
+=== nm -D ===
+0000000000001249 T allocate_matrix
+0000000000001a94 T driver
+00000000000013b4 T free_matrix
+000000000000141e T initialize_matrix_from_string
+00000000000017a8 T matrix_to_string
+0000000000001618 T multiply_matrices
+000000000000192f T write_to_file
+[38;5;244m - Completed in 0.489s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[38;5;141m> [0mNow writing the Rust crate. 7 symbols to reproduce: [38;5;10mallocate_matrix[0m, [38;5;10mdriver[0m, [38;5;10mfree_matrix[0m, [38;5;10minitialize_matrix_from_string[0m, [38;5;10mmatrix_to_string[0m, [38;5;10mmultiply_matrices[0m, [38;5;10mwrite_to_file[0m.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/cstd.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: libc extern declarations and helpers
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Minimal declarations of the C standard library entry points used by the
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! original C sources. The translation calls straight through to libc so that
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! allocation, tokenisation, formatting and stdio behaviour (including
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! diagnostics written to `stderr` and `errno` values) are byte-for-byte
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! identical to the C library.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_long, c_void};
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m /// Opaque stand-in for C's `FILE`.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m pub struct FILE {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     _private: [u8; 0],
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     pub static mut stderr: *mut FILE;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     pub fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     pub fn free(ptr: *mut c_void);
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     pub fn strdup(s: *const c_char) -> *mut c_char;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     pub fn strtok_r(
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         s: *mut c_char,
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         delim: *const c_char,
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         saveptr: *mut *mut c_char,
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     ) -> *mut c_char;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     pub fn strerror(errnum: c_int) -> *mut c_char;
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     pub fn atoi(s: *const c_char) -> c_int;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     pub fn perror(s: *const c_char);
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     pub fn fprintf(stream: *mut FILE, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     pub fn snprintf(str: *mut c_char, size: usize, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     pub fn fopen(path: *const c_char, mode: *const c_char) -> *mut FILE;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     pub fn fclose(stream: *mut FILE) -> c_int;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     fn __errno_location() -> *mut c_int;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m /// `errno` as an rvalue.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m pub fn errno() -> c_int {
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     unsafe { *__errno_location() }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m /// `EINVAL` on Linux.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m pub const EINVAL: c_int = 22;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m /// `EXIT_SUCCESS` from `<stdlib.h>`.
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m pub const EXIT_SUCCESS: c_int = 0;
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m /// `EXIT_FAILURE` from `<stdlib.h>`.
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m pub const EXIT_FAILURE: c_int = 1;
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m /// `sizeof(int)` as C computes it in `malloc(width * sizeof(int))`.
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m pub const SIZEOF_INT: usize = core::mem::size_of::<c_int>();
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m /// `sizeof(int*)` as C computes it in `malloc(height * sizeof(int*))`.
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m pub const SIZEOF_INT_PTR: usize = core::mem::size_of::<*mut c_int>();
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m /// Reproduces C's `n * sizeof(T)`: the (possibly negative) `int` is converted
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m /// to `size_t` first, then multiplied with wrapping semantics.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m pub fn c_size_mul(n: c_int, elem: usize) -> usize {
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     (n as c_long as usize).wrapping_mul(elem)
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m /// `strcat(dst, src)`: append `src` (NUL terminated) at the first NUL of `dst`.
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m /// Same contract as C's `strcat`.
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m pub unsafe fn strcat(dst: *mut c_char, src: *const c_char) -> *mut c_char {
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         let mut end = dst;
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         while *end != 0 {
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m             end = end.add(1);
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         let mut s = src;
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m             let b = *s;
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m             *end = b;
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m             if b == 0 {
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m             end = end.add(1);
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m             s = s.add(1);
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m         dst
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/cstd.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/matrix.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate matrix.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Translation of `c_src/src/matrix.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m use core::ptr;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use crate::cstd::{
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m     self, SIZEOF_INT, SIZEOF_INT_PTR, atoi, c_size_mul, free, malloc, perror, snprintf, stderr,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m     strdup, strtok_r,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// `typedef struct { int** matrix; int width; int height; } matrix_t;`
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m pub struct matrix_t {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     pub matrix: *mut *mut c_int,
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     pub width: c_int,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     pub height: c_int,
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// Non-static in the C source, therefore part of the exported ABI even though
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// it is absent from `matrix.h`.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m pub unsafe extern "C" fn allocate_matrix(width: c_int, height: c_int) -> *mut matrix_t {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         let mat = malloc(core::mem::size_of::<matrix_t>()) as *mut matrix_t;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         if mat.is_null() {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m             perror(c"Failed to allocate memory for matrix struct".as_ptr());
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             return ptr::null_mut();
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         (*mat).width = width;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         (*mat).height = height;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         (*mat).matrix = malloc(c_size_mul(height, SIZEOF_INT_PTR)) as *mut *mut c_int;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         if (*mat).matrix.is_null() {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             perror(c"Failed to allocate memory for matrix rows".as_ptr());
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             free(mat as *mut c_void);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             return ptr::null_mut();
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         let mut i: c_int = 0;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         while i < height {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             let row = malloc(c_size_mul(width, SIZEOF_INT)) as *mut c_int;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m             *(*mat).matrix.offset(i as isize) = row;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             if row.is_null() {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m                 perror(c"Failed to allocate memory for matrix columns".as_ptr());
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 // Note: the C code frees indices 0..=i inclusive; slot `i`
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m                 // holds NULL, and free(NULL) is a no-op. Reproduced as-is.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                 let mut j: c_int = 0;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 while j <= i {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m                     free(*(*mat).matrix.offset(j as isize) as *mut c_void);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                     j += 1;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m                 free((*mat).matrix as *mut c_void);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m                 free(mat as *mut c_void);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m                 return ptr::null_mut();
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         mat
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m pub unsafe extern "C" fn free_matrix(mat: *mut matrix_t) {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         if mat.is_null() {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             return;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         let mut i: c_int = 0;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         while i < (*mat).height {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             free(*(*mat).matrix.offset(i as isize) as *mut c_void);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         free((*mat).matrix as *mut c_void);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         free(mat as *mut c_void);
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m pub unsafe extern "C" fn initialize_matrix_from_string(
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     input: *const c_char,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     width: c_int,
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     height: c_int,
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m ) -> *mut matrix_t {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         // The C code deliberately does not check `mat` for NULL here.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let mat = allocate_matrix(width, height);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         let input_copy = strdup(input);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         if input_copy.is_null() {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             perror(c"Failed to duplicate input string".as_ptr());
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             free_matrix(mat);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             return ptr::null_mut();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         let mut saveptr_row: *mut c_char = ptr::null_mut();
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         let mut row_token = strtok_r(input_copy, c"\n".as_ptr(), &mut saveptr_row);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let mut i: c_int = 0;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         while i < height {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             if row_token.is_null() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 cstd::fprintf(stderr, c"Insufficient rows in input string.\n".as_ptr());
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 free(input_copy as *mut c_void);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                 free_matrix(mat);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                 return ptr::null_mut();
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             let mut saveptr_col: *mut c_char = ptr::null_mut();
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             let mut col_token = strtok_r(row_token, c" ".as_ptr(), &mut saveptr_col);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             let mut j: c_int = 0;
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             while j < width {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                 if col_token.is_null() {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                     cstd::fprintf(
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                         stderr,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                         c"Insufficient columns in row %d.\n".as_ptr(),
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                         i + 1,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                     );
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                     free(input_copy as *mut c_void);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m                     free_matrix(mat);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m                     return ptr::null_mut();
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                 let row = *(*mat).matrix.offset(i as isize);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m                 *row.offset(j as isize) = atoi(col_token);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m                 col_token = strtok_r(ptr::null_mut(), c" ".as_ptr(), &mut saveptr_col);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             row_token = strtok_r(ptr::null_mut(), c"\n".as_ptr(), &mut saveptr_row);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         free(input_copy as *mut c_void);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         mat
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m pub unsafe extern "C" fn multiply_matrices(
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     mat_a: *mut matrix_t,
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     mat_b: *mut matrix_t,
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m ) -> *mut matrix_t {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         if (*mat_a).width != (*mat_b).height {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             cstd::fprintf(
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m                 stderr,
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m                 c"Matrix dimensions do not allow multiplication.\n".as_ptr(),
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m             return ptr::null_mut();
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         // The C code does not check `result` for NULL.
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         let result = allocate_matrix((*mat_b).width, (*mat_a).height);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         let mut i: c_int = 0;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         while i < (*mat_a).height {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m             let mut j: c_int = 0;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m             while j < (*mat_b).width {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m                 let res_row = *(*result).matrix.offset(i as isize);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m                 *res_row.offset(j as isize) = 0;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m                 let mut k: c_int = 0;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                 while k < (*mat_a).width {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                     let a = *(*(*mat_a).matrix.offset(i as isize)).offset(k as isize);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                     let b = *(*(*mat_b).matrix.offset(k as isize)).offset(j as isize);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                     let cur = *res_row.offset(j as isize);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                     *res_row.offset(j as isize) = cur.wrapping_add(a.wrapping_mul(b));
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m                     k += 1;
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         result
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m pub unsafe extern "C" fn matrix_to_string(mat: *mut matrix_t) -> *mut c_char {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         if mat.is_null() {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m             cstd::fprintf(stderr, c"Error: Matrix is NULL.\n".as_ptr());
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             return ptr::null_mut();
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         let width = (*mat).width;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         let height = (*mat).height;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         // int arithmetic, wrapping like gcc: height * (width * 10 + width) + height + 1
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         let buffer_size = height
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m             .wrapping_mul(width.wrapping_mul(10).wrapping_add(width))
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m             .wrapping_add(height)
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m             .wrapping_add(1);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         let result = malloc(c_size_mul(buffer_size, 1)) as *mut c_char;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         if result.is_null() {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             perror(c"Failed to allocate memory for matrix string".as_ptr());
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m             return ptr::null_mut();
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         *result = 0;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         let mut i: c_int = 0;
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         while i < height {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             let mut j: c_int = 0;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             while j < width {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m                 let mut buffer = [0 as c_char; 12];
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m                 let value = *(*(*mat).matrix.offset(i as isize)).offset(j as isize);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m                 snprintf(buffer.as_mut_ptr(), buffer.len(), c"%d".as_ptr(), value);
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m                 cstd::strcat(result, buffer.as_ptr());
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m                 if j < width - 1 {
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m                     cstd::strcat(result, c" ".as_ptr());
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m                 j += 1;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m             cstd::strcat(result, c"\n".as_ptr());
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         result
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/matrix.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/matrix.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Use wrapping subtraction to match C int semantics
+
+[49m[38;5;9m- 214     [0m:[38;5;9m[49m                 if j < width - 1 {
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m                 if j < width.wrapping_sub(1) {
+[0m[K
+Updating: [38;5;141mtranslation/src/matrix.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/write.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate write.c to Rust
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translation of `c_src/src/write.c`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Note the C parameter is named `content` in the definition (`contents` in the
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! header); only the type signature matters across the ABI.
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m use crate::cstd::{self, EINVAL, errno, fclose, fopen, stderr, strerror};
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m pub unsafe extern "C" fn write_to_file(filename: *const c_char, content: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m         if content.is_null() {
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m             cstd::fprintf(stderr, c"Error: Content is NULL.\n".as_ptr());
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m             return EINVAL;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m         let file = fopen(filename, c"w".as_ptr());
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         if file.is_null() {
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m             cstd::fprintf(
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m                 stderr,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m                 c"Error opening file '%s': %s\n".as_ptr(),
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m                 filename,
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m                 strerror(errno()),
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m             return errno();
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         if cstd::fprintf(file, c"%s".as_ptr(), content) < 0 {
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m             cstd::fprintf(
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m                 stderr,
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m                 c"Error writing to file '%s': %s\n".as_ptr(),
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m                 filename,
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m                 strerror(errno()),
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             fclose(file);
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m             return errno();
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         if fclose(file) != 0 {
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             cstd::fprintf(
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m                 stderr,
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m                 c"Error closing file '%s': %s\n".as_ptr(),
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m                 filename,
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m                 strerror(errno()),
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m             return errno();
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/write.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/driver.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translation of `c_src/src/driver.c`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m use crate::cstd::{EXIT_FAILURE, EXIT_SUCCESS, free};
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m use crate::matrix::{free_matrix, initialize_matrix_from_string, matrix_to_string, multiply_matrices};
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m use crate::write::write_to_file;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m /// `#define OUT_FILE "matrix.txt"`
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m const OUT_FILE: &core::ffi::CStr = c"matrix.txt";
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     width_a: c_int,
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     height_a: c_int,
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     matrix_a: *const c_char,
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     width_b: c_int,
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     height_b: c_int,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     matrix_b: *const c_char,
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         let mat_a = initialize_matrix_from_string(matrix_a, width_a, height_a);
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         if mat_a.is_null() {
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m             return EXIT_FAILURE;
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         let mat_b = initialize_matrix_from_string(matrix_b, width_b, height_b);
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         if mat_b.is_null() {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m             free_matrix(mat_a);
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m             return EXIT_FAILURE;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         let res = multiply_matrices(mat_a, mat_b);
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         if res.is_null() {
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m             free_matrix(mat_a);
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m             free_matrix(mat_b);
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             return EXIT_FAILURE;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         let res_str = matrix_to_string(res);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         if res_str.is_null() {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m             free_matrix(mat_a);
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             free_matrix(mat_b);
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m             // The C code frees only the struct here (matching it exactly).
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             free(res as *mut c_void);
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m             return EXIT_FAILURE;
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         let res_write = write_to_file(OUT_FILE.as_ptr(), res_str);
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         free_matrix(mat_a);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         free_matrix(mat_b);
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         free_matrix(res);
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         free(res_str as *mut c_void);
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         if res_write != 0 {
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             return EXIT_FAILURE;
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         EXIT_SUCCESS
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/driver.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Crate root wiring modules together
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C `driver` library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Exports the same public ABI as the CMake-built `libdriver.so`:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! `allocate_matrix`, `free_matrix`, `initialize_matrix_from_string`,
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! `multiply_matrices`, `matrix_to_string`, `write_to_file`, `driver`.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! Behaviour — including diagnostics on `stderr`, `errno` return values,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! allocation via libc `malloc`/`free` (so callers may `free()` returned
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! pointers), and the original code's quirks — is reproduced exactly.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m mod cstd;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m mod driver;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m mod matrix;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m mod write;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m pub use driver::driver;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m pub use matrix::{
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     allocate_matrix, free_matrix, initialize_matrix_from_string, matrix_t, matrix_to_string,
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     multiply_matrices,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m pub use write::write_to_file;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation && cargo build --release 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+[38;5;244m - Completed in 0.198s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Now the symbol diff gate:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-GFHAAo && ls -la translation/target/release/*.so && nm -D --defined-only /tmp/cbuild_gf/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt && nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/rust_syms_all.txt && cat /tmp/c_syms.txt && echo "=== C symbols missing from Rust ===" && comm -23 /tmp/c_syms.txt /tmp/rust_syms_all.txt && echo "(end)" && echo "=== extra Rust exports ===" && comm -13 /tmp/c_syms.txt /tmp/rust_syms_all.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared libraries
+
+-rwxr-xr-x. 2 scheschb amazon 407104 Sep  1 16:21 translation/target/release/libdriver.so
+allocate_matrix
+driver
+free_matrix
+initialize_matrix_from_string
+matrix_to_string
+multiply_matrices
+write_to_file
+=== C symbols missing from Rust ===
+(end)
+=== extra Rust exports ===
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty in both directions. Now I'll verify behavioral/byte-identical equivalence with a dlopen-based differential harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness exercising all 7 exported symbols
+
+[49m[38;5;10m+        1[0m:[38;5;10m[49m // Differential harness: dlopens a driver .so and exercises the full ABI.
+[0m[49m[38;5;10m+        2[0m:[38;5;10m[49m // All observable output goes to stdout/stderr; the caller diffs the two runs.
+[0m[49m[39m    1,   3[0m:[39m[49m #define _GNU_SOURCE
+[0m[49m[39m    2,   4[0m:[39m[49m #include <dlfcn.h>
+[0m[49m[39m    3,   5[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m    4,   6[0m:[39m[49m #include <stdlib.h>
+[0m[49m[39m    5,   7[0m:[39m[49m #include <string.h>
+[0m[49m[39m    6,   8[0m:[39m[49m 
+[0m[49m[38;5;9m-   7     [0m:[38;5;9m[49m typedef char* (*fn_crs)(const char*, int);
+[0m[49m[38;5;9m-   8     [0m:[38;5;9m[49m typedef int (*fn_cp)(int, int);
+[0m[49m[38;5;9m-   9     [0m:[38;5;9m[49m typedef int (*fn_sa)(int, int, int);
+[0m[49m[38;5;9m-  10     [0m:[38;5;9m[49m typedef int (*fn_mwl)(int, int, char**);
+[0m[49m[38;5;9m-  11     [0m:[38;5;9m[49m typedef int (*fn_cas)(int*, int);
+[0m[49m[38;5;9m-  12     [0m:[38;5;9m[49m typedef int (*fn_co)(const char*, const char*);
+[0m[49m[38;5;9m-  13     [0m:[38;5;9m[49m typedef int (*fn_cm)(int, int, int, int);
+[0m[49m[38;5;10m+        9[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+       10[0m:[38;5;10m[49m     int** matrix;
+[0m[49m[38;5;10m+       11[0m:[38;5;10m[49m     int width;
+[0m[49m[38;5;10m+       12[0m:[38;5;10m[49m     int height;
+[0m[49m[38;5;10m+       13[0m:[38;5;10m[49m } matrix_t;
+[0m[49m[39m   14,  14[0m:[39m[49m 
+[0m[49m[38;5;9m-  15     [0m:[38;5;9m[49m int main(int argc, char** argv) {
+[0m[49m[38;5;9m-  16     [0m:[38;5;9m[49m     void* h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;9m-  17     [0m:[38;5;9m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+       15[0m:[38;5;10m[49m typedef matrix_t* (*alloc_fn)(int, int);
+[0m[49m[38;5;10m+       16[0m:[38;5;10m[49m typedef void (*freem_fn)(matrix_t*);
+[0m[49m[38;5;10m+       17[0m:[38;5;10m[49m typedef matrix_t* (*init_fn)(const char*, int, int);
+[0m[49m[38;5;10m+       18[0m:[38;5;10m[49m typedef matrix_t* (*mul_fn)(matrix_t*, matrix_t*);
+[0m[49m[38;5;10m+       19[0m:[38;5;10m[49m typedef char* (*tostr_fn)(matrix_t*);
+[0m[49m[38;5;10m+       20[0m:[38;5;10m[49m typedef int (*write_fn)(const char*, const char*);
+[0m[49m[38;5;10m+       21[0m:[38;5;10m[49m typedef int (*driver_fn)(int, int, const char*, int, int, const char*);
+[0m[49m[39m   18,  22[0m:[39m[49m 
+[0m[49m[38;5;9m-  19     [0m:[38;5;9m[49m     fn_crs create_result_string = (fn_crs)dlsym(h, "create_result_string");
+[0m[49m[38;5;9m-  20     [0m:[38;5;9m[49m     fn_cp  check_permissions    = (fn_cp) dlsym(h, "check_permissions");
+[0m[49m[38;5;9m-  21     [0m:[38;5;9m[49m     fn_sa  safe_add             = (fn_sa) dlsym(h, "safe_add");
+[0m[49m[38;5;9m-  22     [0m:[38;5;9m[49m     fn_mwl multiply_with_log    = (fn_mwl)dlsym(h, "multiply_with_log");
+[0m[49m[38;5;9m-  23     [0m:[38;5;9m[49m     fn_cas copy_and_sum         = (fn_cas)dlsym(h, "copy_and_sum");
+[0m[49m[38;5;9m-  24     [0m:[38;5;9m[49m     fn_co  compare_operations   = (fn_co) dlsym(h, "compare_operations");
+[0m[49m[38;5;9m-  25     [0m:[38;5;9m[49m     fn_cm  complexmode          = (fn_cm) dlsym(h, "complexmode");
+[0m[49m[38;5;10m+       23[0m:[38;5;10m[49m static alloc_fn c_allocate_matrix;
+[0m[49m[38;5;10m+       24[0m:[38;5;10m[49m static freem_fn c_free_matrix;
+[0m[49m[38;5;10m+       25[0m:[38;5;10m[49m static init_fn c_initialize_matrix_from_string;
+[0m[49m[38;5;10m+       26[0m:[38;5;10m[49m static mul_fn c_multiply_matrices;
+[0m[49m[38;5;10m+       27[0m:[38;5;10m[49m static tostr_fn c_matrix_to_string;
+[0m[49m[38;5;10m+       28[0m:[38;5;10m[49m static write_fn c_write_to_file;
+[0m[49m[38;5;10m+       29[0m:[38;5;10m[49m static driver_fn c_driver;
+[0m[49m[39m   26,  30[0m:[39m[49m 
+[0m[49m[38;5;9m-  27     [0m:[38;5;9m[49m     if (!create_result_string || !check_permissions || !safe_add ||
+[0m[49m[38;5;9m-  28     [0m:[38;5;9m[49m         !multiply_with_log || !copy_and_sum || !compare_operations ||
+[0m[49m[38;5;9m-  29     [0m:[38;5;9m[49m         !complexmode) {
+[0m[49m[38;5;9m-  30     [0m:[38;5;9m[49m         fprintf(stderr, "missing symbol\n"); return 3;
+[0m[49m[38;5;10m+       31[0m:[38;5;10m[49m static void dump_str(const char* label, const char* s) {
+[0m[49m[38;5;10m+       32[0m:[38;5;10m[49m     printf("%s: ", label);
+[0m[49m[38;5;10m+       33[0m:[38;5;10m[49m     if (s == NULL) {
+[0m[49m[38;5;10m+       34[0m:[38;5;10m[49m         printf("(null)\n");
+[0m[49m[38;5;10m+       35[0m:[38;5;10m[49m         return;
+[0m[49m[39m   31,  36[0m:[39m[49m     }
+[0m[49m[38;5;10m+       37[0m:[38;5;10m[49m     printf("len=%zu [", strlen(s));
+[0m[49m[38;5;10m+       38[0m:[38;5;10m[49m     for (const char* p = s; *p; p++) {
+[0m[49m[38;5;10m+       39[0m:[38;5;10m[49m         if (*p == '\n') printf("\\n");
+[0m[49m[38;5;10m+       40[0m:[38;5;10m[49m         else printf("%c", *p);
+[0m[49m[38;5;10m+       41[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+       42[0m:[38;5;10m[49m     printf("]\n");
+[0m[49m[38;5;10m+       43[0m:[38;5;10m[49m }
+[0m[49m[39m   32,  44[0m:[39m[49m 
+[0m[49m[38;5;9m-  33     [0m:[38;5;9m[49m     /* ---- create_result_string ---- */
+[0m[49m[38;5;9m-  34     [0m:[38;5;9m[49m     const char* ops[] = {
+[0m[49m[38;5;9m-  35     [0m:[38;5;9m[49m         "multiply", "", "add",
+[0m[49m[38;5;9m-  36     [0m:[38;5;9m[49m         "a_very_long_operation_name_that_definitely_exceeds_the_sixty_four_byte_buffer_limit",
+[0m[49m[38;5;9m-  37     [0m:[38;5;9m[49m         "%d%s%n", "tab\there"
+[0m[49m[38;5;9m-  38     [0m:[38;5;9m[49m     };
+[0m[49m[38;5;9m-  39     [0m:[38;5;9m[49m     int vals[] = {0, 1, -1, 2147483647, -2147483648, 123456};
+[0m[49m[38;5;9m-  40     [0m:[38;5;9m[49m     for (unsigned i = 0; i < sizeof(ops)/sizeof(ops[0]); i++) {
+[0m[49m[38;5;9m-  41     [0m:[38;5;9m[49m         for (unsigned j = 0; j < sizeof(vals)/sizeof(vals[0]); j++) {
+[0m[49m[38;5;9m-  42     [0m:[38;5;9m[49m             char* s = create_result_string(ops[i], vals[j]);
+[0m[49m[38;5;9m-  43     [0m:[38;5;9m[49m             printf("crs[%u,%u]=<%s> len=%zu\n", i, j, s ? s : "(null)",
+[0m[49m[38;5;9m-  44     [0m:[38;5;9m[49m                    s ? strlen(s) : (size_t)0);
+[0m[49m[38;5;9m-  45     [0m:[38;5;9m[49m             free(s);
+[0m[49m[38;5;10m+       45[0m:[38;5;10m[49m static void dump_matrix(const char* label, matrix_t* m) {
+[0m[49m[38;5;10m+       46[0m:[38;5;10m[49m     printf("%s: ", label);
+[0m[49m[38;5;10m+       47[0m:[38;5;10m[49m     if (m == NULL) {
+[0m[49m[38;5;10m+       48[0m:[38;5;10m[49m         printf("(null)\n");
+[0m[49m[38;5;10m+       49[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+       50[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+       51[0m:[38;5;10m[49m     printf("w=%d h=%d {", m->width, m->height);
+[0m[49m[38;5;10m+       52[0m:[38;5;10m[49m     for (int i = 0; i < m->height; i++) {
+[0m[49m[38;5;10m+       53[0m:[38;5;10m[49m         for (int j = 0; j < m->width; j++) {
+[0m[49m[38;5;10m+       54[0m:[38;5;10m[49m             printf("%d%s", m->matrix[i][j], (j == m->width - 1) ? "" : ",");
+[0m[49m[39m   46,  55[0m:[39m[49m         }
+[0m[49m[38;5;10m+       56[0m:[38;5;10m[49m         if (i != m->height - 1) printf(";");
+[0m[49m[39m   47,  57[0m:[39m[49m     }
+[0m[49m[38;5;10m+       58[0m:[38;5;10m[49m     printf("}\n");
+[0m[49m[38;5;10m+       59[0m:[38;5;10m[49m }
+[0m[49m[39m   48,  60[0m:[39m[49m 
+[0m[49m[38;5;9m-  49     [0m:[38;5;9m[49m     /* ---- check_permissions ---- */
+[0m[49m[38;5;9m-  50     [0m:[38;5;9m[49m     int perms[] = {0, 0400, 0200, 0100, 0600, 0644, 0777, 0755, -1, 0x7fffffff, -2147483648};
+[0m[49m[38;5;9m-  51     [0m:[38;5;9m[49m     for (unsigned i = 0; i < sizeof(perms)/sizeof(perms[0]); i++)
+[0m[49m[38;5;9m-  52     [0m:[38;5;9m[49m         for (unsigned j = 0; j < sizeof(perms)/sizeof(perms[0]); j++)
+[0m[49m[38;5;9m-  53     [0m:[38;5;9m[49m             printf("cp(%d,%d)=%d\n", perms[i], perms[j],
+[0m[49m[38;5;9m-  54     [0m:[38;5;9m[49m                    check_permissions(perms[i], perms[j]));
+[0m[49m[38;5;10m+       61[0m:[38;5;10m[49m static void dump_file(const char* label, const char* path) {
+[0m[49m[38;5;10m+       62[0m:[38;5;10m[49m     FILE* f = fopen(path, "rb");
+[0m[49m[38;5;10m+       63[0m:[38;5;10m[49m     printf("%s: ", label);
+[0m[49m[38;5;10m+       64[0m:[38;5;10m[49m     if (!f) { printf("(no file)\n"); return; }
+[0m[49m[38;5;10m+       65[0m:[38;5;10m[49m     int c; size_t n = 0;
+[0m[49m[38;5;10m+       66[0m:[38;5;10m[49m     printf("[");
+[0m[49m[38;5;10m+       67[0m:[38;5;10m[49m     while ((c = fgetc(f)) != EOF) { if (c == '\n') printf("\\n"); else printf("%c", c); n++; }
+[0m[49m[38;5;10m+       68[0m:[38;5;10m[49m     printf("] bytes=%zu\n", n);
+[0m[49m[38;5;10m+       69[0m:[38;5;10m[49m     fclose(f);
+[0m[49m[38;5;10m+       70[0m:[38;5;10m[49m }
+[0m[49m[39m   55,  71[0m:[39m[49m 
+[0m[49m[38;5;9m-  56     [0m:[38;5;9m[49m     /* ---- safe_add ---- */
+[0m[49m[38;5;9m-  57     [0m:[38;5;9m[49m     int as[] = {0, 1, -1, 5, 2147483647, -2147483648, 100000, -99999};
+[0m[49m[38;5;9m-  58     [0m:[38;5;9m[49m     for (unsigned i = 0; i < sizeof(perms)/sizeof(perms[0]); i++)
+[0m[49m[38;5;9m-  59     [0m:[38;5;9m[49m         for (unsigned j = 0; j < sizeof(as)/sizeof(as[0]); j++)
+[0m[49m[38;5;9m-  60     [0m:[38;5;9m[49m             for (unsigned k = 0; k < sizeof(as)/sizeof(as[0]); k++)
+[0m[49m[38;5;9m-  61     [0m:[38;5;9m[49m                 printf("sa(%d,%d,%d)=%d\n", as[j], as[k], perms[i],
+[0m[49m[38;5;9m-  62     [0m:[38;5;9m[49m                        safe_add(as[j], as[k], perms[i]));
+[0m[49m[38;5;10m+       72[0m:[38;5;10m[49m int main(int argc, char** argv) {
+[0m[49m[38;5;10m+       73[0m:[38;5;10m[49m     if (argc < 2) { fprintf(stderr, "usage: %s <lib.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+       74[0m:[38;5;10m[49m     void* h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+       75[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[39m   63,  76[0m:[39m[49m 
+[0m[49m[38;5;9m-  64     [0m:[38;5;9m[49m     /* ---- multiply_with_log ---- */
+[0m[49m[38;5;9m-  65     [0m:[38;5;9m[49m     for (unsigned j = 0; j < sizeof(as)/sizeof(as[0]); j++) {
+[0m[49m[38;5;9m-  66     [0m:[38;5;9m[49m         for (unsigned k = 0; k < sizeof(as)/sizeof(as[0]); k++) {
+[0m[49m[38;5;9m-  67     [0m:[38;5;9m[49m             char* log = (char*)0x1;
+[0m[49m[38;5;9m-  68     [0m:[38;5;9m[49m             int r = multiply_with_log(as[j], as[k], &log);
+[0m[49m[38;5;9m-  69     [0m:[38;5;9m[49m             printf("mwl(%d,%d)=%d log=<%s>\n", as[j], as[k], r,
+[0m[49m[38;5;9m-  70     [0m:[38;5;9m[49m                    log ? log : "(null)");
+[0m[49m[38;5;9m-  71     [0m:[38;5;9m[49m             free(log);
+[0m[49m[38;5;9m-  72     [0m:[38;5;9m[49m         }
+[0m[49m[38;5;10m+       77[0m:[38;5;10m[49m     c_allocate_matrix = (alloc_fn)dlsym(h, "allocate_matrix");
+[0m[49m[38;5;10m+       78[0m:[38;5;10m[49m     c_free_matrix = (freem_fn)dlsym(h, "free_matrix");
+[0m[49m[38;5;10m+       79[0m:[38;5;10m[49m     c_initialize_matrix_from_string = (init_fn)dlsym(h, "initialize_matrix_from_string");
+[0m[49m[38;5;10m+       80[0m:[38;5;10m[49m     c_multiply_matrices = (mul_fn)dlsym(h, "multiply_matrices");
+[0m[49m[38;5;10m+       81[0m:[38;5;10m[49m     c_matrix_to_string = (tostr_fn)dlsym(h, "matrix_to_string");
+[0m[49m[38;5;10m+       82[0m:[38;5;10m[49m     c_write_to_file = (write_fn)dlsym(h, "write_to_file");
+[0m[49m[38;5;10m+       83[0m:[38;5;10m[49m     c_driver = (driver_fn)dlsym(h, "driver");
+[0m[49m[38;5;10m+       84[0m:[38;5;10m[49m     if (!c_allocate_matrix || !c_free_matrix || !c_initialize_matrix_from_string ||
+[0m[49m[38;5;10m+       85[0m:[38;5;10m[49m         !c_multiply_matrices || !c_matrix_to_string || !c_write_to_file || !c_driver) {
+[0m[49m[38;5;10m+       86[0m:[38;5;10m[49m         fprintf(stderr, "missing symbol\n");
+[0m[49m[38;5;10m+       87[0m:[38;5;10m[49m         return 2;
+[0m[49m[39m   73,  88[0m:[39m[49m     }
+[0m[49m[39m   74,  89[0m:[39m[49m 
+[0m[49m[38;5;9m-  75     [0m:[38;5;9m[49m     /* ---- copy_and_sum ---- */
+[0m[49m[38;5;9m-  76     [0m:[38;5;9m[49m     printf("cas(NULL,3)=%d\n", copy_and_sum(NULL, 3));
+[0m[49m[38;5;9m-  77     [0m:[38;5;9m[49m     printf("cas(NULL,-1)=%d\n", copy_and_sum(NULL, -1));
+[0m[49m[38;5;9m-  78     [0m:[38;5;9m[49m     printf("cas(NULL,0)=%d\n", copy_and_sum(NULL, 0));
+[0m[49m[38;5;9m-  79     [0m:[38;5;9m[49m     {
+[0m[49m[38;5;9m-  80     [0m:[38;5;9m[49m         int arr[8] = {1, 2, 3, 4, -5, 2147483647, -2147483648, 0};
+[0m[49m[38;5;9m-  81     [0m:[38;5;9m[49m         int counts[] = {0, 1, 2, 3, 5, 8, -1, -7, -2147483648, 2147483647};
+[0m[49m[38;5;9m-  82     [0m:[38;5;9m[49m         for (unsigned i = 0; i < sizeof(counts)/sizeof(counts[0]); i++)
+[0m[49m[38;5;9m-  83     [0m:[38;5;9m[49m             printf("cas(arr,%d)=%d\n", counts[i], copy_and_sum(arr, counts[i]));
+[0m[49m[38;5;9m-  84     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+       90[0m:[38;5;10m[49m     setvbuf(stdout, NULL, _IONBF, 0);
+[0m[49m[39m   85,  91[0m:[39m[49m 
+[0m[49m[38;5;9m-  86     [0m:[38;5;9m[49m     /* ---- compare_operations ---- */
+[0m[49m[38;5;9m-  87     [0m:[38;5;9m[49m     const char* cs[] = {NULL, "", "a", "b", "aa", "abc", "ABC", "multiply", "add"};
+[0m[49m[38;5;9m-  88     [0m:[38;5;9m[49m     for (unsigned i = 0; i < sizeof(cs)/sizeof(cs[0]); i++) {
+[0m[49m[38;5;9m-  89     [0m:[38;5;9m[49m         for (unsigned j = 0; j < sizeof(cs)/sizeof(cs[0]); j++) {
+[0m[49m[38;5;9m-  90     [0m:[38;5;9m[49m             int r = compare_operations(cs[i], cs[j]);
+[0m[49m[38;5;9m-  91     [0m:[38;5;9m[49m             /* normalize sign only for non-error paths so glibc's exact
+[0m[49m[38;5;9m-  92     [0m:[38;5;9m[49m                magnitude does not mask a real behavioural difference */
+[0m[49m[38;5;9m-  93     [0m:[38;5;9m[49m             printf("co(%u,%u)=%d sign=%d\n", i, j, r, (r > 0) - (r < 0));
+[0m[49m[38;5;9m-  94     [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m-  95     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+       92[0m:[38;5;10m[49m     // --- 1. allocate_matrix / free_matrix ---
+[0m[49m[38;5;10m+       93[0m:[38;5;10m[49m     matrix_t* a0 = c_allocate_matrix(3, 2);
+[0m[49m[38;5;10m+       94[0m:[38;5;10m[49m     printf("T1 alloc nonnull=%d w=%d h=%d rows_nonnull=%d\n",
+[0m[49m[38;5;10m+       95[0m:[38;5;10m[49m            a0 != NULL, a0->width, a0->height, a0->matrix != NULL);
+[0m[49m[38;5;10m+       96[0m:[38;5;10m[49m     for (int i = 0; i < 2; i++) for (int j = 0; j < 3; j++) a0->matrix[i][j] = i * 3 + j;
+[0m[49m[38;5;10m+       97[0m:[38;5;10m[49m     dump_matrix("T1 filled", a0);
+[0m[49m[38;5;10m+       98[0m:[38;5;10m[49m     c_free_matrix(a0);
+[0m[49m[38;5;10m+       99[0m:[38;5;10m[49m     printf("T1 freed ok\n");
+[0m[49m[38;5;10m+      100[0m:[38;5;10m[49m     c_free_matrix(NULL);
+[0m[49m[38;5;10m+      101[0m:[38;5;10m[49m     printf("T1 free(NULL) ok\n");
+[0m[49m[39m   96, 102[0m:[39m[49m 
+[0m[49m[38;5;9m-  97     [0m:[38;5;9m[49m     /* ---- complexmode ---- */
+[0m[49m[38;5;9m-  98     [0m:[38;5;9m[49m     int modes[] = {-2147483648, -1, 0, 1, 2, 3, 4, 5, 99, 2147483647};
+[0m[49m[38;5;9m-  99     [0m:[38;5;9m[49m     int vs[] = {0, 1, -1, 7, 100, -100, 65536, 2147483647, -2147483648};
+[0m[49m[38;5;9m- 100     [0m:[38;5;9m[49m     for (unsigned m = 0; m < sizeof(modes)/sizeof(modes[0]); m++) {
+[0m[49m[38;5;9m- 101     [0m:[38;5;9m[49m         for (unsigned i = 0; i < sizeof(vs)/sizeof(vs[0]); i++) {
+[0m[49m[38;5;9m- 102     [0m:[38;5;9m[49m             int a = vs[i];
+[0m[49m[38;5;9m- 103     [0m:[38;5;9m[49m             int b = vs[(i + 3) % (sizeof(vs)/sizeof(vs[0]))];
+[0m[49m[38;5;9m- 104     [0m:[38;5;9m[49m             int c = vs[(i + 5) % (sizeof(vs)/sizeof(vs[0]))];
+[0m[49m[38;5;9m- 105     [0m:[38;5;9m[49m             printf("--- complexmode(%d,%d,%d,%d) ---\n", modes[m], a, b, c);
+[0m[49m[38;5;9m- 106     [0m:[38;5;9m[49m             printf("=> %d\n", complexmode(modes[m], a, b, c));
+[0m[49m[38;5;9m- 107     [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 108     [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+      103[0m:[38;5;10m[49m     // zero dims
+[0m[49m[38;5;10m+      104[0m:[38;5;10m[49m     matrix_t* az = c_allocate_matrix(0, 0);
+[0m[49m[38;5;10m+      105[0m:[38;5;10m[49m     printf("T1b alloc(0,0) nonnull=%d w=%d h=%d\n", az != NULL, az->width, az->height);
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m     c_free_matrix(az);
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m     // --- 2. initialize_matrix_from_string happy path ---
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m     matrix_t* m1 = c_initialize_matrix_from_string("1 2 3\n4 5 6\n", 3, 2);
+[0m[49m[38;5;10m+      110[0m:[38;5;10m[49m     dump_matrix("T2 m1", m1);
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m     char* s1 = c_matrix_to_string(m1);
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m     dump_str("T2 s1", s1);
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m     free(s1);   // cross-allocator check: test frees with libc free
+[0m[49m[38;5;10m+      114[0m:[38;5;10m[49m     printf("T2 free(s1) ok\n");
+[0m[49m[38;5;10m+      115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      116[0m:[38;5;10m[49m     // --- 3. multiply happy path ---
+[0m[49m[38;5;10m+      117[0m:[38;5;10m[49m     matrix_t* m2 = c_initialize_matrix_from_string("7 8\n9 10\n11 12", 2, 3);
+[0m[49m[38;5;10m+      118[0m:[38;5;10m[49m     dump_matrix("T3 m2", m2);
+[0m[49m[38;5;10m+      119[0m:[38;5;10m[49m     matrix_t* p = c_multiply_matrices(m1, m2);
+[0m[49m[38;5;10m+      120[0m:[38;5;10m[49m     dump_matrix("T3 product", p);
+[0m[49m[38;5;10m+      121[0m:[38;5;10m[49m     char* ps = c_matrix_to_string(p);
+[0m[49m[38;5;10m+      122[0m:[38;5;10m[49m     dump_str("T3 product str", ps);
+[0m[49m[38;5;10m+      123[0m:[38;5;10m[49m     free(ps);
+[0m[49m[38;5;10m+      124[0m:[38;5;10m[49m     c_free_matrix(p);
+[0m[49m[38;5;10m+      125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      126[0m:[38;5;10m[49m     // --- 4. dimension mismatch ---
+[0m[49m[38;5;10m+      127[0m:[38;5;10m[49m     matrix_t* bad = c_multiply_matrices(m1, m1);
+[0m[49m[38;5;10m+      128[0m:[38;5;10m[49m     printf("T4 mismatch null=%d\n", bad == NULL);
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m     c_free_matrix(m1);
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m     c_free_matrix(m2);
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m     // --- 5. insufficient rows ---
+[0m[49m[38;5;10m+      133[0m:[38;5;10m[49m     matrix_t* r = c_initialize_matrix_from_string("1 2 3\n", 3, 4);
+[0m[49m[38;5;10m+      134[0m:[38;5;10m[49m     printf("T5 insufficient rows null=%d\n", r == NULL);
+[0m[49m[38;5;10m+      135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      136[0m:[38;5;10m[49m     // --- 6. insufficient columns (row 2) ---
+[0m[49m[38;5;10m+      137[0m:[38;5;10m[49m     matrix_t* c2 = c_initialize_matrix_from_string("1 2 3\n4 5\n", 3, 2);
+[0m[49m[38;5;10m+      138[0m:[38;5;10m[49m     printf("T6 insufficient cols null=%d\n", c2 == NULL);
+[0m[49m[38;5;10m+      139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      140[0m:[38;5;10m[49m     // --- 7. matrix_to_string(NULL) ---
+[0m[49m[38;5;10m+      141[0m:[38;5;10m[49m     char* ns = c_matrix_to_string(NULL);
+[0m[49m[38;5;10m+      142[0m:[38;5;10m[49m     printf("T7 tostring(NULL) null=%d\n", ns == NULL);
+[0m[49m[38;5;10m+      143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      144[0m:[38;5;10m[49m     // --- 8. atoi quirks / delimiters / negatives / big values ---
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m     matrix_t* q = c_initialize_matrix_from_string("  -5   abc\n12xy 2147483647\n", 2, 2);
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m     dump_matrix("T8 quirks", q);
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m     char* qs = c_matrix_to_string(q);
+[0m[49m[38;5;10m+      148[0m:[38;5;10m[49m     dump_str("T8 quirks str", qs);
+[0m[49m[38;5;10m+      149[0m:[38;5;10m[49m     free(qs);
+[0m[49m[38;5;10m+      150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      151[0m:[38;5;10m[49m     // --- 9. wrapping overflow in multiply ---
+[0m[49m[38;5;10m+      152[0m:[38;5;10m[49m     matrix_t* o1 = c_initialize_matrix_from_string("100000 100000", 2, 1);
+[0m[49m[38;5;10m+      153[0m:[38;5;10m[49m     matrix_t* o2 = c_initialize_matrix_from_string("100000\n100000", 1, 2);
+[0m[49m[38;5;10m+      154[0m:[38;5;10m[49m     matrix_t* op = c_multiply_matrices(o1, o2);
+[0m[49m[38;5;10m+      155[0m:[38;5;10m[49m     dump_matrix("T9 overflow product", op);
+[0m[49m[38;5;10m+      156[0m:[38;5;10m[49m     char* ops = c_matrix_to_string(op);
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m     dump_str("T9 overflow str", ops);
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m     free(ops);
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m     c_free_matrix(o1); c_free_matrix(o2); c_free_matrix(op);
+[0m[49m[38;5;10m+      160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m     // --- 10. INT_MIN rendering (11 chars) ---
+[0m[49m[38;5;10m+      162[0m:[38;5;10m[49m     matrix_t* mn = c_initialize_matrix_from_string("-2147483648", 1, 1);
+[0m[49m[38;5;10m+      163[0m:[38;5;10m[49m     dump_matrix("T10 intmin", mn);
+[0m[49m[38;5;10m+      164[0m:[38;5;10m[49m     char* mns = c_matrix_to_string(mn);
+[0m[49m[38;5;10m+      165[0m:[38;5;10m[49m     dump_str("T10 intmin str", mns);
+[0m[49m[38;5;10m+      166[0m:[38;5;10m[49m     free(mns);
+[0m[49m[38;5;10m+      167[0m:[38;5;10m[49m     c_free_matrix(mn);
+[0m[49m[38;5;10m+      168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      169[0m:[38;5;10m[49m     // --- 11. height = 0 to_string ---
+[0m[49m[38;5;10m+      170[0m:[38;5;10m[49m     matrix_t* h0 = c_initialize_matrix_from_string("1 2", 2, 0);
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m     dump_matrix("T11 h0", h0);
+[0m[49m[38;5;10m+      172[0m:[38;5;10m[49m     char* h0s = c_matrix_to_string(h0);
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m     dump_str("T11 h0 str", h0s);
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m     free(h0s);
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m     c_free_matrix(h0);
+[0m[49m[38;5;10m+      176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      177[0m:[38;5;10m[49m     // --- 12. negative height -> allocate fails -> NULL ---
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m     matrix_t* neg = c_initialize_matrix_from_string("1 2", 2, -1);
+[0m[49m[38;5;10m+      179[0m:[38;5;10m[49m     printf("T12 neg height null=%d\n", neg == NULL);
+[0m[49m[38;5;10m+      180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      181[0m:[38;5;10m[49m     // --- 13. write_to_file NULL content ---
+[0m[49m[38;5;10m+      182[0m:[38;5;10m[49m     int w1 = c_write_to_file("/tmp/harness_out.txt", NULL);
+[0m[49m[38;5;10m+      183[0m:[38;5;10m[49m     printf("T13 write NULL content rc=%d\n", w1);
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      185[0m:[38;5;10m[49m     // --- 14. write_to_file ok ---
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m     remove("/tmp/harness_out.txt");
+[0m[49m[38;5;10m+      187[0m:[38;5;10m[49m     int w2 = c_write_to_file("/tmp/harness_out.txt", "hello\nworld\n");
+[0m[49m[38;5;10m+      188[0m:[38;5;10m[49m     printf("T14 write rc=%d\n", w2);
+[0m[49m[38;5;10m+      189[0m:[38;5;10m[49m     dump_file("T14 file", "/tmp/harness_out.txt");
+[0m[49m[38;5;10m+      190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      191[0m:[38;5;10m[49m     // --- 15. write_to_file empty content ---
+[0m[49m[38;5;10m+      192[0m:[38;5;10m[49m     int w3 = c_write_to_file("/tmp/harness_out.txt", "");
+[0m[49m[38;5;10m+      193[0m:[38;5;10m[49m     printf("T15 write empty rc=%d\n", w3);
+[0m[49m[38;5;10m+      194[0m:[38;5;10m[49m     dump_file("T15 file", "/tmp/harness_out.txt");
+[0m[49m[38;5;10m+      195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      196[0m:[38;5;10m[49m     // --- 16. write_to_file unopenable path ---
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m     int w4 = c_write_to_file("/nonexistent_dir_zzz/f.txt", "x");
+[0m[49m[38;5;10m+      198[0m:[38;5;10m[49m     printf("T16 write bad path rc=%d\n", w4);
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      200[0m:[38;5;10m[49m     // --- 17. write_to_file to a directory ---
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m     int w5 = c_write_to_file("/tmp", "x");
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m     printf("T17 write dir rc=%d\n", w5);
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m     // --- 18. driver happy path ---
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m     remove("matrix.txt");
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m     int d1 = c_driver(3, 2, "1 2 3\n4 5 6", 2, 3, "7 8\n9 10\n11 12");
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m     printf("T18 driver rc=%d\n", d1);
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m     dump_file("T18 matrix.txt", "matrix.txt");
+[0m[49m[39m  109, 209[0m:[39m[49m 
+[0m[49m[38;5;9m- 110     [0m:[38;5;9m[49m     fflush(stdout);
+[0m[49m[38;5;9m- 111     [0m:[38;5;9m[49m     dlclose(h);
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m     // --- 19. driver bad matrix_a ---
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m     int d2 = c_driver(3, 5, "1 2 3", 2, 3, "7 8\n9 10\n11 12");
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m     printf("T19 driver rc=%d\n", d2);
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m     // --- 20. driver bad matrix_b ---
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m     int d3 = c_driver(3, 2, "1 2 3\n4 5 6", 2, 9, "7 8");
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m     printf("T20 driver rc=%d\n", d3);
+[0m[49m[38;5;10m+      217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      218[0m:[38;5;10m[49m     // --- 21. driver dim mismatch ---
+[0m[49m[38;5;10m+      219[0m:[38;5;10m[49m     int d4 = c_driver(3, 2, "1 2 3\n4 5 6", 3, 2, "1 2 3\n4 5 6");
+[0m[49m[38;5;10m+      220[0m:[38;5;10m[49m     printf("T21 driver rc=%d\n", d4);
+[0m[49m[38;5;10m+      221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      222[0m:[38;5;10m[49m     // --- 22. driver 1x1 ---
+[0m[49m[38;5;10m+      223[0m:[38;5;10m[49m     remove("matrix.txt");
+[0m[49m[38;5;10m+      224[0m:[38;5;10m[49m     int d5 = c_driver(1, 1, "6", 1, 1, "7");
+[0m[49m[38;5;10m+      225[0m:[38;5;10m[49m     printf("T22 driver rc=%d\n", d5);
+[0m[49m[38;5;10m+      226[0m:[38;5;10m[49m     dump_file("T22 matrix.txt", "matrix.txt");
+[0m[49m[38;5;10m+      227[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      228[0m:[38;5;10m[49m     // --- 23. driver with negatives ---
+[0m[49m[38;5;10m+      229[0m:[38;5;10m[49m     remove("matrix.txt");
+[0m[49m[38;5;10m+      230[0m:[38;5;10m[49m     int d6 = c_driver(2, 2, "-1 -2\n-3 -4", 2, 2, "5 -6\n-7 8");
+[0m[49m[38;5;10m+      231[0m:[38;5;10m[49m     printf("T23 driver rc=%d\n", d6);
+[0m[49m[38;5;10m+      232[0m:[38;5;10m[49m     dump_file("T23 matrix.txt", "matrix.txt");
+[0m[49m[38;5;10m+      233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      234[0m:[38;5;10m[49m     // --- 24. extra rows/cols in input are ignored ---
+[0m[49m[38;5;10m+      235[0m:[38;5;10m[49m     matrix_t* ex = c_initialize_matrix_from_string("1 2 3 4\n5 6 7 8\n9 9 9 9\n", 2, 2);
+[0m[49m[38;5;10m+      236[0m:[38;5;10m[49m     dump_matrix("T24 extra", ex);
+[0m[49m[38;5;10m+      237[0m:[38;5;10m[49m     char* exs = c_matrix_to_string(ex);
+[0m[49m[38;5;10m+      238[0m:[38;5;10m[49m     dump_str("T24 extra str", exs);
+[0m[49m[38;5;10m+      239[0m:[38;5;10m[49m     free(exs);
+[0m[49m[38;5;10m+      240[0m:[38;5;10m[49m     c_free_matrix(ex);
+[0m[49m[38;5;10m+      241[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      242[0m:[38;5;10m[49m     // --- 25. multiple consecutive delimiters ---
+[0m[49m[38;5;10m+      243[0m:[38;5;10m[49m     matrix_t* md = c_initialize_matrix_from_string("1   2\n\n\n3   4\n", 2, 2);
+[0m[49m[38;5;10m+      244[0m:[38;5;10m[49m     dump_matrix("T25 delims", md);
+[0m[49m[38;5;10m+      245[0m:[38;5;10m[49m     c_free_matrix(md);
+[0m[49m[38;5;10m+      246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      247[0m:[38;5;10m[49m     // --- 26. empty string input ---
+[0m[49m[38;5;10m+      248[0m:[38;5;10m[49m     matrix_t* es = c_initialize_matrix_from_string("", 1, 1);
+[0m[49m[38;5;10m+      249[0m:[38;5;10m[49m     printf("T26 empty input null=%d\n", es == NULL);
+[0m[49m[38;5;10m+      250[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      251[0m:[38;5;10m[49m     // --- 27. width 0 ---
+[0m[49m[38;5;10m+      252[0m:[38;5;10m[49m     matrix_t* w0 = c_initialize_matrix_from_string("1 2\n3 4", 0, 2);
+[0m[49m[38;5;10m+      253[0m:[38;5;10m[49m     dump_matrix("T27 w0", w0);
+[0m[49m[38;5;10m+      254[0m:[38;5;10m[49m     char* w0s = c_matrix_to_string(w0);
+[0m[49m[38;5;10m+      255[0m:[38;5;10m[49m     dump_str("T27 w0 str", w0s);
+[0m[49m[38;5;10m+      256[0m:[38;5;10m[49m     free(w0s);
+[0m[49m[38;5;10m+      257[0m:[38;5;10m[49m     c_free_matrix(w0);
+[0m[49m[38;5;10m+      258[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      259[0m:[38;5;10m[49m     // --- 28. tab is not a delimiter ---
+[0m[49m[38;5;10m+      260[0m:[38;5;10m[49m     matrix_t* tb = c_initialize_matrix_from_string("1\t2 3\n", 2, 1);
+[0m[49m[38;5;10m+      261[0m:[38;5;10m[49m     dump_matrix("T28 tab", tb);
+[0m[49m[38;5;10m+      262[0m:[38;5;10m[49m     c_free_matrix(tb);
+[0m[49m[38;5;10m+      263[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      264[0m:[38;5;10m[49m     printf("DONE\n");
+[0m[49m[39m  112, 265[0m:[39m[49m     return 0;
+[0m[49m[39m  113, 266[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O0 -Wall -o harness harness.c -ldl 2>&1 | head -20 && echo "BUILD OK"
+mkdir -p /tmp/runc /tmp/runr
+cd /tmp/runc && /tmp/harness /tmp/cbuild_gf/libdriver.so > out.txt 2> err.txt; echo "c exit=$?"
+cd /tmp/runr && /tmp/harness /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/target/release/libdriver.so > out.txt 2> err.txt; echo "rust exit=$?"
+echo "=== STDOUT DIFF ==="; diff /tmp/runc/out.txt /tmp/runr/out.txt && echo "(identical)"
+echo "=== STDERR DIFF ==="; diff /tmp/runc/err.txt /tmp/runr/err.txt && echo "(identical)"
+echo "=== matrix.txt DIFF ==="; cmp /tmp/runc/matrix.txt /tmp/runr/matrix.txt && echo "(identical)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential harness against both libraries and diff outputs
+
+BUILD OK
+c exit=0
+rust exit=0
+=== STDOUT DIFF ===
+(identical)
+=== STDERR DIFF ===
+(identical)
+=== matrix.txt DIFF ===
+(identical)
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[38;5;11m
+WARNING: [0mRetry #2, retrying within 10.0s..
+[38;5;141m> [0mBoth runs completed with byte-identical stdout, stderr, and output file. Let me inspect the actual content to confirm the tests are meaningful.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/runc && echo "===== STDOUT ====="; cat out.txt; echo "===== STDERR ====="; cat err.txt; echo "===== matrix.txt ====="; cat matrix.txt; echo "===== md5 ====="; md5sum /tmp/runc/out.txt /tmp/runr/out.txt /tmp/runc/err.txt /tmp/runr/err.txt /tmp/runc/matrix.txt /tmp/runr/matrix.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect harness output content and checksums
+
+===== STDOUT =====
+T1 alloc nonnull=1 w=3 h=2 rows_nonnull=1
+T1 filled: w=3 h=2 {0,1,2;3,4,5}
+T1 freed ok
+T1 free(NULL) ok
+T1b alloc(0,0) nonnull=1 w=0 h=0
+T2 m1: w=3 h=2 {1,2,3;4,5,6}
+T2 s1: len=12 [1 2 3\n4 5 6\n]
+T2 free(s1) ok
+T3 m2: w=2 h=3 {7,8;9,10;11,12}
+T3 product: w=2 h=2 {58,64;139,154}
+T3 product str: len=14 [58 64\n139 154\n]
+T4 mismatch null=1
+T5 insufficient rows null=1
+T6 insufficient cols null=1
+T7 tostring(NULL) null=1
+T8 quirks: w=2 h=2 {-5,0;12,2147483647}
+T8 quirks str: len=19 [-5 0\n12 2147483647\n]
+T9 overflow product: w=1 h=1 {-1474836480}
+T9 overflow str: len=12 [-1474836480\n]
+T10 intmin: w=1 h=1 {-2147483648}
+T10 intmin str: len=12 [-2147483648\n]
+T11 h0: w=2 h=0 {}
+T11 h0 str: len=0 []
+T12 neg height null=1
+T13 write NULL content rc=22
+T14 write rc=0
+T14 file: [hello\nworld\n] bytes=12
+T15 write empty rc=0
+T15 file: [] bytes=0
+T16 write bad path rc=2
+T17 write dir rc=21
+T18 driver rc=0
+T18 matrix.txt: [58 64\n139 154\n] bytes=14
+T19 driver rc=1
+T20 driver rc=1
+T21 driver rc=1
+T22 driver rc=0
+T22 matrix.txt: [42\n] bytes=3
+T23 driver rc=0
+T23 matrix.txt: [9 -10\n13 -14\n] bytes=13
+T24 extra: w=2 h=2 {1,2;5,6}
+T24 extra str: len=8 [1 2\n5 6\n]
+T25 delims: w=2 h=2 {1,2;3,4}
+T26 empty input null=1
+T27 w0: w=0 h=2 {;}
+T27 w0 str: len=2 [\n\n]
+T28 tab: w=2 h=1 {1,3}
+DONE
+===== STDERR =====
+Matrix dimensions do not allow multiplication.
+Insufficient rows in input string.
+Insufficient columns in row 2.
+Error: Matrix is NULL.
+Failed to allocate memory for matrix rows: Cannot allocate memory
+Error: Content is NULL.
+Error opening file '/nonexistent_dir_zzz/f.txt': No such file or directory
+Error opening file '/tmp': Is a directory
+Insufficient rows in input string.
+Insufficient rows in input string.
+Matrix dimensions do not allow multiplication.
+Insufficient rows in input string.
+===== matrix.txt =====
+9 -10
+13 -14
+===== md5 =====
+6fc8bce1f618187112030cfbc2836ae1  /tmp/runc/out.txt
+6fc8bce1f618187112030cfbc2836ae1  /tmp/runr/out.txt
+ea2a068a83db9bcf2a0cb449fb72c504  /tmp/runc/err.txt
+ea2a068a83db9bcf2a0cb449fb72c504  /tmp/runr/err.txt
+f91f9fa34122fe0b441181c874da787b  /tmp/runc/matrix.txt
+f91f9fa34122fe0b441181c874da787b  /tmp/runr/matrix.txt
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[38;5;141m> [0mAll cases meaningful and identical, including wrapping overflow ([38;5;10m-1474836480[0m), the [38;5;10mperror[0m+[38;5;10merrno[0m path for negative height, [38;5;10mEISDIR[0m=21, and [38;5;10mINT_MIN[0m formatting. Final check: allocator/memory-behavior parity under valgrind.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mwhich valgrind >/dev/null 2>&1 && { for t in c r; do lib=$( [ $t = c ] && echo /tmp/cbuild_gf/libdriver.so || echo /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/target/release/libdriver.so ); cd /tmp/run$t; valgrind --error-exitcode=9 --leak-check=no /tmp/harness $lib >/dev/null 2> vg.txt; echo "[$t] valgrind exit=$?"; grep -E "ERROR SUMMARY|Invalid|double free" vg.txt | head -5; done; } || echo "valgrind not installed"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run valgrind on both libraries to compare memory error profiles
+
+valgrind not installed
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor t in c r; do lib=$( [ $t = c ] && echo /tmp/cbuild_gf/libdriver.so || echo /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/target/release/libdriver.so ); cd /tmp/run$t; MALLOC_CHECK_=3 MALLOC_PERTURB_=42 /tmp/harness $lib > mc_out.txt 2> mc_err.txt; echo "[$t] MALLOC_CHECK_ exit=$?"; done; echo "=== glibc-checked stdout diff ==="; diff /tmp/runc/mc_out.txt /tmp/runr/mc_out.txt && echo "(identical)"; echo "=== glibc-checked stderr diff ==="; diff /tmp/runc/mc_err.txt /tmp/runr/mc_err.txt && echo "(identical)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run both with glibc heap consistency checks enabled and diff
+
+[c] MALLOC_CHECK_ exit=0
+[r] MALLOC_CHECK_ exit=0
+=== glibc-checked stdout diff ===
+(identical)
+=== glibc-checked stderr diff ===
+(identical)
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation && touch src/lib.rs && cargo build --release 2>&1 | grep -iE "warn|error" ; echo "--- warnings above (none if empty) ---"; ls -a; wc -l src/*.rs; echo "--- git status of c_src (must be untouched) ---"; cd .. && (git status --porcelain c_src 2>/dev/null || echo "not a git repo"); find c_src -newermt "-30 minutes" -type f | sed 's/^/MODIFIED: /'; echo "(no MODIFIED lines = c_src untouched)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm clean build, file layout, and c_src untouched
+
+--- warnings above (none if empty) ---
+.
+..
+Cargo.lock
+Cargo.toml
+src
+target
+   88 src/cstd.rs
+   60 src/driver.rs
+   23 src/lib.rs
+  225 src/matrix.rs
+   52 src/write.rs
+  448 total
+--- git status of c_src (must be untouched) ---
+not a git repo
+MODIFIED: c_src/CMakeLists.txt
+MODIFIED: c_src/include/matrix.h
+MODIFIED: c_src/include/write.h
+MODIFIED: c_src/src/driver.c
+MODIFIED: c_src/src/matrix.c
+MODIFIED: c_src/src/write.c
+(no MODIFIED lines = c_src untouched)
+[38;5;244m - Completed in 0.158s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-GFHAAo && stat -c '%y  %n' c_src/CMakeLists.txt c_src/include/*.h c_src/src/*.c; echo "--- file count in c_src (must be 6, no build artifacts) ---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src mtimes predate session writes and no artifacts added
+
+2026-09-01 16:17:00.570480745 +0000  c_src/CMakeLists.txt
+2026-09-01 16:17:00.570480745 +0000  c_src/include/matrix.h
+2026-09-01 16:17:00.570480745 +0000  c_src/include/write.h
+2026-09-01 16:17:00.570480745 +0000  c_src/src/driver.c
+2026-09-01 16:17:00.570480745 +0000  c_src/src/matrix.c
+2026-09-01 16:17:00.570480745 +0000  c_src/src/write.c
+--- file count in c_src (must be 6, no build artifacts) ---
+6
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_gf /tmp/runc /tmp/runr /tmp/harness /tmp/harness.c && echo "temp verification artifacts removed"; ls -la /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Remove temporary verification artifacts
+
+temp verification artifacts removed
+-rwxr-xr-x. 2 scheschb amazon 407104 Sep  1 16:23 /local/home/scheschb/.harvest/work/harvest-work-GFHAAo/translation/target/release/libdriver.so
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified. The library turned out to be small — 3 [38;5;10m.c[0m files, 294 lines total, no namespace-renaming macros — so I translated it directly rather than delegating to sub-agents.[0m[0m
+[0m[0m
+[1mSymbol parity (the completion gate):[22m I built the C library with CMake, ran [38;5;10mnm -D --defined-only[0m on both [38;5;10m.so[0m files, and diffed. All 7 C exports are present in the Rust [38;5;10mcdylib[0m, with zero extra exports:[0m[0m
+[0m[0m
+[38;5;10mallocate_matrix  driver  free_matrix  initialize_matrix_from_string
+matrix_to_string  multiply_matrices  write_to_file
+[0m[0m[0m
+[0m[0m
+Note [38;5;10mallocate_matrix[0m is absent from [38;5;10mmatrix.h[0m but non-[38;5;10mstatic[0m in [38;5;10mmatrix.c[0m, so it is part of the exported ABI and is included.[0m[0m
+[0m[0m
+[1mBehavioral parity:[22m I wrote a [38;5;10mdlopen[0m-based differential harness (28 cases covering every symbol) and ran it against both libraries. stdout, stderr, and the written output files were byte-identical (matching md5s), including with glibc heap checking ([38;5;10mMALLOC_CHECK_=3 MALLOC_PERTURB_=42[0m) enabled. Meaningful cases confirmed identical: signed-overflow wraparound ([38;5;10m-1474836480[0m), [38;5;10mINT_MIN[0m formatting, [38;5;10matoi[0m quirks ([38;5;10mabc[0m→0, [38;5;10m12xy[0m→12), [38;5;10mstrtok_r[0m delimiter collapsing, tab not being a delimiter, zero/negative dimensions, and all [38;5;10merrno[0m returns ([38;5;10mEINVAL[0m=22, [38;5;10mENOENT[0m=2, [38;5;10mEISDIR[0m=21).[0m[0m
+[0m[0m
+[1mApproach:[22m to guarantee identical output rather than approximate it, the translation calls through to libc for the operations whose exact semantics matter — [38;5;10mmalloc[0m/[38;5;10mfree[0m (so callers can [38;5;10mfree()[0m returned pointers, which the harness verifies), [38;5;10mstrdup[0m, [38;5;10mstrtok_r[0m, [38;5;10matoi[0m, [38;5;10msnprintf[0m, [38;5;10mperror[0m, and stdio. Control flow, error-check ordering, and integer arithmetic are safe Rust with explicit [38;5;10mwrapping_*[0m ops to match gcc.[0m[0m
+[0m[0m
+Bugs in the C were reproduced, not fixed:[0m[0m
+- [38;5;10minitialize_matrix_from_string[0m and [38;5;10mmultiply_matrices[0m never NULL-check [38;5;10mallocate_matrix[0m's result, so a failed allocation dereferences NULL exactly as in C.[0m[0m
+- [38;5;10mallocate_matrix[0m's cleanup path frees indices [38;5;10m0..=i[0m inclusive, where slot [38;5;10mi[0m is the NULL that just failed.[0m[0m
+- [38;5;10mdriver[0m calls plain [38;5;10mfree(res)[0m (leaking the row pointers) on the [38;5;10mmatrix_to_string[0m-failure path.[0m[0m
+- [38;5;10mmatrix_to_string[0m's buffer sizing allots 11 bytes per column, which is one short for an 11-character value like [38;5;10m-2147483648[0m plus its separator; the unbounded [38;5;10mstrcat[0m sequence is preserved as-is.[0m[0m
+[0m[0m
+One thing I could not verify: valgrind isn't installed on this host, so allocator pairing was checked via glibc's [38;5;10mMALLOC_CHECK_[0m consistency checks and successful [38;5;10mfree()[0m of returned pointers from the test side, not by full memory-error tracing.[0m[0m
+[38;5;8m
+ ▸ Credits: 11.42 • Time: 6m 38s
+
+[0m[1G[0m[0m[?25h

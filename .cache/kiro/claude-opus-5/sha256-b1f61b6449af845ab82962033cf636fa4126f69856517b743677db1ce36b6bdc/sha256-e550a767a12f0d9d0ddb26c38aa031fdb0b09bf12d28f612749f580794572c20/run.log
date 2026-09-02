@@ -1,0 +1,1121 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
+
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/license.txt
+c_src/src/lib.c
+---
+4
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/include/lib.h c_src/src/lib.c c_src/CMakeLists.txt; echo "---"; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and CMakeLists
+
+   1 c_src/include/lib.h
+ 144 c_src/src/lib.c
+  15 c_src/CMakeLists.txt
+ 160 total
+---
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read the C source and header
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/src/lib.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/include/lib.h[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2611 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m46 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/include/lib.h
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, self-contained library. Let me build the C version to get the authoritative symbol list.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SO ===" && ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library with cmake
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: See cmake error
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-6WnDmg/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild2 && mkdir -p /tmp/cbuild2 && cd /tmp/cbuild2 && cmake /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null && make 2>&1 | tail -5 && echo "=== SO ===" && ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir
+
+[ 50%] Building C object CMakeFiles/harvest-work-cRhVzs.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-cRhVzs.so
+[100%] Built target harvest-work-cRhVzs
+=== SO ===
+libharvest-work-cRhVzs.so
+[38;5;244m - Completed in 0.424s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild2 && nm -D --defined-only libharvest-work-cRhVzs.so | awk '$2=="T"||$2=="t"{print $3}' | sort > /tmp/c_syms.txt; echo "=== ALL nm -D ==="; nm -D libharvest-work-cRhVzs.so; echo "=== TEXT SYMS ==="; cat /tmp/c_syms.txt; wc -l < /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract exported symbols from C .so
+
+=== ALL nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+00000000000012f0 T c2CircletoAABB
+0000000000001340 T c2CircletoCapsule
+00000000000012a0 T c2CircletoCircle
+0000000000001230 T c2Clampv
+0000000000001460 T c2Collided
+0000000000001270 T c2Dot
+00000000000011d0 T c2Maxv
+0000000000001200 T c2Minv
+00000000000011c0 T c2Mulvs
+0000000000001260 T c2Sub
+00000000000011b0 T c2V
+00000000000014e0 T circle_collide
+=== TEXT SYMS ===
+c2CircletoAABB
+c2CircletoCapsule
+c2CircletoCircle
+c2Clampv
+c2Collided
+c2Dot
+c2Maxv
+c2Minv
+c2Mulvs
+c2Sub
+c2V
+circle_collide
+12
+[38;5;244m - Completed in 0.34s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; ls /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain versions and working dir contents
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+c_src
+translation
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfind /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation -type f 2>/dev/null | head -20; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect existing translation dir
+
+exit=0
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate the entire C library to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! This is a 1:1 port of `c_src/src/lib.c` (a cut-down subset of the
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `cute_c2` 2D collision routines). Every non-static C function is exported
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! with the exact same linker symbol name and the exact same C ABI signature.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! Behavioural notes (deliberately preserved, do NOT "fix"):
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!   * `c2Maxv` / `c2Minv` use the raw `a > b ? a : b` / `a < b ? a : b`
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //!     ternaries, which return the *second* operand whenever the comparison is
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!     false (e.g. for NaN operands). They are therefore NOT `f32::max` /
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //!     `f32::min`, which have NaN-propagating/quieting semantics.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!   * `c2Collided` blindly casts its first argument to `c2Circle*` regardless
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //!     of the requested type, and returns 0 for any unknown `typeB`.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //!   * No guard against a degenerate (zero-length) capsule segment in
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!     `c2CircletoCapsule`: the `da / dot(n, n)` division is left as-is so that
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //!     division by zero yields the same inf/NaN results as the C.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m #![allow(non_upper_case_globals)]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m use std::ffi::{c_int, c_void};
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m // C2_TYPE enum
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// `typedef enum { C2_TYPE_CIRCLE, C2_TYPE_AABB, C2_TYPE_CAPSULE } C2_TYPE;`
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// An unfixed C enum whose values all fit in `int`, so it is passed as `c_int`.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m pub const C2_TYPE_CIRCLE: c_int = 0;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m pub const C2_TYPE_AABB: c_int = 1;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m pub const C2_TYPE_CAPSULE: c_int = 2;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m // Value types
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m // Layouts must match the C exactly so that the SysV register/stack
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m // classification of by-value arguments and return values is identical:
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m //   c2v       ->  8 bytes, 1 SSE eightbyte     (xmm)
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m //   c2Circle  -> 12 bytes, 2 SSE eightbytes    (xmm, xmm)
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m //   c2AABB    -> 16 bytes, 2 SSE eightbytes    (xmm, xmm)
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m //   c2Capsule -> 20 bytes, > 16 bytes => MEMORY (passed on the stack)
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// `struct c2v { float x; float y; }`
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m pub struct c2v {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     pub x: f32,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     pub y: f32,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// `struct c2Circle { c2v p; float r; }`
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m pub struct c2Circle {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     pub p: c2v,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     pub r: f32,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// `struct c2AABB { c2v min; c2v max; }`
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m pub struct c2AABB {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     pub min: c2v,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     pub max: c2v,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// `struct c2Capsule { c2v a; c2v b; float r; }`
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m pub struct c2Capsule {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     pub a: c2v,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     pub b: c2v,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     pub r: f32,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m // Vector helpers
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// `c2v c2V(float x, float y)`
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let mut a = c2v { x: 0.0, y: 0.0 };
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     a.x = x;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     a.y = y;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// `c2v c2Mulvs(c2v a, float b)`
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let mut a = a;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     a.x *= b;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     a.y *= b;
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// `c2v c2Maxv(c2v a, c2v b)`
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// Uses the bare `>` ternary, exactly like the C macro expansion: when the
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// comparison is false (including any NaN operand) the *second* operand wins.
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     c2V(
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         if a.x > b.x { a.x } else { b.x },
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         if a.y > b.y { a.y } else { b.y },
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m /// `c2v c2Minv(c2v a, c2v b)`
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// Uses the bare `<` ternary; see `c2Maxv` for the NaN behaviour.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     c2V(
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         if a.x < b.x { a.x } else { b.x },
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         if a.y < b.y { a.y } else { b.y },
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m /// `c2v c2Clampv(c2v a, c2v lo, c2v hi)`
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     c2Maxv(lo, c2Minv(a, hi))
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m /// `c2v c2Sub(c2v a, c2v b)`
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let mut a = a;
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     a.x -= b.x;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     a.y -= b.y;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m /// `float c2Dot(c2v a, c2v b)`
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     a.x * b.x + a.y * b.y
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m // Collision routines
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m /// `int c2CircletoCircle(c2Circle A, c2Circle B)`
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     let c = c2Sub(B.p, A.p);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let d2 = c2Dot(c, c);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     let mut r2 = A.r + B.r;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     r2 = r2 * r2;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     (d2 < r2) as c_int
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m /// `int c2CircletoAABB(c2Circle A, c2AABB B)`
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m pub extern "C" fn c2CircletoAABB(A: c2Circle, B: c2AABB) -> c_int {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let L = c2Clampv(A.p, B.min, B.max);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let ab = c2Sub(A.p, L);
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     let d2 = c2Dot(ab, ab);
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     let r2 = A.r * A.r;
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     (d2 < r2) as c_int
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m /// `int c2CircletoCapsule(c2Circle A, c2Capsule B)`
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m pub extern "C" fn c2CircletoCapsule(A: c2Circle, B: c2Capsule) -> c_int {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     let n = c2Sub(B.b, B.a);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let ap = c2Sub(A.p, B.a);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     let da = c2Dot(ap, n);
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     let d2: f32;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     if da < 0.0 {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         d2 = c2Dot(ap, ap);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         let db = c2Dot(c2Sub(A.p, B.b), n);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         if db < 0.0 {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m             let e = c2Sub(ap, c2Mulvs(n, da / c2Dot(n, n)));
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m             d2 = c2Dot(e, e);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m             let bp = c2Sub(A.p, B.b);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             d2 = c2Dot(bp, bp);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let r = A.r + B.r;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     (d2 < r * r) as c_int
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m /// `int c2Collided(const void *A, const void *B, C2_TYPE typeB)`
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m /// `A` is always reinterpreted as a `c2Circle*`, matching the C.
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m /// `A` and `B` must point at properly aligned, initialised objects of the
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m /// types implied by `typeB`, exactly as required by the C original.
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m pub unsafe extern "C" fn c2Collided(A: *const c_void, B: *const c_void, typeB: c_int) -> c_int {
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     match typeB {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         C2_TYPE_CIRCLE => c2CircletoCircle(
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m             *(A as *const c2Circle),
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m             *(B as *const c2Circle),
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         ),
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         C2_TYPE_AABB => c2CircletoAABB(*(A as *const c2Circle), *(B as *const c2AABB)),
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         C2_TYPE_CAPSULE => c2CircletoCapsule(*(A as *const c2Circle), *(B as *const c2Capsule)),
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         _ => 0,
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m // Public entry point (the only symbol declared in include/lib.h)
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m /// `int circle_collide(float x, float y, float r)`
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m /// Tests the caller-supplied circle against three hard-coded shapes and packs
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m /// the three boolean results into bits 0, 1 and 2 of the return value.
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m pub extern "C" fn circle_collide(x: f32, y: f32, r: f32) -> c_int {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     let mut circle_in = c2Circle {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         r: 0.0,
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     circle_in.p = c2V(x, y);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     circle_in.r = r;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     let mut circle = c2Circle {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         r: 0.0,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     circle.p = c2V(-70.0f32, 0.0);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     circle.r = 20.0f32;
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     let mut aabb = c2AABB {
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         min: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         max: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     aabb.min = c2V(-40.0f32, -40.0f32);
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     aabb.max = c2V(-15.0f32, -15.0f32);
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     let mut capsule = c2Capsule {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m         a: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         b: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         r: 0.0,
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     capsule.a = c2V(-40.0f32, 40.0f32);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     capsule.b = c2V(-20.0f32, 100.0f32);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     capsule.r = 10.0f32;
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     // The C passes addresses of these locals into c2Collided; the pointer
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     // reinterpretations below are exactly the ones the C performs.
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         result += c2Collided(
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             &circle_in as *const c2Circle as *const c_void,
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             &circle as *const c2Circle as *const c_void,
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             C2_TYPE_CIRCLE,
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         result += c2Collided(
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m             &circle_in as *const c2Circle as *const c_void,
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m             &aabb as *const c2AABB as *const c_void,
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             C2_TYPE_AABB,
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m         ) << 1;
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m         result += c2Collided(
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m             &circle_in as *const c2Circle as *const c_void,
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m             &capsule as *const c2Capsule as *const c_void,
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m             C2_TYPE_CAPSULE,
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         ) << 2;
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.150s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation && nm -D --defined-only target/release/libtranslation.so | awk '$2=="T"{print $3}' | sort > /tmp/rust_syms.txt
+echo "=== C symbols ($(wc -l < /tmp/c_syms.txt)) ==="; cat /tmp/c_syms.txt
+echo "=== Rust symbols ($(wc -l < /tmp/rust_syms.txt)) ==="; cat /tmp/rust_syms.txt
+echo "=== MISSING FROM RUST ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== EXTRA IN RUST ==="; comm -13 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== DIFF EMPTY? ==="; diff /tmp/c_syms.txt /tmp/rust_syms.txt && echo "IDENTICAL"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
+
+bash: line 2: /tmp/c_syms.txt: No such file or directory
+=== C symbols () ===
+cat: /tmp/c_syms.txt: No such file or directory
+=== Rust symbols (12) ===
+c2CircletoAABB
+c2CircletoCapsule
+c2CircletoCircle
+c2Clampv
+c2Collided
+c2Dot
+c2Maxv
+c2Minv
+c2Mulvs
+c2Sub
+c2V
+circle_collide
+=== MISSING FROM RUST ===
+comm: /tmp/c_syms.txt: No such file or directory
+=== EXTRA IN RUST ===
+comm: /tmp/c_syms.txt: No such file or directory
+=== DIFF EMPTY? ===
+diff: /tmp/c_syms.txt: No such file or directory
+[38;5;244m - Completed in 0.30s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+D=$(mktemp -d); cd $D
+cmake $W/c_src > /dev/null && make > /dev/null 2>&1
+CSO=$(ls *.so)
+nm -D --defined-only "$CSO" | awk '$2=="T"{print $3}' | sort > $D/c.txt
+nm -D --defined-only $W/translation/target/release/libtranslation.so | awk '$2=="T"{print $3}' | sort > $D/r.txt
+echo "C so: $CSO  ($(wc -l < $D/c.txt) exported T symbols)"
+echo "Rust so: libtranslation.so ($(wc -l < $D/r.txt) exported T symbols)"
+echo "=== MISSING FROM RUST ==="; comm -23 $D/c.txt $D/r.txt
+echo "=== EXTRA IN RUST ==="; comm -13 $D/c.txt $D/r.txt
+echo "=== VERDICT ==="
+if diff -q $D/c.txt $D/r.txt > /dev/null; then echo "SYMBOL LISTS IDENTICAL"; else echo "MISMATCH"; fi
+echo "=== full C nm -D ==="; nm -D "$CSO"
+echo "=== full Rust nm -D ==="; nm -D $W/translation/target/release/libtranslation.so
+echo "$D" > /tmp/lastdir[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild C and diff symbol lists in one shell session
+
+C so: libharvest-work-cRhVzs.so  (12 exported T symbols)
+Rust so: libtranslation.so (12 exported T symbols)
+=== MISSING FROM RUST ===
+=== EXTRA IN RUST ===
+=== VERDICT ===
+SYMBOL LISTS IDENTICAL
+=== full C nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001420 T c2CircletoAABB
+00000000000014e1 T c2CircletoCapsule
+0000000000001386 T c2CircletoCircle
+00000000000012c5 T c2Clampv
+0000000000001692 T c2Collided
+0000000000001356 T c2Dot
+000000000000120d T c2Maxv
+0000000000001269 T c2Minv
+00000000000011d6 T c2Mulvs
+0000000000001317 T c2Sub
+00000000000011a9 T c2V
+0000000000001765 T circle_collide
+=== full Rust nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+0000000000011a10 T c2CircletoAABB
+0000000000011a40 T c2CircletoCapsule
+0000000000011ae0 T c2CircletoCircle
+0000000000011b10 T c2Clampv
+0000000000011b20 T c2Collided
+0000000000011c70 T c2Dot
+0000000000011ca0 T c2Maxv
+0000000000011cb0 T c2Minv
+0000000000011cc0 T c2Mulvs
+0000000000011cd0 T c2Sub
+0000000000011ce0 T c2V
+                 U calloc@GLIBC_2.2.5
+0000000000011d00 T circle_collide
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+[38;5;244m - Completed in 0.473s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol lists match exactly. Now let me prove byte-identical behavior with a differential harness that dlopens both libraries and compares every exported function.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/diffharness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness comparing C and Rust .so
+
+[49m[38;5;10m+       1[0m:[38;5;10m[49m // Differential harness: dlopen the C .so and the Rust .so, call every exported
+[0m[49m[38;5;10m+       2[0m:[38;5;10m[49m // symbol with the same inputs, compare results bit-for-bit.
+[0m[49m[38;5;10m+       3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[39m   1,   4[0m:[39m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+       5[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[39m   2,   6[0m:[39m[49m #include <stdint.h>
+[0m[49m[39m   3,   7[0m:[39m[49m #include <stdio.h>
+[0m[49m[38;5;9m-  4     [0m:[38;5;9m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+       8[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+       9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      10[0m:[38;5;10m[49m typedef struct { float x, y; } c2v;
+[0m[49m[38;5;10m+      11[0m:[38;5;10m[49m typedef struct { c2v p; float r; } c2Circle;
+[0m[49m[38;5;10m+      12[0m:[38;5;10m[49m typedef struct { c2v min, max; } c2AABB;
+[0m[49m[38;5;10m+      13[0m:[38;5;10m[49m typedef struct { c2v a, b; float r; } c2Capsule;
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m typedef c2v (*fn_V)(float, float);
+[0m[49m[38;5;10m+      16[0m:[38;5;10m[49m typedef c2v (*fn_Mulvs)(c2v, float);
+[0m[49m[38;5;10m+      17[0m:[38;5;10m[49m typedef c2v (*fn_vv)(c2v, c2v);
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m typedef c2v (*fn_Clampv)(c2v, c2v, c2v);
+[0m[49m[38;5;10m+      19[0m:[38;5;10m[49m typedef float (*fn_Dot)(c2v, c2v);
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m typedef int (*fn_cc)(c2Circle, c2Circle);
+[0m[49m[38;5;10m+      21[0m:[38;5;10m[49m typedef int (*fn_ca)(c2Circle, c2AABB);
+[0m[49m[38;5;10m+      22[0m:[38;5;10m[49m typedef int (*fn_cp)(c2Circle, c2Capsule);
+[0m[49m[38;5;10m+      23[0m:[38;5;10m[49m typedef int (*fn_Collided)(const void *, const void *, int);
+[0m[49m[38;5;10m+      24[0m:[38;5;10m[49m typedef int (*fn_circle_collide)(float, float, float);
+[0m[49m[38;5;10m+      25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      26[0m:[38;5;10m[49m struct api {
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m     fn_V V; fn_Mulvs Mulvs; fn_vv Maxv, Minv, Sub; fn_Clampv Clampv;
+[0m[49m[38;5;10m+      28[0m:[38;5;10m[49m     fn_Dot Dot; fn_cc CtC; fn_ca CtA; fn_cp CtCap;
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m     fn_Collided Collided; fn_circle_collide circle_collide;
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+      31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m static void load(const char *path, struct api *a) {
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m     void *h = dlopen(path, RTLD_NOW);
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(1); }
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m #define G(field, name) \
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m     a->field = dlsym(h, name); \
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m     if (!a->field) { fprintf(stderr, "missing %s in %s\n", name, path); exit(1); }
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m     G(V, "c2V") G(Mulvs, "c2Mulvs") G(Maxv, "c2Maxv") G(Minv, "c2Minv")
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m     G(Sub, "c2Sub") G(Clampv, "c2Clampv") G(Dot, "c2Dot")
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m     G(CtC, "c2CircletoCircle") G(CtA, "c2CircletoAABB")
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m     G(CtCap, "c2CircletoCapsule") G(Collided, "c2Collided")
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m     G(circle_collide, "circle_collide")
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m #undef G
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m }
+[0m[49m[39m   5,  45[0m:[39m[49m 
+[0m[49m[38;5;9m-  6     [0m:[38;5;9m[49m typedef uint32_t (*rev16_fn)(uint32_t);
+[0m[49m[38;5;10m+      46[0m:[38;5;10m[49m static long checks = 0, fails = 0;
+[0m[49m[39m   7,  47[0m:[39m[49m 
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m // Bitwise comparison so that -0.0 vs 0.0 and differing NaN payloads are caught.
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m static void cmpf(const char *what, float c, float r) {
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m     uint32_t bc, br;
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m     memcpy(&bc, &c, 4); memcpy(&br, &r, 4);
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m     checks++;
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m     if (bc != br) {
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m         fails++;
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m         if (fails < 20) printf("FAIL %s: C=0x%08x (%g) RUST=0x%08x (%g)\n", what, bc, c, br, r);
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m static void cmpv(const char *what, c2v c, c2v r) { cmpf(what, c.x, r.x); cmpf(what, c.y, r.y); }
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m static void cmpi(const char *what, int c, int r) {
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m     checks++;
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m     if (c != r) { fails++; if (fails < 20) printf("FAIL %s: C=%d RUST=%d\n", what, c, r); }
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m 
+[0m[49m[39m   8,  64[0m:[39m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;9m-  9     [0m:[38;5;9m[49m     if (argc != 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;9m- 10     [0m:[38;5;9m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;9m- 11     [0m:[38;5;9m[49m     if (!hc) { fprintf(stderr, "dlopen C: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m- 12     [0m:[38;5;9m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;9m- 13     [0m:[38;5;9m[49m     if (!hr) { fprintf(stderr, "dlopen Rust: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m     struct api C, R;
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m     load(argv[1], &C);
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m     load(argv[2], &R);
+[0m[49m[39m  14,  68[0m:[39m[49m 
+[0m[49m[38;5;9m- 15     [0m:[38;5;9m[49m     rev16_fn c = (rev16_fn)dlsym(hc, "rev16");
+[0m[49m[38;5;9m- 16     [0m:[38;5;9m[49m     rev16_fn r = (rev16_fn)dlsym(hr, "rev16");
+[0m[49m[38;5;9m- 17     [0m:[38;5;9m[49m     if (!c) { fprintf(stderr, "dlsym C rev16 missing\n"); return 2; }
+[0m[49m[38;5;9m- 18     [0m:[38;5;9m[49m     if (!r) { fprintf(stderr, "dlsym Rust rev16 missing\n"); return 2; }
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m     // Interesting float values: normals, zeros (both signs), subnormals,
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m     // huge/tiny, infinities and a NaN -- to exercise the raw-ternary min/max.
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m     static const float vals[] = {
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m         0.0f, -0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 3.0f, -3.0f,
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m         10.0f, -10.0f, 15.0f, -15.0f, 20.0f, -20.0f, 40.0f, -40.0f,
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m         70.0f, -70.0f, 100.0f, -100.0f, 0.1f, -0.1f,
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m         1e-30f, -1e-30f, 1e-45f, 3.4e38f, -3.4e38f,
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m         16777217.0f, 1.0f/3.0f, -1.0f/3.0f,
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m         INFINITY, -INFINITY, NAN, -NAN,
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m     const int NV = (int)(sizeof(vals) / sizeof(vals[0]));
+[0m[49m[39m  19,  80[0m:[39m[49m 
+[0m[49m[38;5;9m- 20     [0m:[38;5;9m[49m     uint64_t checked = 0;
+[0m[49m[38;5;9m- 21     [0m:[38;5;9m[49m     uint32_t a = 0;
+[0m[49m[38;5;9m- 22     [0m:[38;5;9m[49m     for (;;) {
+[0m[49m[38;5;9m- 23     [0m:[38;5;9m[49m         uint32_t ec = c(a), er = r(a);
+[0m[49m[38;5;9m- 24     [0m:[38;5;9m[49m         if (ec != er) {
+[0m[49m[38;5;9m- 25     [0m:[38;5;9m[49m             fprintf(stderr, "MISMATCH rev16(0x%08X): C=0x%08X Rust=0x%08X\n", a, ec, er);
+[0m[49m[38;5;9m- 26     [0m:[38;5;9m[49m             return 1;
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m     // --- c2V, c2Mulvs, c2Sub, c2Dot, c2Maxv, c2Minv over all value pairs ---
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m     for (int i = 0; i < NV; i++) {
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m         for (int j = 0; j < NV; j++) {
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m             float x = vals[i], y = vals[j];
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m             cmpv("c2V", C.V(x, y), R.V(x, y));
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m             c2v a = {x, y}, b = {y, x};
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m             cmpv("c2Mulvs", C.Mulvs(a, y), R.Mulvs(a, y));
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m             cmpv("c2Sub", C.Sub(a, b), R.Sub(a, b));
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m             cmpf("c2Dot", C.Dot(a, b), R.Dot(a, b));
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m             cmpv("c2Maxv", C.Maxv(a, b), R.Maxv(a, b));
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m             cmpv("c2Minv", C.Minv(a, b), R.Minv(a, b));
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m             // Reversed operand order matters for the NaN ternary behaviour.
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m             cmpv("c2Maxv/rev", C.Maxv(b, a), R.Maxv(b, a));
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m             cmpv("c2Minv/rev", C.Minv(b, a), R.Minv(b, a));
+[0m[49m[39m  27,  95[0m:[39m[49m         }
+[0m[49m[38;5;9m- 28     [0m:[38;5;9m[49m         checked++;
+[0m[49m[38;5;9m- 29     [0m:[38;5;9m[49m         if (a == 0xFFFFFFFFu) break;
+[0m[49m[38;5;9m- 30     [0m:[38;5;9m[49m         a++;
+[0m[49m[39m  31,  96[0m:[39m[49m     }
+[0m[49m[38;5;9m- 32     [0m:[38;5;9m[49m     printf("OK: rev16 identical on all %llu inputs (full uint32_t domain)\n",
+[0m[49m[38;5;9m- 33     [0m:[38;5;9m[49m            (unsigned long long)checked);
+[0m[49m[38;5;9m- 34     [0m:[38;5;9m[49m     return 0;
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m     // --- c2Clampv over a triple loop ---
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m     for (int i = 0; i < NV; i++)
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m         for (int j = 0; j < NV; j++)
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m             for (int k = 0; k < NV; k++) {
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m                 c2v a = {vals[i], vals[j]}, lo = {vals[j], vals[k]}, hi = {vals[k], vals[i]};
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m                 cmpv("c2Clampv", C.Clampv(a, lo, hi), R.Clampv(a, lo, hi));
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m     // --- shape-vs-shape predicates + c2Collided dispatch ---
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m     for (int i = 0; i < NV; i++)
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m         for (int j = 0; j < NV; j++)
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m             for (int k = 0; k < NV; k++) {
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m                 c2Circle A = {{vals[i], vals[j]}, vals[k]};
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m                 c2Circle B = {{vals[j], vals[k]}, vals[i]};
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m                 c2AABB   Q = {{vals[k], vals[i]}, {vals[j], vals[k]}};
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m                 c2Capsule P = {{vals[i], vals[k]}, {vals[k], vals[j]}, vals[i]};
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m                 cmpi("c2CircletoCircle",  C.CtC(A, B),    R.CtC(A, B));
+[0m[49m[38;5;10m+     116[0m:[38;5;10m[49m                 cmpi("c2CircletoAABB",    C.CtA(A, Q),    R.CtA(A, Q));
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m                 cmpi("c2CircletoCapsule", C.CtCap(A, P),  R.CtCap(A, P));
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     119[0m:[38;5;10m[49m                 cmpi("c2Collided/circle",  C.Collided(&A, &B, 0), R.Collided(&A, &B, 0));
+[0m[49m[38;5;10m+     120[0m:[38;5;10m[49m                 cmpi("c2Collided/aabb",    C.Collided(&A, &Q, 1), R.Collided(&A, &Q, 1));
+[0m[49m[38;5;10m+     121[0m:[38;5;10m[49m                 cmpi("c2Collided/capsule", C.Collided(&A, &P, 2), R.Collided(&A, &P, 2));
+[0m[49m[38;5;10m+     122[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     124[0m:[38;5;10m[49m     // --- c2Collided default / out-of-range type codes ---
+[0m[49m[38;5;10m+     125[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     126[0m:[38;5;10m[49m         c2Circle A = {{1, 2}, 3}, B = {{4, 5}, 6};
+[0m[49m[38;5;10m+     127[0m:[38;5;10m[49m         int codes[] = {3, 4, 99, -1, -1000, 0x7fffffff, (int)0x80000000};
+[0m[49m[38;5;10m+     128[0m:[38;5;10m[49m         for (unsigned t = 0; t < sizeof(codes)/sizeof(codes[0]); t++)
+[0m[49m[38;5;10m+     129[0m:[38;5;10m[49m             cmpi("c2Collided/default", C.Collided(&A, &B, codes[t]), R.Collided(&A, &B, codes[t]));
+[0m[49m[38;5;10m+     130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     132[0m:[38;5;10m[49m     // --- degenerate capsule (zero-length segment => division by zero) ---
+[0m[49m[38;5;10m+     133[0m:[38;5;10m[49m     for (int i = 0; i < NV; i++)
+[0m[49m[38;5;10m+     134[0m:[38;5;10m[49m         for (int j = 0; j < NV; j++) {
+[0m[49m[38;5;10m+     135[0m:[38;5;10m[49m             c2Circle A = {{vals[i], vals[j]}, vals[j]};
+[0m[49m[38;5;10m+     136[0m:[38;5;10m[49m             c2Capsule Z = {{5, 5}, {5, 5}, vals[i]};        // n == (0,0)
+[0m[49m[38;5;10m+     137[0m:[38;5;10m[49m             cmpi("c2CircletoCapsule/degen", C.CtCap(A, Z), R.CtCap(A, Z));
+[0m[49m[38;5;10m+     138[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     140[0m:[38;5;10m[49m     // --- circle_collide: the declared public entry point ---
+[0m[49m[38;5;10m+     141[0m:[38;5;10m[49m     for (int i = 0; i < NV; i++)
+[0m[49m[38;5;10m+     142[0m:[38;5;10m[49m         for (int j = 0; j < NV; j++)
+[0m[49m[38;5;10m+     143[0m:[38;5;10m[49m             for (int k = 0; k < NV; k++)
+[0m[49m[38;5;10m+     144[0m:[38;5;10m[49m                 cmpi("circle_collide", C.circle_collide(vals[i], vals[j], vals[k]),
+[0m[49m[38;5;10m+     145[0m:[38;5;10m[49m                                        R.circle_collide(vals[i], vals[j], vals[k]));
+[0m[49m[38;5;10m+     146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     147[0m:[38;5;10m[49m     // --- circle_collide over a dense sweep of the interesting region ---
+[0m[49m[38;5;10m+     148[0m:[38;5;10m[49m     for (int xi = -1200; xi <= 400; xi += 3)
+[0m[49m[38;5;10m+     149[0m:[38;5;10m[49m         for (int yi = -600; yi <= 1400; yi += 3) {
+[0m[49m[38;5;10m+     150[0m:[38;5;10m[49m             float x = xi / 10.0f, y = yi / 10.0f;
+[0m[49m[38;5;10m+     151[0m:[38;5;10m[49m             for (int ri = 0; ri <= 300; ri += 25) {
+[0m[49m[38;5;10m+     152[0m:[38;5;10m[49m                 float r = ri / 10.0f;
+[0m[49m[38;5;10m+     153[0m:[38;5;10m[49m                 cmpi("circle_collide/sweep", C.circle_collide(x, y, r),
+[0m[49m[38;5;10m+     154[0m:[38;5;10m[49m                                              R.circle_collide(x, y, r));
+[0m[49m[38;5;10m+     155[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     156[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     158[0m:[38;5;10m[49m     printf("\nchecks=%ld  failures=%ld\n", checks, fails);
+[0m[49m[38;5;10m+     159[0m:[38;5;10m[49m     printf(fails ? "*** MISMATCH ***\n" : "ALL OUTPUTS BYTE-IDENTICAL\n");
+[0m[49m[38;5;10m+     160[0m:[38;5;10m[49m     return fails ? 1 : 0;
+[0m[49m[39m  35, 161[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/diffharness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+D=$(mktemp -d); cd $D
+cmake $W/c_src > /dev/null && make > /dev/null 2>&1
+CSO=$D/$(ls *.so)
+gcc -O2 -o $D/harness /tmp/diffharness.c -ldl -lm 2>&1 | head -20
+$D/harness "$CSO" "$W/translation/target/release/libtranslation.so"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run differential harness
+
+/tmp/diffharness.c: In function ‘load’:
+/tmp/diffharness.c:34:68: warning: implicit declaration of function ‘exit’ [-Wimplicit-function-declaration]
+   34 |     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(1); }
+      |                                                                    ^~~~
+/tmp/diffharness.c:9:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘exit’
+    8 | #include <string.h>
+  +++ |+#include <stdlib.h>
+    9 | 
+/tmp/diffharness.c:34:68: warning: incompatible implicit declaration of built-in function ‘exit’ [-Wbuiltin-declaration-mismatch]
+   34 |     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(1); }
+      |                                                                    ^~~~
+/tmp/diffharness.c:34:68: note: include ‘<stdlib.h>’ or provide a declaration of ‘exit’
+/tmp/diffharness.c:37:73: warning: incompatible implicit declaration of built-in function ‘exit’ [-Wbuiltin-declaration-mismatch]
+   37 |     if (!a->field) { fprintf(stderr, "missing %s in %s\n", name, path); exit(1); }
+      |                                                                         ^~~~
+/tmp/diffharness.c:38:5: note: in expansion of macro ‘G’
+   38 |     G(V, "c2V") G(Mulvs, "c2Mulvs") G(Maxv, "c2Maxv") G(Minv, "c2Minv")
+      |     ^
+/tmp/diffharness.c:37:73: note: include ‘<stdlib.h>’ or provide a declaration of ‘exit’
+   37 |     if (!a->field) { fprintf(stderr, "missing %s in %s\n", name, path); exit(1); }
+bash: line 7: /tmp/tmp.etkBrH5jAQ/harness: No such file or directory
+[38;5;244m - Completed in 0.437s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/diffharness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Add stdlib.h include
+
+[49m[39m  7, 7[0m:[39m[49m #include <stdio.h>
+[0m[49m[38;5;10m+    8[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[39m  8, 9[0m:[39m[49m #include <string.h>
+[0m[K
+Updating: [38;5;141m/tmp/diffharness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+D=$(mktemp -d); cd $D
+cmake $W/c_src > /dev/null && make > /dev/null 2>&1
+CSO=$D/$(ls *.so)
+echo "C so: $CSO"
+gcc -O2 -o $D/harness /tmp/diffharness.c -ldl -lm
+echo "gcc rc=$?"
+ls -l $D/harness
+$D/harness "$CSO" "$W/translation/target/release/libtranslation.so"
+echo "harness rc=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Recompile and run differential harness
+
+C so: /tmp/tmp.i47n0e4YQa/libharvest-work-cRhVzs.so
+gcc rc=0
+-rwxr-xr-x. 1 scheschb amazon 21192 Sep  1 11:54 /tmp/tmp.i47n0e4YQa/harness
+
+checks=5002553  failures=0
+ALL OUTPUTS BYTE-IDENTICAL
+harness rc=0
+[38;5;244m - Completed in 1.324s[0m
+
+[?25l[0m[38;5;141m> [0m5,002,553 comparisons, zero mismatches. Let me confirm this holds across C optimization levels and that [38;5;10mc_src/[0m is untouched.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+gcc -O2 -o /tmp/harness /tmp/diffharness.c -ldl -lm
+for BT in "" Debug Release RelWithDebInfo; do
+  D=$(mktemp -d); cd $D
+  cmake $W/c_src ${BT:+-DCMAKE_BUILD_TYPE=$BT} > /dev/null && make > /dev/null 2>&1
+  printf "C build [%-16s] -> " "${BT:-default}"
+  /tmp/harness "$D/$(ls *.so)" "$W/translation/target/release/libtranslation.so" | tail -2 | tr '\n' ' '
+  echo
+done
+echo "--- c_src integrity ---"
+cd $W && (git status --porcelain c_src 2>/dev/null || echo "(not a git repo)")
+find $W/c_src -newermt '-30 minutes' -type f | sed 's/^/RECENTLY MODIFIED: /'
+echo "c_src files: $(find $W/c_src -type f | wc -l)  (unchanged: 4 expected)"
+echo "--- translation tree ---"
+find $W/translation -type f -not -path '*/target/*' | sort
+wc -l $W/translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify across C optimization levels and confirm c_src untouched
+
+C build [default         ] -> checks=5002553  failures=0 ALL OUTPUTS BYTE-IDENTICAL 
+C build [Debug           ] -> checks=5002553  failures=0 ALL OUTPUTS BYTE-IDENTICAL 
+C build [Release         ] -> checks=5002553  failures=2 *** MISMATCH *** 
+C build [RelWithDebInfo  ] -> checks=5002553  failures=0 ALL OUTPUTS BYTE-IDENTICAL 
+--- c_src integrity ---
+(not a git repo)
+RECENTLY MODIFIED: /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/CMakeLists.txt
+RECENTLY MODIFIED: /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/include/lib.h
+RECENTLY MODIFIED: /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/license.txt
+RECENTLY MODIFIED: /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/src/lib.c
+c_src files: 4  (unchanged: 4 expected)
+--- translation tree ---
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/Cargo.lock
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/Cargo.toml
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/src/lib.rs
+277 /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation/src/lib.rs
+[38;5;244m - Completed in 3.984s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10m-O3[0m (Release) produces 2 differences. Let me find them.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+D=$(mktemp -d); cd $D
+cmake $W/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null && make > /dev/null 2>&1
+gcc -O2 -o $D/h /tmp/diffharness.c -ldl -lm
+$D/h "$D/$(ls *.so)" "$W/translation/target/release/libtranslation.so" | grep -A0 FAIL
+echo "--- C flags used ---"
+grep -m1 "C_FLAGS" CMakeFiles/*.dir/flags.make[0m[38;5;244m (using tool: shell)[0m
+Purpose: Identify the two Release-mode mismatches
+
+FAIL c2Mulvs: C=0xffc00000 (-nan) RUST=0x7fc00000 (nan)
+FAIL c2Mulvs: C=0x7fc00000 (nan) RUST=0xffc00000 (-nan)
+--- C flags used ---
+C_FLAGS = -O3 -DNDEBUG -fPIC
+[38;5;244m - Completed in 0.870s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/probe.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create probe to pinpoint diverging c2Mulvs inputs
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Pinpoint exactly which c2Mulvs inputs diverge at -O3.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m typedef struct { float x, y; } c2v;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m typedef c2v (*fn_Mulvs)(c2v, float);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m static uint32_t bits(float f) { uint32_t b; memcpy(&b, &f, 4); return b; }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW), *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     fn_Mulvs mc = dlsym(hc, "c2Mulvs"), mr = dlsym(hr, "c2Mulvs");
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     static const float vals[] = {
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m         0.0f, -0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 3.0f, -3.0f,
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         10.0f, -10.0f, 15.0f, -15.0f, 20.0f, -20.0f, 40.0f, -40.0f,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         70.0f, -70.0f, 100.0f, -100.0f, 0.1f, -0.1f,
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         1e-30f, -1e-30f, 1e-45f, 3.4e38f, -3.4e38f,
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         16777217.0f, 1.0f/3.0f, -1.0f/3.0f,
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         INFINITY, -INFINITY, NAN, -NAN,
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     const int NV = (int)(sizeof(vals)/sizeof(vals[0]));
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     long n = 0, nanBoth = 0;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     for (int i = 0; i < NV; i++)
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         for (int j = 0; j < NV; j++) {
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m             c2v a = {vals[i], vals[j]};
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m             float b = vals[j];
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m             c2v rc = mc(a, b), rr = mr(a, b);
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m             int dx = bits(rc.x) != bits(rr.x), dy = bits(rc.y) != bits(rr.y);
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m             if (dx || dy) {
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m                 n++;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m                 int aNaN = isnan(a.x) || isnan(a.y), bNaN = isnan(b);
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                 if (aNaN && bNaN) nanBoth++;
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m                 printf("in: a=(0x%08x,0x%08x) b=0x%08x | C=(0x%08x,0x%08x) R=(0x%08x,0x%08x)"
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m                        " | aNaN=%d bNaN=%d\n",
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m                        bits(a.x), bits(a.y), bits(b),
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m                        bits(rc.x), bits(rc.y), bits(rr.x), bits(rr.y), aNaN, bNaN);
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     printf("\ndiverging inputs=%ld ; of which BOTH operands NaN=%ld\n", n, nanBoth);
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/probe.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+D=$(mktemp -d); cd $D
+cmake $W/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null && make > /dev/null 2>&1
+gcc -O2 -o $D/p /tmp/probe.c -ldl -lm
+$D/p "$D/$(ls *.so)" "$W/translation/target/release/libtranslation.so"
+echo "=== C -O3 disassembly of c2Mulvs ==="
+objdump -d --no-show-raw-insn "$D/$(ls *.so)" | awk '/<c2Mulvs>:/,/ret/'
+echo "=== Rust disassembly of c2Mulvs ==="
+objdump -d --no-show-raw-insn $W/translation/target/release/libtranslation.so | awk '/<c2Mulvs>:/,/ret/'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Pinpoint divergence and compare disassembly
+
+in: a=(0x7fc00000,0xffc00000) b=0xffc00000 | C=(0xffc00000,0xffc00000) R=(0x7fc00000,0xffc00000) | aNaN=1 bNaN=1
+in: a=(0xffc00000,0x7fc00000) b=0x7fc00000 | C=(0x7fc00000,0x7fc00000) R=(0xffc00000,0x7fc00000) | aNaN=1 bNaN=1
+
+diverging inputs=2 ; of which BOTH operands NaN=2
+=== C -O3 disassembly of c2Mulvs ===
+00000000000011c0 <c2Mulvs>:
+    11c0:	movdqa %xmm0,%xmm2
+    11c4:	movsldup %xmm1,%xmm0
+    11c8:	mulps  %xmm2,%xmm0
+    11cb:	ret
+=== Rust disassembly of c2Mulvs ===
+0000000000011cc0 <c2Mulvs>:
+   11cc0:	unpcklps %xmm1,%xmm1
+   11cc3:	mulps  %xmm1,%xmm0
+   11cc6:	ret
+[38;5;244m - Completed in 0.567s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mW=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+for BT in "" Release; do
+  D=$(mktemp -d); cd $D
+  cmake $W/c_src ${BT:+-DCMAKE_BUILD_TYPE=$BT} > /dev/null && make > /dev/null 2>&1
+  echo "=== C c2Mulvs @ ${BT:-default} ==="
+  objdump -d --no-show-raw-insn "$D/$(ls *.so)" | awk '/<c2Mulvs>:/,/ret/' | grep -E 'mul|ret'
+done
+echo
+echo "=== does circle_collide ever differ at -O3? (it is the only header-declared symbol) ==="
+D=$(mktemp -d); cd $D
+cmake $W/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null && make > /dev/null 2>&1
+gcc -O2 -o $D/h /tmp/diffharness.c -ldl -lm
+$D/h "$D/$(ls *.so)" "$W/translation/target/release/libtranslation.so" | grep -c "FAIL circle_collide" || echo "0 circle_collide failures"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare mul operand order across C opt levels and confirm circle_collide never differs
+
+=== C c2Mulvs @ default ===
+    11e9:	mulss  -0xc(%rbp),%xmm0
+    11f8:	mulss  -0xc(%rbp),%xmm0
+    120c:	ret
+=== C c2Mulvs @ Release ===
+    11c8:	mulps  %xmm2,%xmm0
+    11cb:	ret
+
+=== does circle_collide ever differ at -O3? (it is the only header-declared symbol) ===
+0
+0 circle_collide failures
+[38;5;244m - Completed in 1.695s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed the source-level operand order ([38;5;10ma.x = a.x * b[0m) matches the C's [38;5;10mmulss[0m at [38;5;10m-O0[0m/[38;5;10m-O2[0m. Let me document that finding in the code.[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Document the NaN operand-order finding in c2Mulvs
+
+[49m[39m  92,  92[0m:[39m[49m /// `c2v c2Mulvs(c2v a, float b)`
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m /// Written as `a.x * b` (not `b * a.x`) to match the C's operand order. This is
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m /// observable only for NaN x NaN inputs, where x86 `mulss`/`mulps` propagate the
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m /// *first* source operand's NaN payload including its sign bit. The C at `-O0`
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m /// and `-O2` emits `mulss <b>, %xmm0` with `a` as src1, which this matches; the
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m /// C at `-O3` auto-vectorises to `mulps` with the operands commuted and so
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m /// disagrees with its own lower optimisation levels on that sign bit.
+[0m[49m[39m  93, 100[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  94, 101[0m:[39m[49m pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal end-to-end verification.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+W=/local/home/scheschb/.harvest/work/harvest-work-cRhVzs
+cd $W/translation
+cargo build --release 2>&1 | tail -3
+echo
+echo "### 1. Cargo.toml crate-type ###"
+grep -A4 '^\[lib\]' Cargo.toml
+echo
+echo "### 2. no_mangle export count in source ###"
+echo "unsafe(no_mangle) attributes: $(grep -c 'unsafe(no_mangle)' src/lib.rs)"
+echo
+D=$(mktemp -d); cd $D
+cmake $W/c_src > /dev/null && make > /dev/null 2>&1
+CSO="$D/$(ls *.so)"
+RSO="$W/translation/target/release/libtranslation.so"
+nm -D --defined-only "$CSO" | awk '$2=="T"{print $3}' | sort > c.txt
+nm -D --defined-only "$RSO" | awk '$2=="T"{print $3}' | sort > r.txt
+echo "### 3. SYMBOL GATE ###"
+printf "C exports:    %d\nRust exports: %d\n" $(wc -l < c.txt) $(wc -l < r.txt)
+echo "-- missing from Rust --"; comm -23 c.txt r.txt; echo "(none above = complete)"
+echo "-- extra in Rust --";     comm -13 c.txt r.txt; echo "(none above = exact)"
+diff c.txt r.txt > /dev/null && echo ">>> SYMBOL DIFF EMPTY <<<"
+echo
+echo "### 4. per-symbol side-by-side ###"
+paste c.txt r.txt | awk '{printf "  %-24s %-24s %s\n", $1, $2, ($1==$2?"OK":"MISMATCH")}'
+echo
+echo "### 5. BEHAVIOURAL GATE (differential, all 12 symbols) ###"
+gcc -O2 -o h /tmp/diffharness.c -ldl -lm
+./h "$CSO" "$RSO" | tail -3
+echo
+echo "### 6. c_src untouched ###"
+find $W/c_src -type f | sort
+md5sum $W/c_src/src/lib.c $W/c_src/include/lib.h $W/c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Full final verification: build, symbol gate, behavioural gate, c_src integrity
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/translation)
+    Finished `release` profile [optimized] target(s) in 0.10s
+
+### 1. Cargo.toml crate-type ###
+[lib]
+name = "translation"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+
+### 2. no_mangle export count in source ###
+unsafe(no_mangle) attributes: 12
+
+### 3. SYMBOL GATE ###
+C exports:    12
+Rust exports: 12
+-- missing from Rust --
+(none above = complete)
+-- extra in Rust --
+(none above = exact)
+>>> SYMBOL DIFF EMPTY <<<
+
+### 4. per-symbol side-by-side ###
+  c2CircletoAABB           c2CircletoAABB           OK
+  c2CircletoCapsule        c2CircletoCapsule        OK
+  c2CircletoCircle         c2CircletoCircle         OK
+  c2Clampv                 c2Clampv                 OK
+  c2Collided               c2Collided               OK
+  c2Dot                    c2Dot                    OK
+  c2Maxv                   c2Maxv                   OK
+  c2Minv                   c2Minv                   OK
+  c2Mulvs                  c2Mulvs                  OK
+  c2Sub                    c2Sub                    OK
+  c2V                      c2V                      OK
+  circle_collide           circle_collide           OK
+
+### 5. BEHAVIOURAL GATE (differential, all 12 symbols) ###
+
+checks=5002553  failures=0
+ALL OUTPUTS BYTE-IDENTICAL
+
+### 6. c_src untouched ###
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/CMakeLists.txt
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/include/lib.h
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/license.txt
+/local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/src/lib.c
+4a2c9ca7dff835275c7888245640c8ef  /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/src/lib.c
+59896bd5bd560642bbed9f9cae9958c1  /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/include/lib.h
+8889366dbb1535b8a848547af64fbc79  /local/home/scheschb/.harvest/work/harvest-work-cRhVzs/c_src/CMakeLists.txt
+[38;5;244m - Completed in 1.491s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+The library turned out to be small: [38;5;10mc_src/[0m is 4 files, with all code in a single 144-line [38;5;10msrc/lib.c[0m — a cut-down subset of the [38;5;10mcute_c2[0m 2D collision routines. There are no namespace-renaming macros (the header is one line), so linker symbols equal source names. The C [38;5;10m.so[0m exports 12 functions; the Rust [38;5;10m.so[0m exports the same 12, and the symbol diff is empty.[0m[0m
+[0m[0m
+Both gates pass:[0m[0m
+[0m[0m
+- Symbol gate: [38;5;10mnm -D[0m on both libraries yields identical 12-name lists ([38;5;10mc2V[0m, [38;5;10mc2Mulvs[0m, [38;5;10mc2Maxv[0m, [38;5;10mc2Minv[0m, [38;5;10mc2Clampv[0m, [38;5;10mc2Sub[0m, [38;5;10mc2Dot[0m, [38;5;10mc2CircletoCircle[0m, [38;5;10mc2CircletoAABB[0m, [38;5;10mc2CircletoCapsule[0m, [38;5;10mc2Collided[0m, [38;5;10mcircle_collide[0m) — no missing, no extra.[0m[0m
+- Behavioural gate: I wrote a differential harness that [38;5;10mdlopen[0ms both libraries and compares every exported function bit-for-bit (comparing raw float bit patterns, so [38;5;10m-0.0[0m vs [38;5;10m0.0[0m and differing NaN payloads are caught). 5,002,553 comparisons, 0 failures, across a value set including both signed zeros, subnormals, [38;5;10m±INFINITY[0m, [38;5;10m±NAN[0m, a degenerate zero-length capsule that divides by zero, and out-of-range [38;5;10mc2Collided[0m type codes.[0m[0m
+[0m[0m
+Behaviours I deliberately reproduced rather than fixed: [38;5;10mc2Maxv[0m/[38;5;10mc2Minv[0m use the bare [38;5;10m>[0m/[38;5;10m<[0m ternaries (so the second operand wins on NaN — these are [3mnot[23m [38;5;10mf32::max[0m/[38;5;10mf32::min[0m); [38;5;10mc2Collided[0m always casts its first argument to [38;5;10mc2Circle*[0m regardless of type and returns 0 for unknown codes; and the unguarded [38;5;10mda / dot(n, n)[0m division in [38;5;10mc2CircletoCapsule[0m.[0m[0m
+[0m[0m
+One finding worth flagging: at [38;5;10m-O3[0m the C's [38;5;10mc2Mulvs[0m auto-vectorises to [38;5;10mmulps[0m with commuted operands, which changes the propagated NaN [3msign bit[23m for NaN×NaN inputs. That makes the C disagree with itself — [38;5;10m-O0[0m, [38;5;10m-O2[0m and [38;5;10mRelWithDebInfo[0m all produce the opposite sign from [38;5;10m-O3[0m. I matched the source-level operand order ([38;5;10ma.x = a.x * b[0m), which agrees with the default [38;5;10mcmake && make[0m build plus Debug and [38;5;10m-O2[0m; only [38;5;10m-O3[0m differs, only on NaN×NaN, and only in that sign bit. It cannot surface through [38;5;10mcircle_collide[0m (the sole header-declared entry point), which matched on all inputs at every optimization level. [38;5;10mc_src/[0m is unmodified.[0m[0m
+[38;5;8m
+ ▸ Credits: 10.70 • Time: 5m 11s
+
+[0m[1G[0m[0m[?25h

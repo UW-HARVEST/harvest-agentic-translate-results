@@ -1,16 +1,21 @@
-//! Translation of analyzer.c
+//! Port of c_src/src/analyzer.c
 //!
-//! In C the analyzer holds function pointers to the tokenizer; here the
-//! tokenizer is passed in by reference instead, which is equivalent because
-//! `get_tokenizer_ops` always returns the same set of functions.
+//! As in the C, the analyzer's tracking arrays are static state that is only
+//! cleared by `analyzer_init` — they accumulate across every analysis.
 
-use crate::cio::{contains, err_str, Out};
+use std::cell::RefCell;
+use std::io::Write;
+
+use crate::cio;
 use crate::tokenizer::{
-    Tokenizer, MAX_TOKEN_LENGTH, TOKEN_COMMENT, TOKEN_EOF, TOKEN_IDENTIFIER, TOKEN_KEYWORD,
-    TOKEN_NEWLINE, TOKEN_NUMBER, TOKEN_OPERATOR, TOKEN_PUNCTUATION, TOKEN_STRING, TOKEN_WORD,
+    Token, TokenizerOps, MAX_TOKEN_LENGTH, TOKEN_COMMENT, TOKEN_EOF, TOKEN_IDENTIFIER,
+    TOKEN_KEYWORD, TOKEN_NEWLINE, TOKEN_NUMBER, TOKEN_OPERATOR, TOKEN_PUNCTUATION, TOKEN_STRING,
+    TOKEN_WORD,
 };
+use crate::{ceprintf, cprintf};
 
-#[derive(Default)]
+/// analysis_result_t
+#[derive(Clone, Copy, Default)]
 pub struct AnalysisResult {
     pub word_count: usize,
     pub number_count: usize,
@@ -22,39 +27,31 @@ pub struct AnalysisResult {
     pub char_count: usize,
 }
 
-pub struct Analyzer {
+// Static storage for tokenizer function pointers + static tracking arrays
+struct Analyzer {
+    tokenizer_ops: Option<TokenizerOps>,
     initialized: bool,
     token_type_counts: [i32; 20],
     common_words: Vec<Vec<u8>>,
-    common_word_counts: Vec<i32>,
-    num_common_words: usize,
+    common_word_counts: [i32; 100],
+    num_common_words: i32,
 }
 
 impl Analyzer {
-    pub fn new() -> Analyzer {
+    fn new() -> Self {
         Analyzer {
+            tokenizer_ops: None,
             initialized: false,
             token_type_counts: [0; 20],
             common_words: vec![Vec::new(); 100],
-            common_word_counts: vec![0; 100],
+            common_word_counts: [0; 100],
             num_common_words: 0,
         }
     }
 
-    pub fn init(&mut self) {
-        self.initialized = true;
-
-        // Reset tracking arrays
-        self.token_type_counts = [0; 20];
-        for c in self.common_word_counts.iter_mut() {
-            *c = 0;
-        }
-        self.num_common_words = 0;
-    }
-
     fn track_word(&mut self, word: &[u8]) {
         // Find if word already exists
-        for i in 0..self.num_common_words {
+        for i in 0..self.num_common_words as usize {
             if self.common_words[i] == word {
                 self.common_word_counts[i] += 1;
                 return;
@@ -63,46 +60,79 @@ impl Analyzer {
 
         // Add new word
         if self.num_common_words < 100 {
+            let idx = self.num_common_words as usize;
             // strncpy(..., MAX_TOKEN_LENGTH - 1) then force-terminate
-            let n = if word.len() < MAX_TOKEN_LENGTH - 1 {
+            let take = if word.len() < MAX_TOKEN_LENGTH - 1 {
                 word.len()
             } else {
                 MAX_TOKEN_LENGTH - 1
             };
-            self.common_words[self.num_common_words] = word[..n].to_vec();
-            self.common_word_counts[self.num_common_words] = 1;
+            self.common_words[idx] = word[..take].to_vec();
+            self.common_word_counts[idx] = 1;
             self.num_common_words += 1;
         }
     }
+}
 
-    pub fn analyze_text(&mut self, tk: &mut Tokenizer, text: &[u8]) -> AnalysisResult {
-        let mut result = AnalysisResult::default();
+thread_local! {
+    static ANALYZER: RefCell<Analyzer> = RefCell::new(Analyzer::new());
+}
 
-        if !self.initialized {
-            err_str("Error: Analyzer not initialized\n");
+pub fn analyzer_init(ops: TokenizerOps) {
+    ANALYZER.with(|a| {
+        let mut an = a.borrow_mut();
+        an.tokenizer_ops = Some(ops);
+        an.initialized = true;
+
+        // Reset tracking arrays
+        an.token_type_counts = [0; 20];
+        an.common_word_counts = [0; 100];
+        an.num_common_words = 0;
+    });
+}
+
+pub fn analyze_text(text: &[u8]) -> AnalysisResult {
+    let mut result = AnalysisResult::default();
+
+    let ops = ANALYZER.with(|a| {
+        let an = a.borrow();
+        if !an.initialized {
+            None
+        } else {
+            an.tokenizer_ops
+        }
+    });
+
+    let ops = match ops {
+        Some(ops) => ops,
+        None => {
+            ceprintf!("Error: Analyzer not initialized\n");
             return result;
         }
+    };
 
-        // Load text using function pointer
-        if tk.load_text(text) != 0 {
-            err_str("Error: Failed to load text\n");
-            return result;
+    // Load text using function pointer
+    if (ops.load_text)(text) != 0 {
+        ceprintf!("Error: Failed to load text\n");
+        return result;
+    }
+
+    // Process all tokens using function pointers
+    loop {
+        let token: Token = (ops.next_token)();
+        if token.ttype == TOKEN_EOF {
+            break;
         }
 
-        // Process all tokens using function pointers
-        loop {
-            let token = tk.next_token();
-            if token.ttype == TOKEN_EOF {
-                break;
-            }
-
-            // Update counts
-            self.token_type_counts[token.ttype] += 1;
+        // Update counts
+        ANALYZER.with(|a| {
+            let mut an = a.borrow_mut();
+            an.token_type_counts[token.ttype] += 1;
 
             match token.ttype {
                 TOKEN_WORD | TOKEN_IDENTIFIER => {
                     result.word_count += 1;
-                    self.track_word(&token.value);
+                    an.track_word(&token.value);
                 }
                 TOKEN_NUMBER => result.number_count += 1,
                 TOKEN_KEYWORD => result.keyword_count += 1,
@@ -112,56 +142,61 @@ impl Analyzer {
                 TOKEN_NEWLINE => result.line_count += 1,
                 _ => {}
             }
-        }
-
-        // Get final statistics using function pointer. Note these are cumulative
-        // process-wide totals that are never reset, and they overwrite the
-        // per-analysis newline tally above.
-        let (lines, _tokens, chars) = tk.get_stats();
-
-        result.line_count = lines;
-        result.char_count = chars;
-
-        result
+        });
     }
 
-    pub fn print_token_distribution(&mut self, out: &mut Out) {
-        out.str("\n=== Token Distribution ===\n");
+    // Get final statistics using function pointer
+    let (lines, _tokens, chars) = (ops.get_stats)();
 
-        let token_names: [&str; 12] = [
-            "EOF",
-            "WORD",
-            "NUMBER",
-            "PUNCTUATION",
-            "WHITESPACE",
-            "NEWLINE",
-            "IDENTIFIER",
-            "KEYWORD",
-            "OPERATOR",
-            "STRING",
-            "COMMENT",
-            "ERROR",
-        ];
+    // NOTE (faithful to the C): this discards the newline-token tally computed
+    // above and reports the tokenizer's cumulative line total instead.
+    result.line_count = lines;
+    result.char_count = chars;
 
-        for i in 0..12usize {
-            if self.token_type_counts[i] > 0 {
-                out.str(&format!("{}: {}\n", token_names[i], self.token_type_counts[i]));
+    result
+}
+
+pub fn print_token_distribution() {
+    cprintf!("\n=== Token Distribution ===\n");
+
+    const TOKEN_NAMES: [&str; 12] = [
+        "EOF",
+        "WORD",
+        "NUMBER",
+        "PUNCTUATION",
+        "WHITESPACE",
+        "NEWLINE",
+        "IDENTIFIER",
+        "KEYWORD",
+        "OPERATOR",
+        "STRING",
+        "COMMENT",
+        "ERROR",
+    ];
+
+    ANALYZER.with(|a| {
+        let mut an = a.borrow_mut();
+
+        for i in 0..12 {
+            if an.token_type_counts[i] > 0 {
+                cprintf!("{}: {}\n", TOKEN_NAMES[i], an.token_type_counts[i]);
             }
         }
 
-        out.str("\n=== Most Common Words ===\n");
+        cprintf!("\n=== Most Common Words ===\n");
 
-        // Simple bubble sort for display (mutates the stored arrays, as in C)
-        let n = self.num_common_words as i64;
-        let mut i: i64 = 0;
+        // Simple bubble sort for display
+        let n = an.num_common_words;
+        let mut i = 0i32;
         while i < n - 1 {
-            let mut j: i64 = 0;
+            let mut j = 0i32;
             while j < n - i - 1 {
-                let a = j as usize;
-                let b = (j + 1) as usize;
-                if self.common_word_counts[a] < self.common_word_counts[b] {
-                    self.common_word_counts.swap(a, b);
-                    self.common_words.swap(a, b);
+                let ju = j as usize;
+                if an.common_word_counts[ju] < an.common_word_counts[ju + 1] {
+                    // Swap counts
+                    an.common_word_counts.swap(ju, ju + 1);
+                    // Swap words
+                    an.common_words.swap(ju, ju + 1);
                 }
                 j += 1;
             }
@@ -169,67 +204,87 @@ impl Analyzer {
         }
 
         // Print top 10
-        let limit = if self.num_common_words < 10 {
-            self.num_common_words
+        let limit = if an.num_common_words < 10 {
+            an.num_common_words
         } else {
             10
         };
         for i in 0..limit {
-            out.str(&format!("{}. ", i + 1));
-            out.bytes(&self.common_words[i]);
-            out.str(&format!(": {} times\n", self.common_word_counts[i]));
+            let iu = i as usize;
+            let mut line: Vec<u8> = Vec::new();
+            let _ = write!(line, "{}. ", i + 1);
+            line.extend_from_slice(&an.common_words[iu]);
+            let _ = write!(line, ": {} times\n", an.common_word_counts[iu]);
+            cio::out_bytes(&line);
         }
-    }
+    });
+}
 
-    pub fn calculate_complexity_score(&self) -> i32 {
+pub fn calculate_complexity_score() -> i32 {
+    ANALYZER.with(|a| {
+        let an = a.borrow();
         let mut score: i32 = 0;
 
         // Base score on keyword density
-        score = score.wrapping_add(self.token_type_counts[TOKEN_KEYWORD].wrapping_mul(2));
+        score = score.wrapping_add(an.token_type_counts[TOKEN_KEYWORD].wrapping_mul(2));
 
         // Add points for operators
-        score = score.wrapping_add(self.token_type_counts[TOKEN_OPERATOR]);
+        score = score.wrapping_add(an.token_type_counts[TOKEN_OPERATOR]);
 
         // Nesting indicators (braces)
-        score = score.wrapping_add(self.token_type_counts[TOKEN_PUNCTUATION] / 10);
+        score = score.wrapping_add(an.token_type_counts[TOKEN_PUNCTUATION] / 10);
 
         // Comments reduce complexity (good documentation)
-        score = score.wrapping_sub(self.token_type_counts[TOKEN_COMMENT]);
+        score = score.wrapping_sub(an.token_type_counts[TOKEN_COMMENT]);
 
         if score < 0 {
             score = 0;
         }
 
         score
+    })
+}
+
+pub fn find_patterns(pattern: &[u8]) {
+    let ops = ANALYZER.with(|a| {
+        let an = a.borrow();
+        if !an.initialized {
+            None
+        } else {
+            an.tokenizer_ops
+        }
+    });
+
+    let ops = match ops {
+        Some(ops) => ops,
+        None => return,
+    };
+
+    let mut header: Vec<u8> = Vec::new();
+    header.extend_from_slice(b"\n=== Searching for pattern: '");
+    header.extend_from_slice(pattern);
+    header.extend_from_slice(b"' ===\n");
+    cio::out_bytes(&header);
+
+    // Reset tokenizer using function pointer
+    (ops.reset)();
+
+    let mut count: i32 = 0;
+
+    loop {
+        let token: Token = (ops.next_token)();
+        if token.ttype == TOKEN_EOF {
+            break;
+        }
+        if cio::strstr(&token.value, pattern) {
+            let mut line: Vec<u8> = Vec::new();
+            let _ = write!(line, "Line {}, Column {}: ", token.line, token.column);
+            line.extend_from_slice(&token.value);
+            line.push(b'\n');
+            cio::out_bytes(&line);
+            count += 1;
+        }
     }
 
-    pub fn find_patterns(&mut self, tk: &mut Tokenizer, out: &mut Out, pattern: &[u8]) {
-        if !self.initialized {
-            return;
-        }
-
-        out.str("\n=== Searching for pattern: '");
-        out.bytes(pattern);
-        out.str("' ===\n");
-
-        // Reset tokenizer using function pointer
-        tk.reset();
-
-        let mut count: i32 = 0;
-
-        loop {
-            let token = tk.next_token();
-            if token.ttype == TOKEN_EOF {
-                break;
-            }
-            if contains(&token.value, pattern) {
-                out.str(&format!("Line {}, Column {}: ", token.line, token.column));
-                out.bytes(&token.value);
-                out.str("\n");
-                count += 1;
-            }
-        }
-
-        out.str(&format!("Found {} occurrences\n", count));
-    }
+    cprintf!("Found {} occurrences\n", count);
 }

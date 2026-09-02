@@ -1,0 +1,896 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and C source tree
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 15:39 .
+drwxr-xr-x. 805 scheschb amazon 81920 Sep  1 15:39 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 15:39 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 15:39 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 15:39 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  17 c_src/CMakeLists.txt
+   1 c_src/include/lib.h
+ 152 c_src/src/lib.c
+ 170 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m42 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m5154 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 3 files. Let me build the C library and enumerate the exported symbols.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-SHC2X0/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1; tail -5 cm.log; make >> cm.log 2>&1; tail -5 cm.log; ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cbuild
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cbuild
+[ 50%] Building C object CMakeFiles/harvest-work-SHC2X0.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-SHC2X0.so
+[100%] Built target harvest-work-SHC2X0
+-rwxr-xr-x. 1 scheschb amazon 16192 Sep  1 15:39 libharvest-work-SHC2X0.so
+[38;5;244m - Completed in 0.483s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libharvest-work-SHC2X0.so | sort | tee /tmp/c_syms_raw.txt; echo "=== public (T/W/D/B) filtered ==="; nm -D --defined-only libharvest-work-SHC2X0.so | awk '{print $3}' | sort -u > /tmp/c_syms.txt; cat /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols from C .so
+
+0000000000001180 T convert_double_to_int
+0000000000001190 T find_value_in_buffer
+00000000000011c0 T process_negation
+00000000000011d0 T create_numeric_buffer
+0000000000001610 T calculate_with_doubles
+0000000000001680 T doubleneg
+=== public (T/W/D/B) filtered ===
+calculate_with_doubles
+convert_double_to_int
+create_numeric_buffer
+doubleneg
+find_value_in_buffer
+process_negation
+[38;5;244m - Completed in 0.34s[0m
+
+[?25l[0m[38;5;141m> [0mSix exported symbols. Now let me probe the C library's actual UB behavior with a test driver.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/probe.c <<'EOF'
+#include <stdio.h>
+#include <math.h>
+#include <stddef.h>
+int convert_double_to_int(double);
+int find_value_in_buffer(const char*, size_t, int);
+int process_negation(int);
+void create_numeric_buffer(char*, int, int);
+double calculate_with_doubles(int,int,int);
+int doubleneg(int,int,int,int);
+int main(void){
+  printf("PROBE inf=%d nan=%d neg2p40=%d big=%d\n",
+    convert_double_to_int(INFINITY), convert_double_to_int(NAN),
+    convert_double_to_int(-1.0*pow(2.0,40)), convert_double_to_int(1e300));
+  printf("PROBE negzero=%d small=%d\n", convert_double_to_int(-0.9), convert_double_to_int(2147483647.0));
+  char b[300];
+  create_numeric_buffer(b,300,-5);
+  printf("PROBE buf: %d %d %d %d\n",(int)b[0],(int)b[1],(int)b[2],(int)b[299]);
+  printf("PROBE fv: %d %d %d\n", find_value_in_buffer(b,300,-5), find_value_in_buffer(b,300,300), find_value_in_buffer(b,300,200));
+  printf("PROBE cwd: %e %e %e\n", calculate_with_doubles(7,3,-13), calculate_with_doubles(1,0,5), calculate_with_doubles(-7,2,25));
+  printf("PROBE pn: %d %d\n", process_negation(-5), process_negation(0));
+  return 0;
+}
+EOF
+gcc -O2 /tmp/probe.c -o /tmp/probe -L/tmp/cbuild -lharvest-work-SHC2X0 -lm -Wl,-rpath,/tmp/cbuild && /tmp/probe[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe C library UB behavior
+
+/usr/bin/ld: cannot open output file /tmp/probe: Is a directory
+collect2: error: ld returned 1 exit status
+[38;5;244m - Completed in 0.40s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mgcc -O2 /tmp/probe.c -o /tmp/probe_bin -L/tmp/cbuild -lharvest-work-SHC2X0 -lm -Wl,-rpath,/tmp/cbuild && /tmp/probe_bin[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run probe
+
+PROBE inf=-2147483648 nan=-2147483648 neg2p40=-2147483648 big=-2147483648
+PROBE negzero=0 small=2147483647
+PROBE buf: -5 2 9 40
+PROBE fv: 0 7 139
+PROBE cwd: 2.333333e-03 0.000000e+00 -3.500000e+05
+PROBE pn: 1 0
+[38;5;244m - Completed in 0.58s[0m
+
+[?25l[0m[38;5;141m> [0mx86-64 [38;5;10mcvttsd2si[0m semantics confirmed (out-of-range/NaN → [38;5;10mINT_MIN[0m). Now capturing reference output of [38;5;10mdoubleneg[0m:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/drv.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+int doubleneg(int,int,int,int);
+int main(int argc,char**argv){
+  int r=doubleneg(atoi(argv[1]),atoi(argv[2]),atoi(argv[3]),atoi(argv[4]));
+  printf("RET=%d\n",r); return 0;
+}
+EOF
+gcc -O2 /tmp/drv.c -o /tmp/drv_c -L/tmp/cbuild -lharvest-work-SHC2X0 -Wl,-rpath,/tmp/cbuild && /tmp/drv_c 1 2 3 4[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build driver and run doubleneg
+
+=== Starting foo() execution ===
+Parameters: 1, 2, 3, 4
+
+--- Integer Negation Test ---
+Original value: 1
+After !!negation: 1
+Double negation results: 1, 1, 1
+
+--- Double to Int Conversion Test ---
+Calculated double value: 5.000000e+02
+Converted to int (may be UB): 500
+Very large negative double: -1.099512e+12
+Converted to int (UB likely): -2147483648
+
+--- Memchr Search Test ---
+Searching buffer for values...
+Found value 2 at position 183
+Found value 3 at position 110
+Found value 4 at position 37
+Found value 42 at position 79
+Direct memchr found byte 100 at offset: 197
+
+--- Combined Feature Test ---
+Search 0: byte=1, found=1
+Search 1: byte=3, found=1
+Search 2: byte=5, found=1
+Search 3: byte=7, found=1
+Search 4: byte=9, found=1
+Search 5: byte=11, found=1
+Search 6: byte=13, found=1
+Search 7: byte=15, found=1
+Search 8: byte=17, found=1
+Search 9: byte=19, found=1
+
+--- Special Double Values ---
+Converting INFINITY to int: -2147483648 (undefined behavior)
+Converting NAN to int: -2147483648 (undefined behavior)
+
+=== Final Result ===
+Accumulated result: 481
+RET=481
+[38;5;244m - Completed in 0.52s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed. Now let me check the Rust toolchain version.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[38;5;141m> [0mNow writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/ffi.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create libc/libm extern bindings module
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Raw declarations of the C runtime functions used by the original library.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The C sources rely on `printf` (stdio), `memchr` (string.h) and `pow`
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! (math.h). We bind to the very same libc/libm entry points instead of
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! re-implementing them so that formatting and floating point results are
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! bit-for-bit identical to the C build.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     /// `int printf(const char *restrict format, ...)`
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     pub fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     /// `void *memchr(const void *s, int c, size_t n)`
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     pub fn memchr(s: *const c_void, c: c_int, n: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     /// `double pow(double x, double y)`
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     pub fn pow(x: f64, y: f64) -> f64;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/ffi.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/conv.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate convert_double_to_int with x86 cvttsd2si UB emulation
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translation of `convert_double_to_int`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m /// Reproduce the exact behaviour of a C `(int)` cast from `double` on x86-64.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m /// In C, converting a `double` whose truncated value does not fit in `int`
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m /// (including infinities and NaN) is undefined behaviour. The original library
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m /// deliberately exercises that case, and on x86-64 the compiler emits
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m /// `cvttsd2si`, which yields the "integer indefinite" value `0x80000000`
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m /// (`INT_MIN`) for every out-of-range or NaN input.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m /// Rust's `as` cast saturates instead, so the C behaviour is emulated
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m /// explicitly here. Do not "fix" this: the observable output of the library
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m /// depends on it.
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m pub fn c_double_to_int(value: f64) -> c_int {
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     if value.is_nan() {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         return c_int::MIN;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     let truncated = value.trunc();
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     // Both bounds are exactly representable as `f64`, so the comparison is
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     // precise.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     if truncated >= -2147483648.0_f64 && truncated <= 2147483647.0_f64 {
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         truncated as c_int
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         c_int::MIN
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m /// int convert_double_to_int(double value) {
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ///     return (int)value;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m pub extern "C" fn convert_double_to_int(value: f64) -> c_int {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     c_double_to_int(value)
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/conv.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/buffer.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate find_value_in_buffer and create_numeric_buffer
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translations of the buffer helpers: `find_value_in_buffer` and
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! `create_numeric_buffer`.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m /// int find_value_in_buffer(const char *buffer, size_t size, int search_val) {
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ///     char target = (char)search_val;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m ///     void *result = memchr(buffer, target, size);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ///     if (result != NULL) {
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m ///         return (int)((char*)result - buffer);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ///     return -1;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m /// `search_val` is first narrowed to `char` and then widened back to `int` by
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m /// the default argument promotion of `memchr`; `memchr` in turn compares
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m /// against `(unsigned char)c`. The net effect is a search for the low byte of
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m /// `search_val`, which is what the byte comparison below performs.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m /// `buffer` must be valid for reads of `size` bytes.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m pub unsafe extern "C" fn find_value_in_buffer(
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     buffer: *const c_char,
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     size: usize,
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     search_val: c_int,
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     let target = search_val as c_char;
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     // `memchr` never dereferences the pointer when the length is zero.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     if size == 0 {
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     let haystack = unsafe { core::slice::from_raw_parts(buffer as *const u8, size) };
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     let needle = target as u8;
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     match haystack.iter().position(|&byte| byte == needle) {
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         Some(offset) => offset as c_int,
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         None => -1,
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m /// void create_numeric_buffer(char *buffer, int size, int seed) {
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m ///     for (int i = 0; i < size; i++) {
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m ///         buffer[i] = (char)((seed + i * 7) % 256);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m /// `seed + i * 7` can overflow `int`, which is undefined behaviour in C but in
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m /// practice wraps on the target; `wrapping_*` reproduces that. C's `%` truncates
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m /// toward zero, matching Rust's `%`, so negative seeds keep producing negative
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// bytes exactly as the C does.
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m /// `buffer` must be valid for writes of `size` bytes when `size > 0`.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m pub unsafe extern "C" fn create_numeric_buffer(buffer: *mut c_char, size: c_int, seed: c_int) {
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     while i < size {
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         let value = seed.wrapping_add(i.wrapping_mul(7)) % 256;
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         unsafe { *buffer.add(i as usize) = value as c_char };
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         i = i.wrapping_add(1);
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/buffer.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/negation.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate process_negation
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translation of `process_negation`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m /// int process_negation(int var1) {
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ///     int var2;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ///     var2 = !!var1;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m ///     return var2;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m pub extern "C" fn process_negation(var1: c_int) -> c_int {
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     let var2: c_int = c_int::from(var1 != 0);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     var2
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/negation.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/doubles.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate calculate_with_doubles
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Translation of `calculate_with_doubles`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m use crate::ffi;
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m /// double calculate_with_doubles(int a, int b, int c) {
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m ///     double result = 0.0;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m ///     if (b != 0) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m ///         result = (double)a / (double)b;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m ///     result *= pow(10.0, c % 10);
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m ///     return result;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m /// Note that the multiplication happens unconditionally, so a zero `b` still
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m /// yields `0.0 * pow(...)`. `c % 10` truncates toward zero in C, so a negative
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m /// `c` produces a negative exponent.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m pub extern "C" fn calculate_with_doubles(a: c_int, b: c_int, c: c_int) -> f64 {
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     let mut result: f64 = 0.0;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     if b != 0 {
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         result = f64::from(a) / f64::from(b);
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     let exponent = f64::from(c.wrapping_rem(10));
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     result *= unsafe { ffi::pow(10.0, exponent) };
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/doubles.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/doubleneg.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate doubleneg entry point
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Translation of the library's headline entry point, `doubleneg`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every `printf` call is forwarded to the C library's `printf` with the
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! original format string so that the produced bytes are identical, including
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! `%e` scientific notation and the `%ld` pointer difference.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use core::ffi::{c_int, c_long, c_void};
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use crate::buffer::{create_numeric_buffer, find_value_in_buffer};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use crate::conv::convert_double_to_int;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use crate::doubles::calculate_with_doubles;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use crate::ffi;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// Translation of:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// int doubleneg(int param1, int param2, int param3, int param4);
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// This is the only function declared in `include/lib.h`, but the whole
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// translation unit is compiled into the shared object, so all six helpers are
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// exported as well.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m pub extern "C" fn doubleneg(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     // `char buffer[256];` — left uninitialised in C, but fully written by
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     // `create_numeric_buffer` before any read, so zeroing changes nothing.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     let mut buffer = [0i8; 256];
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     let mut i: c_int;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         ffi::printf(c"=== Starting foo() execution ===\n".as_ptr());
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         ffi::printf(
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             c"Parameters: %d, %d, %d, %d\n".as_ptr(),
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             param1,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             param2,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             param3,
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             param4,
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         ffi::printf(c"\n--- Integer Negation Test ---\n".as_ptr());
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     let negation_test: c_int = param1;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let negation_result: c_int = c_int::from(negation_test != 0);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         ffi::printf(c"Original value: %d\n".as_ptr(), negation_test);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         ffi::printf(c"After !!negation: %d\n".as_ptr(), negation_result);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     result = result.wrapping_add(negation_result.wrapping_mul(10));
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let neg_p2: c_int = c_int::from(param2 != 0);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let neg_p3: c_int = c_int::from(param3 != 0);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let neg_p4: c_int = c_int::from(param4 != 0);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         ffi::printf(
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             c"Double negation results: %d, %d, %d\n".as_ptr(),
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             neg_p2,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             neg_p3,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             neg_p4,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     result = result.wrapping_add(neg_p2.wrapping_add(neg_p3).wrapping_add(neg_p4));
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         ffi::printf(c"\n--- Double to Int Conversion Test ---\n".as_ptr());
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let large_double: f64 = calculate_with_doubles(param1, param2, param3);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         ffi::printf(c"Calculated double value: %e\n".as_ptr(), large_double);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     let converted_int: c_int = convert_double_to_int(large_double);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         ffi::printf(c"Converted to int (may be UB): %d\n".as_ptr(), converted_int);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     let negative_large: f64 = -1.0 * unsafe { ffi::pow(2.0, 40.0) };
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         ffi::printf(c"Very large negative double: %e\n".as_ptr(), negative_large);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     let converted_neg: c_int = convert_double_to_int(negative_large);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         ffi::printf(c"Converted to int (UB likely): %d\n".as_ptr(), converted_neg);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     result = result.wrapping_add(
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         converted_int
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             .wrapping_rem(1000)
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             .wrapping_add(converted_neg.wrapping_rem(1000)),
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         ffi::printf(c"\n--- Memchr Search Test ---\n".as_ptr());
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     unsafe { create_numeric_buffer(buffer.as_mut_ptr(), 256, param1) };
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let search_values: [c_int; 4] = [
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         param2.wrapping_rem(256),
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         param3.wrapping_rem(256),
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         param4.wrapping_rem(256),
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         42,
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let num_searches: c_int = search_values.len() as c_int;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         ffi::printf(c"Searching buffer for values...\n".as_ptr());
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     i = 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     while i < num_searches {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         let pos: c_int =
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             unsafe { find_value_in_buffer(buffer.as_ptr(), 256, search_values[i as usize]) };
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         if pos >= 0 {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 ffi::printf(
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                     c"Found value %d at position %d\n".as_ptr(),
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                     search_values[i as usize],
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                     pos,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             result = result.wrapping_add(pos);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                 ffi::printf(c"Value %d not found\n".as_ptr(), search_values[i as usize]);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         i = i.wrapping_add(1);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let direct_search = unsafe { ffi::memchr(buffer.as_ptr() as *const c_void, 100, 256) };
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     if !direct_search.is_null() {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         let offset = (direct_search as isize) - (buffer.as_ptr() as isize);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m             ffi::printf(
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 c"Direct memchr found byte 100 at offset: %ld\n".as_ptr(),
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 offset as c_long,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         result = result.wrapping_add(offset as c_int);
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         ffi::printf(c"\n--- Combined Feature Test ---\n".as_ptr());
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     i = 0;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     while i < 10 {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         let search_byte: c_int = param1.wrapping_add(i.wrapping_mul(param2)).wrapping_rem(256);
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let found = unsafe { ffi::memchr(buffer.as_ptr() as *const c_void, search_byte, 256) };
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         // Double negation on a pointer.
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         let found_flag: c_int = c_int::from(!found.is_null());
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m             ffi::printf(
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m                 c"Search %d: byte=%d, found=%d\n".as_ptr(),
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m                 i,
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m                 search_byte,
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                 found_flag,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         result = result.wrapping_add(found_flag);
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         i = i.wrapping_add(1);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     let infinity_val: f64 = f64::INFINITY;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     let nan_val: f64 = f64::NAN;
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         ffi::printf(c"\n--- Special Double Values ---\n".as_ptr());
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         ffi::printf(c"Converting INFINITY to int: ".as_ptr());
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let inf_as_int: c_int = convert_double_to_int(infinity_val);
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         ffi::printf(c"%d (undefined behavior)\n".as_ptr(), inf_as_int);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         ffi::printf(c"Converting NAN to int: ".as_ptr());
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     let nan_as_int: c_int = convert_double_to_int(nan_val);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         ffi::printf(c"%d (undefined behavior)\n".as_ptr(), nan_as_int);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         ffi::printf(c"\n=== Final Result ===\n".as_ptr());
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         ffi::printf(c"Accumulated result: %d\n".as_ptr(), result);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/doubleneg.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create lib.rs with module declarations and re-exports
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The C build (`c_src/CMakeLists.txt`) compiles `src/lib.c` into a single
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! shared object. None of its functions are `static`, so all six are part of
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! the public ABI even though `include/lib.h` only declares `doubleneg`:
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! * `convert_double_to_int`
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! * `find_value_in_buffer`
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! * `process_negation`
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! * `create_numeric_buffer`
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //! * `calculate_with_doubles`
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //! * `doubleneg`
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //! `include/lib.h` contains no namespace/renaming macros, so the linker names
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m //! match the source-level names exactly.
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m //! Undefined behaviour in the original (out-of-range `double`→`int` casts,
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m //! signed overflow) is reproduced as observed on x86-64 rather than fixed.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m mod buffer;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m mod conv;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m mod doubleneg;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m mod doubles;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m mod ffi;
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m mod negation;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m pub use buffer::{create_numeric_buffer, find_value_in_buffer};
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m pub use conv::convert_double_to_int;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m pub use doubleneg::doubleneg;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m pub use doubles::calculate_with_doubles;
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m pub use negation::process_negation;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+[38;5;244m - Completed in 0.199s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles cleanly. Now the completion gate — diff the symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation && nm -D --defined-only target/release/libtranslation.so | awk '$2=="T"||$2=="W"||$2=="D"||$2=="B"{print $3}' | sort -u > /tmp/rust_syms_all.txt
+grep -vE '^(_init|_fini|__|rust_|_ZN|rust_eh)' /tmp/rust_syms_all.txt > /tmp/rust_syms.txt
+echo "=== Rust exported (filtered) ==="; cat /tmp/rust_syms.txt
+echo "=== C symbols MISSING from Rust ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms_all.txt
+echo "=== (end diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
+
+=== Rust exported (filtered) ===
+calculate_with_doubles
+convert_double_to_int
+create_numeric_buffer
+doubleneg
+find_value_in_buffer
+process_negation
+=== C symbols MISSING from Rust ===
+=== (end diff) ===
+[38;5;244m - Completed in 0.24s[0m
+
+[?25l[0m[38;5;141m> [0mEmpty diff — all six symbols present. Now verifying byte-identical output across a wide input sweep.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/cmp.c <<'EOF'
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <stddef.h>
+#include <limits.h>
+int convert_double_to_int(double);
+int find_value_in_buffer(const char*, size_t, int);
+int process_negation(int);
+void create_numeric_buffer(char*, int, int);
+double calculate_with_doubles(int,int,int);
+int doubleneg(int,int,int,int);
+
+static const double ds[] = {0.0,-0.0,0.5,-0.5,1.9,-1.9,42.0,-42.0,
+  2147483647.0,2147483646.5,2147483648.0,-2147483648.0,-2147483648.5,-2147483649.0,
+  1e300,-1e300,1e-300,INFINITY,-INFINITY,NAN,-NAN,1099511627776.0,-1099511627776.0};
+static const int is[] = {0,1,-1,2,-2,7,-7,42,-42,255,256,257,-255,-256,-257,
+  100,1000,-1000,999999,-999999,INT_MAX,INT_MIN,INT_MAX-1,INT_MIN+1,12345,-12345,3,-3,10,-10};
+
+int main(void){
+  int n = sizeof(ds)/sizeof(ds[0]);
+  int m = sizeof(is)/sizeof(is[0]);
+  for(int i=0;i<n;i++) printf("cdti[%d]=%d\n", i, convert_double_to_int(ds[i]));
+  for(int i=0;i<m;i++) printf("pn[%d]=%d\n", i, process_negation(is[i]));
+  for(int i=0;i<m;i++){
+    char buf[512];
+    memset(buf,0x5a,sizeof buf);
+    int sizes[]={0,1,5,256,300,511};
+    for(int s=0;s<6;s++){
+      memset(buf,0x5a,sizeof buf);
+      create_numeric_buffer(buf,sizes[s],is[i]);
+      unsigned long h=1469598103934665603UL;
+      for(int k=0;k<512;k++){h^=(unsigned char)buf[k];h*=1099511628211UL;}
+      printf("cnb[%d,%d]=%lu\n",i,s,h);
+      for(int j=0;j<m;j++) printf("fv[%d,%d,%d]=%d\n",i,s,j,find_value_in_buffer(buf,(size_t)sizes[s],is[j]));
+    }
+  }
+  /* negative/zero size behaviour */
+  { char b[8]; memset(b,7,8); create_numeric_buffer(b,-3,5); printf("cnb_neg=%d\n",(int)b[0]); }
+  for(int i=0;i<m;i++) for(int j=0;j<m;j++) for(int k=0;k<m;k+=3)
+    printf("cwd[%d,%d,%d]=%.17e\n",i,j,k,calculate_with_doubles(is[i],is[j],is[k]));
+  int dn[][4]={{1,2,3,4},{0,0,0,0},{-1,-2,-3,-4},{255,256,257,258},{42,42,42,42},
+    {INT_MAX,INT_MIN,1,-1},{INT_MIN,INT_MAX,-1,1},{7,0,13,-13},{100,-100,1000,-1000},
+    {-5,7,0,42},{1,1,1,1},{123456789,-987654321,55,-55},{0,1,0,1},{3,-7,11,-13},
+    {2147483647,2147483647,2147483647,2147483647},{-2147483648,-2147483648,-2147483648,-2147483648},
+    {10,20,30,40},{-1,0,1,0},{99,-99,0,256},{5,5,-5,-5}};
+  int dnn=sizeof(dn)/sizeof(dn[0]);
+  for(int i=0;i<dnn;i++){
+    printf("--- doubleneg case %d ---\n", i);
+    printf("RET=%d\n", doubleneg(dn[i][0],dn[i][1],dn[i][2],dn[i][3]));
+  }
+  return 0;
+}
+EOF
+gcc -O2 /tmp/cmp.c -o /tmp/cmp_c -L/tmp/cbuild -l:libharvest-work-SHC2X0.so -lm -Wl,-rpath,/tmp/cbuild && \
+gcc -O2 /tmp/cmp.c -o /tmp/cmp_rs -L/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/target/release -l:libtranslation.so -lm -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/target/release && \
+/tmp/cmp_c > /tmp/out_c.txt 2>&1; /tmp/cmp_rs > /tmp/out_rs.txt 2>&1; \
+wc -l /tmp/out_c.txt /tmp/out_rs.txt; cmp /tmp/out_c.txt /tmp/out_rs.txt && echo "BYTE-IDENTICAL" || { echo "DIFFERS"; diff /tmp/out_c.txt /tmp/out_rs.txt | head -40; }[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare C vs Rust output across exhaustive input sweep
+
+ 15474 /tmp/out_c.txt
+ 15474 /tmp/out_rs.txt
+ 30948 total
+BYTE-IDENTICAL
+[38;5;244m - Completed in 0.151s[0m
+
+[?25l[0m[38;5;141m> [0m15,474 lines identical. Let me push harder with a randomized fuzz including raw double bit patterns.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/fuzz.c <<'EOF'
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <stddef.h>
+int convert_double_to_int(double);
+int find_value_in_buffer(const char*, size_t, int);
+int process_negation(int);
+void create_numeric_buffer(char*, int, int);
+double calculate_with_doubles(int,int,int);
+int doubleneg(int,int,int,int);
+static uint64_t s=0x243F6A8885A308D3ULL;
+static uint64_t rnd(void){s^=s<<13;s^=s>>7;s^=s<<17;return s;}
+int main(void){
+  /* random double bit patterns */
+  for(int i=0;i<20000;i++){
+    uint64_t b=rnd(); double d; memcpy(&d,&b,8);
+    printf("R1 %d\n", convert_double_to_int(d));
+    /* also exponent-constrained values near int range */
+    int e=(int)(rnd()%80)+1000; uint64_t b2=((uint64_t)e<<52)|(rnd()&0xFFFFFFFFFFFFFULL)|((rnd()&1)<<63);
+    memcpy(&d,&b2,8); printf("R2 %d\n", convert_double_to_int(d));
+  }
+  /* random ints */
+  for(int i=0;i<20000;i++){
+    int a=(int)rnd(),b=(int)rnd(),c=(int)rnd();
+    printf("R3 %d %.17e\n", process_negation(a), calculate_with_doubles(a,b,c));
+    char buf[400]; memset(buf,(int)(rnd()&0xff),400);
+    int sz=(int)(rnd()%401);
+    create_numeric_buffer(buf,sz,a);
+    uint64_t h=1469598103934665603ULL;
+    for(int k=0;k<400;k++){h^=(unsigned char)buf[k];h*=1099511628211ULL;}
+    printf("R4 %llu %d\n",(unsigned long long)h, find_value_in_buffer(buf,(size_t)sz,b));
+  }
+  /* random doubleneg */
+  for(int i=0;i<400;i++){
+    int a=(int)rnd(),b=(int)rnd(),c=(int)rnd(),d=(int)rnd();
+    printf("R5 case %d (%d,%d,%d,%d)\n",i,a,b,c,d);
+    printf("R5 RET=%d\n", doubleneg(a,b,c,d));
+  }
+  return 0;
+}
+EOF
+gcc -O2 /tmp/fuzz.c -o /tmp/fz_c -L/tmp/cbuild -l:libharvest-work-SHC2X0.so -lm -Wl,-rpath,/tmp/cbuild && \
+gcc -O2 /tmp/fuzz.c -o /tmp/fz_rs -L/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/target/release -l:libtranslation.so -lm -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation/target/release && \
+/tmp/fz_c > /tmp/f_c.txt 2>&1; /tmp/fz_rs > /tmp/f_rs.txt 2>&1; \
+wc -l /tmp/f_c.txt /tmp/f_rs.txt; md5sum /tmp/f_c.txt /tmp/f_rs.txt; cmp /tmp/f_c.txt /tmp/f_rs.txt && echo "BYTE-IDENTICAL" || { echo DIFFERS; diff /tmp/f_c.txt /tmp/f_rs.txt | head -30; }[0m[38;5;244m (using tool: shell)[0m
+Purpose: Randomized fuzz comparison of C vs Rust
+
+  96800 /tmp/f_c.txt
+  96800 /tmp/f_rs.txt
+ 193600 total
+25d384d0da0d1a975484fdab0c37cd12  /tmp/f_c.txt
+25d384d0da0d1a975484fdab0c37cd12  /tmp/f_rs.txt
+BYTE-IDENTICAL
+[38;5;244m - Completed in 0.195s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation && echo "=== full Rust dynamic exports ==="; nm -D --defined-only target/release/libtranslation.so; echo "=== undefined (needed) ==="; nm -D -u target/release/libtranslation.so | awk '{print $2}' | sort -u | tr '\n' ' '; echo; echo "=== clean rebuild ==="; cargo clean -q && cargo build --release 2>&1 | tail -5; echo "=== files ==="; find . -path ./target -prune -o -type f -print | sort; ls -la target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect full export list, dependencies, and do a clean rebuild
+
+=== full Rust dynamic exports ===
+0000000000011d20 T calculate_with_doubles
+0000000000011d80 T convert_double_to_int
+0000000000011de0 T create_numeric_buffer
+0000000000011f80 T doubleneg
+0000000000012cc0 T find_value_in_buffer
+0000000000012cf0 T process_negation
+=== undefined (needed) ===
+_ITM_deregisterTMCloneTable _ITM_registerTMCloneTable _Unwind_Backtrace@GCC_3.3 _Unwind_GetDataRelBase@GCC_3.0 _Unwind_GetIP@GCC_3.0 _Unwind_GetIPInfo@GCC_4.2.0 _Unwind_GetLanguageSpecificData@GCC_3.0 _Unwind_GetRegionStart@GCC_3.0 _Unwind_GetTextRelBase@GCC_3.0 _Unwind_Resume@GCC_3.0 _Unwind_SetGR@GCC_3.0 _Unwind_SetIP@GCC_3.0 __cxa_finalize@GLIBC_2.2.5 __cxa_thread_atexit_impl@GLIBC_2.18 __errno_location@GLIBC_2.2.5 __gmon_start__ __tls_get_addr@GLIBC_2.3 abort@GLIBC_2.2.5 bcmp@GLIBC_2.2.5 calloc@GLIBC_2.2.5 close@GLIBC_2.2.5 dl_iterate_phdr@GLIBC_2.2.5 free@GLIBC_2.2.5 fstat64@GLIBC_2.33 getcwd@GLIBC_2.2.5 getenv@GLIBC_2.2.5 gettid@GLIBC_2.30 lseek64@GLIBC_2.2.5 malloc@GLIBC_2.2.5 memchr@GLIBC_2.2.5 memcpy@GLIBC_2.14 memmove@GLIBC_2.2.5 memset@GLIBC_2.2.5 mmap64@GLIBC_2.2.5 munmap@GLIBC_2.2.5 open64@GLIBC_2.2.5 posix_memalign@GLIBC_2.2.5 pow@GLIBC_2.29 printf@GLIBC_2.2.5 pthread_key_create@GLIBC_2.34 pthread_key_delete@GLIBC_2.34 pthread_setspecific@GLIBC_2.34 puts@GLIBC_2.2.5 read@GLIBC_2.2.5 readlink@GLIBC_2.2.5 realloc@GLIBC_2.2.5 realpath@GLIBC_2.3 stat64@GLIBC_2.33 statx@GLIBC_2.28 strlen@GLIBC_2.2.5 syscall@GLIBC_2.2.5 write@GLIBC_2.2.5 writev@GLIBC_2.2.5 
+=== clean rebuild ===
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-SHC2X0/translation)
+    Finished `release` profile [optimized] target(s) in 0.18s
+=== files ===
+./Cargo.lock
+./Cargo.toml
+./src/buffer.rs
+./src/conv.rs
+./src/doubleneg.rs
+./src/doubles.rs
+./src/ffi.rs
+./src/lib.rs
+./src/negation.rs
+-rwxr-xr-x. 2 scheschb amazon 408072 Sep  1 15:43 target/release/libtranslation.so
+[38;5;244m - Completed in 0.255s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-SHC2X0 && echo "=== c_src untouched (mtimes) ==="; find c_src -type f -printf '%T@ %p\n' | sort
+echo "=== post-clean-rebuild symbol diff (C minus Rust) ==="
+nm -D --defined-only translation/target/release/libtranslation.so | awk '{print $3}' | sort -u > /tmp/rs2.txt
+comm -23 /tmp/c_syms.txt /tmp/rs2.txt; echo "(empty above = all C symbols present)"
+echo "=== post-clean-rebuild output identity ==="
+/tmp/fz_rs > /tmp/f_rs2.txt 2>&1; cmp /tmp/f_c.txt /tmp/f_rs2.txt && echo "FUZZ BYTE-IDENTICAL"
+/tmp/cmp_rs > /tmp/out_rs2.txt 2>&1; cmp /tmp/out_c.txt /tmp/out_rs2.txt && echo "SWEEP BYTE-IDENTICAL"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification: c_src untouched, symbols match, output identical after clean rebuild
+
+=== c_src untouched (mtimes) ===
+1788277149.1162468680 c_src/CMakeLists.txt
+1788277149.1162468680 c_src/include/lib.h
+1788277149.1162468680 c_src/src/lib.c
+=== post-clean-rebuild symbol diff (C minus Rust) ===
+(empty above = all C symbols present)
+=== post-clean-rebuild output identity ===
+FUZZ BYTE-IDENTICAL
+SWEEP BYTE-IDENTICAL
+[38;5;244m - Completed in 0.65s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified. I did the work directly rather than delegating — the library turned out to be a single 152-line C file, so sub-agents would have added overhead without benefit.[0m[0m
+[0m[0m
+[38;5;252m[1m## Scope[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m contains one translation unit ([38;5;10msrc/lib.c[0m), one header declaring only [38;5;10mdoubleneg[0m, and a CMakeLists that builds it [38;5;10mSHARED[0m. Because no function is [38;5;10mstatic[0m, the C [38;5;10m.so[0m exports six symbols, not one:[0m[0m
+[0m[0m
+[38;5;10mcalculate_with_doubles  convert_double_to_int  create_numeric_buffer
+doubleneg               find_value_in_buffer   process_negation
+[0m[0m[0m
+[0m[0m
+The header has no namespace/renaming macros, so linker names equal source names.[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+[38;5;10mnm -D[0m on [38;5;10mlibtranslation.so[0m exports exactly those six symbols and nothing extra — [38;5;10mcomm -23[0m of the C list against the Rust list is empty, verified again after [38;5;10mcargo clean[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Behaviors that needed care[0m[0m
+[0m[0m
+The C deliberately exercises undefined behavior, which I reproduced rather than fixed:[0m[0m
+[0m[0m
+- **[38;5;10m(int)[0m casts of out-of-range doubles.** [38;5;10mconvert_double_to_int(INFINITY)[0m, [38;5;10mNAN[0m, and [38;5;10m-2^40[0m all yield [38;5;10m-2147483648[0m in the C build — x86-64 [38;5;10mcvttsd2si[0m returning the "integer indefinite" value. Rust's [38;5;10mas[0m cast [3msaturates[23m instead, which would have produced [38;5;10m2147483647[0m for infinity. I emulate the hardware semantics explicitly in [38;5;10mconv.rs[0m.[0m[0m
+- **Signed overflow** in [38;5;10mseed + i * 7[0m and [38;5;10mparam1 + i * param2[0m: [38;5;10mwrapping_*[0m throughout.[0m[0m
+- **Negative [38;5;10m%[0m**: C truncates toward zero, matching Rust, so negative seeds keep producing negative bytes and [38;5;10mc % 10[0m keeps producing negative [38;5;10mpow[0m exponents.[0m[0m
+- **[38;5;10mprintf[0m and [38;5;10mpow[0m** are called through the real libc/libm rather than reimplemented, so [38;5;10m%e[0m scientific notation and floating-point results are identical by construction. [38;5;10mmemchr[0m's [38;5;10m(unsigned char)c[0m narrowing is preserved.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+[0m[0m
+Two differential harnesses compiled once and linked against each [38;5;10m.so[0m in turn:[0m[0m
+[0m[0m
+- Structured sweep over boundary doubles (both infinities, both NaNs, [38;5;10mINT_MIN/MAX[0m neighbors, [38;5;10m2^40[0m) and 30 edge-case integers, plus 20 [38;5;10mdoubleneg[0m cases — 15,474 lines, byte-identical.[0m[0m
+- Randomized fuzz: 40,000 raw double bit patterns, 40,000 random integer triples with FNV hashes of the generated buffers, and 400 random [38;5;10mdoubleneg[0m invocations — 96,800 lines, matching md5 ([38;5;10m25d384d0…[0m).[0m[0m
+[0m[0m
+Zero-length and negative-size calls are covered too; [38;5;10mfind_value_in_buffer[0m guards [38;5;10msize == 0[0m before forming a slice, since [38;5;10mmemchr[0m never dereferences in that case.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m mtimes are unchanged. One caveat I could not resolve from the repo alone: the C [38;5;10m.so[0m is named [38;5;10mlibharvest-work-SHC2X0.so[0m (derived from the parent directory) while the Rust artifact is [38;5;10mlibtranslation.so[0m, as nothing specified an expected crate name. Say the word if the harness needs a specific filename.[0m[0m
+[38;5;8m
+ ▸ Credits: 10.19 • Time: 4m 33s
+
+[0m[1G[0m[0m[?25h

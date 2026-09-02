@@ -1,42 +1,24 @@
-//! Translation of `c_src/src/pcre2_chkdint.c`.
-//!
-//! Functions to implement checked integer operations.
-
-#![allow(non_snake_case)]
-
-use core::ffi::c_int;
+//! Translation of `pcre2_chkdint.c`.
 
 use crate::internal::*;
+use core::ffi::c_int;
 
-/* Checked Integer Multiplication.
-
-Arguments:
-  r         A pointer to PCRE2_SIZE to store the answer
-  a, b      Two integers
-
-Returns:    Bool indicating if the operation overflows
-
-It is modeled after C23's <stdckdint.h> interface. This mirrors the
-HAVE_BUILTIN_MUL_OVERFLOW branch of the C source (the compiler builtin is
-available under the build configuration). */
-
-pub unsafe fn ckd_smul(r: *mut PCRE2_SIZE, a: c_int, b: c_int) -> BOOL {
-    unsafe {
-        /* __builtin_mul_overflow computes a * b in the type of *r (PCRE2_SIZE,
-        i.e. usize) and reports whether the mathematical result is not
-        representable in that type. a and b are ints (possibly negative). */
-        let wide = (a as i64).wrapping_mul(b as i64);
-        let m = wide as PCRE2_SIZE;
-        if (m as i64) != wide {
-            return TRUE;
-        }
-        *r = m;
-        FALSE
-    }
-}
-
-/// Exported as `_pcre2_ckd_smul_8`.
+/// `PRIV(ckd_smul)` — checked signed multiplication.
+///
+/// `HAVE_BUILTIN_MUL_OVERFLOW` is not defined in this configuration, and
+/// `INT64_OR_DOUBLE` resolves to `int64_t`. On a 64-bit target
+/// `sizeof(int64_t) > sizeof(PCRE2_SIZE)` is false, so the overflow test is
+/// never taken and the function always reports success — reproduced here
+/// exactly, including the absence of overflow detection.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _pcre2_ckd_smul_8(r: *mut PCRE2_SIZE, a: c_int, b: c_int) -> BOOL {
-    unsafe { ckd_smul(r, a, b) }
+    let m: i64 = (a as i64).wrapping_mul(b as i64);
+
+    if core::mem::size_of::<i64>() > core::mem::size_of::<PCRE2_SIZE>()
+        && m > PCRE2_SIZE_MAX as i64
+    {
+        return TRUE;
+    }
+    unsafe { *r = m as PCRE2_SIZE };
+    FALSE
 }

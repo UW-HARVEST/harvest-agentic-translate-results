@@ -1,0 +1,8 @@
+# The differential tests take over file descriptor 1 to capture what the two
+# shared objects write to C `stdout`. libtest's own progress lines also go to
+# fd 1, from the harness main thread, so concurrent tests would interleave
+# harness text into a capture. Running the tests serially removes that race at
+# the source (the capture helper additionally filters it, but this keeps runs
+# deterministic). Override with `RUST_TEST_THREADS=N` if desired.
+[env]
+RUST_TEST_THREADS = { value = "1", force = false }

@@ -1,0 +1,1522 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200; echo "---"; find . -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+I will run the following command: [38;5;141mls -la[0m[38;5;244m (using tool: shell)[0m
+
+./c_src/CMakeLists.txt
+./c_src/include/lib.h
+./c_src/license.txt
+./c_src/src/lib.c
+./.claude/settings.json
+---
+5
+[38;5;244m - Completed in 0.9s[0m
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 11:54 .
+drwxr-xr-x. 717 scheschb amazon 81920 Sep  1 11:54 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 11:54 .claude
+drwxr-xr-x.   4 scheschb amazon    73 Sep  1 11:54 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 11:54 translation
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/include/lib.h c_src/src/lib.c c_src/CMakeLists.txt; echo "---"; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+    9 c_src/include/lib.h
+  493 c_src/src/lib.c
+   17 c_src/CMakeLists.txt
+  519 total
+---
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+target_link_libraries(${project_name} PRIVATE m)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m204 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m14274 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild && mkdir -p cbuild && cd cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1; tail -3 cm.log; make 2>&1 | tail -20; find . -name "*.so"[0m[38;5;244m (using tool: shell)[0m
+
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cbuild
+[ 50%] Building C object CMakeFiles/harvest-work-EtgoFA.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-EtgoFA.so
+[100%] Built target harvest-work-EtgoFA
+./libharvest-work-EtgoFA.so
+[38;5;244m - Completed in 0.612s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libharvest-work-EtgoFA.so | sort[0m[38;5;244m (using tool: shell)[0m
+
+0000000000002630 T cp_inflate
+0000000000003470 T convert_pix
+0000000000006040 D cp_dist_base
+00000000000060c0 D cp_dist_extra_bits
+00000000000060e0 D cp_len_base
+0000000000006160 D cp_len_extra_bits
+0000000000006180 D cp_permutation_order
+00000000000061a0 D cp_fixed_table
+00000000000062e8 B cp_error_reason
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[38;5;141m> [0mScope is one C file, 9 exported symbols. Writing the Rust crate now.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_EtgoFA"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Full Rust translation of c_src/src/lib.c
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of c_src/src/lib.c (a cut-down cute_png style DEFLATE/PNG helper).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The translation is intentionally literal: every observable behaviour of the C
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! implementation (including its quirks and bugs) is reproduced. `assert()` calls
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! from the C source are treated as no-ops (release / `NDEBUG` semantics), since
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! they have no side effects.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #![allow(non_upper_case_globals)]
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::ptr;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // Public types
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// `struct cp_pixel_t` from include/lib.h
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m pub struct cp_pixel_t {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     pub r: u8,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     pub g: u8,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     pub b: u8,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     pub a: u8,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m fn cp_make_pixel_a(r: u8, g: u8, b: u8, a: u8) -> cp_pixel_t {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     cp_pixel_t { r, g, b, a }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m fn cp_make_pixel(r: u8, g: u8, b: u8) -> cp_pixel_t {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     cp_pixel_t { r, g, b, a: 0xFF }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m // Public (exported, writable) data objects
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m pub static mut cp_error_reason: *const c_char = ptr::null();
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m unsafe fn set_error(msg: &'static [u8]) {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     // msg must be NUL terminated.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     *(&raw mut cp_error_reason) = msg.as_ptr() as *const c_char;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m pub static mut cp_fixed_table: [u8; 288 + 32] = [
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m pub static mut cp_permutation_order: [u8; 19] = [
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m pub static mut cp_len_extra_bits: [u8; 29 + 2] = [
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 0, 0,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m pub static mut cp_len_base: [u32; 29 + 2] = [
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     163, 195, 227, 258, 0, 0,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m pub static mut cp_dist_extra_bits: [u8; 30 + 2] = [
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13,
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     13, 0, 0,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m pub static mut cp_dist_base: [u32; 30 + 2] = [
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537,
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0, 0,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m // Internal image type (unused by the public ABI, kept for fidelity)
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m struct cp_image_t {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     w: c_int,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     h: c_int,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     pix: *mut cp_pixel_t,
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m // Inflate state
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m struct cp_state_t {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     bits: u64,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     count: c_int,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     words: *mut u32,
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     word_count: c_int,
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     word_index: c_int,
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     bits_left: c_int,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     final_word_available: c_int,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     final_word: u32,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     out: *mut c_char,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     out_end: *mut c_char,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     begin: *mut c_char,
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     lookup: [u16; 1 << 9],
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     lit: [u32; 288],
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     dst: [u32; 32],
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     len: [u32; 19],
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     nlit: u32,
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     ndst: u32,
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     nlen: u32,
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m impl cp_state_t {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     fn zeroed() -> cp_state_t {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         cp_state_t {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m             bits: 0,
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             count: 0,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             words: ptr::null_mut(),
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             word_count: 0,
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m             word_index: 0,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             bits_left: 0,
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             final_word_available: 0,
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             final_word: 0,
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m             out: ptr::null_mut(),
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             out_end: ptr::null_mut(),
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             begin: ptr::null_mut(),
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m             lookup: [0; 1 << 9],
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             lit: [0; 288],
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             dst: [0; 32],
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             len: [0; 19],
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             nlit: 0,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m             ndst: 0,
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             nlen: 0,
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m unsafe fn cp_would_overflow(s: *mut cp_state_t, num_bits: c_int) -> c_int {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     let s = &*s;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     (((s.bits_left.wrapping_add(s.count)).wrapping_sub(num_bits)) < 0) as c_int
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m unsafe fn cp_ptr(s: *mut cp_state_t) -> *mut c_char {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let s = &*s;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     // assert(!(s->bits_left & 7));
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     (s.words.offset(s.word_index as isize) as *mut c_char).offset(-((s.count / 8) as isize))
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     let st = &mut *s;
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     if st.count < num_bits_to_read {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         if st.word_index < st.word_count {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             let word = ptr::read(st.words.offset(st.word_index as isize));
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             st.word_index += 1;
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m             st.bits |= (word as u64) << st.count;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m             st.count += 32;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         } else if st.final_word_available != 0 {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m             let word = st.final_word;
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m             st.bits |= (word as u64) << st.count;
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             st.count += st.bits_left;
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m             st.final_word_available = 0;
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     st.bits
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let st = &mut *s;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     // assert(s->count >= num_bits_to_read);
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     let bits = (st.bits & (((1u64) << num_bits_to_read).wrapping_sub(1))) as u32;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     st.bits >>= num_bits_to_read;
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     st.count -= num_bits_to_read;
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     st.bits_left -= num_bits_to_read;
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     bits
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m unsafe fn cp_read_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     // asserts elided (no side effects)
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     cp_peak_bits(s, num_bits_to_read);
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     cp_consume_bits(s, num_bits_to_read)
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m fn cp_rev16(a: u32) -> u32 {
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     let mut a = a;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     a = ((a & 0xAAAA) >> 1) | ((a & 0x5555) << 1);
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     a = ((a & 0xCCCC) >> 2) | ((a & 0x3333) << 2);
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     a = ((a & 0xF0F0) >> 4) | ((a & 0x0F0F) << 4);
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     a = ((a & 0xFF00) >> 8) | ((a & 0x00FF) << 8);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m unsafe fn cp_build(
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     s: *mut cp_state_t,
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     tree: *mut u32,
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     lens: *const u8,
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     sym_count: c_int,
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     // int n, codes[16], first[16], counts[16] = {0};
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     let mut codes: [c_int; 16] = [0; 16];
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     let mut first: [c_int; 16] = [0; 16];
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let mut counts: [c_int; 16] = [0; 16];
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     let mut n: c_int = 0;
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     while n < sym_count {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         let l = ptr::read(lens.offset(n as isize)) as usize;
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         counts[l] += 1;
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         n += 1;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     counts[0] = 0;
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     codes[0] = 0;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     first[0] = 0;
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     for n in 1..=15usize {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         codes[n] = (codes[n - 1].wrapping_add(counts[n - 1])) << 1;
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         first[n] = first[n - 1].wrapping_add(counts[n - 1]);
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     if !s.is_null() {
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         ptr::write_bytes((*s).lookup.as_mut_ptr() as *mut u8, 0, 2 * (1 << 9));
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     while i < sym_count {
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         let len = ptr::read(lens.offset(i as isize)) as c_int;
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m         if len != 0 {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m             // assert(len < 16);
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m             let code = codes[len as usize] as u32;
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m             codes[len as usize] = codes[len as usize].wrapping_add(1);
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m             let slot = first[len as usize] as u32;
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m             first[len as usize] = first[len as usize].wrapping_add(1);
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m             ptr::write(
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m                 tree.offset(slot as isize),
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m                 (code << (32 - len)) | ((i as u32) << 4) | (len as u32),
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m             if !s.is_null() && len <= 9 {
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m                 let mut j: c_int = (cp_rev16(code) >> (16 - len)) as c_int;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m                 while j < (1 << 9) {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m                     (*s).lookup[j as usize] = (((len as u32) << 9) | (i as u32)) as u16;
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m                     j += 1 << len;
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     first[15]
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m unsafe fn cp_stored(s: *mut cp_state_t) -> c_int {
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     let p: *mut c_char;
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     cp_read_bits(s, (*s).count & 7);
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     let len_val = cp_read_bits(s, 16) as u16;
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m     let nlen_val = cp_read_bits(s, 16) as u16;
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     if !(len_val == !nlen_val) {
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         set_error(
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m             b"Failed to find LEN and NLEN as complements within stored (uncompressed) stream.\0",
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     if !((*s).bits_left / 8 <= len_val as c_int) {
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         set_error(b"Stored block extends beyond end of input stream.\0");
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     p = cp_ptr(s);
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m     ptr::copy_nonoverlapping(p as *const u8, (*s).out as *mut u8, len_val as usize);
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     (*s).out = (*s).out.offset(len_val as isize);
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m unsafe fn cp_fixed(s: *mut cp_state_t) -> c_int {
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     let table = (&raw mut cp_fixed_table) as *mut u8;
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     let lit = (*s).lit.as_mut_ptr();
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     (*s).nlit = cp_build(s, lit, table as *const u8, 288) as u32;
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m     let dst = (*s).dst.as_mut_ptr();
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     (*s).ndst = cp_build(
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         ptr::null_mut(),
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m         dst,
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m         table.offset(288) as *const u8,
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m         32,
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     ) as u32;
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m unsafe fn cp_decode(s: *mut cp_state_t, tree: *mut u32, hi: c_int) -> c_int {
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     let bits = cp_peak_bits(s, 16);
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     let search: u32 = (cp_rev16(bits as u32) << 16) | 0xFFFF;
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     let mut lo: c_int = 0;
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     let mut hi = hi;
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m     while lo < hi {
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m         let guess = (lo + hi) >> 1;
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m         if search < ptr::read(tree.offset(guess as isize)) {
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m             hi = guess;
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m             lo = guess + 1;
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     let key = ptr::read(tree.offset((lo - 1) as isize));
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     // assert((search >> len) == (key >> len));
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     let code = cp_consume_bits(s, (key & 0xF) as c_int);
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     let _ = code;
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     ((key >> 4) & 0xFFF) as c_int
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m unsafe fn cp_dynamic(s: *mut cp_state_t) -> c_int {
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     let mut lenlens: [u8; 19] = [0; 19];
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     let nlit: c_int = 257 + cp_read_bits(s, 5) as c_int;
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     let ndst: c_int = 1 + cp_read_bits(s, 5) as c_int;
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     let nlen: c_int = 4 + cp_read_bits(s, 4) as c_int;
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m     let perm = (&raw mut cp_permutation_order) as *mut u8;
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m     for i in 0..nlen {
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m         let idx = ptr::read(perm.offset(i as isize)) as usize;
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m         lenlens[idx] = cp_read_bits(s, 3) as u8;
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m     let lenp = (*s).len.as_mut_ptr();
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     (*s).nlen = cp_build(ptr::null_mut(), lenp, lenlens.as_ptr(), 19) as u32;
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m     // uint8_t lens[288 + 32];
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m     // The C code can run past the end of this array with malformed input (a
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m     // repeat code may overshoot nlit + ndst) and can also read lens[-1] when
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     // symbol 16 appears first. The backing store below is padded on both sides
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m     // so that the arithmetic stays in bounds; for well formed streams the
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m     // behaviour is identical to the C version.
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m     let mut lens_backing: [u8; 1 + (288 + 32) + 160] = [0; 1 + (288 + 32) + 160];
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m     let lens: *mut u8 = lens_backing.as_mut_ptr().offset(1);
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m     let mut n: c_int = 0;
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     while n < nlit + ndst {
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m         let sym = cp_decode(s, (*s).len.as_mut_ptr(), (*s).nlen as c_int);
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m         match sym {
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m             16 => {
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m                 let mut i = 3 + cp_read_bits(s, 2) as c_int;
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m                 while i != 0 {
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m                     ptr::write(
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m                         lens.offset(n as isize),
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m                         ptr::read(lens.offset((n - 1) as isize)),
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m                     );
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m                     i -= 1;
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m                     n += 1;
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m             17 => {
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m                 let mut i = 3 + cp_read_bits(s, 3) as c_int;
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m                 while i != 0 {
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m                     ptr::write(lens.offset(n as isize), 0);
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m                     i -= 1;
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m                     n += 1;
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m             18 => {
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m                 let mut i = 11 + cp_read_bits(s, 7) as c_int;
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m                 while i != 0 {
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m                     ptr::write(lens.offset(n as isize), 0);
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m                     i -= 1;
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m                     n += 1;
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m             _ => {
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m                 ptr::write(lens.offset(n as isize), sym as u8);
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m                 n += 1;
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m     let lit = (*s).lit.as_mut_ptr();
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m     (*s).nlit = cp_build(s, lit, lens as *const u8, nlit) as u32;
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m     let dstp = (*s).dst.as_mut_ptr();
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m     (*s).ndst = cp_build(
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m         ptr::null_mut(),
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m         dstp,
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         lens.offset(nlit as isize) as *const u8,
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m         ndst,
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m     ) as u32;
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m unsafe fn cp_block(s: *mut cp_state_t) -> c_int {
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m         let mut symbol = cp_decode(s, (*s).lit.as_mut_ptr(), (*s).nlit as c_int);
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m         if symbol < 256 {
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m             if !((*s).out.offset(1) <= (*s).out_end) {
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m                 set_error(b"Attempted to overwrite out buffer while outputting a symbol.\0");
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m                 return 0;
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m             ptr::write((*s).out, symbol as c_char);
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m             (*s).out = (*s).out.offset(1);
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m         } else if symbol > 256 {
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m             symbol -= 257;
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m             let len_extra = ptr::read(((&raw mut cp_len_extra_bits) as *const u8).offset(symbol as isize));
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m             let len_base = ptr::read(((&raw mut cp_len_base) as *const u32).offset(symbol as isize));
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m             let length: c_int =
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m                 (cp_read_bits(s, len_extra as c_int) as c_int).wrapping_add(len_base as c_int);
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m             let distance_symbol = cp_decode(s, (*s).dst.as_mut_ptr(), (*s).ndst as c_int);
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m             let dist_extra = ptr::read(
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m                 ((&raw mut cp_dist_extra_bits) as *const u8).offset(distance_symbol as isize),
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m             let dist_base = ptr::read(
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m                 ((&raw mut cp_dist_base) as *const u32).offset(distance_symbol as isize),
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m             let backwards_distance: c_int =
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m                 (cp_read_bits(s, dist_extra as c_int) as c_int).wrapping_add(dist_base as c_int);
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m             if !((*s).out.offset(-(backwards_distance as isize)) >= (*s).begin) {
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m                 set_error(
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m                     b"Attempted to write before out buffer (invalid backwards distance).\0",
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m                 return 0;
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m             if !((*s).out.offset(length as isize) <= (*s).out_end) {
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m                 set_error(b"Attempted to overwrite out buffer while outputting a string.\0");
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m                 return 0;
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m             let mut src = (*s).out.offset(-(backwards_distance as isize));
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m             let mut dst = (*s).out;
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m             (*s).out = (*s).out.offset(length as isize);
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m             match backwards_distance {
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m                 1 => {
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m                     ptr::write_bytes(dst as *mut u8, ptr::read(src as *const u8), length as usize);
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m                 _ => {
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m                     let mut length = length;
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m                     while length != 0 {
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m                         length -= 1;
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m                         ptr::write(dst, ptr::read(src));
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m                         dst = dst.offset(1);
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m                         src = src.offset(1);
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m pub unsafe extern "C" fn cp_inflate(
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m     input: *mut c_void,
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m     in_bytes: c_int,
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m     out: *mut c_void,
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m     out_bytes: c_int,
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m     let boxed: Box<cp_state_t> = Box::new(cp_state_t::zeroed());
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m     let s: *mut cp_state_t = Box::into_raw(boxed);
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m     (*s).bits = 0;
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m     (*s).count = 0;
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m     (*s).word_index = 0;
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m     (*s).bits_left = in_bytes.wrapping_mul(8);
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m     let in_addr = input as usize;
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m     let first_bytes: c_int = (((in_addr.wrapping_add(3)) & !3usize).wrapping_sub(in_addr)) as c_int;
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m     (*s).words = ((input as *mut c_char).offset(first_bytes as isize)) as *mut u32;
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m     (*s).word_count = (in_bytes.wrapping_sub(first_bytes)) / 4;
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m     let last_bytes: c_int = (in_bytes.wrapping_sub(first_bytes)) & 3;
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m     for i in 0..first_bytes {
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m         let b = ptr::read((input as *const u8).offset(i as isize));
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m         (*s).bits |= (b as u64) << (i * 8);
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m     (*s).final_word_available = if last_bytes != 0 { 1 } else { 0 };
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m     (*s).final_word = 0;
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m     for i in 0..last_bytes {
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m         let b = ptr::read(
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m             (input as *const u8).offset((in_bytes.wrapping_sub(last_bytes) + i) as isize),
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m         (*s).final_word |= ((b as c_int) << (i * 8)) as u32;
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m     (*s).count = first_bytes.wrapping_mul(8);
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m     (*s).out = out as *mut c_char;
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m     (*s).out_end = (*s).out.offset(out_bytes as isize);
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m     (*s).begin = out as *mut c_char;
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m     let mut count: c_int = 0;
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m     let mut bfinal: c_int;
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m     let mut ok = true;
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m         bfinal = cp_read_bits(s, 1) as c_int;
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m         let btype = cp_read_bits(s, 2) as c_int;
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m         match btype {
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m             0 => {
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m                 if cp_stored(s) == 0 {
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m                     ok = false;
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m                 cp_fixed(s);
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m                 if cp_block(s) == 0 {
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m                     ok = false;
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m                 cp_dynamic(s);
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m                 if cp_block(s) == 0 {
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m                     ok = false;
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m                 set_error(b"Detected unknown block type within input stream.\0");
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m                 ok = false;
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m             _ => {}
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m         count = count.wrapping_add(1);
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m         if bfinal != 0 {
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m     let _ = count;
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     drop(Box::from_raw(s));
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m     if ok {
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m         1
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m // PNG helpers (all `static` in C, so not part of the exported ABI)
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m fn cp_paeth(a: u8, b: u8, c: u8) -> u8 {
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m     let p: c_int = a as c_int + b as c_int - c as c_int;
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m     let pa = (p - a as c_int).abs();
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m     let pb = (p - b as c_int).abs();
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m     let pc = (p - c as c_int).abs();
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m     if pa <= pb && pa <= pc {
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m         a
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m     } else if pb <= pc {
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m         b
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m         c
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m struct cp_raw_png_t {
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m     p: *const u8,
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m     end: *const u8,
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m unsafe fn cp_make32(s: *const u8) -> u32 {
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m     ((ptr::read(s.offset(0)) as u32) << 24)
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m         | ((ptr::read(s.offset(1)) as u32) << 16)
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m         | ((ptr::read(s.offset(2)) as u32) << 8)
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m         | (ptr::read(s.offset(3)) as u32)
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m unsafe fn cp_memcmp4(a: *const u8, b: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m     for i in 0..4isize {
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m         let x = ptr::read(a.offset(i));
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m         let y = ptr::read(b.offset(i) as *const u8);
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m         if x != y {
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m             return if x < y { -1 } else { 1 };
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m unsafe fn cp_chunk(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> *const u8 {
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m     let len = cp_make32((*png).p);
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m     let start = (*png).p;
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m     if cp_memcmp4(start.offset(4), chunk) == 0 && len >= minlen {
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m         let offset = len.wrapping_add(12) as c_int;
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m         if (*png).p.offset(offset as isize) <= (*png).end {
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m             (*png).p = (*png).p.offset(offset as isize);
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m             return start.offset(8);
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m     ptr::null()
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m unsafe fn cp_find(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> *const u8 {
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m     while (*png).p < (*png).end {
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m         let len = cp_make32((*png).p);
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m         let start = (*png).p;
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m         (*png).p = (*png).p.offset(len.wrapping_add(12) as isize);
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m         if cp_memcmp4(start.offset(4), chunk) == 0 && len >= minlen && (*png).p <= (*png).end {
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m             return start.offset(8);
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m     ptr::null()
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m unsafe fn cp_unfilter(w: c_int, h: c_int, bpp: c_int, raw: *mut u8) -> c_int {
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m     let len: c_int = w.wrapping_mul(bpp);
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m     let mut raw = raw;
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m     let prev0: *mut u8;
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m     let mut x: c_int;
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m     if h > 0 {
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m         let f = ptr::read(raw);
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m         raw = raw.offset(1);
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m         match f {
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m             0 => {}
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m                 x = bpp;
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m                     let v = ptr::read(raw.offset((x - bpp) as isize));
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m             2 => {}
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m                 x = bpp;
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m                     let v = ptr::read(raw.offset((x - bpp) as isize)) / 2;
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m             4 => {
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m                 x = bpp;
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m                     let v = cp_paeth(ptr::read(raw.offset((x - bpp) as isize)), 0, 0);
+[0m[49m[38;5;10m+    639[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    640[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    641[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    642[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    643[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    644[0m:[38;5;10m[49m             _ => return 0,
+[0m[49m[38;5;10m+    645[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    646[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    647[0m:[38;5;10m[49m     prev0 = raw;
+[0m[49m[38;5;10m+    648[0m:[38;5;10m[49m     let mut prev = prev0;
+[0m[49m[38;5;10m+    649[0m:[38;5;10m[49m     raw = raw.offset(len as isize);
+[0m[49m[38;5;10m+    650[0m:[38;5;10m[49m     let mut y: c_int = 1;
+[0m[49m[38;5;10m+    651[0m:[38;5;10m[49m     while y < h {
+[0m[49m[38;5;10m+    652[0m:[38;5;10m[49m         let f = ptr::read(raw);
+[0m[49m[38;5;10m+    653[0m:[38;5;10m[49m         raw = raw.offset(1);
+[0m[49m[38;5;10m+    654[0m:[38;5;10m[49m         match f {
+[0m[49m[38;5;10m+    655[0m:[38;5;10m[49m             0 => {}
+[0m[49m[38;5;10m+    656[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+    657[0m:[38;5;10m[49m                 x = 0;
+[0m[49m[38;5;10m+    658[0m:[38;5;10m[49m                 while x < bpp {
+[0m[49m[38;5;10m+    659[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    660[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(0));
+[0m[49m[38;5;10m+    661[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    662[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    663[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    664[0m:[38;5;10m[49m                     let v = ptr::read(raw.offset((x - bpp) as isize));
+[0m[49m[38;5;10m+    665[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    666[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    667[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    668[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    669[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    670[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+    671[0m:[38;5;10m[49m                 x = 0;
+[0m[49m[38;5;10m+    672[0m:[38;5;10m[49m                 while x < bpp {
+[0m[49m[38;5;10m+    673[0m:[38;5;10m[49m                     let v = ptr::read(prev.offset(x as isize));
+[0m[49m[38;5;10m+    674[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    675[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    676[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    677[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    678[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    679[0m:[38;5;10m[49m                     let v = ptr::read(prev.offset(x as isize));
+[0m[49m[38;5;10m+    680[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    681[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    682[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    683[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    684[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    685[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+    686[0m:[38;5;10m[49m                 x = 0;
+[0m[49m[38;5;10m+    687[0m:[38;5;10m[49m                 while x < bpp {
+[0m[49m[38;5;10m+    688[0m:[38;5;10m[49m                     let v = ptr::read(prev.offset(x as isize)) / 2;
+[0m[49m[38;5;10m+    689[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    690[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    691[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    692[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    693[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    694[0m:[38;5;10m[49m                     let a = ptr::read(raw.offset((x - bpp) as isize)) as c_int;
+[0m[49m[38;5;10m+    695[0m:[38;5;10m[49m                     let b = ptr::read(prev.offset(x as isize)) as c_int;
+[0m[49m[38;5;10m+    696[0m:[38;5;10m[49m                     let v = ((a + b) / 2) as u8;
+[0m[49m[38;5;10m+    697[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    698[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    699[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    700[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    701[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    702[0m:[38;5;10m[49m             4 => {
+[0m[49m[38;5;10m+    703[0m:[38;5;10m[49m                 x = 0;
+[0m[49m[38;5;10m+    704[0m:[38;5;10m[49m                 while x < bpp {
+[0m[49m[38;5;10m+    705[0m:[38;5;10m[49m                     let v = ptr::read(prev.offset(x as isize));
+[0m[49m[38;5;10m+    706[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    707[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    708[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    709[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    710[0m:[38;5;10m[49m                 while x < len {
+[0m[49m[38;5;10m+    711[0m:[38;5;10m[49m                     let v = cp_paeth(
+[0m[49m[38;5;10m+    712[0m:[38;5;10m[49m                         ptr::read(raw.offset((x - bpp) as isize)),
+[0m[49m[38;5;10m+    713[0m:[38;5;10m[49m                         ptr::read(prev.offset(x as isize)),
+[0m[49m[38;5;10m+    714[0m:[38;5;10m[49m                         ptr::read(prev.offset((x - bpp) as isize)),
+[0m[49m[38;5;10m+    715[0m:[38;5;10m[49m                     );
+[0m[49m[38;5;10m+    716[0m:[38;5;10m[49m                     let cur = ptr::read(raw.offset(x as isize));
+[0m[49m[38;5;10m+    717[0m:[38;5;10m[49m                     ptr::write(raw.offset(x as isize), cur.wrapping_add(v));
+[0m[49m[38;5;10m+    718[0m:[38;5;10m[49m                     x += 1;
+[0m[49m[38;5;10m+    719[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    720[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    721[0m:[38;5;10m[49m             _ => return 0,
+[0m[49m[38;5;10m+    722[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    723[0m:[38;5;10m[49m         y += 1;
+[0m[49m[38;5;10m+    724[0m:[38;5;10m[49m         prev = raw;
+[0m[49m[38;5;10m+    725[0m:[38;5;10m[49m         raw = raw.offset(len as isize);
+[0m[49m[38;5;10m+    726[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    727[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    728[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    729[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    730[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    731[0m:[38;5;10m[49m // convert_pix (public)
+[0m[49m[38;5;10m+    732[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    733[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    734[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    735[0m:[38;5;10m[49m pub unsafe extern "C" fn convert_pix(
+[0m[49m[38;5;10m+    736[0m:[38;5;10m[49m     bpp: c_int,
+[0m[49m[38;5;10m+    737[0m:[38;5;10m[49m     w: c_int,
+[0m[49m[38;5;10m+    738[0m:[38;5;10m[49m     h: c_int,
+[0m[49m[38;5;10m+    739[0m:[38;5;10m[49m     src: *mut u8,
+[0m[49m[38;5;10m+    740[0m:[38;5;10m[49m     dst: *mut cp_pixel_t,
+[0m[49m[38;5;10m+    741[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    742[0m:[38;5;10m[49m     let mut src = src;
+[0m[49m[38;5;10m+    743[0m:[38;5;10m[49m     let mut dst = dst;
+[0m[49m[38;5;10m+    744[0m:[38;5;10m[49m     let mut y: c_int = 0;
+[0m[49m[38;5;10m+    745[0m:[38;5;10m[49m     while y < h {
+[0m[49m[38;5;10m+    746[0m:[38;5;10m[49m         src = src.offset(1);
+[0m[49m[38;5;10m+    747[0m:[38;5;10m[49m         let mut x: c_int = 0;
+[0m[49m[38;5;10m+    748[0m:[38;5;10m[49m         while x < w {
+[0m[49m[38;5;10m+    749[0m:[38;5;10m[49m             match bpp {
+[0m[49m[38;5;10m+    750[0m:[38;5;10m[49m                 1 => {
+[0m[49m[38;5;10m+    751[0m:[38;5;10m[49m                     let v = ptr::read(src.offset(0));
+[0m[49m[38;5;10m+    752[0m:[38;5;10m[49m                     ptr::write(dst, cp_make_pixel(v, v, v));
+[0m[49m[38;5;10m+    753[0m:[38;5;10m[49m                     dst = dst.offset(1);
+[0m[49m[38;5;10m+    754[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    755[0m:[38;5;10m[49m                 2 => {
+[0m[49m[38;5;10m+    756[0m:[38;5;10m[49m                     let v = ptr::read(src.offset(0));
+[0m[49m[38;5;10m+    757[0m:[38;5;10m[49m                     let a = ptr::read(src.offset(1));
+[0m[49m[38;5;10m+    758[0m:[38;5;10m[49m                     ptr::write(dst, cp_make_pixel_a(v, v, v, a));
+[0m[49m[38;5;10m+    759[0m:[38;5;10m[49m                     dst = dst.offset(1);
+[0m[49m[38;5;10m+    760[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    761[0m:[38;5;10m[49m                 3 => {
+[0m[49m[38;5;10m+    762[0m:[38;5;10m[49m                     let r = ptr::read(src.offset(0));
+[0m[49m[38;5;10m+    763[0m:[38;5;10m[49m                     let g = ptr::read(src.offset(1));
+[0m[49m[38;5;10m+    764[0m:[38;5;10m[49m                     let b = ptr::read(src.offset(2));
+[0m[49m[38;5;10m+    765[0m:[38;5;10m[49m                     ptr::write(dst, cp_make_pixel(r, g, b));
+[0m[49m[38;5;10m+    766[0m:[38;5;10m[49m                     dst = dst.offset(1);
+[0m[49m[38;5;10m+    767[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    768[0m:[38;5;10m[49m                 4 => {
+[0m[49m[38;5;10m+    769[0m:[38;5;10m[49m                     let r = ptr::read(src.offset(0));
+[0m[49m[38;5;10m+    770[0m:[38;5;10m[49m                     let g = ptr::read(src.offset(1));
+[0m[49m[38;5;10m+    771[0m:[38;5;10m[49m                     let b = ptr::read(src.offset(2));
+[0m[49m[38;5;10m+    772[0m:[38;5;10m[49m                     let a = ptr::read(src.offset(3));
+[0m[49m[38;5;10m+    773[0m:[38;5;10m[49m                     ptr::write(dst, cp_make_pixel_a(r, g, b, a));
+[0m[49m[38;5;10m+    774[0m:[38;5;10m[49m                     dst = dst.offset(1);
+[0m[49m[38;5;10m+    775[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    776[0m:[38;5;10m[49m                 _ => {}
+[0m[49m[38;5;10m+    777[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    778[0m:[38;5;10m[49m             x += 1;
+[0m[49m[38;5;10m+    779[0m:[38;5;10m[49m             src = src.offset(bpp as isize);
+[0m[49m[38;5;10m+    780[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    781[0m:[38;5;10m[49m         y += 1;
+[0m[49m[38;5;10m+    782[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    783[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation)
+error[E0308]: mismatched types
+  --> src/lib.rs:53:49
+   |
+53 |   pub static mut cp_fixed_table: [u8; 288 + 32] = [
+   |  ________________________________--------------___^
+   | |                                |
+   | |                                expected because of the type of the static
+54 | |     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+55 | |     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+56 | |     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+...  |
+64 | |     5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+65 | | ];
+   | |_^ expected an array with a size of 320, found one with a size of 326
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `translation` (lib) due to 1 previous error
+[38;5;244m - Completed in 0.121s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-EtgoFA && python3 - <<'EOF'
+import re
+src=open('c_src/src/lib.c').read()
+m=re.search(r'cp_fixed_table\[288 \+ 32\] = \{(.*?)\};', src, re.S)
+vals=[int(x) for x in re.findall(r'\d+', m.group(1))]
+print(len(vals))
+from itertools import groupby
+print([(k,len(list(g))) for k,g in groupby(vals)])
+# emit rust rows of 32
+rows=[', '.join(str(v) for v in vals[i:i+32]) for i in range(0,len(vals),32)]
+open('/tmp/table.txt','w').write('\n'.join('    '+r+',' for r in rows))
+EOF
+cat /tmp/table.txt[0m[38;5;244m (using tool: shell)[0m
+
+320
+[(8, 144), (9, 112), (7, 24), (8, 8), (5, 32)]
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,[38;5;244m - Completed in 0.24s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation && python3 - <<'EOF'
+import re
+p='src/lib.rs'
+s=open(p).read()
+table=open('/tmp/table.txt').read().rstrip('\n')
+new = "pub static mut cp_fixed_table: [u8; 288 + 32] = [\n" + table + "\n];"
+s2 = re.sub(r'pub static mut cp_fixed_table: \[u8; 288 \+ 32\] = \[.*?\];', new, s, flags=re.S)
+assert s2 != s
+open(p,'w').write(s2)
+EOF
+cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation)
+warning: crate `harvest_work_EtgoFA` should have a snake case name
+  |
+  = help: convert the identifier to snake case: `harvest_work_etgo_fa`
+  = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `translation` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.22s
+[38;5;244m - Completed in 0.262s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds. Now the symbol diff:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-EtgoFA && nm -D --defined-only /tmp/cbuild/libharvest-work-EtgoFA.so | awk '{print $2, $3}' | sort > /tmp/c.syms && nm -D --defined-only translation/target/release/libharvest_work_EtgoFA.so | awk '{print $2, $3}' | sort > /tmp/r.syms && echo "=== C ==="; cat /tmp/c.syms; echo "=== RUST ==="; cat /tmp/r.syms; echo "=== DIFF (names only) ==="; diff <(awk '{print $2}' /tmp/c.syms) <(awk '{print $2}' /tmp/r.syms) && echo "NO DIFF"[0m[38;5;244m (using tool: shell)[0m
+
+=== C ===
+B cp_error_reason
+D cp_dist_base
+D cp_dist_extra_bits
+D cp_fixed_table
+D cp_len_base
+D cp_len_extra_bits
+D cp_permutation_order
+T convert_pix
+T cp_inflate
+=== RUST ===
+B cp_error_reason
+D cp_dist_base
+D cp_dist_extra_bits
+D cp_fixed_table
+D cp_len_base
+D cp_len_extra_bits
+D cp_permutation_order
+T convert_pix
+T cp_inflate
+=== DIFF (names only) ===
+NO DIFF
+[38;5;244m - Completed in 0.38s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls /usr/include/zlib.h 2>&1; nm --defined-only -S /tmp/cbuild/libharvest-work-EtgoFA.so | grep -v " t \| d \| b " | sort -k3[0m[38;5;244m (using tool: shell)[0m
+
+/usr/include/zlib.h
+00000000000062e8 0000000000000008 B cp_error_reason
+0000000000006040 0000000000000080 D cp_dist_base
+00000000000060c0 0000000000000020 D cp_dist_extra_bits
+00000000000061a0 0000000000000140 D cp_fixed_table
+00000000000060e0 000000000000007c D cp_len_base
+0000000000006160 000000000000001f D cp_len_extra_bits
+0000000000006180 0000000000000013 D cp_permutation_order
+0000000000003470 0000000000000118 T convert_pix
+0000000000002630 0000000000000e34 T cp_inflate
+00000000000043b0 r __FRAME_END__
+000000000000418c r __GNU_EH_FRAME_HDR
+[38;5;244m - Completed in 0.21s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-EtgoFA && nm --defined-only -S translation/target/release/libharvest_work_EtgoFA.so | grep -E " [BDT] " | sort -k3[0m[38;5;244m (using tool: shell)[0m
+
+000000000004ff70 0000000000000008 B cp_error_reason
+000000000004f4fc 0000000000000080 D cp_dist_base
+000000000004f368 0000000000000020 D cp_dist_extra_bits
+000000000004f388 0000000000000140 D cp_fixed_table
+000000000004f57c 000000000000007c D cp_len_base
+000000000004f4c8 000000000000001f D cp_len_extra_bits
+000000000004f4e7 0000000000000013 D cp_permutation_order
+00000000000122f0 0000000000000300 T convert_pix
+00000000000125f0 0000000000000d94 T cp_inflate
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol names, types, and data sizes all match. Now differential testing against the C library:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/main.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust libraries
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential harness: dlopen both libs, compare cp_inflate / convert_pix / globals.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <zlib.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m   uint8_t r, g, b, a;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m } pix_t;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m typedef int (*inflate_fn)(void *, int, void *, int);
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m typedef void (*convert_fn)(int, int, int, uint8_t *, pix_t *);
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m   void *h;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m   inflate_fn inf;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m   convert_fn cvt;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   const char **err;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m   uint8_t *fixed_table;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m   uint8_t *perm;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m   uint8_t *len_extra;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m   uint32_t *len_base;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m   uint8_t *dist_extra;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m   uint32_t *dist_base;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m } lib_t;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m static void load(lib_t *l, const char *path) {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m   l->h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m   if (!l->h) {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     fprintf(stderr, "dlopen %s: %s\n", path, dlerror());
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     exit(2);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m #define SYM(f, n)                                                              \
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m   l->f = dlsym(l->h, n);                                                       \
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m   if (!l->f) {                                                                 \
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     fprintf(stderr, "missing %s in %s\n", n, path);                            \
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     exit(2);                                                                   \
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m   SYM(inf, "cp_inflate")
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m   SYM(cvt, "convert_pix")
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m   SYM(err, "cp_error_reason")
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m   SYM(fixed_table, "cp_fixed_table")
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m   SYM(perm, "cp_permutation_order")
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m   SYM(len_extra, "cp_len_extra_bits")
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m   SYM(len_base, "cp_len_base")
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m   SYM(dist_extra, "cp_dist_extra_bits")
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m   SYM(dist_base, "cp_dist_base")
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m #undef SYM
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m static int failures = 0;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m static int cases = 0;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m static void cmp_tables(lib_t *a, lib_t *b) {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m   if (memcmp(a->fixed_table, b->fixed_table, 320)) {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     printf("FAIL cp_fixed_table differs\n");
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m   if (memcmp(a->perm, b->perm, 19)) {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     printf("FAIL cp_permutation_order differs\n");
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m   if (memcmp(a->len_extra, b->len_extra, 31)) {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     printf("FAIL cp_len_extra_bits differs\n");
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m   if (memcmp(a->len_base, b->len_base, 31 * 4)) {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     printf("FAIL cp_len_base differs\n");
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m   if (memcmp(a->dist_extra, b->dist_extra, 32)) {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     printf("FAIL cp_dist_extra_bits differs\n");
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m   if (memcmp(a->dist_base, b->dist_base, 32 * 4)) {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     printf("FAIL cp_dist_base differs\n");
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     failures++;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m   printf("tables: compared (initial values)\n");
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m // run cp_inflate in both libs; compare rv, out bytes, error string
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m static void run_inflate(lib_t *A, lib_t *B, const char *tag, const uint8_t *in,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                         int in_bytes, int out_bytes, int align_off) {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m   cases++;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m   size_t pad = 64;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m   uint8_t *ba = malloc(in_bytes + pad), *bb = malloc(in_bytes + pad);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m   uint8_t *ia = ba + align_off, *ib = bb + align_off;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m   memset(ba, 0, in_bytes + pad);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m   memset(bb, 0, in_bytes + pad);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m   memcpy(ia, in, in_bytes);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m   memcpy(ib, in, in_bytes);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m   uint8_t *oa = calloc(1, out_bytes + 16), *ob = calloc(1, out_bytes + 16);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m   *A->err = NULL;
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m   *B->err = NULL;
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m   int ra = A->inf(ia, in_bytes, oa, out_bytes);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m   int rb = B->inf(ib, in_bytes, ob, out_bytes);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m   const char *ea = *A->err, *eb = *B->err;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m   int bad = 0;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m   if (ra != rb) {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     printf("FAIL[%s off=%d] rv %d vs %d\n", tag, align_off, ra, rb);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     bad = 1;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m   if (memcmp(oa, ob, out_bytes + 16)) {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     int i = 0;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     while (i < out_bytes + 16 && oa[i] == ob[i])
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m       i++;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     printf("FAIL[%s off=%d] out differs at %d: %02x vs %02x\n", tag, align_off,
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m            i, oa[i], ob[i]);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     bad = 1;
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m   if ((ea == NULL) != (eb == NULL) || (ea && eb && strcmp(ea, eb))) {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     printf("FAIL[%s off=%d] err '%s' vs '%s'\n", tag, align_off,
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m            ea ? ea : "(null)", eb ? eb : "(null)");
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     bad = 1;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m   // input buffers must not be mutated differently either
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m   if (memcmp(ba, bb, in_bytes + pad)) {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     printf("FAIL[%s off=%d] input buffer differs after call\n", tag, align_off);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     bad = 1;
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m   failures += bad;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m   free(ba);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m   free(bb);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m   free(oa);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m   free(ob);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m static uint32_t rnd_state = 12345;
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m   rnd_state = rnd_state * 1103515245u + 12345u;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m   return (rnd_state >> 8);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m static void deflate_raw(const uint8_t *data, int n, int level, int strategy,
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                         uint8_t **outp, int *outn) {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m   z_stream zs;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m   memset(&zs, 0, sizeof zs);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m   deflateInit2(&zs, level, Z_DEFLATED, -15, 9, strategy);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m   uLong cap = deflateBound(&zs, n) + 64;
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m   uint8_t *out = malloc(cap);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m   zs.next_in = (Bytef *)data;
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m   zs.avail_in = n;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m   zs.next_out = out;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m   zs.avail_out = cap;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m   int r = deflate(&zs, Z_FINISH);
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m   if (r != Z_STREAM_END) {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     fprintf(stderr, "deflate failed %d\n", r);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     exit(3);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m   *outn = (int)zs.total_out;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m   deflateEnd(&zs);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m   *outp = out;
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m   lib_t A, B;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m   load(&A, argv[1]);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m   load(&B, argv[2]);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m   cmp_tables(&A, &B);
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m   int levels[] = {0, 1, 6, 9};
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m   int strategies[] = {Z_DEFAULT_STRATEGY, Z_FIXED, Z_HUFFMAN_ONLY, Z_RLE};
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m   const char *sname[] = {"default", "fixed", "huffonly", "rle"};
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m   // deterministic + random payloads of many sizes
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m   for (int iter = 0; iter < 300; iter++) {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     int n = (iter < 40) ? iter : (int)(rnd() % 40000) + 1;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     uint8_t *data = malloc(n ? n : 1);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     int kind = iter % 5;
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     for (int i = 0; i < n; i++) {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m       switch (kind) {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m       case 0:
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         data[i] = (uint8_t)rnd();
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         break; // incompressible
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m       case 1:
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         data[i] = 'A';
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         break; // run
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m       case 2:
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         data[i] = (uint8_t)(i % 7);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         break; // periodic
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m       case 3:
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         data[i] = (uint8_t)("hello world, this is a test string. " [i % 36]);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m       case 4:
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         data[i] = (uint8_t)(rnd() % 4);
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         break; // low entropy
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m       }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     for (size_t li = 0; li < sizeof levels / sizeof *levels; li++)
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m       for (size_t si = 0; si < sizeof strategies / sizeof *strategies; si++) {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         uint8_t *cz;
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         int czn;
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         deflate_raw(data, n, levels[li], strategies[si], &cz, &czn);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         char tag[128];
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         snprintf(tag, sizeof tag, "n=%d kind=%d lvl=%d %s", n, kind, levels[li],
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m                  sname[si]);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         for (int off = 0; off < 4; off++)
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m           run_inflate(&A, &B, tag, cz, czn, n + 1, off);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         // truncated output buffer -> error paths
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         if (n > 4) {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m           snprintf(tag, sizeof tag, "n=%d kind=%d lvl=%d %s SHORTOUT", n, kind,
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m                    levels[li], sname[si]);
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m           run_inflate(&A, &B, tag, cz, czn, n / 2, 1);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m           run_inflate(&A, &B, tag, cz, czn, 1, 0);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         // truncated input
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         if (czn > 6) {
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m           snprintf(tag, sizeof tag, "n=%d kind=%d lvl=%d %s SHORTIN", n, kind,
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m                    levels[li], sname[si]);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m           run_inflate(&A, &B, tag, cz, czn - 3, n + 1, 2);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         free(cz);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m       }
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     free(data);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m   // hand crafted streams: bad block type, stored with bad LEN/NLEN, empty
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m   {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     uint8_t bad_btype[] = {0x07, 0x00, 0x00, 0x00, 0x00};
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     run_inflate(&A, &B, "badtype", bad_btype, sizeof bad_btype, 64, 0);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     uint8_t stored_bad[] = {0x01, 0x05, 0x00, 0x05, 0x00, 1, 2, 3, 4, 5};
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     run_inflate(&A, &B, "stored_bad_nlen", stored_bad, sizeof stored_bad, 64, 0);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     uint8_t stored_ok[] = {0x01, 0x05, 0x00, 0xFA, 0xFF, 1, 2, 3, 4, 5};
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     for (int off = 0; off < 4; off++)
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m       run_inflate(&A, &B, "stored_ok", stored_ok, sizeof stored_ok, 64, off);
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     uint8_t tiny[] = {0x03, 0x00};
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     for (int off = 0; off < 4; off++)
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m       run_inflate(&A, &B, "empty_fixed", tiny, sizeof tiny, 8, off);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     uint8_t one[] = {0x01};
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     run_inflate(&A, &B, "onebyte", one, 1, 8, 1);
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     uint8_t zero[] = {0x00};
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     run_inflate(&A, &B, "zerobyte", zero, 1, 8, 3);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m   // convert_pix
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m   for (int iter = 0; iter < 500; iter++) {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     int w = (int)(rnd() % 33), h = (int)(rnd() % 17), bpp = (int)(rnd() % 7);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     int stride = w * bpp + 1;
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     int srcn = stride * h + 16;
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     uint8_t *src = malloc(srcn ? srcn : 1);
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     for (int i = 0; i < srcn; i++)
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m       src[i] = (uint8_t)rnd();
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     int npix = (w * h) + 8;
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     pix_t *pa = calloc(npix, sizeof(pix_t)), *pb = calloc(npix, sizeof(pix_t));
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     A.cvt(bpp, w, h, src, pa);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     B.cvt(bpp, w, h, src, pb);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     cases++;
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     if (memcmp(pa, pb, npix * sizeof(pix_t))) {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m       printf("FAIL convert_pix bpp=%d w=%d h=%d\n", bpp, w, h);
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m       failures++;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     free(src);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     free(pa);
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     free(pb);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m   printf("\ncases=%d failures=%d\n", cases, failures);
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m   return failures != 0;
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest/main.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && gcc -O1 -g -o difftest main.c -ldl -lz 2>&1 | head -20 && ./difftest /tmp/cbuild/libharvest-work-EtgoFA.so /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/target/release/libharvest_work_EtgoFA.so 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+double free or corruption (!prev)
+[38;5;244m - Completed in 3.205s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/difftest/main.c[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m-  96     [0m:[38;5;9m[49m   uint8_t *oa = calloc(1, out_bytes + 16), *ob = calloc(1, out_bytes + 16);
+[0m[49m[38;5;10m+       96[0m:[38;5;10m[49m   // Generous arena: the C code can legitimately (per its own bugs) write past
+[0m[49m[38;5;10m+       97[0m:[38;5;10m[49m   // out_bytes in a stored block, so give both libs identical slack and compare
+[0m[49m[38;5;10m+       98[0m:[38;5;10m[49m   // the whole arena.
+[0m[49m[38;5;10m+       99[0m:[38;5;10m[49m   size_t arena = 1u << 20;
+[0m[49m[38;5;10m+      100[0m:[38;5;10m[49m   uint8_t *oa = calloc(1, arena), *ob = calloc(1, arena);
+[0m[49m[39m   97, 101[0m:[39m[49m   *A->err = NULL;
+[0m[49m[39m   98, 102[0m:[39m[49m   *B->err = NULL;
+[0m[49m[39m   99, 103[0m:[39m[49m   int ra = A->inf(ia, in_bytes, oa, out_bytes);
+[0m[49m[39m  100, 104[0m:[39m[49m   int rb = B->inf(ib, in_bytes, ob, out_bytes);
+[0m[49m[39m  101, 105[0m:[39m[49m   const char *ea = *A->err, *eb = *B->err;
+[0m[49m[39m  102, 106[0m:[39m[49m   int bad = 0;
+[0m[49m[39m  103, 107[0m:[39m[49m   if (ra != rb) {
+[0m[49m[39m  104, 108[0m:[39m[49m     printf("FAIL[%s off=%d] rv %d vs %d\n", tag, align_off, ra, rb);
+[0m[49m[39m  105, 109[0m:[39m[49m     bad = 1;
+[0m[49m[39m  106, 110[0m:[39m[49m   }
+[0m[49m[38;5;9m- 107     [0m:[38;5;9m[49m   if (memcmp(oa, ob, out_bytes + 16)) {
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m   if (memcmp(oa, ob, arena)) {
+[0m[49m[39m  108, 112[0m:[39m[49m     int i = 0;
+[0m[49m[38;5;9m- 109     [0m:[38;5;9m[49m     while (i < out_bytes + 16 && oa[i] == ob[i])
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m     while ((size_t)i < arena && oa[i] == ob[i])
+[0m[49m[39m  110, 114[0m:[39m[49m       i++;
+[0m[K
+Updating: [38;5;141m/tmp/difftest/main.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && gcc -O1 -g -o difftest main.c -ldl -lz 2>&1 | head && ./difftest /tmp/cbuild/libharvest-work-EtgoFA.so /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/target/release/libharvest_work_EtgoFA.so 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+
+tables: compared (initial values)
+
+cases=33821 failures=0
+[38;5;244m - Completed in 13.827s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild_dbg && mkdir cbuild_dbg && cd cbuild_dbg && cmake /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src >/dev/null 2>&1 && make 2>&1 | tail -2 && cd /tmp/difftest && ./difftest /tmp/cbuild_dbg/libharvest-work-EtgoFA.so /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/target/release/libharvest_work_EtgoFA.so 2>&1 | tail -10[0m[38;5;244m (using tool: shell)[0m
+
+[100%] Linking C shared library libharvest-work-EtgoFA.so
+[100%] Built target harvest-work-EtgoFA
+difftest: /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src/src/lib.c:109: cp_consume_bits: Assertion `s->count >= num_bits_to_read' failed.
+[38;5;244m - Completed in 1.366s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && cat > which.c <<'EOF'
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <zlib.h>
+typedef int (*inflate_fn)(void*,int,void*,int);
+int main(int argc,char**argv){
+  void*h=dlopen(argv[1],RTLD_NOW); inflate_fn inf=dlsym(h,"cp_inflate");
+  // replicate: valid-only streams, full out buffer
+  uint32_t st=12345;
+  #define RND() (st=st*1103515245u+12345u, st>>8)
+  int levels[]={0,1,6,9}; int strat[]={Z_DEFAULT_STRATEGY,Z_FIXED,Z_HUFFMAN_ONLY,Z_RLE};
+  int mode=atoi(argv[2]); // 0=valid only, 1=+shortout, 2=+shortin
+  for(int iter=0;iter<300;iter++){
+    int n=(iter<40)?iter:(int)(RND()%40000)+1; uint8_t*data=malloc(n?n:1); int kind=iter%5;
+    for(int i=0;i<n;i++){switch(kind){case 0:data[i]=(uint8_t)RND();break;case 1:data[i]='A';break;case 2:data[i]=(uint8_t)(i%7);break;case 3:data[i]=(uint8_t)("hello world, this is a test string. "[i%36]);break;case 4:data[i]=(uint8_t)(RND()%4);break;}}
+    for(int li=0;li<4;li++)for(int si=0;si<4;si++){
+      z_stream zs; memset(&zs,0,sizeof zs); deflateInit2(&zs,levels[li],Z_DEFLATED,-15,9,strat[si]);
+      uLong cap=deflateBound(&zs,n)+64; uint8_t*cz=malloc(cap);
+      zs.next_in=data; zs.avail_in=n; zs.next_out=cz; zs.avail_out=cap; deflate(&zs,Z_FINISH); int czn=zs.total_out; deflateEnd(&zs);
+      for(int off=0;off<4;off++){
+        uint8_t*ib=calloc(1,czn+64); memcpy(ib+off,cz,czn); uint8_t*o=calloc(1,1u<<20);
+        fprintf(stderr,"VALID n=%d kind=%d lvl=%d si=%d off=%d\n",n,kind,levels[li],si,off);
+        inf(ib+off,czn,o,n+1); free(ib);free(o);
+      }
+      if(mode>=1&&n>4){ for(int k=0;k<2;k++){int ob=k?1:n/2; uint8_t*ib=calloc(1,czn+64);memcpy(ib+1,cz,czn);uint8_t*o=calloc(1,1u<<20);
+        fprintf(stderr,"SHORTOUT n=%d lvl=%d si=%d ob=%d\n",n,levels[li],si,ob); inf(ib+1,czn,o,ob); free(ib);free(o);} }
+      if(mode>=2&&czn>6){ uint8_t*ib=calloc(1,czn+64);memcpy(ib+2,cz,czn-3);uint8_t*o=calloc(1,1u<<20);
+        fprintf(stderr,"SHORTIN n=%d lvl=%d si=%d\n",n,levels[li],si); inf(ib+2,czn-3,o,n+1); free(ib);free(o);}
+      free(cz);
+    }
+    free(data);
+  }
+  printf("done mode=%d\n",mode); return 0;
+}
+EOF
+gcc -O1 -o which which.c -ldl -lz && for m in 0 1 2; do echo "=== mode $m ==="; ./which /tmp/cbuild_dbg/libharvest-work-EtgoFA.so $m 2>/tmp/trace_$m.txt; echo "exit=$?"; tail -2 /tmp/trace_$m.txt; done[0m[38;5;244m (using tool: shell)[0m
+
+=== mode 0 ===
+done mode=0
+exit=0
+VALID n=39306 kind=4 lvl=9 si=3 off=2
+VALID n=39306 kind=4 lvl=9 si=3 off=3
+=== mode 1 ===
+done mode=1
+exit=0
+SHORTOUT n=39306 lvl=9 si=3 ob=19653
+SHORTOUT n=39306 lvl=9 si=3 ob=1
+=== mode 2 ===
+exit=134
+bash: line 40: 1562655 Aborted                 (core dumped) ./which /tmp/cbuild_dbg/libharvest-work-EtgoFA.so $m 2> /tmp/trace_$m.txt
+SHORTIN n=7 lvl=1 si=0
+which: /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/c_src/src/lib.c:109: cp_consume_bits: Assertion `s->count >= num_bits_to_read' failed.
+[38;5;244m - Completed in 7.72s[0m
+
+[?25l[0m[38;5;141m> [0mAssertions only fire on truncated/malformed input; all well-formed streams are identical either way. One more check — the exported tables are writable, so verify the Rust reads them live rather than using baked-in copies:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && cat > mut.c <<'EOF'
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <zlib.h>
+typedef int (*inflate_fn)(void*,int,void*,int);
+static int fails=0;
+static void t(const char*lab,void*ha,void*hb,const char*sym,int idx,int isu32,unsigned val,uint8_t*cz,int czn,int n){
+  inflate_fn ia=dlsym(ha,"cp_inflate"), ib=dlsym(hb,"cp_inflate");
+  void*ta=dlsym(ha,sym),*tb=dlsym(hb,sym);
+  unsigned sa,sb;
+  if(isu32){sa=((uint32_t*)ta)[idx];sb=((uint32_t*)tb)[idx];((uint32_t*)ta)[idx]=val;((uint32_t*)tb)[idx]=val;}
+  else {sa=((uint8_t*)ta)[idx];sb=((uint8_t*)tb)[idx];((uint8_t*)ta)[idx]=(uint8_t)val;((uint8_t*)tb)[idx]=(uint8_t)val;}
+  if(sa!=sb){printf("FAIL %s initial value differs %u vs %u\n",lab,sa,sb);fails++;}
+  uint8_t*oa=calloc(1,1u<<20),*ob=calloc(1,1u<<20);
+  int ra=ia(cz,czn,oa,n+1), rb=ib(cz,czn,ob,n+1);
+  const char**ea=dlsym(ha,"cp_error_reason"),**eb=dlsym(hb,"cp_error_reason");
+  if(ra!=rb||memcmp(oa,ob,1u<<20)||((*ea==NULL)!=(*eb==NULL))||(*ea&&*eb&&strcmp(*ea,*eb))){
+    printf("FAIL %s: rv %d/%d out%s err '%s'/'%s'\n",lab,ra,rb,memcmp(oa,ob,1u<<20)?" DIFF":" ok",*ea?*ea:"(null)",*eb?*eb:"(null)");fails++;
+  } else printf("ok   %s (rv=%d)\n",lab,ra);
+  if(isu32){((uint32_t*)ta)[idx]=sa;((uint32_t*)tb)[idx]=sb;} else {((uint8_t*)ta)[idx]=(uint8_t)sa;((uint8_t*)tb)[idx]=(uint8_t)sb;}
+  free(oa);free(ob);
+}
+int main(int argc,char**argv){
+  void*ha=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL),*hb=dlopen(argv[2],RTLD_NOW|RTLD_LOCAL);
+  int n=3000; uint8_t*data=malloc(n); for(int i=0;i<n;i++)data[i]=(uint8_t)(i%251);
+  z_stream zs;memset(&zs,0,sizeof zs);deflateInit2(&zs,9,Z_DEFLATED,-15,9,Z_DEFAULT_STRATEGY);
+  uLong cap=deflateBound(&zs,n)+64;uint8_t*cz=malloc(cap);zs.next_in=data;zs.avail_in=n;zs.next_out=cz;zs.avail_out=cap;
+  deflate(&zs,Z_FINISH);int czn=zs.total_out;deflateEnd(&zs);
+  t("baseline(no mutation)",ha,hb,"cp_len_base",0,1,3,cz,czn,n);
+  t("cp_len_base[5]=999",ha,hb,"cp_len_base",5,1,999,cz,czn,n);
+  t("cp_len_extra_bits[8]=3",ha,hb,"cp_len_extra_bits",8,0,3,cz,czn,n);
+  t("cp_dist_base[4]=77",ha,hb,"cp_dist_base",4,1,77,cz,czn,n);
+  t("cp_dist_extra_bits[6]=0",ha,hb,"cp_dist_extra_bits",6,0,0,cz,czn,n);
+  t("cp_permutation_order[0]=15",ha,hb,"cp_permutation_order",0,0,15,cz,czn,n);
+  t("cp_fixed_table[0]=9",ha,hb,"cp_fixed_table",0,0,9,cz,czn,n);
+  printf("mutation failures=%d\n",fails); return fails!=0;
+}
+EOF
+gcc -O1 -o mut mut.c -ldl -lz && ./mut /tmp/cbuild/libharvest-work-EtgoFA.so /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/target/release/libharvest_work_EtgoFA.so[0m[38;5;244m (using tool: shell)[0m
+
+ok   baseline(no mutation) (rv=1)
+ok   cp_len_base[5]=999 (rv=1)
+ok   cp_len_extra_bits[8]=3 (rv=1)
+ok   cp_dist_base[4]=77 (rv=1)
+ok   cp_dist_extra_bits[6]=0 (rv=1)
+ok   cp_permutation_order[0]=15 (rv=1)
+ok   cp_fixed_table[0]=9 (rv=0)
+mutation failures=0
+[38;5;244m - Completed in 0.69s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation && rm -rf target && cargo build --release 2>&1 | tail -3 && echo "--- files ---" && ls -la && wc -l src/lib.rs && echo "--- symbol diff (C vs Rust) ---" && diff <(nm -D --defined-only /tmp/cbuild/libharvest-work-EtgoFA.so | awk '{print $2,$3}' | sort) <(nm -D --defined-only target/release/libharvest_work_EtgoFA.so | awk '{print $2,$3}' | sort) && echo "SYMBOL DIFF EMPTY" && echo "--- c_src untouched ---" && ls -l --time-style=+%F_%T ../c_src/src/lib.c ../c_src/include/lib.h ../c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+
+warning: `translation` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.26s
+--- files ---
+total 8
+drwxr-xr-x. 4 scheschb amazon  87 Sep  1 12:01 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 11:54 ..
+-rw-r--r--. 1 scheschb amazon 155 Sep  1 11:58 Cargo.lock
+-rw-r--r--. 1 scheschb amazon 181 Sep  1 11:56 Cargo.toml
+drwxr-xr-x. 2 scheschb amazon  20 Sep  1 11:58 src
+drwxr-xr-x. 3 scheschb amazon  81 Sep  1 12:01 target
+782 src/lib.rs
+--- symbol diff (C vs Rust) ---
+SYMBOL DIFF EMPTY
+--- c_src untouched ---
+-rw-r--r--. 1 scheschb amazon   490 2026-09-01_11:54:59 ../c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon   205 2026-09-01_11:54:59 ../c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 14275 2026-09-01_11:54:59 ../c_src/src/lib.c
+[38;5;244m - Completed in 0.306s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && ./difftest /tmp/cbuild/libharvest-work-EtgoFA.so /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/target/release/libharvest_work_EtgoFA.so | tail -3 && ./mut /tmp/cbuild/libharvest-work-EtgoFA.so /local/home/scheschb/.harvest/work/harvest-work-EtgoFA/translation/target/release/libharvest_work_EtgoFA.so | tail -1 && rm -rf /tmp/difftest /tmp/cbuild /tmp/cbuild_dbg /tmp/table.txt /tmp/trace_*.txt /tmp/c.syms /tmp/r.syms && echo "temp files cleaned"[0m[38;5;244m (using tool: shell)[0m
+
+tables: compared (initial values)
+
+cases=33821 failures=0
+mutation failures=0
+temp files cleaned
+[38;5;244m - Completed in 13.284s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library is [38;5;10mc_src/src/lib.c[0m (493 lines, a cut-down cute_png DEFLATE/PNG helper) plus one public header — no namespace-renaming macros, so linker names equal source names.[0m[0m
+[0m[0m
+Verified completion gate — [38;5;10mnm -D[0m on the Rust [38;5;10m.so[0m and the C [38;5;10m.so[0m produce an empty diff, matching name, symbol class, and object size for all 9 exports:[0m[0m
+[0m[0m
+| Symbol | Class | Size |[0m[0m
+|---|---|---|[0m[0m
+| [38;5;10mcp_inflate[0m, [38;5;10mconvert_pix[0m | T | — |[0m[0m
+| [38;5;10mcp_error_reason[0m | B | 8 |[0m[0m
+| [38;5;10mcp_fixed_table[0m | D | 0x140 |[0m[0m
+| [38;5;10mcp_permutation_order[0m | D | 0x13 |[0m[0m
+| [38;5;10mcp_len_extra_bits[0m / [38;5;10mcp_len_base[0m | D | 0x1f / 0x7c |[0m[0m
+| [38;5;10mcp_dist_extra_bits[0m / [38;5;10mcp_dist_base[0m | D | 0x20 / 0x80 |[0m[0m
+[0m[0m
+Behavioral verification (my own harness, dlopen'ing both [38;5;10m.so[0ms side by side, not a sub-agent claim): 33,821 cases comparing return value, the full 1 MB output arena byte-for-byte, the [38;5;10mcp_error_reason[0m string, and post-call input-buffer state. Coverage included zlib streams at levels 0/1/6/9 × default/fixed/huffman-only/RLE strategies over 300 payloads (random, runs, periodic, text, low-entropy), all four input pointer alignments (the C code's [38;5;10mfirst_bytes[0m/[38;5;10mfinal_word[0m path depends on alignment), truncated output buffers, truncated input, hand-crafted bad block type, and bad stored LEN/NLEN — plus 500 [38;5;10mconvert_pix[0m cases across bpp 0–6. Zero failures. Since the tables are writable exports, I also confirmed the Rust reads them live: poking [38;5;10mcp_len_base[0m, [38;5;10mcp_fixed_table[0m, etc. from the caller changes both libraries' results identically.[0m[0m
+[0m[0m
+Fidelity notes:[0m[0m
+- Bugs preserved, not fixed: [38;5;10mcp_stored[0m's inverted [38;5;10mbits_left/8 <= LEN[0m check and its unbounded [38;5;10mmemcpy[0m into [38;5;10mout[0m, [38;5;10mcp_decode[0m's [38;5;10mtree[lo-1][0m read when [38;5;10mlo==0[0m, unfilter row-0 cases 1/3 skipping the first [38;5;10mbpp[0m bytes, and error-check ordering.[0m[0m
+- [38;5;10massert()[0m is treated as a no-op (release/[38;5;10mNDEBUG[0m semantics). I checked what this costs: with a default [38;5;10mcmake[0m build (asserts on), the C only aborts on [3mtruncated[23m input; every well-formed stream is identical under either build. The malformed-input path where C would abort is where the Rust instead follows the [38;5;10mNDEBUG[0m path.[0m[0m
+- [38;5;10mcp_dynamic[0m's [38;5;10mlens[288+32][0m stack array can be overrun by a malformed repeat code (and reads [38;5;10mlens[-1][0m); the Rust uses a padded backing buffer so the same arithmetic stays in bounds instead of corrupting the stack. Identical for well-formed input; the C is UB there.[0m[0m
+- The unused [38;5;10mstatic[0m helpers ([38;5;10mcp_chunk[0m, [38;5;10mcp_find[0m, [38;5;10mcp_unfilter[0m, [38;5;10mcp_paeth[0m, [38;5;10mcp_make32[0m) are translated as private functions for completeness — they are not in either ABI.[0m[0m
+[38;5;8m
+ ▸ Credits: 14.29 • Time: 7m 11s
+
+[0m[1G[0m[0m[?25h

@@ -1,0 +1,10 @@
+[build]
+# The C library is built by CMake with no optimization flags (-O0), which emits a
+# frame pointer in every function. `bad()` leaks stack residue to stdout
+# (CWE-457), so the frame layout of these functions is observable.
+#
+# On x86-64 the four exported functions are `#[naked]` and carry their own
+# `push %rbp; mov %rsp,%rbp` prologue, so this flag is not what makes them match
+# there. It is kept for the portable (non-x86-64) fallback in `src/lib.rs`, whose
+# frames come from the code generator.
+rustflags = ["-Cforce-frame-pointers=yes"]

@@ -1,23 +1,31 @@
-// Translation of c_src/src/jsstate.c
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
+//! Translation of src/jsstate.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
 
-use crate::common::*;
-use crate::jsbuiltin::jsB_init;
-use crate::jscompile::jsC_compilescript;
-use crate::jsparse::{jsP_freeparse, jsP_parse};
-use crate::jsproperty::jsV_newobject;
-use crate::jsrun::*;
+use crate::jsi::*;
 use crate::jsvalue::js_newscript;
-use crate::types::*;
-use std::ffi::{c_char, c_int, c_void};
-use std::ptr;
+use core::ptr::{null, null_mut};
+
+use crate::jsrun::{
+    js_call, js_endtry, js_pop, js_pushundefined, js_throw, js_toboolean,
+    js_tointeger, js_tonumber, js_tostring, jsR_newenvironment,
+};
+use crate::jsproperty::jsV_newobject;
+use crate::jsbuiltin::jsB_init;
+use crate::jsgc::js_freestate;
+use crate::jsparse::{jsP_freeparse, jsP_parse};
+use crate::jscompile::jsC_compilescript;
+
+/* --- static helpers --- */
 
 unsafe fn js_ptry(J: *mut js_State) -> c_int {
     unsafe {
-        if (*J).trytop == JS_TRYLIMIT as c_int {
-            let v = (*J).stack.offset((*J).top as isize);
-            (*v).set_ty(JS_TLITSTR);
-            (*v).u.litstr = c"exception stack overflow".as_ptr();
+        if (*J).trytop == JS_TRYLIMIT {
+            let top = (*J).top as usize;
+            (*(*J).stack.add(top)).set_ty(JS_TLITSTR);
+            (*(*J).stack.add(top)).litstr = c"exception stack overflow".as_ptr();
             (*J).top += 1;
             return 1;
         }
@@ -26,23 +34,23 @@ unsafe fn js_ptry(J: *mut js_State) -> c_int {
 }
 
 unsafe extern "C-unwind" fn js_defaultalloc(
-    _actx: *mut c_void,
+    actx: *mut c_void,
     ptr: *mut c_void,
     size: c_int,
 ) -> *mut c_void {
     unsafe {
         if size == 0 {
             free(ptr);
-            return ptr::null_mut();
+            return null_mut();
         }
-        realloc(ptr, size as usize)
+        realloc(ptr, size as size_t)
     }
 }
 
-unsafe extern "C-unwind" fn js_defaultreport(_J: *mut js_State, message: *const c_char) {
+unsafe extern "C-unwind" fn js_defaultreport(J: *mut js_State, message: *const c_char) {
     unsafe {
         fputs(message, stderr);
-        fputc(b'\n' as c_int, stderr);
+        fputc('\n' as c_int, stderr);
     }
 }
 
@@ -63,12 +71,11 @@ pub unsafe extern "C-unwind" fn js_ploadstring(
         if js_ptry(J) != 0 {
             return 1;
         }
-        if js_try(J, || {
+        let mut caught = false;
+        if crate::except::js_try_run(J, || {
             js_loadstring(J, filename, source);
             js_endtry(J);
-        })
-        .is_err()
-        {
+        }) {
             return 1;
         }
         0
@@ -82,96 +89,76 @@ pub unsafe extern "C-unwind" fn js_trystring(
     error: *const c_char,
 ) -> *const c_char {
     unsafe {
+        let mut s: *const c_char = null();
         if js_ptry(J) != 0 {
             js_pop(J, 1);
             return error;
         }
-        match js_try(J, || {
-            let s = js_tostring(J, idx);
+        if crate::except::js_try_run(J, || {
+            s = js_tostring(J, idx);
             js_endtry(J);
-            s
         }) {
-            Ok(s) => s,
-            Err(()) => {
-                js_pop(J, 1);
-                error
-            }
+            js_pop(J, 1);
+            return error;
         }
+        s
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn js_trynumber(
-    J: *mut js_State,
-    idx: c_int,
-    error: f64,
-) -> f64 {
+pub unsafe extern "C-unwind" fn js_trynumber(J: *mut js_State, idx: c_int, error: f64) -> f64 {
     unsafe {
+        let mut v: f64 = 0.0;
         if js_ptry(J) != 0 {
             js_pop(J, 1);
             return error;
         }
-        match js_try(J, || {
-            let v = js_tonumber(J, idx);
+        if crate::except::js_try_run(J, || {
+            v = js_tonumber(J, idx);
             js_endtry(J);
-            v
         }) {
-            Ok(v) => v,
-            Err(()) => {
-                js_pop(J, 1);
-                error
-            }
+            js_pop(J, 1);
+            return error;
         }
+        v
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn js_tryinteger(
-    J: *mut js_State,
-    idx: c_int,
-    error: c_int,
-) -> c_int {
+pub unsafe extern "C-unwind" fn js_tryinteger(J: *mut js_State, idx: c_int, error: c_int) -> c_int {
     unsafe {
+        let mut v: c_int = 0;
         if js_ptry(J) != 0 {
             js_pop(J, 1);
             return error;
         }
-        match js_try(J, || {
-            let v = js_tointeger(J, idx);
+        if crate::except::js_try_run(J, || {
+            v = js_tointeger(J, idx);
             js_endtry(J);
-            v
         }) {
-            Ok(v) => v,
-            Err(()) => {
-                js_pop(J, 1);
-                error
-            }
+            js_pop(J, 1);
+            return error;
         }
+        v
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn js_tryboolean(
-    J: *mut js_State,
-    idx: c_int,
-    error: c_int,
-) -> c_int {
+pub unsafe extern "C-unwind" fn js_tryboolean(J: *mut js_State, idx: c_int, error: c_int) -> c_int {
     unsafe {
+        let mut v: c_int = 0;
         if js_ptry(J) != 0 {
             js_pop(J, 1);
             return error;
         }
-        match js_try(J, || {
-            let v = js_toboolean(J, idx);
+        if crate::except::js_try_run(J, || {
+            v = js_toboolean(J, idx);
             js_endtry(J);
-            v
         }) {
-            Ok(v) => v,
-            Err(()) => {
-                js_pop(J, 1);
-                error
-            }
+            js_pop(J, 1);
+            return error;
         }
+        v
     }
 }
 
@@ -182,9 +169,9 @@ unsafe fn js_loadstringx(
     iseval: c_int,
 ) {
     unsafe {
-        if js_try(J, || {
-            let P = jsP_parse(J, filename, source);
-            let F = jsC_compilescript(
+        if crate::except::js_try_run(J, || {
+            let P: *mut js_Ast = jsP_parse(J, filename, source);
+            let F: *mut js_Function = jsC_compilescript(
                 J,
                 P,
                 if iseval != 0 {
@@ -198,15 +185,17 @@ unsafe fn js_loadstringx(
                 J,
                 F,
                 if iseval != 0 {
-                    if (*J).strict != 0 { (*J).E } else { ptr::null_mut() }
+                    if (*J).strict != 0 {
+                        (*J).E
+                    } else {
+                        null_mut()
+                    }
                 } else {
                     (*J).GE
                 },
             );
             js_endtry(J);
-        })
-        .is_err()
-        {
+        }) {
             jsP_freeparse(J);
             js_throw(J);
         }
@@ -243,15 +232,13 @@ pub unsafe extern "C-unwind" fn js_dostring(J: *mut js_State, source: *const c_c
             js_pop(J, 1);
             return 1;
         }
-        if js_try(J, || {
+        if crate::except::js_try_run(J, || {
             js_loadstring(J, c"[string]".as_ptr(), source);
             js_pushundefined(J);
             js_call(J, 0);
             js_pop(J, 1);
             js_endtry(J);
-        })
-        .is_err()
-        {
+        }) {
             js_report(J, js_trystring(J, -1, c"Error".as_ptr()));
             js_pop(J, 1);
             return 1;
@@ -263,7 +250,7 @@ pub unsafe extern "C-unwind" fn js_dostring(J: *mut js_State, source: *const c_c
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_atpanic(J: *mut js_State, panic: js_Panic) -> js_Panic {
     unsafe {
-        let old = (*J).panic;
+        let old: js_Panic = (*J).panic;
         (*J).panic = panic;
         old
     }
@@ -272,8 +259,8 @@ pub unsafe extern "C-unwind" fn js_atpanic(J: *mut js_State, panic: js_Panic) ->
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_report(J: *mut js_State, message: *const c_char) {
     unsafe {
-        if let Some(r) = (*J).report {
-            r(J, message);
+        if (*J).report.is_some() {
+            ((*J).report.unwrap())(J, message);
         }
     }
 }
@@ -304,25 +291,23 @@ pub unsafe extern "C-unwind" fn js_newstate(
     flags: c_int,
 ) -> *mut js_State {
     unsafe {
-        crate::common::install_panic_hook();
+        crate::except::install_panic_hook();
 
-        const _: () = assert!(std::mem::size_of::<js_Value>() == 16);
-        const _: () = assert!(std::mem::offset_of!(js_ValueT, type_) == 15);
+        let mut alloc = alloc;
 
-        let alloc = match alloc {
-            Some(a) => Some(a),
-            None => Some(js_defaultalloc as unsafe extern "C-unwind" fn(*mut c_void, *mut c_void, c_int) -> *mut c_void),
-        };
+        debug_assert!(core::mem::size_of::<js_Value>() == 16);
+        debug_assert!(JS_VALUE_TYPEOFF == 15);
 
-        let J = (alloc.unwrap())(
-            actx,
-            ptr::null_mut(),
-            std::mem::size_of::<js_State>() as c_int,
-        ) as *mut js_State;
-        if J.is_null() {
-            return ptr::null_mut();
+        if alloc.is_none() {
+            alloc = Some(js_defaultalloc);
         }
-        memset(J as *mut c_void, 0, std::mem::size_of::<js_State>());
+
+        let J = (alloc.unwrap())(actx, null_mut(), core::mem::size_of::<js_State>() as c_int)
+            as *mut js_State;
+        if J.is_null() {
+            return null_mut();
+        }
+        memset(J as *mut c_void, 0, core::mem::size_of::<js_State>());
         (*J).actx = actx;
         (*J).alloc = alloc;
 
@@ -340,35 +325,35 @@ pub unsafe extern "C-unwind" fn js_newstate(
 
         (*J).stack = (alloc.unwrap())(
             actx,
-            ptr::null_mut(),
-            JS_STACKSIZE * std::mem::size_of::<js_Value>() as c_int,
+            null_mut(),
+            JS_STACKSIZE * core::mem::size_of::<js_Value>() as c_int,
         ) as *mut js_Value;
         if (*J).stack.is_null() {
             (alloc.unwrap())(actx, J as *mut c_void, 0);
-            return ptr::null_mut();
+            return null_mut();
         }
 
         (*J).gcmark = 1;
         (*J).nextref = 0;
         (*J).gcthresh = 0; /* reaches stability within ~ 2-5 GC cycles */
 
-        if js_try(J, || {
-            (*J).R = jsV_newobject(J, JS_COBJECT, ptr::null_mut());
-            (*J).G = jsV_newobject(J, JS_COBJECT, ptr::null_mut());
-            (*J).E = jsR_newenvironment(J, (*J).G, ptr::null_mut());
+        let mut failed = false;
+        if crate::except::js_try_run(J, || {
+            (*J).R = jsV_newobject(J, JS_COBJECT, null_mut());
+            (*J).G = jsV_newobject(J, JS_COBJECT, null_mut());
+            (*J).E = jsR_newenvironment(J, (*J).G, null_mut());
             (*J).GE = (*J).E;
 
             jsB_init(J);
 
             js_endtry(J);
-        })
-        .is_err()
-        {
+        }) {
             js_freestate(J);
-            return ptr::null_mut();
+            failed = true;
+        }
+        if failed {
+            return null_mut();
         }
         J
     }
 }
-
-use crate::jsgc::js_freestate;

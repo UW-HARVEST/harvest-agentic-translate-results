@@ -6,7 +6,6 @@ use crate::blake::blake256::{SPX_BLAKE256_OUTPUT_BYTES, blake256, blake256_mgf1}
 use crate::blake::blake512::{SPX_BLAKE512_OUTPUT_BYTES, blake512, blake512_mgf1};
 use crate::context::SpxCtx;
 use crate::params::*;
-use crate::vla::Vla;
 
 /// Takes an array of `inblocks` concatenated arrays of `SPX_N` bytes.
 pub fn thash(out: &mut [u8], inp: &[u8], inblocks: usize, ctx: &SpxCtx, addr: &[u32; 8]) {
@@ -16,12 +15,9 @@ pub fn thash(out: &mut [u8], inp: &[u8], inblocks: usize, ctx: &SpxCtx, addr: &[
     }
 
     let mut outbuf = [0u8; SPX_BLAKE256_OUTPUT_BYTES];
+    let mut bitmask = [0u8; SPX_MAX_INBLOCKS * SPX_N];
+    let mut buf = [0u8; SPX_N + SPX_ADDR_BYTES + SPX_MAX_INBLOCKS * SPX_N];
     let n = inblocks * SPX_N;
-    let mut mask_vla = Vla::<{ SPX_MAX_INBLOCKS * SPX_N }>::new(n);
-    let bitmask = mask_vla.as_mut_slice();
-    let mut vla =
-        Vla::<{ SPX_N + SPX_ADDR_BYTES + SPX_MAX_INBLOCKS * SPX_N }>::new(SPX_N + SPX_ADDR_BYTES + n);
-    let buf = vla.as_mut_slice();
 
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);
     buf[SPX_N..SPX_N + SPX_ADDR_BYTES].copy_from_slice(addr_bytes(addr));
@@ -45,12 +41,9 @@ pub fn thash(out: &mut [u8], inp: &[u8], inblocks: usize, ctx: &SpxCtx, addr: &[
 
 fn thash_512(out: &mut [u8], inp: &[u8], inblocks: usize, ctx: &SpxCtx, addr: &[u32; 8]) {
     let mut outbuf = [0u8; SPX_BLAKE512_OUTPUT_BYTES];
+    let mut bitmask = [0u8; SPX_MAX_INBLOCKS * SPX_N];
+    let mut buf = [0u8; SPX_N + SPX_ADDR_BYTES + SPX_MAX_INBLOCKS * SPX_N];
     let n = inblocks * SPX_N;
-    let mut mask_vla = Vla::<{ SPX_MAX_INBLOCKS * SPX_N }>::new(n);
-    let bitmask = mask_vla.as_mut_slice();
-    let mut vla =
-        Vla::<{ SPX_N + SPX_ADDR_BYTES + SPX_MAX_INBLOCKS * SPX_N }>::new(SPX_N + SPX_ADDR_BYTES + n);
-    let buf = vla.as_mut_slice();
 
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);
     buf[SPX_N..SPX_N + SPX_ADDR_BYTES].copy_from_slice(addr_bytes(addr));

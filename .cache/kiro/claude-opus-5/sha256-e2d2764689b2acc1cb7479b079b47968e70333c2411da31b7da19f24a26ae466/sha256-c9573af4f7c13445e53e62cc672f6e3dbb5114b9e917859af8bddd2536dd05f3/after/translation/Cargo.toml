@@ -1,0 +1,22 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# "rlib" is present only so that the integration tests have a dependency edge on
+# the library target: with `crate-type = ["cdylib"]` alone, `cargo test` does not
+# rebuild the .so when src/ changes, and the differential tests would silently
+# run against a stale artifact. The tests never link the rlib -- they dlopen the
+# cdylib through libloading.
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+name = "arr_push_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,31 +1,14 @@
-// Copyright 2025 MIT Lincoln Laboratory
-// Permission is hereby granted, free of charge,
-// to any person obtaining a copy of this software
-// and associated documentation files (the "Software"),
-// to deal in the Software without restriction,
-// including without limitation the rights to use, copy,
-// modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software,
-// and to permit persons to whom the Software is furnished to do so,
-// subject to the following conditions:
+// Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
 //
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions of the Software.
+// The C library exports exactly four public symbols:
+//     printLine, bad, good, driver
+// The two `static` helpers (`helperBad`, `helperGood`) stay private, matching
+// the C translation unit's internal linkage.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-//! Rust translation of `c_src/src/driver.c`.
-//!
-//! Output is written through C `printf` so that buffering and interleaving with
-//! any other C stdio output in the hosting process match the original library
-//! byte for byte.
+// Output is emitted through libc's `printf` rather than Rust's own `println!`
+// so that stdout buffering behaviour (and therefore the exact byte stream and
+// its interleaving with any other C output in the process) is identical to the
+// original library.
 
 #![allow(non_snake_case)]
 
@@ -35,70 +18,74 @@ use std::ptr;
 
 unsafe extern "C" {
     #[link_name = "printf"]
-    unsafe fn c_printf(format: *const c_char, ...) -> c_int;
+    unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// Format string equivalent to the C source's `"%s\n"`.
-const LINE_FORMAT: &[u8; 4] = b"%s\n\0";
+/// `printf("%s\n", line)` — the one and only output primitive of the library.
+const FMT_STR_NL: &[u8] = b"%s\n\0";
 
-/// `void printLine(const char *line)`
+/// Print a NUL-terminated C string followed by a newline, ignoring NULL.
 ///
-/// Prints `line` followed by a newline; a NULL pointer prints nothing.
+/// Mirrors:
+/// ```c
+/// void printLine(const char *line)
+/// {
+///     if (line != NULL)
+///     {
+///         printf("%s\n", line);
+///     }
+/// }
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn printLine(line: *const c_char) {
     if line != ptr::null() {
         unsafe {
-            c_printf(LINE_FORMAT.as_ptr() as *const c_char, line);
+            c_printf(FMT_STR_NL.as_ptr() as *const c_char, line);
         }
     }
 }
 
-/// `static void helperBad()` — defined but never called in the C source.
-///
-/// Retained (unused) to mirror the original translation unit exactly.
-#[allow(dead_code)]
-fn helperBad() {
-    unsafe {
-        printLine(c"helperBad()".as_ptr());
-    }
+/// Convenience wrapper for calling `printLine` with a Rust byte literal that
+/// already carries its terminating NUL.
+#[inline]
+fn print_line_lit(lit: &[u8]) {
+    debug_assert_eq!(lit.last().copied(), Some(0u8));
+    unsafe { printLine(lit.as_ptr() as *const c_char) }
 }
 
-/// `void bad()`
-///
-/// Note: the C implementation never calls `helperBad()`; that behavior is
-/// preserved here rather than "fixed".
+/// `static void helperBad()` — never called by the C code either, but kept for
+/// fidelity with the original translation unit.
+#[allow(dead_code)]
+fn helperBad() {
+    print_line_lit(b"helperBad()\0");
+}
+
+/// `void bad()` — prints its own name and, unlike `good()`, does *not* call its
+/// helper. Reproduced exactly as written in the C source.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn bad() {
-    unsafe {
-        printLine(c"bad()".as_ptr());
-    }
+pub extern "C" fn bad() {
+    print_line_lit(b"bad()\0");
 }
 
 /// `static void helperGood()`
 fn helperGood() {
-    unsafe {
-        printLine(c"helperGood()".as_ptr());
-    }
+    print_line_lit(b"helperGood()\0");
 }
 
-/// `void good()`
+/// `void good()` — prints its own name, then calls its helper.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn good() {
-    unsafe {
-        printLine(c"good()".as_ptr());
-    }
+pub extern "C" fn good() {
+    print_line_lit(b"good()\0");
     helperGood();
 }
 
-/// `void driver(void)`
+/// `void driver(void)` — the public entry point declared in `include/driver.h`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn driver() {
-    unsafe {
-        printLine(c"Calling good()...".as_ptr());
-        good();
-        printLine(c"Finished good()".as_ptr());
-        printLine(c"Calling bad()...".as_ptr());
-        bad();
-        printLine(c"Finished bad()".as_ptr());
-    }
+pub extern "C" fn driver() {
+    print_line_lit(b"Calling good()...\0");
+    good();
+    print_line_lit(b"Finished good()\0");
+    print_line_lit(b"Calling bad()...\0");
+    bad();
+    print_line_lit(b"Finished bad()\0");
 }

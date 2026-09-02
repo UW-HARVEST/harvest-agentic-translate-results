@@ -1,482 +1,427 @@
 // Rust translation of c_src/src/main.c
 //
-// Original C:
-//     float x = 0.f;
-//     scanf("%f", &x);
-//     driver(x);          // memcpy the float into a char[4] and hexdump it
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// The program prints the four raw bytes of the float as "%02x" each, followed
-// by a newline. If `scanf` fails to match anything, `x` keeps its initial
-// value of 0.0f, so "00000000" is printed.
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
 //
-// Everything below reproduces the observable behaviour of glibc's
-// `scanf("%f", ...)`: leading whitespace is skipped (including newlines),
-// decimal and hexadecimal floats are accepted, as are `inf`/`infinity` and
-// `nan`/`nan(n-char-sequence)`, all case-insensitively. Reading is done one
-// byte at a time so no more input is consumed than `scanf` would need.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 
-// ---------------------------------------------------------------------------
-// Byte-at-a-time stdin reader with one byte of lookahead (like getc/ungetc).
-// ---------------------------------------------------------------------------
-
-struct Input {
-    inner: io::Stdin,
-    peeked: Option<u8>,
-    eof: bool,
+/// static void print_hex(unsigned char *p, int len)
+fn print_hex(p: &[u8]) {
+    let mut out = String::with_capacity(p.len() * 2 + 1);
+    for &b in p {
+        // printf("%02x", p[i]);
+        out.push_str(&format!("{:02x}", b));
+    }
+    // printf("\n");
+    out.push('\n');
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    let _ = lock.write_all(out.as_bytes());
+    let _ = lock.flush();
 }
 
-impl Input {
-    fn new() -> Self {
-        Input {
-            inner: io::stdin(),
-            peeked: None,
-            eof: false,
-        }
-    }
-
-    fn peek(&mut self) -> Option<u8> {
-        if let Some(b) = self.peeked {
-            return Some(b);
-        }
-        if self.eof {
-            return None;
-        }
-        let mut buf = [0u8; 1];
-        loop {
-            match self.inner.read(&mut buf) {
-                Ok(0) => {
-                    self.eof = true;
-                    return None;
-                }
-                Ok(_) => {
-                    self.peeked = Some(buf[0]);
-                    return Some(buf[0]);
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(_) => {
-                    self.eof = true;
-                    return None;
-                }
-            }
-        }
-    }
-
-    /// Consume the byte returned by the most recent `peek`.
-    fn bump(&mut self) {
-        self.peeked = None;
-    }
-
-    /// Consume `expected` (case-insensitively) if it is next. Returns true on match.
-    fn eat_ci(&mut self, expected: u8) -> bool {
-        match self.peek() {
-            Some(c) if c.eq_ignore_ascii_case(&expected) => {
-                self.bump();
-                true
-            }
-            _ => false,
-        }
-    }
-}
-
-fn is_c_space(c: u8) -> bool {
-    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
-}
-
-fn is_digit(c: u8) -> bool {
-    c.is_ascii_digit()
-}
-
-fn is_hex_digit(c: u8) -> bool {
-    c.is_ascii_hexdigit()
-}
-
-fn hex_val(c: u8) -> u32 {
-    match c {
-        b'0'..=b'9' => (c - b'0') as u32,
-        b'a'..=b'f' => (c - b'a') as u32 + 10,
-        _ => (c - b'A') as u32 + 10,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// scanf("%f") emulation. Returns the resulting f32 bit pattern, or None on a
-// matching failure (in which case the C program leaves x == 0.0f).
-// ---------------------------------------------------------------------------
-
-fn scan_float(inp: &mut Input) -> Option<u32> {
-    // Skip leading whitespace (scanf's %f skips it, crossing newlines).
-    while let Some(c) = inp.peek() {
-        if is_c_space(c) {
-            inp.bump();
-        } else {
-            break;
-        }
-    }
-
-    // Optional sign.
-    let mut sign: u32 = 0;
-    match inp.peek() {
-        Some(b'+') => inp.bump(),
-        Some(b'-') => {
-            sign = 0x8000_0000;
-            inp.bump();
-        }
-        _ => {}
-    }
-
-    match inp.peek() {
-        Some(c) if c.eq_ignore_ascii_case(&b'i') => return scan_inf(inp, sign),
-        Some(c) if c.eq_ignore_ascii_case(&b'n') => return scan_nan(inp, sign),
-        _ => {}
-    }
-
-    // Possible "0x"/"0X" hexadecimal prefix.
-    let mut leading_zero = false;
-    if let Some(b'0') = inp.peek() {
-        inp.bump();
-        leading_zero = true;
-        if let Some(c) = inp.peek() {
-            if c == b'x' || c == b'X' {
-                inp.bump();
-                return scan_hex(inp, sign);
-            }
-        }
-    }
-
-    scan_decimal(inp, sign, leading_zero)
-}
-
-/// "inf", optionally spelled "infinity". glibc treats a partial "infinity"
-/// (e.g. "infi", "infinit") as a matching failure, not as "inf".
-fn scan_inf(inp: &mut Input, sign: u32) -> Option<u32> {
-    for &c in b"inf" {
-        if !inp.eat_ci(c) {
-            return None;
-        }
-    }
-    if inp.eat_ci(b'i') {
-        for &c in b"nity" {
-            if !inp.eat_ci(c) {
-                return None;
-            }
-        }
-    }
-    Some(sign | 0x7f80_0000)
-}
-
-/// "nan", optionally followed by "(n-char-sequence)". The sequence is consumed
-/// but does not affect the value: glibc's scanf yields the default quiet NaN.
-fn scan_nan(inp: &mut Input, sign: u32) -> Option<u32> {
-    for &c in b"nan" {
-        if !inp.eat_ci(c) {
-            return None;
-        }
-    }
-
-    if let Some(b'(') = inp.peek() {
-        inp.bump();
-        while let Some(c) = inp.peek() {
-            if c.is_ascii_alphanumeric() || c == b'_' {
-                inp.bump();
-            } else {
-                break;
-            }
-        }
-        if let Some(b')') = inp.peek() {
-            inp.bump();
-        }
-    }
-
-    Some(sign | 0x7fc0_0000)
-}
-
-/// Decimal float. `leading_zero` means one '0' digit was already consumed.
-fn scan_decimal(inp: &mut Input, sign: u32, leading_zero: bool) -> Option<u32> {
-    let mut int_part: Vec<u8> = Vec::new();
-    let mut frac_part: Vec<u8> = Vec::new();
-    let mut any_digit = leading_zero;
-    if leading_zero {
-        int_part.push(b'0');
-    }
-
-    while let Some(c) = inp.peek() {
-        if is_digit(c) {
-            int_part.push(c);
-            any_digit = true;
-            inp.bump();
-        } else {
-            break;
-        }
-    }
-
-    let mut got_dot = false;
-    if let Some(b'.') = inp.peek() {
-        got_dot = true;
-        inp.bump();
-        while let Some(c) = inp.peek() {
-            if is_digit(c) {
-                frac_part.push(c);
-                any_digit = true;
-                inp.bump();
-            } else {
-                break;
-            }
-        }
-    }
-
-    if !any_digit {
-        return None;
-    }
-
-    let exp = scan_exponent(inp, b'e');
-
-    // Build a string accepted by Rust's f32 parser (same grammar subset,
-    // correctly rounded ties-to-even, matching glibc's strtof).
-    let mut text = String::new();
-    if int_part.is_empty() {
-        text.push('0');
-    } else {
-        text.push_str(std::str::from_utf8(&int_part).unwrap());
-    }
-    if got_dot || !frac_part.is_empty() {
-        text.push('.');
-        text.push_str(std::str::from_utf8(&frac_part).unwrap());
-    }
-    if let Some(e) = exp {
-        text.push('e');
-        text.push_str(&e.to_string());
-    }
-
-    let magnitude: f32 = text.parse().unwrap_or(0.0);
-    Some(sign | (magnitude.to_bits() & 0x7fff_ffff))
-}
-
-/// Optional exponent: [eE]/[pP] followed by an optional sign and digits.
-/// Returns None when there is no valid exponent. Saturating to keep the
-/// arithmetic in range; the extremes already mean overflow/underflow.
-fn scan_exponent(inp: &mut Input, marker: u8) -> Option<i64> {
-    match inp.peek() {
-        Some(c) if c.eq_ignore_ascii_case(&marker) => {}
-        _ => return None,
-    }
-    inp.bump();
-
-    let mut negative = false;
-    match inp.peek() {
-        Some(b'+') => inp.bump(),
-        Some(b'-') => {
-            negative = true;
-            inp.bump();
-        }
-        _ => {}
-    }
-
-    let mut digits: Vec<u8> = Vec::new();
-    while let Some(c) = inp.peek() {
-        if is_digit(c) {
-            digits.push(c);
-            inp.bump();
-        } else {
-            break;
-        }
-    }
-    if digits.is_empty() {
-        // Not a valid exponent; glibc drops it and keeps the mantissa value.
-        return None;
-    }
-
-    let mut value: i64 = 0;
-    for c in digits {
-        value = value
-            .saturating_mul(10)
-            .saturating_add((c - b'0') as i64)
-            .min(1_000_000);
-    }
-    Some(if negative { -value } else { value })
-}
-
-/// Hexadecimal float, called after the "0x" prefix has been consumed.
-/// With no hex digits after the prefix glibc reports a matching failure, so the
-/// C program keeps x == 0.0f.
-fn scan_hex(inp: &mut Input, sign: u32) -> Option<u32> {
-    // Significand as m * 2^(4*skipped) with the dropped digits' non-zeroness
-    // recorded in `sticky`, so rounding stays exact.
-    let mut m: u128 = 0;
-    let mut skipped: i64 = 0;
-    let mut sticky = false;
-    let mut frac_digits: i64 = 0;
-    let mut any_digit = false;
-
-    let push = |d: u32, m: &mut u128, skipped: &mut i64, sticky: &mut bool| {
-        if *m < (1u128 << 124) {
-            *m = (*m << 4) | d as u128;
-        } else {
-            if d != 0 {
-                *sticky = true;
-            }
-            *skipped += 1;
-        }
-    };
-
-    while let Some(c) = inp.peek() {
-        if is_hex_digit(c) {
-            push(hex_val(c), &mut m, &mut skipped, &mut sticky);
-            any_digit = true;
-            inp.bump();
-        } else {
-            break;
-        }
-    }
-
-    if let Some(b'.') = inp.peek() {
-        inp.bump();
-        while let Some(c) = inp.peek() {
-            if is_hex_digit(c) {
-                push(hex_val(c), &mut m, &mut skipped, &mut sticky);
-                frac_digits += 1;
-                any_digit = true;
-                inp.bump();
-            } else {
-                break;
-            }
-        }
-    }
-
-    if !any_digit {
-        return None; // "0x" with no hex digits: matching failure
-    }
-
-    let p = scan_exponent(inp, b'p').unwrap_or(0);
-    let exp2 = p - 4 * frac_digits + 4 * skipped;
-
-    Some(sign | round_to_f32(m, exp2, sticky))
-}
-
-// ---------------------------------------------------------------------------
-// Round m * 2^exp2 (plus sticky low bits) to the f32 magnitude bit pattern.
-// ---------------------------------------------------------------------------
-
-fn shr_sat(m: u128, s: u32) -> u128 {
-    if s >= 128 {
-        0
-    } else {
-        m >> s
-    }
-}
-
-fn bit_at(m: u128, i: u32) -> u32 {
-    if i >= 128 {
-        0
-    } else {
-        ((m >> i) & 1) as u32
-    }
-}
-
-fn low_bits_nonzero(m: u128, s: u32) -> bool {
-    if s == 0 {
-        false
-    } else if s >= 128 {
-        m != 0
-    } else {
-        m & ((1u128 << s) - 1) != 0
-    }
-}
-
-fn round_to_f32(m: u128, exp2: i64, sticky: bool) -> u32 {
-    if m == 0 {
-        return 0;
-    }
-    let bl = (128 - m.leading_zeros()) as i64; // bit length of m
-    let e = bl - 1 + exp2; // floor(log2(value))
-
-    if e > 200 {
-        return 0x7f80_0000; // infinity
-    }
-    if e < -200 {
-        return 0; // zero
-    }
-
-    let mut target_exp = if e - 23 > -149 { e - 23 } else { -149 };
-    let shift = target_exp - exp2;
-
-    let (mut q, round_bit, rest_nonzero) = if shift <= 0 {
-        (m << ((-shift) as u32), 0u32, false)
-    } else {
-        let s = shift as u32;
-        (shr_sat(m, s), bit_at(m, s - 1), low_bits_nonzero(m, s - 1))
-    };
-
-    if round_bit == 1 && (rest_nonzero || sticky || (q & 1) == 1) {
-        q += 1;
-    }
-
-    if q >= (1u128 << 24) {
-        q >>= 1;
-        target_exp += 1;
-    }
-
-    if target_exp <= -149 && q < (1u128 << 23) {
-        return q as u32; // zero or subnormal
-    }
-
-    let e_final = target_exp + 23;
-    if e_final > 127 {
-        return 0x7f80_0000; // infinity
-    }
-    (((e_final + 127) as u32) << 23) | ((q as u32) & 0x007f_ffff)
-}
-
-// ---------------------------------------------------------------------------
-// print_hex / driver / main
-// ---------------------------------------------------------------------------
-
-fn print_hex(out: &mut impl Write, bytes: &[u8]) {
-    let mut s = String::with_capacity(bytes.len() * 2 + 1);
-    for b in bytes {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s.push('\n');
-    let _ = out.write_all(s.as_bytes());
-}
-
-fn driver(out: &mut impl Write, x: f32) {
-    let raw = x.to_bits().to_le_bytes(); // memcpy of the float's storage
-    print_hex(out, &raw);
-}
-
-// ---------------------------------------------------------------------------
-// The Rust runtime installs SIG_IGN for SIGPIPE before `main` runs, which the C
-// program does not do. Without restoring the default disposition, a write to a
-// broken stdout pipe would make this program ignore EPIPE and exit 0, whereas
-// the C program is killed by SIGPIPE. Restore SIG_DFL so both die identically.
-// `signal` comes from the libc that is already linked into every Rust binary,
-// so no extra crate dependency is needed.
-// ---------------------------------------------------------------------------
-
-fn restore_default_sigpipe() {
-    extern "C" {
-        fn signal(signum: i32, handler: usize) -> usize;
-    }
-    const SIGPIPE: i32 = 13; // Linux
-    const SIG_DFL: usize = 0;
-    unsafe {
-        signal(SIGPIPE, SIG_DFL);
-    }
+/// void driver(float x)
+fn driver(x: f32) {
+    // char raw[sizeof(x)]; memcpy(raw, &x, sizeof(x));
+    // Native byte order, exactly like memcpy of the object representation.
+    let raw: [u8; 4] = x.to_ne_bytes();
+    print_hex(&raw);
 }
 
 fn main() {
-    restore_default_sigpipe();
-
-    let mut inp = Input::new();
+    // float x = 0.f;
     let mut x: f32 = 0.0;
-    if let Some(bits) = scan_float(&mut inp) {
-        x = f32::from_bits(bits);
+
+    // scanf("%f", &x);
+    // On matching failure or input failure, `x` is left untouched (0.0f).
+    let mut input: Vec<u8> = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut input);
+    if let Some(v) = scan_f(&input) {
+        x = v;
     }
 
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    driver(&mut out, x);
-    let _ = out.flush();
+    // driver(x);
+    driver(x);
+    // return 0;
+}
+
+// ---------------------------------------------------------------------------
+// scanf("%f", ...) emulation
+//
+// The conversion skips leading whitespace, then consumes the longest initial
+// subsequence of the input that has the form of a strtof() subject sequence.
+// If no such sequence exists the conversion fails and nothing is stored.
+// ---------------------------------------------------------------------------
+
+fn is_c_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+fn lower(b: u8) -> u8 {
+    if b.is_ascii_uppercase() {
+        b + 32
+    } else {
+        b
+    }
+}
+
+fn hex_val(b: u8) -> Option<u32> {
+    match b {
+        b'0'..=b'9' => Some((b - b'0') as u32),
+        b'a'..=b'f' => Some((b - b'a' + 10) as u32),
+        b'A'..=b'F' => Some((b - b'A' + 10) as u32),
+        _ => None,
+    }
+}
+
+fn starts_with_ci(s: &[u8], pat: &[u8]) -> bool {
+    s.len() >= pat.len() && s[..pat.len()].iter().zip(pat).all(|(a, b)| lower(*a) == *b)
+}
+
+fn scan_f(input: &[u8]) -> Option<f32> {
+    let mut i = 0usize;
+
+    // Leading whitespace is skipped by the %f directive.
+    while i < input.len() && is_c_space(input[i]) {
+        i += 1;
+    }
+    if i >= input.len() {
+        return None; // input failure: nothing stored
+    }
+
+    // Optional sign.
+    let mut negative = false;
+    if input[i] == b'+' || input[i] == b'-' {
+        negative = input[i] == b'-';
+        i += 1;
+    }
+    let rest = &input[i..];
+
+    // "infinity" / "inf". scanf's scanner commits to "infinity" as soon as it
+    // sees a fourth 'i', so a truncated "infin..." is a matching failure
+    // rather than a successful "inf".
+    if starts_with_ci(rest, b"infinity") {
+        let bits: u32 = 0x7f80_0000 | (if negative { 0x8000_0000 } else { 0 });
+        return Some(f32::from_bits(bits));
+    }
+    if starts_with_ci(rest, b"inf") {
+        if rest.len() > 3 && lower(rest[3]) == b'i' {
+            return None;
+        }
+        let bits: u32 = 0x7f80_0000 | (if negative { 0x8000_0000 } else { 0 });
+        return Some(f32::from_bits(bits));
+    }
+
+    // "nan". Note that scanf's own float scanner never forwards a
+    // parenthesised n-char-sequence payload to strtof, so a payload such as
+    // "nan(1)" still yields the default quiet NaN.
+    if starts_with_ci(rest, b"nan") {
+        let mut bits: u32 = 0x7fc0_0000; // default quiet NaN
+        if negative {
+            bits |= 0x8000_0000;
+        }
+        return Some(f32::from_bits(bits));
+    }
+
+    // Hexadecimal form. Once the "0x"/"0X" prefix has been consumed the
+    // scanner is committed to it: a significand consisting of at least one hex
+    // digit or a radix point is required, otherwise the whole conversion fails
+    // (it does *not* fall back to matching just the leading "0").
+    if rest.len() >= 2 && rest[0] == b'0' && (rest[1] == b'x' || rest[1] == b'X') {
+        if rest.len() >= 3 && (hex_val(rest[2]).is_some() || rest[2] == b'.') {
+            return Some(parse_hex_float(&rest[2..], negative));
+        }
+        return None;
+    }
+
+    // Decimal form.
+    let mut j = 0usize;
+    let int_start = 0usize;
+    let mut digits = 0usize;
+    while j < rest.len() && rest[j].is_ascii_digit() {
+        j += 1;
+        digits += 1;
+    }
+    let int_end = j;
+    let mut frac_start = j;
+    let mut frac_end = j;
+    if j < rest.len() && rest[j] == b'.' {
+        j += 1;
+        frac_start = j;
+        while j < rest.len() && rest[j].is_ascii_digit() {
+            j += 1;
+            digits += 1;
+        }
+        frac_end = j;
+    }
+    if digits == 0 {
+        return None; // matching failure: nothing stored
+    }
+    // Optional exponent part, only consumed when it is complete.
+    let mut dec_exp: i64 = 0;
+    if j < rest.len() && (rest[j] == b'e' || rest[j] == b'E') {
+        let mut k = j + 1;
+        let mut eneg = false;
+        if k < rest.len() && (rest[k] == b'+' || rest[k] == b'-') {
+            eneg = rest[k] == b'-';
+            k += 1;
+        }
+        let mut v: i64 = 0;
+        let mut exp_digits = 0usize;
+        while k < rest.len() && rest[k].is_ascii_digit() {
+            v = v.saturating_mul(10).saturating_add((rest[k] - b'0') as i64);
+            if v > 1_000_000_000 {
+                v = 1_000_000_000;
+            }
+            k += 1;
+            exp_digits += 1;
+        }
+        if exp_digits > 0 {
+            dec_exp = if eneg { -v } else { v };
+        }
+    }
+
+    Some(decimal_to_f32(
+        negative,
+        &rest[int_start..int_end],
+        &rest[frac_start..frac_end],
+        dec_exp,
+    ))
+}
+
+/// Correctly rounded decimal -> f32, matching strtof() for arbitrarily long
+/// significands and arbitrarily large exponents.
+fn decimal_to_f32(negative: bool, int_part: &[u8], frac_part: &[u8], exp: i64) -> f32 {
+    let sign_bit: u32 = if negative { 0x8000_0000 } else { 0 };
+
+    // value == digits * 10^(exp - frac_part.len())
+    let mut digits: Vec<u8> = Vec::with_capacity(int_part.len() + frac_part.len());
+    digits.extend_from_slice(int_part);
+    digits.extend_from_slice(frac_part);
+    let mut dexp: i64 = exp.saturating_sub(frac_part.len() as i64);
+
+    // Strip leading zeros.
+    let lead = digits.iter().take_while(|&&b| b == b'0').count();
+    digits.drain(..lead);
+    if digits.is_empty() {
+        return f32::from_bits(sign_bit); // (signed) zero
+    }
+    // Strip trailing zeros (exact transformation).
+    while digits.len() > 1 && *digits.last().unwrap() == b'0' {
+        digits.pop();
+        dexp = dexp.saturating_add(1);
+    }
+
+    // Truncate an over-long significand, keeping a sticky digit. The cut-off is
+    // far beyond the longest exact halfway case of a binary32 value, so this
+    // never changes the rounding direction.
+    const KEEP: usize = 800;
+    if digits.len() > KEEP {
+        let dropped = digits.len() - KEEP;
+        let sticky = digits[KEEP..].iter().any(|&b| b != b'0');
+        digits.truncate(KEEP);
+        dexp = dexp.saturating_add(dropped as i64);
+        if sticky {
+            digits.push(b'1');
+            dexp = dexp.saturating_sub(1);
+        }
+    }
+
+    // Decimal magnitude: 10^(mag-1) <= value < 10^mag
+    let mag = dexp.saturating_add(digits.len() as i64);
+    if mag > 60 {
+        return f32::from_bits(sign_bit | 0x7f80_0000); // certain overflow
+    }
+    if mag < -60 {
+        return f32::from_bits(sign_bit); // certain underflow to zero
+    }
+
+    let mut text = String::with_capacity(digits.len() + 24);
+    if negative {
+        text.push('-');
+    }
+    // digits are ASCII decimal digits only
+    text.push_str(std::str::from_utf8(&digits).unwrap());
+    text.push('e');
+    text.push_str(&dexp.to_string());
+    // Rust's decimal parser is correctly rounded, matching strtof().
+    text.parse::<f32>().unwrap_or(f32::from_bits(sign_bit))
+}
+
+/// Parses a hexadecimal floating literal (input starts right after "0x")
+/// with correct round-to-nearest-even rounding into f32.
+fn parse_hex_float(s: &[u8], negative: bool) -> f32 {
+    let mut mant: u128 = 0;
+    let mut skipped: i64 = 0; // significand digits dropped on the right
+    let mut frac_digits: i64 = 0;
+    let mut seen_point = false;
+    let mut sticky = false;
+    let mut i = 0usize;
+
+    while i < s.len() {
+        let b = s[i];
+        if b == b'.' && !seen_point {
+            seen_point = true;
+            i += 1;
+            continue;
+        }
+        let d = match hex_val(b) {
+            Some(d) => d,
+            None => break,
+        };
+        if seen_point {
+            frac_digits += 1;
+        }
+        if mant <= (u128::MAX >> 4) {
+            mant = mant * 16 + d as u128;
+        } else {
+            if d != 0 {
+                sticky = true;
+            }
+            skipped += 1;
+        }
+        i += 1;
+    }
+
+    // Optional binary exponent part, consumed only when complete.
+    let mut pexp: i64 = 0;
+    if i < s.len() && (s[i] == b'p' || s[i] == b'P') {
+        let mut k = i + 1;
+        let mut eneg = false;
+        if k < s.len() && (s[k] == b'+' || s[k] == b'-') {
+            eneg = s[k] == b'-';
+            k += 1;
+        }
+        let mut v: i64 = 0;
+        let mut n = 0usize;
+        while k < s.len() && s[k].is_ascii_digit() {
+            v = v.saturating_mul(10).saturating_add((s[k] - b'0') as i64);
+            if v > 1_000_000_000 {
+                v = 1_000_000_000;
+            }
+            k += 1;
+            n += 1;
+        }
+        if n > 0 {
+            pexp = if eneg { -v } else { v };
+        }
+    }
+
+    let sign_bit: u32 = if negative { 0x8000_0000 } else { 0 };
+
+    if mant == 0 {
+        return f32::from_bits(sign_bit);
+    }
+
+    // value == mant * 2^exp2 (plus a sticky low remainder)
+    let exp2: i64 = 4 * skipped - 4 * frac_digits + pexp;
+
+    let nbits: i64 = (128 - mant.leading_zeros()) as i64;
+    let lead_exp = exp2.saturating_add(nbits - 1);
+
+    // Fast rejections to keep the shift arithmetic in range.
+    if lead_exp > 128 {
+        return f32::from_bits(sign_bit | 0x7f80_0000); // overflow -> inf
+    }
+    if lead_exp < -200 {
+        return f32::from_bits(sign_bit); // underflow -> zero
+    }
+
+    let mut target_e = std::cmp::max(lead_exp - 23, -149);
+    let shift = target_e - exp2;
+
+    let mut m: u128;
+    if shift <= 0 {
+        m = mant << ((-shift) as u32);
+    } else if shift >= 128 {
+        m = 0;
+        sticky = sticky || mant != 0;
+        // everything shifted out; round based on comparison with half
+        let half_pos = shift - 1;
+        let round_up = if half_pos < 128 {
+            let half_bit = (mant >> (half_pos as u32)) & 1;
+            let low_mask = (1u128 << (half_pos as u32)) - 1;
+            let low = mant & low_mask;
+            half_bit == 1 && (low != 0 || sticky)
+        } else {
+            false
+        };
+        if round_up {
+            m = 1;
+        }
+        return encode(sign_bit, m, target_e);
+    } else {
+        let sh = shift as u32;
+        let dropped_mask = (1u128 << sh) - 1;
+        let dropped = mant & dropped_mask;
+        m = mant >> sh;
+        let half = 1u128 << (sh - 1);
+        let round_up = if dropped > half {
+            true
+        } else if dropped == half {
+            sticky || (m & 1) == 1
+        } else {
+            false
+        };
+        if round_up {
+            m += 1;
+        }
+        // Rounding may carry into the next binade.
+        if m >= (1u128 << 24) {
+            m >>= 1;
+            target_e += 1;
+        }
+        return encode(sign_bit, m, target_e);
+    }
+
+    // shift <= 0 path: exact, no rounding needed.
+    if m >= (1u128 << 24) {
+        // Cannot happen (target_e was chosen to keep 24 bits), but stay safe.
+        while m >= (1u128 << 24) {
+            m >>= 1;
+            target_e += 1;
+        }
+    }
+    encode(sign_bit, m, target_e)
+}
+
+fn encode(sign_bit: u32, m: u128, target_e: i64) -> f32 {
+    if m == 0 {
+        return f32::from_bits(sign_bit);
+    }
+    if m >= (1u128 << 23) {
+        let exp_field = target_e + 150;
+        if exp_field >= 255 {
+            return f32::from_bits(sign_bit | 0x7f80_0000);
+        }
+        if exp_field <= 0 {
+            // Should not happen for normalized m; fall back to zero.
+            return f32::from_bits(sign_bit);
+        }
+        let bits = sign_bit | ((exp_field as u32) << 23) | ((m as u32) & 0x7f_ffff);
+        f32::from_bits(bits)
+    } else {
+        // Subnormal: target_e == -149
+        f32::from_bits(sign_bit | (m as u32))
+    }
 }

@@ -1,3 +1,6 @@
+// Rust translation of c_src/src/lib.c
+//
+// Original C copyright header:
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -8,10 +11,10 @@
 // and/or sell copies of the Software,
 // and to permit persons to whom the Software is furnished to do so,
 // subject to the following conditions:
-
+//
 // The above copyright notice and this permission notice
 // shall be included in all copies or substantial portions of the Software.
-
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 // THE WARRANTIES OF MERCHANTABILITY,
@@ -21,88 +24,99 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Rust translation of `c_src/src/lib.c`.
-//!
-//! The C translation unit declares every function with external linkage (none
-//! are `static`), and the header only advertises `fallcalc`. There are no
-//! namespace-renaming preprocessor macros, so the linker symbols are the plain
-//! source-level names. All of them are re-exported here with the same symbols
-//! and signatures.
+#![allow(clippy::missing_safety_doc)]
 
-use std::ffi::c_int;
+use core::ffi::{c_double, c_int, c_void};
 
-// #define OCTAL_MASK_1 0777
-const OCTAL_MASK_1: c_int = 0o777;
-// #define OCTAL_MASK_2 0100
-const OCTAL_MASK_2: c_int = 0o100;
-// #define OCTAL_FLAG   0200
-const OCTAL_FLAG: c_int = 0o200;
-// #define OCTAL_BASE   010
-const OCTAL_BASE: c_int = 0o10;
+// ---------------------------------------------------------------------------
+// C preprocessor constants (octal literals in the original source)
+// ---------------------------------------------------------------------------
+const OCTAL_MASK_1: c_int = 0o777; // 511
+const OCTAL_MASK_2: c_int = 0o100; // 64
+const OCTAL_FLAG: c_int = 0o200; // 128
+const OCTAL_BASE: c_int = 0o10; // 8
 
-/// `typedef struct { int value; double coefficient; } DataPoint;`
+// `limits.h`
+const INT_MAX: c_int = c_int::MAX;
+const INT_MIN: c_int = c_int::MIN;
+
+// ---------------------------------------------------------------------------
+// The C code uses malloc/free from libc directly; we bind to the very same
+// allocator so that allocation-failure behaviour (and hence return values)
+// matches bit for bit.
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+}
+
+/// typedef struct { int value; double coefficient; } DataPoint;
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct DataPoint {
     value: c_int,
-    coefficient: f64,
+    coefficient: c_double,
 }
 
-/// Number of bytes `malloc` is asked for by
-/// `malloc(size * sizeof(DataPoint))`, reproducing the C conversion of a
-/// possibly negative `int` to `size_t`.
-fn malloc_byte_request(count: c_int) -> usize {
-    (count as isize as usize).wrapping_mul(size_of::<DataPoint>())
-}
-
+// ---------------------------------------------------------------------------
+// int safe_double_to_int(double d)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-pub extern "C" fn safe_double_to_int(d: f64) -> c_int {
+pub extern "C" fn safe_double_to_int(d: c_double) -> c_int {
     if d.is_nan() {
         return 0;
     }
 
     if d.is_infinite() {
-        return if d > 0.0 { c_int::MAX } else { c_int::MIN };
+        return if d > 0.0 { INT_MAX } else { INT_MIN };
     }
 
-    // (double)INT_MAX and (double)INT_MIN are both exactly representable.
-    if d >= c_int::MAX as f64 {
-        return c_int::MAX;
+    if d >= INT_MAX as c_double {
+        return INT_MAX;
     }
-    if d <= c_int::MIN as f64 {
-        return c_int::MIN;
+    if d <= INT_MIN as c_double {
+        return INT_MIN;
     }
 
-    // In range, so the C cast is a plain truncation toward zero.
+    // C truncating conversion; the guards above keep this in range.
     d as c_int
 }
 
-/// Walks *backwards* from `end`, reading `count` elements.
-///
-/// # Safety
-///
-/// Mirrors the C contract: `end` must be the last element of a block of at
-/// least `count` `int`s when `count > 0`.
+// ---------------------------------------------------------------------------
+// int process_array_reverse(int *end, int count)
+//
+// Walks *backwards* from `end`, summing `count` elements.
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_array_reverse(end: *mut c_int, count: c_int) -> c_int {
     let mut sum: c_int = 0;
-    let mut ptr = end;
+    let mut ptr: *mut c_int = end;
 
     let mut i: c_int = 0;
     while i < count {
         sum = sum.wrapping_add(unsafe { *ptr });
         ptr = unsafe { ptr.offset(-1) };
-        i += 1;
+        i = i.wrapping_add(1);
     }
 
     sum
 }
 
+// ---------------------------------------------------------------------------
+// int switch_fallthrough_calculator(int value, int operation)
+//
+// The original switch deliberately falls through:
+//   0 -> *=8, +=128, &=511
+//   1 ->      +=128, &=511
+//   2 ->             &=511
+//   3 -> *=3,  +=64
+//   4 ->       +=64
+//   default -> 0
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub extern "C" fn switch_fallthrough_calculator(value: c_int, operation: c_int) -> c_int {
     let mut result: c_int = value;
 
-    // The C `switch` falls through from 0 -> 1 -> 2 and from 3 -> 4.
     match operation {
         0 => {
             result = result.wrapping_mul(OCTAL_BASE);
@@ -131,93 +145,113 @@ pub extern "C" fn switch_fallthrough_calculator(value: c_int, operation: c_int) 
     result
 }
 
+// ---------------------------------------------------------------------------
+// int allocate_and_compute(int size, double multiplier)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-pub extern "C" fn allocate_and_compute(size: c_int, multiplier: f64) -> c_int {
-    // `malloc(size * sizeof(DataPoint))`: a negative `size` becomes an enormous
-    // `size_t`, so the allocation fails and the C returns -1. A `size` of 0
-    // yields a non-NULL pointer from malloc(0), so the C falls through with an
-    // empty array.
-    let bytes = malloc_byte_request(size);
-    if bytes > isize::MAX as usize {
+pub extern "C" fn allocate_and_compute(size: c_int, multiplier: c_double) -> c_int {
+    // C: malloc(size * sizeof(DataPoint)) -- `size` is promoted to size_t, so a
+    // negative `size` becomes an enormous unsigned request and malloc fails.
+    let bytes: usize = (size as isize as usize).wrapping_mul(core::mem::size_of::<DataPoint>());
+    let points = unsafe { malloc(bytes) } as *mut DataPoint;
+
+    if points.is_null() {
         return -1;
     }
 
-    let elements = size as usize;
-    let mut points: Vec<DataPoint> = Vec::new();
-    if points.try_reserve_exact(elements).is_err() {
-        return -1;
+    let mut i: c_int = 0;
+    while i < size {
+        unsafe {
+            let p = points.offset(i as isize);
+            (*p).value = i.wrapping_mul(OCTAL_BASE);
+            (*p).coefficient = (i as c_double) * multiplier;
+        }
+        i = i.wrapping_add(1);
     }
 
-    for i in 0..size {
-        points.push(DataPoint {
-            value: i.wrapping_mul(OCTAL_BASE),
-            coefficient: i as f64 * multiplier,
-        });
+    let mut sum: c_double = 0.0;
+    let mut i: c_int = 0;
+    while i < size {
+        unsafe {
+            let p = points.offset(i as isize);
+            sum += (*p).value as c_double * (*p).coefficient;
+        }
+        i = i.wrapping_add(1);
     }
 
-    let mut sum: f64 = 0.0;
-    for i in 0..size as usize {
-        sum += points[i].value as f64 * points[i].coefficient;
-    }
+    let result = safe_double_to_int(sum);
 
-    // `free(points)` is the Vec drop.
-    safe_double_to_int(sum)
+    unsafe { free(points as *mut c_void) };
+
+    result
 }
 
-/// Reproduces the `FOREACH` macro, whose nested-loop / `keep` toggling walks
-/// the array once from index 0 to `count - 1`.
+// ---------------------------------------------------------------------------
+// int foreach_sum(int *array, int count)
+//
+// The FOREACH macro expands to a double `for` loop that visits every element
+// exactly once, in order.
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn foreach_sum(array: *mut c_int, count: c_int) -> c_int {
     let mut total: c_int = 0;
 
-    let size = count;
-    let mut keep = true;
+    // Faithful expansion of the FOREACH macro.
+    let size: c_int = count;
+    let mut keep: c_int = 1;
     let mut idx: c_int = 0;
-    while keep && idx < size {
-        let element = unsafe { *array.offset(idx as isize) };
-        while keep {
+    while keep != 0 && idx < size {
+        let element: c_int = unsafe { *array.offset(idx as isize) };
+        while keep != 0 {
             total = total.wrapping_add(element);
-            keep = !keep;
+            keep = (keep == 0) as c_int;
         }
-        keep = !keep;
-        idx += 1;
+        keep = (keep == 0) as c_int;
+        idx = idx.wrapping_add(1);
     }
 
     total
 }
 
+// ---------------------------------------------------------------------------
+// int fallcalc(int param1, int param2, int param3, int param4)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub extern "C" fn fallcalc(param1: c_int, param2: c_int, param3: c_int, param4: c_int) -> c_int {
     let mut result: c_int;
 
-    let base_value = param1.wrapping_mul(OCTAL_MASK_2).wrapping_add(param2);
+    let base_value: c_int = param1.wrapping_mul(OCTAL_MASK_2).wrapping_add(param2);
 
     let array_size: c_int = 5;
-    let mut data_array: Vec<c_int> = Vec::new();
-    if data_array.try_reserve_exact(array_size as usize).is_err() {
+    let data_array =
+        unsafe { malloc((array_size as usize) * core::mem::size_of::<c_int>()) } as *mut c_int;
+
+    if data_array.is_null() {
         return -1;
     }
-    data_array.resize(array_size as usize, 0);
 
-    for i in 0..array_size {
-        data_array[i as usize] = (i.wrapping_add(1))
-            .wrapping_mul(OCTAL_BASE)
-            .wrapping_add(param1);
+    let mut i: c_int = 0;
+    while i < array_size {
+        unsafe {
+            *data_array.offset(i as isize) =
+                i.wrapping_add(1).wrapping_mul(OCTAL_BASE).wrapping_add(param1);
+        }
+        i = i.wrapping_add(1);
     }
 
-    let base_ptr = data_array.as_mut_ptr();
+    let foreach_result = unsafe { foreach_sum(data_array, array_size) };
 
-    let foreach_result = unsafe { foreach_sum(base_ptr, array_size) };
-
-    let last_element = unsafe { base_ptr.offset(array_size as isize - 1) };
+    let last_element =
+        unsafe { data_array.offset(array_size as isize).offset(-1) };
     let reverse_sum = unsafe { process_array_reverse(last_element, array_size) };
 
-    let switch_result = switch_fallthrough_calculator(param2, param3 % 5);
+    let switch_result = switch_fallthrough_calculator(param2, param3.wrapping_rem(5));
 
-    let floating_calc = param1 as f64 * 3.7 + param2 as f64 * 2.3 - param3 as f64 * 0.5;
+    let floating_calc: c_double =
+        (param1 as c_double) * 3.7 + (param2 as c_double) * 2.3 - (param3 as c_double) * 0.5;
     let converted = safe_double_to_int(floating_calc);
 
-    let alloc_result = allocate_and_compute(param4 % 10 + 1, 1.5);
+    let alloc_result = allocate_and_compute(param4.wrapping_rem(10).wrapping_add(1), 1.5);
 
     result = base_value
         .wrapping_add(foreach_result)
@@ -230,8 +264,7 @@ pub extern "C" fn fallcalc(param1: c_int, param2: c_int, param3: c_int, param4: 
         result |= OCTAL_FLAG;
     }
 
-    // `free(data_array)` is the Vec drop.
-    drop(data_array);
+    unsafe { free(data_array as *mut c_void) };
 
     result &= OCTAL_MASK_1;
 

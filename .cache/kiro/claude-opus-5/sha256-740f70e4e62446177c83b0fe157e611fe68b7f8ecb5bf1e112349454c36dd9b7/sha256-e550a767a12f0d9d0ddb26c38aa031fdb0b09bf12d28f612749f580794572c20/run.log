@@ -1,0 +1,1836 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -100 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 07:44 .
+drwxr-xr-x. 571 scheschb amazon 81920 Sep  1 07:44 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 07:44 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 07:44 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 07:44 translation
+---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---
+3
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/driver.h c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  35 c_src/CMakeLists.txt
+  28 c_src/include/driver.h
+  59 c_src/src/driver.c
+ 122 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/include/driver.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/src/driver.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1218 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/include/driver.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1516 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/src/driver.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src > /dev/null 2>&1 && make 2>&1 | tail -20 && ls -la[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src 2>&1 | tail -20; echo "=== make ==="; make 2>&1 | tail -30; ls[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library verbose
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-vEncB1/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+=== make ===
+CMake Error: The source directory "/local/home/scheschb/.harvest/work/harvest-work-vEncB1/c_src" does not exist.
+Specify --help for usage, or press the help button on the CMake GUI.
+make: *** [Makefile:228: cmake_check_build_system] Error 1
+CMakeCache.txt
+CMakeFiles
+Makefile
+cm.log
+cmake.log
+cmake_install.cmake
+driver_O0
+driver_O2
+driver_c
+err.txt
+libSieve.so
+libdriver.so
+out.txt
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_bbt && mkdir -p /tmp/cbuild_bbt && cd /tmp/cbuild_bbt && cmake /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/c_src > /dev/null 2>&1; make 2>&1 | tail -20; ls[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir
+
+[ 50%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+libdriver.so
+[38;5;244m - Completed in 0.399s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && nm -D libdriver.so | sort && echo "=== defined text only ===" && nm -D --defined-only libdriver.so | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols of C .so
+
+                 U puts@GLIBC_2.2.5
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001139 T printLine
+000000000000115b T bad
+0000000000001172 T good
+0000000000001194 T driver
+=== defined text only ===
+0000000000001139 T printLine
+000000000000115b T bad
+0000000000001172 T good
+0000000000001194 T driver
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && cat > t.c <<'EOF'
+#include <stdio.h>
+void driver(int);
+void bad(void);
+void good(void);
+void printLine(const char*);
+int main(int argc,char**argv){
+  int m = atoi(argv[1]);
+  if(m==0) driver(0);
+  else if(m==1) driver(1);
+  else if(m==2) bad();
+  else if(m==3) good();
+  else if(m==4) printLine("hello");
+  else if(m==5) printLine(NULL);
+  return 0;
+}
+EOF
+gcc t.c -o t -L. -ldriver -Wl,-rpath,. 2>&1 | tail -5
+for i in 0 1 2 3 4 5; do echo "--- mode $i"; ./t $i; echo "exit=$?"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test C library behavior including uninitialized read
+
+t.c: In function ‘main’:
+t.c:7:11: warning: implicit declaration of function ‘atoi’ [-Wimplicit-function-declaration]
+    7 |   int m = atoi(argv[1]);
+      |           ^~~~
+--- mode 0
+
+exit=0
+--- mode 1
+string
+exit=0
+--- mode 2
+
+exit=0
+--- mode 3
+string
+exit=0
+--- mode 4
+hello
+exit=0
+--- mode 5
+exit=0
+[38;5;244m - Completed in 0.50s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn libdriver.so | sed -n '/<printLine>:/,/^$/p;/<bad>:/,/^$/p;/<good>:/,/^$/p;/<driver>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble the C functions
+
+0000000000001139 <printLine>:
+    1139:	push   %rbp
+    113a:	mov    %rsp,%rbp
+    113d:	sub    $0x10,%rsp
+    1141:	mov    %rdi,-0x8(%rbp)
+    1145:	cmpq   $0x0,-0x8(%rbp)
+    114a:	je     1158 <printLine+0x1f>
+    114c:	mov    -0x8(%rbp),%rax
+    1150:	mov    %rax,%rdi
+    1153:	call   1040 <puts@plt>
+    1158:	nop
+    1159:	leave
+    115a:	ret
+
+000000000000115b <bad>:
+    115b:	push   %rbp
+    115c:	mov    %rsp,%rbp
+    115f:	sub    $0x10,%rsp
+    1163:	mov    -0x8(%rbp),%rax
+    1167:	mov    %rax,%rdi
+    116a:	call   1060 <printLine@plt>
+    116f:	nop
+    1170:	leave
+    1171:	ret
+
+0000000000001172 <good>:
+    1172:	push   %rbp
+    1173:	mov    %rsp,%rbp
+    1176:	sub    $0x10,%rsp
+    117a:	lea    0xe7f(%rip),%rax        # 2000 <_fini+0xe40>
+    1181:	mov    %rax,-0x8(%rbp)
+    1185:	mov    -0x8(%rbp),%rax
+    1189:	mov    %rax,%rdi
+    118c:	call   1060 <printLine@plt>
+    1191:	nop
+    1192:	leave
+    1193:	ret
+
+0000000000001194 <driver>:
+    1194:	push   %rbp
+    1195:	mov    %rsp,%rbp
+    1198:	sub    $0x10,%rsp
+    119c:	mov    %edi,-0x4(%rbp)
+    119f:	cmpl   $0x0,-0x4(%rbp)
+    11a3:	je     11b1 <driver+0x1d>
+    11a5:	mov    $0x0,%eax
+    11aa:	call   1030 <good@plt>
+    11af:	jmp    11bb <driver+0x27>
+    11b1:	mov    $0x0,%eax
+    11b6:	call   1050 <bad@plt>
+    11bb:	nop
+    11bc:	leave
+    11bd:	ret
+
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && cat > t2.c <<'EOF'
+#include <stdio.h>
+#include <string.h>
+void driver(int);
+void bad(void);
+void deep(int d){ char buf[64]; memset(buf,0xAB,sizeof buf); if(d) deep(d-1); else bad(); }
+int main(void){
+  printf("A:"); fflush(stdout); bad();
+  printf("B:"); fflush(stdout); driver(0);
+  printf("C:"); fflush(stdout); driver(1);
+  printf("D:"); fflush(stdout); driver(0);
+  printf("E:"); fflush(stdout); deep(3);
+  printf("F:"); fflush(stdout); bad();
+  return 0;
+}
+EOF
+gcc t2.c -o t2 -L. -ldriver -Wl,-rpath,. && ./t2; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe bad() behavior across stack contexts
+
+A:
+B:
+C:string
+D:
+E:F:
+exit=0
+[38;5;244m - Completed in 0.46s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && cat > t3.c <<'EOF'
+#include <stdio.h>
+void bad(void); void driver(int);
+void printLine(const char *line){ printf("[ptr=%p]", (void*)line); if(line) printf("first=%02x\n",(unsigned char)line[0]); else printf("NULL\n"); }
+int main(void){ bad(); driver(0); bad(); return 0; }
+EOF
+gcc t3.c -o t3 -L. -ldriver -Wl,-rpath,. -rdynamic && ./t3[0m[38;5;244m (using tool: shell)[0m
+Purpose: Interpose printLine to reveal the garbage pointer
+
+[38;5;244m - Completed in 0.589s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && ./t3; echo "exit=$?"; nm -D t3 | grep -i printline[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check interposition result
+
+exit=139
+bash: line 1: 378156 Segmentation fault      (core dumped) ./t3
+0000000000401156 T printLine
+[38;5;244m - Completed in 0.411s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && cat > t4.c <<'EOF'
+#include <stdio.h>
+#include <dlfcn.h>
+int main(int argc,char**argv){
+  void*h=dlopen("./libdriver.so",RTLD_NOW);
+  void(*d)(int)=dlsym(h,"driver");
+  void(*b)(void)=dlsym(h,"bad");
+  d(0); fflush(stdout); fprintf(stderr,"--sep1--\n");
+  d(1); fflush(stdout); fprintf(stderr,"--sep2--\n");
+  b(); fflush(stdout); fprintf(stderr,"--sep3--\n");
+  return 0;
+}
+EOF
+gcc t4.c -o t4 -ldl && ./t4 | xxd | head; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test dlopen-style harness
+
+--sep1--
+--sep2--
+--sep3--
+00000000: 5548 89e5 4883 ec10 488b 45f8 4889 c7e8  UH..H...H.E.H...
+00000010: f1fe ffff 90c9 c355 4889 e548 83ec 1048  .......UH..H...H
+00000020: 8d05 7f0e 0a73 7472 696e 670a 2011 400a  .....string. .@.
+exit=0
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('./libdriver.so')
+l.driver(0); sys.stdout.flush()
+" | xxd | head -5; echo "---driver(1)---"; python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('./libdriver.so')
+l.driver(1); sys.stdout.flush()
+" | xxd | head -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test ctypes harness behavior
+
+00000000: ffff ffff 0a                             .....
+---driver(1)---
+00000000: 7374 7269 6e67 0a                        string.
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 4 exported symbols. Note [38;5;10mbad()[0m reads an uninitialized pointer (genuine UB); I verified its output is environment-dependent in C:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && for i in 1 2 3; do python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('./libdriver.so')
+l.driver(0); sys.stdout.flush()" | xxd; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check reproducibility of the uninitialized read under ctypes
+
+00000000: ffff ffff 0a                             .....
+00000000: ffff ffff 0a                             .....
+00000000: ffff ffff 0a                             .....
+[38;5;244m - Completed in 0.46s[0m
+
+[?25l[0m[38;5;141m> [0mIt's reproducible per-harness, so I'll faithfully reproduce the uninitialized stack read rather than substitute a value.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // The C library is built by CMake as a single shared object (`libdriver.so`)
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // from `src/driver.c` and exports four public symbols:
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //     printLine, bad, good, driver
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // None of the declarations in `include/driver.h` are wrapped in a namespace
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // macro, so the linker names are identical to the source-level names.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // Behaviour is reproduced exactly, including the CWE-457 defect in `bad()`
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // (use of an uninitialized pointer). No bugs are fixed.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     /// libc `puts`. GCC lowers the C source's `printf("%s\n", line)` to a
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     /// `puts(line)` call (verified in the disassembly of `libdriver.so`), so
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     /// calling `puts` here yields byte-identical output and shares the exact
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     /// same stdio stream and buffering semantics as the C library.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     fn puts(s: *const c_char) -> c_int;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// void printLine(const char *line)
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ///     if (line != NULL)
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m ///     {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m ///         printf("%s\n", line);
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m pub extern "C" fn printLine(line: *const c_char) {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     if !line.is_null() {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         unsafe { puts(line) };
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// void bad()
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m ///     char *data;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m ///     printLine(data);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// `data` is never assigned, so the C code passes whatever residue happens to
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// occupy that stack slot to `printLine`. The compiled C performs a real load
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// from `-0x8(%rbp)` (the top eight bytes of the 16-byte local area) and
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// forwards the result verbatim.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// This is reproduced rather than "fixed": a 16-byte uninitialized stack local
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// stands in for the C frame's local area, and the pointer-sized word at its
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// high end is read with `read_volatile` so the load is actually emitted
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// against stack memory instead of being folded into an LLVM `undef` (which
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// would let the optimizer invent an arbitrary value and drop the load).
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m pub extern "C" fn bad() {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     // Deliberately uninitialized: mirrors `char *data;` with no initializer.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let frame: std::mem::MaybeUninit<[*const c_char; 2]> = std::mem::MaybeUninit::uninit();
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     // Highest-addressed slot of the local area == the C's `-0x8(%rbp)`.
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let slot = unsafe { (frame.as_ptr() as *const *const c_char).add(1) };
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let data: *const c_char = unsafe { std::ptr::read_volatile(slot) };
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     printLine(data);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// void good()
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ///     char *data;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///     data = "string";
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///     printLine(data);
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m pub extern "C" fn good() {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     let data: *const c_char = c"string".as_ptr();
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     printLine(data);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// void driver(int useGood)
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m ///     if (useGood)
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m ///     {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m ///         good();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m ///     else
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m ///     {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m ///         bad();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m pub extern "C" fn driver(useGood: c_int) {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     if useGood != 0 {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         good();
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         bad();
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.147s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbols.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && ls -la target/release/*.so && nm -D --defined-only /tmp/cbuild_bbt/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt && nm -D --defined-only target/release/libdriver.so | awk '{print $3}' | sort > /tmp/rust_syms_all.txt && echo "=== C exports ===" && cat /tmp/c_syms.txt && echo "=== MISSING from Rust (C - Rust) ===" && comm -23 /tmp/c_syms.txt /tmp/rust_syms_all.txt && echo "(end)" && echo "=== Rust exports ===" && cat /tmp/rust_syms_all.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
+
+-rwxr-xr-x. 2 scheschb amazon 402224 Sep  1 07:46 target/release/libdriver.so
+=== C exports ===
+bad
+driver
+good
+printLine
+=== MISSING from Rust (C - Rust) ===
+(end)
+=== Rust exports ===
+bad
+driver
+good
+printLine
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now behavioral comparison against the C library:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && cp /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/target/release/libdriver.so ./librust_driver.so
+run() { python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('$1')
+$2
+sys.stdout.flush()"; }
+for lib in ./libdriver.so ./librust_driver.so; do
+  echo "##### $lib"
+  for call in "l.driver(1)" "l.good()" "l.printLine(b'hello')" "l.printLine(None)" "l.printLine(b'')" "l.driver(1);l.driver(1)" "l.driver(0)" "l.bad()"; do
+    printf '%-28s -> ' "$call"; run "$lib" "$call" | xxd -p
+  done
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare C and Rust behavior across all entry points
+
+##### ./libdriver.so
+l.driver(1)                  -> 737472696e670a
+l.good()                     -> 737472696e670a
+l.printLine(b'hello')        -> 68656c6c6f0a
+l.printLine(None)            -> l.printLine(b'')             -> 0a
+l.driver(1);l.driver(1)      -> 737472696e670a737472696e670a
+l.driver(0)                  -> ffffffff0a
+l.bad()                      -> ffffffff0a
+##### ./librust_driver.so
+l.driver(1)                  -> 737472696e670a
+l.good()                     -> 737472696e670a
+l.printLine(b'hello')        -> 68656c6c6f0a
+l.printLine(None)            -> l.printLine(b'')             -> 0a
+l.driver(1);l.driver(1)      -> 737472696e670a737472696e670a
+l.driver(0)                  -> l.bad()                      -> [38;5;244m - Completed in 0.251s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn librust_driver.so | sed -n '/<bad>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble Rust bad()
+
+0000000000011780 <bad>:
+   11780:	mov    -0x8(%rsp),%rdi
+   11785:	test   %rdi,%rdi
+   11788:	je     11790 <bad+0x10>
+   1178a:	jmp    *0x3a838(%rip)        # 4bfc8 <puts@GLIBC_2.2.5>
+   11790:	ret
+   11791:	int3
+   11792:	int3
+   11793:	int3
+   11794:	int3
+   11795:	int3
+   11796:	int3
+   11797:	int3
+   11798:	int3
+   11799:	int3
+   1179a:	int3
+   1179b:	int3
+   1179c:	int3
+   1179d:	int3
+   1179e:	int3
+   1179f:	int3
+
+[38;5;244m - Completed in 0.66s[0m
+
+[?25l[0m[38;5;141m> [0mRust reads the wrong stack slot: C loads [38;5;10m[rbp-8][0m = [38;5;10mentry_rsp-16[0m, while Rust's frame-less codegen read [38;5;10mentry_rsp-8[0m. Adjusting to the matching offset:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 65    [0m:[38;5;9m[49m     // Highest-addressed slot of the local area == the C's `-0x8(%rbp)`.
+[0m[49m[38;5;9m- 66    [0m:[38;5;9m[49m     let slot = unsafe { (frame.as_ptr() as *const *const c_char).add(1) };
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     // The C frame is `push %rbp; mov %rsp,%rbp; sub $0x10,%rsp`, so its
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     // `-0x8(%rbp)` slot sits at `entry_rsp - 16`. Rust elides the frame pointer
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     // here and places `frame` at `entry_rsp - 16 .. entry_rsp`, which puts the
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     // matching word at index 0. Selecting it makes the residue observed by the
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     // Rust build the same residue the C build observes for the same caller.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     let slot = frame.as_ptr() as *const *const c_char;
+[0m[49m[39m  67, 71[0m:[39m[49m     let data: *const c_char = unsafe { std::ptr::read_volatile(slot) };
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cargo build --release 2>&1 | tail -3 && cp target/release/libdriver.so /tmp/cbuild_bbt/librust_driver.so && cd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn librust_driver.so | sed -n '/<bad>:/,/ret/p' && for lib in ./libdriver.so ./librust_driver.so; do printf '%-22s driver(0)-> ' "$lib"; python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('$lib'); l.driver(0); sys.stdout.flush()" | xxd -p; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and re-test the uninitialized path
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+0000000000011780 <bad>:
+   11780:	mov    -0x8(%rsp),%rdi
+   11785:	test   %rdi,%rdi
+   11788:	je     11790 <bad+0x10>
+   1178a:	jmp    *0x3a838(%rip)        # 4bfc8 <puts@GLIBC_2.2.5>
+   11790:	ret
+./libdriver.so         driver(0)-> ffffffff0a
+./librust_driver.so    driver(0)-> [38;5;244m - Completed in 0.190s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version for naked function support
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[38;5;141m> [0mRust's codegen reads the wrong address regardless of index (LLVM shrinks the slot). To make the uninitialized read hit the same stack word the C reads, I'll mirror the C frame exactly on x86-64:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  42,  42[0m:[39m[49m /// ```c
+[0m[49m[39m  43,  43[0m:[39m[49m /// void bad()
+[0m[49m[39m  44,  44[0m:[39m[49m /// {
+[0m[49m[39m  45,  45[0m:[39m[49m ///     char *data;
+[0m[49m[39m  46,  46[0m:[39m[49m ///     printLine(data);
+[0m[49m[39m  47,  47[0m:[39m[49m /// }
+[0m[49m[39m  48,  48[0m:[39m[49m /// ```
+[0m[49m[39m  49,  49[0m:[39m[49m ///
+[0m[49m[38;5;9m- 50     [0m:[38;5;9m[49m /// `data` is never assigned, so the C code passes whatever residue happens to
+[0m[49m[38;5;9m- 51     [0m:[38;5;9m[49m /// occupy that stack slot to `printLine`. The compiled C performs a real load
+[0m[49m[38;5;9m- 52     [0m:[38;5;9m[49m /// from `-0x8(%rbp)` (the top eight bytes of the 16-byte local area) and
+[0m[49m[38;5;9m- 53     [0m:[38;5;9m[49m /// forwards the result verbatim.
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m /// `data` is never assigned (CWE-457), so the C code hands whatever residue
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m /// occupies that stack slot to `printLine`. This is *observable*: the value is
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m /// leftover data from previously executed frames, and the resulting stdout
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m /// bytes differ per caller. The C compiles to
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m /// ```text
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m /// push %rbp; mov %rsp,%rbp; sub $0x10,%rsp
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m /// mov -0x8(%rbp),%rax        ; == entry_rsp - 16
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m /// mov %rax,%rdi; call printLine; leave; ret
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m /// ```
+[0m[49m[39m  54,  60[0m:[39m[49m ///
+[0m[49m[38;5;9m- 55     [0m:[38;5;9m[49m /// This is reproduced rather than "fixed": a 16-byte uninitialized stack local
+[0m[49m[38;5;9m- 56     [0m:[38;5;9m[49m /// stands in for the C frame's local area, and the pointer-sized word at its
+[0m[49m[38;5;9m- 57     [0m:[38;5;9m[49m /// high end is read with `read_volatile` so the load is actually emitted
+[0m[49m[38;5;9m- 58     [0m:[38;5;9m[49m /// against stack memory instead of being folded into an LLVM `undef` (which
+[0m[49m[38;5;9m- 59     [0m:[38;5;9m[49m /// would let the optimizer invent an arbitrary value and drop the load).
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m /// so the byte read is fixed at `entry_rsp - 16`. Ordinary Rust cannot name
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m /// that slot: LLVM sinks a `MaybeUninit` local to whatever offset it likes
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m /// (it picked `entry_rsp - 8` here) and is free to fold an uninitialized read
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m /// into `undef` and drop the load entirely. Reproducing the defect's *output*
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m /// therefore requires reproducing the frame, which is what this naked body
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m /// does - it is the C prologue, load, and tail call, instruction for
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m /// instruction, so the residue observed is the same residue the C observes for
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m /// the same caller.
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m #[unsafe(naked)]
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m pub extern "C" fn bad() {
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m     core::arch::naked_asm!(
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m         "push rbp",
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m         "mov rbp, rsp",
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m         "sub rsp, 16",
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m         // `char *data;` is never written, so this loads stale stack contents.
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m         "mov rax, qword ptr [rbp - 8]",
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m         "mov rdi, rax",
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m         "call {print_line}",
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m         "leave",
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m         "ret",
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m         print_line = sym printLine,
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m /// Portable fallback for targets without the hand-written frame above. The
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m /// uninitialized read is still performed against real stack memory (via
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m /// `read_volatile`, so the load survives optimization), but the exact slot -
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m /// and hence the exact garbage - is whatever the code generator chooses.
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[39m  60,  92[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  61,  93[0m:[39m[49m pub extern "C" fn bad() {
+[0m[49m[39m  62,  94[0m:[39m[49m     // Deliberately uninitialized: mirrors `char *data;` with no initializer.
+[0m[49m[39m  63,  95[0m:[39m[49m     let frame: std::mem::MaybeUninit<[*const c_char; 2]> = std::mem::MaybeUninit::uninit();
+[0m[49m[38;5;9m- 64     [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 65     [0m:[38;5;9m[49m     // The C frame is `push %rbp; mov %rsp,%rbp; sub $0x10,%rsp`, so its
+[0m[49m[38;5;9m- 66     [0m:[38;5;9m[49m     // `-0x8(%rbp)` slot sits at `entry_rsp - 16`. Rust elides the frame pointer
+[0m[49m[38;5;9m- 67     [0m:[38;5;9m[49m     // here and places `frame` at `entry_rsp - 16 .. entry_rsp`, which puts the
+[0m[49m[38;5;9m- 68     [0m:[38;5;9m[49m     // matching word at index 0. Selecting it makes the residue observed by the
+[0m[49m[38;5;9m- 69     [0m:[38;5;9m[49m     // Rust build the same residue the C build observes for the same caller.
+[0m[49m[39m  70,  96[0m:[39m[49m     let slot = frame.as_ptr() as *const *const c_char;
+[0m[49m[39m  71,  97[0m:[39m[49m     let data: *const c_char = unsafe { std::ptr::read_volatile(slot) };
+[0m[49m[39m  72,  98[0m:[39m[49m 
+[0m[49m[39m  73,  99[0m:[39m[49m     printLine(data);
+[0m[49m[39m  74, 100[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild with naked bad()
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+[38;5;244m - Completed in 0.96s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cp target/release/libdriver.so /tmp/cbuild_bbt/librust_driver.so && cd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn librust_driver.so | sed -n '/<bad>:/,/^$/p' | head -12 && echo "=== ctypes compare ===" && for lib in ./libdriver.so ./librust_driver.so; do printf '%-22s driver(0)-> ' "$lib"; python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('$lib'); l.driver(0); sys.stdout.flush()" | xxd -p; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify naked bad() output matches C
+
+000000000001179c <bad>:
+   1179c:	push   %rbp
+   1179d:	mov    %rsp,%rbp
+   117a0:	sub    $0x10,%rsp
+   117a4:	mov    -0x8(%rbp),%rax
+   117a8:	mov    %rax,%rdi
+   117ab:	call   496d0 <printLine@plt>
+   117b0:	leave
+   117b1:	ret
+   117b2:	int3
+   117b3:	int3
+   117b4:	int3
+=== ctypes compare ===
+./libdriver.so         driver(0)-> ffffffff0a
+./librust_driver.so    driver(0)-> 704553ffeb7f0a
+[38;5;244m - Completed in 0.97s[0m
+
+[?25l[0m[38;5;141m> [0mC's residue depends on the frames of [3mall four[23m functions (they overlap at equal stack depth). A naked-asm-only [38;5;10mbad[0m isn't enough. Let me instead materialize each C local in a real stack slot with a frame pointer, so frame sizes and offsets match:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m    1,   1[0m:[39m[49m // Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
+[0m[49m[39m    2,   2[0m:[39m[49m //
+[0m[49m[39m    3,   3[0m:[39m[49m // The C library is built by CMake as a single shared object (`libdriver.so`)
+[0m[49m[38;5;9m-   4     [0m:[38;5;9m[49m // from `src/driver.c` and exports four public symbols:
+[0m[49m[38;5;10m+        4[0m:[38;5;10m[49m // from `src/driver.c`. It exports exactly four public symbols:
+[0m[49m[39m    5,   5[0m:[39m[49m //
+[0m[49m[39m    6,   6[0m:[39m[49m //     printLine, bad, good, driver
+[0m[49m[39m    7,   7[0m:[39m[49m //
+[0m[49m[38;5;9m-   8     [0m:[38;5;9m[49m // None of the declarations in `include/driver.h` are wrapped in a namespace
+[0m[49m[38;5;9m-   9     [0m:[38;5;9m[49m // macro, so the linker names are identical to the source-level names.
+[0m[49m[38;5;10m+        8[0m:[38;5;10m[49m // `include/driver.h` declares `driver` with no namespace/renaming macro, so the
+[0m[49m[38;5;10m+        9[0m:[38;5;10m[49m // linker names are identical to the source-level names (verified with
+[0m[49m[38;5;10m+       10[0m:[38;5;10m[49m // `nm -D libdriver.so`).
+[0m[49m[39m   10,  11[0m:[39m[49m //
+[0m[49m[39m   11,  12[0m:[39m[49m // Behaviour is reproduced exactly, including the CWE-457 defect in `bad()`
+[0m[49m[39m   12,  13[0m:[39m[49m // (use of an uninitialized pointer). No bugs are fixed.
+[0m[49m[38;5;10m+       14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       15[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+       16[0m:[38;5;10m[49m // Why the stack layout is reproduced explicitly
+[0m[49m[38;5;10m+       17[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+       18[0m:[38;5;10m[49m // `bad()` passes an uninitialized `char *` to `printLine`, so the bytes written
+[0m[49m[38;5;10m+       19[0m:[38;5;10m[49m // to stdout are whatever residue occupies that stack slot. That makes the frame
+[0m[49m[38;5;10m+       20[0m:[38;5;10m[49m // layout of *every* function here observable, not just `bad`'s:
+[0m[49m[38;5;10m+       21[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       22[0m:[38;5;10m[49m //   * `bad` reads the pointer-sized word at `-0x8(%rbp)`;
+[0m[49m[38;5;10m+       23[0m:[38;5;10m[49m //   * `good` is called from `driver` at the same stack depth as `bad`, so the
+[0m[49m[38;5;10m+       24[0m:[38;5;10m[49m //     `"string"` pointer it stores at its own `-0x8(%rbp)` lands on the exact
+[0m[49m[38;5;10m+       25[0m:[38;5;10m[49m //     word a later `bad()` reads;
+[0m[49m[38;5;10m+       26[0m:[38;5;10m[49m //   * `driver`'s frame determines how deep `bad`/`good` sit;
+[0m[49m[38;5;10m+       27[0m:[38;5;10m[49m //   * `printLine`'s frame determines what it clobbers below them.
+[0m[49m[38;5;10m+       28[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       29[0m:[38;5;10m[49m // So each C local is materialized in a real stack slot at the same offset the C
+[0m[49m[38;5;10m+       30[0m:[38;5;10m[49m // compiler chose, using volatile accesses so the loads and stores survive
+[0m[49m[38;5;10m+       31[0m:[38;5;10m[49m // optimization instead of being folded away (an uninitialized read in
+[0m[49m[38;5;10m+       32[0m:[38;5;10m[49m // particular would otherwise become LLVM `undef` and the load would vanish).
+[0m[49m[38;5;10m+       33[0m:[38;5;10m[49m // `-Cforce-frame-pointers=yes` in `.cargo/config.toml` supplies the matching
+[0m[49m[38;5;10m+       34[0m:[38;5;10m[49m // `push %rbp; mov %rsp,%rbp` prologue.
+[0m[49m[38;5;10m+       35[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       36[0m:[38;5;10m[49m // Reference disassembly from the C build (gcc, CMake default `-O0`):
+[0m[49m[38;5;10m+       37[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+       38[0m:[38;5;10m[49m //     printLine: push rbp; mov rbp,rsp; sub rsp,0x10; mov [rbp-8],rdi
+[0m[49m[38;5;10m+       39[0m:[38;5;10m[49m //                cmpq [rbp-8],0; je out; mov rdi,[rbp-8]; call puts@plt
+[0m[49m[38;5;10m+       40[0m:[38;5;10m[49m //     bad:       push rbp; mov rbp,rsp; sub rsp,0x10
+[0m[49m[38;5;10m+       41[0m:[38;5;10m[49m //                mov rax,[rbp-8]; mov rdi,rax; call printLine@plt
+[0m[49m[38;5;10m+       42[0m:[38;5;10m[49m //     good:      push rbp; mov rbp,rsp; sub rsp,0x10
+[0m[49m[38;5;10m+       43[0m:[38;5;10m[49m //                lea rax,"string"; mov [rbp-8],rax
+[0m[49m[38;5;10m+       44[0m:[38;5;10m[49m //                mov rdi,[rbp-8]; call printLine@plt
+[0m[49m[38;5;10m+       45[0m:[38;5;10m[49m //     driver:    push rbp; mov rbp,rsp; sub rsp,0x10; mov [rbp-4],edi
+[0m[49m[38;5;10m+       46[0m:[38;5;10m[49m //                cmpl [rbp-4],0; je bad_path; call good@plt; jmp out
+[0m[49m[38;5;10m+       47[0m:[38;5;10m[49m //                bad_path: call bad@plt
+[0m[49m[39m   13,  48[0m:[39m[49m 
+[0m[49m[39m   14,  49[0m:[39m[49m #![allow(non_snake_case)]
+[0m[49m[39m   15,  50[0m:[39m[49m 
+[0m[49m[39m   16,  51[0m:[39m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+       52[0m:[38;5;10m[49m use std::mem::MaybeUninit;
+[0m[49m[38;5;10m+       53[0m:[38;5;10m[49m use std::ptr::{read_volatile, write_volatile};
+[0m[49m[39m   17,  54[0m:[39m[49m 
+[0m[49m[39m   18,  55[0m:[39m[49m unsafe extern "C" {
+[0m[49m[38;5;9m-  19     [0m:[38;5;9m[49m     /// libc `puts`. GCC lowers the C source's `printf("%s\n", line)` to a
+[0m[49m[38;5;9m-  20     [0m:[38;5;9m[49m     /// `puts(line)` call (verified in the disassembly of `libdriver.so`), so
+[0m[49m[38;5;9m-  21     [0m:[38;5;9m[49m     /// calling `puts` here yields byte-identical output and shares the exact
+[0m[49m[38;5;9m-  22     [0m:[38;5;9m[49m     /// same stdio stream and buffering semantics as the C library.
+[0m[49m[38;5;10m+       56[0m:[38;5;10m[49m     /// libc `puts`. gcc lowers the C source's `printf("%s\n", line)` to
+[0m[49m[38;5;10m+       57[0m:[38;5;10m[49m     /// `puts(line)` (confirmed in the disassembly of `libdriver.so`), so calling
+[0m[49m[38;5;10m+       58[0m:[38;5;10m[49m     /// `puts` here produces byte-identical output and shares the exact same
+[0m[49m[38;5;10m+       59[0m:[38;5;10m[49m     /// stdio stream and buffering behaviour as the C library.
+[0m[49m[39m   23,  60[0m:[39m[49m     fn puts(s: *const c_char) -> c_int;
+[0m[49m[39m   24,  61[0m:[39m[49m }
+[0m[49m[39m   25,  62[0m:[39m[49m 
+[0m[49m[38;5;10m+       63[0m:[38;5;10m[49m /// A stand-in for the 16-byte local area the C compiler reserves in each of
+[0m[49m[38;5;10m+       64[0m:[38;5;10m[49m /// these functions (`sub $0x10,%rsp`). Deliberately uninitialized, matching C
+[0m[49m[38;5;10m+       65[0m:[38;5;10m[49m /// locals that have no initializer.
+[0m[49m[38;5;10m+       66[0m:[38;5;10m[49m type LocalArea = MaybeUninit<[usize; 2]>;
+[0m[49m[38;5;10m+       67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       68[0m:[38;5;10m[49m /// Address of the word the C compiler addresses as `-0x8(%rbp)`: the
+[0m[49m[38;5;10m+       69[0m:[38;5;10m[49m /// highest-addressed pointer-sized slot of the 16-byte local area.
+[0m[49m[38;5;10m+       70[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+       71[0m:[38;5;10m[49m fn slot_8(area: &LocalArea) -> *mut *const c_char {
+[0m[49m[38;5;10m+       72[0m:[38;5;10m[49m     unsafe { (area.as_ptr() as *mut *const c_char).add(1) }
+[0m[49m[38;5;10m+       73[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       74[0m:[38;5;10m[49m 
+[0m[49m[39m   26,  75[0m:[39m[49m /// ```c
+[0m[49m[39m   27,  76[0m:[39m[49m /// void printLine(const char *line)
+[0m[49m[39m   28,  77[0m:[39m[49m /// {
+[0m[49m[39m   29,  78[0m:[39m[49m ///     if (line != NULL)
+[0m[49m[39m   30,  79[0m:[39m[49m ///     {
+[0m[49m[39m   31,  80[0m:[39m[49m ///         printf("%s\n", line);
+[0m[49m[39m   32,  81[0m:[39m[49m ///     }
+[0m[49m[39m   33,  82[0m:[39m[49m /// }
+[0m[49m[39m   34,  83[0m:[39m[49m /// ```
+[0m[49m[38;5;10m+       84[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+       85[0m:[38;5;10m[49m /// The parameter is spilled to `-0x8(%rbp)` and re-read for both the NULL test
+[0m[49m[38;5;10m+       86[0m:[38;5;10m[49m /// and the call, exactly as the unoptimized C does.
+[0m[49m[39m   35,  87[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m   36,  88[0m:[39m[49m pub extern "C" fn printLine(line: *const c_char) {
+[0m[49m[38;5;9m-  37     [0m:[38;5;9m[49m     if !line.is_null() {
+[0m[49m[38;5;9m-  38     [0m:[38;5;9m[49m         unsafe { puts(line) };
+[0m[49m[38;5;10m+       89[0m:[38;5;10m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[38;5;10m+       90[0m:[38;5;10m[49m     let param = slot_8(&mut area);
+[0m[49m[38;5;10m+       91[0m:[38;5;10m[49m     unsafe { write_volatile(param, line) };
+[0m[49m[38;5;10m+       92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       93[0m:[38;5;10m[49m     if unsafe { read_volatile(param) }.is_null() {
+[0m[49m[38;5;10m+       94[0m:[38;5;10m[49m         return;
+[0m[49m[39m   39,  95[0m:[39m[49m     }
+[0m[49m[38;5;10m+       96[0m:[38;5;10m[49m     let line = unsafe { read_volatile(param) };
+[0m[49m[38;5;10m+       97[0m:[38;5;10m[49m     unsafe { puts(line) };
+[0m[49m[39m   40,  98[0m:[39m[49m }
+[0m[49m[39m   41,  99[0m:[39m[49m 
+[0m[49m[39m   42, 100[0m:[39m[49m /// ```c
+[0m[49m[39m   43, 101[0m:[39m[49m /// void bad()
+[0m[49m[39m   44, 102[0m:[39m[49m /// {
+[0m[49m[39m   45, 103[0m:[39m[49m ///     char *data;
+[0m[49m[39m   46, 104[0m:[39m[49m ///     printLine(data);
+[0m[49m[39m   47, 105[0m:[39m[49m /// }
+[0m[49m[39m   48, 106[0m:[39m[49m /// ```
+[0m[49m[39m   49, 107[0m:[39m[49m ///
+[0m[49m[38;5;9m-  50     [0m:[38;5;9m[49m /// `data` is never assigned (CWE-457), so the C code hands whatever residue
+[0m[49m[38;5;9m-  51     [0m:[38;5;9m[49m /// occupies that stack slot to `printLine`. This is *observable*: the value is
+[0m[49m[38;5;9m-  52     [0m:[38;5;9m[49m /// leftover data from previously executed frames, and the resulting stdout
+[0m[49m[38;5;9m-  53     [0m:[38;5;9m[49m /// bytes differ per caller. The C compiles to
+[0m[49m[38;5;9m-  54     [0m:[38;5;9m[49m ///
+[0m[49m[38;5;9m-  55     [0m:[38;5;9m[49m /// ```text
+[0m[49m[38;5;9m-  56     [0m:[38;5;9m[49m /// push %rbp; mov %rsp,%rbp; sub $0x10,%rsp
+[0m[49m[38;5;9m-  57     [0m:[38;5;9m[49m /// mov -0x8(%rbp),%rax        ; == entry_rsp - 16
+[0m[49m[38;5;9m-  58     [0m:[38;5;9m[49m /// mov %rax,%rdi; call printLine; leave; ret
+[0m[49m[38;5;9m-  59     [0m:[38;5;9m[49m /// ```
+[0m[49m[38;5;9m-  60     [0m:[38;5;9m[49m ///
+[0m[49m[38;5;9m-  61     [0m:[38;5;9m[49m /// so the byte read is fixed at `entry_rsp - 16`. Ordinary Rust cannot name
+[0m[49m[38;5;9m-  62     [0m:[38;5;9m[49m /// that slot: LLVM sinks a `MaybeUninit` local to whatever offset it likes
+[0m[49m[38;5;9m-  63     [0m:[38;5;9m[49m /// (it picked `entry_rsp - 8` here) and is free to fold an uninitialized read
+[0m[49m[38;5;9m-  64     [0m:[38;5;9m[49m /// into `undef` and drop the load entirely. Reproducing the defect's *output*
+[0m[49m[38;5;9m-  65     [0m:[38;5;9m[49m /// therefore requires reproducing the frame, which is what this naked body
+[0m[49m[38;5;9m-  66     [0m:[38;5;9m[49m /// does - it is the C prologue, load, and tail call, instruction for
+[0m[49m[38;5;9m-  67     [0m:[38;5;9m[49m /// instruction, so the residue observed is the same residue the C observes for
+[0m[49m[38;5;9m-  68     [0m:[38;5;9m[49m /// the same caller.
+[0m[49m[38;5;9m-  69     [0m:[38;5;9m[49m #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;9m-  70     [0m:[38;5;9m[49m #[unsafe(naked)]
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m /// CWE-457: `data` is never assigned, so this forwards whatever stale value is
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m /// sitting in the `-0x8(%rbp)` slot. Reproduced, not fixed.
+[0m[49m[39m   71, 110[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m   72, 111[0m:[39m[49m pub extern "C" fn bad() {
+[0m[49m[38;5;9m-  73     [0m:[38;5;9m[49m     core::arch::naked_asm!(
+[0m[49m[38;5;9m-  74     [0m:[38;5;9m[49m         "push rbp",
+[0m[49m[38;5;9m-  75     [0m:[38;5;9m[49m         "mov rbp, rsp",
+[0m[49m[38;5;9m-  76     [0m:[38;5;9m[49m         "sub rsp, 16",
+[0m[49m[38;5;9m-  77     [0m:[38;5;9m[49m         // `char *data;` is never written, so this loads stale stack contents.
+[0m[49m[38;5;9m-  78     [0m:[38;5;9m[49m         "mov rax, qword ptr [rbp - 8]",
+[0m[49m[38;5;9m-  79     [0m:[38;5;9m[49m         "mov rdi, rax",
+[0m[49m[38;5;9m-  80     [0m:[38;5;9m[49m         "call {print_line}",
+[0m[49m[38;5;9m-  81     [0m:[38;5;9m[49m         "leave",
+[0m[49m[38;5;9m-  82     [0m:[38;5;9m[49m         "ret",
+[0m[49m[38;5;9m-  83     [0m:[38;5;9m[49m         print_line = sym printLine,
+[0m[49m[38;5;9m-  84     [0m:[38;5;9m[49m     )
+[0m[49m[38;5;9m-  85     [0m:[38;5;9m[49m }
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m     // `char *data;` -- no initializer, never written.
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[38;5;10m+      114[0m:[38;5;10m[49m     let data_slot = slot_8(&mut area);
+[0m[49m[39m   86, 115[0m:[39m[49m 
+[0m[49m[38;5;9m-  87     [0m:[38;5;9m[49m /// Portable fallback for targets without the hand-written frame above. The
+[0m[49m[38;5;9m-  88     [0m:[38;5;9m[49m /// uninitialized read is still performed against real stack memory (via
+[0m[49m[38;5;9m-  89     [0m:[38;5;9m[49m /// `read_volatile`, so the load survives optimization), but the exact slot -
+[0m[49m[38;5;9m-  90     [0m:[38;5;9m[49m /// and hence the exact garbage - is whatever the code generator chooses.
+[0m[49m[38;5;9m-  91     [0m:[38;5;9m[49m #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[38;5;9m-  92     [0m:[38;5;9m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;9m-  93     [0m:[38;5;9m[49m pub extern "C" fn bad() {
+[0m[49m[38;5;9m-  94     [0m:[38;5;9m[49m     // Deliberately uninitialized: mirrors `char *data;` with no initializer.
+[0m[49m[38;5;9m-  95     [0m:[38;5;9m[49m     let frame: std::mem::MaybeUninit<[*const c_char; 2]> = std::mem::MaybeUninit::uninit();
+[0m[49m[38;5;9m-  96     [0m:[38;5;9m[49m     let slot = frame.as_ptr() as *const *const c_char;
+[0m[49m[38;5;9m-  97     [0m:[38;5;9m[49m     let data: *const c_char = unsafe { std::ptr::read_volatile(slot) };
+[0m[49m[38;5;9m-  98     [0m:[38;5;9m[49m 
+[0m[49m[38;5;10m+      116[0m:[38;5;10m[49m     let data: *const c_char = unsafe { read_volatile(data_slot) };
+[0m[49m[39m   99, 117[0m:[39m[49m     printLine(data);
+[0m[49m[39m  100, 118[0m:[39m[49m }
+[0m[49m[39m  101, 119[0m:[39m[49m 
+[0m[49m[39m  102, 120[0m:[39m[49m /// ```c
+[0m[49m[39m  103, 121[0m:[39m[49m /// void good()
+[0m[49m[39m  104, 122[0m:[39m[49m /// {
+[0m[49m[39m  105, 123[0m:[39m[49m ///     char *data;
+[0m[49m[39m  106, 124[0m:[39m[49m ///     data = "string";
+[0m[49m[39m  107, 125[0m:[39m[49m ///     printLine(data);
+[0m[49m[39m  108, 126[0m:[39m[49m /// }
+[0m[49m[39m  109, 127[0m:[39m[49m /// ```
+[0m[49m[39m  110, 128[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  111, 129[0m:[39m[49m pub extern "C" fn good() {
+[0m[49m[38;5;9m- 112     [0m:[38;5;9m[49m     let data: *const c_char = c"string".as_ptr();
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[38;5;10m+      131[0m:[38;5;10m[49m     let data_slot = slot_8(&mut area);
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      133[0m:[38;5;10m[49m     unsafe { write_volatile(data_slot, c"string".as_ptr()) };
+[0m[49m[38;5;10m+      134[0m:[38;5;10m[49m     let data: *const c_char = unsafe { read_volatile(data_slot) };
+[0m[49m[39m  113, 135[0m:[39m[49m     printLine(data);
+[0m[49m[39m  114, 136[0m:[39m[49m }
+[0m[49m[39m  115, 137[0m:[39m[49m 
+[0m[49m[39m  116, 138[0m:[39m[49m /// ```c
+[0m[49m[39m  117, 139[0m:[39m[49m /// void driver(int useGood)
+[0m[49m[39m  118, 140[0m:[39m[49m /// {
+[0m[49m[39m  119, 141[0m:[39m[49m ///     if (useGood)
+[0m[49m[39m  120, 142[0m:[39m[49m ///     {
+[0m[49m[39m  121, 143[0m:[39m[49m ///         good();
+[0m[49m[39m  122, 144[0m:[39m[49m ///     }
+[0m[49m[39m  123, 145[0m:[39m[49m ///     else
+[0m[49m[39m  124, 146[0m:[39m[49m ///     {
+[0m[49m[39m  125, 147[0m:[39m[49m ///         bad();
+[0m[49m[39m  126, 148[0m:[39m[49m ///     }
+[0m[49m[39m  127, 149[0m:[39m[49m /// }
+[0m[49m[39m  128, 150[0m:[39m[49m /// ```
+[0m[49m[38;5;10m+      151[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      152[0m:[38;5;10m[49m /// `useGood` is spilled to `-0x4(%rbp)` and re-read for the test, as in the
+[0m[49m[38;5;10m+      153[0m:[38;5;10m[49m /// unoptimized C.
+[0m[49m[39m  129, 154[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  130, 155[0m:[39m[49m pub extern "C" fn driver(useGood: c_int) {
+[0m[49m[38;5;9m- 131     [0m:[38;5;9m[49m     if useGood != 0 {
+[0m[49m[38;5;10m+      156[0m:[38;5;10m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[38;5;10m+      157[0m:[38;5;10m[49m     // `-0x4(%rbp)`: the top 4 bytes of the 16-byte local area.
+[0m[49m[38;5;10m+      158[0m:[38;5;10m[49m     let param = unsafe { (slot_8(&mut area) as *mut c_int).add(1) };
+[0m[49m[38;5;10m+      159[0m:[38;5;10m[49m     unsafe { write_volatile(param, useGood) };
+[0m[49m[38;5;10m+      160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      161[0m:[38;5;10m[49m     if unsafe { read_volatile(param) } != 0 {
+[0m[49m[39m  132, 162[0m:[39m[49m         good();
+[0m[49m[39m  133, 163[0m:[39m[49m     } else {
+[0m[49m[39m  134, 164[0m:[39m[49m         bad();
+[0m[49m[39m  135, 165[0m:[39m[49m     }
+[0m[49m[39m  136, 166[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/.cargo/config.toml[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+    1[0m:[38;5;10m[49m [build]
+[0m[49m[38;5;10m+    2[0m:[38;5;10m[49m # The C library is built by CMake with no optimization flags (-O0), which emits a
+[0m[49m[38;5;10m+    3[0m:[38;5;10m[49m # frame pointer in every function. `bad()` leaks stack residue to stdout
+[0m[49m[38;5;10m+    4[0m:[38;5;10m[49m # (CWE-457), so the frame layout of these functions is observable: matching the
+[0m[49m[38;5;10m+    5[0m:[38;5;10m[49m # C prologue keeps the observable bytes identical.
+[0m[49m[38;5;10m+    6[0m:[38;5;10m[49m rustflags = ["-Cforce-frame-pointers=yes"]
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/.cargo/config.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cargo build --release 2>&1 | tail -20 && cp target/release/libdriver.so /tmp/cbuild_bbt/librust_driver.so && cd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn librust_driver.so | sed -n '/<printLine>:/,/^$/p;/<bad>:/,/^$/p;/<good>:/,/^$/p;/<driver>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build and disassemble Rust functions
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.09s
+0000000000011800 <bad>:
+   11800:	push   %rbp
+   11801:	mov    %rsp,%rbp
+   11804:	mov    -0x10(%rbp),%rax
+   11808:	mov    %rax,-0x8(%rbp)
+   1180c:	cmpq   $0x0,-0x8(%rbp)
+   11811:	je     1181e <bad+0x1e>
+   11813:	mov    -0x8(%rbp),%rdi
+   11817:	pop    %rbp
+   11818:	jmp    *0x3a86a(%rip)        # 4c088 <puts@GLIBC_2.2.5>
+   1181e:	pop    %rbp
+   1181f:	ret
+
+0000000000011820 <driver>:
+   11820:	push   %rbp
+   11821:	mov    %rsp,%rbp
+   11824:	sub    $0x20,%rsp
+   11828:	mov    %edi,-0xc(%rbp)
+   1182b:	cmpl   $0x0,-0xc(%rbp)
+   1182f:	je     1183c <driver+0x1c>
+   11831:	lea    -0xd337(%rip),%rax        # 4501 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x44b9>
+   11838:	mov    %rax,-0x18(%rbp)
+   1183c:	mov    -0x18(%rbp),%rax
+   11840:	mov    %rax,-0x8(%rbp)
+   11844:	cmpq   $0x0,-0x8(%rbp)
+   11849:	je     11855 <driver+0x35>
+   1184b:	mov    -0x8(%rbp),%rdi
+   1184f:	call   *0x3a833(%rip)        # 4c088 <puts@GLIBC_2.2.5>
+   11855:	add    $0x20,%rsp
+   11859:	pop    %rbp
+   1185a:	ret
+   1185b:	int3
+   1185c:	int3
+   1185d:	int3
+   1185e:	int3
+   1185f:	int3
+
+0000000000011860 <good>:
+   11860:	push   %rbp
+   11861:	mov    %rsp,%rbp
+   11864:	lea    -0xd36a(%rip),%rax        # 4501 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x44b9>
+   1186b:	mov    %rax,-0x10(%rbp)
+   1186f:	mov    -0x10(%rbp),%rax
+   11873:	mov    %rax,-0x8(%rbp)
+   11877:	cmpq   $0x0,-0x8(%rbp)
+   1187c:	je     11889 <good+0x29>
+   1187e:	mov    -0x8(%rbp),%rdi
+   11882:	pop    %rbp
+   11883:	jmp    *0x3a7ff(%rip)        # 4c088 <puts@GLIBC_2.2.5>
+   11889:	pop    %rbp
+   1188a:	ret
+   1188b:	int3
+   1188c:	int3
+   1188d:	int3
+   1188e:	int3
+   1188f:	int3
+
+0000000000011890 <printLine>:
+   11890:	push   %rbp
+   11891:	mov    %rsp,%rbp
+   11894:	mov    %rdi,-0x8(%rbp)
+   11898:	cmpq   $0x0,-0x8(%rbp)
+   1189d:	je     118aa <printLine+0x1a>
+   1189f:	mov    -0x8(%rbp),%rdi
+   118a3:	pop    %rbp
+   118a4:	jmp    *0x3a7de(%rip)        # 4c088 <puts@GLIBC_2.2.5>
+   118aa:	pop    %rbp
+   118ab:	ret
+   118ac:	int3
+   118ad:	int3
+   118ae:	int3
+   118af:	int3
+
+[38;5;244m - Completed in 0.175s[0m
+
+[?25l[0m[38;5;141m> [0mLLVM inlined and elided the frames. I need [38;5;10m#[inline(never)][0m plus a post-call liveness pin to defeat tail calls and force the 16-byte reservation:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m    1,   1[0m:[39m[49m // Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
+[0m[49m[39m    2,   2[0m:[39m[49m //
+[0m[49m[39m    3,   3[0m:[39m[49m // The C library is built by CMake as a single shared object (`libdriver.so`)
+[0m[49m[39m    4,   4[0m:[39m[49m // from `src/driver.c`. It exports exactly four public symbols:
+[0m[49m[39m    5,   5[0m:[39m[49m //
+[0m[49m[39m    6,   6[0m:[39m[49m //     printLine, bad, good, driver
+[0m[49m[39m    7,   7[0m:[39m[49m //
+[0m[49m[39m    8,   8[0m:[39m[49m // `include/driver.h` declares `driver` with no namespace/renaming macro, so the
+[0m[49m[39m    9,   9[0m:[39m[49m // linker names are identical to the source-level names (verified with
+[0m[49m[39m   10,  10[0m:[39m[49m // `nm -D libdriver.so`).
+[0m[49m[39m   11,  11[0m:[39m[49m //
+[0m[49m[39m   12,  12[0m:[39m[49m // Behaviour is reproduced exactly, including the CWE-457 defect in `bad()`
+[0m[49m[39m   13,  13[0m:[39m[49m // (use of an uninitialized pointer). No bugs are fixed.
+[0m[49m[39m   14,  14[0m:[39m[49m //
+[0m[49m[39m   15,  15[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[39m   16,  16[0m:[39m[49m // Why the stack layout is reproduced explicitly
+[0m[49m[39m   17,  17[0m:[39m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;9m-  18     [0m:[38;5;9m[49m // `bad()` passes an uninitialized `char *` to `printLine`, so the bytes written
+[0m[49m[38;5;9m-  19     [0m:[38;5;9m[49m // to stdout are whatever residue occupies that stack slot. That makes the frame
+[0m[49m[38;5;9m-  20     [0m:[38;5;9m[49m // layout of *every* function here observable, not just `bad`'s:
+[0m[49m[38;5;10m+       18[0m:[38;5;10m[49m // `bad()` hands an uninitialized `char *` to `printLine`, so the bytes that
+[0m[49m[38;5;10m+       19[0m:[38;5;10m[49m // reach stdout are whatever residue occupies that stack slot. That makes the
+[0m[49m[38;5;10m+       20[0m:[38;5;10m[49m // frame layout of *every* function in this file observable, not just `bad`'s:
+[0m[49m[39m   21,  21[0m:[39m[49m //
+[0m[49m[39m   22,  22[0m:[39m[49m //   * `bad` reads the pointer-sized word at `-0x8(%rbp)`;
+[0m[49m[38;5;9m-  23     [0m:[38;5;9m[49m //   * `good` is called from `driver` at the same stack depth as `bad`, so the
+[0m[49m[38;5;9m-  24     [0m:[38;5;9m[49m //     `"string"` pointer it stores at its own `-0x8(%rbp)` lands on the exact
+[0m[49m[38;5;9m-  25     [0m:[38;5;9m[49m //     word a later `bad()` reads;
+[0m[49m[38;5;9m-  26     [0m:[38;5;9m[49m //   * `driver`'s frame determines how deep `bad`/`good` sit;
+[0m[49m[38;5;9m-  27     [0m:[38;5;9m[49m //   * `printLine`'s frame determines what it clobbers below them.
+[0m[49m[38;5;10m+       23[0m:[38;5;10m[49m //   * `good` runs at the same stack depth as `bad` (both are called from
+[0m[49m[38;5;10m+       24[0m:[38;5;10m[49m //     `driver`), so the `"string"` pointer it stores at its own `-0x8(%rbp)`
+[0m[49m[38;5;10m+       25[0m:[38;5;10m[49m //     lands on the very word a later `bad()` reads;
+[0m[49m[38;5;10m+       26[0m:[38;5;10m[49m //   * `driver`'s frame size determines how deep `bad`/`good` sit;
+[0m[49m[38;5;10m+       27[0m:[38;5;10m[49m //   * `printLine`'s frame determines what gets clobbered below them.
+[0m[49m[39m   28,  28[0m:[39m[49m //
+[0m[49m[38;5;9m-  29     [0m:[38;5;9m[49m // So each C local is materialized in a real stack slot at the same offset the C
+[0m[49m[38;5;9m-  30     [0m:[38;5;9m[49m // compiler chose, using volatile accesses so the loads and stores survive
+[0m[49m[38;5;9m-  31     [0m:[38;5;9m[49m // optimization instead of being folded away (an uninitialized read in
+[0m[49m[38;5;9m-  32     [0m:[38;5;9m[49m // particular would otherwise become LLVM `undef` and the load would vanish).
+[0m[49m[38;5;10m+       29[0m:[38;5;10m[49m // Each C local is therefore materialized in a real stack slot at the offset the
+[0m[49m[38;5;10m+       30[0m:[38;5;10m[49m // C compiler chose, with volatile accesses so the loads and stores survive
+[0m[49m[38;5;10m+       31[0m:[38;5;10m[49m // optimization. Without that, an uninitialized read folds into LLVM `undef` and
+[0m[49m[38;5;10m+       32[0m:[38;5;10m[49m // the load disappears; `#[inline(never)]` keeps the frames from being merged
+[0m[49m[38;5;10m+       33[0m:[38;5;10m[49m // away, and the trailing `pin` keeps the local area live across the call so the
+[0m[49m[38;5;10m+       34[0m:[38;5;10m[49m // call is not turned into a tail jump (the C makes real calls and returns).
+[0m[49m[39m   33,  35[0m:[39m[49m // `-Cforce-frame-pointers=yes` in `.cargo/config.toml` supplies the matching
+[0m[49m[39m   34,  36[0m:[39m[49m // `push %rbp; mov %rsp,%rbp` prologue.
+[0m[49m[39m   35,  37[0m:[39m[49m //
+[0m[49m[39m   36,  38[0m:[39m[49m // Reference disassembly from the C build (gcc, CMake default `-O0`):
+[0m[49m[39m   37,  39[0m:[39m[49m //
+[0m[49m[39m   38,  40[0m:[39m[49m //     printLine: push rbp; mov rbp,rsp; sub rsp,0x10; mov [rbp-8],rdi
+[0m[49m[39m   39,  41[0m:[39m[49m //                cmpq [rbp-8],0; je out; mov rdi,[rbp-8]; call puts@plt
+[0m[49m[39m   40,  42[0m:[39m[49m //     bad:       push rbp; mov rbp,rsp; sub rsp,0x10
+[0m[49m[39m   41,  43[0m:[39m[49m //                mov rax,[rbp-8]; mov rdi,rax; call printLine@plt
+[0m[49m[39m   42,  44[0m:[39m[49m //     good:      push rbp; mov rbp,rsp; sub rsp,0x10
+[0m[49m[39m   43,  45[0m:[39m[49m //                lea rax,"string"; mov [rbp-8],rax
+[0m[49m[39m   44,  46[0m:[39m[49m //                mov rdi,[rbp-8]; call printLine@plt
+[0m[49m[39m   45,  47[0m:[39m[49m //     driver:    push rbp; mov rbp,rsp; sub rsp,0x10; mov [rbp-4],edi
+[0m[49m[39m   46,  48[0m:[39m[49m //                cmpl [rbp-4],0; je bad_path; call good@plt; jmp out
+[0m[49m[39m   47,  49[0m:[39m[49m //                bad_path: call bad@plt
+[0m[49m[39m   48,  50[0m:[39m[49m 
+[0m[49m[39m   49,  51[0m:[39m[49m #![allow(non_snake_case)]
+[0m[49m[39m   50,  52[0m:[39m[49m 
+[0m[49m[39m   51,  53[0m:[39m[49m use std::ffi::{c_char, c_int};
+[0m[49m[39m   52,  54[0m:[39m[49m use std::mem::MaybeUninit;
+[0m[49m[39m   53,  55[0m:[39m[49m use std::ptr::{read_volatile, write_volatile};
+[0m[49m[39m   54,  56[0m:[39m[49m 
+[0m[49m[39m   55,  57[0m:[39m[49m unsafe extern "C" {
+[0m[49m[39m   56,  58[0m:[39m[49m     /// libc `puts`. gcc lowers the C source's `printf("%s\n", line)` to
+[0m[49m[39m   57,  59[0m:[39m[49m     /// `puts(line)` (confirmed in the disassembly of `libdriver.so`), so calling
+[0m[49m[39m   58,  60[0m:[39m[49m     /// `puts` here produces byte-identical output and shares the exact same
+[0m[49m[39m   59,  61[0m:[39m[49m     /// stdio stream and buffering behaviour as the C library.
+[0m[49m[39m   60,  62[0m:[39m[49m     fn puts(s: *const c_char) -> c_int;
+[0m[49m[39m   61,  63[0m:[39m[49m }
+[0m[49m[39m   62,  64[0m:[39m[49m 
+[0m[49m[38;5;9m-  63     [0m:[38;5;9m[49m /// A stand-in for the 16-byte local area the C compiler reserves in each of
+[0m[49m[38;5;9m-  64     [0m:[38;5;9m[49m /// these functions (`sub $0x10,%rsp`). Deliberately uninitialized, matching C
+[0m[49m[38;5;9m-  65     [0m:[38;5;9m[49m /// locals that have no initializer.
+[0m[49m[38;5;10m+       65[0m:[38;5;10m[49m /// Stand-in for the 16-byte local area the C compiler reserves in each of these
+[0m[49m[38;5;10m+       66[0m:[38;5;10m[49m /// functions (`sub $0x10,%rsp`). Deliberately uninitialized, matching C locals
+[0m[49m[38;5;10m+       67[0m:[38;5;10m[49m /// declared without an initializer.
+[0m[49m[39m   66,  68[0m:[39m[49m type LocalArea = MaybeUninit<[usize; 2]>;
+[0m[49m[39m   67,  69[0m:[39m[49m 
+[0m[49m[38;5;9m-  68     [0m:[38;5;9m[49m /// Address of the word the C compiler addresses as `-0x8(%rbp)`: the
+[0m[49m[38;5;9m-  69     [0m:[38;5;9m[49m /// highest-addressed pointer-sized slot of the 16-byte local area.
+[0m[49m[38;5;10m+       70[0m:[38;5;10m[49m /// Address of the word the C compiler names `-0x8(%rbp)`: the highest-addressed
+[0m[49m[38;5;10m+       71[0m:[38;5;10m[49m /// pointer-sized slot of the 16-byte local area.
+[0m[49m[38;5;10m+       72[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+       73[0m:[38;5;10m[49m fn slot_8(area: &mut LocalArea) -> *mut *const c_char {
+[0m[49m[38;5;10m+       74[0m:[38;5;10m[49m     unsafe { (area.as_mut_ptr() as *mut *const c_char).add(1) }
+[0m[49m[38;5;10m+       75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+       77[0m:[38;5;10m[49m /// Keeps the local area live past a call so the call is emitted as a real call
+[0m[49m[38;5;10m+       78[0m:[38;5;10m[49m /// (with the frame still standing), matching the C. Reads only; it must not
+[0m[49m[38;5;10m+       79[0m:[38;5;10m[49m /// disturb the residue the C leaves behind.
+[0m[49m[39m   70,  80[0m:[39m[49m #[inline(always)]
+[0m[49m[38;5;9m-  71     [0m:[38;5;9m[49m fn slot_8(area: &LocalArea) -> *mut *const c_char {
+[0m[49m[38;5;9m-  72     [0m:[38;5;9m[49m     unsafe { (area.as_ptr() as *mut *const c_char).add(1) }
+[0m[49m[38;5;10m+       81[0m:[38;5;10m[49m fn pin(area: &LocalArea) {
+[0m[49m[38;5;10m+       82[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+       83[0m:[38;5;10m[49m         read_volatile(area.as_ptr());
+[0m[49m[38;5;10m+       84[0m:[38;5;10m[49m     }
+[0m[49m[39m   73,  85[0m:[39m[49m }
+[0m[49m[39m   74,  86[0m:[39m[49m 
+[0m[49m[39m   75,  87[0m:[39m[49m /// ```c
+[0m[49m[39m   76,  88[0m:[39m[49m /// void printLine(const char *line)
+[0m[49m[39m   77,  89[0m:[39m[49m /// {
+[0m[49m[39m   78,  90[0m:[39m[49m ///     if (line != NULL)
+[0m[49m[39m   79,  91[0m:[39m[49m ///     {
+[0m[49m[39m   80,  92[0m:[39m[49m ///         printf("%s\n", line);
+[0m[49m[39m   81,  93[0m:[39m[49m ///     }
+[0m[49m[39m   82,  94[0m:[39m[49m /// }
+[0m[49m[39m   83,  95[0m:[39m[49m /// ```
+[0m[49m[39m   84,  96[0m:[39m[49m ///
+[0m[49m[39m   85,  97[0m:[39m[49m /// The parameter is spilled to `-0x8(%rbp)` and re-read for both the NULL test
+[0m[49m[39m   86,  98[0m:[39m[49m /// and the call, exactly as the unoptimized C does.
+[0m[49m[38;5;10m+       99[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[39m   87, 100[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m   88, 101[0m:[39m[49m pub extern "C" fn printLine(line: *const c_char) {
+[0m[49m[39m   89, 102[0m:[39m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[39m   90, 103[0m:[39m[49m     let param = slot_8(&mut area);
+[0m[49m[39m   91, 104[0m:[39m[49m     unsafe { write_volatile(param, line) };
+[0m[49m[39m   92, 105[0m:[39m[49m 
+[0m[49m[38;5;9m-  93     [0m:[38;5;9m[49m     if unsafe { read_volatile(param) }.is_null() {
+[0m[49m[38;5;9m-  94     [0m:[38;5;9m[49m         return;
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m     if !unsafe { read_volatile(param) }.is_null() {
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m         let line = unsafe { read_volatile(param) };
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m         unsafe { puts(line) };
+[0m[49m[39m   95, 109[0m:[39m[49m     }
+[0m[49m[38;5;9m-  96     [0m:[38;5;9m[49m     let line = unsafe { read_volatile(param) };
+[0m[49m[38;5;9m-  97     [0m:[38;5;9m[49m     unsafe { puts(line) };
+[0m[49m[38;5;10m+      110[0m:[38;5;10m[49m     pin(&area);
+[0m[49m[39m   98, 111[0m:[39m[49m }
+[0m[49m[39m   99, 112[0m:[39m[49m 
+[0m[49m[39m  100, 113[0m:[39m[49m /// ```c
+[0m[49m[39m  101, 114[0m:[39m[49m /// void bad()
+[0m[49m[39m  102, 115[0m:[39m[49m /// {
+[0m[49m[39m  103, 116[0m:[39m[49m ///     char *data;
+[0m[49m[39m  104, 117[0m:[39m[49m ///     printLine(data);
+[0m[49m[39m  105, 118[0m:[39m[49m /// }
+[0m[49m[39m  106, 119[0m:[39m[49m /// ```
+[0m[49m[39m  107, 120[0m:[39m[49m ///
+[0m[49m[39m  108, 121[0m:[39m[49m /// CWE-457: `data` is never assigned, so this forwards whatever stale value is
+[0m[49m[39m  109, 122[0m:[39m[49m /// sitting in the `-0x8(%rbp)` slot. Reproduced, not fixed.
+[0m[49m[38;5;10m+      123[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[39m  110, 124[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  111, 125[0m:[39m[49m pub extern "C" fn bad() {
+[0m[49m[39m  112, 126[0m:[39m[49m     // `char *data;` -- no initializer, never written.
+[0m[49m[39m  113, 127[0m:[39m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[39m  114, 128[0m:[39m[49m     let data_slot = slot_8(&mut area);
+[0m[49m[39m  115, 129[0m:[39m[49m 
+[0m[49m[39m  116, 130[0m:[39m[49m     let data: *const c_char = unsafe { read_volatile(data_slot) };
+[0m[49m[39m  117, 131[0m:[39m[49m     printLine(data);
+[0m[49m[38;5;10m+      132[0m:[38;5;10m[49m     pin(&area);
+[0m[49m[39m  118, 133[0m:[39m[49m }
+[0m[49m[39m  119, 134[0m:[39m[49m 
+[0m[49m[39m  120, 135[0m:[39m[49m /// ```c
+[0m[49m[39m  121, 136[0m:[39m[49m /// void good()
+[0m[49m[39m  122, 137[0m:[39m[49m /// {
+[0m[49m[39m  123, 138[0m:[39m[49m ///     char *data;
+[0m[49m[39m  124, 139[0m:[39m[49m ///     data = "string";
+[0m[49m[39m  125, 140[0m:[39m[49m ///     printLine(data);
+[0m[49m[39m  126, 141[0m:[39m[49m /// }
+[0m[49m[39m  127, 142[0m:[39m[49m /// ```
+[0m[49m[38;5;10m+      143[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[39m  128, 144[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  129, 145[0m:[39m[49m pub extern "C" fn good() {
+[0m[49m[39m  130, 146[0m:[39m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[39m  131, 147[0m:[39m[49m     let data_slot = slot_8(&mut area);
+[0m[49m[39m  132, 148[0m:[39m[49m 
+[0m[49m[39m  133, 149[0m:[39m[49m     unsafe { write_volatile(data_slot, c"string".as_ptr()) };
+[0m[49m[39m  134, 150[0m:[39m[49m     let data: *const c_char = unsafe { read_volatile(data_slot) };
+[0m[49m[39m  135, 151[0m:[39m[49m     printLine(data);
+[0m[49m[38;5;10m+      152[0m:[38;5;10m[49m     pin(&area);
+[0m[49m[39m  136, 153[0m:[39m[49m }
+[0m[49m[39m  137, 154[0m:[39m[49m 
+[0m[49m[39m  138, 155[0m:[39m[49m /// ```c
+[0m[49m[39m  139, 156[0m:[39m[49m /// void driver(int useGood)
+[0m[49m[39m  140, 157[0m:[39m[49m /// {
+[0m[49m[39m  141, 158[0m:[39m[49m ///     if (useGood)
+[0m[49m[39m  142, 159[0m:[39m[49m ///     {
+[0m[49m[39m  143, 160[0m:[39m[49m ///         good();
+[0m[49m[39m  144, 161[0m:[39m[49m ///     }
+[0m[49m[39m  145, 162[0m:[39m[49m ///     else
+[0m[49m[39m  146, 163[0m:[39m[49m ///     {
+[0m[49m[39m  147, 164[0m:[39m[49m ///         bad();
+[0m[49m[39m  148, 165[0m:[39m[49m ///     }
+[0m[49m[39m  149, 166[0m:[39m[49m /// }
+[0m[49m[39m  150, 167[0m:[39m[49m /// ```
+[0m[49m[39m  151, 168[0m:[39m[49m ///
+[0m[49m[39m  152, 169[0m:[39m[49m /// `useGood` is spilled to `-0x4(%rbp)` and re-read for the test, as in the
+[0m[49m[39m  153, 170[0m:[39m[49m /// unoptimized C.
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[39m  154, 172[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  155, 173[0m:[39m[49m pub extern "C" fn driver(useGood: c_int) {
+[0m[49m[39m  156, 174[0m:[39m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[39m  157, 175[0m:[39m[49m     // `-0x4(%rbp)`: the top 4 bytes of the 16-byte local area.
+[0m[49m[39m  158, 176[0m:[39m[49m     let param = unsafe { (slot_8(&mut area) as *mut c_int).add(1) };
+[0m[49m[39m  159, 177[0m:[39m[49m     unsafe { write_volatile(param, useGood) };
+[0m[49m[39m  160, 178[0m:[39m[49m 
+[0m[49m[39m  161, 179[0m:[39m[49m     if unsafe { read_volatile(param) } != 0 {
+[0m[49m[39m  162, 180[0m:[39m[49m         good();
+[0m[49m[39m  163, 181[0m:[39m[49m     } else {
+[0m[49m[39m  164, 182[0m:[39m[49m         bad();
+[0m[49m[39m  165, 183[0m:[39m[49m     }
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m     pin(&area);
+[0m[49m[39m  166, 185[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cargo build --release 2>&1 | tail -10 && cp target/release/libdriver.so /tmp/cbuild_bbt/librust_driver.so && cd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn librust_driver.so | sed -n '/<printLine>:/,/int3/p;/<bad>:/,/int3/p;/<good>:/,/int3/p;/<driver>:/,/int3/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and inspect codegen
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+0000000000011830 <bad>:
+   11830:	push   %rbp
+   11831:	mov    %rsp,%rbp
+   11834:	sub    $0x10,%rsp
+   11838:	mov    -0x8(%rbp),%rdi
+   1183c:	call   *0x3a85e(%rip)        # 4c0a0 <printLine@@Base+0x3a7f0>
+   11842:	mov    -0x10(%rbp),%rax
+   11846:	mov    -0x8(%rbp),%rax
+   1184a:	add    $0x10,%rsp
+   1184e:	pop    %rbp
+   1184f:	ret
+
+0000000000011850 <driver>:
+0000000000011850 <driver>:
+   11850:	push   %rbp
+   11850:	push   %rbp
+   11851:	mov    %rsp,%rbp
+   11851:	mov    %rsp,%rbp
+   11854:	sub    $0x10,%rsp
+   11854:	sub    $0x10,%rsp
+   11858:	mov    %edi,-0x4(%rbp)
+   11858:	mov    %edi,-0x4(%rbp)
+   1185b:	cmpl   $0x0,-0x4(%rbp)
+   1185b:	cmpl   $0x0,-0x4(%rbp)
+   1185f:	je     11869 <driver+0x19>
+   1185f:	je     11869 <driver+0x19>
+   11861:	call   *0x3a831(%rip)        # 4c098 <good@@Base+0x3a818>
+   11861:	call   *0x3a831(%rip)        # 4c098 <good@@Base+0x3a818>
+   11867:	jmp    1186f <driver+0x1f>
+   11867:	jmp    1186f <driver+0x1f>
+   11869:	call   *0x3a821(%rip)        # 4c090 <bad@@Base+0x3a860>
+   11869:	call   *0x3a821(%rip)        # 4c090 <bad@@Base+0x3a860>
+   1186f:	mov    -0x10(%rbp),%rax
+   1186f:	mov    -0x10(%rbp),%rax
+   11873:	mov    -0x8(%rbp),%rax
+   11873:	mov    -0x8(%rbp),%rax
+   11877:	add    $0x10,%rsp
+   11877:	add    $0x10,%rsp
+   1187b:	pop    %rbp
+   1187b:	pop    %rbp
+   1187c:	ret
+   1187c:	ret
+   1187d:	int3
+   1187d:	int3
+0000000000011880 <good>:
+   11880:	push   %rbp
+   11881:	mov    %rsp,%rbp
+   11884:	sub    $0x10,%rsp
+   11888:	lea    -0xd34e(%rip),%rax        # 4541 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x44f9>
+   1188f:	mov    %rax,-0x8(%rbp)
+   11893:	mov    -0x8(%rbp),%rdi
+   11897:	call   *0x3a803(%rip)        # 4c0a0 <printLine@@Base+0x3a7f0>
+   1189d:	mov    -0x10(%rbp),%rax
+   118a1:	mov    -0x8(%rbp),%rax
+   118a5:	add    $0x10,%rsp
+   118a9:	pop    %rbp
+   118aa:	ret
+   118ab:	int3
+00000000000118b0 <printLine>:
+   118b0:	push   %rbp
+   118b1:	mov    %rsp,%rbp
+   118b4:	sub    $0x10,%rsp
+   118b8:	mov    %rdi,-0x8(%rbp)
+   118bc:	cmpq   $0x0,-0x8(%rbp)
+   118c1:	je     118cd <printLine+0x1d>
+   118c3:	mov    -0x8(%rbp),%rdi
+   118c7:	call   *0x3a803(%rip)        # 4c0d0 <puts@GLIBC_2.2.5>
+   118cd:	mov    -0x10(%rbp),%rax
+   118d1:	mov    -0x8(%rbp),%rax
+   118d5:	add    $0x10,%rsp
+   118d9:	pop    %rbp
+   118da:	ret
+   118db:	int3
+[38;5;244m - Completed in 0.163s[0m
+
+[?25l[0m[38;5;141m> [0mCodegen now matches the C frame layout instruction-for-instruction. Testing across three different harness styles:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && echo "===== ctypes =====" && for lib in ./libdriver.so ./librust_driver.so; do
+  echo "-- $lib"
+  for call in "l.driver(0)" "l.driver(1)" "l.bad()" "l.good()" "l.printLine(b'hi')" "l.printLine(None)" "l.printLine(b'')" "l.driver(1);l.driver(0)" "l.driver(0);l.driver(0)" "l.driver(0);l.driver(1);l.driver(0)" "l.bad();l.bad()" "l.printLine(b'x');l.driver(0)" "l.good();l.bad()"; do
+    printf '  %-36s -> ' "$call"
+    python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('$lib'); $call; sys.stdout.flush()" 2>/dev/null | xxd -p | tr -d '\n'; echo
+  done
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare outputs under ctypes harness
+
+===== ctypes =====
+-- ./libdriver.so
+  l.driver(0)                          -> ffffffff0a
+  l.driver(1)                          -> 737472696e670a
+  l.bad()                              -> ffffffff0a
+  l.good()                             -> 737472696e670a
+  l.printLine(b'hi')                   -> 68690a
+  l.printLine(None)                    -> 
+  l.printLine(b'')                     -> 0a
+  l.driver(1);l.driver(0)              -> 737472696e670a737472696e670a
+  l.driver(0);l.driver(0)              -> ffffffff0affffffff0a
+  l.driver(0);l.driver(1);l.driver(0)  -> ffffffff0a737472696e670a737472696e670a
+  l.bad();l.bad()                      -> ffffffff0affffffff0a
+  l.printLine(b'x');l.driver(0)        -> 
+  l.good();l.bad()                     -> 737472696e670a737472696e670a
+-- ./librust_driver.so
+  l.driver(0)                          -> ffffffff0a
+  l.driver(1)                          -> 737472696e670a
+  l.bad()                              -> ffffffff0a
+  l.good()                             -> 737472696e670a
+  l.printLine(b'hi')                   -> 68690a
+  l.printLine(None)                    -> 
+  l.printLine(b'')                     -> 0a
+  l.driver(1);l.driver(0)              -> 737472696e670a737472696e670a
+  l.driver(0);l.driver(0)              -> ffffffff0affffffff0a
+  l.driver(0);l.driver(1);l.driver(0)  -> ffffffff0a737472696e670a737472696e670a
+  l.bad();l.bad()                      -> ffffffff0affffffff0a
+  l.printLine(b'x');l.driver(0)        -> 
+  l.good();l.bad()                     -> 737472696e670a737472696e670a
+[38;5;244m - Completed in 4.69s[0m
+
+[?25l[0m[38;5;141m> [0mAll 13 ctypes cases match byte-for-byte, including the residue interactions. Now the direct-link and dlopen harnesses:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && mkdir -p cver rver && cp libdriver.so cver/ && cp librust_driver.so rver/libdriver.so
+gcc t2.c -o t2c -Lcver -ldriver -Wl,-rpath,'$ORIGIN/cver' && gcc t2.c -o t2r -Lrver -ldriver -Wl,-rpath,'$ORIGIN/rver'
+echo "--- direct-link t2 (C) ---"; ./t2c | xxd -p; echo "--- direct-link t2 (Rust) ---"; ./t2r | xxd -p
+gcc t.c -o tc -Lcver -ldriver -Wl,-rpath,'$ORIGIN/cver' 2>/dev/null && gcc t.c -o tr -Lrver -ldriver -Wl,-rpath,'$ORIGIN/rver' 2>/dev/null
+echo "--- direct-link t modes ---"; for i in 0 1 2 3 4 5; do printf 'mode %s  C=%-20s R=%s\n' $i "$(./tc $i|xxd -p|tr -d '\n')" "$(./tr $i|xxd -p|tr -d '\n')"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare under direct-link harnesses
+
+--- direct-link t2 (C) ---
+413a0a423a0a433a737472696e670a443a0a453a463a010a
+--- direct-link t2 (Rust) ---
+413a0a423a0a433a737472696e670a443a0a453a463a010a
+--- direct-link t modes ---
+mode 0  C=0a                   R=1f428a72fc7f0a
+mode 1  C=737472696e670a       R=737472696e670a
+mode 2  C=0a                   R=0a
+mode 3  C=737472696e670a       R=737472696e670a
+mode 4  C=68656c6c6f0a         R=68656c6c6f0a
+mode 5  C=                     R=
+[38;5;244m - Completed in 0.180s[0m
+
+[?25l[0m[38;5;141m> [0mt2 matches exactly; [38;5;10mt[0m mode 0 diverges. Investigating — likely lazy PLT resolution clobbering the slot:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && echo "--- C dyn flags ---" && readelf -d cver/libdriver.so | grep -Ei 'flags|bind' ; echo "--- Rust dyn flags ---" && readelf -d rver/libdriver.so | grep -Ei 'flags|bind'
+echo "--- mode0 with LD_BIND_NOW=1 ---"
+printf 'C=%s\n' "$(LD_BIND_NOW=1 ./tc 0|xxd -p|tr -d '\n')"
+printf 'R=%s\n' "$(LD_BIND_NOW=1 ./tr 0|xxd -p|tr -d '\n')"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check binding mode effect on divergence
+
+--- C dyn flags ---
+--- Rust dyn flags ---
+ 0x000000000000001e (FLAGS)              BIND_NOW
+ 0x000000006ffffffb (FLAGS_1)            Flags: NOW
+--- mode0 with LD_BIND_NOW=1 ---
+C=112255f6fc7f0a
+R=117285eafe7f0a
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5 && ls -la .claude && find .claude -type f | head -20 && for f in $(find .claude -type f); do echo "===== $f"; cat "$f"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect .claude for harness details
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 07:44 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 07:44 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 07:44 settings.json
+.claude/settings.json
+===== .claude/settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-BbTsM5"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-BbTsM5"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[38;5;11m
+WARNING: [0mRetry #2, retrying within 10.0s..
+[38;5;141m> [0mDiagnosis: the C [38;5;10m.so[0m uses lazy PLT binding; Rust links [38;5;10mBIND_NOW[0m with GOT-indirect calls, so C's first-call [38;5;10m_dl_runtime_resolve[0m scribbles the stack slot [38;5;10mbad[0m reads. Testing that theory:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Cforce-frame-pointers=yes -Zplt=yes -Clink-arg=-Wl,-z,lazy,-z,norelro" cargo build --release --target-dir /tmp/tgt_plt 2>&1 | tail -3 && cp /tmp/tgt_plt/release/libdriver.so /tmp/cbuild_bbt/rver/libdriver.so && cd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn rver/libdriver.so | sed -n '/<bad>:/,/int3/p' && readelf -d rver/libdriver.so | grep -Ei 'flags' ; echo "--- mode0 ---"; printf 'C=%s\nR=%s\n' "$(./tc 0|xxd -p|tr -d '\n')" "$(./tr 0|xxd -p|tr -d '\n')"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test whether lazy PLT binding fixes the divergence
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+00000000000117c0 <bad>:
+   117c0:	push   %rbp
+   117c1:	mov    %rsp,%rbp
+   117c4:	sub    $0x10,%rsp
+   117c8:	mov    -0x8(%rbp),%rdi
+   117cc:	call   49760 <printLine@plt>
+   117d1:	mov    -0x10(%rbp),%rax
+   117d5:	mov    -0x8(%rbp),%rax
+   117d9:	add    $0x10,%rsp
+   117dd:	pop    %rbp
+   117de:	ret
+   117df:	int3
+--- mode0 ---
+C=0a
+R=0a
+[38;5;244m - Completed in 0.220s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed — lazy PLT binding is the remaining difference. Checking whether stable link flags alone suffice:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && echo "--- C relro ---" && readelf -lW cver/libdriver.so | grep -i relro; echo "--- C reloc for bad/good ---" && readelf -rW cver/libdriver.so | grep -E 'printLine|bad|good|puts'
+cd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && RUSTFLAGS="-Cforce-frame-pointers=yes -Clink-arg=-Wl,-z,lazy -Clink-arg=-Wl,-z,norelro" cargo build --release --target-dir /tmp/tgt_lazy 2>&1|tail -2 && cp /tmp/tgt_lazy/release/libdriver.so /tmp/cbuild_bbt/rver/libdriver.so && cd /tmp/cbuild_bbt && objdump -d --no-show-raw-insn rver/libdriver.so|sed -n '/<bad>:/,/int3/p'|head -6 && printf 'mode0 C=%s R=%s\n' "$(./tc 0|xxd -p|tr -d '\n')" "$(./tr 0|xxd -p|tr -d '\n')"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test stable-only link flags
+
+--- C relro ---
+  GNU_RELRO      0x002de0 0x0000000000003de0 0x0000000000003de0 0x000220 0x000220 R   0x1
+--- C reloc for bad/good ---
+0000000000004000  0000000600000007 R_X86_64_JUMP_SLOT     0000000000001172 good + 0
+0000000000004008  0000000200000007 R_X86_64_JUMP_SLOT     0000000000000000 puts@GLIBC_2.2.5 + 0
+0000000000004010  0000000700000007 R_X86_64_JUMP_SLOT     000000000000115b bad + 0
+0000000000004018  0000000900000007 R_X86_64_JUMP_SLOT     0000000000001139 printLine + 0
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+00000000000117c0 <bad>:
+   117c0:	push   %rbp
+   117c1:	mov    %rsp,%rbp
+   117c4:	sub    $0x10,%rsp
+   117c8:	mov    -0x8(%rbp),%rdi
+   117cc:	call   *0x3b1ae(%rip)        # 4c980 <printLine@@Base+0x3b140>
+mode0 C=0a R=13d2a22bfc7f0a
+[38;5;244m - Completed in 0.231s[0m
+
+[?25l[0m[38;5;141m> [0mOnly [38;5;10mdriver[0m's two call sites are at a stack depth where PLT-resolver residue is observable. Checking whether I still need the frame-pointer flag:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && RUSTFLAGS="" cargo build --release --target-dir /tmp/tgt_nofp 2>&1|tail -2 && objdump -d --no-show-raw-insn /tmp/tgt_nofp/release/libdriver.so | sed -n '/<bad>:/,/int3/p;/<good>:/,/int3/p;/<driver>:/,/int3/p' | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check codegen without force-frame-pointers
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+00000000000117e0 <bad>:
+   117e0:	sub    $0x18,%rsp
+   117e4:	mov    0x10(%rsp),%rdi
+   117e9:	call   *0x3a871(%rip)        # 4c060 <printLine@@Base+0x3a7f0>
+   117ef:	mov    0x8(%rsp),%rax
+   117f4:	mov    0x10(%rsp),%rax
+   117f9:	add    $0x18,%rsp
+   117fd:	ret
+   117fe:	int3
+0000000000011800 <driver>:
+   11800:	sub    $0x18,%rsp
+   11804:	mov    %edi,0x14(%rsp)
+   11808:	cmpl   $0x0,0x14(%rsp)
+   1180d:	je     11824 <driver+0x24>
+   1180f:	call   *0x3a843(%rip)        # 4c058 <good@@Base+0x3a818>
+   11815:	mov    0x8(%rsp),%rax
+   1181a:	mov    0x10(%rsp),%rax
+   1181f:	add    $0x18,%rsp
+   11823:	ret
+   11824:	call   *0x3a826(%rip)        # 4c050 <bad@@Base+0x3a870>
+   1182a:	mov    0x8(%rsp),%rax
+   1182f:	mov    0x10(%rsp),%rax
+   11834:	add    $0x18,%rsp
+   11838:	ret
+   11839:	int3
+0000000000011840 <good>:
+   11840:	sub    $0x18,%rsp
+   11844:	lea    -0xd30a(%rip),%rax        # 4541 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x44f9>
+   1184b:	mov    %rax,0x10(%rsp)
+   11850:	mov    0x10(%rsp),%rdi
+   11855:	call   *0x3a805(%rip)        # 4c060 <printLine@@Base+0x3a7f0>
+   1185b:	mov    0x8(%rsp),%rax
+   11860:	mov    0x10(%rsp),%rax
+   11865:	add    $0x18,%rsp
+   11869:	ret
+   1186a:	int3
+[38;5;244m - Completed in 0.207s[0m
+
+[?25l[0m[38;5;141m> [0mOnly stable path to lazy-PLT calls is asm, and only [38;5;10mdriver[0m's call sites need it. Implementing [38;5;10mdriver[0m as a naked transcription while keeping the other three in Rust:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  155, 155[0m:[39m[49m /// ```c
+[0m[49m[39m  156, 156[0m:[39m[49m /// void driver(int useGood)
+[0m[49m[39m  157, 157[0m:[39m[49m /// {
+[0m[49m[39m  158, 158[0m:[39m[49m ///     if (useGood)
+[0m[49m[39m  159, 159[0m:[39m[49m ///     {
+[0m[49m[39m  160, 160[0m:[39m[49m ///         good();
+[0m[49m[39m  161, 161[0m:[39m[49m ///     }
+[0m[49m[39m  162, 162[0m:[39m[49m ///     else
+[0m[49m[39m  163, 163[0m:[39m[49m ///     {
+[0m[49m[39m  164, 164[0m:[39m[49m ///         bad();
+[0m[49m[39m  165, 165[0m:[39m[49m ///     }
+[0m[49m[39m  166, 166[0m:[39m[49m /// }
+[0m[49m[39m  167, 167[0m:[39m[49m /// ```
+[0m[49m[39m  168, 168[0m:[39m[49m ///
+[0m[49m[38;5;9m- 169     [0m:[38;5;9m[49m /// `useGood` is spilled to `-0x4(%rbp)` and re-read for the test, as in the
+[0m[49m[38;5;9m- 170     [0m:[38;5;9m[49m /// unoptimized C.
+[0m[49m[38;5;10m+      169[0m:[38;5;10m[49m /// Transcribed instruction-for-instruction from the C build. Two properties of
+[0m[49m[38;5;10m+      170[0m:[38;5;10m[49m /// this function are observable through the CWE-457 read in `bad()`, and
+[0m[49m[38;5;10m+      171[0m:[38;5;10m[49m /// neither can be expressed in ordinary Rust:
+[0m[49m[38;5;10m+      172[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      173[0m:[38;5;10m[49m ///  1. **Frame geometry.** `useGood` is spilled to `-0x4(%rbp)` inside a 16-byte
+[0m[49m[38;5;10m+      174[0m:[38;5;10m[49m ///     local area, which is what puts `bad`/`good` at the stack depth where
+[0m[49m[38;5;10m+      175[0m:[38;5;10m[49m ///     `bad` reads `entry_rsp - 0x30` (see the module comment).
+[0m[49m[38;5;10m+      176[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      177[0m:[38;5;10m[49m ///  2. **Lazy PLT calls.** The C `.so` reaches `good`/`bad` through
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m ///     `R_X86_64_JUMP_SLOT` PLT entries, so the *first* such call in a process
+[0m[49m[38;5;10m+      179[0m:[38;5;10m[49m ///     runs `_dl_runtime_resolve`, which scribbles several hundred bytes of
+[0m[49m[38;5;10m+      180[0m:[38;5;10m[49m ///     stack starting just below `driver`'s frame - including the very word
+[0m[49m[38;5;10m+      181[0m:[38;5;10m[49m ///     `bad()` is about to read. rustc unconditionally marks these calls
+[0m[49m[38;5;10m+      182[0m:[38;5;10m[49m ///     `nonlazybind` and emits GOT-indirect calls (`-Zplt=yes` is nightly-only),
+[0m[49m[38;5;10m+      183[0m:[38;5;10m[49m ///     which skips the resolver and leaves different residue. `call` via a `sym`
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m ///     operand emits a real `R_X86_64_PLT32` reference; `build.rs` passes
+[0m[49m[38;5;10m+      185[0m:[38;5;10m[49m ///     `-z lazy` so the linker binds it lazily, exactly as the C does.
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      187[0m:[38;5;10m[49m /// The resolver only matters at `driver`'s call sites: it clobbers memory below
+[0m[49m[38;5;10m+      188[0m:[38;5;10m[49m /// the caller's frame, so the calls inside `bad`/`good`/`printLine` disturb only
+[0m[49m[38;5;10m+      189[0m:[38;5;10m[49m /// stack that is already deeper than the word `bad` reads. Those three functions
+[0m[49m[38;5;10m+      190[0m:[38;5;10m[49m /// are therefore ordinary Rust.
+[0m[49m[38;5;10m+      191[0m:[38;5;10m[49m #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;10m+      192[0m:[38;5;10m[49m #[unsafe(naked)]
+[0m[49m[38;5;10m+      193[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+      194[0m:[38;5;10m[49m pub extern "C" fn driver(useGood: c_int) {
+[0m[49m[38;5;10m+      195[0m:[38;5;10m[49m     core::arch::naked_asm!(
+[0m[49m[38;5;10m+      196[0m:[38;5;10m[49m         "push rbp",
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m         "mov rbp, rsp",
+[0m[49m[38;5;10m+      198[0m:[38;5;10m[49m         "sub rsp, 16",
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m         "mov dword ptr [rbp - 4], edi", // spill `useGood`
+[0m[49m[38;5;10m+      200[0m:[38;5;10m[49m         "cmp dword ptr [rbp - 4], 0",
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m         "je 2f",
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m         "call {good}",
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m         "jmp 3f",
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m         "2:",
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m         "call {bad}",
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m         "3:",
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m         "leave",
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m         "ret",
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m         good = sym good,
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m         bad = sym bad,
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      214[0m:[38;5;10m[49m /// Portable fallback for non-x86-64 targets. Semantically identical; the stack
+[0m[49m[38;5;10m+      215[0m:[38;5;10m[49m /// residue observed by `bad()` is whatever the code generator produces.
+[0m[49m[38;5;10m+      216[0m:[38;5;10m[49m #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[39m  171, 217[0m:[39m[49m #[inline(never)]
+[0m[49m[39m  172, 218[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  173, 219[0m:[39m[49m pub extern "C" fn driver(useGood: c_int) {
+[0m[49m[39m  174, 220[0m:[39m[49m     let mut area: LocalArea = MaybeUninit::uninit();
+[0m[49m[39m  175, 221[0m:[39m[49m     // `-0x4(%rbp)`: the top 4 bytes of the 16-byte local area.
+[0m[49m[39m  176, 222[0m:[39m[49m     let param = unsafe { (slot_8(&mut area) as *mut c_int).add(1) };
+[0m[49m[39m  177, 223[0m:[39m[49m     unsafe { write_volatile(param, useGood) };
+[0m[49m[39m  178, 224[0m:[39m[49m 
+[0m[49m[39m  179, 225[0m:[39m[49m     if unsafe { read_volatile(param) } != 0 {
+[0m[49m[39m  180, 226[0m:[39m[49m         good();
+[0m[49m[39m  181, 227[0m:[39m[49m     } else {
+[0m[49m[39m  182, 228[0m:[39m[49m         bad();
+[0m[49m[39m  183, 229[0m:[39m[49m     }
+[0m[49m[39m  184, 230[0m:[39m[49m     pin(&area);
+[0m[49m[39m  185, 231[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/build.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Link configuration for the `driver` cdylib.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The C library is linked by CMake with the toolchain defaults: partial RELRO
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! and **lazy** PLT binding (`R_X86_64_JUMP_SLOT` entries for `printLine`,
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! `bad`, `good`, `puts`). rustc instead defaults to `-z relro -z now`, which
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! resolves everything at load time.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! That difference is observable here: `bad()` prints an uninitialized stack
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! word (CWE-457), and with lazy binding the first PLT call inside `driver`
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! runs `_dl_runtime_resolve`, which overwrites exactly that word. Requesting
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //! `-z lazy` reproduces the C's binding behaviour, and hence its output.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //! These are emitted from `build.rs` rather than `.cargo/config.toml` so they
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //! survive a `RUSTFLAGS` override in the environment.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     println!("cargo::rerun-if-changed=build.rs");
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m         println!("cargo::rustc-cdylib-link-arg=-Wl,-z,lazy");
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation/build.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && rm -rf target && cargo build --release 2>&1 | tail -15[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean build with naked driver and lazy binding
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.20s
+[38;5;244m - Completed in 0.225s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cp target/release/libdriver.so /tmp/cbuild_bbt/rver/libdriver.so && cp target/release/libdriver.so /tmp/cbuild_bbt/librust_driver.so && cd /tmp/cbuild_bbt && echo "--- Rust relocs ---" && readelf -rW rver/libdriver.so | grep -E 'JUMP_SLOT' | grep -E 'printLine|bad|good|puts' && echo "--- Rust FLAGS (expect no BIND_NOW) ---" && (readelf -d rver/libdriver.so | grep -Ei 'flags' || echo "none") && echo "--- driver disasm ---" && objdump -d --no-show-raw-insn rver/libdriver.so | sed -n '/<driver>:/,/int3/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify lazy PLT relocations and driver codegen
+
+--- Rust relocs ---
+000000000004e150  0000003300000007 R_X86_64_JUMP_SLOT     0000000000011820 bad + 0
+000000000004e158  0000003500000007 R_X86_64_JUMP_SLOT     0000000000011840 good + 0
+--- Rust FLAGS (expect no BIND_NOW) ---
+none
+--- driver disasm ---
+00000000000117fc <driver>:
+   117fc:	push   %rbp
+   117fd:	mov    %rsp,%rbp
+   11800:	sub    $0x10,%rsp
+   11804:	mov    %edi,-0x4(%rbp)
+   11807:	cmpl   $0x0,-0x4(%rbp)
+   1180b:	je     11814 <driver+0x18>
+   1180d:	call   49780 <good@plt>
+   11812:	jmp    11819 <driver+0x1d>
+   11814:	call   49770 <bad@plt>
+   11819:	leave
+   1181a:	ret
+   1181b:	int3
+[38;5;244m - Completed in 0.82s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mdriver[0m now matches the C instruction-for-instruction with lazy JUMP_SLOT PLT entries. Full differential re-verification:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && gcc t.c -o tr -Lrver -ldriver -Wl,-rpath,'$ORIGIN/rver' 2>/dev/null; gcc t2.c -o t2r -Lrver -ldriver -Wl,-rpath,'$ORIGIN/rver'
+echo "===== A) direct-link, fresh process per call (worst case for PLT residue) ====="
+fail=0; for i in 0 1 2 3 4 5; do c=$(./tc $i|xxd -p|tr -d '\n'); r=$(./tr $i|xxd -p|tr -d '\n'); [ "$c" = "$r" ] && s=OK || { s=DIFF; fail=1; }; printf '  mode %s  %-4s C=%-24s R=%s\n' $i "$s" "$c" "$r"; done
+echo "===== B) direct-link, long mixed sequence + recursion-dirtied stack ====="
+c=$(./t2c|xxd -p|tr -d '\n'); r=$(./t2r|xxd -p|tr -d '\n'); [ "$c" = "$r" ] && echo "  OK   $c" || { echo "  DIFF C=$c R=$r"; fail=1; }
+echo "===== C) dlopen harness ====="
+gcc t4.c -o t4x -ldl
+c=$(cd cver && ../t4x 2>/dev/null|xxd -p|tr -d '\n'); r=$(cd rver && ../t4x 2>/dev/null|xxd -p|tr -d '\n')
+[ "$c" = "$r" ] && echo "  OK   $c" || { echo "  DIFF C=$c R=$r"; fail=1; }
+echo "overall_fail=$fail"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test across direct-link and dlopen harnesses
+
+===== A) direct-link, fresh process per call (worst case for PLT residue) =====
+  mode 0  OK   C=0a                       R=0a
+  mode 1  OK   C=737472696e670a           R=737472696e670a
+  mode 2  OK   C=0a                       R=0a
+  mode 3  OK   C=737472696e670a           R=737472696e670a
+  mode 4  OK   C=68656c6c6f0a             R=68656c6c6f0a
+  mode 5  OK   C=                         R=
+===== B) direct-link, long mixed sequence + recursion-dirtied stack =====
+  OK   413a0a423a0a433a737472696e670a443a0a453a463a010a
+===== C) dlopen harness =====
+  DIFF C=554889e54883ec10488b45f84889c7e8f1feffff90c9c3554889e54883ec10488d057f0e0a737472696e670a2011400a R=554889e54883ec10488b7df8ff151ea8030a737472696e670a2011400a
+overall_fail=1
+[38;5;244m - Completed in 0.148s[0m
+
+[?25l[0m[38;5;141m> [0mA and B now match fully. The dlopen case is structurally identical but irreducibly different — let me confirm why:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && echo "C  bad() first bytes:" && objdump -d --no-show-raw-insn cver/libdriver.so | sed -n '/<bad>:/,/ret/p' | head -4 && echo "Rust bad() first bytes:" && objdump -d --no-show-raw-insn rver/libdriver.so | sed -n '/<bad>:/,/ret/p' | head -4
+echo "=> In the dlopen harness the stale pointer lands on bad() itself in BOTH libs,"
+echo "   so printLine prints the library's own machine code. Identical bytes would"
+echo "   require identical codegen for the whole .so, not identical behavior."[0m[38;5;244m (using tool: shell)[0m
+Purpose: Show that the dlopen divergence is the library printing its own code
+
+C  bad() first bytes:
+000000000000115b <bad>:
+    115b:	push   %rbp
+    115c:	mov    %rsp,%rbp
+    115f:	sub    $0x10,%rsp
+Rust bad() first bytes:
+0000000000011820 <bad>:
+   11820:	push   %rbp
+   11821:	mov    %rsp,%rbp
+   11824:	sub    $0x10,%rsp
+=> In the dlopen harness the stale pointer lands on bad() itself in BOTH libs,
+   so printLine prints the library's own machine code. Identical bytes would
+   require identical codegen for the whole .so, not identical behavior.
+[38;5;244m - Completed in 0.72s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  38, 38[0m:[39m[49m // Reference disassembly from the C build (gcc, CMake default `-O0`):
+[0m[49m[39m  39, 39[0m:[39m[49m //
+[0m[49m[39m  40, 40[0m:[39m[49m //     printLine: push rbp; mov rbp,rsp; sub rsp,0x10; mov [rbp-8],rdi
+[0m[49m[39m  41, 41[0m:[39m[49m //                cmpq [rbp-8],0; je out; mov rdi,[rbp-8]; call puts@plt
+[0m[49m[39m  42, 42[0m:[39m[49m //     bad:       push rbp; mov rbp,rsp; sub rsp,0x10
+[0m[49m[39m  43, 43[0m:[39m[49m //                mov rax,[rbp-8]; mov rdi,rax; call printLine@plt
+[0m[49m[39m  44, 44[0m:[39m[49m //     good:      push rbp; mov rbp,rsp; sub rsp,0x10
+[0m[49m[39m  45, 45[0m:[39m[49m //                lea rax,"string"; mov [rbp-8],rax
+[0m[49m[39m  46, 46[0m:[39m[49m //                mov rdi,[rbp-8]; call printLine@plt
+[0m[49m[39m  47, 47[0m:[39m[49m //     driver:    push rbp; mov rbp,rsp; sub rsp,0x10; mov [rbp-4],edi
+[0m[49m[39m  48, 48[0m:[39m[49m //                cmpl [rbp-4],0; je bad_path; call good@plt; jmp out
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m //                bad_path: call bad@plt
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m //                bad_path: call bad@plt
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m // With this layout the output is byte-identical to the C library's, verified
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m // against it for `driver`/`bad`/`good`/`printLine` under ctypes harnesses and
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m // under directly linked harnesses (both one call per fresh process and long
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m // mixed call sequences over a dirtied stack), including the case where a
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m // preceding `good()` leaves its `"string"` pointer in the slot a later `bad()`
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m // reads.
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m // One residual case cannot be matched by any translation: if the stale pointer
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m // happens to aim into the library's own text (observed when the library is
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m // reached via `dlopen`/`dlsym`), `printLine` prints the library's machine code.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m // Both builds read the identical stale address - it lands on `bad` in each - but
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m // the bytes at that address are the compiler's own instruction encodings, so
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m // equality there would require byte-identical codegen for the entire shared
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m // object rather than identical behaviour.
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal verification — clean build, symbol diff, and full differential matrix:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && rm -rf target && cargo build --release 2>&1 | tail -10 && echo "=== files ===" && ls -la Cargo.toml build.rs src/lib.rs .cargo/config.toml && grep -n 'crate-type' Cargo.toml && echo "=== no_mangle count ===" && grep -c 'unsafe(no_mangle)' src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean release build and crate structure check
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation)
+    Finished `release` profile [optimized] target(s) in 0.20s
+=== files ===
+-rw-r--r--. 1 scheschb amazon  337 Sep  1 07:50 .cargo/config.toml
+-rw-r--r--. 1 scheschb amazon  163 Sep  1 07:46 Cargo.toml
+-rw-r--r--. 1 scheschb amazon  981 Sep  1 07:58 build.rs
+-rw-r--r--. 1 scheschb amazon 9291 Sep  1 07:59 src/lib.rs
+8:crate-type = ["cdylib"]
+=== no_mangle count ===
+5
+[38;5;244m - Completed in 0.233s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5/translation && cp target/release/libdriver.so /tmp/cbuild_bbt/rver/libdriver.so && cp target/release/libdriver.so /tmp/cbuild_bbt/librust_driver.so && cd /tmp/cbuild_bbt
+nm -D --defined-only cver/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only rver/libdriver.so | awk '{print $3}' | sort > /tmp/r_syms.txt
+echo "=== C exports ($(wc -l < /tmp/c_syms.txt)) ==="; cat /tmp/c_syms.txt
+echo "=== Rust exports ($(wc -l < /tmp/r_syms.txt)) ==="; cat /tmp/r_syms.txt
+echo "=== MISSING (in C, not in Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/r_syms.txt; echo "<none above = complete>"
+echo "=== EXTRA (in Rust, not in C) ==="; comm -13 /tmp/c_syms.txt /tmp/r_syms.txt; echo "<none above = clean>"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final ABI symbol diff
+
+=== C exports (4) ===
+bad
+driver
+good
+printLine
+=== Rust exports (4) ===
+bad
+driver
+good
+printLine
+=== MISSING (in C, not in Rust) ===
+<none above = complete>
+=== EXTRA (in Rust, not in C) ===
+<none above = clean>
+[38;5;244m - Completed in 0.49s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_bbt && gcc t.c -o tr -Lrver -ldriver -Wl,-rpath,'$ORIGIN/rver' 2>/dev/null; gcc t2.c -o t2r -Lrver -ldriver -Wl,-rpath,'$ORIGIN/rver'
+pass=0; fail=0
+echo "===== ctypes harness ====="
+for call in "l.driver(0)" "l.driver(1)" "l.bad()" "l.good()" "l.printLine(b'hi')" "l.printLine(None)" "l.printLine(b'')" "l.printLine(b'a'*300)" "l.driver(1);l.driver(0)" "l.driver(0);l.driver(0)" "l.driver(0);l.driver(1);l.driver(0)" "l.bad();l.bad()" "l.good();l.bad()" "l.printLine(b'x');l.driver(0)" "l.driver(2)" "l.driver(-1)" "[l.driver(i%2) for i in range(6)]"; do
+  c=$(python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('./cver/libdriver.so'); $call; sys.stdout.flush()" 2>/dev/null|xxd -p|tr -d '\n')
+  r=$(python3 -c "
+import ctypes,sys
+l=ctypes.CDLL('./rver/libdriver.so'); $call; sys.stdout.flush()" 2>/dev/null|xxd -p|tr -d '\n')
+  if [ "$c" = "$r" ]; then pass=$((pass+1)); printf '  OK    %s\n' "$call"; else fail=$((fail+1)); printf '  DIFF  %-38s C=%s R=%s\n' "$call" "$c" "$r"; fi
+done
+echo "===== direct-link, fresh process per call ====="
+for i in 0 1 2 3 4 5; do c=$(./tc $i|xxd -p|tr -d '\n'); r=$(./tr $i|xxd -p|tr -d '\n'); if [ "$c" = "$r" ]; then pass=$((pass+1)); echo "  OK    mode $i"; else fail=$((fail+1)); echo "  DIFF  mode $i C=$c R=$r"; fi; done
+echo "===== direct-link, long mixed sequence ====="
+c=$(./t2c|xxd -p|tr -d '\n'); r=$(./t2r|xxd -p|tr -d '\n'); if [ "$c" = "$r" ]; then pass=$((pass+1)); echo "  OK    t2"; else fail=$((fail+1)); echo "  DIFF  t2 C=$c R=$r"; fi
+echo; echo "TOTAL: pass=$pass fail=$fail"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Full differential test matrix, C vs Rust
+
+===== ctypes harness =====
+  OK    l.driver(0)
+  OK    l.driver(1)
+  OK    l.bad()
+  OK    l.good()
+  OK    l.printLine(b'hi')
+  OK    l.printLine(None)
+  OK    l.printLine(b'')
+  OK    l.printLine(b'a'*300)
+  OK    l.driver(1);l.driver(0)
+  OK    l.driver(0);l.driver(0)
+  OK    l.driver(0);l.driver(1);l.driver(0)
+  OK    l.bad();l.bad()
+  OK    l.good();l.bad()
+  OK    l.printLine(b'x');l.driver(0)
+  OK    l.driver(2)
+  OK    l.driver(-1)
+  OK    [l.driver(i%2) for i in range(6)]
+===== direct-link, fresh process per call =====
+  OK    mode 0
+  OK    mode 1
+  OK    mode 2
+  OK    mode 3
+  OK    mode 4
+  OK    mode 5
+===== direct-link, long mixed sequence =====
+  OK    t2
+
+TOTAL: pass=24 fail=0
+[38;5;244m - Completed in 4.452s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-BbTsM5 && echo "=== c_src untouched (all mtimes = checkout time 07:44) ===" && find c_src -type f -printf '%TH:%TM  %p\n' && echo "=== translation tree ===" && find translation -type f -not -path '*/target/*' | sort && rm -rf /tmp/cbuild_bbt /tmp/tgt_plt /tmp/tgt_lazy /tmp/tgt_nofp /tmp/c_syms.txt /tmp/r_syms.txt /tmp/rust_syms_all.txt && echo "=== temp verification artifacts removed ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src untouched and clean up temp artifacts
+
+=== c_src untouched (all mtimes = checkout time 07:44) ===
+07:44  c_src/CMakeLists.txt
+07:44  c_src/include/driver.h
+07:44  c_src/src/driver.c
+=== translation tree ===
+translation/.cargo/config.toml
+translation/Cargo.lock
+translation/Cargo.toml
+translation/build.rs
+translation/src/lib.rs
+=== temp verification artifacts removed ===
+[38;5;244m - Completed in 0.15s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library is small — one translation unit, four exported symbols — so I translated it directly rather than delegating.[0m[0m
+[0m[0m
+[1mABI completeness (the gate):[22m [38;5;10mnm -D --defined-only[0m on both [38;5;10m.so[0m files gives identical 4-symbol sets — [38;5;10mbad[0m, [38;5;10mdriver[0m, [38;5;10mgood[0m, [38;5;10mprintLine[0m. Diff is empty in both directions (no missing, no extras). No namespace/renaming macros exist in [38;5;10minclude/driver.h[0m, so linker names equal source names.[0m[0m
+[0m[0m
+[1mThe hard part was not the logic, it was the bug.[22m [38;5;10mbad()[0m passes an uninitialized [38;5;10mchar *[0m to [38;5;10mprintLine[0m (CWE-457), so the bytes reaching stdout [3mare[23m stack residue. I confirmed with the real C library that its output changes with the caller: the same [38;5;10mdriver(0)[0m prints an empty line from a shallow [38;5;10mmain[0m, [38;5;10m\xff\xff\xff\xff[0m under ctypes, and its own machine code under [38;5;10mdlopen[0m. That makes the frame geometry of every function observable, not just [38;5;10mbad[0m's — [38;5;10mgood()[0m runs at the same depth and leaves its [38;5;10m"string"[0m pointer on the exact word a later [38;5;10mbad()[0m reads.[0m[0m
+[0m[0m
+Three things were needed to match it, each found by diffing disassembly against the C:[0m[0m
+[0m[0m
+- Uninitialized C locals are materialized in real stack slots at the offsets gcc chose, with volatile accesses. Plain [38;5;10mMaybeUninit[0m reads fold to LLVM [38;5;10mundef[0m and the load vanishes entirely.[0m[0m
+- [38;5;10m#[inline(never)][0m plus a trailing liveness pin, and [38;5;10m-Cforce-frame-pointers=yes[0m. Without these LLVM inlined [38;5;10mprintLine[0m, used the red zone, and tail-jumped, putting the read 8 bytes off.[0m[0m
+- [38;5;10mdriver[0m is a naked transcription and [38;5;10mbuild.rs[0m passes [38;5;10m-z lazy[0m. The C reaches [38;5;10mgood[0m/[38;5;10mbad[0m through lazy [38;5;10mJUMP_SLOT[0m PLT entries, so its first call runs [38;5;10m_dl_runtime_resolve[0m, which overwrites the very word [38;5;10mbad[0m then reads. rustc marks those calls [38;5;10mnonlazybind[0m and there is no stable flag to change it, so [38;5;10mdriver[0m is the one function written in asm; [38;5;10mprintLine[0m, [38;5;10mbad[0m, and [38;5;10mgood[0m are ordinary Rust because the resolver only dirties stack below the caller's frame.[0m[0m
+[0m[0m
+[1mVerification:[22m 24/24 differential cases byte-identical against the C [38;5;10m.so[0m — ctypes and directly-linked harnesses, one call per fresh process and long mixed sequences over a deliberately dirtied stack, including NULL, empty, and 300-byte strings, negative/non-1 [38;5;10museGood[0m, and the [38;5;10mgood()[0m-then-[38;5;10mbad()[0m residue interaction.[0m[0m
+[0m[0m
+[1mOne case cannot be matched by any translation.[22m Under [38;5;10mdlopen[0m/[38;5;10mdlsym[0m the stale pointer aims into the library's own text. Both builds read the identical stale address — it lands on [38;5;10mbad[0m in each — but [38;5;10mprintLine[0m then prints the compiler's instruction encodings, and the string ends at a NUL inside a rip-relative displacement. Equality there requires byte-identical codegen for the whole shared object, not identical behavior. This is documented in the module comment rather than papered over.[0m[0m
+[0m[0m
+No bugs were fixed, check order is preserved, and [38;5;10mc_src/[0m is untouched (mtimes still at checkout time).[0m[0m
+[38;5;8m
+ ▸ Credits: 28.35 • Time: 16m 51s
+
+[0m[1G[0m[0m[?25h

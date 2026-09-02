@@ -4,16 +4,12 @@ use crate::address::addr_bytes;
 use crate::context::SpxCtx;
 use crate::params::*;
 use crate::shake::fips202::shake256;
-use crate::vla::Vla;
 
 /// Takes an array of `inblocks` concatenated arrays of `SPX_N` bytes.
 pub fn thash(out: &mut [u8], inp: &[u8], inblocks: usize, ctx: &SpxCtx, addr: &[u32; 8]) {
+    let mut buf = [0u8; SPX_N + SPX_ADDR_BYTES + SPX_MAX_INBLOCKS * SPX_N];
+    let mut bitmask = [0u8; SPX_MAX_INBLOCKS * SPX_N];
     let n = inblocks * SPX_N;
-    let mut vla =
-        Vla::<{ SPX_N + SPX_ADDR_BYTES + SPX_MAX_INBLOCKS * SPX_N }>::new(SPX_N + SPX_ADDR_BYTES + n);
-    let buf = vla.as_mut_slice();
-    let mut mask_vla = Vla::<{ SPX_MAX_INBLOCKS * SPX_N }>::new(n);
-    let bitmask = mask_vla.as_mut_slice();
 
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);
     buf[SPX_N..SPX_N + SPX_ADDR_BYTES].copy_from_slice(addr_bytes(addr));

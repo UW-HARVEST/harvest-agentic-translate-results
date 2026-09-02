@@ -1,0 +1,2448 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory and enumerate C sources
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 11:13 .
+drwxr-xr-x. 697 scheschb amazon 81920 Sep  1 11:13 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 11:13 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 11:13 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 11:13 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; echo "==="; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and CMakeLists
+
+   17 c_src/CMakeLists.txt
+    1 c_src/include/lib.h
+  645 c_src/src/lib.c
+  663 total
+===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+target_link_libraries(${project_name} PRIVATE m)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read the C header and source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m61 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m12823 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mThis is a compact library (one file, 645 lines). Let me build the C library to enumerate the exported ABI.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5; echo "---SO---"; find /tmp/cbuild -name "*.so"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+---SO---
+/tmp/cbuild/libdriver.so
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libdriver.so | sort | tee /tmp/c_syms.txt; echo "=== count ==="; nm -D --defined-only libdriver.so | awk '$2=="T"||$2=="W"{print $3}' | sort > /tmp/c_pub.txt; wc -l /tmp/c_pub.txt; cat /tmp/c_pub.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate exported symbols from the C shared library
+
+0000000000001119 T driver
+=== count ===
+1 /tmp/c_pub.txt
+driver
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/cbuild/; echo "=== all nm ==="; nm -D /tmp/cbuild/libdriver.so | head -50; echo "=== cache proj ==="; grep -i "CMAKE_PROJECT_NAME\|project_name" /tmp/cbuild/CMakeCache.txt | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect build dir and cmake cache
+
+total 100
+drwxr-xr-x.    3 scheschb amazon   260 Sep  1 11:12 .
+drwxrwxrwt. 1296 root     root   91520 Sep  1 11:13 ..
+-rw-r--r--.    1 scheschb amazon 14495 Sep  1 11:09 CMakeCache.txt
+drwxr-xr-x.    5 scheschb amazon   240 Sep  1 11:13 CMakeFiles
+-rw-r--r--.    1 scheschb amazon  7693 Sep  1 11:09 Makefile
+-rw-r--r--.    1 scheschb amazon   741 Sep  1 11:09 cmake.log
+-rw-r--r--.    1 scheschb amazon  2946 Sep  1 11:09 cmake_install.cmake
+-rwxr-xr-x.    1 scheschb amazon 16736 Sep  1 11:12 h_c
+-rwxr-xr-x.    1 scheschb amazon 16736 Sep  1 11:12 h_r
+-rw-r--r--.    1 scheschb amazon   190 Sep  1 11:12 harness.c
+-rwxr-xr-x.    1 scheschb amazon 15840 Sep  1 11:12 libdriver.so
+-rw-r--r--.    1 scheschb amazon    98 Sep  1 11:12 out_c.txt
+-rw-r--r--.    1 scheschb amazon    98 Sep  1 11:12 out_r.txt
+=== all nm ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001119 T driver
+                 U printf@GLIBC_2.2.5
+                 U puts@GLIBC_2.2.5
+=== cache proj ===
+CMAKE_PROJECT_NAME:STATIC=driver
+[38;5;244m - Completed in 0.24s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10m/tmp/cbuild[0m was pre-existing from an unrelated project. Using a fresh build dir.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_h && mkdir -p /tmp/cbuild_h && cd /tmp/cbuild_h && cmake /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src > cmake.log 2>&1 && make 2>&1 | tail -5; echo "---SO---"; ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in clean directory
+
+[ 50%] Building C object CMakeFiles/harvest-work-i6OCXF.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-i6OCXF.so
+[100%] Built target harvest-work-i6OCXF
+---SO---
+-rwxr-xr-x. 1 scheschb amazon 25504 Sep  1 11:13 libharvest-work-i6OCXF.so
+[38;5;244m - Completed in 0.445s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_h && nm -D --defined-only libharvest-work-i6OCXF.so | awk '{print $NF}' | grep -v '^_' | sort > /tmp/c_pub.txt; wc -l < /tmp/c_pub.txt; cat /tmp/c_pub.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported public symbols of C library
+
+38
+aabb
+c22
+c23
+c2AABBtoAABB
+c2AABBtoCapsule
+c2Add
+c2BBVerts
+c2CCW90
+c2CapsuletoCapsule
+c2CircletoAABB
+c2CircletoCapsule
+c2CircletoCircle
+c2Clampv
+c2Collided
+c2D
+c2Det2
+c2Div
+c2Dot
+c2GJK
+c2GJKSimplexMetric
+c2L
+c2Len
+c2MakeProxy
+c2Maxv
+c2Minv
+c2Mulrv
+c2MulrvT
+c2Mulvs
+c2Mulxv
+c2Neg
+c2Norm
+c2RotIdentity
+c2Skew
+c2Sub
+c2Support
+c2V
+c2Witness
+c2xIdentity
+[38;5;244m - Completed in 0.21s[0m
+
+[?25l[0m[38;5;141m> [0mAll 38 symbols come from one file with no namespace macros. Checking the toolchain before writing.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; echo "=== C flags used ==="; grep -E "^CMAKE_C_FLAGS(_RELEASE)?:" /tmp/cbuild_h/CMakeCache.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check rustc version and C build flags
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+=== C flags used ===
+CMAKE_C_FLAGS:STRING=
+CMAKE_C_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[38;5;141m> [0mThe C library is one translation unit exporting 38 symbols, no namespace macros. Writing the crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-i6OCXF"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_i6OCXF"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Full Rust translation of the C collision library
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of `c_src/src/lib.c` (a cute_c2 derived 2D collision library).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C translation unit compiles every function with external linkage, so all
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! 38 of those symbols are re-exported here with the exact same names and the
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! exact same C ABI signatures. Behaviour — including the quirks and bugs of the
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! original — is reproduced operation for operation so that floating point
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! results are bit identical.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::ffi::{c_int, c_void};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // Types
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // typedef enum { C2_TYPE_CIRCLE, C2_TYPE_AABB, C2_TYPE_CAPSULE } C2_TYPE;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m pub const C2_TYPE_CIRCLE: c_int = 0;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m pub const C2_TYPE_AABB: c_int = 1;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m pub const C2_TYPE_CAPSULE: c_int = 2;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// `typedef struct c2v { float x; float y; } c2v;`
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m pub struct c2v {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     pub x: f32,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     pub y: f32,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// `typedef struct c2r { float c; float s; } c2r;`
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m pub struct c2r {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     pub c: f32,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     pub s: f32,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// `typedef struct c2x { c2v p; c2r r; } c2x;`
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m pub struct c2x {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     pub p: c2v,
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     pub r: c2r,
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// `typedef struct c2Circle { c2v p; float r; } c2Circle;`
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m pub struct c2Circle {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     pub p: c2v,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     pub r: f32,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// `typedef struct c2AABB { c2v min; c2v max; } c2AABB;`
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m pub struct c2AABB {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     pub min: c2v,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     pub max: c2v,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// `typedef struct c2Capsule { c2v a; c2v b; float r; } c2Capsule;`
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m pub struct c2Capsule {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     pub a: c2v,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     pub b: c2v,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     pub r: f32,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// `typedef struct c2GJKCache { float metric; int count; int iA[3]; int iB[3]; float div; }`
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m pub struct c2GJKCache {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     pub metric: f32,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     pub count: c_int,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     pub iA: [c_int; 3],
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     pub iB: [c_int; 3],
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     pub div: f32,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// `typedef struct { float radius; int count; c2v verts[8]; } c2Proxy;`
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m pub struct c2Proxy {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     pub radius: f32,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     pub count: c_int,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     pub verts: [c2v; 8],
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// `typedef struct { c2v sA; c2v sB; c2v p; float u; int iA; int iB; } c2sv;`
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m pub struct c2sv {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     pub sA: c2v,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     pub sB: c2v,
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     pub p: c2v,
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     pub u: f32,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     pub iA: c_int,
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     pub iB: c_int,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// `typedef struct { c2sv a, b, c, d; float div; int count; } c2Simplex;`
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// The four `c2sv` members are laid out contiguously and the C code walks them
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m /// as an array via `c2sv *verts = &s.a;`, so they are modelled as an array here.
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m /// `c2sv` has size 36 and alignment 4, so `[c2sv; 4]` reproduces the C layout
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m /// exactly.
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m #[derive(Copy, Clone)]
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m pub struct c2Simplex {
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     pub verts: [c2sv; 4],
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     pub div: f32,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     pub count: c_int,
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m impl c2sv {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     const ZERO: c2sv = c2sv {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         sA: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         sB: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         u: 0.0,
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         iA: 0,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         iB: 0,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m // `FLT_MAX` / `FLT_EPSILON` as spelled out in the C source.
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m const C_FLT_MAX: f32 = 3.40282346638528859811704183484516925e+38;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m const C_FLT_EPSILON: f32 = 1.19209289550781250000000000000000000e-7;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m // Vector / rotation helpers
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     let mut a = c2v { x: 0.0, y: 0.0 };
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     a.x = x;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     a.y = y;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     a.x *= b;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     a.y *= b;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     // Ternary select, not fmaxf: NaN handling must match the C exactly.
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     c2V(
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         if a.x > b.x { a.x } else { b.x },
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         if a.y > b.y { a.y } else { b.y },
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     c2V(
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         if a.x < b.x { a.x } else { b.x },
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         if a.y < b.y { a.y } else { b.y },
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     c2Maxv(lo, c2Minv(a, hi))
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     a.x -= b.x;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     a.y -= b.y;
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     a.x * b.x + a.y * b.y
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m pub extern "C" fn c2RotIdentity() -> c2r {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let mut r = c2r { c: 0.0, s: 0.0 };
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     r.c = 1.0f32;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     r.s = 0.0;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     r
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m pub extern "C" fn c2xIdentity() -> c2x {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     let mut x = c2x {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         r: c2r { c: 0.0, s: 0.0 },
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     x.p = c2V(0.0, 0.0);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     x.r = c2RotIdentity();
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     x
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     a.x += b.x;
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     a.y += b.y;
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m pub extern "C" fn c2Mulxv(a: c2x, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     c2Add(c2Mulrv(a.r, b), a.p)
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m pub extern "C" fn c2Neg(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     c2V(-a.x, -a.y)
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m pub extern "C" fn c2Skew(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     let mut b = c2v { x: 0.0, y: 0.0 };
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     b.x = -a.y;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     b.y = a.x;
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     b
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m pub extern "C" fn c2CCW90(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     let mut b = c2v { x: 0.0, y: 0.0 };
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     b.x = a.y;
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     b.y = -a.x;
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     b
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m pub extern "C" fn c2Len(a: c2v) -> f32 {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     // sqrtf
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     c2Dot(a, a).sqrt()
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     a.x * b.y - a.y * b.x
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     c2Mulvs(a, 1.0f32 / b)
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m pub extern "C" fn c2Norm(a: c2v) -> c2v {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     c2Div(a, c2Len(a))
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m // Shape proxies
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m pub unsafe extern "C" fn c2BBVerts(out: *mut c2v, bb: *mut c2AABB) {
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         let bb = &*bb;
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m         *out.add(0) = bb.min;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m         *out.add(1) = c2V(bb.max.x, bb.min.y);
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m         *out.add(2) = bb.max;
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         *out.add(3) = c2V(bb.min.x, bb.max.y);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, type_: c_int, p: *mut c2Proxy) {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         match type_ {
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m             C2_TYPE_CIRCLE => {
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m                 let c = shape as *mut c2Circle;
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m                 (*p).radius = (*c).r;
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m                 (*p).count = 1;
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m                 (*p).verts[0] = (*c).p;
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m             C2_TYPE_AABB => {
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m                 let bb = shape as *mut c2AABB;
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m                 (*p).radius = 0.0;
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m                 (*p).count = 4;
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m                 c2BBVerts((*p).verts.as_mut_ptr(), bb);
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m             C2_TYPE_CAPSULE => {
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m                 let c = shape as *mut c2Capsule;
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m                 (*p).radius = (*c).r;
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m                 (*p).count = 2;
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m                 (*p).verts[0] = (*c).a;
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m                 (*p).verts[1] = (*c).b;
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m             // The C switch has no default: the proxy is left untouched.
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m             _ => {}
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m // Simplex machinery
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m pub unsafe extern "C" fn c2GJKSimplexMetric(s: *mut c2Simplex) -> f32 {
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m         let s = &*s;
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m         match s.count {
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m             // `default:` falls through into `case 1:` in the C.
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m             2 => c2Len(c2Sub(s.verts[1].p, s.verts[0].p)),
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m             3 => c2Det2(
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m                 c2Sub(s.verts[1].p, s.verts[0].p),
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m                 c2Sub(s.verts[2].p, s.verts[0].p),
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m             ),
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m             _ => 0.0,
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m         let s = &mut *s;
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m         let a = s.verts[0].p;
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m         let b = s.verts[1].p;
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m         let u = c2Dot(b, c2Sub(b, a));
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m         let v = c2Dot(a, c2Sub(a, b));
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m         if v <= 0.0 {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m             s.verts[0].u = 1.0f32;
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m             s.div = 1.0f32;
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m             s.count = 1;
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m         } else if u <= 0.0 {
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m             s.verts[0] = s.verts[1];
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m             s.verts[0].u = 1.0f32;
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m             s.div = 1.0f32;
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m             s.count = 1;
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m             s.verts[0].u = u;
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m             s.verts[1].u = v;
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m             s.div = u + v;
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m             s.count = 2;
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m         let s = &mut *s;
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m         let a = s.verts[0].p;
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m         let b = s.verts[1].p;
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         let c = s.verts[2].p;
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         let uAB = c2Dot(b, c2Sub(b, a));
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         let vAB = c2Dot(a, c2Sub(a, b));
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         let uBC = c2Dot(c, c2Sub(c, b));
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         let vBC = c2Dot(b, c2Sub(b, c));
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m         let uCA = c2Dot(a, c2Sub(a, c));
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m         let vCA = c2Dot(c, c2Sub(c, a));
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m         let area = c2Det2(c2Sub(b, a), c2Sub(c, a));
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m         let uABC = c2Det2(b, c) * area;
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         let vABC = c2Det2(c, a) * area;
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         let wABC = c2Det2(a, b) * area;
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         if vAB <= 0.0 && uCA <= 0.0 {
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m             s.verts[0].u = 1.0f32;
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m             s.div = 1.0f32;
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m             s.count = 1;
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m         } else if uAB <= 0.0 && vBC <= 0.0 {
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m             s.verts[0] = s.verts[1];
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m             s.verts[0].u = 1.0f32;
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m             s.div = 1.0f32;
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m             s.count = 1;
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m         } else if uBC <= 0.0 && vCA <= 0.0 {
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m             s.verts[0] = s.verts[2];
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m             s.verts[0].u = 1.0f32;
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m             s.div = 1.0f32;
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m             s.count = 1;
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         } else if uAB > 0.0 && vAB > 0.0 && wABC <= 0.0 {
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m             s.verts[0].u = uAB;
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m             s.verts[1].u = vAB;
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m             s.div = uAB + vAB;
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m             s.count = 2;
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         } else if uBC > 0.0 && vBC > 0.0 && uABC <= 0.0 {
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m             s.verts[0] = s.verts[1];
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m             s.verts[1] = s.verts[2];
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m             s.verts[0].u = uBC;
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m             s.verts[1].u = vBC;
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m             s.div = uBC + vBC;
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m             s.count = 2;
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m         } else if uCA > 0.0 && vCA > 0.0 && vABC <= 0.0 {
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m             s.verts[1] = s.verts[0];
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m             s.verts[0] = s.verts[2];
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m             s.verts[0].u = uCA;
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m             s.verts[1].u = vCA;
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m             s.div = uCA + vCA;
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m             s.count = 2;
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m             s.verts[0].u = uABC;
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m             s.verts[1].u = vABC;
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m             s.verts[2].u = wABC;
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m             s.div = uABC + vABC + wABC;
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m             s.count = 3;
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m pub unsafe extern "C" fn c2D(s: *mut c2Simplex) -> c2v {
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m         let s = &*s;
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m         match s.count {
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m             1 => c2Neg(s.verts[0].p),
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m                 let ab = c2Sub(s.verts[1].p, s.verts[0].p);
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m                 if c2Det2(ab, c2Neg(s.verts[0].p)) > 0.0 {
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m                     return c2Skew(ab);
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m                 c2CCW90(ab)
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m             // `case 3:` and `default:`
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m             _ => c2V(0.0, 0.0),
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c_int {
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m         let mut imax: c_int = 0;
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m         // The C reads verts[0] unconditionally, even when count <= 0.
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m         let mut dmax = c2Dot(*verts.add(0), d);
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m         let mut i: c_int = 1;
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m         while i < count {
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m             let dot = c2Dot(*verts.add(i as usize), d);
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m             if dot > dmax {
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m                 imax = i;
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m                 dmax = dot;
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m             i += 1;
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m         imax
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m         let s = &*s;
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m         let den = 1.0f32 / s.div;
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m         match s.count {
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m                 *a = s.verts[0].sA;
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m                 *b = s.verts[0].sB;
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m                 *a = c2Add(
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m                     c2Mulvs(s.verts[0].sA, den * s.verts[0].u),
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m                     c2Mulvs(s.verts[1].sA, den * s.verts[1].u),
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m                 *b = c2Add(
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m                     c2Mulvs(s.verts[0].sB, den * s.verts[0].u),
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m                     c2Mulvs(s.verts[1].sB, den * s.verts[1].u),
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m                 *a = c2Add(
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m                     c2Add(
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m                         c2Mulvs(s.verts[0].sA, den * s.verts[0].u),
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m                         c2Mulvs(s.verts[1].sA, den * s.verts[1].u),
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m                     ),
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m                     c2Mulvs(s.verts[2].sA, den * s.verts[2].u),
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m                 *b = c2Add(
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m                     c2Add(
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m                         c2Mulvs(s.verts[0].sB, den * s.verts[0].u),
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m                         c2Mulvs(s.verts[1].sB, den * s.verts[1].u),
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m                     ),
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m                     c2Mulvs(s.verts[2].sB, den * s.verts[2].u),
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m             _ => {
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m                 *a = c2V(0.0, 0.0);
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m                 *b = c2V(0.0, 0.0);
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m         let s = &*s;
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m         let den = 1.0f32 / s.div;
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m         match s.count {
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m             1 => s.verts[0].p,
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m             2 => c2Add(
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m                 c2Mulvs(s.verts[0].p, den * s.verts[0].u),
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m                 c2Mulvs(s.verts[1].p, den * s.verts[1].u),
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m             ),
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m             _ => c2V(0.0, 0.0),
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m // GJK
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m pub unsafe extern "C" fn c2GJK(
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m     A: *const c_void,
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m     typeA: c_int,
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m     ax_ptr: *const c2x,
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m     B: *const c_void,
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m     typeB: c_int,
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m     bx_ptr: *const c2x,
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m     outA: *mut c2v,
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m     outB: *mut c2v,
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m     use_radius: c_int,
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     iterations: *mut c_int,
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m     cache: *mut c2GJKCache,
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m ) -> f32 {
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m         let ax: c2x;
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m         let bx: c2x;
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m         if ax_ptr.is_null() {
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m             ax = c2xIdentity();
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m             ax = *ax_ptr;
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m         if bx_ptr.is_null() {
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m             bx = c2xIdentity();
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m             bx = *bx_ptr;
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m         // In C these are uninitialised stack objects; c2MakeProxy fills them in
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m         // for every valid C2_TYPE. Zeroing keeps the invalid-type case
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m         // deterministic instead of reading indeterminate stack bytes.
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m         let mut pA = c2Proxy {
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m             radius: 0.0,
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m             count: 0,
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m             verts: [c2v { x: 0.0, y: 0.0 }; 8],
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m         let mut pB = pA;
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m         c2MakeProxy(A, typeA, &raw mut pA);
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m         c2MakeProxy(B, typeB, &raw mut pB);
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m         let mut s = c2Simplex {
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m             verts: [c2sv::ZERO; 4],
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m             div: 0.0,
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m             count: 0,
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m         let mut cache_was_read = 0;
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m         if !cache.is_null() {
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m             let cache_was_good = (*cache).count != 0;
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m             if cache_was_good {
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m                 let mut i: c_int = 0;
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m                 while i < (*cache).count {
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m                     let iA = (*cache).iA[i as usize];
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m                     let iB = (*cache).iB[i as usize];
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m                     let sA = c2Mulxv(ax, pA.verts[iA as usize]);
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m                     let sB = c2Mulxv(bx, pB.verts[iB as usize]);
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m                     let v = &mut s.verts[i as usize];
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m                     v.iA = iA;
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m                     v.sA = sA;
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m                     v.iB = iB;
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m                     v.sB = sB;
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m                     v.p = c2Sub(v.sB, v.sA);
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m                     v.u = 0.0;
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m                     i += 1;
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m                 s.count = (*cache).count;
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m                 s.div = (*cache).div;
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m                 let metric_old = (*cache).metric;
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m                 let metric = c2GJKSimplexMetric(&raw mut s);
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m                 let min_metric = if metric < metric_old { metric } else { metric_old };
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m                 let max_metric = if metric > metric_old { metric } else { metric_old };
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m                 // Reproduced verbatim from the C, including the inverted /
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m                 // nonsensical `metric < -1.0e8f` test.
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m                 if !(min_metric < max_metric * 2.0f32 && metric < -1.0e8f32) {
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m                     cache_was_read = 1;
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m         if cache_was_read == 0 {
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m             s.verts[0].iA = 0;
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m             s.verts[0].iB = 0;
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m             s.verts[0].sA = c2Mulxv(ax, pA.verts[0]);
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m             s.verts[0].sB = c2Mulxv(bx, pB.verts[0]);
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m             s.verts[0].p = c2Sub(s.verts[0].sB, s.verts[0].sA);
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m             s.verts[0].u = 1.0f32;
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m             s.div = 1.0f32;
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m             s.count = 1;
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m         let mut saveA: [c_int; 3] = [0; 3];
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m         let mut saveB: [c_int; 3] = [0; 3];
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m         let mut save_count: c_int;
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m         let mut d0: f32 = C_FLT_MAX;
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m         let mut d1: f32;
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m         let mut iter: c_int = 0;
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m         let mut hit: c_int = 0;
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m         while iter < 20 {
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m             save_count = s.count;
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m             let mut i: c_int = 0;
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m             while i < save_count {
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m                 saveA[i as usize] = s.verts[i as usize].iA;
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m                 saveB[i as usize] = s.verts[i as usize].iB;
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m             match s.count {
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m                 1 => {}
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m                 2 => c22(&raw mut s),
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m                 3 => c23(&raw mut s),
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m                 _ => {}
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m             if s.count == 3 {
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m                 hit = 1;
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m             let p = c2L(&raw mut s);
+[0m[49m[38;5;10m+    639[0m:[38;5;10m[49m             d1 = c2Dot(p, p);
+[0m[49m[38;5;10m+    640[0m:[38;5;10m[49m             if d1 > d0 {
+[0m[49m[38;5;10m+    641[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    642[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    643[0m:[38;5;10m[49m             d0 = d1;
+[0m[49m[38;5;10m+    644[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    645[0m:[38;5;10m[49m             let d = c2D(&raw mut s);
+[0m[49m[38;5;10m+    646[0m:[38;5;10m[49m             if c2Dot(d, d) < C_FLT_EPSILON * C_FLT_EPSILON {
+[0m[49m[38;5;10m+    647[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    648[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    649[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    650[0m:[38;5;10m[49m             let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, c2Neg(d)));
+[0m[49m[38;5;10m+    651[0m:[38;5;10m[49m             let sA = c2Mulxv(ax, pA.verts[iA as usize]);
+[0m[49m[38;5;10m+    652[0m:[38;5;10m[49m             let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, d));
+[0m[49m[38;5;10m+    653[0m:[38;5;10m[49m             let sB = c2Mulxv(bx, pB.verts[iB as usize]);
+[0m[49m[38;5;10m+    654[0m:[38;5;10m[49m             {
+[0m[49m[38;5;10m+    655[0m:[38;5;10m[49m                 let v = &mut s.verts[s.count as usize];
+[0m[49m[38;5;10m+    656[0m:[38;5;10m[49m                 v.iA = iA;
+[0m[49m[38;5;10m+    657[0m:[38;5;10m[49m                 v.sA = sA;
+[0m[49m[38;5;10m+    658[0m:[38;5;10m[49m                 v.iB = iB;
+[0m[49m[38;5;10m+    659[0m:[38;5;10m[49m                 v.sB = sB;
+[0m[49m[38;5;10m+    660[0m:[38;5;10m[49m                 v.p = c2Sub(v.sB, v.sA);
+[0m[49m[38;5;10m+    661[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    662[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    663[0m:[38;5;10m[49m             let mut dup = 0;
+[0m[49m[38;5;10m+    664[0m:[38;5;10m[49m             let mut i: c_int = 0;
+[0m[49m[38;5;10m+    665[0m:[38;5;10m[49m             while i < save_count {
+[0m[49m[38;5;10m+    666[0m:[38;5;10m[49m                 if iA == saveA[i as usize] && iB == saveB[i as usize] {
+[0m[49m[38;5;10m+    667[0m:[38;5;10m[49m                     dup = 1;
+[0m[49m[38;5;10m+    668[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    669[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    670[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    671[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    672[0m:[38;5;10m[49m             if dup != 0 {
+[0m[49m[38;5;10m+    673[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    674[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    675[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    676[0m:[38;5;10m[49m             s.count += 1;
+[0m[49m[38;5;10m+    677[0m:[38;5;10m[49m             iter += 1;
+[0m[49m[38;5;10m+    678[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    679[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    680[0m:[38;5;10m[49m         let mut a = c2v { x: 0.0, y: 0.0 };
+[0m[49m[38;5;10m+    681[0m:[38;5;10m[49m         let mut b = c2v { x: 0.0, y: 0.0 };
+[0m[49m[38;5;10m+    682[0m:[38;5;10m[49m         c2Witness(&raw mut s, &raw mut a, &raw mut b);
+[0m[49m[38;5;10m+    683[0m:[38;5;10m[49m         let mut dist = c2Len(c2Sub(a, b));
+[0m[49m[38;5;10m+    684[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    685[0m:[38;5;10m[49m         if hit != 0 {
+[0m[49m[38;5;10m+    686[0m:[38;5;10m[49m             a = b;
+[0m[49m[38;5;10m+    687[0m:[38;5;10m[49m             dist = 0.0;
+[0m[49m[38;5;10m+    688[0m:[38;5;10m[49m         } else if use_radius != 0 {
+[0m[49m[38;5;10m+    689[0m:[38;5;10m[49m             let rA = pA.radius;
+[0m[49m[38;5;10m+    690[0m:[38;5;10m[49m             let rB = pB.radius;
+[0m[49m[38;5;10m+    691[0m:[38;5;10m[49m             if dist > rA + rB && dist > C_FLT_EPSILON {
+[0m[49m[38;5;10m+    692[0m:[38;5;10m[49m                 dist -= rA + rB;
+[0m[49m[38;5;10m+    693[0m:[38;5;10m[49m                 let n = c2Norm(c2Sub(b, a));
+[0m[49m[38;5;10m+    694[0m:[38;5;10m[49m                 a = c2Add(a, c2Mulvs(n, rA));
+[0m[49m[38;5;10m+    695[0m:[38;5;10m[49m                 b = c2Sub(b, c2Mulvs(n, rB));
+[0m[49m[38;5;10m+    696[0m:[38;5;10m[49m                 if a.x == b.x && a.y == b.y {
+[0m[49m[38;5;10m+    697[0m:[38;5;10m[49m                     dist = 0.0;
+[0m[49m[38;5;10m+    698[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    699[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    700[0m:[38;5;10m[49m                 let p = c2Mulvs(c2Add(a, b), 0.5f32);
+[0m[49m[38;5;10m+    701[0m:[38;5;10m[49m                 a = p;
+[0m[49m[38;5;10m+    702[0m:[38;5;10m[49m                 b = p;
+[0m[49m[38;5;10m+    703[0m:[38;5;10m[49m                 dist = 0.0;
+[0m[49m[38;5;10m+    704[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    705[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    706[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    707[0m:[38;5;10m[49m         if !cache.is_null() {
+[0m[49m[38;5;10m+    708[0m:[38;5;10m[49m             (*cache).metric = c2GJKSimplexMetric(&raw mut s);
+[0m[49m[38;5;10m+    709[0m:[38;5;10m[49m             (*cache).count = s.count;
+[0m[49m[38;5;10m+    710[0m:[38;5;10m[49m             let mut i: c_int = 0;
+[0m[49m[38;5;10m+    711[0m:[38;5;10m[49m             while i < s.count {
+[0m[49m[38;5;10m+    712[0m:[38;5;10m[49m                 let v = &s.verts[i as usize];
+[0m[49m[38;5;10m+    713[0m:[38;5;10m[49m                 (*cache).iA[i as usize] = v.iA;
+[0m[49m[38;5;10m+    714[0m:[38;5;10m[49m                 (*cache).iB[i as usize] = v.iB;
+[0m[49m[38;5;10m+    715[0m:[38;5;10m[49m                 i += 1;
+[0m[49m[38;5;10m+    716[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    717[0m:[38;5;10m[49m             (*cache).div = s.div;
+[0m[49m[38;5;10m+    718[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    719[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    720[0m:[38;5;10m[49m         if !outA.is_null() {
+[0m[49m[38;5;10m+    721[0m:[38;5;10m[49m             *outA = a;
+[0m[49m[38;5;10m+    722[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    723[0m:[38;5;10m[49m         if !outB.is_null() {
+[0m[49m[38;5;10m+    724[0m:[38;5;10m[49m             *outB = b;
+[0m[49m[38;5;10m+    725[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    726[0m:[38;5;10m[49m         if !iterations.is_null() {
+[0m[49m[38;5;10m+    727[0m:[38;5;10m[49m             *iterations = iter;
+[0m[49m[38;5;10m+    728[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    729[0m:[38;5;10m[49m         dist
+[0m[49m[38;5;10m+    730[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    731[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    732[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    733[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    734[0m:[38;5;10m[49m // Boolean collision routines
+[0m[49m[38;5;10m+    735[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    736[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    737[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    738[0m:[38;5;10m[49m pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
+[0m[49m[38;5;10m+    739[0m:[38;5;10m[49m     let d0 = (B.max.x < A.min.x) as c_int;
+[0m[49m[38;5;10m+    740[0m:[38;5;10m[49m     let d1 = (A.max.x < B.min.x) as c_int;
+[0m[49m[38;5;10m+    741[0m:[38;5;10m[49m     let d2 = (B.max.y < A.min.y) as c_int;
+[0m[49m[38;5;10m+    742[0m:[38;5;10m[49m     let d3 = (A.max.y < B.min.y) as c_int;
+[0m[49m[38;5;10m+    743[0m:[38;5;10m[49m     ((d0 | d1 | d2 | d3) == 0) as c_int
+[0m[49m[38;5;10m+    744[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    745[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    746[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    747[0m:[38;5;10m[49m pub extern "C" fn c2AABBtoCapsule(A: c2AABB, B: c2Capsule) -> c_int {
+[0m[49m[38;5;10m+    748[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    749[0m:[38;5;10m[49m         // `if (c2GJK(...)) return 0; return 1;` — a non-zero float is truthy.
+[0m[49m[38;5;10m+    750[0m:[38;5;10m[49m         if c2GJK(
+[0m[49m[38;5;10m+    751[0m:[38;5;10m[49m             &raw const A as *const c_void,
+[0m[49m[38;5;10m+    752[0m:[38;5;10m[49m             C2_TYPE_AABB,
+[0m[49m[38;5;10m+    753[0m:[38;5;10m[49m             std::ptr::null(),
+[0m[49m[38;5;10m+    754[0m:[38;5;10m[49m             &raw const B as *const c_void,
+[0m[49m[38;5;10m+    755[0m:[38;5;10m[49m             C2_TYPE_CAPSULE,
+[0m[49m[38;5;10m+    756[0m:[38;5;10m[49m             std::ptr::null(),
+[0m[49m[38;5;10m+    757[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    758[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    759[0m:[38;5;10m[49m             1,
+[0m[49m[38;5;10m+    760[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    761[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    762[0m:[38;5;10m[49m         ) != 0.0
+[0m[49m[38;5;10m+    763[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    764[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+    765[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    766[0m:[38;5;10m[49m         1
+[0m[49m[38;5;10m+    767[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    768[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    769[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    770[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    771[0m:[38;5;10m[49m pub extern "C" fn c2CapsuletoCapsule(A: c2Capsule, B: c2Capsule) -> c_int {
+[0m[49m[38;5;10m+    772[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    773[0m:[38;5;10m[49m         if c2GJK(
+[0m[49m[38;5;10m+    774[0m:[38;5;10m[49m             &raw const A as *const c_void,
+[0m[49m[38;5;10m+    775[0m:[38;5;10m[49m             C2_TYPE_CAPSULE,
+[0m[49m[38;5;10m+    776[0m:[38;5;10m[49m             std::ptr::null(),
+[0m[49m[38;5;10m+    777[0m:[38;5;10m[49m             &raw const B as *const c_void,
+[0m[49m[38;5;10m+    778[0m:[38;5;10m[49m             C2_TYPE_CAPSULE,
+[0m[49m[38;5;10m+    779[0m:[38;5;10m[49m             std::ptr::null(),
+[0m[49m[38;5;10m+    780[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    781[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    782[0m:[38;5;10m[49m             1,
+[0m[49m[38;5;10m+    783[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    784[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    785[0m:[38;5;10m[49m         ) != 0.0
+[0m[49m[38;5;10m+    786[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    787[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+    788[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    789[0m:[38;5;10m[49m         1
+[0m[49m[38;5;10m+    790[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    791[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    792[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    793[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    794[0m:[38;5;10m[49m pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
+[0m[49m[38;5;10m+    795[0m:[38;5;10m[49m     let c = c2Sub(B.p, A.p);
+[0m[49m[38;5;10m+    796[0m:[38;5;10m[49m     let d2 = c2Dot(c, c);
+[0m[49m[38;5;10m+    797[0m:[38;5;10m[49m     let mut r2 = A.r + B.r;
+[0m[49m[38;5;10m+    798[0m:[38;5;10m[49m     r2 = r2 * r2;
+[0m[49m[38;5;10m+    799[0m:[38;5;10m[49m     (d2 < r2) as c_int
+[0m[49m[38;5;10m+    800[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    801[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    802[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    803[0m:[38;5;10m[49m pub extern "C" fn c2CircletoAABB(A: c2Circle, B: c2AABB) -> c_int {
+[0m[49m[38;5;10m+    804[0m:[38;5;10m[49m     let L = c2Clampv(A.p, B.min, B.max);
+[0m[49m[38;5;10m+    805[0m:[38;5;10m[49m     let ab = c2Sub(A.p, L);
+[0m[49m[38;5;10m+    806[0m:[38;5;10m[49m     let d2 = c2Dot(ab, ab);
+[0m[49m[38;5;10m+    807[0m:[38;5;10m[49m     let r2 = A.r * A.r;
+[0m[49m[38;5;10m+    808[0m:[38;5;10m[49m     (d2 < r2) as c_int
+[0m[49m[38;5;10m+    809[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    810[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    811[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    812[0m:[38;5;10m[49m pub extern "C" fn c2CircletoCapsule(A: c2Circle, B: c2Capsule) -> c_int {
+[0m[49m[38;5;10m+    813[0m:[38;5;10m[49m     let n = c2Sub(B.b, B.a);
+[0m[49m[38;5;10m+    814[0m:[38;5;10m[49m     let ap = c2Sub(A.p, B.a);
+[0m[49m[38;5;10m+    815[0m:[38;5;10m[49m     let da = c2Dot(ap, n);
+[0m[49m[38;5;10m+    816[0m:[38;5;10m[49m     let d2: f32;
+[0m[49m[38;5;10m+    817[0m:[38;5;10m[49m     if da < 0.0 {
+[0m[49m[38;5;10m+    818[0m:[38;5;10m[49m         d2 = c2Dot(ap, ap);
+[0m[49m[38;5;10m+    819[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    820[0m:[38;5;10m[49m         let db = c2Dot(c2Sub(A.p, B.b), n);
+[0m[49m[38;5;10m+    821[0m:[38;5;10m[49m         if db < 0.0 {
+[0m[49m[38;5;10m+    822[0m:[38;5;10m[49m             let e = c2Sub(ap, c2Mulvs(n, da / c2Dot(n, n)));
+[0m[49m[38;5;10m+    823[0m:[38;5;10m[49m             d2 = c2Dot(e, e);
+[0m[49m[38;5;10m+    824[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    825[0m:[38;5;10m[49m             let bp = c2Sub(A.p, B.b);
+[0m[49m[38;5;10m+    826[0m:[38;5;10m[49m             d2 = c2Dot(bp, bp);
+[0m[49m[38;5;10m+    827[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    828[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    829[0m:[38;5;10m[49m     let r = A.r + B.r;
+[0m[49m[38;5;10m+    830[0m:[38;5;10m[49m     (d2 < r * r) as c_int
+[0m[49m[38;5;10m+    831[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    832[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    833[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    834[0m:[38;5;10m[49m pub unsafe extern "C" fn c2Collided(
+[0m[49m[38;5;10m+    835[0m:[38;5;10m[49m     A: *const c_void,
+[0m[49m[38;5;10m+    836[0m:[38;5;10m[49m     typeA: c_int,
+[0m[49m[38;5;10m+    837[0m:[38;5;10m[49m     B: *const c_void,
+[0m[49m[38;5;10m+    838[0m:[38;5;10m[49m     typeB: c_int,
+[0m[49m[38;5;10m+    839[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    840[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    841[0m:[38;5;10m[49m         match typeA {
+[0m[49m[38;5;10m+    842[0m:[38;5;10m[49m             C2_TYPE_CIRCLE => match typeB {
+[0m[49m[38;5;10m+    843[0m:[38;5;10m[49m                 C2_TYPE_CIRCLE => c2CircletoCircle(*(A as *const c2Circle), *(B as *const c2Circle)),
+[0m[49m[38;5;10m+    844[0m:[38;5;10m[49m                 C2_TYPE_AABB => c2CircletoAABB(*(A as *const c2Circle), *(B as *const c2AABB)),
+[0m[49m[38;5;10m+    845[0m:[38;5;10m[49m                 C2_TYPE_CAPSULE => {
+[0m[49m[38;5;10m+    846[0m:[38;5;10m[49m                     c2CircletoCapsule(*(A as *const c2Circle), *(B as *const c2Capsule))
+[0m[49m[38;5;10m+    847[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    848[0m:[38;5;10m[49m                 _ => 0,
+[0m[49m[38;5;10m+    849[0m:[38;5;10m[49m             },
+[0m[49m[38;5;10m+    850[0m:[38;5;10m[49m             C2_TYPE_AABB => match typeB {
+[0m[49m[38;5;10m+    851[0m:[38;5;10m[49m                 C2_TYPE_CIRCLE => c2CircletoAABB(*(B as *const c2Circle), *(A as *const c2AABB)),
+[0m[49m[38;5;10m+    852[0m:[38;5;10m[49m                 C2_TYPE_AABB => c2AABBtoAABB(*(A as *const c2AABB), *(B as *const c2AABB)),
+[0m[49m[38;5;10m+    853[0m:[38;5;10m[49m                 C2_TYPE_CAPSULE => c2AABBtoCapsule(*(A as *const c2AABB), *(B as *const c2Capsule)),
+[0m[49m[38;5;10m+    854[0m:[38;5;10m[49m                 _ => 0,
+[0m[49m[38;5;10m+    855[0m:[38;5;10m[49m             },
+[0m[49m[38;5;10m+    856[0m:[38;5;10m[49m             C2_TYPE_CAPSULE => match typeB {
+[0m[49m[38;5;10m+    857[0m:[38;5;10m[49m                 C2_TYPE_CIRCLE => {
+[0m[49m[38;5;10m+    858[0m:[38;5;10m[49m                     c2CircletoCapsule(*(B as *const c2Circle), *(A as *const c2Capsule))
+[0m[49m[38;5;10m+    859[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    860[0m:[38;5;10m[49m                 C2_TYPE_AABB => c2AABBtoCapsule(*(B as *const c2AABB), *(A as *const c2Capsule)),
+[0m[49m[38;5;10m+    861[0m:[38;5;10m[49m                 C2_TYPE_CAPSULE => {
+[0m[49m[38;5;10m+    862[0m:[38;5;10m[49m                     c2CapsuletoCapsule(*(A as *const c2Capsule), *(B as *const c2Capsule))
+[0m[49m[38;5;10m+    863[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    864[0m:[38;5;10m[49m                 _ => 0,
+[0m[49m[38;5;10m+    865[0m:[38;5;10m[49m             },
+[0m[49m[38;5;10m+    866[0m:[38;5;10m[49m             _ => 0,
+[0m[49m[38;5;10m+    867[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    868[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    869[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    870[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    871[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    872[0m:[38;5;10m[49m // Public entry point declared in include/lib.h
+[0m[49m[38;5;10m+    873[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    874[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    875[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    876[0m:[38;5;10m[49m pub extern "C" fn aabb(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> c_int {
+[0m[49m[38;5;10m+    877[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    878[0m:[38;5;10m[49m         let mut result: c_int = 0;
+[0m[49m[38;5;10m+    879[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    880[0m:[38;5;10m[49m         let mut aabb_in = c2AABB {
+[0m[49m[38;5;10m+    881[0m:[38;5;10m[49m             min: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    882[0m:[38;5;10m[49m             max: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    883[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    884[0m:[38;5;10m[49m         aabb_in.min = c2V(min_x, min_y);
+[0m[49m[38;5;10m+    885[0m:[38;5;10m[49m         aabb_in.max = c2V(max_x, max_y);
+[0m[49m[38;5;10m+    886[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    887[0m:[38;5;10m[49m         let mut circle = c2Circle {
+[0m[49m[38;5;10m+    888[0m:[38;5;10m[49m             p: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    889[0m:[38;5;10m[49m             r: 0.0,
+[0m[49m[38;5;10m+    890[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    891[0m:[38;5;10m[49m         circle.p = c2V(-70.0f32, 0.0);
+[0m[49m[38;5;10m+    892[0m:[38;5;10m[49m         circle.r = 20.0f32;
+[0m[49m[38;5;10m+    893[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    894[0m:[38;5;10m[49m         let mut aabb = c2AABB {
+[0m[49m[38;5;10m+    895[0m:[38;5;10m[49m             min: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    896[0m:[38;5;10m[49m             max: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    897[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    898[0m:[38;5;10m[49m         aabb.min = c2V(-40.0f32, -40.0f32);
+[0m[49m[38;5;10m+    899[0m:[38;5;10m[49m         aabb.max = c2V(-15.0f32, -15.0f32);
+[0m[49m[38;5;10m+    900[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    901[0m:[38;5;10m[49m         let mut capsule = c2Capsule {
+[0m[49m[38;5;10m+    902[0m:[38;5;10m[49m             a: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    903[0m:[38;5;10m[49m             b: c2v { x: 0.0, y: 0.0 },
+[0m[49m[38;5;10m+    904[0m:[38;5;10m[49m             r: 0.0,
+[0m[49m[38;5;10m+    905[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    906[0m:[38;5;10m[49m         capsule.a = c2V(-40.0f32, 40.0f32);
+[0m[49m[38;5;10m+    907[0m:[38;5;10m[49m         capsule.b = c2V(-20.0f32, 100.0f32);
+[0m[49m[38;5;10m+    908[0m:[38;5;10m[49m         capsule.r = 10.0f32;
+[0m[49m[38;5;10m+    909[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    910[0m:[38;5;10m[49m         result += c2Collided(
+[0m[49m[38;5;10m+    911[0m:[38;5;10m[49m             &raw const circle as *const c_void,
+[0m[49m[38;5;10m+    912[0m:[38;5;10m[49m             C2_TYPE_CIRCLE,
+[0m[49m[38;5;10m+    913[0m:[38;5;10m[49m             &raw const aabb_in as *const c_void,
+[0m[49m[38;5;10m+    914[0m:[38;5;10m[49m             C2_TYPE_AABB,
+[0m[49m[38;5;10m+    915[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    916[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    917[0m:[38;5;10m[49m         result += c2Collided(
+[0m[49m[38;5;10m+    918[0m:[38;5;10m[49m             &raw const aabb as *const c_void,
+[0m[49m[38;5;10m+    919[0m:[38;5;10m[49m             C2_TYPE_AABB,
+[0m[49m[38;5;10m+    920[0m:[38;5;10m[49m             &raw const aabb_in as *const c_void,
+[0m[49m[38;5;10m+    921[0m:[38;5;10m[49m             C2_TYPE_AABB,
+[0m[49m[38;5;10m+    922[0m:[38;5;10m[49m         ) << 1;
+[0m[49m[38;5;10m+    923[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    924[0m:[38;5;10m[49m         result += c2Collided(
+[0m[49m[38;5;10m+    925[0m:[38;5;10m[49m             &raw const capsule as *const c_void,
+[0m[49m[38;5;10m+    926[0m:[38;5;10m[49m             C2_TYPE_CAPSULE,
+[0m[49m[38;5;10m+    927[0m:[38;5;10m[49m             &raw const aabb_in as *const c_void,
+[0m[49m[38;5;10m+    928[0m:[38;5;10m[49m             C2_TYPE_AABB,
+[0m[49m[38;5;10m+    929[0m:[38;5;10m[49m         ) << 2;
+[0m[49m[38;5;10m+    930[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    931[0m:[38;5;10m[49m         result
+[0m[49m[38;5;10m+    932[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    933[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation && cargo build --release 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling harvest-work-i6OCXF v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation)
+    Finished `release` profile [optimized] target(s) in 0.29s
+[38;5;244m - Completed in 0.310s[0m
+
+[?25l[0m[38;5;141m> [0mClean build. Now the completion gate — diffing the exported symbol sets.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation && ls target/release/*.so && nm -D --defined-only target/release/*.so | awk '{print $NF}' | grep -v '^_' | sort > /tmp/rust_pub.txt; echo "C symbols: $(wc -l < /tmp/c_pub.txt)  Rust symbols: $(wc -l < /tmp/rust_pub.txt)"; echo "=== DIFF (C-only '<' / Rust-only '>') ==="; diff /tmp/c_pub.txt /tmp/rust_pub.txt && echo "*** SYMBOL SETS IDENTICAL ***"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared libraries
+
+target/release/libharvest_work_i6OCXF.so
+C symbols: 38  Rust symbols: 38
+=== DIFF (C-only '<' / Rust-only '>') ===
+*** SYMBOL SETS IDENTICAL ***
+[38;5;244m - Completed in 0.28s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol sets match exactly. Now verifying byte-identical behavior with a differential harness that [38;5;10mdlopen[0ms both libraries and compares raw bit patterns across all 38 functions.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/diffharness/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust libraries symbol by symbol
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m /* Differential harness: dlopen the C .so and the Rust .so and compare the raw
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m  * bit patterns of every exported function's results across randomized inputs. */
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m typedef enum { C2_TYPE_CIRCLE, C2_TYPE_AABB, C2_TYPE_CAPSULE } C2_TYPE;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m typedef struct c2v { float x, y; } c2v;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef struct c2r { float c, s; } c2r;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m typedef struct c2x { c2v p; c2r r; } c2x;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m typedef struct c2Circle { c2v p; float r; } c2Circle;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m typedef struct c2AABB { c2v min, max; } c2AABB;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m typedef struct c2Capsule { c2v a, b; float r; } c2Capsule;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m typedef struct c2GJKCache { float metric; int count; int iA[3]; int iB[3]; float div; } c2GJKCache;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m typedef struct { float radius; int count; c2v verts[8]; } c2Proxy;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m typedef struct { c2v sA, sB, p; float u; int iA, iB; } c2sv;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m typedef struct { c2sv a, b, c, d; float div; int count; } c2Simplex;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m static void *hc, *hr;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m static long fails = 0, checks = 0;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m static void *S(void *h, const char *n) {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 	void *p = dlsym(h, n);
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 	if (!p) { fprintf(stderr, "missing symbol %s\n", n); exit(2); }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 	return p;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m static void cmp(const char *tag, const void *a, const void *b, size_t n) {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 	++checks;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 	if (memcmp(a, b, n) != 0) {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 		if (fails < 20) {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 			fprintf(stderr, "MISMATCH %s: C=", tag);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 			for (size_t i = 0; i < n; ++i) fprintf(stderr, "%02x", ((const unsigned char *)a)[i]);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 			fprintf(stderr, " R=");
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 			for (size_t i = 0; i < n; ++i) fprintf(stderr, "%02x", ((const unsigned char *)b)[i]);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 			fprintf(stderr, "\n");
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 		++fails;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /* deterministic PRNG */
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m static uint64_t st = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m static uint32_t nx(void) { st ^= st << 13; st ^= st >> 7; st ^= st << 17; return (uint32_t)(st >> 32); }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m static float rf(float lo, float hi) { return lo + (hi - lo) * ((float)(nx() % 100001) / 100000.0f); }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m static c2v rv(void) { c2v v; v.x = rf(-120, 120); v.y = rf(-120, 120); return v; }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /* interesting float values, including specials */
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m static float special(void) {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 	static const float t[] = { 0.0f, -0.0f, 1.0f, -1.0f, 1e-30f, -1e-30f, 1e30f, -1e30f,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 	                           3.4028235e38f, -3.4028235e38f, 1.1920929e-7f, 0.5f, -0.5f,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 	                           20.0f, -70.0f, 100.0f };
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 	unsigned k = nx() % (sizeof(t) / sizeof(t[0]) + 4);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 	if (k < sizeof(t) / sizeof(t[0])) return t[k];
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 	if (k == sizeof(t) / sizeof(t[0])) return INFINITY;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 	if (k == sizeof(t) / sizeof(t[0]) + 1) return -INFINITY;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 	if (k == sizeof(t) / sizeof(t[0]) + 2) return NAN;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 	return rf(-200, 200);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m static c2v sv2(void) { c2v v; v.x = special(); v.y = special(); return v; }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m int main(void) {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 	hc = dlopen("./libc.so", RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 	hr = dlopen("./librust.so", RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 	if (!hc || !hr) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m #define B2(name, T) T name##_c = (T)S(hc, #name), name##_r = (T)S(hr, #name)
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 	/* ---- 1-arg / 2-arg pure vector math ---- */
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 	B2(c2V, c2v (*)(float, float));
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 	B2(c2Mulvs, c2v (*)(c2v, float));
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 	B2(c2Maxv, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 	B2(c2Minv, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 	B2(c2Clampv, c2v (*)(c2v, c2v, c2v));
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 	B2(c2Sub, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 	B2(c2Add, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 	B2(c2Dot, float (*)(c2v, c2v));
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 	B2(c2Det2, float (*)(c2v, c2v));
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 	B2(c2Len, float (*)(c2v));
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 	B2(c2Neg, c2v (*)(c2v));
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 	B2(c2Skew, c2v (*)(c2v));
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 	B2(c2CCW90, c2v (*)(c2v));
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 	B2(c2Div, c2v (*)(c2v, float));
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 	B2(c2Norm, c2v (*)(c2v));
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 	B2(c2Mulrv, c2v (*)(c2r, c2v));
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 	B2(c2MulrvT, c2v (*)(c2r, c2v));
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 	B2(c2Mulxv, c2v (*)(c2x, c2v));
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 	B2(c2RotIdentity, c2r (*)(void));
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 	B2(c2xIdentity, c2x (*)(void));
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 	{ c2r a = c2RotIdentity_c(), b = c2RotIdentity_r(); cmp("c2RotIdentity", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 	{ c2x a = c2xIdentity_c(), b = c2xIdentity_r(); cmp("c2xIdentity", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 	for (int i = 0; i < 40000; ++i) {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 		c2v p = sv2(), q = sv2(), r2 = sv2();
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 		float f = special();
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 		c2r rot; rot.c = special(); rot.s = special();
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 		c2x xf; xf.p = sv2(); xf.r = rot;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 		{ c2v a = c2V_c(p.x, p.y),        b = c2V_r(p.x, p.y);        cmp("c2V", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 		{ c2v a = c2Mulvs_c(p, f),        b = c2Mulvs_r(p, f);        cmp("c2Mulvs", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 		{ c2v a = c2Maxv_c(p, q),         b = c2Maxv_r(p, q);         cmp("c2Maxv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 		{ c2v a = c2Minv_c(p, q),         b = c2Minv_r(p, q);         cmp("c2Minv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 		{ c2v a = c2Clampv_c(p, q, r2),   b = c2Clampv_r(p, q, r2);   cmp("c2Clampv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 		{ c2v a = c2Sub_c(p, q),          b = c2Sub_r(p, q);          cmp("c2Sub", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 		{ c2v a = c2Add_c(p, q),          b = c2Add_r(p, q);          cmp("c2Add", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 		{ float a = c2Dot_c(p, q),        b = c2Dot_r(p, q);          cmp("c2Dot", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 		{ float a = c2Det2_c(p, q),       b = c2Det2_r(p, q);         cmp("c2Det2", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 		{ float a = c2Len_c(p),           b = c2Len_r(p);             cmp("c2Len", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 		{ c2v a = c2Neg_c(p),             b = c2Neg_r(p);             cmp("c2Neg", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 		{ c2v a = c2Skew_c(p),            b = c2Skew_r(p);            cmp("c2Skew", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 		{ c2v a = c2CCW90_c(p),           b = c2CCW90_r(p);           cmp("c2CCW90", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 		{ c2v a = c2Div_c(p, f),          b = c2Div_r(p, f);          cmp("c2Div", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 		{ c2v a = c2Norm_c(p),            b = c2Norm_r(p);            cmp("c2Norm", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 		{ c2v a = c2Mulrv_c(rot, p),      b = c2Mulrv_r(rot, p);      cmp("c2Mulrv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 		{ c2v a = c2MulrvT_c(rot, p),     b = c2MulrvT_r(rot, p);     cmp("c2MulrvT", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 		{ c2v a = c2Mulxv_c(xf, p),       b = c2Mulxv_r(xf, p);       cmp("c2Mulxv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 	/* ---- pointer-based: c2BBVerts, c2MakeProxy, c2Support ---- */
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 	B2(c2BBVerts, void (*)(c2v *, c2AABB *));
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 	B2(c2MakeProxy, void (*)(const void *, C2_TYPE, c2Proxy *));
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 	B2(c2Support, int (*)(const c2v *, int, c2v));
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 	for (int i = 0; i < 20000; ++i) {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 		c2AABB bb; bb.min = sv2(); bb.max = sv2();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 		c2v oc[4], orr[4];
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 		memset(oc, 0xAA, sizeof oc); memset(orr, 0xAA, sizeof orr);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 		c2BBVerts_c(oc, &bb); c2BBVerts_r(orr, &bb);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 		cmp("c2BBVerts", oc, orr, sizeof oc);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 		c2Proxy pc, pr;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 		c2Circle ci; ci.p = sv2(); ci.r = special();
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 		c2Capsule ca; ca.a = sv2(); ca.b = sv2(); ca.r = special();
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 		int ty = (int)(nx() % 3);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 		memset(&pc, 0, sizeof pc); memset(&pr, 0, sizeof pr);
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 		const void *sh = ty == 0 ? (const void *)&ci : ty == 1 ? (const void *)&bb : (const void *)&ca;
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 		c2MakeProxy_c(sh, (C2_TYPE)ty, &pc); c2MakeProxy_r(sh, (C2_TYPE)ty, &pr);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 		cmp("c2MakeProxy", &pc, &pr, sizeof pc);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 		c2v vs[8]; for (int k = 0; k < 8; ++k) vs[k] = sv2();
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 		int n = 1 + (int)(nx() % 8);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 		c2v d = sv2();
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 		{ int a = c2Support_c(vs, n, d), b = c2Support_r(vs, n, d); cmp("c2Support", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 	/* ---- simplex functions: c22, c23, c2D, c2L, c2Witness, c2GJKSimplexMetric ---- */
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 	B2(c22, void (*)(c2Simplex *));
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 	B2(c23, void (*)(c2Simplex *));
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 	B2(c2D, c2v (*)(c2Simplex *));
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 	B2(c2L, c2v (*)(c2Simplex *));
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 	B2(c2Witness, void (*)(c2Simplex *, c2v *, c2v *));
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 	B2(c2GJKSimplexMetric, float (*)(c2Simplex *));
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 	for (int i = 0; i < 30000; ++i) {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 		c2Simplex s0;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 		memset(&s0, 0, sizeof s0);
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 		c2sv *vv = &s0.a;
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 		for (int k = 0; k < 4; ++k) {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 			vv[k].sA = sv2(); vv[k].sB = sv2(); vv[k].p = sv2();
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 			vv[k].u = special(); vv[k].iA = (int)(nx() % 8); vv[k].iB = (int)(nx() % 8);
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 		s0.div = special();
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 		s0.count = 1 + (int)(nx() % 3);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c22_c(&a); c22_r(&b); cmp("c22", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c23_c(&a); c23_r(&b); cmp("c23", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c2v x = c2D_c(&a), y = c2D_r(&b);
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 		  cmp("c2D", &x, &y, sizeof x); cmp("c2D/state", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c2v x = c2L_c(&a), y = c2L_r(&b); cmp("c2L", &x, &y, sizeof x); }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; float x = c2GJKSimplexMetric_c(&a), y = c2GJKSimplexMetric_r(&b);
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 		  cmp("c2GJKSimplexMetric", &x, &y, sizeof x); }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c2v wa1, wb1, wa2, wb2;
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 		  memset(&wa1, 0xAA, sizeof wa1); memset(&wb1, 0xAA, sizeof wb1);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 		  memset(&wa2, 0xAA, sizeof wa2); memset(&wb2, 0xAA, sizeof wb2);
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 		  c2Witness_c(&a, &wa1, &wb1); c2Witness_r(&b, &wa2, &wb2);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 		  cmp("c2Witness/a", &wa1, &wa2, sizeof wa1); cmp("c2Witness/b", &wb1, &wb2, sizeof wb1); }
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 		/* also exercise count 0 and 4 (default branches) */
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; a.count = b.count = (int)(nx() % 2) * 4;
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 		  float x = c2GJKSimplexMetric_c(&a), y = c2GJKSimplexMetric_r(&b);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 		  cmp("metric/default", &x, &y, sizeof x);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 		  c2v u1, u2, v1, v2;
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 		  c2Witness_c(&a, &u1, &v1); c2Witness_r(&b, &u2, &v2);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 		  cmp("witness/default/a", &u1, &u2, sizeof u1);
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m 		  cmp("witness/default/b", &v1, &v2, sizeof v1);
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 		  c2v l1 = c2L_c(&a), l2 = c2L_r(&b); cmp("c2L/default", &l1, &l2, sizeof l1);
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 		  c2v d1 = c2D_c(&a), d2 = c2D_r(&b); cmp("c2D/default", &d1, &d2, sizeof d1); }
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 	/* ---- c2GJK ---- */
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 	B2(c2GJK, float (*)(const void *, C2_TYPE, const c2x *, const void *, C2_TYPE,
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 	                    const c2x *, c2v *, c2v *, int, int *, c2GJKCache *));
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 	for (int i = 0; i < 60000; ++i) {
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 		c2Circle ci; ci.p = rv(); ci.r = rf(0.f, 40.f);
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 		c2AABB bb; bb.min = rv(); bb.max = rv();
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 		c2Capsule ca; ca.a = rv(); ca.b = rv(); ca.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 		c2Circle ci2; ci2.p = rv(); ci2.r = rf(0.f, 40.f);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 		c2AABB bb2; bb2.min = rv(); bb2.max = rv();
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m 		c2Capsule ca2; ca2.a = rv(); ca2.b = rv(); ca2.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 		if (i % 7 == 0) { ci.r = special(); bb.min = sv2(); ca.b = sv2(); }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 		int tA = (int)(nx() % 3), tB = (int)(nx() % 3);
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m 		const void *A = tA == 0 ? (const void *)&ci : tA == 1 ? (const void *)&bb : (const void *)&ca;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 		const void *Bp = tB == 0 ? (const void *)&ci2 : tB == 1 ? (const void *)&bb2 : (const void *)&ca2;
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 		c2x ax; ax.p = rv(); ax.r.c = rf(-1, 1); ax.r.s = rf(-1, 1);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 		c2x bx; bx.p = rv(); bx.r.c = rf(-1, 1); bx.r.s = rf(-1, 1);
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 		const c2x *axp = (nx() % 3) ? &ax : NULL;
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m 		const c2x *bxp = (nx() % 3) ? &bx : NULL;
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 		int ur = (int)(nx() % 2);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 		int use_cache = (int)(nx() % 2);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 		c2GJKCache kc, kr;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m 		memset(&kc, 0, sizeof kc); memset(&kr, 0, sizeof kr);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 		if (use_cache && (nx() % 2)) {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 			kc.metric = rf(-10, 10); kc.count = 1 + (int)(nx() % 3); kc.div = rf(0.1f, 5.f);
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 			for (int k = 0; k < 3; ++k) { kc.iA[k] = (int)(nx() % 4); kc.iB[k] = (int)(nx() % 4); }
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 			kr = kc;
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 		c2v a1, b1, a2, b2; int it1 = -1, it2 = -1;
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m 		memset(&a1, 0xAA, sizeof a1); memset(&b1, 0xAA, sizeof b1);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m 		memset(&a2, 0xAA, sizeof a2); memset(&b2, 0xAA, sizeof b2);
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m 		float r1 = c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &a1, &b1, ur, &it1,
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 		                   use_cache ? &kc : NULL);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 		float r2 = c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &a2, &b2, ur, &it2,
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m 		                   use_cache ? &kr : NULL);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 		cmp("c2GJK/ret", &r1, &r2, sizeof r1);
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 		cmp("c2GJK/outA", &a1, &a2, sizeof a1);
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m 		cmp("c2GJK/outB", &b1, &b2, sizeof b1);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 		cmp("c2GJK/iter", &it1, &it2, sizeof it1);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 		if (use_cache) cmp("c2GJK/cache", &kc, &kr, sizeof kc);
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 		/* NULL out-params path */
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m 		float n1 = c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, NULL, NULL, ur, NULL, NULL);
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m 		float n2 = c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, NULL, NULL, ur, NULL, NULL);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 		cmp("c2GJK/null", &n1, &n2, sizeof n1);
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m 	/* ---- boolean collision routines + c2Collided ---- */
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 	B2(c2AABBtoAABB, int (*)(c2AABB, c2AABB));
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 	B2(c2AABBtoCapsule, int (*)(c2AABB, c2Capsule));
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m 	B2(c2CapsuletoCapsule, int (*)(c2Capsule, c2Capsule));
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m 	B2(c2CircletoCircle, int (*)(c2Circle, c2Circle));
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m 	B2(c2CircletoAABB, int (*)(c2Circle, c2AABB));
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m 	B2(c2CircletoCapsule, int (*)(c2Circle, c2Capsule));
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 	B2(c2Collided, int (*)(const void *, C2_TYPE, const void *, C2_TYPE));
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 	for (int i = 0; i < 60000; ++i) {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m 		c2Circle ci; ci.p = rv(); ci.r = rf(0.f, 50.f);
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 		c2Circle ci2; ci2.p = rv(); ci2.r = rf(0.f, 50.f);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 		c2AABB bb; bb.min = rv(); bb.max = rv();
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m 		c2AABB bb2; bb2.min = rv(); bb2.max = rv();
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m 		c2Capsule ca; ca.a = rv(); ca.b = rv(); ca.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 		c2Capsule ca2; ca2.a = rv(); ca2.b = rv(); ca2.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m 		if (i % 11 == 0) { ci.p = sv2(); bb.max = sv2(); ca.r = special(); }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m 		{ int a = c2AABBtoAABB_c(bb, bb2), b = c2AABBtoAABB_r(bb, bb2); cmp("c2AABBtoAABB", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m 		{ int a = c2AABBtoCapsule_c(bb, ca), b = c2AABBtoCapsule_r(bb, ca); cmp("c2AABBtoCapsule", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m 		{ int a = c2CapsuletoCapsule_c(ca, ca2), b = c2CapsuletoCapsule_r(ca, ca2); cmp("c2CapsuletoCapsule", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 		{ int a = c2CircletoCircle_c(ci, ci2), b = c2CircletoCircle_r(ci, ci2); cmp("c2CircletoCircle", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m 		{ int a = c2CircletoAABB_c(ci, bb), b = c2CircletoAABB_r(ci, bb); cmp("c2CircletoAABB", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 		{ int a = c2CircletoCapsule_c(ci, ca), b = c2CircletoCapsule_r(ci, ca); cmp("c2CircletoCapsule", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m 		for (int tA = 0; tA < 4; ++tA) for (int tB = 0; tB < 4; ++tB) {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 			const void *A = tA == 0 ? (const void *)&ci : tA == 1 ? (const void *)&bb
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 			              : tA == 2 ? (const void *)&ca : (const void *)&ci;
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m 			const void *Bp = tB == 0 ? (const void *)&ci2 : tB == 1 ? (const void *)&bb2
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 			               : tB == 2 ? (const void *)&ca2 : (const void *)&ci2;
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 			int a = c2Collided_c(A, (C2_TYPE)tA, Bp, (C2_TYPE)tB);
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m 			int b = c2Collided_r(A, (C2_TYPE)tA, Bp, (C2_TYPE)tB);
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m 			cmp("c2Collided", &a, &b, sizeof a);
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m 	/* ---- aabb(): the documented public entry point ---- */
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 	B2(aabb, int (*)(float, float, float, float));
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m 	for (int i = 0; i < 300000; ++i) {
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m 		float a, b, c, d;
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m 		if (i % 3 == 0) { a = special(); b = special(); c = special(); d = special(); }
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m 		else { a = rf(-150, 150); b = rf(-150, 150); c = rf(-150, 150); d = rf(-150, 150); }
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m 		int r1 = aabb_c(a, b, c, d), r2 = aabb_r(a, b, c, d);
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m 		if (r1 != r2) {
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m 			if (fails < 20) fprintf(stderr, "MISMATCH aabb(%g,%g,%g,%g): C=%d R=%d\n", a, b, c, d, r1, r2);
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m 			++fails;
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m 		++checks;
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m 	/* grid sweep over the region that actually touches all three shapes */
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m 	for (int ix = -80; ix <= 40; ix += 3) for (int iy = -80; iy <= 60; iy += 3)
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m 		for (int w = 0; w <= 60; w += 15) for (int h = 0; h <= 60; h += 15) {
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m 			float a = (float)ix, b = (float)iy, c = (float)(ix + w), d = (float)(iy + h);
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m 			int r1 = aabb_c(a, b, c, d), r2 = aabb_r(a, b, c, d);
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m 			if (r1 != r2) { if (fails < 20) fprintf(stderr, "MISMATCH aabb grid %g %g %g %g: %d vs %d\n", a, b, c, d, r1, r2); ++fails; }
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m 			++checks;
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m 	printf("checks=%ld fails=%ld\n", checks, fails);
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 	return fails ? 1 : 0;
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m }
+[0m[K
+ ⋮ 
+[1m[38;5;9m ● Execution failed after 0.0s:
+[0m[38;5;9mFile exists (os error 17)[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/diffharness 2>/dev/null; ls -ld /tmp/diffharness[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check pre-existing diffharness path
+
+-rwxr-xr-x. 1 scheschb amazon 16976 Sep  1 06:14 /tmp/diffharness
+-rwxr-xr-x. 1 scheschb amazon 16976 Sep  1 06:14 /tmp/diffharness
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mD=$(mktemp -d /tmp/hdiff.XXXXXX); echo "$D" > /tmp/hdiff_dir.txt; echo "$D"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Create unique temp dir for harness
+
+/tmp/hdiff.br13Oy
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/hdiff.br13Oy/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust libraries across all 38 exports
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m /* Differential harness: dlopen the C .so and the Rust .so and compare the raw
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m  * bit patterns of every exported function's results across randomized inputs. */
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m typedef enum { C2_TYPE_CIRCLE, C2_TYPE_AABB, C2_TYPE_CAPSULE } C2_TYPE;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m typedef struct c2v { float x, y; } c2v;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef struct c2r { float c, s; } c2r;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m typedef struct c2x { c2v p; c2r r; } c2x;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m typedef struct c2Circle { c2v p; float r; } c2Circle;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m typedef struct c2AABB { c2v min, max; } c2AABB;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m typedef struct c2Capsule { c2v a, b; float r; } c2Capsule;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m typedef struct c2GJKCache { float metric; int count; int iA[3]; int iB[3]; float div; } c2GJKCache;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m typedef struct { float radius; int count; c2v verts[8]; } c2Proxy;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m typedef struct { c2v sA, sB, p; float u; int iA, iB; } c2sv;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m typedef struct { c2sv a, b, c, d; float div; int count; } c2Simplex;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m static void *hc, *hr;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m static long fails = 0, checks = 0;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m static void *S(void *h, const char *n) {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 	void *p = dlsym(h, n);
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 	if (!p) { fprintf(stderr, "missing symbol %s\n", n); exit(2); }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 	return p;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m static void cmp(const char *tag, const void *a, const void *b, size_t n) {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 	++checks;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 	if (memcmp(a, b, n) != 0) {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 		if (fails < 20) {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 			fprintf(stderr, "MISMATCH %s: C=", tag);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 			for (size_t i = 0; i < n; ++i) fprintf(stderr, "%02x", ((const unsigned char *)a)[i]);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 			fprintf(stderr, " R=");
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 			for (size_t i = 0; i < n; ++i) fprintf(stderr, "%02x", ((const unsigned char *)b)[i]);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 			fprintf(stderr, "\n");
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 		++fails;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /* deterministic PRNG */
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m static uint64_t st = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m static uint32_t nx(void) { st ^= st << 13; st ^= st >> 7; st ^= st << 17; return (uint32_t)(st >> 32); }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m static float rf(float lo, float hi) { return lo + (hi - lo) * ((float)(nx() % 100001) / 100000.0f); }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m static c2v rv(void) { c2v v; v.x = rf(-120, 120); v.y = rf(-120, 120); return v; }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m static float special(void) {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 	static const float t[] = { 0.0f, -0.0f, 1.0f, -1.0f, 1e-30f, -1e-30f, 1e30f, -1e30f,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 	                           3.4028235e38f, -3.4028235e38f, 1.1920929e-7f, 0.5f, -0.5f,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 	                           20.0f, -70.0f, 100.0f };
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 	unsigned n = sizeof(t) / sizeof(t[0]);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 	unsigned k = nx() % (n + 4);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 	if (k < n) return t[k];
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 	if (k == n) return INFINITY;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 	if (k == n + 1) return -INFINITY;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 	if (k == n + 2) return NAN;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 	return rf(-200, 200);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m static c2v sv2(void) { c2v v; v.x = special(); v.y = special(); return v; }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m int main(void) {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 	hc = dlopen("./libc.so", RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 	if (!hc) { fprintf(stderr, "dlopen C: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 	hr = dlopen("./librust.so", RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 	if (!hr) { fprintf(stderr, "dlopen R: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #define B2(name, T) T name##_c = (T)S(hc, #name), name##_r = (T)S(hr, #name)
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 	B2(c2V, c2v (*)(float, float));
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 	B2(c2Mulvs, c2v (*)(c2v, float));
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 	B2(c2Maxv, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 	B2(c2Minv, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 	B2(c2Clampv, c2v (*)(c2v, c2v, c2v));
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 	B2(c2Sub, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 	B2(c2Add, c2v (*)(c2v, c2v));
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 	B2(c2Dot, float (*)(c2v, c2v));
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 	B2(c2Det2, float (*)(c2v, c2v));
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 	B2(c2Len, float (*)(c2v));
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 	B2(c2Neg, c2v (*)(c2v));
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 	B2(c2Skew, c2v (*)(c2v));
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 	B2(c2CCW90, c2v (*)(c2v));
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 	B2(c2Div, c2v (*)(c2v, float));
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 	B2(c2Norm, c2v (*)(c2v));
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 	B2(c2Mulrv, c2v (*)(c2r, c2v));
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 	B2(c2MulrvT, c2v (*)(c2r, c2v));
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 	B2(c2Mulxv, c2v (*)(c2x, c2v));
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 	B2(c2RotIdentity, c2r (*)(void));
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 	B2(c2xIdentity, c2x (*)(void));
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 	{ c2r a = c2RotIdentity_c(), b = c2RotIdentity_r(); cmp("c2RotIdentity", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 	{ c2x a = c2xIdentity_c(), b = c2xIdentity_r(); cmp("c2xIdentity", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 	for (int i = 0; i < 40000; ++i) {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 		c2v p = sv2(), q = sv2(), r2 = sv2();
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 		float f = special();
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 		c2r rot; rot.c = special(); rot.s = special();
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 		c2x xf; xf.p = sv2(); xf.r = rot;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 		{ c2v a = c2V_c(p.x, p.y),      b = c2V_r(p.x, p.y);      cmp("c2V", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 		{ c2v a = c2Mulvs_c(p, f),      b = c2Mulvs_r(p, f);      cmp("c2Mulvs", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 		{ c2v a = c2Maxv_c(p, q),       b = c2Maxv_r(p, q);       cmp("c2Maxv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 		{ c2v a = c2Minv_c(p, q),       b = c2Minv_r(p, q);       cmp("c2Minv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 		{ c2v a = c2Clampv_c(p, q, r2), b = c2Clampv_r(p, q, r2); cmp("c2Clampv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 		{ c2v a = c2Sub_c(p, q),        b = c2Sub_r(p, q);        cmp("c2Sub", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 		{ c2v a = c2Add_c(p, q),        b = c2Add_r(p, q);        cmp("c2Add", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 		{ float a = c2Dot_c(p, q),      b = c2Dot_r(p, q);        cmp("c2Dot", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 		{ float a = c2Det2_c(p, q),     b = c2Det2_r(p, q);       cmp("c2Det2", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 		{ float a = c2Len_c(p),         b = c2Len_r(p);           cmp("c2Len", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 		{ c2v a = c2Neg_c(p),           b = c2Neg_r(p);           cmp("c2Neg", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 		{ c2v a = c2Skew_c(p),          b = c2Skew_r(p);          cmp("c2Skew", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 		{ c2v a = c2CCW90_c(p),         b = c2CCW90_r(p);         cmp("c2CCW90", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 		{ c2v a = c2Div_c(p, f),        b = c2Div_r(p, f);        cmp("c2Div", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 		{ c2v a = c2Norm_c(p),          b = c2Norm_r(p);          cmp("c2Norm", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 		{ c2v a = c2Mulrv_c(rot, p),    b = c2Mulrv_r(rot, p);    cmp("c2Mulrv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 		{ c2v a = c2MulrvT_c(rot, p),   b = c2MulrvT_r(rot, p);   cmp("c2MulrvT", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 		{ c2v a = c2Mulxv_c(xf, p),     b = c2Mulxv_r(xf, p);     cmp("c2Mulxv", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 	B2(c2BBVerts, void (*)(c2v *, c2AABB *));
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 	B2(c2MakeProxy, void (*)(const void *, C2_TYPE, c2Proxy *));
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 	B2(c2Support, int (*)(const c2v *, int, c2v));
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 	for (int i = 0; i < 20000; ++i) {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 		c2AABB bb; bb.min = sv2(); bb.max = sv2();
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 		c2v oc[4], orr[4];
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 		memset(oc, 0xAA, sizeof oc); memset(orr, 0xAA, sizeof orr);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 		c2BBVerts_c(oc, &bb); c2BBVerts_r(orr, &bb);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 		cmp("c2BBVerts", oc, orr, sizeof oc);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 		c2Proxy pc, pr;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 		c2Circle ci; ci.p = sv2(); ci.r = special();
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 		c2Capsule ca; ca.a = sv2(); ca.b = sv2(); ca.r = special();
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 		int ty = (int)(nx() % 3);
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 		memset(&pc, 0, sizeof pc); memset(&pr, 0, sizeof pr);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 		const void *sh = ty == 0 ? (const void *)&ci : ty == 1 ? (const void *)&bb : (const void *)&ca;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 		c2MakeProxy_c(sh, (C2_TYPE)ty, &pc); c2MakeProxy_r(sh, (C2_TYPE)ty, &pr);
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 		cmp("c2MakeProxy", &pc, &pr, sizeof pc);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 		c2v vs[8]; for (int k = 0; k < 8; ++k) vs[k] = sv2();
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 		int n = 1 + (int)(nx() % 8);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 		c2v d = sv2();
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 		{ int a = c2Support_c(vs, n, d), b = c2Support_r(vs, n, d); cmp("c2Support", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 	B2(c22, void (*)(c2Simplex *));
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 	B2(c23, void (*)(c2Simplex *));
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 	B2(c2D, c2v (*)(c2Simplex *));
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 	B2(c2L, c2v (*)(c2Simplex *));
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 	B2(c2Witness, void (*)(c2Simplex *, c2v *, c2v *));
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 	B2(c2GJKSimplexMetric, float (*)(c2Simplex *));
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 	for (int i = 0; i < 30000; ++i) {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 		c2Simplex s0;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 		memset(&s0, 0, sizeof s0);
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 		c2sv *vv = &s0.a;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 		for (int k = 0; k < 4; ++k) {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 			vv[k].sA = sv2(); vv[k].sB = sv2(); vv[k].p = sv2();
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 			vv[k].u = special(); vv[k].iA = (int)(nx() % 8); vv[k].iB = (int)(nx() % 8);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 		s0.div = special();
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 		s0.count = 1 + (int)(nx() % 3);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c22_c(&a); c22_r(&b); cmp("c22", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c23_c(&a); c23_r(&b); cmp("c23", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c2v x = c2D_c(&a), y = c2D_r(&b);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 		  cmp("c2D", &x, &y, sizeof x); cmp("c2D/state", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c2v x = c2L_c(&a), y = c2L_r(&b); cmp("c2L", &x, &y, sizeof x); }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; float x = c2GJKSimplexMetric_c(&a), y = c2GJKSimplexMetric_r(&b);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 		  cmp("c2GJKSimplexMetric", &x, &y, sizeof x); }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; c2v wa1, wb1, wa2, wb2;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 		  memset(&wa1, 0xAA, sizeof wa1); memset(&wb1, 0xAA, sizeof wb1);
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 		  memset(&wa2, 0xAA, sizeof wa2); memset(&wb2, 0xAA, sizeof wb2);
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 		  c2Witness_c(&a, &wa1, &wb1); c2Witness_r(&b, &wa2, &wb2);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 		  cmp("c2Witness/a", &wa1, &wa2, sizeof wa1); cmp("c2Witness/b", &wb1, &wb2, sizeof wb1); }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 		{ c2Simplex a = s0, b = s0; a.count = b.count = (int)(nx() % 2) * 4;
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 		  float x = c2GJKSimplexMetric_c(&a), y = c2GJKSimplexMetric_r(&b);
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 		  cmp("metric/default", &x, &y, sizeof x);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 		  c2v u1, u2, v1, v2;
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 		  c2Witness_c(&a, &u1, &v1); c2Witness_r(&b, &u2, &v2);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 		  cmp("witness/default/a", &u1, &u2, sizeof u1);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 		  cmp("witness/default/b", &v1, &v2, sizeof v1);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 		  c2v l1 = c2L_c(&a), l2 = c2L_r(&b); cmp("c2L/default", &l1, &l2, sizeof l1);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 		  c2v d1 = c2D_c(&a), d2 = c2D_r(&b); cmp("c2D/default", &d1, &d2, sizeof d1); }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 	B2(c2GJK, float (*)(const void *, C2_TYPE, const c2x *, const void *, C2_TYPE,
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m 	                    const c2x *, c2v *, c2v *, int, int *, c2GJKCache *));
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 	for (int i = 0; i < 60000; ++i) {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 		c2Circle ci; ci.p = rv(); ci.r = rf(0.f, 40.f);
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 		c2AABB bb; bb.min = rv(); bb.max = rv();
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 		c2Capsule ca; ca.a = rv(); ca.b = rv(); ca.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 		c2Circle ci2; ci2.p = rv(); ci2.r = rf(0.f, 40.f);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 		c2AABB bb2; bb2.min = rv(); bb2.max = rv();
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 		c2Capsule ca2; ca2.a = rv(); ca2.b = rv(); ca2.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 		if (i % 7 == 0) { ci.r = special(); bb.min = sv2(); ca.b = sv2(); }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 		int tA = (int)(nx() % 3), tB = (int)(nx() % 3);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m 		const void *A = tA == 0 ? (const void *)&ci : tA == 1 ? (const void *)&bb : (const void *)&ca;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 		const void *Bp = tB == 0 ? (const void *)&ci2 : tB == 1 ? (const void *)&bb2 : (const void *)&ca2;
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 		c2x ax; ax.p = rv(); ax.r.c = rf(-1, 1); ax.r.s = rf(-1, 1);
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m 		c2x bx; bx.p = rv(); bx.r.c = rf(-1, 1); bx.r.s = rf(-1, 1);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 		const c2x *axp = (nx() % 3) ? &ax : NULL;
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 		const c2x *bxp = (nx() % 3) ? &bx : NULL;
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 		int ur = (int)(nx() % 2);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 		int use_cache = (int)(nx() % 2);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m 		c2GJKCache kc, kr;
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 		memset(&kc, 0, sizeof kc); memset(&kr, 0, sizeof kr);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 		if (use_cache && (nx() % 2)) {
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 			kc.metric = rf(-10, 10); kc.count = 1 + (int)(nx() % 3); kc.div = rf(0.1f, 5.f);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 			for (int k = 0; k < 3; ++k) { kc.iA[k] = (int)(nx() % 4); kc.iB[k] = (int)(nx() % 4); }
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 		kr = kc;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 		c2v a1, b1, a2, b2; int it1 = -1, it2 = -1;
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 		memset(&a1, 0xAA, sizeof a1); memset(&b1, 0xAA, sizeof b1);
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m 		memset(&a2, 0xAA, sizeof a2); memset(&b2, 0xAA, sizeof b2);
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 		float r1 = c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &a1, &b1, ur, &it1,
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m 		                   use_cache ? &kc : NULL);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m 		float r2 = c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &a2, &b2, ur, &it2,
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 		                   use_cache ? &kr : NULL);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m 		cmp("c2GJK/ret", &r1, &r2, sizeof r1);
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 		cmp("c2GJK/outA", &a1, &a2, sizeof a1);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 		cmp("c2GJK/outB", &b1, &b2, sizeof b1);
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m 		cmp("c2GJK/iter", &it1, &it2, sizeof it1);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 		if (use_cache) cmp("c2GJK/cache", &kc, &kr, sizeof kc);
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m 		float n1 = c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, NULL, NULL, ur, NULL, NULL);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 		float n2 = c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, NULL, NULL, ur, NULL, NULL);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 		cmp("c2GJK/null", &n1, &n2, sizeof n1);
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m 	B2(c2AABBtoAABB, int (*)(c2AABB, c2AABB));
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m 	B2(c2AABBtoCapsule, int (*)(c2AABB, c2Capsule));
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 	B2(c2CapsuletoCapsule, int (*)(c2Capsule, c2Capsule));
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 	B2(c2CircletoCircle, int (*)(c2Circle, c2Circle));
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 	B2(c2CircletoAABB, int (*)(c2Circle, c2AABB));
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m 	B2(c2CircletoCapsule, int (*)(c2Circle, c2Capsule));
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 	B2(c2Collided, int (*)(const void *, C2_TYPE, const void *, C2_TYPE));
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m 	for (int i = 0; i < 60000; ++i) {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m 		c2Circle ci; ci.p = rv(); ci.r = rf(0.f, 50.f);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m 		c2Circle ci2; ci2.p = rv(); ci2.r = rf(0.f, 50.f);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m 		c2AABB bb; bb.min = rv(); bb.max = rv();
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 		c2AABB bb2; bb2.min = rv(); bb2.max = rv();
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m 		c2Capsule ca; ca.a = rv(); ca.b = rv(); ca.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 		c2Capsule ca2; ca2.a = rv(); ca2.b = rv(); ca2.r = rf(0.f, 30.f);
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m 		if (i % 11 == 0) { ci.p = sv2(); bb.max = sv2(); ca.r = special(); }
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m 		{ int a = c2AABBtoAABB_c(bb, bb2), b = c2AABBtoAABB_r(bb, bb2); cmp("c2AABBtoAABB", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m 		{ int a = c2AABBtoCapsule_c(bb, ca), b = c2AABBtoCapsule_r(bb, ca); cmp("c2AABBtoCapsule", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m 		{ int a = c2CapsuletoCapsule_c(ca, ca2), b = c2CapsuletoCapsule_r(ca, ca2); cmp("c2CapsuletoCapsule", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 		{ int a = c2CircletoCircle_c(ci, ci2), b = c2CircletoCircle_r(ci, ci2); cmp("c2CircletoCircle", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m 		{ int a = c2CircletoAABB_c(ci, bb), b = c2CircletoAABB_r(ci, bb); cmp("c2CircletoAABB", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 		{ int a = c2CircletoCapsule_c(ci, ca), b = c2CircletoCapsule_r(ci, ca); cmp("c2CircletoCapsule", &a, &b, sizeof a); }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m 		for (int tA = 0; tA < 4; ++tA) for (int tB = 0; tB < 4; ++tB) {
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m 			const void *A = tA == 0 ? (const void *)&ci : tA == 1 ? (const void *)&bb
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 			              : tA == 2 ? (const void *)&ca : (const void *)&ci;
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m 			const void *Bp = tB == 0 ? (const void *)&ci2 : tB == 1 ? (const void *)&bb2
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 			               : tB == 2 ? (const void *)&ca2 : (const void *)&ci2;
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 			int a = c2Collided_c(A, (C2_TYPE)tA, Bp, (C2_TYPE)tB);
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m 			int b = c2Collided_r(A, (C2_TYPE)tA, Bp, (C2_TYPE)tB);
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 			cmp("c2Collided", &a, &b, sizeof a);
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 	B2(aabb, int (*)(float, float, float, float));
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m 	for (int i = 0; i < 300000; ++i) {
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m 		float a, b, c, d;
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m 		if (i % 3 == 0) { a = special(); b = special(); c = special(); d = special(); }
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m 		else { a = rf(-150, 150); b = rf(-150, 150); c = rf(-150, 150); d = rf(-150, 150); }
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m 		int r1 = aabb_c(a, b, c, d), r2 = aabb_r(a, b, c, d);
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m 		if (r1 != r2) {
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 			if (fails < 20) fprintf(stderr, "MISMATCH aabb(%g,%g,%g,%g): C=%d R=%d\n", a, b, c, d, r1, r2);
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m 			++fails;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m 		++checks;
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m 	for (int ix = -80; ix <= 40; ix += 3) for (int iy = -80; iy <= 60; iy += 3)
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m 		for (int w = 0; w <= 60; w += 15) for (int h = 0; h <= 60; h += 15) {
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m 			float a = (float)ix, b = (float)iy, c = (float)(ix + w), d = (float)(iy + h);
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m 			int r1 = aabb_c(a, b, c, d), r2 = aabb_r(a, b, c, d);
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m 			if (r1 != r2) { if (fails < 20) fprintf(stderr, "MISMATCH aabb grid %g %g %g %g: %d vs %d\n", a, b, c, d, r1, r2); ++fails; }
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m 			++checks;
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m 	printf("checks=%ld fails=%ld\n", checks, fails);
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m 	return fails ? 1 : 0;
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/hdiff.br13Oy/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && cp /tmp/cbuild_h/libharvest-work-i6OCXF.so ./libc.so && cp /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation/target/release/libharvest_work_i6OCXF.so ./librust.so && gcc -O2 -o h harness.c -ldl -lm 2>&1 | head -20 && echo BUILT && ./h; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build and run the differential harness
+
+harness.c: In function ‘main’:
+harness.c:74:23: error: expected identifier or ‘(’ before ‘)’ token
+   74 |         B2(c2V, c2v (*)(float, float));
+      |                       ^
+harness.c:72:21: note: in definition of macro ‘B2’
+   72 | #define B2(name, T) T name##_c = (T)S(hc, #name), name##_r = (T)S(hr, #name)
+      |                     ^
+harness.c:75:27: error: expected identifier or ‘(’ before ‘)’ token
+   75 |         B2(c2Mulvs, c2v (*)(c2v, float));
+      |                           ^
+harness.c:72:21: note: in definition of macro ‘B2’
+   72 | #define B2(name, T) T name##_c = (T)S(hc, #name), name##_r = (T)S(hr, #name)
+      |                     ^
+harness.c:76:26: error: expected identifier or ‘(’ before ‘)’ token
+   76 |         B2(c2Maxv, c2v (*)(c2v, c2v));
+      |                          ^
+harness.c:72:21: note: in definition of macro ‘B2’
+   72 | #define B2(name, T) T name##_c = (T)S(hc, #name), name##_r = (T)S(hr, #name)
+      |                     ^
+harness.c:77:26: error: expected identifier or ‘(’ before ‘)’ token
+BUILT
+bash: line 1: ./h: No such file or directory
+exit=127
+[38;5;244m - Completed in 0.46s[0m
+
+[?25l[0m[38;5;141m> [0mMacro can't build function-pointer declarators. Fixing.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && python3 - <<'PY'
+import re
+s = open('harness.c').read()
+# join the multi-line c2GJK B2 declaration
+s = s.replace("""	B2(c2GJK, float (*)(const void *, C2_TYPE, const c2x *, const void *, C2_TYPE,
+	                    const c2x *, c2v *, c2v *, int, int *, c2GJKCache *));""",
+"""	B2(c2GJK, float (*)(const void *, C2_TYPE, const c2x *, const void *, C2_TYPE, const c2x *, c2v *, c2v *, int, int *, c2GJKCache *));""")
+# new macro
+s = s.replace('#define B2(name, T) T name##_c = (T)S(hc, #name), name##_r = (T)S(hr, #name)',
+ '#define B2(name, RET, ARGS) RET (*name##_c) ARGS = (RET (*) ARGS)S(hc, #name); \\\n\tRET (*name##_r) ARGS = (RET (*) ARGS)S(hr, #name)')
+# rewrite call sites: B2(name, RET (*)(args));
+n = 0
+def rep(m):
+    global n
+    n += 1
+    return 'B2(%s, %s, (%s));' % (m.group(1), m.group(2).strip(), m.group(3))
+s = re.sub(r'B2\((\w+), (.*?) \(\*\)\((.*)\)\);', rep, s)
+open('harness.c','w').write(s)
+print("rewrote", n, "B2 sites")
+PY
+grep -c "B2(" harness.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rewrite harness macro to support function pointer declarators
+
+rewrote 38 B2 sites
+39
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && gcc -O2 -o h harness.c -ldl -lm 2>&1 | head -30 && echo "=== BUILT ===" && ./h; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run the differential harness
+
+=== BUILT ===
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c0ff0000c07f R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2Dot: C=0000c0ff R=0000c07f
+MISMATCH c2Dot: C=0000c0ff R=0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c0ff0000c07f R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+MISMATCH c2MulrvT: C=0000c07f0000c0ff R=0000c07f0000c07f
+checks=3168431 fails=28079
+exit=1
+[38;5;244m - Completed in 1.51s[0m
+
+[?25l[0m[38;5;141m> [0mAll 28079 mismatches are NaN sign-bit differences ([38;5;10m0xffc00000[0m vs [38;5;10m0x7fc00000[0m). Let me isolate the exact inputs.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/hdiff.br13Oy/probe.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Minimal probe to isolate NaN mismatch inputs
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m typedef struct c2v { float x, y; } c2v;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef struct c2r { float c, s; } c2r;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m static uint32_t bits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m int main(void) {
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 	void *hc = dlopen("./libc.so", RTLD_NOW), *hr = dlopen("./librust.so", RTLD_NOW);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 	float (*dc)(c2v, c2v) = dlsym(hc, "c2Dot");
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 	float (*dr)(c2v, c2v) = dlsym(hr, "c2Dot");
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 	c2v (*tc)(c2r, c2v) = dlsym(hc, "c2MulrvT");
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 	c2v (*tr)(c2r, c2v) = dlsym(hr, "c2MulrvT");
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 	float vals[] = { 0.0f, -0.0f, 1.0f, -1.0f, INFINITY, -INFINITY, NAN, 1e30f, -1e30f, 3.4028235e38f };
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 	int n = sizeof(vals)/sizeof(vals[0]);
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 	printf("--- c2Dot ---\n");
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 	for (int a = 0; a < n; ++a) for (int b = 0; b < n; ++b)
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 	for (int c = 0; c < n; ++c) for (int d = 0; d < n; ++d) {
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 		c2v p = { vals[a], vals[b] }, q = { vals[c], vals[d] };
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 		float r1 = dc(p, q), r2 = dr(p, q);
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 		if (bits(r1) != bits(r2)) {
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 			printf("Dot x=%08x y=%08x  bx=%08x by=%08x -> C=%08x R=%08x\n",
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 			       bits(p.x), bits(p.y), bits(q.x), bits(q.y), bits(r1), bits(r2));
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 			goto next;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m next:
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 	printf("--- c2MulrvT ---\n");
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 	for (int a = 0; a < n; ++a) for (int b = 0; b < n; ++b)
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 	for (int c = 0; c < n; ++c) for (int d = 0; d < n; ++d) {
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 		c2r rr = { vals[a], vals[b] }; c2v q = { vals[c], vals[d] };
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 		c2v r1 = tc(rr, q), r2 = tr(rr, q);
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 		if (bits(r1.x) != bits(r2.x) || bits(r1.y) != bits(r2.y)) {
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 			printf("MulrvT c=%08x s=%08x  bx=%08x by=%08x -> C=(%08x,%08x) R=(%08x,%08x)\n",
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 			       bits(rr.c), bits(rr.s), bits(q.x), bits(q.y),
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 			       bits(r1.x), bits(r1.y), bits(r2.x), bits(r2.y));
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 			return 0;
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 		}
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 	}
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 	printf("no mismatch\n");
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 	return 0;
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/hdiff.br13Oy/probe.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && gcc -O2 -o probe probe.c -ldl -lm && ./probe[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run probe to find exact NaN mismatch inputs
+
+--- c2Dot ---
+Dot x=00000000 y=00000000  bx=7f800000 by=7fc00000 -> C=7fc00000 R=ffc00000
+--- c2MulrvT ---
+MulrvT c=00000000 s=00000000  bx=7f800000 by=7fc00000 -> C=(ffc00000,ffc00000) R=(7fc00000,7fc00000)
+[38;5;244m - Completed in 0.82s[0m
+
+[?25l[0m[38;5;141m> [0mBoth directions occur — this is [38;5;10maddss[0m operand-order nondeterminism when [3mboth[23m addends are NaN (only reachable via Inf/NaN inputs). Let me quantify: per-function breakdown plus a finite-input-only run.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && python3 - <<'PY'
+s = open('harness.c').read()
+
+# per-tag failure tally + optional suppression of Inf/NaN in special()
+s = s.replace('''static void *hc, *hr;
+static long fails = 0, checks = 0;''',
+'''static void *hc, *hr;
+static long fails = 0, checks = 0;
+static int finite_only = 0;
+#define MAXTAG 64
+static const char *tags[MAXTAG]; static long tagf[MAXTAG], tagc[MAXTAG]; static int ntag = 0;
+static int tagidx(const char *t) {
+	for (int i = 0; i < ntag; ++i) if (tags[i] == t) return i;
+	tags[ntag] = t; return ntag++;
+}''')
+
+s = s.replace('''static void cmp(const char *tag, const void *a, const void *b, size_t n) {
+	++checks;
+	if (memcmp(a, b, n) != 0) {
+		if (fails < 20) {''',
+'''static void cmp(const char *tag, const void *a, const void *b, size_t n) {
+	++checks;
+	int ti = tagidx(tag); ++tagc[ti];
+	if (memcmp(a, b, n) != 0) {
+		++tagf[ti];
+		if (0) {''')
+
+s = s.replace('''	unsigned n = sizeof(t) / sizeof(t[0]);
+	unsigned k = nx() % (n + 4);
+	if (k < n) return t[k];''',
+'''	unsigned n = sizeof(t) / sizeof(t[0]);
+	unsigned k = nx() % (n + (finite_only ? 1 : 4));
+	if (k < n) return t[k];''')
+
+s = s.replace('int main(void) {', 'int main(int argc, char **argv) {\n\tfinite_only = (argc > 1);')
+
+# aabb tally
+s = s.replace('''		if (r1 != r2) {
+			if (fails < 20) fprintf(stderr, "MISMATCH aabb(%g,%g,%g,%g): C=%d R=%d\\n", a, b, c, d, r1, r2);
+			++fails;
+		}
+		++checks;''',
+'''		{ int t = tagidx("aabb"); ++tagc[t]; if (r1 != r2) { ++tagf[t]; ++fails;
+			if (tagf[t] < 6) fprintf(stderr, "MISMATCH aabb(%g,%g,%g,%g): C=%d R=%d\\n", a, b, c, d, r1, r2); } }
+		++checks;''')
+s = s.replace('''			if (r1 != r2) { if (fails < 20) fprintf(stderr, "MISMATCH aabb grid %g %g %g %g: %d vs %d\\n", a, b, c, d, r1, r2); ++fails; }
+			++checks;''',
+'''			{ int t = tagidx("aabb/grid"); ++tagc[t]; if (r1 != r2) { ++tagf[t]; ++fails;
+				fprintf(stderr, "MISMATCH aabb grid %g %g %g %g: %d vs %d\\n", a, b, c, d, r1, r2); } }
+			++checks;''')
+
+s = s.replace('''	printf("checks=%ld fails=%ld\\n", checks, fails);
+	return fails ? 1 : 0;''',
+'''	printf("mode=%s\\n", finite_only ? "FINITE-ONLY" : "WITH INF/NAN");
+	long tot = 0;
+	for (int i = 0; i < ntag; ++i) { tot += tagf[i];
+		printf("  %-24s checks=%-9ld fails=%ld\\n", tags[i], tagc[i], tagf[i]); }
+	printf("TOTAL checks=%ld fails=%ld\\n", checks, tot);
+	return tot ? 1 : 0;''')
+open('harness.c','w').write(s)
+print("patched")
+PY
+gcc -O2 -o h harness.c -ldl -lm 2>&1|head -20 && echo "=== FINITE ONLY ===" && ./h finite 2>&1 | tail -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Add per-function failure tally and run finite-only comparison
+
+patched
+=== FINITE ONLY ===
+  c2V                      checks=40000     fails=0
+  c2Mulvs                  checks=40000     fails=0
+  c2Maxv                   checks=40000     fails=0
+  c2Minv                   checks=40000     fails=0
+  c2Clampv                 checks=40000     fails=0
+  c2Sub                    checks=40000     fails=0
+  c2Add                    checks=40000     fails=0
+  c2Dot                    checks=40000     fails=0
+  c2Det2                   checks=40000     fails=0
+  c2Len                    checks=40000     fails=0
+  c2Neg                    checks=40000     fails=0
+  c2Skew                   checks=40000     fails=0
+  c2CCW90                  checks=40000     fails=0
+  c2Div                    checks=40000     fails=0
+  c2Norm                   checks=40000     fails=0
+  c2Mulrv                  checks=40000     fails=0
+  c2MulrvT                 checks=40000     fails=0
+  c2Mulxv                  checks=40000     fails=0
+  c2BBVerts                checks=20000     fails=0
+  c2MakeProxy              checks=20000     fails=0
+  c2Support                checks=20000     fails=0
+  c22                      checks=30000     fails=0
+  c23                      checks=30000     fails=0
+  c2D                      checks=30000     fails=0
+  c2D/state                checks=30000     fails=0
+  c2L                      checks=30000     fails=0
+  c2GJKSimplexMetric       checks=30000     fails=0
+  c2Witness/a              checks=30000     fails=0
+  c2Witness/b              checks=30000     fails=0
+  metric/default           checks=30000     fails=0
+  witness/default/a        checks=30000     fails=0
+  witness/default/b        checks=30000     fails=0
+  c2L/default              checks=30000     fails=0
+  c2D/default              checks=30000     fails=0
+  c2GJK/ret                checks=60000     fails=5458
+  c2GJK/outA               checks=60000     fails=6024
+  c2GJK/outB               checks=60000     fails=6533
+  c2GJK/iter               checks=60000     fails=1206
+  c2GJK/null               checks=60000     fails=0
+  c2GJK/cache              checks=30111     fails=5580
+  c2AABBtoAABB             checks=60000     fails=0
+  c2AABBtoCapsule          checks=60000     fails=0
+  c2CapsuletoCapsule       checks=60000     fails=0
+  c2CircletoCircle         checks=60000     fails=0
+  c2CircletoAABB           checks=60000     fails=0
+  c2CircletoCapsule        checks=60000     fails=0
+  c2Collided               checks=960000    fails=0
+  aabb                     checks=300000    fails=0
+  aabb/grid                checks=48175     fails=0
+TOTAL checks=3168288 fails=24801
+[38;5;244m - Completed in 1.98s[0m
+
+[?25l[0m[38;5;141m> [0mFinite inputs match everywhere except [38;5;10mc2GJK[0m with a supplied cache. My harness was seeding the cache with vertex indices beyond the proxy's [38;5;10mcount[0m — the C reads uninitialized stack there, so that's a harness artifact, not a translation issue. Let me confirm by seeding caches legitimately.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && python3 - <<'PY'
+s = open('harness.c').read()
+old = '''		int use_cache = (int)(nx() % 2);
+		c2GJKCache kc, kr;
+		memset(&kc, 0, sizeof kc); memset(&kr, 0, sizeof kr);
+		if (use_cache && (nx() % 2)) {
+			kc.metric = rf(-10, 10); kc.count = 1 + (int)(nx() % 3); kc.div = rf(0.1f, 5.f);
+			for (int k = 0; k < 3; ++k) { kc.iA[k] = (int)(nx() % 4); kc.iB[k] = (int)(nx() % 4); }
+		}
+		kr = kc;
+'''
+new = '''		int use_cache = (int)(nx() % 2);
+		int nA = tA == 0 ? 1 : tA == 1 ? 4 : 2;
+		int nB = tB == 0 ? 1 : tB == 1 ? 4 : 2;
+		c2GJKCache kc, kr;
+		memset(&kc, 0, sizeof kc); memset(&kr, 0, sizeof kr);
+		if (use_cache && (nx() % 2)) {
+			/* synthetic cache, but with indices inside each proxy's vertex count
+			   (out-of-range indices make the C read uninitialised stack memory) */
+			kc.metric = rf(-10, 10); kc.count = 1 + (int)(nx() % 3); kc.div = rf(0.1f, 5.f);
+			for (int k = 0; k < 3; ++k) { kc.iA[k] = (int)(nx() % nA); kc.iB[k] = (int)(nx() % nB); }
+		}
+		kr = kc;
+'''
+assert old in s
+s = s.replace(old, new)
+
+# after the primary comparison, exercise the warm-cache read path twice more
+old2 = '''		float n1 = c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, NULL, NULL, ur, NULL, NULL);
+		float n2 = c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, NULL, NULL, ur, NULL, NULL);
+		cmp("c2GJK/null", &n1, &n2, sizeof n1);'''
+new2 = old2 + '''
+
+		/* realistic warm-cache usage: seed the cache with a real call, then reuse it */
+		{
+			c2GJKCache wc, wr; memset(&wc, 0, sizeof wc); memset(&wr, 0, sizeof wr);
+			c2v p1, q1, p2, q2; int i1, i2;
+			c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &p1, &q1, ur, &i1, &wc);
+			c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &p2, &q2, ur, &i2, &wr);
+			cmp("c2GJK/warm0/cache", &wc, &wr, sizeof wc);
+			for (int pass = 0; pass < 3; ++pass) {
+				float f1 = c2GJK_c(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &p1, &q1, ur, &i1, &wc);
+				float f2 = c2GJK_r(A, (C2_TYPE)tA, axp, Bp, (C2_TYPE)tB, bxp, &p2, &q2, ur, &i2, &wr);
+				cmp("c2GJK/warm/ret", &f1, &f2, sizeof f1);
+				cmp("c2GJK/warm/outA", &p1, &p2, sizeof p1);
+				cmp("c2GJK/warm/outB", &q1, &q2, sizeof q1);
+				cmp("c2GJK/warm/iter", &i1, &i2, sizeof i1);
+				cmp("c2GJK/warm/cache", &wc, &wr, sizeof wc);
+			}
+		}'''
+assert old2 in s
+s = s.replace(old2, new2)
+open('harness.c','w').write(s)
+print("patched")
+PY
+gcc -O2 -o h harness.c -ldl -lm 2>&1|head && echo "=== FINITE ONLY ===" && ./h finite 2>&1 | grep -E "c2GJK|TOTAL|mode|MISMATCH" [0m[38;5;244m (using tool: shell)[0m
+Purpose: Constrain cache indices to valid range and add warm-cache round trips
+
+patched
+=== FINITE ONLY ===
+mode=FINITE-ONLY
+  c2GJKSimplexMetric       checks=30000     fails=0
+  c2GJK/ret                checks=60000     fails=0
+  c2GJK/outA               checks=60000     fails=0
+  c2GJK/outB               checks=60000     fails=0
+  c2GJK/iter               checks=60000     fails=0
+  c2GJK/null               checks=60000     fails=0
+  c2GJK/warm0/cache        checks=60000     fails=0
+  c2GJK/warm/ret           checks=180000    fails=0
+  c2GJK/warm/outA          checks=180000    fails=0
+  c2GJK/warm/outB          checks=180000    fails=0
+  c2GJK/warm/iter          checks=180000    fails=0
+  c2GJK/warm/cache         checks=180000    fails=0
+  c2GJK/cache              checks=30111     fails=0
+TOTAL checks=4128288 fails=0
+[38;5;244m - Completed in 1.288s[0m
+
+[?25l[0m[38;5;141m> [0mZero failures across 4.1M checks on finite inputs. Now the Inf/NaN case:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && ./h 2>&1 | grep -vE "fails=0$" [0m[38;5;244m (using tool: shell)[0m
+Purpose: Run harness with Inf/NaN inputs, show only failing tags
+
+mode=WITH INF/NAN
+  c2Dot                    checks=40000     fails=147
+  c2Mulrv                  checks=40000     fails=151
+  c2MulrvT                 checks=40000     fails=2196
+  c23                      checks=30000     fails=19
+  c2L                      checks=30000     fails=21
+  c2Witness/a              checks=30000     fails=66
+  c2Witness/b              checks=30000     fails=48
+  c2GJK/ret                checks=60000     fails=1
+  c2GJK/outA               checks=60000     fails=5
+  c2GJK/outB               checks=60000     fails=4
+  c2GJK/cache              checks=30254     fails=2
+  c2GJK/null               checks=60000     fails=3
+  c2GJK/warm/ret           checks=180000    fails=9
+  c2GJK/warm/outA          checks=180000    fails=15
+  c2GJK/warm/outB          checks=180000    fails=6
+TOTAL checks=4128431 fails=2693
+[38;5;244m - Completed in 1.32s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10maabb[0m, [38;5;10mc2Collided[0m, and all boolean predicates are bit-identical even with Inf/NaN. The residual 2693/4.1M are NaN-operand selection in [38;5;10mfadd[0m/[38;5;10mfsub[0m when [3mboth[23m addends are NaN. Let me check whether the C itself is even stable there across optimization levels.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && for O in 0 1 2 3; do gcc -O$O -fPIC -shared -I../  -o libO$O.so /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/c_src/src/lib.c -lm; done && ls libO*.so
+cat > vary.c <<'EOF'
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+typedef struct c2v { float x, y; } c2v;
+typedef struct c2r { float c, s; } c2r;
+static uint32_t B(float f){uint32_t u;memcpy(&u,&f,4);return u;}
+int main(void){
+  const char *libs[] = {"./libO0.so","./libO1.so","./libO2.so","./libO3.so","./librust.so"};
+  void *h[5]; for(int i=0;i<5;i++){h[i]=dlopen(libs[i],RTLD_NOW|RTLD_LOCAL); if(!h[i]){printf("err %s\n",dlerror());return 2;}}
+  float (*dot[5])(c2v,c2v); c2v (*mrt[5])(c2r,c2v); c2v (*add[5])(c2v,c2v);
+  for(int i=0;i<5;i++){dot[i]=dlsym(h[i],"c2Dot");mrt[i]=dlsym(h[i],"c2MulrvT");add[i]=dlsym(h[i],"c2Add");}
+  c2v p={0.0f,0.0f}, q={INFINITY,NAN};
+  printf("c2Dot((0,0),(inf,nan)):   ");
+  for(int i=0;i<5;i++) printf("%-10s=%08x  ", libs[i]+2, B(dot[i](p,q)));
+  printf("\nc2MulrvT((0,0),(inf,nan)):");
+  for(int i=0;i<5;i++) printf("%-10s=%08x  ", libs[i]+2, B(mrt[i]((c2r){0,0},q).x));
+  c2v n1={NAN,NAN}, n2={-NAN,-NAN};
+  printf("\nc2Add((nan,nan),(-nan,-nan)):");
+  for(int i=0;i<5;i++) printf("%-10s=%08x  ", libs[i]+2, B(add[i](n1,n2).x));
+  printf("\n");
+  return 0;
+}
+EOF
+gcc -O2 -o vary vary.c -ldl -lm && ./vary[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test whether C NaN-selection behavior is stable across optimization levels
+
+libO0.so
+libO1.so
+libO2.so
+libO3.so
+c2Dot((0,0),(inf,nan)):   libO0.so  =7fc00000  libO1.so  =ffc00000  libO2.so  =ffc00000  libO3.so  =ffc00000  librust.so=ffc00000  
+c2MulrvT((0,0),(inf,nan)):libO0.so  =ffc00000  libO1.so  =ffc00000  libO2.so  =ffc00000  libO3.so  =ffc00000  librust.so=7fc00000  
+c2Add((nan,nan),(-nan,-nan)):libO0.so  =ffc00000  libO1.so  =ffc00000  libO2.so  =ffc00000  libO3.so  =7fc00000  librust.so=7fc00000  
+[38;5;244m - Completed in 0.596s[0m
+
+[?25l[0m[38;5;141m> [0mDecisive result: the C's own NaN-sign answer changes between [38;5;10m-O0[0m, [38;5;10m-O1..2[0m, and [38;5;10m-O3[0m — for [38;5;10mc2Dot[0m and [38;5;10mc2Add[0m it flips. So NaN-operand selection isn't a stable property of the C library, just instruction-selection noise. Finite-input parity is the real contract. Let me harden that: degenerate geometry, subnormals, and C built at every [38;5;10m-O[0m level.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && python3 - <<'PY'
+s = open('harness.c').read()
+s = s.replace('hc = dlopen("./libc.so", RTLD_NOW | RTLD_LOCAL);',
+              'hc = dlopen(argc > 2 ? argv[2] : "./libc.so", RTLD_NOW | RTLD_LOCAL);')
+# add degenerate + subnormal values to the finite pool
+s = s.replace('''	static const float t[] = { 0.0f, -0.0f, 1.0f, -1.0f, 1e-30f, -1e-30f, 1e30f, -1e30f,
+	                           3.4028235e38f, -3.4028235e38f, 1.1920929e-7f, 0.5f, -0.5f,
+	                           20.0f, -70.0f, 100.0f };''',
+'''	static const float t[] = { 0.0f, -0.0f, 1.0f, -1.0f, 1e-30f, -1e-30f, 1e30f, -1e30f,
+	                           3.4028235e38f, -3.4028235e38f, 1.1920929e-7f, 0.5f, -0.5f,
+	                           20.0f, -70.0f, 100.0f,
+	                           1.4012985e-45f, -1.4012985e-45f, 5.877472e-39f, -5.877472e-39f,
+	                           1.1754944e-38f, 16777216.0f, -16777216.0f, 8388608.5f,
+	                           1e-20f, 1e20f, 2.5f, -2.5f, 15.0f, -15.0f, 40.0f, -40.0f, 10.0f };''')
+# degenerate geometry: force zero-extent / coincident / zero-radius cases
+s = s.replace('''		if (i % 7 == 0) { ci.r = special(); bb.min = sv2(); ca.b = sv2(); }''',
+'''		if (i % 7 == 0) { ci.r = special(); bb.min = sv2(); ca.b = sv2(); }
+		if (i % 5 == 0) { bb.max = bb.min; }                 /* degenerate AABB (a point) */
+		if (i % 9 == 0) { ca.b = ca.a; }                     /* degenerate capsule (a point) */
+		if (i % 13 == 0) { ca.r = 0.f; ci.r = 0.f; ci2.r = 0.f; }
+		if (i % 17 == 0) { ci2.p = ci.p; bb2 = bb; ca2 = ca; } /* identical shapes */
+		if (i % 19 == 0) { bb2.min = bb.max; bb2.max = bb.min; } /* inverted AABB */''')
+s = s.replace('''		if (i % 11 == 0) { ci.p = sv2(); bb.max = sv2(); ca.r = special(); }''',
+'''		if (i % 11 == 0) { ci.p = sv2(); bb.max = sv2(); ca.r = special(); }
+		if (i % 5 == 0) { bb.max = bb.min; }
+		if (i % 9 == 0) { ca.b = ca.a; }
+		if (i % 13 == 0) { ca.r = 0.f; ci.r = 0.f; ci2.r = 0.f; }
+		if (i % 17 == 0) { ci2.p = ci.p; bb2 = bb; ca2 = ca; }
+		if (i % 19 == 0) { bb2.min = bb.max; bb2.max = bb.min; }''')
+open('harness.c','w').write(s)
+print("patched")
+PY
+gcc -O2 -o h harness.c -ldl -lm 2>&1|head && echo OK[0m[38;5;244m (using tool: shell)[0m
+Purpose: Harden harness with degenerate geometry, subnormals, selectable C lib
+
+patched
+OK
+[38;5;244m - Completed in 0.272s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && for O in 0 1 2 3; do printf "C at -O%s (finite inputs): " "$O"; ./h finite ./libO$O.so 2>/dev/null | tail -1; done; echo; printf "cmake default build (finite): "; ./h finite ./libc.so 2>/dev/null | tail -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify finite-input parity against C built at all optimization levels
+
+C at -O0 (finite inputs): TOTAL checks=4128288 fails=0
+C at -O1 (finite inputs): TOTAL checks=4128288 fails=0
+C at -O2 (finite inputs): TOTAL checks=4128288 fails=0
+C at -O3 (finite inputs): TOTAL checks=4128288 fails=0
+
+cmake default build (finite): TOTAL checks=4128288 fails=0
+[38;5;244m - Completed in 3.753s[0m
+
+[?25l[0m[38;5;141m> [0mZero failures against every C optimization level. Now confirming the Inf/NaN residual is confined to float-returning internals (never the integer API):[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && for O in 0 3; do echo "=== C -O$O, WITH INF/NAN — failing tags only ==="; ./h "" ./libO$O.so 2>/dev/null | grep -vE "fails=0$" | grep -v "^mode"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Show residual Inf/NaN mismatches per optimization level
+
+=== C -O0, WITH INF/NAN — failing tags only ===
+=== C -O3, WITH INF/NAN — failing tags only ===
+[38;5;244m - Completed in 1.569s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && sed -i 's/finite_only = (argc > 1);/finite_only = (argc > 1 \&\& strcmp(argv[1], "finite") == 0);/' harness.c && gcc -O2 -o h harness.c -ldl -lm && for O in 0 1 2 3; do echo "=== C -O$O, WITH INF\&NAN — failing tags only ==="; ./h nan ./libO$O.so 2>/dev/null | grep -vE "fails=0$|^mode"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix flag parsing and show residual Inf/NaN mismatches per opt level
+
+=== C -O0, WITH INF\&NAN — failing tags only ===
+  c2Dot                    checks=40000     fails=16
+  c2Mulrv                  checks=40000     fails=32
+  c2MulrvT                 checks=40000     fails=1109
+  c23                      checks=30000     fails=1
+  c2L                      checks=30000     fails=4
+  c2Witness/a              checks=30000     fails=13
+  c2Witness/b              checks=30000     fails=11
+  c2GJK/cache              checks=30253     fails=1
+  c2GJK/null               checks=60000     fails=1
+  c2GJK/warm/ret           checks=180000    fails=3
+  c2GJK/warm/outA          checks=180000    fails=3
+TOTAL checks=4128430 fails=1194
+=== C -O1, WITH INF\&NAN — failing tags only ===
+  c2MulrvT                 checks=40000     fails=26
+  c2Mulxv                  checks=40000     fails=31
+  c22                      checks=30000     fails=26
+  c2L                      checks=30000     fails=4
+  c2GJKSimplexMetric       checks=30000     fails=3
+  c2Witness/a              checks=30000     fails=15
+  c2Witness/b              checks=30000     fails=10
+  c2GJK/cache              checks=30253     fails=1
+TOTAL checks=4128430 fails=116
+=== C -O2, WITH INF\&NAN — failing tags only ===
+  c2MulrvT                 checks=40000     fails=26
+  c2Mulxv                  checks=40000     fails=31
+  c22                      checks=30000     fails=26
+  c23                      checks=30000     fails=110
+  c2L                      checks=30000     fails=4
+  c2GJKSimplexMetric       checks=30000     fails=3
+  c2Witness/a              checks=30000     fails=15
+  c2Witness/b              checks=30000     fails=10
+  c2GJK/cache              checks=30253     fails=1
+TOTAL checks=4128430 fails=226
+=== C -O3, WITH INF\&NAN — failing tags only ===
+  c2MulrvT                 checks=40000     fails=26
+  c2Mulxv                  checks=40000     fails=84
+  c22                      checks=30000     fails=26
+  c23                      checks=30000     fails=110
+  c2L                      checks=30000     fails=64
+  c2GJKSimplexMetric       checks=30000     fails=3
+  c2Witness/a              checks=30000     fails=276
+  c2Witness/b              checks=30000     fails=278
+  c2GJK/cache              checks=30253     fails=1
+TOTAL checks=4128430 fails=868
+[38;5;244m - Completed in 3.14s[0m
+
+[?25l[0m[38;5;141m> [0mOne more check — how much does the C disagree with [3mitself[23m across [38;5;10m-O[0m levels, using the same harness?[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/hdiff.br13Oy && sed -i 's|hr = dlopen("./librust.so", RTLD_NOW \| RTLD_LOCAL);|hr = dlopen(argc > 3 ? argv[3] : "./librust.so", RTLD_NOW \| RTLD_LOCAL);|' harness.c && grep -n "argc > 3" harness.c && gcc -O2 -o h harness.c -ldl -lm && echo "--- C -O0 vs C -O3, finite ---" && ./h finite ./libO0.so ./libO3.so 2>/dev/null | tail -1 && echo "--- C -O0 vs C -O3, WITH INF/NAN ---" && ./h nan ./libO0.so ./libO3.so 2>/dev/null | grep -vE "fails=0$|^mode" && echo "--- Rust vs C -O0, finite ---" && ./h finite ./libO0.so ./librust.so 2>/dev/null | tail -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Cross-compare C against itself across optimization levels
+
+82:	hr = dlopen(argc > 3 ? argv[3] : "./librust.so", RTLD_NOW | RTLD_LOCAL);
+--- C -O0 vs C -O3, finite ---
+TOTAL checks=4128288 fails=0
+--- C -O0 vs C -O3, WITH INF/NAN ---
+  c2Dot                    checks=40000     fails=16
+  c2Mulrv                  checks=40000     fails=32
+  c2MulrvT                 checks=40000     fails=1090
+  c2Mulxv                  checks=40000     fails=84
+  c22                      checks=30000     fails=26
+  c23                      checks=30000     fails=110
+  c2L                      checks=30000     fails=68
+  c2GJKSimplexMetric       checks=30000     fails=3
+  c2Witness/a              checks=30000     fails=286
+  c2Witness/b              checks=30000     fails=287
+  c2GJK/cache              checks=30253     fails=1
+  c2GJK/null               checks=60000     fails=1
+  c2GJK/warm/ret           checks=180000    fails=3
+  c2GJK/warm/outA          checks=180000    fails=3
+TOTAL checks=4128430 fails=2010
+--- Rust vs C -O0, finite ---
+TOTAL checks=4128288 fails=0
+[38;5;244m - Completed in 3.688s[0m
+
+[?25l[0m[38;5;141m> [0mThe C disagrees with [1mitself[22m (2010 mismatches, [38;5;10m-O0[0m vs [38;5;10m-O3[0m) on the same NaN inputs — same functions, comparable magnitude to Rust-vs-C. So that residual is codegen noise, not translation error. Final verification pass:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-i6OCXF
+echo "=== c_src untouched? ==="
+find c_src -newer c_src/CMakeLists.txt -type f | grep -v CMakeLists || true
+md5sum c_src/src/lib.c c_src/include/lib.h c_src/CMakeLists.txt
+echo "=== translation layout ==="
+find translation -type f -not -path "*/target/*" | sort
+echo "=== crate-type ==="
+grep -A3 '^\[lib\]' translation/Cargo.toml
+echo "=== no_mangle count (expect 38) ==="
+grep -c '#\[unsafe(no_mangle)\]' translation/src/lib.rs
+echo "=== extern \"C\" fn count (expect 38) ==="
+grep -c 'extern "C" fn' translation/src/lib.rs
+echo "=== clean rebuild ==="
+cd translation && cargo clean -q && cargo build --release 2>&1 | tail -3[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src untouched, crate layout, annotation counts, clean rebuild
+
+=== c_src untouched? ===
+f749106d2040a62786d3e98ca4c501bf  c_src/src/lib.c
+a1ae4066b9fcbd3abb6b0a2b59465096  c_src/include/lib.h
+7856754ef47525158a2550699ae845a3  c_src/CMakeLists.txt
+=== translation layout ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+=== crate-type ===
+[lib]
+name = "harvest_work_i6OCXF"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+=== no_mangle count (expect 38) ===
+38
+=== extern "C" fn count (expect 38) ===
+38
+=== clean rebuild ===
+   Compiling harvest-work-i6OCXF v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation)
+    Finished `release` profile [optimized] target(s) in 0.29s
+[38;5;244m - Completed in 0.354s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-i6OCXF/translation
+nm -D --defined-only target/release/libharvest_work_i6OCXF.so | awk '{print $NF}' | grep -v '^_' | sort > /tmp/rust_pub2.txt
+echo "COMPLETION GATE: C=$(wc -l < /tmp/c_pub.txt) symbols, Rust=$(wc -l < /tmp/rust_pub2.txt) symbols"
+diff /tmp/c_pub.txt /tmp/rust_pub2.txt && echo "*** DIFF EMPTY — all C exports present in Rust ***"
+echo "=== undefined (should be libc/libm only) ==="
+nm -D --undefined-only target/release/libharvest_work_i6OCXF.so | awk '{print $NF}' | sort -u | head
+echo "=== final differential re-run vs freshly built C ==="
+cp target/release/libharvest_work_i6OCXF.so /tmp/hdiff.br13Oy/librust.so
+cd /tmp/hdiff.br13Oy && ./h finite ./libc.so ./librust.so 2>/dev/null | tail -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final symbol diff and differential re-run after clean rebuild
+
+COMPLETION GATE: C=38 symbols, Rust=38 symbols
+*** DIFF EMPTY — all C exports present in Rust ***
+=== undefined (should be libc/libm only) ===
+_ITM_deregisterTMCloneTable
+_ITM_registerTMCloneTable
+_Unwind_Backtrace@GCC_3.3
+_Unwind_GetDataRelBase@GCC_3.0
+_Unwind_GetIP@GCC_3.0
+_Unwind_GetIPInfo@GCC_4.2.0
+_Unwind_GetLanguageSpecificData@GCC_3.0
+_Unwind_GetRegionStart@GCC_3.0
+_Unwind_GetTextRelBase@GCC_3.0
+_Unwind_Resume@GCC_3.0
+=== final differential re-run vs freshly built C ===
+TOTAL checks=4128288 fails=0
+[38;5;244m - Completed in 1.62s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/hdiff.br13Oy /tmp/cbuild_h /tmp/c_syms.txt /tmp/c_pub.txt /tmp/rust_pub.txt /tmp/rust_pub2.txt /tmp/hdiff_dir.txt
+cd /local/home/scheschb/.harvest/work/harvest-work-i6OCXF && ls -a && echo "--- translation ---" && ls translation && ls translation/target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temporary verification artifacts
+
+.
+..
+.claude
+c_src
+translation
+--- translation ---
+Cargo.lock
+Cargo.toml
+src
+target
+translation/target/release/libharvest_work_i6OCXF.so
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library is fully translated and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is a single 645-line translation unit: a cute_c2–derived 2D collision library (circle / AABB / capsule, GJK distance solver). The public header declares only [38;5;10maabb()[0m, but the C compiles every function with external linkage, so the [38;5;10m.so[0m exports [1m38 symbols[22m. There were no namespace-renaming macros, so linker names equal source names.[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+[38;5;10mnm -D[0m on both [38;5;10m.so[0m files yields identical 38-symbol sets — the diff is empty:[0m[0m
+[0m[0m
+[38;5;10mCOMPLETION GATE: C=38 symbols, Rust=38 symbols
+*** DIFF EMPTY — all C exports present in Rust ***
+[0m[0m[0m
+[0m[0m
+[38;5;252m[1m## Behavioral verification[0m[0m
+[0m[0m
+I built a differential harness that [38;5;10mdlopen[0ms both libraries and compares [1mraw bit patterns[22m of every return value and every out-parameter. All 38 symbols are exercised (I verified the harness generates exactly 38 binding sites). Coverage includes randomized and edge-case floats, subnormals, degenerate geometry (point AABBs, inverted AABBs, zero-length capsules, zero radii), all 16 [38;5;10mc2Collided[0m type pairs including invalid enum values, [38;5;10mc2Simplex[0m counts 0–4 to hit every [38;5;10mdefault:[0m branch, NULL out-params, and GJK cache cold/warm/reused paths.[0m[0m
+[0m[0m
+[1m4,128,288 checks, 0 failures[22m — against the C compiled at [38;5;10m-O0[0m, [38;5;10m-O1[0m, [38;5;10m-O2[0m, [38;5;10m-O3[0m, and the default CMake build.[0m[0m
+[0m[0m
+[38;5;252m[1m## One finding worth reporting[0m[0m
+[0m[0m
+With Inf/NaN inputs, a few thousand float results differ in the NaN sign bit ([38;5;10m0x7fc00000[0m vs [38;5;10m0xffc00000[0m). This is [38;5;10maddss[0m operand-order selection when [3mboth[23m addends are NaN — the hardware returns whichever operand the compiler placed in the destination register.[0m[0m
+[0m[0m
+This is not a translation defect: the C does not agree with itself here. Compiled at [38;5;10m-O0[0m versus [38;5;10m-O3[0m, the same C source produces [1m2010 mismatches[22m on the same inputs, affecting the same functions at comparable magnitude to Rust-vs-C. [38;5;10mc2Dot[0m flips between [38;5;10m-O0[0m and [38;5;10m-O1[0m; [38;5;10mc2Add[0m flips between [38;5;10m-O2[0m and [38;5;10m-O3[0m. I deliberately did not hard-code per-expression NaN choices, since that would overfit to one GCC version and flag combination and would be wrong for others. Every integer-returning function — [38;5;10maabb[0m, [38;5;10mc2Collided[0m, [38;5;10mc2Support[0m, and all six boolean predicates — is bit-identical at every optimization level in every mode, including with Inf/NaN.[0m[0m
+[0m[0m
+[38;5;252m[1m## Fidelity notes[0m[0m
+[0m[0m
+Bugs and quirks were reproduced rather than fixed: the inverted cache-validity test in [38;5;10mc2GJK[0m ([38;5;10mmetric < -1.0e8f[0m), [38;5;10mc2Support[0m reading [38;5;10mverts[0][0m unconditionally even when [38;5;10mcount <= 0[0m, the [38;5;10mdefault:[0m/[38;5;10mcase 1:[0m fall-through in [38;5;10mc2GJKSimplexMetric[0m, ternary min/max instead of [38;5;10mfminf[0m/[38;5;10mfmaxf[0m (which differ on NaN), and [38;5;10mc2MakeProxy[0m leaving the proxy untouched for an unknown type. [38;5;10mc2Simplex[0m models the C's [38;5;10mc2sv a,b,c,d[0m as [38;5;10m[c2sv; 4][0m because the C walks them as an array via [38;5;10mc2sv *verts = &s.a;[0m — [38;5;10mc2sv[0m is 36 bytes with alignment 4, so the layout matches exactly. The by-value struct ABI, including the 20-byte [38;5;10mc2Capsule[0m that classifies as MEMORY and the 16-byte [38;5;10mc2x[0m passed in two SSE registers, is confirmed correct by the passing tests.[0m[0m
+[0m[0m
+The one intentional deviation: [38;5;10mc2GJK[0m's local [38;5;10mc2Proxy[0m objects are uninitialized in C, so an invalid [38;5;10mC2_TYPE[0m makes it read indeterminate stack bytes. I zero-initialize instead, which is deterministic. This is unreachable through any valid input, and it was in fact what my first harness draft accidentally probed — the apparent GJK failures vanished once I constrained cache indices to each proxy's actual vertex count.[0m[0m
+[38;5;8m
+ ▸ Credits: 27.37 • Time: 12m 17s
+
+[0m[1G[0m[0m[?25h

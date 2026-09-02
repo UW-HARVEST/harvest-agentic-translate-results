@@ -1,0 +1,1356 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
+[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA[0m [38;5;244m(10 entries)[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/include/strcpy-fun.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/src/main.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/src/lib.c[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1363 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/include/strcpy-fun.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3458 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m9755 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1210 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-8wOWYA/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall codebase — I'll handle it directly. Let me build the C reference first to empirically confirm behaviors.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mwhich gcc cargo rustc; gcc --version | head -1; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain availability
+
+/usr/bin/gcc
+/home/scheschb/.cargo/bin/cargo
+/home/scheschb/.cargo/bin/rustc
+gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/main.c c_src/src/lib.c 2>&1 | tail -5 && echo BUILT && ls -l /tmp/cref/driver[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C reference binary
+
+BUILT
+-rwxr-xr-x. 1 scheschb amazon 17456 Sep  1 16:43 /tmp/cref/driver
+[38;5;244m - Completed in 0.75s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
+run(){ printf "%s" "$1" | ./driver; echo "  exit=$?"; }
+echo "--- op4 cs, text=AB(no NUL), pat=ABCDE"
+run "4 2 2 65 66 5 65 66 67 68 69"
+echo "--- op4 cs, text=AB\\0, pat=ABCDE\\0"
+run "4 2 3 65 66 0 6 65 66 67 68 69 0"
+echo "--- op4 cs, text=ABCDE\\0 pat=CD\\0"
+run "4 2 6 65 66 67 68 69 0 3 67 68 0"
+echo "--- op4 cs, pat empty ref_len=0, text=XY\\0"
+run "4 2 3 88 89 0 0"
+echo "--- op0 token"
+run "0 0 3 79 75 0 3 79 75 0"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe C reference behaviors
+
+--- op4 cs, text=AB(no NUL), pat=ABCDE
+0
+  exit=0
+--- op4 cs, text=AB\0, pat=ABCDE\0
+environment: line 2: 287242 Done                    printf "%s" "$1"
+     287243 Segmentation fault      (core dumped) | ./driver
+  exit=139
+--- op4 cs, text=ABCDE\0 pat=CD\0
+12
+  exit=0
+--- op4 cs, pat empty ref_len=0, text=XY\0
+environment: line 2: 287267 Done                    printf "%s" "$1"
+     287268 Segmentation fault      (core dumped) | ./driver
+  exit=139
+--- op0 token
+1
+  exit=0
+[38;5;244m - Completed in 1.116s[0m
+
+[?25l[0m[38;5;141m> [0mStack garbage matters here. Let me probe the actual memory layout (copy to /tmp, never touching c_src).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/probe && cp c_src/src/main.c /tmp/probe/main.c && cp c_src/src/lib.c /tmp/probe/lib.c && cd /tmp/probe && python3 - <<'EOF'
+s=open('main.c').read()
+s=s.replace('''    /* Call the library function */''','''    fprintf(stderr, "ADDR input=%p ref=%p diff=%ld\\n", (void*)input_buffer, (void*)ref_buffer, (long)(ref_buffer-input_buffer));
+    fprintf(stderr, "STRLEN input=%zu ref=%zu\\n", strlen(input_buffer), strlen(ref_buffer));
+    { size_t nz=0; for (size_t k=input_len;k<200;k++) if (input_buffer[k]) nz++; fprintf(stderr,"nonzero-after-input(to200)=%zu\\n",nz); }
+    fprintf(stderr,"first32after: "); for(size_t k=input_len;k<input_len+32 && k<1024;k++) fprintf(stderr,"%d ",(unsigned char)input_buffer[k]); fprintf(stderr,"\\n");
+    /* Call the library function */''')
+s=s.replace('#include <stddef.h>','#include <stddef.h>\n#include <string.h>')
+open('main.c','w').write(s)
+EOF
+gcc -O0 -o probe main.c lib.c && printf "4 2 2 65 66 5 65 66 67 68 69" | ./probe[0m[38;5;244m (using tool: shell)[0m
+Purpose: Instrument a copy to inspect stack layout
+
+0
+ADDR input=0x7ffc1c1d1da0 ref=0x7ffc1c1d19a0 diff=-1024
+STRLEN input=6 ref=5
+nonzero-after-input(to200)=103
+first32after: 250 224 75 127 0 0 56 30 29 28 252 127 0 0 52 30 29 28 252 127 0 0 144 30 29 28 252 127 0 0 32 53 
+[38;5;244m - Completed in 0.93s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
+for n in 1 2 3 4 5; do printf "4 2 3 65 66 0 6 65 66 67 68 69 0" | ./driver >/dev/null 2>&1; echo -n "$? "; done; echo
+echo "--- longer pattern underflow variants"
+for pl in 1 10 40; do
+  # text = "A\0" (len2), pattern length pl of 'B'
+  py=$(python3 -c "
+pl=$pl
+print('4 2 2 65 0 %d %s' % (pl+1, ' '.join(['66']*pl+['0'])))")
+  printf "%s" "$py" | ./driver >/dev/null 2>&1; echo "pl=$pl exit=$?"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify segfault determinism on underflow path
+
+bash: line 2: 289309 Done                    printf "4 2 3 65 66 0 6 65 66 67 68 69 0"
+     289310 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+139 bash: line 2: 289345 Done                    printf "4 2 3 65 66 0 6 65 66 67 68 69 0"
+     289346 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+139 bash: line 2: 289558 Done                    printf "4 2 3 65 66 0 6 65 66 67 68 69 0"
+     289559 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+139 bash: line 2: 289661 Done                    printf "4 2 3 65 66 0 6 65 66 67 68 69 0"
+     289662 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+139 139 
+bash: line 2: 289693 Done                    printf "4 2 3 65 66 0 6 65 66 67 68 69 0"
+     289694 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+--- longer pattern underflow variants
+pl=1 exit=0
+bash: line 4: 289748 Done                    printf "%s" "$py"
+     289749 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+pl=10 exit=139
+pl=40 exit=139
+bash: line 4: 289771 Done                    printf "%s" "$py"
+     289772 Segmentation fault      (core dumped) | ./driver > /dev/null 2>&1
+[38;5;244m - Completed in 4.888s[0m
+
+[?25l[0m[38;5;141m> [0mNow I'll write the Rust translation.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo manifest for the translated executable
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/cstring.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: C string primitive emulation helpers
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! C string primitive emulation.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C program operates on fixed-size stack arrays that are not always
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! NUL-terminated within the region the caller filled in.  Every buffer handed
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! to these helpers is therefore modelled as "the bytes we know about, followed
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! by an unbounded run of zero bytes".  `byte_at` implements that model, which
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! makes every scan terminate without ever indexing out of bounds.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m /// Reads `buf[i]`, modelling memory past the end of the buffer as zero bytes.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m pub fn byte_at(buf: &[u8], i: usize) -> u8 {
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     match buf.get(i) {
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m         Some(&b) => b,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m         None => 0,
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// `strlen(&buf[off])`
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m pub fn c_strlen(buf: &[u8], off: usize) -> usize {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let mut n = 0usize;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     while byte_at(buf, off + n) != 0 {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         n += 1;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     n
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// `strcmp(&a[ao], &b[bo]) == 0`
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// Only equality is ever tested by the original C, so the ordering result is
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// not modelled.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m pub fn c_strcmp_eq(a: &[u8], ao: usize, b: &[u8], bo: usize) -> bool {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         let ca = byte_at(a, ao + i);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         let cb = byte_at(b, bo + i);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         if ca != cb {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             return false;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         if ca == 0 {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             return true;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// `strncmp(&a[ao], &b[bo], n) == 0`
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m pub fn c_strncmp_eq(a: &[u8], ao: usize, b: &[u8], bo: usize, n: usize) -> bool {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     while i < n {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         let ca = byte_at(a, ao + i);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         let cb = byte_at(b, bo + i);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         if ca != cb {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             return false;
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         if ca == 0 {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             return true;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     true
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// `strncpy(dst, &src[so], n)` where `dst.len() >= n`.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// Copies until a NUL is seen in the source and zero-pads the remainder of the
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// first `n` bytes, exactly like the C library routine.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m pub fn c_strncpy(dst: &mut [u8], src: &[u8], so: usize, n: usize) {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     while i < n {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         let c = byte_at(src, so + i);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         dst[i] = c;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         if c == 0 {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     while i < n {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         dst[i] = 0;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// `strncat(dst, src, n)`: append at most `n` bytes of `src` then a NUL.
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m pub fn c_strncat(dst: &mut [u8], src: &[u8], n: usize) {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     let l = c_strlen(dst, 0);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let mut j = 0usize;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     while j < n {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let c = byte_at(src, j);
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         if c == 0 {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         dst[l + j] = c;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         j += 1;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     dst[l + j] = 0;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// Emulates the out-of-bounds read loop in `match_pattern` running off the end
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// of the stack and taking a fatal signal.
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// When `pattern_len > text_len` the original C computes `text_len -
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// pattern_len` in `size_t` arithmetic, which wraps to a huge value, so the
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// loop walks forward through memory until it leaves the mapped stack.  The
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// reference binary dies with SIGSEGV and prints nothing on stdout; this
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// reproduces that observable behaviour.
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m pub fn simulate_stack_overrun_fault() -> ! {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     // Deliberate null write: the only way to reproduce the reference program's
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     // fatal signal (and hence its empty stdout) without linking libc.
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         std::ptr::null_mut::<u8>().write_volatile(0);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     // Unreachable in practice; kept so the function is diverging regardless.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     std::process::abort();
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/cstring.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/scanf.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: scanf integer conversion emulation
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Minimal emulation of the `scanf` integer conversions used by `main.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! `%d`, `%u` and `%zu` all skip leading whitespace (crossing newlines freely),
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! accept an optional sign, and then require at least one decimal digit.  A
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! conversion that finds no digit is a matching failure and leaves the
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! offending byte in the stream; either way `main` treats a result other than 1
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! as fatal, so only "did it succeed" needs to be modelled precisely.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::io::Read;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m const CHUNK: usize = 4096;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m pub struct Scanner<R: Read> {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     src: R,
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     buf: [u8; CHUNK],
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     pos: usize,
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     filled: usize,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     at_eof: bool,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// A parsed decimal literal: sign, magnitude, and whether the magnitude
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// exceeded `unsigned long` (mirroring `strtoul`/`strtol` ERANGE clamping).
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m struct RawNumber {
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     negative: bool,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     magnitude: u64,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     overflow: bool,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m impl<R: Read> Scanner<R> {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     pub fn new(src: R) -> Self {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         Scanner {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m             src,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m             buf: [0u8; CHUNK],
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             pos: 0,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             filled: 0,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             at_eof: false,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     fn peek(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         if self.pos == self.filled {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             if self.at_eof {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m                 return None;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             match self.src.read(&mut self.buf) {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 Ok(0) => {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m                     self.at_eof = true;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                     return None;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m                 Ok(n) => {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                     self.pos = 0;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                     self.filled = n;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m                 Err(_) => {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m                     self.at_eof = true;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                     return None;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         Some(self.buf[self.pos])
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     fn bump(&mut self) {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         if self.pos < self.filled {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             self.pos += 1;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     /// `isspace` in the C locale.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     fn is_space(b: u8) -> bool {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     /// Consumes whitespace and returns the next significant byte, leaving it in
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     /// the stream.
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     fn skip_whitespace(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             let b = self.peek()?;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             if Self::is_space(b) {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m                 self.bump();
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m                 return Some(b);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     fn scan_raw(&mut self) -> Option<RawNumber> {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let mut c = self.skip_whitespace()?;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let mut negative = false;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         if c == b'+' || c == b'-' {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             negative = c == b'-';
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             self.bump();
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             c = self.peek()?;
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         if !c.is_ascii_digit() {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             // Matching failure: no digits available.
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         let mut magnitude: u64 = 0;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         let mut overflow = false;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         while let Some(d) = self.peek() {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             if !d.is_ascii_digit() {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             self.bump();
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             let digit = u64::from(d - b'0');
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             match magnitude.checked_mul(10).and_then(|m| m.checked_add(digit)) {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 Some(m) => magnitude = m,
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                 None => overflow = true,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         Some(RawNumber {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             negative,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             magnitude,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             overflow,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     /// `scanf("%d", ...)`: `strtol` into a `long`, then truncated into an `int`.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     pub fn scan_i32(&mut self) -> Option<i32> {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         let n = self.scan_raw()?;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         let as_long: i64 = if n.overflow {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             if n.negative {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m                 i64::MIN
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                 i64::MAX
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         } else if n.negative {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m             if n.magnitude > (i64::MAX as u64) + 1 {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                 i64::MIN
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 (n.magnitude as i64).wrapping_neg()
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         } else if n.magnitude > i64::MAX as u64 {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m             i64::MAX
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             n.magnitude as i64
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         Some(as_long as i32)
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     /// `scanf("%u", ...)`: `strtoul` into an `unsigned long`, truncated into an
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     /// `unsigned int`.
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     pub fn scan_u32(&mut self) -> Option<u32> {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let v = self.scan_unsigned_long()?;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         Some(v as u32)
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     /// `scanf("%zu", ...)`
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     pub fn scan_usize(&mut self) -> Option<u64> {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         self.scan_unsigned_long()
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     fn scan_unsigned_long(&mut self) -> Option<u64> {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         let n = self.scan_raw()?;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         if n.overflow {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             return Some(u64::MAX);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         Some(if n.negative {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             n.magnitude.wrapping_neg()
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m             n.magnitude
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/scanf.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/strlib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translation of lib.c string processing logic
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Translation of `c_src/src/lib.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Behaviour — including the buffer-overrun bug in `match_pattern` — is
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! reproduced as-is rather than corrected.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use crate::cstring::{
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m     byte_at, c_strcmp_eq, c_strlen, c_strncat, c_strncmp_eq, c_strncpy, simulate_stack_overrun_fault,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m /// Main entrance function - performs various string comparison operations.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// `input` and `reference` model the caller's fixed-size stack arrays; both are
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// followed by an implicit run of zero bytes (see `cstring::byte_at`).
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m pub fn process_strings(
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     input: &[u8],
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     input_len: usize,
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     reference: &[u8],
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     ref_len: usize,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     operation: i32,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     flags: u32,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m ) -> i32 {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     // `input == NULL` is impossible here: the C caller always passes an array.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     match operation {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         0 => {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m             // Validate token.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             // `reference == NULL` check retained for ordering; never taken.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             validate_token(input, reference)
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         1 => {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m             // Parse command from list - checks against multiple strings.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m             const COMMANDS: [&[u8]; 5] = [b"START", b"STOP", b"PAUSE", b"RESUME", b"RESET"];
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             parse_command(input, input_len, &COMMANDS, 5)
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         2 => {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             // Compare prefix - can use strcmp or strncmp based on flags.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             let exact = flags & 0x01;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             compare_prefix(input, reference, exact as i32)
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         3 => {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             // Find delimiter position.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             let delim = if ref_len > 0 { byte_at(reference, 0) } else { b':' };
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m             find_delimiter(input, input_len, delim)
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         4 => {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             // Match pattern.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             let case_sens = flags & 0x02;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             match_pattern(input, reference, case_sens as i32)
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         _ => -3,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// Validate token against expected value.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m fn validate_token(token: &[u8], expected: &[u8]) -> i32 {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     if c_strcmp_eq(token, 0, expected, 0) {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         return 1; // Valid
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     if c_strcmp_eq(token, 0, b"VALID", 0) || c_strcmp_eq(token, 0, b"OK", 0) {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     0 // Invalid
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// Parse command from a list of valid commands.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m fn parse_command(buffer: &[u8], buf_size: usize, cmd_list: &[&[u8]; 5], list_size: i32) -> i32 {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     for i in 0..list_size {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         let cmd = cmd_list[i as usize];
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         let cmd_len = c_strlen(cmd, 0);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         if buf_size >= cmd_len {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             if c_strncmp_eq(buffer, 0, cmd, 0, cmd_len) {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m                 // Check if exact match.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m                 let after = byte_at(buffer, cmd_len);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m                 if after == 0 || after == b' ' {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m                     return i; // Return command index
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         // Fallback: direct strcmp.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         if c_strcmp_eq(buffer, 0, cmd, 0) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             return i;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     // Check for special admin command.
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     if c_strcmp_eq(buffer, 0, b"ADMIN", 0) {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         return 99;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     -1 // No match
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// Compare prefix with optional exact matching.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m fn compare_prefix(s: &[u8], prefix: &[u8], exact_match: i32) -> i32 {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let prefix_len = c_strlen(prefix, 0);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     if exact_match != 0 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         // Exact match required.
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         if c_strcmp_eq(s, 0, prefix, 0) {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             return 1;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         // `char variations[5][32]` initialised from string literals, so each row
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         // is zero-padded out to 32 bytes.
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         let mut variations = [[0u8; 32]; 5];
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         for (row, literal) in variations
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             .iter_mut()
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             .zip([b"_v1".as_slice(), b"_v2", b"_old", b"_new", b"_tmp"])
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             row[..literal.len()].copy_from_slice(literal);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         for i in 0..5usize {
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             // Construct expected string.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             let mut expected = [0u8; 64];
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             c_strncpy(&mut expected, prefix, 0, 63);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             expected[63] = 0;
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             let n = 63 - c_strlen(&expected, 0);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             c_strncat(&mut expected, &variations[i], n);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             if c_strcmp_eq(s, 0, &expected, 0) {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                 return 2 + i as i32;
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         // Prefix match only.
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         if c_strncmp_eq(s, 0, prefix, 0, prefix_len) {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m             return 1;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m /// Find delimiter position in string.
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m fn find_delimiter(data: &[u8], len: usize, delim: u8) -> i32 {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     if len == 0 {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     // Manual search with bounds checking.
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     for i in 0..len {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         let c = byte_at(data, i);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         if c == delim {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             return i as i32;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         if c == 0 {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     // Check for special delimiter patterns using strcmp.
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     if delim == b'|' && c_strcmp_eq(data, 0, b"NONE", 0) {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         return -2; // Special case
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     if delim == b':' && c_strcmp_eq(data, 0, b"EMPTY", 0) {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         return -3; // Special case
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     -1 // Not found
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m /// `snprintf(dst, 64, ...)` over a concatenation of literal/string pieces.
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m fn snprintf64(dst: &mut [u8; 64], pieces: &[&[u8]]) {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     let mut n = 0usize;
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     for piece in pieces {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         for &c in piece.iter() {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             if n < 63 {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m                 dst[n] = c;
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m                 n += 1;
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     dst[n] = 0;
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m /// Match pattern with optional case sensitivity.
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m fn match_pattern(text: &[u8], pattern: &[u8], case_sensitive: i32) -> i32 {
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     if case_sensitive != 0 {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         // Case-sensitive exact match.
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         if c_strcmp_eq(text, 0, pattern, 0) {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m             return 1;
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         // Try with wildcards - construct patterns.
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         let pat_len = c_strlen(pattern, 0);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         let pat: Vec<u8> = (0..pat_len).map(|k| byte_at(pattern, k)).collect();
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         let mut wildcard_patterns = [[0u8; 64]; 3];
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         snprintf64(&mut wildcard_patterns[0], &[b"*", &pat, b"*"]);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         snprintf64(&mut wildcard_patterns[1], &[&pat, b"*"]);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         snprintf64(&mut wildcard_patterns[2], &[b"*", &pat]);
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         for i in 0..3usize {
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m             if c_strcmp_eq(text, 0, &wildcard_patterns[i], 0) {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m                 return 2 + i as i32;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         // Check if text contains pattern.
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         let text_len = c_strlen(text, 0);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         let pattern_len = c_strlen(pattern, 0);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         // The C loop bound `text_len - pattern_len` is computed in size_t
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         // arithmetic and wraps around when the pattern is longer than the text,
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m         // walking off the end of the stack.  No match is possible in that case,
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         // so the reference program always dies on a fatal signal here.
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         if pattern_len > text_len {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m             simulate_stack_overrun_fault();
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         for i in 0..=(text_len - pattern_len) {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m             if c_strncmp_eq(text, i, pattern, 0, pattern_len) {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m                 return (10 + i) as i32; // Return position + offset
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         // Case-insensitive - first try exact match.
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         if c_strcmp_eq(text, 0, pattern, 0) {
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m             return 1;
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         let pattern_len = c_strlen(pattern, 0);
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         let text_len = c_strlen(text, 0);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         if text_len != pattern_len {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m             // Try prefix match with strncmp.
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m             if c_strncmp_eq(text, 0, pattern, 0, pattern_len) {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m                 return 5;
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         // Compare character by character.
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         if text_len == pattern_len {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m             let mut matched = true;
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m             for i in 0..pattern_len {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m                 let mut c1 = byte_at(text, i);
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m                 let mut c2 = byte_at(pattern, i);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m                 // Convert to lowercase.
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m                 if c1 >= b'A' && c1 <= b'Z' {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m                     c1 = c1.wrapping_add(32);
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m                 if c2 >= b'A' && c2 <= b'Z' {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m                     c2 = c2.wrapping_add(32);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m                 if c1 != c2 {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m                     matched = false;
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m             if matched {
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m                 return 6;
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     0 // No match
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/strlib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translation of main.c driver
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Translation of `c_src/src/main.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m mod cstring;
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m mod scanf;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m mod strlib;
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::process::ExitCode;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m const MAX_BUFFER_SIZE: usize = 1024;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Extra zero bytes trailing each 1024-byte array, standing in for the memory
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// the C program reads past the end of a buffer that was filled to capacity
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// without a NUL terminator.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m const TRAILING_ZEROS: usize = 64;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m fn fail(msg: &str) -> ExitCode {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     let stderr = std::io::stderr();
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     let mut handle = stderr.lock();
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let _ = handle.write_all(msg.as_bytes());
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     let _ = handle.flush();
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     ExitCode::from(1)
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m fn main() -> ExitCode {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     let mut sc = scanf::Scanner::new(std::io::stdin());
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     let mut input_buffer = vec![0u8; MAX_BUFFER_SIZE + TRAILING_ZEROS];
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     let mut ref_buffer = vec![0u8; MAX_BUFFER_SIZE + TRAILING_ZEROS];
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     // Read operation
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let operation = match sc.scan_i32() {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         Some(v) => v,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         None => return fail("Error reading operation\n"),
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     // Read flags
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     let flags = match sc.scan_u32() {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         Some(v) => v,
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         None => return fail("Error reading flags\n"),
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     // Read input length
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let input_len = match sc.scan_usize() {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         Some(v) => v,
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         None => return fail("Error reading input length\n"),
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     if input_len > MAX_BUFFER_SIZE as u64 {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         return fail(&format!(
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             "Error: input length {} exceeds maximum {}\n",
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             input_len, MAX_BUFFER_SIZE
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         ));
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     // Read input buffer data
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     for i in 0..input_len {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         let byte = match sc.scan_u32() {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             Some(v) => v,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             None => return fail(&format!("Error reading input byte {}\n", i)),
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         input_buffer[i as usize] = byte as u8;
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     // Read reference length
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let ref_len = match sc.scan_usize() {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         Some(v) => v,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         None => return fail("Error reading reference length\n"),
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     if ref_len > MAX_BUFFER_SIZE as u64 {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         return fail(&format!(
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             "Error: reference length {} exceeds maximum {}\n",
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             ref_len, MAX_BUFFER_SIZE
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         ));
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     // Read reference buffer data
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     for i in 0..ref_len {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         let byte = match sc.scan_u32() {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             Some(v) => v,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             None => return fail(&format!("Error reading reference byte {}\n", i)),
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         ref_buffer[i as usize] = byte as u8;
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     // Call the library function
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     let result = strlib::process_strings(
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         &input_buffer,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         input_len as usize,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         &ref_buffer,
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         ref_len as usize,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         operation,
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         flags,
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     // Print result to stdout
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     let _ = out.write_all(format!("{}\n", result).as_bytes());
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     ExitCode::from(0)
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation)
+    Finished `release` profile [optimized] target(s) in 0.35s
+[38;5;244m - Completed in 0.367s[0m
+
+[?25l[0m[38;5;141m> [0mNow a differential test harness against the C reference.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #!/usr/bin/env python3
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m """Differential tester: C reference vs Rust translation."""
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m import random
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m import subprocess
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m import sys
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m C = "/tmp/cref/driver"
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m R = "/local/home/scheschb/.harvest/work/harvest-work-8wOWYA/translation/target/release/driver"
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m def run(binary, data):
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     p = subprocess.run(binary, input=data.encode(), capture_output=True, timeout=20)
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     return p.returncode, p.stdout, p.stderr
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m def enc(op, flags, inp, ref, sep=" "):
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     """inp/ref are lists of ints; lengths are len()."""
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     parts = [str(op), str(flags), str(len(inp))]
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     parts += [str(b) for b in inp]
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     parts.append(str(len(ref)))
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     parts += [str(b) for b in ref]
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     return sep.join(parts)
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m def s2b(s, nul=True):
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     b = [ord(c) for c in s]
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     if nul:
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         b.append(0)
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     return b
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m cases = []
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m # --- malformed / error-path inputs ---
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m cases += [
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     "", "x", "abc", "0", "0 ", "0 x", "0 1", "0 1 x", "0 1 5",
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     "0 1 1025 1", "0 1 1024", "-1 0 0 0", "5 0 0 0", "99 0 0 0",
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     "0 1 3 65 66", "0 1 2 65 66", "0 1 2 65 66 3 67",
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     "0 1 2 65 66 1025 1", "0 1 2 65 66 -1 1",
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     "  \n\t 0 \n 1 \n 3 \n 65 \n 66 \n 0 \n 3 \n 65 66 0",
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     "-0 0 0 0", "+2 +1 +3 65 66 0 +3 65 66 0",
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     "4294967295 4294967295 0 0",
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     "99999999999999999999999999 1 0 0",
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     "1 99999999999999999999999999 0 0",
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     "0 1 99999999999999999999999999 0",
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     "0 1 -1 0",
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     "1 0 -0 0",
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     "2147483648 0 0 0", "4294967296 0 0 0", "-2147483649 0 0 0",
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     "0 1 2 300 400 3 44 45 0",
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     "0 1 2 65 66\t\r\n3 65 66 0",
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m ]
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m # --- structured, well-formed (NUL-terminated) cases across all operations ---
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m strings = ["", "A", "OK", "VALID", "START", "STOP", "PAUSE", "RESUME", "RESET",
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m            "ADMIN", "START ", "START X", "STARTX", "NONE", "EMPTY", "abc",
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m            "ABC", "aBc", "abc:def", "abc|def", "pre", "pre_v1", "pre_v2",
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m            "pre_old", "pre_new", "pre_tmp", "prefix", "*abc*", "abc*", "*abc",
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m            "hello world", "a:b:c", "x" * 62, "y" * 63, "z" * 64,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m            "w" * 70 + "_v1", "AB", "ab", "Ab", ":", "|"]
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m for op in range(-1, 6):
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     for flags in (0, 1, 2, 3, 5, 0xFFFFFFFF):
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         for a in strings:
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             for b in strings:
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m                 cases.append(enc(op, flags, s2b(a), s2b(b)))
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m # non-NUL-terminated payloads (garbage-dependent in C; recorded separately)
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m raw_cases = []
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m for op in range(0, 5):
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     for flags in (0, 1, 2, 3):
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         for a in strings[:20]:
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             for b in strings[:20]:
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m                 raw_cases.append(enc(op, flags, s2b(a, False), s2b(b, False)))
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m # random fuzz
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m rng = random.Random(1234)
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m for _ in range(4000):
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     op = rng.choice([0, 1, 2, 3, 4, rng.randint(-5, 9)])
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     flags = rng.choice([0, 1, 2, 3, rng.randint(0, 255)])
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     na = rng.randint(0, 12)
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     nb = rng.randint(0, 12)
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     a = [rng.choice([0, 32, 42, 58, 65, 66, 67, 95, 124, rng.randint(0, 255)]) for _ in range(na)]
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     b = [rng.choice([0, 32, 42, 58, 65, 66, 67, 95, 124, rng.randint(0, 255)]) for _ in range(nb)]
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     if a and 0 not in a:
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         a[-1] = 0
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     if b and 0 not in b:
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         b[-1] = 0
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     cases.append(enc(op, flags, a, b, sep=rng.choice([" ", "\n", "\t", "  "])))
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m # big buffers
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m cases.append(enc(2, 0, s2b("Q" * 1000), s2b("Q" * 500)))
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m cases.append(enc(2, 1, s2b("Q" * 1000), s2b("Q" * 500)))
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m cases.append(enc(4, 2, s2b("Q" * 1000), s2b("Q" * 500)))
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m cases.append(enc(4, 0, s2b("Q" * 1000), s2b("Q" * 500)))
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m cases.append(enc(3, 0, s2b("Q" * 1023), s2b(":", False)))
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m cases.append(enc(1, 0, [83, 84, 65, 82, 84] + [88] * 1019, []))
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m def check(pool, label):
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     bad = 0
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     total = 0
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     for data in pool:
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         total += 1
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         try:
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             rc_c, out_c, err_c = run(C, data)
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         except subprocess.TimeoutExpired:
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             rc_c, out_c, err_c = ("TIMEOUT", b"", b"")
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         try:
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             rc_r, out_r, err_r = run(R, data)
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         except subprocess.TimeoutExpired:
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             rc_r, out_r, err_r = ("TIMEOUT", b"", b"")
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         if (rc_c, out_c, err_c) != (rc_r, out_r, err_r):
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             bad += 1
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             if bad <= 15:
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                 print(f"[{label}] MISMATCH input={data[:140]!r}")
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 print(f"   C: rc={rc_c} out={out_c!r} err={err_c!r}")
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                 print(f"   R: rc={rc_r} out={out_r!r} err={err_r!r}")
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     print(f"[{label}] {total - bad}/{total} identical")
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     return bad
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m b1 = check(cases, "wellformed+errors")
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m b2 = check(raw_cases, "non-nul-terminated")
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m sys.exit(1 if b1 else 0)
+[0m[K
+Creating: [38;5;141m/tmp/difftest.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mulimit -c 0; python3 /tmp/difftest.py 2>&1 | tail -80[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests
+
+Traceback (most recent call last):
+  File "/tmp/difftest.py", line 3, in <module>
+    import random
+  File "/local/home/scheschb/.local/share/mise/installs/python/3.12.14/lib/python3.12/random.py", line 62, in <module>
+    from bisect import bisect as _bisect
+  File "/tmp/bisect.py", line 30, in <module>
+    open('src/lib.rs','w').write(s)
+    ^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'src/lib.rs'
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/dt && mv /tmp/difftest.py /tmp/dt/difftest.py && ulimit -c 0 && cd /tmp/dt && python3 difftest.py 2>&1 | tail -80[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests from clean dir
+
+[wellformed+errors] MISMATCH input=''
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading operation\n'
+[wellformed+errors] MISMATCH input='x'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid input\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading operation\n'
+[wellformed+errors] MISMATCH input='abc'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid input\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading operation\n'
+[wellformed+errors] MISMATCH input='0'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading flags\n'
+[wellformed+errors] MISMATCH input='0 '
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading flags\n'
+[wellformed+errors] MISMATCH input='0 x'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading flags\n'
+[wellformed+errors] MISMATCH input='0 1'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading input length\n'
+[wellformed+errors] MISMATCH input='0 1 x'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading input length\n'
+[wellformed+errors] MISMATCH input='0 1 5'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading input byte 0\n'
+[wellformed+errors] MISMATCH input='0 1 1025 1'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error: input length 1025 exceeds maximum 1024\n'
+[wellformed+errors] MISMATCH input='0 1 1024'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading input byte 0\n'
+[wellformed+errors] MISMATCH input='-1 0 0 0'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=0 out=b'-3\n' err=b''
+[wellformed+errors] MISMATCH input='5 0 0 0'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Enter pattern to search: \n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=0 out=b'-3\n' err=b''
+[wellformed+errors] MISMATCH input='99 0 0 0'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=0 out=b'-3\n' err=b''
+[wellformed+errors] MISMATCH input='0 1 3 65 66'
+   C: rc=0 out=b'Text Analysis and Tokenization System\nThis system demonstrates function pointers and static globals\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: Invalid choice\n\n=== Text Analyzer ===\n1. Analyze text\n2. Load text from file\n3. Show token distribution\n4. Calculate complexity score\n5. Find pattern\n6. Interactive tokenizer\n7. Exit\nChoice: ' err=b''
+   R: rc=1 out=b'' err=b'Error reading input byte 2\n'
+Traceback (most recent call last):
+  File "/tmp/dt/difftest.py", line 122, in <module>
+    b1 = check(cases, "wellformed+errors")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/dt/difftest.py", line 105, in check
+    rc_c, out_c, err_c = run(C, data)
+                         ^^^^^^^^^^^^
+  File "/tmp/dt/difftest.py", line 12, in run
+    p = subprocess.run(binary, input=data.encode(), capture_output=True, timeout=20)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/local/home/scheschb/.local/share/mise/installs/python/3.12.14/lib/python3.12/subprocess.py", line 548, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/local/home/scheschb/.local/share/mise/installs/python/3.12.14/lib/python3.12/subprocess.py", line 1026, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/local/home/scheschb/.local/share/mise/installs/python/3.12.14/lib/python3.12/subprocess.py", line 1955, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/cref/driver'
+[38;5;244m - Completed in 150.503s[0m
+
+[?25l[0m[38;5;141m> [0m/tmp is shared and my reference binary got clobbered by another job. Rebuilding into a private, uniquely-named directory.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+D=$(mktemp -d /tmp/xlate-8wOWYA-XXXXXX)
+echo "DIR=$D"
+gcc -O0 -o "$D/cdriver" c_src/src/main.c c_src/src/lib.c
+cp translation/target/release/driver "$D/rdriver"
+sed -e "s#^C = .*#C = \"$D/cdriver\"#" -e "s#^R = .*#R = \"$D/rdriver\"#" /tmp/dt/difftest.py > "$D/difftest.py"
+grep -n '^C = \|^R = ' "$D/difftest.py"
+echo "$D" > /tmp/xlate-8wOWYA-dir.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild reference and test harness in a private directory
+
+DIR=/tmp/xlate-8wOWYA-WnayUL
+7:C = "/tmp/xlate-8wOWYA-WnayUL/cdriver"
+8:R = "/tmp/xlate-8wOWYA-WnayUL/rdriver"
+[38;5;244m - Completed in 0.79s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mulimit -c 0; cd /tmp/xlate-8wOWYA-WnayUL && python3 difftest.py 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests against private reference build
+
+   R: rc=-11 out=b'' err=b''
+[wellformed+errors] MISMATCH input='4 2 2 58 0 3 97 98 0'
+   C: rc=0 out=b'10820\n' err=b''
+   R: rc=-11 out=b'' err=b''
+[wellformed+errors] MISMATCH input='4 2 2 124 0 3 65 66 0'
+   C: rc=0 out=b'4349\n' err=b''
+   R: rc=-11 out=b'' err=b''
+[wellformed+errors] MISMATCH input='4 2 2 124 0 3 97 98 0'
+   C: rc=0 out=b'4724\n' err=b''
+   R: rc=-11 out=b'' err=b''
+[wellformed+errors] MISMATCH input='4 3 1 0 2 65 0'
+   C: rc=0 out=b'178\n' err=b''
+   R: rc=-11 out=b'' err=b''
+[wellformed+errors] 74458/74641 identical
+[non-nul-terminated] MISMATCH input='0 0 0 0'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 1 65 1 65'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 0'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 1 65'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 2 79 75'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 5 86 65 76 73 68'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 5 83 84 65 82 84'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 4 83 84 79 80'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 5 80 65 85 83 69'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 6 82 69 83 85 77 69'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 5 82 69 83 69 84'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 5 65 68 77 73 78'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 6 83 84 65 82 84 32'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 7 83 84 65 82 84 32 88'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] MISMATCH input='0 0 2 79 75 6 83 84 65 82 84 88'
+   C: rc=0 out=b'0\n' err=b''
+   R: rc=0 out=b'1\n' err=b''
+[non-nul-terminated] 6945/8000 identical
+[38;5;244m - Completed in 1297.807s[0m
+
+[?25l[0m[38;5;141m> [0mMost remaining mismatches are on the known out-of-bounds path. Let me classify them precisely.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate-8wOWYA-WnayUL && python3 - <<'PY' > report.txt 2>&1
+import importlib.util, sys, subprocess
+spec = importlib.util.spec_from_file_location("dt", "difftest.py")
+# instead of importing (it runs), re-create case list by exec with check disabled
+src = open("difftest.py").read()
+src = src.split("def check(")[0]
+g = {}
+exec(src, g)
+cases = g["cases"]; raw = g["raw_cases"]; run = g["run"]; C = g["C"]; R = g["R"]
+
+def classify(data):
+    t = data.split()
+    try:
+        op = int(t[0]); flags = int(t[1]); il = int(t[2])
+        inp = [int(x) for x in t[3:3+il]]
+        rl = int(t[3+il]); ref=[int(x) for x in t[4+il:4+il+rl]]
+    except Exception:
+        return "unparsable"
+    if op != 4 or not (flags & 2):
+        return "other"
+    def slen(b):
+        for i,v in enumerate(b):
+            if v%256==0: return i
+        return None
+    tl = slen(inp); pl = slen(ref)
+    if tl is None or pl is None: return "nonterm"
+    return "underflow" if pl > tl else "other"
+
+buckets={}
+for data in cases:
+    rc,o,e = run(C,data)
+    rc2,o2,e2 = run(R,data)
+    if (rc,o,e)!=(rc2,o2,e2):
+        k=classify(data)
+        buckets.setdefault(k,[]).append((data,rc,o,e,rc2,o2,e2))
+for k,v in buckets.items():
+    print("BUCKET",k,len(v))
+for k,v in buckets.items():
+    if k!="underflow":
+        for row in v[:20]: print(k, row)
+PY
+tail -40 report.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Classify mismatches by cause
+
+other ('-0 0 0 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('4294967296 0 0 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0 1 2 65 66\t\r\n3 65 66 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2 0 2 66 0 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('4\t0\t0\t0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2\t64\t4\t124\t66\t65\t0\t0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0\n0\n0\n5\n0\n58\n66\n67\n58', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2 179 3 0 95 98 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0\n3\n4\n0\n42\n147\n67\n0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2  0  0  0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2\t0\t1\t0\t0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0\n3\n3\n0\n32\n95\n0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2  0  11  66  66  67  58  14  0  66  42  42  66  42  0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2 0 0 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2 1 2 0 159 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('4\n1\n5\n0\n42\n42\n0\n32\n0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0  1  0  0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0\n3\n10\n0\n32\n0\n65\n131\n65\n124\n42\n0\n42\n0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('2 216 9 32 65 0 58 32 67 42 95 65 0', 0, b'0\n', b'', 0, b'1\n', b'')
+other ('0\n2\n7\n0\n58\n66\n67\n201\n0\n42\n0', 0, b'0\n', b'', 0, b'1\n', b'')
+nonterm ('4 2 11 42 32 58 42 231 42 18 95 0 42 67 0', 0, b'0\n', b'', 0, b'10\n', b'')
+nonterm ('4\n2\n0\n3\n5\n42\n0', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4  2  0  7  124  67  124  0  66  95  58', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4 2 12 124 66 0 67 67 124 42 65 67 124 58 67 0', -11, b'', b'', 0, b'10\n', b'')
+nonterm ('4\n2\n9\n95\n32\n66\n65\n122\n95\n32\n66\n0\n0', 0, b'0\n', b'', 0, b'10\n', b'')
+nonterm ('4\t3\t12\t124\t251\t124\t32\t58\t42\t32\t58\t124\t66\t42\t0\t0', 0, b'0\n', b'', 0, b'10\n', b'')
+nonterm ('4  2  0  2  249  0', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4  3  1  0  0', -11, b'', b'', 0, b'1\n', b'')
+nonterm ('4 3 0 4 66 0 65 67', 0, b'12\n', b'', -11, b'', b'')
+nonterm ('4\n3\n12\n65\n0\n42\n32\n58\n118\n124\n95\n66\n66\n95\n95\n0', -11, b'', b'', 0, b'10\n', b'')
+nonterm ('4  3  8  124  124  124  65  95  124  65  0  0', 0, b'0\n', b'', 0, b'10\n', b'')
+nonterm ('4 3 0 11 124 58 66 120 0 58 124 65 200 58 67', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4\n3\n0\n6\n67\n208\n67\n67\n58\n0', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4 59 0 9 32 0 51 67 32 0 102 66 124', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4\n3\n0\n0', 0, b'0\n', b'', 0, b'1\n', b'')
+nonterm ('4\n3\n0\n9\n95\n66\n32\n95\n65\n42\n0\n42\n156', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4\t3\t12\t0\t95\t42\t32\t0\t124\t180\t42\t65\t0\t67\t95\t0', -11, b'', b'', 0, b'1\n', b'')
+nonterm ('4\t3\t0\t2\t66\t0', 0, b'0\n', b'', -11, b'', b'')
+nonterm ('4\n3\n9\n66\n42\n65\n0\n96\n95\n23\n95\n0\n0', -11, b'', b'', 0, b'10\n', b'')
+nonterm ('4\n2\n0\n12\n67\n0\n124\n67\n42\n32\n32\n58\n124\n0\n67\n66', 0, b'0\n', b'', -11, b'', b'')
+[38;5;244m - Completed in 2475.626s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate-8wOWYA-WnayUL && grep '^BUCKET' report.txt && echo "--- 'other' bucket count and sample" && grep -c "^other " report.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Show mismatch bucket totals
+
+BUCKET other 88
+BUCKET underflow 41
+BUCKET nonterm 51
+--- 'other' bucket count and sample
+20
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate-8wOWYA-WnayUL && python3 - <<'PY' > report2.txt 2>&1
+src = open("difftest.py").read().split("def check(")[0]
+g={}; exec(src,g)
+cases=g["cases"]+g["raw_cases"]; run=g["run"]; C=g["C"]; R=g["R"]
+
+def parse(data):
+    t=data.split()
+    try:
+        op=int(t[0]); flags=int(t[1]); il=int(t[2])
+        if il>1024 or 3+il>len(t): return None
+        inp=[int(x)%256 for x in t[3:3+il]]
+        rl=int(t[3+il])
+        if rl>1024 or 4+il+rl>len(t): return None
+        ref=[int(x)%256 for x in t[4+il:4+il+rl]]
+        return op,flags,inp,ref
+    except Exception: return None
+
+def touches_uninit(p):
+    """True if the C program would read uninitialised stack bytes."""
+    op,flags,inp,ref=p
+    inp_term = 0 in inp
+    ref_term = 0 in ref
+    if op==0:  return not (inp_term and ref_term)
+    if op==1:  return not inp_term
+    if op==2:  return not (inp_term and ref_term)
+    if op==3:
+        if len(ref)==0: return True          # reference[0] is garbage
+        return not inp_term and (ref[0] not in inp)
+    if op==4:  return not (inp_term and ref_term)
+    return False
+
+def underflow(p):
+    op,flags,inp,ref=p
+    if op!=4 or not (flags & 2): return False
+    if 0 not in inp or 0 not in ref: return False
+    return ref.index(0) > inp.index(0)
+
+real=[]; uninit=0; und=0
+for data in cases:
+    rc,o,e=run(C,data); rc2,o2,e2=run(R,data)
+    if (rc,o,e)==(rc2,o2,e2): continue
+    p=parse(data)
+    if p is None: real.append(("PARSE?",data,rc,o,e,rc2,o2,e2)); continue
+    if touches_uninit(p): uninit+=1; continue
+    if underflow(p): und+=1; continue
+    real.append(("REAL",data,rc,o,e,rc2,o2,e2))
+print("total cases:",len(cases))
+print("uninit-dependent mismatches:",uninit)
+print("oob-scan(underflow) mismatches:",und)
+print("REAL mismatches:",len(real))
+for r in real[:40]: print(r)
+PY
+cat report2.txt | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Reclassify all mismatches, isolating genuine translation bugs
+
+total cases: 82641
+uninit-dependent mismatches: 1189
+oob-scan(underflow) mismatches: 41
+REAL mismatches: 1
+('REAL', '4294967296 0 0 0', 0, b'0\n', b'', 0, b'1\n', b'')
+[38;5;244m - Completed in 3299.767s[0m
+
+[?25l[0m[38;5;141m> [0mOnly one flagged "REAL" and it's actually an uninitialized-memory case (op truncates to 0, both buffers empty). Let me quantify the OOB-scan path to pick the best-matching behavior.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate-8wOWYA-WnayUL && python3 - <<'PY'
+src = open("difftest.py").read().split("def check(")[0]
+g={}; exec(src,g)
+run=g["run"]; C=g["C"]; R=g["R"]; enc=g["enc"]; s2b=g["s2b"]
+seg=0; num=0; ex={}
+rows=[]
+for tl in range(0,9):
+    for pl in range(tl+1, tl+9):
+        if pl==0: continue
+        data=enc(4,2,s2b("A"*tl),s2b("B"*pl))
+        rc,o,e=run(C,data)
+        rows.append((tl,pl,rc,o))
+        if rc==-11: seg+=1
+        else: num+=1
+print("C segfault:",seg," C returned value:",num)
+for r in rows:
+    if r[2]!=-11: print("NON-SEGV",r)
+PY[0m[38;5;244m (using tool: shell)[0m
+Purpose: Measure how often C segfaults on the OOB scan path
+
+C segfault: 71  C returned value: 1
+NON-SEGV (0, 1, 0, b'595\n')
+[38;5;244m - Completed in 48.100s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/xlate-8wOWYA-WnayUL && python3 - <<'PY'
+src = open("difftest.py").read().split("def check(")[0]
+g={}; exec(src,g)
+cases=g["cases"]+g["raw_cases"]; run=g["run"]; C=g["C"]; R=g["R"]
+def parse(data):
+    t=data.split()
+    try:
+        op=int(t[0]); flags=int(t[1]); il=int(t[2])
+        if il>1024 or 3+il>len(t): return None
+        inp=[int(x)%256 for x in t[3:3+il]]
+        rl=int(t[3+il])
+        if rl>1024 or 4+il+rl>len(t): return None
+        return op,flags,inp,[int(x)%256 for x in t[4+il:4+il+rl]]
+    except Exception: return None
+tot=0; agree=0
+for data in cases:
+    p=parse(data)
+    if not p: continue
+    op,flags,inp,ref=p
+    if op!=4 or not(flags&2): continue
+    if 0 not in inp or 0 not in ref: continue
+    if ref.index(0) <= inp.index(0): continue
+    tot+=1
+    if run(C,data)==run(R,data): agree+=1
+print(f"well-formed OOB-scan cases: {agree}/{tot} identical")
+PY[0m[38;5;244m (using tool: shell)[0m
+Purpose: Agreement rate on the OOB-scan path
+
+[1G[0m[0m[?25h

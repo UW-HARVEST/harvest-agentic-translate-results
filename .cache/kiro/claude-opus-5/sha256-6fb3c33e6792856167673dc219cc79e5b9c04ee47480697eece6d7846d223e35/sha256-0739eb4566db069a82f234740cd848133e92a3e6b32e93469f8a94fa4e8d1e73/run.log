@@ -1,0 +1,731 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in working directory
+
+./c_src/CMakeLists.txt
+./c_src/src/main.c
+./.claude/settings.json
+---
+     25 c_src/CMakeLists.txt
+      0 c_src/src
+     25 total
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/src/main.c; echo "---"; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check main.c size and CMakeLists
+
+50 c_src/src/main.c
+---
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_executable(driver src/main.c)[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/c_src/src/main.c[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1920 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-RpLDvF/c_src/src/main.c
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, single-file program. Let me build the reference binary and probe its actual behavior across all inputs.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/ref && gcc -O0 -o /tmp/ref/driver c_src/src/main.c 2>&1 | tail -5; echo "exit=$?"; ls -l /tmp/ref/driver; gcc --version | head -1; ldd --version | head -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile reference C binary outside c_src
+
+exit=0
+-rwxr-xr-x. 1 scheschb amazon 16992 Sep  1 09:56 /tmp/ref/driver
+gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+ldd (GNU libc) 2.34
+[38;5;244m - Completed in 0.54s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ref && for i in $(seq 0 255); do printf "%d " $i; printf "\\x$(printf %02x $i)" | ./driver | tr '\n' '|' | od -c -A n | tr -s ' ' | tr -d '\n'; echo; done > probe.txt; echo "EOF:"; printf "" | ./driver | od -c; echo "=== first 40 ==="; head -40 probe.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe reference binary for all byte values
+
+EOF:
+0000000   a   l   p   h   a   n   u   m   e   r   i   c   :       0  \n
+0000020   a   l   p   h   a   b   e   t   i   c   :       0  \n   l   o
+0000040   w   e   r   c   a   s   e   :       0  \n   u   p   p   e   r
+0000060   c   a   s   e   :       0  \n   d   i   g   i   t   :       0
+0000100  \n   h   e   x   a   d   e   c   i   m   a   l   :       0  \n
+0000120   c   o   n   t   r   o   l   :       0  \n   g   r   a   p   h
+0000140   i   c   a   l   :       0  \n   s   p   a   c   e   :       0
+0000160  \n   b   l   a   n   k   :       0  \n   p   r   i   n   t   i
+0000200   n   g   :       0  \n   p   u   n   c   t   u   a   t   i   o
+0000220   n   :       0  \n   t   o       l   o   w   e   r   :     377
+0000240  \n   t   o       u   p   p   e   r   :     377  \n
+0000255
+=== first 40 ===
+0  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \0 | t o u p p e r : \0 |
+1  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 001 | t o u p p e r : 001 |
+2  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 002 | t o u p p e r : 002 |
+3  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 003 | t o u p p e r : 003 |
+4  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 004 | t o u p p e r : 004 |
+5  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 005 | t o u p p e r : 005 |
+6  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 006 | t o u p p e r : 006 |
+7  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \a | t o u p p e r : \a |
+8  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \b | t o u p p e r : \b |
+9  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 8 1 9 2 | b l a n k : 1 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \t | t o u p p e r : \t |
+10  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 8 1 9 2 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : | | t o u p p e r : | |
+11  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 8 1 9 2 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \v | t o u p p e r : \v |
+12  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 8 1 9 2 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \f | t o u p p e r : \f |
+13  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 8 1 9 2 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : \r | t o u p p e r : \r |
+14  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 016 | t o u p p e r : 016 |
+15  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 017 | t o u p p e r : 017 |
+16  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 020 | t o u p p e r : 020 |
+17  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 021 | t o u p p e r : 021 |
+18  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 022 | t o u p p e r : 022 |
+19  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 023 | t o u p p e r : 023 |
+20  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 024 | t o u p p e r : 024 |
+21  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 025 | t o u p p e r : 025 |
+22  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 026 | t o u p p e r : 026 |
+23  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 027 | t o u p p e r : 027 |
+24  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 030 | t o u p p e r : 030 |
+25  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 031 | t o u p p e r : 031 |
+26  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 032 | t o u p p e r : 032 |
+27  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 033 | t o u p p e r : 033 |
+28  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 034 | t o u p p e r : 034 |
+29  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 035 | t o u p p e r : 035 |
+30  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 036 | t o u p p e r : 036 |
+31  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 2 | g r a p h i c a l : 0 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 0 | p u n c t u a t i o n : 0 | t o l o w e r : 037 | t o u p p e r : 037 |
+32  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 0 | s p a c e : 8 1 9 2 | b l a n k : 1 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 0 | t o l o w e r : | t o u p p e r : |
+33  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : ! | t o u p p e r : ! |
+34  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : " | t o u p p e r : " |
+35  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : # | t o u p p e r : # |
+36  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : $ | t o u p p e r : $ |
+37  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : % | t o u p p e r : % |
+38  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : & | t o u p p e r : & |
+39  a l p h a n u m e r i c : 0 | a l p h a b e t i c : 0 | l o w e r c a s e : 0 | u p p e r c a s e : 0 | d i g i t : 0 | h e x a d e c i m a l : 0 | c o n t r o l : 0 | g r a p h i c a l : 3 2 7 6 8 | s p a c e : 0 | b l a n k : 0 | p r i n t i n g : 1 6 3 8 4 | p u n c t u a t i o n : 4 | t o  l o w e r : ' | t o u p p e r : ' |
+[38;5;244m - Completed in 0.623s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed glibc's macro-based ctype returns raw bitmasks. Now let me extract the exact table, including the negative-index region (bytes ≥128 become negative [38;5;10mchar[0m).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ref && for i in $(seq 0 255); do out=$(printf "\\x$(printf %02x $i)" | ./driver); nums=$(echo "$out" | head -12 | sed 's/.*: //' | tr '\n' ',');
+lo=$(echo "$out" | sed -n '13p' | sed 's/^to lower: //' | od -An -tu1 | tr -s ' ' | sed 's/^ //;s/ 10$//');
+up=$(echo "$out" | sed -n '14p' | sed 's/^to upper: //' | od -An -tu1 | tr -s ' ' | sed 's/^ //;s/ 10$//');
+echo "$i|$nums|lo=$lo|up=$up"; done > table.txt
+echo "== bytes 128-255 distinct classification patterns =="; awk -F'|' '$1>=128' table.txt | cut -d'|' -f2 | sort -u
+echo "== bytes 128-255 tolower/upper =="; awk -F'|' '$1>=128 {print $1, $3, $4}' table.txt | head -8
+awk -F'|' '$1>=128 {print $1, $3, $4}' table.txt | tail -4[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build exact classification table from reference binary
+
+bash: line 1: warning: command substitution: ignored null byte in input
+== bytes 128-255 distinct classification patterns ==
+0,0,0,0,0,0,0,0,0,0,0,0,
+== bytes 128-255 tolower/upper ==
+128 lo=128 up=128
+129 lo=129 up=129
+130 lo=130 up=130
+131 lo=131 up=131
+132 lo=132 up=132
+133 lo=133 up=133
+134 lo=134 up=134
+135 lo=135 up=135
+252 lo=252 up=252
+253 lo=253 up=253
+254 lo=254 up=254
+255 lo=255 up=255
+[38;5;244m - Completed in 2.593s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ref && awk -F'|' '$1<128' table.txt | awk -F'|' '{print $1"|"$2}' | sed -n '1,128p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Dump classification values for bytes 0-127
+
+0|0,0,0,0,0,0,2,0,0,0,0,0,
+1|0,0,0,0,0,0,2,0,0,0,0,0,
+2|0,0,0,0,0,0,2,0,0,0,0,0,
+3|0,0,0,0,0,0,2,0,0,0,0,0,
+4|0,0,0,0,0,0,2,0,0,0,0,0,
+5|0,0,0,0,0,0,2,0,0,0,0,0,
+6|0,0,0,0,0,0,2,0,0,0,0,0,
+7|0,0,0,0,0,0,2,0,0,0,0,0,
+8|0,0,0,0,0,0,2,0,0,0,0,0,
+9|0,0,0,0,0,0,2,0,8192,1,0,0,
+10|0,0,0,0,0,0,2,0,8192,0,0,0,
+11|0,0,0,0,0,0,2,0,8192,0,0,0,
+12|0,0,0,0,0,0,2,0,8192,0,0,0,
+13|0,0,0,0,0,0,2,0,8192,0,0,0,
+14|0,0,0,0,0,0,2,0,0,0,0,0,
+15|0,0,0,0,0,0,2,0,0,0,0,0,
+16|0,0,0,0,0,0,2,0,0,0,0,0,
+17|0,0,0,0,0,0,2,0,0,0,0,0,
+18|0,0,0,0,0,0,2,0,0,0,0,0,
+19|0,0,0,0,0,0,2,0,0,0,0,0,
+20|0,0,0,0,0,0,2,0,0,0,0,0,
+21|0,0,0,0,0,0,2,0,0,0,0,0,
+22|0,0,0,0,0,0,2,0,0,0,0,0,
+23|0,0,0,0,0,0,2,0,0,0,0,0,
+24|0,0,0,0,0,0,2,0,0,0,0,0,
+25|0,0,0,0,0,0,2,0,0,0,0,0,
+26|0,0,0,0,0,0,2,0,0,0,0,0,
+27|0,0,0,0,0,0,2,0,0,0,0,0,
+28|0,0,0,0,0,0,2,0,0,0,0,0,
+29|0,0,0,0,0,0,2,0,0,0,0,0,
+30|0,0,0,0,0,0,2,0,0,0,0,0,
+31|0,0,0,0,0,0,2,0,0,0,0,0,
+32|0,0,0,0,0,0,0,0,8192,1,16384,0,
+33|0,0,0,0,0,0,0,32768,0,0,16384,4,
+34|0,0,0,0,0,0,0,32768,0,0,16384,4,
+35|0,0,0,0,0,0,0,32768,0,0,16384,4,
+36|0,0,0,0,0,0,0,32768,0,0,16384,4,
+37|0,0,0,0,0,0,0,32768,0,0,16384,4,
+38|0,0,0,0,0,0,0,32768,0,0,16384,4,
+39|0,0,0,0,0,0,0,32768,0,0,16384,4,
+40|0,0,0,0,0,0,0,32768,0,0,16384,4,
+41|0,0,0,0,0,0,0,32768,0,0,16384,4,
+42|0,0,0,0,0,0,0,32768,0,0,16384,4,
+43|0,0,0,0,0,0,0,32768,0,0,16384,4,
+44|0,0,0,0,0,0,0,32768,0,0,16384,4,
+45|0,0,0,0,0,0,0,32768,0,0,16384,4,
+46|0,0,0,0,0,0,0,32768,0,0,16384,4,
+47|0,0,0,0,0,0,0,32768,0,0,16384,4,
+48|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+49|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+50|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+51|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+52|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+53|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+54|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+55|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+56|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+57|8,0,0,0,2048,4096,0,32768,0,0,16384,0,
+58|0,0,0,0,0,0,0,32768,0,0,16384,4,
+59|0,0,0,0,0,0,0,32768,0,0,16384,4,
+60|0,0,0,0,0,0,0,32768,0,0,16384,4,
+61|0,0,0,0,0,0,0,32768,0,0,16384,4,
+62|0,0,0,0,0,0,0,32768,0,0,16384,4,
+63|0,0,0,0,0,0,0,32768,0,0,16384,4,
+64|0,0,0,0,0,0,0,32768,0,0,16384,4,
+65|8,1024,0,256,0,4096,0,32768,0,0,16384,0,
+66|8,1024,0,256,0,4096,0,32768,0,0,16384,0,
+67|8,1024,0,256,0,4096,0,32768,0,0,16384,0,
+68|8,1024,0,256,0,4096,0,32768,0,0,16384,0,
+69|8,1024,0,256,0,4096,0,32768,0,0,16384,0,
+70|8,1024,0,256,0,4096,0,32768,0,0,16384,0,
+71|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+72|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+73|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+74|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+75|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+76|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+77|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+78|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+79|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+80|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+81|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+82|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+83|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+84|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+85|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+86|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+87|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+88|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+89|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+90|8,1024,0,256,0,0,0,32768,0,0,16384,0,
+91|0,0,0,0,0,0,0,32768,0,0,16384,4,
+92|0,0,0,0,0,0,0,32768,0,0,16384,4,
+93|0,0,0,0,0,0,0,32768,0,0,16384,4,
+94|0,0,0,0,0,0,0,32768,0,0,16384,4,
+95|0,0,0,0,0,0,0,32768,0,0,16384,4,
+96|0,0,0,0,0,0,0,32768,0,0,16384,4,
+97|8,1024,512,0,0,4096,0,32768,0,0,16384,0,
+98|8,1024,512,0,0,4096,0,32768,0,0,16384,0,
+99|8,1024,512,0,0,4096,0,32768,0,0,16384,0,
+100|8,1024,512,0,0,4096,0,32768,0,0,16384,0,
+101|8,1024,512,0,0,4096,0,32768,0,0,16384,0,
+102|8,1024,512,0,0,4096,0,32768,0,0,16384,0,
+103|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+104|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+105|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+106|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+107|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+108|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+109|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+110|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+111|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+112|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+113|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+114|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+115|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+116|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+117|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+118|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+119|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+120|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+121|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+122|8,1024,512,0,0,0,0,32768,0,0,16384,0,
+123|0,0,0,0,0,0,0,32768,0,0,16384,4,
+124|0,0,0,0,0,0,0,32768,0,0,16384,4,
+125|0,0,0,0,0,0,0,32768,0,0,16384,4,
+126|0,0,0,0,0,0,0,32768,0,0,16384,4,
+127|0,0,0,0,0,0,2,0,0,0,0,0,
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mTable matches the standard C-locale ctype bitmask exactly (negative/high indices are all-zero with identity case mapping). Writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translated executable
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/src/ctype.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Implement glibc C-locale ctype tables with raw-bitmask return values
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Faithful re-implementation of the glibc `<ctype.h>` lookup tables for the
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `"C"` locale, as used by the original C program.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Two details of the C original are load-bearing and are reproduced here:
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! 1. glibc implements `isalnum()` and friends as macros that mask a table
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!    entry (`(*__ctype_b_loc ())[c] & _ISalnum`) and hand the *raw masked
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!    bits* back to the caller. So `printf("%d", isalpha('a'))` prints `1024`,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //!    not `1`. The mask constants below are exactly glibc's `_ISbit` values.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! 2. The tables are addressed from `-128` through `255`, because a plain
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!    `char` is signed on this platform. In the `"C"` locale every entry in
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //!    the `-128..=-1` and `128..=255` regions is zero, and the case-conversion
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //!    tables are the identity there. Passing a negative `char` therefore
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!    classifies as "nothing at all" rather than trapping.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// `_ISbit(0)` — uppercase.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m pub const IS_UPPER: u16 = 0x0100;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// `_ISbit(1)` — lowercase.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m pub const IS_LOWER: u16 = 0x0200;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// `_ISbit(2)` — alphabetic.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m pub const IS_ALPHA: u16 = 0x0400;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// `_ISbit(3)` — decimal digit.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m pub const IS_DIGIT: u16 = 0x0800;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// `_ISbit(4)` — hexadecimal digit.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m pub const IS_XDIGIT: u16 = 0x1000;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// `_ISbit(5)` — whitespace.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m pub const IS_SPACE: u16 = 0x2000;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// `_ISbit(6)` — printing.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m pub const IS_PRINT: u16 = 0x4000;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// `_ISbit(7)` — graphical.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m pub const IS_GRAPH: u16 = 0x8000;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// `_ISbit(8)` — blank.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m pub const IS_BLANK: u16 = 0x0001;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// `_ISbit(9)` — control.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m pub const IS_CNTRL: u16 = 0x0002;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// `_ISbit(10)` — punctuation.
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m pub const IS_PUNCT: u16 = 0x0004;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// `_ISbit(11)` — alphanumeric.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m pub const IS_ALNUM: u16 = 0x0008;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// The tables are indexed from `-128`, so this is added to the character value.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m const TABLE_BIAS: i32 = 128;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// `-128 ..= 255`, the index range glibc's ctype tables cover.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m const TABLE_LEN: usize = 384;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// Classification bits for one ASCII code point in the `"C"` locale.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m const fn class_of(c: u8) -> u16 {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let upper = c >= b'A' && c <= b'Z';
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let lower = c >= b'a' && c <= b'z';
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let digit = c >= b'0' && c <= b'9';
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let xdigit = digit || (c >= b'A' && c <= b'F') || (c >= b'a' && c <= b'f');
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let space = c == b' ' || (c >= 0x09 && c <= 0x0d);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let blank = c == b' ' || c == b'\t';
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     let print = c >= 0x20 && c <= 0x7e;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let graph = c >= 0x21 && c <= 0x7e;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     let cntrl = c <= 0x1f || c == 0x7f;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     let alpha = upper || lower;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     let alnum = alpha || digit;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let punct = graph && !alnum;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let mut m = 0u16;
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     if upper {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         m |= IS_UPPER;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     if lower {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         m |= IS_LOWER;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     if alpha {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         m |= IS_ALPHA;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     if digit {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         m |= IS_DIGIT;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     if xdigit {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         m |= IS_XDIGIT;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     if space {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         m |= IS_SPACE;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     if print {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         m |= IS_PRINT;
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     if graph {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         m |= IS_GRAPH;
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     if blank {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         m |= IS_BLANK;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     if cntrl {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         m |= IS_CNTRL;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     if punct {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         m |= IS_PUNCT;
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     if alnum {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         m |= IS_ALNUM;
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     m
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// glibc's `__ctype_b` table for the `"C"` locale, biased by [`TABLE_BIAS`].
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m const fn build_class_table() -> [u16; TABLE_LEN] {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     // Everything outside 0..=127 stays zero, exactly as in the "C" locale.
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let mut t = [0u16; TABLE_LEN];
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     while i < 128 {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         t[TABLE_BIAS as usize + i] = class_of(i as u8);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     t
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m /// glibc's `__ctype_tolower` / `__ctype_toupper` tables, biased by
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// [`TABLE_BIAS`]. `to_upper` selects which of the two to build.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m const fn build_case_table(to_upper: bool) -> [i32; TABLE_LEN] {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let mut t = [0i32; TABLE_LEN];
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     while i < TABLE_LEN {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         // Recover the signed character value this slot stands for.
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         let c = i as i32 - TABLE_BIAS;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         // Identity outside the ASCII letters, including the negative range.
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         t[i] = if to_upper {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             if c >= b'a' as i32 && c <= b'z' as i32 {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                 c - 32
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m                 c
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         } else if c >= b'A' as i32 && c <= b'Z' as i32 {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             c + 32
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             c
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     t
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m static CTYPE_B: [u16; TABLE_LEN] = build_class_table();
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m static CTYPE_TOLOWER: [i32; TABLE_LEN] = build_case_table(false);
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m static CTYPE_TOUPPER: [i32; TABLE_LEN] = build_case_table(true);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m /// `(*__ctype_b_loc ())[c] & mask` — returns the raw masked bits, like the
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m /// glibc macros, not a normalised 0/1.
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m fn is_ctype(c: i32, mask: u16) -> i32 {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     let idx = (c + TABLE_BIAS) as usize;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     (CTYPE_B[idx] & mask) as i32
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m pub fn isalnum(c: i32) -> i32 {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     is_ctype(c, IS_ALNUM)
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m pub fn isalpha(c: i32) -> i32 {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     is_ctype(c, IS_ALPHA)
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m pub fn islower(c: i32) -> i32 {
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     is_ctype(c, IS_LOWER)
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m pub fn isupper(c: i32) -> i32 {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     is_ctype(c, IS_UPPER)
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m pub fn isdigit(c: i32) -> i32 {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     is_ctype(c, IS_DIGIT)
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m pub fn isxdigit(c: i32) -> i32 {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     is_ctype(c, IS_XDIGIT)
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m pub fn iscntrl(c: i32) -> i32 {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     is_ctype(c, IS_CNTRL)
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m pub fn isgraph(c: i32) -> i32 {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     is_ctype(c, IS_GRAPH)
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m pub fn isspace(c: i32) -> i32 {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     is_ctype(c, IS_SPACE)
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m pub fn isblank(c: i32) -> i32 {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     is_ctype(c, IS_BLANK)
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m pub fn isprint(c: i32) -> i32 {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     is_ctype(c, IS_PRINT)
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m pub fn ispunct(c: i32) -> i32 {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     is_ctype(c, IS_PUNCT)
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m pub fn tolower(c: i32) -> i32 {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     CTYPE_TOLOWER[(c + TABLE_BIAS) as usize]
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m pub fn toupper(c: i32) -> i32 {
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     CTYPE_TOUPPER[(c + TABLE_BIAS) as usize]
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/src/ctype.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate main.c driver to Rust with byte-exact output
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m // and associated documentation files (the “Software”),
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m //! Rust translation of `c_src/src/main.c`.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m //! Reads a single byte from stdin and reports every `<ctype.h>` classification
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m //! for it, then its lower- and upper-cased forms.
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m mod ctype;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m /// `printf("%c", v)` converts the `int` argument to `unsigned char`, so the
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m /// output is a single raw byte — including NUL, and including bytes that are
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m /// not valid UTF-8. Output is therefore assembled as bytes, not as a `String`.
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m fn push_char_line(out: &mut Vec<u8>, label: &str, v: i32) {
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     out.extend_from_slice(label.as_bytes());
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     out.push(v as u8);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     out.push(b'\n');
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m /// `printf("%d", v)`.
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m fn push_int_line(out: &mut Vec<u8>, label: &str, v: i32) {
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     out.extend_from_slice(label.as_bytes());
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     out.extend_from_slice(v.to_string().as_bytes());
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     out.push(b'\n');
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m fn driver(c: i8) {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     // setlocale(LC_ALL, "C") in the original: the "C" locale is already what
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     // the tables in `ctype` model, so there is nothing to switch to.
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     // The C code passes a `char` to functions taking `int`; the default
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     // argument promotion sign-extends it. Values 0x80..=0xFF therefore arrive
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     // as -128..=-1.
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     let c = i32::from(c);
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     let mut out = Vec::new();
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     push_int_line(&mut out, "alphanumeric: ", ctype::isalnum(c));
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     push_int_line(&mut out, "alphabetic: ", ctype::isalpha(c));
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     push_int_line(&mut out, "lowercase: ", ctype::islower(c));
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     push_int_line(&mut out, "uppercase: ", ctype::isupper(c));
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     push_int_line(&mut out, "digit: ", ctype::isdigit(c));
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     push_int_line(&mut out, "hexadecimal: ", ctype::isxdigit(c));
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     push_int_line(&mut out, "control: ", ctype::iscntrl(c));
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     push_int_line(&mut out, "graphical: ", ctype::isgraph(c));
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     push_int_line(&mut out, "space: ", ctype::isspace(c));
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     push_int_line(&mut out, "blank: ", ctype::isblank(c));
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     push_int_line(&mut out, "printing: ", ctype::isprint(c));
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     push_int_line(&mut out, "punctuation: ", ctype::ispunct(c));
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     push_char_line(&mut out, "to lower: ", ctype::tolower(c));
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     push_char_line(&mut out, "to upper: ", ctype::toupper(c));
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     // C's stdout is flushed once at exit; a single write matches that.
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     let mut stdout = stdout.lock();
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     let _ = stdout.write_all(&out);
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     let _ = stdout.flush();
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m /// `getchar()`: one byte from stdin, or `EOF` (-1) at end of input.
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m fn getchar() -> i32 {
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     let mut b = [0u8; 1];
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m     match std::io::stdin().read(&mut b) {
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m         Ok(1) => i32::from(b[0]),
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m         _ => -1,
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m     // `char c = getchar();` — `char` is signed here, so EOF stays -1 and bytes
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m     // above 0x7F wrap to negative values. The truncation is deliberate.
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m     let c = getchar() as i8;
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m     driver(c);
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.184s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean. Now verifying byte-for-byte against the reference across every possible input.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ref && RS=/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/target/release/driver
+fail=0
+# all 256 single-byte inputs
+for i in $(seq 0 255); do
+  printf "\\x$(printf %02x $i)" > in.bin
+  ./driver < in.bin > c.out 2>c.err; ce=$?
+  $RS      < in.bin > r.out 2>r.err; re=$?
+  cmp -s c.out r.out || { echo "STDOUT DIFF byte $i"; fail=1; }
+  [ "$ce" = "$re" ] || { echo "EXIT DIFF byte $i: c=$ce rust=$re"; fail=1; }
+done
+# EOF (empty stdin)
+: > in.bin; ./driver < in.bin > c.out; ce=$?; $RS < in.bin > r.out; re=$?
+cmp -s c.out r.out || { echo "STDOUT DIFF eof"; fail=1; }
+[ "$ce" = "$re" ] || { echo "EXIT DIFF eof c=$ce rust=$re"; fail=1; }
+echo "single-byte + EOF sweep fail=$fail"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare outputs for all 256 bytes and EOF
+
+single-byte + EOF sweep fail=0
+[38;5;244m - Completed in 1.52s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ref && RS=/local/home/scheschb/.harvest/work/harvest-work-RpLDvF/translation/target/release/driver
+fail=0
+run() { desc="$1"; shift; ./driver > c.out 2>/dev/null; }
+# multi-byte / multi-line / binary inputs: only first byte should matter
+for spec in 'Hello World' '9abc' $'\n\n\n' $'\t x' 'ZZZ' '   leading' $'\xff\xfe' $'\x00\x41' '~tilde' '{brace' 'f0f0' 'G' 'g'; do
+  printf '%s' "$spec" > in.bin
+  ./driver < in.bin > c.out; ce=$?
+  $RS      < in.bin > r.out; re=$?
+  cmp -s c.out r.out || { echo "DIFF: [$spec]"; fail=1; }
+  [ "$ce" = "$re" ] || { echo "EXIT DIFF [$spec] c=$ce rust=$re"; fail=1; }
+done
+# large input
+head -c 100000 /dev/urandom > in.bin
+./driver < in.bin > c.out; $RS < in.bin > r.out; cmp -s c.out r.out || { echo "DIFF large"; fail=1; }
+# stdin closed entirely
+./driver <&- > c.out 2>/dev/null; ce=$?; $RS <&- > r.out 2>/dev/null; re=$?
+cmp -s c.out r.out || { echo "DIFF closed-stdin"; fail=1; }
+[ "$ce" = "$re" ] || { echo "EXIT DIFF closed-stdin c=$ce rust=$re"; fail=1; }
+# terminal-ish: input from /dev/null
+./driver < /dev/null > c.out; $RS < /dev/null > r.out; cmp -s c.out r.out || { echo "DIFF devnull"; fail=1; }
+echo "multi-byte/edge-case fail=$fail"
+echo "--- sample: input 'G' ---"; printf 'G' | $RS | cat -A[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare on multi-byte, binary, and closed-stdin inputs
+
+multi-byte/edge-case fail=0
+--- sample: input 'G' ---
+alphanumeric: 8$
+alphabetic: 1024$
+lowercase: 0$
+uppercase: 256$
+digit: 0$
+hexadecimal: 0$
+control: 0$
+graphical: 32768$
+space: 0$
+blank: 0$
+printing: 16384$
+punctuation: 0$
+to lower: g$
+to upper: G$
+[38;5;244m - Completed in 0.66s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-RpLDvF
+echo "=== translation tree ==="; find translation -type f -not -path '*/target/*' | sort
+echo "=== line counts ==="; wc -l translation/Cargo.toml translation/src/*.rs
+echo "=== binary ==="; ls -l translation/target/release/driver
+echo "=== c_src untouched (mtimes) ==="; find c_src -type f -printf '%T@ %p\n' | sort
+echo "=== warnings check ==="; cd translation && touch src/main.rs && cargo build --release 2>&1 | grep -ci warning
+rm -f /tmp/ref/in.bin /tmp/ref/c.out /tmp/ref/r.out /tmp/ref/c.err /tmp/ref/r.err[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify artifacts and confirm c_src untouched
+
+=== translation tree ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/ctype.rs
+translation/src/main.rs
+=== line counts ===
+  11 translation/Cargo.toml
+ 204 translation/src/ctype.rs
+  95 translation/src/main.rs
+ 310 total
+=== binary ===
+-rwxr-xr-x. 2 scheschb amazon 451456 Sep  1 09:58 translation/target/release/driver
+=== c_src untouched (mtimes) ===
+1788256553.1118119560 c_src/CMakeLists.txt
+1788256553.1118119560 c_src/src/main.c
+=== warnings check ===
+0
+[38;5;244m - Completed in 0.165s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean with zero warnings and produces byte-identical output to the compiled C reference on all 257 possible inputs (every byte 0–255 plus EOF), plus multi-byte, binary, and closed-stdin cases. [38;5;10mc_src/[0m is untouched.[0m[0m
+[0m[0m
+Two non-obvious behaviors in the C had to be reproduced rather than "fixed":[0m[0m
+[0m[0m
+[1mThe classification functions return bitmasks, not 0/1.[22m glibc implements [38;5;10misalpha[0m and friends as macros that mask a table entry and hand back the raw bits, so [38;5;10mprintf("%d", isalpha('a'))[0m prints [38;5;10m1024[0m, not [38;5;10m1[0m. Each predicate has its own magic number — [38;5;10misalnum[0m→8, [38;5;10misupper[0m→256, [38;5;10mislower[0m→512, [38;5;10misdigit[0m→2048, [38;5;10misxdigit[0m→4096, [38;5;10misspace[0m→8192, [38;5;10misprint[0m→16384, [38;5;10misgraph[0m→32768, [38;5;10misblank[0m→1, [38;5;10miscntrl[0m→2, [38;5;10mispunct[0m→4. I verified these empirically against the compiled binary rather than assuming them.[0m[0m
+[0m[0m
+[1m[38;5;10mchar c = getchar()[0m truncates.[22m [38;5;10mchar[0m is signed on x86-64 Linux, so input bytes 0x80–0xFF arrive at the ctype functions as −128..−1 after integer promotion, and EOF stays −1 (colliding with byte 0xFF). In the [38;5;10m"C"[0m locale glibc's tables cover −128..255 with all-zero classifications and identity case mapping in the negative region, so high bytes report "nothing at all" and echo back unchanged. The translation models the same −128-biased table layout.[0m[0m
+[0m[0m
+Output is assembled as raw bytes, not a [38;5;10mString[0m, because [38;5;10mprintf("%c")[0m emits NUL for input byte 0 and non-UTF-8 bytes for the high range — [38;5;10mprintln![0m would not round-trip those.[0m[0m
+[0m[0m
+Structure: [38;5;10msrc/ctype.rs[0m holds the const-built glibc tables and predicate wrappers; [38;5;10msrc/main.rs[0m mirrors the original's [38;5;10mdriver[0m/[38;5;10mmain[0m split. I did the work directly rather than delegating, so there are no sub-agent claims outstanding.[0m[0m
+[38;5;8m
+ ▸ Credits: 7.08 • Time: 3m 34s
+
+[0m[1G[0m[0m[?25h

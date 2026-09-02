@@ -1,0 +1,693 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -100; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src structure
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 12:19 .
+drwxr-xr-x. 727 scheschb amazon 81920 Sep  1 12:19 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 12:19 .claude
+drwxr-xr-x.   4 scheschb amazon    93 Sep  1 12:19 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 12:19 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/license.txt
+c_src/src/lib.c
+---
+4
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c c_src/license.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+   15 c_src/CMakeLists.txt
+    1 c_src/include/lib.h
+  273 c_src/src/lib.c
+   21 c_src/license.txt
+  310 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m4[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/src/lib.c[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/license.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m31 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m9013 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1084 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src/license.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 4 operations processed, 4 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — one public symbol. Let me build the C side to confirm the exported ABI.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5; ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+libdriver.so
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && ls -la; echo "=== nm -D ==="; nm -D *.so; echo "=== defined only ==="; nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported dynamic symbols of the C .so
+
+total 48
+drwxr-xr-x.    3 scheschb amazon   160 Sep  1 12:02 .
+drwxrwxrwt. 1317 root     root   88660 Sep  1 12:19 ..
+-rw-r--r--.    1 scheschb amazon 14547 Sep  1 12:02 CMakeCache.txt
+drwxr-xr-x.    5 scheschb amazon   240 Sep  1 12:02 CMakeFiles
+-rw-r--r--.    1 scheschb amazon  7630 Sep  1 12:02 Makefile
+-rw-r--r--.    1 scheschb amazon   279 Sep  1 12:07 cmake.log
+-rw-r--r--.    1 scheschb amazon  2946 Sep  1 12:02 cmake_install.cmake
+-rwxr-xr-x.    1 scheschb amazon 15872 Sep  1 12:02 libdriver.so
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U calloc@GLIBC_2.2.5
+0000000000001140 T decode_base64
+                 U free@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U strlen@GLIBC_2.2.5
+=== defined only ===
+0000000000001140 T decode_base64
+[38;5;244m - Completed in 0.36s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cb_pred && mkdir -p /tmp/cb_pred && cd /tmp/cb_pred && cmake /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/c_src > cmake.log 2>&1 && make 2>&1 | tail -5; echo "=== so files ==="; ls *.so; echo "=== defined dynamic symbols ==="; nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fresh cmake build of the C library and enumerate exports
+
+[ 50%] Building C object CMakeFiles/harvest-work-w7YX6u.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-w7YX6u.so
+[100%] Built target harvest-work-w7YX6u
+=== so files ===
+libharvest-work-w7YX6u.so
+=== defined dynamic symbols ===
+00000000000024c8 T get_predict_func
+[38;5;244m - Completed in 0.428s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: exactly one exported symbol, [38;5;10mget_predict_func[0m, no namespace macros. Now the Rust translation.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Public ABI surface (matches `nm -D` on the C shared library):
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //!   - `get_predict_func`
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! Everything else in the C source has internal (`static`) linkage and is kept
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! private here as well. The behaviour of the original C — including the places
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! where the standalone `_PfnNN` helpers disagree with the corresponding `case`
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! arms of `BTAC1C2_PredictSample` (cases 10 and 11) — is reproduced verbatim.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! Those discrepancies are NOT fixed.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::os::raw::{c_uchar, c_ushort, c_void};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m type btac1c_u16 = c_ushort;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m type btac1c_s16 = i16;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m type btac1c_byte = c_uchar;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// Mirrors `struct btac1c_idxstate_s`. Layout must match the C struct because
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// callers may hand us a pointer to one.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m pub struct btac1c_idxstate {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     pub idx: btac1c_u16,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     pub lpred: btac1c_s16,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     pub rpred: btac1c_s16,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     pub tag: btac1c_byte,
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     pub bcfcn: btac1c_byte,
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     pub bsfcn: btac1c_byte,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     pub usefx: btac1c_byte,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     pub firfx: [[btac1c_s16; 8]; 4],
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// Signature shared by every predictor entry point.
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m type PredictFunc =
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     unsafe extern "C" fn(*mut c_int, c_int, c_int, *mut btac1c_idxstate) -> c_int;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// `psamp[(i - n) & 7]` in the original C. `i - n` is computed with wrapping
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// `int` arithmetic and the mask makes the result a valid 0..=7 index, exactly
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// as in C (where `& 7` on a negative two's-complement value yields the low
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// three bits).
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m unsafe fn s(psamp: *const c_int, i: c_int, n: c_int) -> c_int {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let idx = (i.wrapping_sub(n) & 7) as usize;
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     unsafe { *psamp.add(idx) }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m // static int BTAC1C2_PredictSample(...)
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample(
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     pfcn: c_int,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     let pred: c_int;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let p0: c_int;
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let p1: c_int;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     let i: c_int = idx;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         match pfcn {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             0 => {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m                 pred = s(psamp, i, 1);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m                 pred = 2i32.wrapping_mul(s(psamp, i, 1)).wrapping_sub(s(psamp, i, 2));
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m                 pred = (3i32.wrapping_mul(s(psamp, i, 1)).wrapping_sub(s(psamp, i, 2))) >> 1;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m                 pred = (5i32.wrapping_mul(s(psamp, i, 1)).wrapping_sub(s(psamp, i, 2))) >> 2;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             4 => {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m                 p0 = s(psamp, i, 1).wrapping_add(s(psamp, i, 2));
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m                 p1 = s(psamp, i, 2).wrapping_add(s(psamp, i, 3));
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m                 pred = p0.wrapping_sub(p1 >> 1);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             5 => {
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m                 p0 = s(psamp, i, 1).wrapping_add(s(psamp, i, 2));
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m                 p1 = s(psamp, i, 2).wrapping_add(s(psamp, i, 3));
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                 pred = (3i32.wrapping_mul(p0).wrapping_sub(p1)) >> 2;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             6 => {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m                 p0 = s(psamp, i, 1).wrapping_add(s(psamp, i, 2));
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 p1 = s(psamp, i, 2).wrapping_add(s(psamp, i, 3));
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m                 pred = (5i32.wrapping_mul(p0).wrapping_sub(p1)) >> 3;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             7 => {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m                 pred = (18i32
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m                     .wrapping_mul(s(psamp, i, 1))
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m                     .wrapping_sub(4i32.wrapping_mul(s(psamp, i, 2)))
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m                     .wrapping_add(3i32.wrapping_mul(s(psamp, i, 3)))
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                     .wrapping_sub(2i32.wrapping_mul(s(psamp, i, 4)))
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                     .wrapping_add(1i32.wrapping_mul(s(psamp, i, 5))))
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                     .wrapping_div(16);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             8 => {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 pred = (72i32
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                     .wrapping_mul(s(psamp, i, 1))
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                     .wrapping_sub(16i32.wrapping_mul(s(psamp, i, 2)))
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                     .wrapping_add(12i32.wrapping_mul(s(psamp, i, 3)))
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m                     .wrapping_sub(8i32.wrapping_mul(s(psamp, i, 4)))
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                     .wrapping_add(5i32.wrapping_mul(s(psamp, i, 5)))
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m                     .wrapping_sub(3i32.wrapping_mul(s(psamp, i, 6)))
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                     .wrapping_add(3i32.wrapping_mul(s(psamp, i, 7)))
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                     .wrapping_sub(1i32.wrapping_mul(s(psamp, i, 8))))
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                     .wrapping_div(64);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             9 => {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 pred = (76i32
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                     .wrapping_mul(s(psamp, i, 1))
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                     .wrapping_sub(17i32.wrapping_mul(s(psamp, i, 2)))
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                     .wrapping_add(10i32.wrapping_mul(s(psamp, i, 3)))
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                     .wrapping_sub(7i32.wrapping_mul(s(psamp, i, 4)))
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                     .wrapping_add(5i32.wrapping_mul(s(psamp, i, 5)))
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m                     .wrapping_sub(4i32.wrapping_mul(s(psamp, i, 6)))
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m                     .wrapping_add(4i32.wrapping_mul(s(psamp, i, 7)))
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m                     .wrapping_sub(3i32.wrapping_mul(s(psamp, i, 8))))
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                     .wrapping_div(64);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             10 => {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m                 p0 = s(psamp, i, 1)
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 2))
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 3))
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 4));
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m                 p1 = s(psamp, i, 5)
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 6))
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 7))
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 8));
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 pred = (5i32.wrapping_mul(p0).wrapping_sub(p1)) >> 4;
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             11 => {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                 p0 = s(psamp, i, 1)
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 2))
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 3))
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 4));
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                 p1 = s(psamp, i, 5)
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 6))
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 7))
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                     .wrapping_add(s(psamp, i, 8));
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m                 pred = (p0.wrapping_add(p1)) >> 3;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             12 | 13 | 14 | 15 => {
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m                 let fir = &(*ridx).firfx[(pfcn - 12) as usize];
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m                 pred = ((fir[0] as c_int).wrapping_mul(s(psamp, i, 1)))
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m                     .wrapping_add((fir[1] as c_int).wrapping_mul(s(psamp, i, 2)))
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m                     .wrapping_add((fir[2] as c_int).wrapping_mul(s(psamp, i, 3)))
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m                     .wrapping_add((fir[3] as c_int).wrapping_mul(s(psamp, i, 4)))
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m                     .wrapping_add((fir[4] as c_int).wrapping_mul(s(psamp, i, 5)))
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m                     .wrapping_add((fir[5] as c_int).wrapping_mul(s(psamp, i, 6)))
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                     .wrapping_add((fir[6] as c_int).wrapping_mul(s(psamp, i, 7)))
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                     .wrapping_add((fir[7] as c_int).wrapping_mul(s(psamp, i, 8)))
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m                     .wrapping_div(256);
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             _ => {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m                 pred = 0;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     pred
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m // The specialised per-function-number predictors.
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m // `pfcn` and `ridx` are unused in each of these, exactly as in the C.
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn0(
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     unsafe { s(psamp, idx, 1) }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn1(
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     unsafe { 2i32.wrapping_mul(s(psamp, idx, 1)).wrapping_sub(s(psamp, idx, 2)) }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn2(
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     unsafe { (3i32.wrapping_mul(s(psamp, idx, 1)).wrapping_sub(s(psamp, idx, 2))) >> 1 }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn3(
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     unsafe { (5i32.wrapping_mul(s(psamp, idx, 1)).wrapping_sub(s(psamp, idx, 2))) >> 2 }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn4(
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         let p0 = s(psamp, idx, 1).wrapping_add(s(psamp, idx, 2));
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         let p1 = s(psamp, idx, 2).wrapping_add(s(psamp, idx, 3));
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         p0.wrapping_sub(p1 >> 1)
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn5(
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         let p0 = s(psamp, idx, 1).wrapping_add(s(psamp, idx, 2));
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         let p1 = s(psamp, idx, 2).wrapping_add(s(psamp, idx, 3));
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         (3i32.wrapping_mul(p0).wrapping_sub(p1)) >> 2
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn6(
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         let p0 = s(psamp, idx, 1).wrapping_add(s(psamp, idx, 2));
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         let p1 = s(psamp, idx, 2).wrapping_add(s(psamp, idx, 3));
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         (5i32.wrapping_mul(p0).wrapping_sub(p1)) >> 3
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn7(
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         (18i32
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             .wrapping_mul(s(psamp, idx, 1))
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             .wrapping_sub(4i32.wrapping_mul(s(psamp, idx, 2)))
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m             .wrapping_add(3i32.wrapping_mul(s(psamp, idx, 3)))
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m             .wrapping_sub(2i32.wrapping_mul(s(psamp, idx, 4)))
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m             .wrapping_add(1i32.wrapping_mul(s(psamp, idx, 5))))
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         .wrapping_div(16)
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn8(
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         (72i32
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m             .wrapping_mul(s(psamp, idx, 1))
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m             .wrapping_sub(16i32.wrapping_mul(s(psamp, idx, 2)))
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m             .wrapping_add(12i32.wrapping_mul(s(psamp, idx, 3)))
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m             .wrapping_sub(8i32.wrapping_mul(s(psamp, idx, 4)))
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m             .wrapping_add(5i32.wrapping_mul(s(psamp, idx, 5)))
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m             .wrapping_sub(3i32.wrapping_mul(s(psamp, idx, 6)))
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             .wrapping_add(3i32.wrapping_mul(s(psamp, idx, 7)))
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m             .wrapping_sub(1i32.wrapping_mul(s(psamp, idx, 8))))
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         .wrapping_div(64)
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn9(
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m         (76i32
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m             .wrapping_mul(s(psamp, idx, 1))
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m             .wrapping_sub(17i32.wrapping_mul(s(psamp, idx, 2)))
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m             .wrapping_add(10i32.wrapping_mul(s(psamp, idx, 3)))
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m             .wrapping_sub(7i32.wrapping_mul(s(psamp, idx, 4)))
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m             .wrapping_add(5i32.wrapping_mul(s(psamp, idx, 5)))
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m             .wrapping_sub(4i32.wrapping_mul(s(psamp, idx, 6)))
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m             .wrapping_add(4i32.wrapping_mul(s(psamp, idx, 7)))
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m             .wrapping_sub(3i32.wrapping_mul(s(psamp, idx, 8))))
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m         .wrapping_div(64)
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m /// NOTE: the C uses `>> 3` here while `case 10` of `BTAC1C2_PredictSample`
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m /// uses `>> 4`. Reproduced as-is.
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn10(
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m         let p0 = s(psamp, idx, 1)
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 2))
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 3))
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 4));
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m         let p1 = s(psamp, idx, 5)
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 6))
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 7))
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 8));
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m         (5i32.wrapping_mul(p0).wrapping_sub(p1)) >> 3
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m /// NOTE: the C uses `>> 1` here while `case 11` of `BTAC1C2_PredictSample`
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m /// uses `>> 3`. Reproduced as-is.
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m unsafe extern "C" fn BTAC1C2_PredictSample_Pfn11(
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m     psamp: *mut c_int,
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m     idx: c_int,
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m     _pfcn: c_int,
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     _ridx: *mut btac1c_idxstate,
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m         let p0 = s(psamp, idx, 1)
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 2))
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 3))
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 4));
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m         let p1 = s(psamp, idx, 5)
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 6))
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 7))
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m             .wrapping_add(s(psamp, idx, 8));
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m         (p0.wrapping_add(p1)) >> 1
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m // static void *BTAC1C2_GetPredictFunc(int pfcn)
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m #[inline(never)]
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m fn BTAC1C2_GetPredictFunc(pfcn: c_int) -> *const c_void {
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m     let fcn: PredictFunc = match pfcn {
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         0 => BTAC1C2_PredictSample_Pfn0,
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m         1 => BTAC1C2_PredictSample_Pfn1,
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m         2 => BTAC1C2_PredictSample_Pfn2,
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m         3 => BTAC1C2_PredictSample_Pfn3,
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m         4 => BTAC1C2_PredictSample_Pfn4,
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         5 => BTAC1C2_PredictSample_Pfn5,
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         6 => BTAC1C2_PredictSample_Pfn6,
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         7 => BTAC1C2_PredictSample_Pfn7,
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m         8 => BTAC1C2_PredictSample_Pfn8,
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m         9 => BTAC1C2_PredictSample_Pfn9,
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m         10 => BTAC1C2_PredictSample_Pfn10,
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m         11 => BTAC1C2_PredictSample_Pfn11,
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m         _ => BTAC1C2_PredictSample,
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m     fcn as *const c_void
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m /// Address of a predictor, for the pointer-identity comparisons below.
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m fn addr(f: PredictFunc) -> *const c_void {
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m     f as *const c_void
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m // int get_predict_func(int pfcn)   <-- the only exported symbol
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m pub extern "C" fn get_predict_func(pfcn: c_int) -> c_int {
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m     let fcn = BTAC1C2_GetPredictFunc(pfcn);
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m     match pfcn {
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m         0 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn0)) as c_int,
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m         1 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn1)) as c_int,
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m         2 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn2)) as c_int,
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m         3 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn3)) as c_int,
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m         4 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn4)) as c_int,
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m         5 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn5)) as c_int,
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         6 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn6)) as c_int,
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m         7 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn7)) as c_int,
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         8 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn8)) as c_int,
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m         9 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn9)) as c_int,
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m         10 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn10)) as c_int,
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m         11 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn11)) as c_int,
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m         _ => {}
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-w7YX6u/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.181s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-w7YX6u
+nm -D --defined-only /tmp/cb_pred/libharvest-work-w7YX6u.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libharvest_translation.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+echo "=== C symbols ==="; cat /tmp/c_syms.txt
+echo "=== Rust symbols ==="; cat /tmp/rust_syms.txt
+echo "=== MISSING from Rust (C - Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== (count of missing) ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbol lists between C and Rust .so
+
+=== C symbols ===
+get_predict_func
+=== Rust symbols ===
+get_predict_func
+=== MISSING from Rust (C - Rust) ===
+=== (count of missing) ===
+0
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now a differential behaviour test across both libraries.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/diffharness.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
+#include <limits.h>
+typedef int (*fn_t)(int);
+int main(int argc,char**argv){
+  void *hc=dlopen(argv[1],RTLD_NOW), *hr=dlopen(argv[2],RTLD_NOW);
+  if(!hc||!hr){fprintf(stderr,"dlopen: %s\n",dlerror());return 2;}
+  fn_t c=(fn_t)dlsym(hc,"get_predict_func"), r=(fn_t)dlsym(hr,"get_predict_func");
+  if(!c||!r){fprintf(stderr,"dlsym failed\n");return 2;}
+  int inputs[]={-2147483648,-1000000,-16,-12,-11,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,100,65535,2147483647};
+  int n=sizeof(inputs)/sizeof(inputs[0]), bad=0;
+  for(int i=0;i<n;i++){int a=c(inputs[i]),b=r(inputs[i]);
+    printf("get_predict_func(%11d) C=%d Rust=%d %s\n",inputs[i],a,b,a==b?"ok":"MISMATCH");
+    if(a!=b)bad++;}
+  printf("\n%d/%d matched, %d mismatches\n",n-bad,n,bad);
+  return bad?1:0;
+}
+EOF
+gcc -O2 -o /tmp/diffharness /tmp/diffharness.c -ldl && /tmp/diffharness /tmp/cb_pred/libharvest-work-w7YX6u.so /local/home/scheschb/.harvest/work/harvest-work-w7YX6u/translation/target/release/libharvest_translation.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test: call get_predict_func in both C and Rust .so and compare
+
+get_predict_func(-2147483648) C=0 Rust=0 ok
+get_predict_func(   -1000000) C=0 Rust=0 ok
+get_predict_func(        -16) C=0 Rust=0 ok
+get_predict_func(        -12) C=0 Rust=0 ok
+get_predict_func(        -11) C=0 Rust=0 ok
+get_predict_func(         -2) C=0 Rust=0 ok
+get_predict_func(         -1) C=0 Rust=0 ok
+get_predict_func(          0) C=1 Rust=1 ok
+get_predict_func(          1) C=1 Rust=1 ok
+get_predict_func(          2) C=1 Rust=1 ok
+get_predict_func(          3) C=1 Rust=1 ok
+get_predict_func(          4) C=1 Rust=1 ok
+get_predict_func(          5) C=1 Rust=1 ok
+get_predict_func(          6) C=1 Rust=1 ok
+get_predict_func(          7) C=1 Rust=1 ok
+get_predict_func(          8) C=1 Rust=1 ok
+get_predict_func(          9) C=1 Rust=1 ok
+get_predict_func(         10) C=1 Rust=1 ok
+get_predict_func(         11) C=1 Rust=1 ok
+get_predict_func(         12) C=0 Rust=0 ok
+get_predict_func(         13) C=0 Rust=0 ok
+get_predict_func(         14) C=0 Rust=0 ok
+get_predict_func(         15) C=0 Rust=0 ok
+get_predict_func(         16) C=0 Rust=0 ok
+get_predict_func(         17) C=0 Rust=0 ok
+get_predict_func(        100) C=0 Rust=0 ok
+get_predict_func(      65535) C=0 Rust=0 ok
+get_predict_func( 2147483647) C=0 Rust=0 ok
+
+28/28 matched, 0 mismatches
+[38;5;244m - Completed in 0.56s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-w7YX6u
+echo "=== c_src unmodified (mtimes) ==="; find c_src -type f -newermt '2026-09-01 12:19' | wc -l
+echo "=== md5 of c_src files ==="; md5sum c_src/src/lib.c c_src/include/lib.h
+echo "=== translation tree ==="; find translation -maxdepth 2 -not -path '*/target*' -type f
+echo "=== crate-type check ==="; grep -A3 '\[lib\]' translation/Cargo.toml
+rm -f /tmp/diffharness /tmp/diffharness.c /tmp/c_syms.txt /tmp/rust_syms.txt; rm -rf /tmp/cb_pred /tmp/cbuild
+echo cleaned[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src untouched, list artifacts, clean up temp files
+
+=== c_src unmodified (mtimes) ===
+4
+=== md5 of c_src files ===
+e068687c4ace5bde1ee99b1a2e96a2bd  c_src/src/lib.c
+5172b452c871b5d3a3eb52a3c031171c  c_src/include/lib.h
+=== translation tree ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+=== crate-type check ===
+[lib]
+name = "harvest_translation"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+cleaned
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[38;5;141m> [0mDone. Translation complete and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## Scope[0m[0m
+[0m[0m
+The library turned out to be small: [38;5;10mc_src/[0m contains a single translation unit ([38;5;10msrc/lib.c[0m, 273 lines) plus a one-line public header. I built the C library with its own CMakeLists in a fresh build dir and enumerated exports:[0m[0m
+[0m[0m
+[38;5;10m$ nm -D --defined-only libharvest-work-w7YX6u.so
+00000000000024c8 T get_predict_func
+[0m[0m[0m
+[0m[0m
+One exported symbol. Everything else in [38;5;10mlib.c[0m ([38;5;10mBTAC1C2_PredictSample[0m, the twelve [38;5;10mBTAC1C2_PredictSample_PfnNN[0m specialisations, and [38;5;10mBTAC1C2_GetPredictFunc[0m) is [38;5;10mstatic[0m, so it never reaches the dynamic symbol table. No namespace/renaming macros in the header. I translated all of it anyway — the private predictors are needed because [38;5;10mget_predict_func[0m works by taking their addresses and comparing pointer identity.[0m[0m
+[0m[0m
+Note my first cmake attempt silently reused a stale [38;5;10m/tmp/cbuild[0m cache from an unrelated project and produced [38;5;10mlibdriver.so[0m exporting [38;5;10mdecode_base64[0m; I discarded that and rebuilt in a clean directory before trusting the symbol list.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+[0m[0m
+Symbol diff is empty:[0m[0m
+[0m[0m
+[38;5;10m=== MISSING from Rust (C - Rust) ===
+(count of missing) 0
+[0m[0m[0m
+[0m[0m
+Behavioural equivalence via a [38;5;10mdlopen[0m harness that loads both [38;5;10m.so[0m files and calls each through the same function pointer type, over 28 inputs including [38;5;10mINT_MIN[0m, [38;5;10mINT_MAX[0m, negatives, the whole [38;5;10m0..=15[0m switch range, and values past the end: [1m28/28 matched, 0 mismatches[22m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Faithfulness notes[0m[0m
+[0m[0m
+- The C source contains two internal inconsistencies I deliberately preserved: [38;5;10m_Pfn10[0m uses [38;5;10m>> 3[0m where [38;5;10mcase 10[0m of the big switch uses [38;5;10m>> 4[0m, and [38;5;10m_Pfn11[0m uses [38;5;10m>> 1[0m where [38;5;10mcase 11[0m uses [38;5;10m>> 3[0m. Not fixed; each is commented in the Rust.[0m[0m
+- All arithmetic uses [38;5;10mwrapping_*[0m so signed overflow wraps like gcc's [38;5;10m-fwrapv[0m-free-but-two's-complement codegen rather than panicking in debug; [38;5;10m>>[0m on [38;5;10mi32[0m is arithmetic and [38;5;10m/[0m truncates toward zero, matching gcc on this target.[0m[0m
+- [38;5;10m(i - n) & 7[0m indexing is reproduced with wrapping subtraction plus the mask, which yields the same 0..=7 index C gets from the low three bits of a negative value.[0m[0m
+- [38;5;10m#[inline(never)][0m on the predictors keeps their addresses distinct so the pointer-identity comparisons behave as in the unoptimised C.[0m[0m
+[0m[0m
+Artifacts: [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m), [38;5;10mtranslation/src/lib.rs[0m. [38;5;10mc_src/[0m is untouched. Temp build dirs and the harness are cleaned up.[0m[0m
+[38;5;8m
+ ▸ Credits: 5.92 • Time: 2m 44s
+
+[0m[1G[0m[0m[?25h

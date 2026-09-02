@@ -1,0 +1,100 @@
+//! Translation of c_src/libsodium/crypto_stream/xsalsa20/stream_xsalsa20.c
+
+use core::ffi::{c_int, c_void};
+
+const CRYPTO_STREAM_XSALSA20_KEYBYTES: usize = 32;
+const CRYPTO_STREAM_XSALSA20_NONCEBYTES: usize = 24;
+// crypto_stream_xsalsa20_MESSAGEBYTES_MAX = SODIUM_SIZE_MAX
+const CRYPTO_STREAM_XSALSA20_MESSAGEBYTES_MAX: usize = usize::MAX;
+
+extern "C" {
+    fn crypto_core_hsalsa20(
+        out: *mut u8,
+        in_: *const u8,
+        k: *const u8,
+        c: *const u8,
+    ) -> c_int;
+    fn crypto_stream_salsa20(
+        c: *mut u8,
+        clen: u64,
+        n: *const u8,
+        k: *const u8,
+    ) -> c_int;
+    fn crypto_stream_salsa20_xor_ic(
+        c: *mut u8,
+        m: *const u8,
+        mlen: u64,
+        n: *const u8,
+        ic: u64,
+        k: *const u8,
+    ) -> c_int;
+    fn sodium_memzero(pnt: *mut c_void, len: usize);
+    fn randombytes_buf(buf: *mut c_void, size: usize);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20(
+    c: *mut u8,
+    clen: u64,
+    n: *const u8,
+    k: *const u8,
+) -> c_int {
+    let mut subkey: [u8; 32] = [0u8; 32];
+    let ret: c_int;
+
+    crypto_core_hsalsa20(subkey.as_mut_ptr(), n, k, core::ptr::null());
+    ret = crypto_stream_salsa20(c, clen, n.add(16), subkey.as_ptr());
+    sodium_memzero(subkey.as_mut_ptr() as *mut c_void, core::mem::size_of_val(&subkey));
+
+    ret
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20_xor_ic(
+    c: *mut u8,
+    m: *const u8,
+    mlen: u64,
+    n: *const u8,
+    ic: u64,
+    k: *const u8,
+) -> c_int {
+    let mut subkey: [u8; 32] = [0u8; 32];
+    let ret: c_int;
+
+    crypto_core_hsalsa20(subkey.as_mut_ptr(), n, k, core::ptr::null());
+    ret = crypto_stream_salsa20_xor_ic(c, m, mlen, n.add(16), ic, subkey.as_ptr());
+    sodium_memzero(subkey.as_mut_ptr() as *mut c_void, core::mem::size_of_val(&subkey));
+
+    ret
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20_xor(
+    c: *mut u8,
+    m: *const u8,
+    mlen: u64,
+    n: *const u8,
+    k: *const u8,
+) -> c_int {
+    crypto_stream_xsalsa20_xor_ic(c, m, mlen, n, 0u64, k)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20_keybytes() -> usize {
+    CRYPTO_STREAM_XSALSA20_KEYBYTES
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20_noncebytes() -> usize {
+    CRYPTO_STREAM_XSALSA20_NONCEBYTES
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20_messagebytes_max() -> usize {
+    CRYPTO_STREAM_XSALSA20_MESSAGEBYTES_MAX
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crypto_stream_xsalsa20_keygen(k: *mut u8) {
+    randombytes_buf(k as *mut c_void, CRYPTO_STREAM_XSALSA20_KEYBYTES);
+}

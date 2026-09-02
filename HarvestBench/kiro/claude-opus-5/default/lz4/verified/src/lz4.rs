@@ -1,1004 +1,56 @@
-//! Translation of `lz4.c` (LZ4 1.10.0).
-//!
-//! Compiled with `LZ4_HEAPMODE=0`, default `LZ4_MEMORY_USAGE` (14),
-//! `LZ4_DISTANCE_MAX` 65535, on a little-endian 64-bit target
-//! (so `reg_t` == `U64`, `STEPSIZE` == 8, `LZ4_FAST_DEC_LOOP` == 1).
+//! Translation of `lz4.c` (LZ4 v1.10.0), built with `LZ4_HEAPMODE=0`.
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
+#![allow(unused_assignments)]
 
+use crate::common::*;
 use core::ffi::{c_char, c_int, c_void};
-
-use crate::util::*;
-
-/* ===== version ===== */
 
 pub const LZ4_VERSION_MAJOR: c_int = 1;
 pub const LZ4_VERSION_MINOR: c_int = 10;
 pub const LZ4_VERSION_RELEASE: c_int = 0;
 pub const LZ4_VERSION_NUMBER: c_int =
     LZ4_VERSION_MAJOR * 100 * 100 + LZ4_VERSION_MINOR * 100 + LZ4_VERSION_RELEASE;
-static LZ4_VERSION_STRING_BYTES: &[u8] = b"1.10.0\0";
-
-/* ===== tuning ===== */
+static LZ4_VERSION_STRING_C: &[u8] = b"1.10.0\0";
 
 pub const LZ4_ACCELERATION_DEFAULT: c_int = 1;
 pub const LZ4_ACCELERATION_MAX: c_int = 65537;
 
-pub const LZ4_MEMORY_USAGE: usize = 14;
-pub const LZ4_HASHLOG: usize = LZ4_MEMORY_USAGE - 2;
-pub const LZ4_HASHTABLESIZE: usize = 1 << LZ4_MEMORY_USAGE;
-pub const LZ4_HASH_SIZE_U32: usize = 1 << LZ4_HASHLOG;
+pub const LZ4_64Klimit: c_int = (64 * KB + (MFLIMIT - 1)) as c_int;
+pub const LZ4_skipTrigger: u32 = 6;
 
-pub const LZ4_MAX_INPUT_SIZE: c_int = 0x7E00_0000;
+pub const HASH_UNIT: usize = 8; /* sizeof(reg_t) */
 
-/* ===== common constants ===== */
-
-pub const MINMATCH: usize = 4;
-pub const WILDCOPYLENGTH: usize = 8;
-pub const LASTLITERALS: usize = 5;
-pub const MFLIMIT: usize = 12;
-pub const MATCH_SAFEGUARD_DISTANCE: usize = (2 * WILDCOPYLENGTH) - MINMATCH;
-pub const FASTLOOP_SAFE_DISTANCE: usize = 64;
-pub const LZ4_MIN_LENGTH: c_int = (MFLIMIT + 1) as c_int;
-
-pub const LZ4_DISTANCE_ABSOLUTE_MAX: u32 = 65535;
-pub const LZ4_DISTANCE_MAX: u32 = 65535;
-
-pub const ML_BITS: u32 = 4;
-pub const ML_MASK: u32 = (1 << ML_BITS) - 1;
-pub const RUN_BITS: u32 = 8 - ML_BITS;
-pub const RUN_MASK: u32 = (1 << RUN_BITS) - 1;
-
-pub const LZ4_64K_LIMIT: c_int = (64 * 1024) + (MFLIMIT as c_int - 1);
-const LZ4_SKIP_TRIGGER: u32 = 6;
-
-pub const STEPSIZE: usize = 8;
-pub const HASH_UNIT: usize = 8;
+/* ===== allocation ===== */
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn calloc(n: usize, size: usize) -> *mut c_void;
+    fn free(p: *mut c_void);
+}
+#[inline(always)]
+pub unsafe fn ALLOC(s: usize) -> *mut c_void {
+    unsafe { malloc(s) }
+}
+#[inline(always)]
+pub unsafe fn ALLOC_AND_ZERO(s: usize) -> *mut c_void {
+    unsafe { calloc(1, s) }
+}
+#[inline(always)]
+pub unsafe fn FREEMEM(p: *mut c_void) {
+    unsafe { free(p) }
+}
 
 #[inline]
-pub const fn lz4_compress_bound(isize_: c_int) -> c_int {
-    if (isize_ as u32) > (LZ4_MAX_INPUT_SIZE as u32) {
+pub fn LZ4_COMPRESSBOUND(isize_: c_int) -> c_int {
+    if (isize_ as u32) > LZ4_MAX_INPUT_SIZE {
         0
     } else {
         isize_ + (isize_ / 255) + 16
     }
 }
 
-/* ===== directives ===== */
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum LimitedOutput {
-    NotLimited = 0,
-    Limited = 1,
-    FillOutput = 2,
-}
-use LimitedOutput::*;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum TableType {
-    ClearedTable = 0,
-    ByPtr = 1,
-    ByU32 = 2,
-    ByU16 = 3,
-}
-use TableType::*;
-
-impl TableType {
-    #[inline]
-    fn from_u32(v: u32) -> TableType {
-        match v {
-            0 => ClearedTable,
-            1 => ByPtr,
-            2 => ByU32,
-            _ => ByU16,
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum DictDirective {
-    NoDict = 0,
-    WithPrefix64k = 1,
-    UsingExtDict = 2,
-    UsingDictCtx = 3,
-}
-use DictDirective::*;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum DictIssue {
-    NoDictIssue = 0,
-    DictSmall = 1,
-}
-use DictIssue::*;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum EarlyEnd {
-    DecodeFullBlock = 0,
-    PartialDecode = 1,
-}
-use EarlyEnd::*;
-
-/* ===== state structures ===== */
-
-#[repr(C)]
-pub struct LZ4StreamInternal {
-    pub hash_table: [u32; LZ4_HASH_SIZE_U32],
-    pub dictionary: *const u8,
-    pub dict_ctx: *const LZ4StreamInternal,
-    pub current_offset: u32,
-    pub table_type: u32,
-    pub dict_size: u32,
-}
-
-pub const LZ4_STREAM_MINSIZE: usize = (1usize << LZ4_MEMORY_USAGE) + 32;
-
-#[repr(C)]
-pub union LZ4Stream {
-    pub min_state_size: [u8; LZ4_STREAM_MINSIZE],
-    pub internal_donotuse: core::mem::ManuallyDrop<LZ4StreamInternal>,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct LZ4StreamDecodeInternal {
-    pub external_dict: *const u8,
-    pub prefix_end: *const u8,
-    pub ext_dict_size: usize,
-    pub prefix_size: usize,
-}
-
-pub const LZ4_STREAMDECODE_MINSIZE: usize = 32;
-
-#[repr(C)]
-pub union LZ4StreamDecode {
-    pub min_state_size: [u8; LZ4_STREAMDECODE_MINSIZE],
-    pub internal_donotuse: LZ4StreamDecodeInternal,
-}
-
-const _: () = assert!(core::mem::size_of::<LZ4StreamInternal>() == LZ4_STREAM_MINSIZE);
-const _: () = assert!(core::mem::size_of::<LZ4Stream>() == LZ4_STREAM_MINSIZE);
-const _: () = assert!(core::mem::size_of::<LZ4StreamDecode>() == LZ4_STREAMDECODE_MINSIZE);
-
-#[inline]
-pub fn lz4_is_aligned(ptr: *const c_void, alignment: usize) -> bool {
-    (ptr as usize & (alignment - 1)) == 0
-}
-
-#[inline]
-fn lz4_stream_t_alignment() -> usize {
-    core::mem::align_of::<LZ4Stream>()
-}
-
-/* ===== wild copies ===== */
-
-/// `LZ4_wildCopy8` : can overwrite up to 8 bytes beyond `dst_end`.
-#[inline(always)]
-pub unsafe fn wild_copy8(dst: *mut u8, src: *const u8, dst_end: *mut u8) {
-    unsafe {
-        let mut d = dst;
-        let mut s = src;
-        loop {
-            copy8(d, s);
-            d = d.wrapping_add(8);
-            s = s.wrapping_add(8);
-            if d >= dst_end {
-                break;
-            }
-        }
-    }
-}
-
-/// `LZ4_wildCopy32` : two 16-byte copies per iteration.
-#[inline(always)]
-pub unsafe fn wild_copy32(dst: *mut u8, src: *const u8, dst_end: *mut u8) {
-    unsafe {
-        let mut d = dst;
-        let mut s = src;
-        loop {
-            copy16(d, s);
-            copy16(d.wrapping_add(16), s.wrapping_add(16));
-            d = d.wrapping_add(32);
-            s = s.wrapping_add(32);
-            if d >= dst_end {
-                break;
-            }
-        }
-    }
-}
-
-pub static INC32TABLE: [u32; 8] = [0, 1, 2, 1, 0, 4, 4, 4];
-pub static DEC64TABLE: [i32; 8] = [0, 0, 0, -1, -4, 1, 2, 3];
-
-unsafe fn lz4_memcpy_using_offset_base(
-    dst_ptr: *mut u8,
-    src_ptr: *const u8,
-    dst_end: *mut u8,
-    offset: usize,
-) {
-    unsafe {
-        let mut d = dst_ptr;
-        let mut s = src_ptr;
-        if offset < 8 {
-            write32(d, 0);
-            *d = *s;
-            *d.add(1) = *s.add(1);
-            *d.add(2) = *s.add(2);
-            *d.add(3) = *s.add(3);
-            s = s.wrapping_add(INC32TABLE[offset] as usize);
-            copy4(d.add(4), s);
-            s = s.wrapping_offset(-(DEC64TABLE[offset] as isize));
-            d = d.add(8);
-        } else {
-            copy8(d, s);
-            d = d.add(8);
-            s = s.add(8);
-        }
-        wild_copy8(d, s, dst_end);
-    }
-}
-
-unsafe fn lz4_memcpy_using_offset(
-    dst_ptr: *mut u8,
-    src_ptr: *const u8,
-    dst_end: *mut u8,
-    offset: usize,
-) {
-    unsafe {
-        let mut v: [u8; 8] = [0; 8];
-        let mut dst_ptr = dst_ptr;
-
-        match offset {
-            1 => {
-                mem_init(v.as_mut_ptr(), *src_ptr, 8);
-            }
-            2 => {
-                copy2(v.as_mut_ptr(), src_ptr);
-                copy2(v.as_mut_ptr().add(2), src_ptr);
-                copy4(v.as_mut_ptr().add(4), v.as_ptr());
-            }
-            4 => {
-                copy4(v.as_mut_ptr(), src_ptr);
-                copy4(v.as_mut_ptr().add(4), src_ptr);
-            }
-            _ => {
-                lz4_memcpy_using_offset_base(dst_ptr, src_ptr, dst_end, offset);
-                return;
-            }
-        }
-
-        copy8(dst_ptr, v.as_ptr());
-        dst_ptr = dst_ptr.add(8);
-        while dst_ptr < dst_end {
-            copy8(dst_ptr, v.as_ptr());
-            dst_ptr = dst_ptr.add(8);
-        }
-    }
-}
-
-/* ===== common functions ===== */
-
-/// `LZ4_NbCommonBytes` for little-endian 64-bit.
-#[inline(always)]
-pub fn lz4_nb_common_bytes(val: u64) -> u32 {
-    val.trailing_zeros() >> 3
-}
-
-#[inline(always)]
-pub unsafe fn lz4_count(p_in: *const u8, p_match: *const u8, p_in_limit: *const u8) -> u32 {
-    unsafe {
-        let p_start = p_in;
-        let mut p_in = p_in;
-        let mut p_match = p_match;
-
-        if p_in < p_in_limit.wrapping_sub(STEPSIZE - 1) {
-            let diff = read_arch(p_match) ^ read_arch(p_in);
-            if diff == 0 {
-                p_in = p_in.add(STEPSIZE);
-                p_match = p_match.add(STEPSIZE);
-            } else {
-                return lz4_nb_common_bytes(diff);
-            }
-        }
-
-        while p_in < p_in_limit.wrapping_sub(STEPSIZE - 1) {
-            let diff = read_arch(p_match) ^ read_arch(p_in);
-            if diff == 0 {
-                p_in = p_in.add(STEPSIZE);
-                p_match = p_match.add(STEPSIZE);
-                continue;
-            }
-            p_in = p_in.add(lz4_nb_common_bytes(diff) as usize);
-            return (p_in as usize - p_start as usize) as u32;
-        }
-
-        if p_in < p_in_limit.wrapping_sub(3) && read32(p_match) == read32(p_in) {
-            p_in = p_in.add(4);
-            p_match = p_match.add(4);
-        }
-        if p_in < p_in_limit.wrapping_sub(1) && read16(p_match) == read16(p_in) {
-            p_in = p_in.add(2);
-            p_match = p_match.add(2);
-        }
-        if p_in < p_in_limit && *p_match == *p_in {
-            p_in = p_in.add(1);
-        }
-        (p_in as usize - p_start as usize) as u32
-    }
-}
-
-/* ===== hashing ===== */
-
-#[inline(always)]
-fn lz4_hash4(sequence: u32, table_type: TableType) -> u32 {
-    if table_type == ByU16 {
-        sequence.wrapping_mul(2654435761) >> ((MINMATCH * 8) - (LZ4_HASHLOG + 1))
-    } else {
-        sequence.wrapping_mul(2654435761) >> ((MINMATCH * 8) - LZ4_HASHLOG)
-    }
-}
-
-#[inline(always)]
-fn lz4_hash5(sequence: u64, table_type: TableType) -> u32 {
-    let hash_log = if table_type == ByU16 {
-        LZ4_HASHLOG + 1
-    } else {
-        LZ4_HASHLOG
-    };
-    const PRIME5BYTES: u64 = 889523592379;
-    ((sequence << 24).wrapping_mul(PRIME5BYTES) >> (64 - hash_log)) as u32
-}
-
-#[inline(always)]
-unsafe fn lz4_hash_position(p: *const u8, table_type: TableType) -> u32 {
-    unsafe {
-        if table_type != ByU16 {
-            return lz4_hash5(read_arch(p), table_type);
-        }
-        lz4_hash4(read32(p), table_type)
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_clear_hash(h: u32, table_base: *mut u32, table_type: TableType) {
-    unsafe {
-        match table_type {
-            ByPtr => {
-                let t = table_base as *mut *const u8;
-                *t.add(h as usize) = core::ptr::null();
-            }
-            ByU32 => {
-                *table_base.add(h as usize) = 0;
-            }
-            ByU16 => {
-                let t = table_base as *mut u16;
-                *t.add(h as usize) = 0;
-            }
-            ClearedTable => {}
-        }
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_put_index_on_hash(idx: u32, h: u32, table_base: *mut u32, table_type: TableType) {
-    unsafe {
-        match table_type {
-            ByU32 => {
-                *table_base.add(h as usize) = idx;
-            }
-            ByU16 => {
-                let t = table_base as *mut u16;
-                *t.add(h as usize) = idx as u16;
-            }
-            _ => {}
-        }
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_put_position_on_hash(p: *const u8, h: u32, table_base: *mut u32) {
-    unsafe {
-        let t = table_base as *mut *const u8;
-        *t.add(h as usize) = p;
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_put_position(p: *const u8, table_base: *mut u32, table_type: TableType) {
-    unsafe {
-        let h = lz4_hash_position(p, table_type);
-        lz4_put_position_on_hash(p, h, table_base);
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_get_index_on_hash(h: u32, table_base: *const u32, table_type: TableType) -> u32 {
-    unsafe {
-        if table_type == ByU32 {
-            return *table_base.add(h as usize);
-        }
-        if table_type == ByU16 {
-            let t = table_base as *const u16;
-            return *t.add(h as usize) as u32;
-        }
-        0
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_get_position_on_hash(h: u32, table_base: *const u32) -> *const u8 {
-    unsafe {
-        let t = table_base as *const *const u8;
-        *t.add(h as usize)
-    }
-}
-
-#[inline(always)]
-unsafe fn lz4_get_position(
-    p: *const u8,
-    table_base: *const u32,
-    table_type: TableType,
-) -> *const u8 {
-    unsafe {
-        let h = lz4_hash_position(p, table_type);
-        lz4_get_position_on_hash(h, table_base)
-    }
-}
-
-unsafe fn lz4_prepare_table(cctx: *mut LZ4StreamInternal, input_size: c_int, table_type: TableType) {
-    unsafe {
-        let c = &mut *cctx;
-        if TableType::from_u32(c.table_type) != ClearedTable {
-            if TableType::from_u32(c.table_type) != table_type
-                || (table_type == ByU16
-                    && c.current_offset.wrapping_add(input_size as u32) >= 0xFFFF)
-                || (table_type == ByU32 && c.current_offset > (1u32 << 30))
-                || table_type == ByPtr
-                || input_size >= 4 * 1024
-            {
-                mem_init(c.hash_table.as_mut_ptr() as *mut u8, 0, LZ4_HASHTABLESIZE);
-                c.current_offset = 0;
-                c.table_type = ClearedTable as u32;
-            }
-        }
-
-        if c.current_offset != 0 && table_type == ByU32 {
-            c.current_offset = c.current_offset.wrapping_add(64 * 1024);
-        }
-
-        c.dict_ctx = core::ptr::null();
-        c.dictionary = core::ptr::null();
-        c.dict_size = 0;
-    }
-}
-
-/* ===== compression ===== */
-
-unsafe fn lz4_compress_generic_validated(
-    cctx: *mut LZ4StreamInternal,
-    source: *const c_char,
-    dest: *mut c_char,
-    input_size: c_int,
-    input_consumed: *mut c_int,
-    max_output_size: c_int,
-    output_directive: LimitedOutput,
-    table_type: TableType,
-    dict_directive: DictDirective,
-    dict_issue: DictIssue,
-    acceleration: c_int,
-) -> c_int {
-    unsafe {
-        let cctx_r = &mut *cctx;
-        let mut ip = source as *const u8;
-
-        let start_index: u32 = cctx_r.current_offset;
-        let base = (source as *const u8).wrapping_sub(start_index as usize);
-        let mut low_limit: *const u8;
-
-        let dict_ctx = cctx_r.dict_ctx;
-        let dictionary: *const u8 = if dict_directive == UsingDictCtx {
-            (*dict_ctx).dictionary
-        } else {
-            cctx_r.dictionary
-        };
-        let dict_size: u32 = if dict_directive == UsingDictCtx {
-            (*dict_ctx).dict_size
-        } else {
-            cctx_r.dict_size
-        };
-        let dict_delta: u32 = if dict_directive == UsingDictCtx {
-            start_index.wrapping_sub((*dict_ctx).current_offset)
-        } else {
-            0
-        };
-
-        let maybe_ext_mem = dict_directive == UsingExtDict || dict_directive == UsingDictCtx;
-        let prefix_idx_limit: u32 = start_index.wrapping_sub(dict_size);
-        let dict_end: *const u8 = if !dictionary.is_null() {
-            dictionary.wrapping_add(dict_size as usize)
-        } else {
-            dictionary
-        };
-        let mut anchor = source as *const u8;
-        let iend = ip.wrapping_add(input_size as usize);
-        let mflimit_plus_one = iend.wrapping_sub(MFLIMIT).wrapping_add(1);
-        let matchlimit = iend.wrapping_sub(LASTLITERALS);
-
-        let dict_base: *const u8 = if dictionary.is_null() {
-            core::ptr::null()
-        } else if dict_directive == UsingDictCtx {
-            dictionary
-                .wrapping_add(dict_size as usize)
-                .wrapping_sub((*dict_ctx).current_offset as usize)
-        } else {
-            dictionary
-                .wrapping_add(dict_size as usize)
-                .wrapping_sub(start_index as usize)
-        };
-
-        let mut op = dest as *mut u8;
-        let olimit = op.wrapping_add(max_output_size as usize);
-
-        let mut offset: u32 = 0;
-        let mut forward_h: u32;
-
-        if output_directive == FillOutput && max_output_size < 1 {
-            return 0;
-        }
-
-        low_limit = (source as *const u8).wrapping_sub(if dict_directive == WithPrefix64k {
-            dict_size as usize
-        } else {
-            0
-        });
-
-        /* Update context state */
-        if dict_directive == UsingDictCtx {
-            cctx_r.dict_ctx = core::ptr::null();
-            cctx_r.dict_size = input_size as u32;
-        } else {
-            cctx_r.dict_size = cctx_r.dict_size.wrapping_add(input_size as u32);
-        }
-        cctx_r.current_offset = cctx_r.current_offset.wrapping_add(input_size as u32);
-        cctx_r.table_type = table_type as u32;
-
-        let table = cctx_r.hash_table.as_mut_ptr();
-
-        let mut token: *mut u8 = core::ptr::null_mut();
-        let mut r#match: *const u8 = core::ptr::null();
-        let mut filled_ip: *const u8;
-
-        /* `goto _last_literals` when input is too small */
-        let small_input = input_size < LZ4_MIN_LENGTH;
-
-        if !small_input {
-            /* First Byte */
-            {
-                let h = lz4_hash_position(ip, table_type);
-                if table_type == ByPtr {
-                    lz4_put_position_on_hash(ip, h, table);
-                } else {
-                    lz4_put_index_on_hash(start_index, h, table, table_type);
-                }
-            }
-            ip = ip.add(1);
-            forward_h = lz4_hash_position(ip, table_type);
-
-            /* Main Loop */
-            'main_loop: loop {
-                /* --- Find a match --- */
-                if table_type == ByPtr {
-                    let mut forward_ip = ip;
-                    let mut step: isize = 1;
-                    let mut search_match_nb: i32 = acceleration << LZ4_SKIP_TRIGGER;
-                    loop {
-                        let h = forward_h;
-                        ip = forward_ip;
-                        forward_ip = forward_ip.wrapping_offset(step);
-                        step = (search_match_nb >> LZ4_SKIP_TRIGGER) as isize;
-                        search_match_nb += 1;
-
-                        if forward_ip > mflimit_plus_one {
-                            break 'main_loop;
-                        }
-
-                        r#match = lz4_get_position_on_hash(h, table);
-                        forward_h = lz4_hash_position(forward_ip, table_type);
-                        lz4_put_position_on_hash(ip, h, table);
-
-                        if !(r#match.wrapping_add(LZ4_DISTANCE_MAX as usize) < ip
-                            || read32(r#match) != read32(ip))
-                        {
-                            break;
-                        }
-                    }
-                } else {
-                    let mut forward_ip = ip;
-                    let mut step: isize = 1;
-                    let mut search_match_nb: i32 = acceleration << LZ4_SKIP_TRIGGER;
-                    loop {
-                        let h = forward_h;
-                        let current = (forward_ip as usize - base as usize) as u32;
-                        let mut match_index = lz4_get_index_on_hash(h, table, table_type);
-                        ip = forward_ip;
-                        forward_ip = forward_ip.wrapping_offset(step);
-                        step = (search_match_nb >> LZ4_SKIP_TRIGGER) as isize;
-                        search_match_nb += 1;
-
-                        if forward_ip > mflimit_plus_one {
-                            break 'main_loop;
-                        }
-
-                        if dict_directive == UsingDictCtx {
-                            if match_index < start_index {
-                                match_index =
-                                    lz4_get_index_on_hash(h, (*dict_ctx).hash_table.as_ptr(), ByU32);
-                                r#match = dict_base.wrapping_add(match_index as usize);
-                                match_index = match_index.wrapping_add(dict_delta);
-                                low_limit = dictionary;
-                            } else {
-                                r#match = base.wrapping_add(match_index as usize);
-                                low_limit = source as *const u8;
-                            }
-                        } else if dict_directive == UsingExtDict {
-                            if match_index < start_index {
-                                r#match = dict_base.wrapping_add(match_index as usize);
-                                low_limit = dictionary;
-                            } else {
-                                r#match = base.wrapping_add(match_index as usize);
-                                low_limit = source as *const u8;
-                            }
-                        } else {
-                            r#match = base.wrapping_add(match_index as usize);
-                        }
-                        forward_h = lz4_hash_position(forward_ip, table_type);
-                        lz4_put_index_on_hash(current, h, table, table_type);
-
-                        if dict_issue == DictSmall && match_index < prefix_idx_limit {
-                            continue;
-                        }
-                        if (table_type != ByU16 || LZ4_DISTANCE_MAX < LZ4_DISTANCE_ABSOLUTE_MAX)
-                            && match_index.wrapping_add(LZ4_DISTANCE_MAX) < current
-                        {
-                            continue;
-                        }
-
-                        if read32(r#match) == read32(ip) {
-                            if maybe_ext_mem {
-                                offset = current.wrapping_sub(match_index);
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                /* --- Catch up --- */
-                filled_ip = ip;
-                if r#match > low_limit && *ip.wrapping_sub(1) == *r#match.wrapping_sub(1) {
-                    loop {
-                        ip = ip.wrapping_sub(1);
-                        r#match = r#match.wrapping_sub(1);
-                        if !(((ip > anchor) & (r#match > low_limit))
-                            && *ip.wrapping_sub(1) == *r#match.wrapping_sub(1))
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                /* --- Encode Literals --- */
-                {
-                    let lit_length = (ip as usize - anchor as usize) as u32;
-                    token = op;
-                    op = op.wrapping_add(1);
-                    if output_directive == Limited
-                        && op
-                            .wrapping_add(lit_length as usize)
-                            .wrapping_add(2 + 1 + LASTLITERALS)
-                            .wrapping_add((lit_length / 255) as usize)
-                            > olimit
-                    {
-                        return 0;
-                    }
-                    if output_directive == FillOutput
-                        && op
-                            .wrapping_add(((lit_length + 240) / 255) as usize)
-                            .wrapping_add(lit_length as usize)
-                            .wrapping_add(2 + 1 + MFLIMIT - MINMATCH)
-                            > olimit
-                    {
-                        op = op.wrapping_sub(1);
-                        break 'main_loop;
-                    }
-                    if lit_length >= RUN_MASK {
-                        let mut len = lit_length - RUN_MASK;
-                        *token = (RUN_MASK << ML_BITS) as u8;
-                        while len >= 255 {
-                            *op = 255;
-                            op = op.add(1);
-                            len -= 255;
-                        }
-                        *op = len as u8;
-                        op = op.add(1);
-                    } else {
-                        *token = (lit_length << ML_BITS) as u8;
-                    }
-
-                    /* Copy Literals */
-                    wild_copy8(op, anchor, op.wrapping_add(lit_length as usize));
-                    op = op.wrapping_add(lit_length as usize);
-                }
-
-                /* --- _next_match --- */
-                loop {
-                    if output_directive == FillOutput
-                        && op.wrapping_add(2 + 1 + MFLIMIT - MINMATCH) > olimit
-                    {
-                        op = token;
-                        break 'main_loop;
-                    }
-
-                    /* Encode Offset */
-                    if maybe_ext_mem {
-                        write_le16(op, offset as u16);
-                        op = op.wrapping_add(2);
-                    } else {
-                        write_le16(op, (ip as usize - r#match as usize) as u16);
-                        op = op.wrapping_add(2);
-                    }
-
-                    /* Encode MatchLength */
-                    {
-                        let mut match_code: u32;
-
-                        if (dict_directive == UsingExtDict || dict_directive == UsingDictCtx)
-                            && low_limit == dictionary
-                        {
-                            let mut limit = ip
-                                .wrapping_add(dict_end as usize - r#match as usize);
-                            if limit > matchlimit {
-                                limit = matchlimit;
-                            }
-                            match_code = lz4_count(
-                                ip.wrapping_add(MINMATCH),
-                                r#match.wrapping_add(MINMATCH),
-                                limit,
-                            );
-                            ip = ip.wrapping_add(match_code as usize + MINMATCH);
-                            if ip == limit {
-                                let more = lz4_count(limit, source as *const u8, matchlimit);
-                                match_code += more;
-                                ip = ip.wrapping_add(more as usize);
-                            }
-                        } else {
-                            match_code = lz4_count(
-                                ip.wrapping_add(MINMATCH),
-                                r#match.wrapping_add(MINMATCH),
-                                matchlimit,
-                            );
-                            ip = ip.wrapping_add(match_code as usize + MINMATCH);
-                        }
-
-                        if output_directive != NotLimited
-                            && op
-                                .wrapping_add(1 + LASTLITERALS)
-                                .wrapping_add(((match_code + 240) / 255) as usize)
-                                > olimit
-                        {
-                            if output_directive == FillOutput {
-                                let new_match_code: u32 = 15u32.wrapping_sub(1).wrapping_add(
-                                    ((olimit as usize - op as usize) as u32)
-                                        .wrapping_sub(1)
-                                        .wrapping_sub(LASTLITERALS as u32)
-                                        .wrapping_mul(255),
-                                );
-                                ip = ip.wrapping_sub(
-                                    match_code.wrapping_sub(new_match_code) as usize,
-                                );
-                                match_code = new_match_code;
-                                if ip <= filled_ip {
-                                    let mut ptr = ip;
-                                    while ptr <= filled_ip {
-                                        let h = lz4_hash_position(ptr, table_type);
-                                        lz4_clear_hash(h, table, table_type);
-                                        ptr = ptr.add(1);
-                                    }
-                                }
-                            } else {
-                                return 0;
-                            }
-                        }
-                        if match_code >= ML_MASK {
-                            *token = (*token).wrapping_add(ML_MASK as u8);
-                            match_code -= ML_MASK;
-                            write32(op, 0xFFFF_FFFF);
-                            while match_code >= 4 * 255 {
-                                op = op.wrapping_add(4);
-                                write32(op, 0xFFFF_FFFF);
-                                match_code -= 4 * 255;
-                            }
-                            op = op.wrapping_add((match_code / 255) as usize);
-                            *op = (match_code % 255) as u8;
-                            op = op.wrapping_add(1);
-                        } else {
-                            *token = (*token).wrapping_add(match_code as u8);
-                        }
-                    }
-
-                    anchor = ip;
-
-                    /* Test end of chunk */
-                    if ip >= mflimit_plus_one {
-                        break 'main_loop;
-                    }
-
-                    /* Fill table */
-                    {
-                        let h = lz4_hash_position(ip.wrapping_sub(2), table_type);
-                        if table_type == ByPtr {
-                            lz4_put_position_on_hash(ip.wrapping_sub(2), h, table);
-                        } else {
-                            let idx = (ip.wrapping_sub(2) as usize - base as usize) as u32;
-                            lz4_put_index_on_hash(idx, h, table, table_type);
-                        }
-                    }
-
-                    /* Test next position */
-                    if table_type == ByPtr {
-                        r#match = lz4_get_position(ip, table, table_type);
-                        lz4_put_position(ip, table, table_type);
-                        if r#match.wrapping_add(LZ4_DISTANCE_MAX as usize) >= ip
-                            && read32(r#match) == read32(ip)
-                        {
-                            token = op;
-                            op = op.wrapping_add(1);
-                            *token = 0;
-                            continue;
-                        }
-                    } else {
-                        let h = lz4_hash_position(ip, table_type);
-                        let current = (ip as usize - base as usize) as u32;
-                        let mut match_index = lz4_get_index_on_hash(h, table, table_type);
-                        if dict_directive == UsingDictCtx {
-                            if match_index < start_index {
-                                match_index =
-                                    lz4_get_index_on_hash(h, (*dict_ctx).hash_table.as_ptr(), ByU32);
-                                r#match = dict_base.wrapping_add(match_index as usize);
-                                low_limit = dictionary;
-                                match_index = match_index.wrapping_add(dict_delta);
-                            } else {
-                                r#match = base.wrapping_add(match_index as usize);
-                                low_limit = source as *const u8;
-                            }
-                        } else if dict_directive == UsingExtDict {
-                            if match_index < start_index {
-                                r#match = dict_base.wrapping_add(match_index as usize);
-                                low_limit = dictionary;
-                            } else {
-                                r#match = base.wrapping_add(match_index as usize);
-                                low_limit = source as *const u8;
-                            }
-                        } else {
-                            r#match = base.wrapping_add(match_index as usize);
-                        }
-                        lz4_put_index_on_hash(current, h, table, table_type);
-                        let cond_a = if dict_issue == DictSmall {
-                            match_index >= prefix_idx_limit
-                        } else {
-                            true
-                        };
-                        let cond_b = if table_type == ByU16
-                            && LZ4_DISTANCE_MAX == LZ4_DISTANCE_ABSOLUTE_MAX
-                        {
-                            true
-                        } else {
-                            match_index.wrapping_add(LZ4_DISTANCE_MAX) >= current
-                        };
-                        if cond_a && cond_b && read32(r#match) == read32(ip) {
-                            token = op;
-                            op = op.wrapping_add(1);
-                            *token = 0;
-                            if maybe_ext_mem {
-                                offset = current.wrapping_sub(match_index);
-                            }
-                            continue;
-                        }
-                    }
-
-                    /* Prepare next loop */
-                    ip = ip.wrapping_add(1);
-                    forward_h = lz4_hash_position(ip, table_type);
-                    break;
-                }
-            }
-        }
-
-        /* --- _last_literals --- */
-        {
-            let mut last_run = iend as usize - anchor as usize;
-            if output_directive != NotLimited
-                && op
-                    .wrapping_add(last_run)
-                    .wrapping_add(1)
-                    .wrapping_add((last_run + 255 - RUN_MASK as usize) / 255)
-                    > olimit
-            {
-                if output_directive == FillOutput {
-                    last_run = (olimit as usize - op as usize) - 1;
-                    last_run -= (last_run + 256 - RUN_MASK as usize) / 256;
-                } else {
-                    return 0;
-                }
-            }
-            if last_run >= RUN_MASK as usize {
-                let mut accumulator = last_run - RUN_MASK as usize;
-                *op = (RUN_MASK << ML_BITS) as u8;
-                op = op.add(1);
-                while accumulator >= 255 {
-                    *op = 255;
-                    op = op.add(1);
-                    accumulator -= 255;
-                }
-                *op = accumulator as u8;
-                op = op.add(1);
-            } else {
-                *op = ((last_run as u32) << ML_BITS) as u8;
-                op = op.add(1);
-            }
-            mem_copy(op, anchor, last_run);
-            ip = anchor.wrapping_add(last_run);
-            op = op.wrapping_add(last_run);
-        }
-
-        if output_directive == FillOutput {
-            *input_consumed = (ip as usize - source as usize) as c_int;
-        }
-        (op as usize - dest as usize) as c_int
-    }
-}
-
-unsafe fn lz4_compress_generic(
-    cctx: *mut LZ4StreamInternal,
-    src: *const c_char,
-    dst: *mut c_char,
-    src_size: c_int,
-    input_consumed: *mut c_int,
-    dst_capacity: c_int,
-    output_directive: LimitedOutput,
-    table_type: TableType,
-    dict_directive: DictDirective,
-    dict_issue: DictIssue,
-    acceleration: c_int,
-) -> c_int {
-    unsafe {
-        if (src_size as u32) > (LZ4_MAX_INPUT_SIZE as u32) {
-            return 0;
-        }
-        if src_size == 0 {
-            if output_directive != NotLimited && dst_capacity <= 0 {
-                return 0;
-            }
-            *dst = 0;
-            if output_directive == FillOutput {
-                *input_consumed = 0;
-            }
-            return 1;
-        }
-
-        lz4_compress_generic_validated(
-            cctx,
-            src,
-            dst,
-            src_size,
-            input_consumed,
-            dst_capacity,
-            output_directive,
-            table_type,
-            dict_directive,
-            dict_issue,
-            acceleration,
-        )
-    }
-}
-
-/* ===== simple / ext-state compression API ===== */
+/* ===== Local Utils ===== */
 
 #[unsafe(no_mangle)]
 pub extern "C" fn LZ4_versionNumber() -> c_int {
@@ -1007,17 +59,716 @@ pub extern "C" fn LZ4_versionNumber() -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn LZ4_versionString() -> *const c_char {
-    LZ4_VERSION_STRING_BYTES.as_ptr() as *const c_char
+    LZ4_VERSION_STRING_C.as_ptr() as *const c_char
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn LZ4_compressBound(isize_: c_int) -> c_int {
-    lz4_compress_bound(isize_)
+    LZ4_COMPRESSBOUND(isize_)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn LZ4_sizeofState() -> c_int {
-    core::mem::size_of::<LZ4Stream>() as c_int
+    core::mem::size_of::<LZ4_stream_t>() as c_int
+}
+
+/* ===== Hashing ===== */
+
+#[inline(always)]
+fn LZ4_hash4(sequence: u32, tableType: u32) -> u32 {
+    if tableType == byU16 {
+        sequence.wrapping_mul(2654435761u32) >> ((MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1))
+    } else {
+        sequence.wrapping_mul(2654435761u32) >> ((MINMATCH as u32 * 8) - LZ4_HASHLOG)
+    }
+}
+
+#[inline(always)]
+fn LZ4_hash5(sequence: u64, tableType: u32) -> u32 {
+    let hashLog = if tableType == byU16 {
+        LZ4_HASHLOG + 1
+    } else {
+        LZ4_HASHLOG
+    };
+    let prime5bytes: u64 = 889523592379u64;
+    ((sequence << 24).wrapping_mul(prime5bytes) >> (64 - hashLog)) as u32
+}
+
+#[inline(always)]
+unsafe fn LZ4_hashPosition(p: *const u8, tableType: u32) -> u32 {
+    unsafe {
+        if tableType != byU16 {
+            return LZ4_hash5(LZ4_read_ARCH(p), tableType);
+        }
+        LZ4_hash4(LZ4_read32(p), tableType)
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_clearHash(h: u32, tableBase: *mut u32, tableType: u32) {
+    unsafe {
+        match tableType {
+            byPtr => {
+                let hashTable = tableBase as *mut *const u8;
+                *hashTable.wrapping_add(h as usize) = core::ptr::null();
+            }
+            byU32 => {
+                *tableBase.wrapping_add(h as usize) = 0;
+            }
+            byU16 => {
+                let hashTable = tableBase as *mut u16;
+                *hashTable.wrapping_add(h as usize) = 0;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_putIndexOnHash(idx: u32, h: u32, tableBase: *mut u32, tableType: u32) {
+    unsafe {
+        match tableType {
+            byU32 => {
+                *tableBase.wrapping_add(h as usize) = idx;
+            }
+            byU16 => {
+                let hashTable = tableBase as *mut u16;
+                *hashTable.wrapping_add(h as usize) = idx as u16;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_putPositionOnHash(p: *const u8, h: u32, tableBase: *mut u32, _tableType: u32) {
+    unsafe {
+        let hashTable = tableBase as *mut *const u8;
+        *hashTable.wrapping_add(h as usize) = p;
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_putPosition(p: *const u8, tableBase: *mut u32, tableType: u32) {
+    unsafe {
+        let h = LZ4_hashPosition(p, tableType);
+        LZ4_putPositionOnHash(p, h, tableBase, tableType);
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_getIndexOnHash(h: u32, tableBase: *const u32, tableType: u32) -> u32 {
+    unsafe {
+        if tableType == byU32 {
+            return *tableBase.wrapping_add(h as usize);
+        }
+        if tableType == byU16 {
+            let hashTable = tableBase as *const u16;
+            return *hashTable.wrapping_add(h as usize) as u32;
+        }
+        0
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_getPositionOnHash(h: u32, tableBase: *const u32, _tableType: u32) -> *const u8 {
+    unsafe {
+        let hashTable = tableBase as *const *const u8;
+        *hashTable.wrapping_add(h as usize)
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_getPosition(p: *const u8, tableBase: *const u32, tableType: u32) -> *const u8 {
+    unsafe {
+        let h = LZ4_hashPosition(p, tableType);
+        LZ4_getPositionOnHash(h, tableBase, tableType)
+    }
+}
+
+#[inline(always)]
+unsafe fn LZ4_prepareTable(cctx: *mut LZ4_stream_t_internal, inputSize: c_int, tableType: u32) {
+    unsafe {
+        if (*cctx).tableType != clearedTable {
+            if (*cctx).tableType != tableType
+                || (tableType == byU16
+                    && (*cctx).currentOffset.wrapping_add(inputSize as u32) >= 0xFFFFu32)
+                || (tableType == byU32 && (*cctx).currentOffset > (1u32 << 30))
+                || tableType == byPtr
+                || inputSize >= (4 * KB) as c_int
+            {
+                MEM_INIT(
+                    (*cctx).hashTable.as_mut_ptr() as *mut u8,
+                    0,
+                    LZ4_HASHTABLESIZE,
+                );
+                (*cctx).currentOffset = 0;
+                (*cctx).tableType = clearedTable;
+            }
+        }
+
+        if (*cctx).currentOffset != 0 && tableType == byU32 {
+            (*cctx).currentOffset = (*cctx).currentOffset.wrapping_add(64 * KB as u32);
+        }
+
+        (*cctx).dictCtx = core::ptr::null();
+        (*cctx).dictionary = core::ptr::null();
+        (*cctx).dictSize = 0;
+    }
+}
+
+/* ===== Compression ===== */
+
+unsafe fn LZ4_compress_generic_validated(
+    cctx: *mut LZ4_stream_t_internal,
+    source: *const c_char,
+    dest: *mut c_char,
+    inputSize: c_int,
+    inputConsumed: *mut c_int,
+    maxOutputSize: c_int,
+    outputDirective: i32,
+    tableType: u32,
+    dictDirective: i32,
+    dictIssue: i32,
+    acceleration: c_int,
+) -> c_int {
+    unsafe {
+        let result: c_int;
+        let mut ip: *const u8 = source as *const u8;
+
+        let startIndex: u32 = (*cctx).currentOffset;
+        let base: *const u8 = csub(source as *const u8, startIndex as usize);
+        let mut lowLimit: *const u8;
+
+        let dictCtx: *const LZ4_stream_t_internal = (*cctx).dictCtx;
+        let dictionary: *const u8 = if dictDirective == usingDictCtx {
+            (*dictCtx).dictionary
+        } else {
+            (*cctx).dictionary
+        };
+        let dictSize: u32 = if dictDirective == usingDictCtx {
+            (*dictCtx).dictSize
+        } else {
+            (*cctx).dictSize
+        };
+        let dictDelta: u32 = if dictDirective == usingDictCtx {
+            startIndex.wrapping_sub((*dictCtx).currentOffset)
+        } else {
+            0
+        };
+
+        let maybe_extMem: bool =
+            (dictDirective == usingExtDict) || (dictDirective == usingDictCtx);
+        let prefixIdxLimit: u32 = startIndex.wrapping_sub(dictSize);
+        let dictEnd: *const u8 = if !dictionary.is_null() {
+            cadd(dictionary, dictSize as usize)
+        } else {
+            dictionary
+        };
+        let mut anchor: *const u8 = source as *const u8;
+        let iend: *const u8 = cadd(ip, inputSize as usize);
+        let mflimitPlusOne: *const u8 = csub(cadd(iend, 1), MFLIMIT);
+        let matchlimit: *const u8 = csub(iend, LASTLITERALS);
+
+        let dictBase: *const u8 = if dictionary.is_null() {
+            core::ptr::null()
+        } else if dictDirective == usingDictCtx {
+            csub(
+                cadd(dictionary, dictSize as usize),
+                (*dictCtx).currentOffset as usize,
+            )
+        } else {
+            csub(cadd(dictionary, dictSize as usize), startIndex as usize)
+        };
+
+        let mut op: *mut u8 = dest as *mut u8;
+        let olimit: *mut u8 = madd(op, maxOutputSize as usize);
+
+        let mut offset: u32 = 0;
+        let mut forwardH: u32;
+
+        if outputDirective == fillOutput && maxOutputSize < 1 {
+            return 0;
+        }
+
+        lowLimit = csub(
+            source as *const u8,
+            if dictDirective == withPrefix64k {
+                dictSize as usize
+            } else {
+                0
+            },
+        );
+
+        /* Update context state */
+        if dictDirective == usingDictCtx {
+            (*cctx).dictCtx = core::ptr::null();
+            (*cctx).dictSize = inputSize as u32;
+        } else {
+            (*cctx).dictSize = (*cctx).dictSize.wrapping_add(inputSize as u32);
+        }
+        (*cctx).currentOffset = (*cctx).currentOffset.wrapping_add(inputSize as u32);
+        (*cctx).tableType = tableType;
+
+        let mut r#match: *const u8 = core::ptr::null();
+        let mut token: *mut u8 = core::ptr::null_mut();
+        let mut filledIp: *const u8 = core::ptr::null();
+
+        'lastlit: {
+            if inputSize < LZ4_minLength {
+                break 'lastlit;
+            }
+
+            /* First Byte */
+            {
+                let h = LZ4_hashPosition(ip, tableType);
+                if tableType == byPtr {
+                    LZ4_putPositionOnHash(ip, h, (*cctx).hashTable.as_mut_ptr(), byPtr);
+                } else {
+                    LZ4_putIndexOnHash(startIndex, h, (*cctx).hashTable.as_mut_ptr(), tableType);
+                }
+            }
+            ip = cadd(ip, 1);
+            forwardH = LZ4_hashPosition(ip, tableType);
+
+            let mut at_next_match = false;
+            'main: loop {
+                if !at_next_match {
+                    /* Find a match */
+                    if tableType == byPtr {
+                        let mut forwardIp = ip;
+                        let mut step: c_int = 1;
+                        let mut searchMatchNb: c_int = acceleration << LZ4_skipTrigger;
+                        loop {
+                            let h = forwardH;
+                            ip = forwardIp;
+                            forwardIp = coff(forwardIp, step as isize);
+                            step = {
+                                let s = searchMatchNb >> LZ4_skipTrigger;
+                                searchMatchNb += 1;
+                                s
+                            };
+
+                            if forwardIp > mflimitPlusOne {
+                                break 'lastlit;
+                            }
+
+                            r#match = LZ4_getPositionOnHash(
+                                h,
+                                (*cctx).hashTable.as_ptr(),
+                                tableType,
+                            );
+                            forwardH = LZ4_hashPosition(forwardIp, tableType);
+                            LZ4_putPositionOnHash(
+                                ip,
+                                h,
+                                (*cctx).hashTable.as_mut_ptr(),
+                                tableType,
+                            );
+
+                            if !((cadd(r#match, LZ4_DISTANCE_MAX as usize) < ip)
+                                || (LZ4_read32(r#match) != LZ4_read32(ip)))
+                            {
+                                break;
+                            }
+                        }
+                    } else {
+                        let mut forwardIp = ip;
+                        let mut step: c_int = 1;
+                        let mut searchMatchNb: c_int = acceleration << LZ4_skipTrigger;
+                        loop {
+                            let h = forwardH;
+                            let current: u32 = pdiff(forwardIp, base) as u32;
+                            let mut matchIndex =
+                                LZ4_getIndexOnHash(h, (*cctx).hashTable.as_ptr(), tableType);
+                            ip = forwardIp;
+                            forwardIp = coff(forwardIp, step as isize);
+                            step = {
+                                let s = searchMatchNb >> LZ4_skipTrigger;
+                                searchMatchNb += 1;
+                                s
+                            };
+
+                            if forwardIp > mflimitPlusOne {
+                                break 'lastlit;
+                            }
+
+                            if dictDirective == usingDictCtx {
+                                if matchIndex < startIndex {
+                                    matchIndex = LZ4_getIndexOnHash(
+                                        h,
+                                        (*dictCtx).hashTable.as_ptr(),
+                                        byU32,
+                                    );
+                                    r#match = cadd(dictBase, matchIndex as usize);
+                                    matchIndex = matchIndex.wrapping_add(dictDelta);
+                                    lowLimit = dictionary;
+                                } else {
+                                    r#match = cadd(base, matchIndex as usize);
+                                    lowLimit = source as *const u8;
+                                }
+                            } else if dictDirective == usingExtDict {
+                                if matchIndex < startIndex {
+                                    r#match = cadd(dictBase, matchIndex as usize);
+                                    lowLimit = dictionary;
+                                } else {
+                                    r#match = cadd(base, matchIndex as usize);
+                                    lowLimit = source as *const u8;
+                                }
+                            } else {
+                                r#match = cadd(base, matchIndex as usize);
+                            }
+                            forwardH = LZ4_hashPosition(forwardIp, tableType);
+                            LZ4_putIndexOnHash(
+                                current,
+                                h,
+                                (*cctx).hashTable.as_mut_ptr(),
+                                tableType,
+                            );
+
+                            if (dictIssue == dictSmall) && (matchIndex < prefixIdxLimit) {
+                                continue;
+                            }
+                            if ((tableType != byU16)
+                                || (LZ4_DISTANCE_MAX < LZ4_DISTANCE_ABSOLUTE_MAX))
+                                && (matchIndex.wrapping_add(LZ4_DISTANCE_MAX) < current)
+                            {
+                                continue;
+                            }
+
+                            if LZ4_read32(r#match) == LZ4_read32(ip) {
+                                if maybe_extMem {
+                                    offset = current.wrapping_sub(matchIndex);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    /* Catch up */
+                    filledIp = ip;
+                    if (r#match > lowLimit) && (*csub(ip, 1) == *csub(r#match, 1)) {
+                        loop {
+                            ip = csub(ip, 1);
+                            r#match = csub(r#match, 1);
+                            if !(((ip > anchor) && (r#match > lowLimit))
+                                && (*csub(ip, 1) == *csub(r#match, 1)))
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    /* Encode Literals */
+                    {
+                        let litLength: u32 = pdiff(ip, anchor) as u32;
+                        token = op;
+                        op = madd(op, 1);
+                        if (outputDirective == limitedOutput)
+                            && (madd(
+                                op,
+                                litLength as usize + (2 + 1 + LASTLITERALS) + (litLength / 255) as usize,
+                            ) > olimit)
+                        {
+                            return 0;
+                        }
+                        if (outputDirective == fillOutput)
+                            && (madd(
+                                op,
+                                ((litLength + 240) / 255) as usize
+                                    + litLength as usize
+                                    + 2
+                                    + 1
+                                    + MFLIMIT
+                                    - MINMATCH,
+                            ) > olimit)
+                        {
+                            op = msub(op, 1);
+                            break 'lastlit;
+                        }
+                        if litLength >= RUN_MASK {
+                            let mut len = litLength - RUN_MASK;
+                            *token = (RUN_MASK << ML_BITS) as u8;
+                            while len >= 255 {
+                                *op = 255;
+                                op = madd(op, 1);
+                                len -= 255;
+                            }
+                            *op = len as u8;
+                            op = madd(op, 1);
+                        } else {
+                            *token = ((litLength << ML_BITS) as u8) as u8;
+                        }
+
+                        /* Copy Literals */
+                        LZ4_wildCopy8(op, anchor, madd(op, litLength as usize));
+                        op = madd(op, litLength as usize);
+                    }
+                }
+                at_next_match = false;
+
+                /* _next_match: */
+                if (outputDirective == fillOutput)
+                    && (madd(op, 2 + 1 + MFLIMIT - MINMATCH) > olimit)
+                {
+                    op = token;
+                    break 'lastlit;
+                }
+
+                /* Encode Offset */
+                if maybe_extMem {
+                    LZ4_writeLE16(op, offset as u16);
+                    op = madd(op, 2);
+                } else {
+                    LZ4_writeLE16(op, pdiff(ip, r#match) as u16);
+                    op = madd(op, 2);
+                }
+
+                /* Encode MatchLength */
+                {
+                    let mut matchCode: u32;
+
+                    if (dictDirective == usingExtDict || dictDirective == usingDictCtx)
+                        && (lowLimit == dictionary)
+                    {
+                        let mut limit = coff(ip, pdiff(dictEnd, r#match));
+                        if limit > matchlimit {
+                            limit = matchlimit;
+                        }
+                        matchCode =
+                            LZ4_count(cadd(ip, MINMATCH), cadd(r#match, MINMATCH), limit);
+                        ip = cadd(ip, matchCode as usize + MINMATCH);
+                        if ip == limit {
+                            let more = LZ4_count(limit, source as *const u8, matchlimit);
+                            matchCode += more;
+                            ip = cadd(ip, more as usize);
+                        }
+                    } else {
+                        matchCode =
+                            LZ4_count(cadd(ip, MINMATCH), cadd(r#match, MINMATCH), matchlimit);
+                        ip = cadd(ip, matchCode as usize + MINMATCH);
+                    }
+
+                    if (outputDirective != notLimited)
+                        && (madd(op, (1 + LASTLITERALS) + ((matchCode + 240) / 255) as usize)
+                            > olimit)
+                    {
+                        if outputDirective == fillOutput {
+                            let newMatchCode: u32 = (15u32 - 1).wrapping_add(
+                                (pdiff(olimit, op) as u32)
+                                    .wrapping_sub(1)
+                                    .wrapping_sub(LASTLITERALS as u32)
+                                    .wrapping_mul(255),
+                            );
+                            ip = csub(ip, matchCode.wrapping_sub(newMatchCode) as usize);
+                            matchCode = newMatchCode;
+                            if ip <= filledIp {
+                                let mut ptr = ip;
+                                while ptr <= filledIp {
+                                    let h = LZ4_hashPosition(ptr, tableType);
+                                    LZ4_clearHash(h, (*cctx).hashTable.as_mut_ptr(), tableType);
+                                    ptr = cadd(ptr, 1);
+                                }
+                            }
+                        } else {
+                            return 0;
+                        }
+                    }
+                    if matchCode >= ML_MASK {
+                        *token = (*token).wrapping_add(ML_MASK as u8);
+                        matchCode -= ML_MASK;
+                        LZ4_write32(op, 0xFFFFFFFF);
+                        while matchCode >= 4 * 255 {
+                            op = madd(op, 4);
+                            LZ4_write32(op, 0xFFFFFFFF);
+                            matchCode -= 4 * 255;
+                        }
+                        op = madd(op, (matchCode / 255) as usize);
+                        *op = (matchCode % 255) as u8;
+                        op = madd(op, 1);
+                    } else {
+                        *token = (*token).wrapping_add(matchCode as u8);
+                    }
+                }
+
+                anchor = ip;
+
+                /* Test end of chunk */
+                if ip >= mflimitPlusOne {
+                    break 'main;
+                }
+
+                /* Fill table */
+                {
+                    let h = LZ4_hashPosition(csub(ip, 2), tableType);
+                    if tableType == byPtr {
+                        LZ4_putPositionOnHash(
+                            csub(ip, 2),
+                            h,
+                            (*cctx).hashTable.as_mut_ptr(),
+                            byPtr,
+                        );
+                    } else {
+                        let idx: u32 = pdiff(csub(ip, 2), base) as u32;
+                        LZ4_putIndexOnHash(idx, h, (*cctx).hashTable.as_mut_ptr(), tableType);
+                    }
+                }
+
+                /* Test next position */
+                if tableType == byPtr {
+                    r#match = LZ4_getPosition(ip, (*cctx).hashTable.as_ptr(), tableType);
+                    LZ4_putPosition(ip, (*cctx).hashTable.as_mut_ptr(), tableType);
+                    if (cadd(r#match, LZ4_DISTANCE_MAX as usize) >= ip)
+                        && (LZ4_read32(r#match) == LZ4_read32(ip))
+                    {
+                        token = op;
+                        op = madd(op, 1);
+                        *token = 0;
+                        at_next_match = true;
+                        continue 'main;
+                    }
+                } else {
+                    let h = LZ4_hashPosition(ip, tableType);
+                    let current: u32 = pdiff(ip, base) as u32;
+                    let mut matchIndex =
+                        LZ4_getIndexOnHash(h, (*cctx).hashTable.as_ptr(), tableType);
+                    if dictDirective == usingDictCtx {
+                        if matchIndex < startIndex {
+                            matchIndex =
+                                LZ4_getIndexOnHash(h, (*dictCtx).hashTable.as_ptr(), byU32);
+                            r#match = cadd(dictBase, matchIndex as usize);
+                            lowLimit = dictionary;
+                            matchIndex = matchIndex.wrapping_add(dictDelta);
+                        } else {
+                            r#match = cadd(base, matchIndex as usize);
+                            lowLimit = source as *const u8;
+                        }
+                    } else if dictDirective == usingExtDict {
+                        if matchIndex < startIndex {
+                            r#match = cadd(dictBase, matchIndex as usize);
+                            lowLimit = dictionary;
+                        } else {
+                            r#match = cadd(base, matchIndex as usize);
+                            lowLimit = source as *const u8;
+                        }
+                    } else {
+                        r#match = cadd(base, matchIndex as usize);
+                    }
+                    LZ4_putIndexOnHash(current, h, (*cctx).hashTable.as_mut_ptr(), tableType);
+                    let cond1 = if dictIssue == dictSmall {
+                        matchIndex >= prefixIdxLimit
+                    } else {
+                        true
+                    };
+                    let cond2 = if (tableType == byU16)
+                        && (LZ4_DISTANCE_MAX == LZ4_DISTANCE_ABSOLUTE_MAX)
+                    {
+                        true
+                    } else {
+                        matchIndex.wrapping_add(LZ4_DISTANCE_MAX) >= current
+                    };
+                    if cond1 && cond2 && (LZ4_read32(r#match) == LZ4_read32(ip)) {
+                        token = op;
+                        op = madd(op, 1);
+                        *token = 0;
+                        if maybe_extMem {
+                            offset = current.wrapping_sub(matchIndex);
+                        }
+                        at_next_match = true;
+                        continue 'main;
+                    }
+                }
+
+                /* Prepare next loop */
+                ip = cadd(ip, 1);
+                forwardH = LZ4_hashPosition(ip, tableType);
+            }
+        }
+
+        /* _last_literals: */
+        {
+            let mut lastRun: usize = pdiff(iend, anchor) as usize;
+            if (outputDirective != notLimited)
+                && (madd(op, lastRun + 1 + ((lastRun + 255 - RUN_MASK as usize) / 255)) > olimit)
+            {
+                if outputDirective == fillOutput {
+                    lastRun = (pdiff(olimit, op) as usize) - 1;
+                    lastRun -= (lastRun + 256 - RUN_MASK as usize) / 256;
+                } else {
+                    return 0;
+                }
+            }
+            if lastRun >= RUN_MASK as usize {
+                let mut accumulator = lastRun - RUN_MASK as usize;
+                *op = (RUN_MASK << ML_BITS) as u8;
+                op = madd(op, 1);
+                while accumulator >= 255 {
+                    *op = 255;
+                    op = madd(op, 1);
+                    accumulator -= 255;
+                }
+                *op = accumulator as u8;
+                op = madd(op, 1);
+            } else {
+                *op = ((lastRun as u32) << ML_BITS) as u8;
+                op = madd(op, 1);
+            }
+            LZ4_memcpy(op, anchor, lastRun);
+            ip = cadd(anchor, lastRun);
+            op = madd(op, lastRun);
+        }
+
+        if outputDirective == fillOutput {
+            *inputConsumed = pdiff(ip, source as *const u8) as c_int;
+        }
+        result = pdiff(op as *const u8, dest as *const u8) as c_int;
+        result
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn LZ4_compress_generic(
+    cctx: *mut LZ4_stream_t_internal,
+    src: *const c_char,
+    dst: *mut c_char,
+    srcSize: c_int,
+    inputConsumed: *mut c_int,
+    dstCapacity: c_int,
+    outputDirective: i32,
+    tableType: u32,
+    dictDirective: i32,
+    dictIssue: i32,
+    acceleration: c_int,
+) -> c_int {
+    unsafe {
+        if (srcSize as u32) > LZ4_MAX_INPUT_SIZE {
+            return 0;
+        }
+        if srcSize == 0 {
+            if outputDirective != notLimited && dstCapacity <= 0 {
+                return 0;
+            }
+            *(dst as *mut u8) = 0;
+            if outputDirective == fillOutput {
+                *inputConsumed = 0;
+            }
+            return 1;
+        }
+
+        LZ4_compress_generic_validated(
+            cctx,
+            src,
+            dst,
+            srcSize,
+            inputConsumed,
+            dstCapacity,
+            outputDirective,
+            tableType,
+            dictDirective,
+            dictIssue,
+            acceleration,
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1025,48 +776,76 @@ pub unsafe extern "C" fn LZ4_compress_fast_extState(
     state: *mut c_void,
     source: *const c_char,
     dest: *mut c_char,
-    input_size: c_int,
-    max_output_size: c_int,
-    acceleration: c_int,
+    inputSize: c_int,
+    maxOutputSize: c_int,
+    mut acceleration: c_int,
 ) -> c_int {
     unsafe {
-        let ctx =
-            LZ4_initStream(state, core::mem::size_of::<LZ4Stream>()) as *mut LZ4StreamInternal;
-        let mut acceleration = acceleration;
+        let ctx = LZ4_initStream(state, core::mem::size_of::<LZ4_stream_t>());
         if acceleration < 1 {
             acceleration = LZ4_ACCELERATION_DEFAULT;
         }
         if acceleration > LZ4_ACCELERATION_MAX {
             acceleration = LZ4_ACCELERATION_MAX;
         }
-        if max_output_size >= lz4_compress_bound(input_size) {
-            let table_type = if input_size < LZ4_64K_LIMIT { ByU16 } else { ByU32 };
-            lz4_compress_generic(
+        if maxOutputSize >= LZ4_compressBound(inputSize) {
+            if inputSize < LZ4_64Klimit {
+                LZ4_compress_generic(
+                    ctx,
+                    source,
+                    dest,
+                    inputSize,
+                    core::ptr::null_mut(),
+                    0,
+                    notLimited,
+                    byU16,
+                    noDict,
+                    noDictIssue,
+                    acceleration,
+                )
+            } else {
+                let tableType = byU32;
+                LZ4_compress_generic(
+                    ctx,
+                    source,
+                    dest,
+                    inputSize,
+                    core::ptr::null_mut(),
+                    0,
+                    notLimited,
+                    tableType,
+                    noDict,
+                    noDictIssue,
+                    acceleration,
+                )
+            }
+        } else if inputSize < LZ4_64Klimit {
+            LZ4_compress_generic(
                 ctx,
                 source,
                 dest,
-                input_size,
+                inputSize,
                 core::ptr::null_mut(),
-                0,
-                NotLimited,
-                table_type,
-                NoDict,
-                NoDictIssue,
+                maxOutputSize,
+                limitedOutput,
+                byU16,
+                noDict,
+                noDictIssue,
                 acceleration,
             )
         } else {
-            let table_type = if input_size < LZ4_64K_LIMIT { ByU16 } else { ByU32 };
-            lz4_compress_generic(
+            let tableType = byU32;
+            LZ4_compress_generic(
                 ctx,
                 source,
                 dest,
-                input_size,
+                inputSize,
                 core::ptr::null_mut(),
-                max_output_size,
-                Limited,
-                table_type,
-                NoDict,
-                NoDictIssue,
+                maxOutputSize,
+                limitedOutput,
+                tableType,
+                noDict,
+                noDictIssue,
                 acceleration,
             )
         }
@@ -1078,13 +857,12 @@ pub unsafe extern "C" fn LZ4_compress_fast_extState_fastReset(
     state: *mut c_void,
     src: *const c_char,
     dst: *mut c_char,
-    src_size: c_int,
-    dst_capacity: c_int,
-    acceleration: c_int,
+    srcSize: c_int,
+    dstCapacity: c_int,
+    mut acceleration: c_int,
 ) -> c_int {
     unsafe {
-        let ctx = state as *mut LZ4StreamInternal;
-        let mut acceleration = acceleration;
+        let ctx = state as *mut LZ4_stream_t_internal;
         if acceleration < 1 {
             acceleration = LZ4_ACCELERATION_DEFAULT;
         }
@@ -1092,52 +870,102 @@ pub unsafe extern "C" fn LZ4_compress_fast_extState_fastReset(
             acceleration = LZ4_ACCELERATION_MAX;
         }
 
-        let output_directive = if dst_capacity >= lz4_compress_bound(src_size) {
-            NotLimited
-        } else {
-            Limited
-        };
-        let max_output = if output_directive == NotLimited {
-            0
-        } else {
-            dst_capacity
-        };
-
-        if src_size < LZ4_64K_LIMIT {
-            let table_type = ByU16;
-            lz4_prepare_table(ctx, src_size, table_type);
-            let dict_issue = if (*ctx).current_offset != 0 {
-                DictSmall
+        if dstCapacity >= LZ4_compressBound(srcSize) {
+            if srcSize < LZ4_64Klimit {
+                let tableType = byU16;
+                LZ4_prepareTable(ctx, srcSize, tableType);
+                if (*ctx).currentOffset != 0 {
+                    LZ4_compress_generic(
+                        ctx,
+                        src,
+                        dst,
+                        srcSize,
+                        core::ptr::null_mut(),
+                        0,
+                        notLimited,
+                        tableType,
+                        noDict,
+                        dictSmall,
+                        acceleration,
+                    )
+                } else {
+                    LZ4_compress_generic(
+                        ctx,
+                        src,
+                        dst,
+                        srcSize,
+                        core::ptr::null_mut(),
+                        0,
+                        notLimited,
+                        tableType,
+                        noDict,
+                        noDictIssue,
+                        acceleration,
+                    )
+                }
             } else {
-                NoDictIssue
-            };
-            lz4_compress_generic(
-                ctx,
-                src,
-                dst,
-                src_size,
-                core::ptr::null_mut(),
-                max_output,
-                output_directive,
-                table_type,
-                NoDict,
-                dict_issue,
-                acceleration,
-            )
+                let tableType = byU32;
+                LZ4_prepareTable(ctx, srcSize, tableType);
+                LZ4_compress_generic(
+                    ctx,
+                    src,
+                    dst,
+                    srcSize,
+                    core::ptr::null_mut(),
+                    0,
+                    notLimited,
+                    tableType,
+                    noDict,
+                    noDictIssue,
+                    acceleration,
+                )
+            }
+        } else if srcSize < LZ4_64Klimit {
+            let tableType = byU16;
+            LZ4_prepareTable(ctx, srcSize, tableType);
+            if (*ctx).currentOffset != 0 {
+                LZ4_compress_generic(
+                    ctx,
+                    src,
+                    dst,
+                    srcSize,
+                    core::ptr::null_mut(),
+                    dstCapacity,
+                    limitedOutput,
+                    tableType,
+                    noDict,
+                    dictSmall,
+                    acceleration,
+                )
+            } else {
+                LZ4_compress_generic(
+                    ctx,
+                    src,
+                    dst,
+                    srcSize,
+                    core::ptr::null_mut(),
+                    dstCapacity,
+                    limitedOutput,
+                    tableType,
+                    noDict,
+                    noDictIssue,
+                    acceleration,
+                )
+            }
         } else {
-            let table_type = ByU32;
-            lz4_prepare_table(ctx, src_size, table_type);
-            lz4_compress_generic(
+            let tableType = byU32;
+            LZ4_prepareTable(ctx, srcSize, tableType);
+            LZ4_compress_generic(
                 ctx,
                 src,
                 dst,
-                src_size,
+                srcSize,
                 core::ptr::null_mut(),
-                max_output,
-                output_directive,
-                table_type,
-                NoDict,
-                NoDictIssue,
+                dstCapacity,
+                limitedOutput,
+                tableType,
+                noDict,
+                noDictIssue,
                 acceleration,
             )
         }
@@ -1148,18 +976,18 @@ pub unsafe extern "C" fn LZ4_compress_fast_extState_fastReset(
 pub unsafe extern "C" fn LZ4_compress_fast(
     src: *const c_char,
     dest: *mut c_char,
-    src_size: c_int,
-    dst_capacity: c_int,
+    srcSize: c_int,
+    dstCapacity: c_int,
     acceleration: c_int,
 ) -> c_int {
     unsafe {
-        let mut ctx = core::mem::MaybeUninit::<LZ4Stream>::uninit();
+        let mut ctx = core::mem::MaybeUninit::<LZ4_stream_t>::uninit();
         LZ4_compress_fast_extState(
             ctx.as_mut_ptr() as *mut c_void,
             src,
             dest,
-            src_size,
-            dst_capacity,
+            srcSize,
+            dstCapacity,
             acceleration,
         )
     }
@@ -1169,45 +997,59 @@ pub unsafe extern "C" fn LZ4_compress_fast(
 pub unsafe extern "C" fn LZ4_compress_default(
     src: *const c_char,
     dst: *mut c_char,
-    src_size: c_int,
-    dst_capacity: c_int,
+    srcSize: c_int,
+    dstCapacity: c_int,
 ) -> c_int {
-    unsafe { LZ4_compress_fast(src, dst, src_size, dst_capacity, 1) }
+    unsafe { LZ4_compress_fast(src, dst, srcSize, dstCapacity, 1) }
 }
 
-unsafe fn lz4_compress_dest_size_ext_state_internal(
-    state: *mut LZ4Stream,
+unsafe fn LZ4_compress_destSize_extState_internal(
+    state: *mut LZ4_stream_t,
     src: *const c_char,
     dst: *mut c_char,
-    src_size_ptr: *mut c_int,
-    target_dst_size: c_int,
+    srcSizePtr: *mut c_int,
+    targetDstSize: c_int,
     acceleration: c_int,
 ) -> c_int {
     unsafe {
-        LZ4_initStream(state as *mut c_void, core::mem::size_of::<LZ4Stream>());
+        LZ4_initStream(state as *mut c_void, core::mem::size_of::<LZ4_stream_t>());
 
-        if target_dst_size >= lz4_compress_bound(*src_size_ptr) {
+        if targetDstSize >= LZ4_compressBound(*srcSizePtr) {
             LZ4_compress_fast_extState(
                 state as *mut c_void,
                 src,
                 dst,
-                *src_size_ptr,
-                target_dst_size,
+                *srcSizePtr,
+                targetDstSize,
+                acceleration,
+            )
+        } else if *srcSizePtr < LZ4_64Klimit {
+            LZ4_compress_generic(
+                state,
+                src,
+                dst,
+                *srcSizePtr,
+                srcSizePtr,
+                targetDstSize,
+                fillOutput,
+                byU16,
+                noDict,
+                noDictIssue,
                 acceleration,
             )
         } else {
-            let addr_mode = if *src_size_ptr < LZ4_64K_LIMIT { ByU16 } else { ByU32 };
-            lz4_compress_generic(
-                state as *mut LZ4StreamInternal,
+            let addrMode = byU32;
+            LZ4_compress_generic(
+                state,
                 src,
                 dst,
-                *src_size_ptr,
-                src_size_ptr,
-                target_dst_size,
-                FillOutput,
-                addr_mode,
-                NoDict,
-                NoDictIssue,
+                *srcSizePtr,
+                srcSizePtr,
+                targetDstSize,
+                fillOutput,
+                addrMode,
+                noDict,
+                noDictIssue,
                 acceleration,
             )
         }
@@ -1219,20 +1061,20 @@ pub unsafe extern "C" fn LZ4_compress_destSize_extState(
     state: *mut c_void,
     src: *const c_char,
     dst: *mut c_char,
-    src_size_ptr: *mut c_int,
-    target_dst_size: c_int,
+    srcSizePtr: *mut c_int,
+    targetDstSize: c_int,
     acceleration: c_int,
 ) -> c_int {
     unsafe {
-        let r = lz4_compress_dest_size_ext_state_internal(
-            state as *mut LZ4Stream,
+        let r = LZ4_compress_destSize_extState_internal(
+            state as *mut LZ4_stream_t,
             src,
             dst,
-            src_size_ptr,
-            target_dst_size,
+            srcSizePtr,
+            targetDstSize,
             acceleration,
         );
-        LZ4_initStream(state, core::mem::size_of::<LZ4Stream>());
+        LZ4_initStream(state, core::mem::size_of::<LZ4_stream_t>());
         r
     }
 }
@@ -1241,230 +1083,230 @@ pub unsafe extern "C" fn LZ4_compress_destSize_extState(
 pub unsafe extern "C" fn LZ4_compress_destSize(
     src: *const c_char,
     dst: *mut c_char,
-    src_size_ptr: *mut c_int,
-    target_dst_size: c_int,
+    srcSizePtr: *mut c_int,
+    targetDstSize: c_int,
 ) -> c_int {
     unsafe {
-        let mut ctx_body = core::mem::MaybeUninit::<LZ4Stream>::uninit();
-        lz4_compress_dest_size_ext_state_internal(
-            ctx_body.as_mut_ptr(),
+        let mut ctxBody = core::mem::MaybeUninit::<LZ4_stream_t>::uninit();
+        LZ4_compress_destSize_extState_internal(
+            ctxBody.as_mut_ptr(),
             src,
             dst,
-            src_size_ptr,
-            target_dst_size,
+            srcSizePtr,
+            targetDstSize,
             1,
         )
     }
 }
 
-/* ===== streaming compression ===== */
+/* ===== Streaming ===== */
 
 #[unsafe(no_mangle)]
-pub extern "C" fn LZ4_createStream() -> *mut LZ4Stream {
+pub unsafe extern "C" fn LZ4_createStream() -> *mut LZ4_stream_t {
     unsafe {
-        let lz4s = malloc(core::mem::size_of::<LZ4Stream>()) as *mut LZ4Stream;
+        let lz4s = ALLOC(core::mem::size_of::<LZ4_stream_t>()) as *mut LZ4_stream_t;
         if lz4s.is_null() {
             return core::ptr::null_mut();
         }
-        LZ4_initStream(lz4s as *mut c_void, core::mem::size_of::<LZ4Stream>());
+        LZ4_initStream(lz4s as *mut c_void, core::mem::size_of::<LZ4_stream_t>());
         lz4s
     }
 }
 
+fn LZ4_stream_t_alignment() -> usize {
+    core::mem::align_of::<LZ4_stream_t>()
+}
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn LZ4_initStream(buffer: *mut c_void, size: usize) -> *mut LZ4Stream {
+pub unsafe extern "C" fn LZ4_initStream(buffer: *mut c_void, size: usize) -> *mut LZ4_stream_t {
     unsafe {
         if buffer.is_null() {
             return core::ptr::null_mut();
         }
-        if size < core::mem::size_of::<LZ4Stream>() {
+        if size < core::mem::size_of::<LZ4_stream_t>() {
             return core::ptr::null_mut();
         }
-        if !lz4_is_aligned(buffer, lz4_stream_t_alignment()) {
+        if LZ4_isAligned(buffer as *const u8, LZ4_stream_t_alignment()) == 0 {
             return core::ptr::null_mut();
         }
-        mem_init(
+        MEM_INIT(
             buffer as *mut u8,
             0,
-            core::mem::size_of::<LZ4StreamInternal>(),
+            core::mem::size_of::<LZ4_stream_t_internal>(),
         );
-        buffer as *mut LZ4Stream
+        buffer as *mut LZ4_stream_t
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn LZ4_resetStream(lz4_stream: *mut LZ4Stream) {
+pub unsafe extern "C" fn LZ4_resetStream(LZ4_stream: *mut LZ4_stream_t) {
     unsafe {
-        mem_init(
-            lz4_stream as *mut u8,
+        MEM_INIT(
+            LZ4_stream as *mut u8,
             0,
-            core::mem::size_of::<LZ4StreamInternal>(),
+            core::mem::size_of::<LZ4_stream_t_internal>(),
         );
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn LZ4_resetStream_fast(ctx: *mut LZ4Stream) {
-    unsafe { lz4_prepare_table(ctx as *mut LZ4StreamInternal, 0, ByU32) }
+pub unsafe extern "C" fn LZ4_resetStream_fast(ctx: *mut LZ4_stream_t) {
+    unsafe {
+        LZ4_prepareTable(ctx, 0, byU32);
+    }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn LZ4_freeStream(lz4_stream: *mut LZ4Stream) -> c_int {
+pub unsafe extern "C" fn LZ4_freeStream(LZ4_stream: *mut LZ4_stream_t) -> c_int {
     unsafe {
-        if lz4_stream.is_null() {
+        if LZ4_stream.is_null() {
             return 0;
         }
-        free(lz4_stream as *mut c_void);
+        FREEMEM(LZ4_stream as *mut c_void);
         0
     }
 }
 
-const LD_FAST: u32 = 0;
-const LD_SLOW: u32 = 1;
+const _ld_fast: i32 = 0;
+const _ld_slow: i32 = 1;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_loadDict_internal(
-    lz4_dict: *mut LZ4Stream,
+    LZ4_dict: *mut LZ4_stream_t,
     dictionary: *const c_char,
-    dict_size: c_int,
-    ld: u32,
+    dictSize: c_int,
+    _ld: i32,
 ) -> c_int {
     unsafe {
-        let dict = lz4_dict as *mut LZ4StreamInternal;
-        let table_type = ByU32;
-        let mut p = dictionary as *const u8;
-        let dict_end = p.wrapping_add(dict_size as usize);
+        let dict: *mut LZ4_stream_t_internal = LZ4_dict;
+        let tableType = byU32;
+        let mut p: *const u8 = dictionary as *const u8;
+        let dictEnd: *const u8 = cadd(p, dictSize as usize);
         let mut idx32: u32;
 
-        LZ4_resetStream(lz4_dict);
+        LZ4_resetStream(LZ4_dict);
 
-        (*dict).current_offset = (*dict).current_offset.wrapping_add(64 * 1024);
+        (*dict).currentOffset = (*dict).currentOffset.wrapping_add(64 * KB as u32);
 
-        if dict_size < HASH_UNIT as c_int {
+        if dictSize < HASH_UNIT as c_int {
             return 0;
         }
 
-        if (dict_end as isize - p as isize) > 64 * 1024 {
-            p = dict_end.wrapping_sub(64 * 1024);
+        if pdiff(dictEnd, p) > (64 * KB) as isize {
+            p = csub(dictEnd, 64 * KB);
         }
         (*dict).dictionary = p;
-        (*dict).dict_size = (dict_end as usize - p as usize) as u32;
-        (*dict).table_type = table_type as u32;
-        idx32 = (*dict).current_offset.wrapping_sub((*dict).dict_size);
+        (*dict).dictSize = pdiff(dictEnd, p) as u32;
+        (*dict).tableType = tableType;
+        idx32 = (*dict).currentOffset.wrapping_sub((*dict).dictSize);
 
-        let table = (*dict).hash_table.as_mut_ptr();
-
-        while p <= dict_end.wrapping_sub(HASH_UNIT) {
-            let h = lz4_hash_position(p, table_type);
-            lz4_put_index_on_hash(idx32, h, table, table_type);
-            p = p.wrapping_add(3);
+        while p <= csub(dictEnd, HASH_UNIT) {
+            let h = LZ4_hashPosition(p, tableType);
+            LZ4_putIndexOnHash(idx32, h, (*dict).hashTable.as_mut_ptr(), tableType);
+            p = cadd(p, 3);
             idx32 = idx32.wrapping_add(3);
         }
 
-        if ld == LD_SLOW {
+        if _ld == _ld_slow {
             p = (*dict).dictionary;
-            idx32 = (*dict).current_offset.wrapping_sub((*dict).dict_size);
-            while p <= dict_end.wrapping_sub(HASH_UNIT) {
-                let h = lz4_hash_position(p, table_type);
-                let limit = (*dict).current_offset.wrapping_sub(64 * 1024);
-                if lz4_get_index_on_hash(h, table, table_type) <= limit {
-                    lz4_put_index_on_hash(idx32, h, table, table_type);
+            idx32 = (*dict).currentOffset.wrapping_sub((*dict).dictSize);
+            while p <= csub(dictEnd, HASH_UNIT) {
+                let h = LZ4_hashPosition(p, tableType);
+                let limit = (*dict).currentOffset.wrapping_sub(64 * KB as u32);
+                if LZ4_getIndexOnHash(h, (*dict).hashTable.as_ptr(), tableType) <= limit {
+                    LZ4_putIndexOnHash(idx32, h, (*dict).hashTable.as_mut_ptr(), tableType);
                 }
-                p = p.wrapping_add(1);
+                p = cadd(p, 1);
                 idx32 = idx32.wrapping_add(1);
             }
         }
 
-        (*dict).dict_size as c_int
+        (*dict).dictSize as c_int
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_loadDict(
-    lz4_dict: *mut LZ4Stream,
+    LZ4_dict: *mut LZ4_stream_t,
     dictionary: *const c_char,
-    dict_size: c_int,
+    dictSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_loadDict_internal(lz4_dict, dictionary, dict_size, LD_FAST) }
+    unsafe { LZ4_loadDict_internal(LZ4_dict, dictionary, dictSize, _ld_fast) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_loadDictSlow(
-    lz4_dict: *mut LZ4Stream,
+    LZ4_dict: *mut LZ4_stream_t,
     dictionary: *const c_char,
-    dict_size: c_int,
+    dictSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_loadDict_internal(lz4_dict, dictionary, dict_size, LD_SLOW) }
+    unsafe { LZ4_loadDict_internal(LZ4_dict, dictionary, dictSize, _ld_slow) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_attach_dictionary(
-    working_stream: *mut LZ4Stream,
-    dictionary_stream: *const LZ4Stream,
+    workingStream: *mut LZ4_stream_t,
+    dictionaryStream: *const LZ4_stream_t,
 ) {
     unsafe {
-        let mut dict_ctx: *const LZ4StreamInternal = if dictionary_stream.is_null() {
+        let mut dictCtx: *const LZ4_stream_t_internal = if dictionaryStream.is_null() {
             core::ptr::null()
         } else {
-            dictionary_stream as *const LZ4StreamInternal
+            dictionaryStream
         };
 
-        if !dict_ctx.is_null() {
-            let ws = working_stream as *mut LZ4StreamInternal;
-            if (*ws).current_offset == 0 {
-                (*ws).current_offset = 64 * 1024;
+        if !dictCtx.is_null() {
+            if (*workingStream).currentOffset == 0 {
+                (*workingStream).currentOffset = 64 * KB as u32;
             }
-            if (*dict_ctx).dict_size == 0 {
-                dict_ctx = core::ptr::null();
+            if (*dictCtx).dictSize == 0 {
+                dictCtx = core::ptr::null();
             }
         }
-        (*(working_stream as *mut LZ4StreamInternal)).dict_ctx = dict_ctx;
+        (*workingStream).dictCtx = dictCtx;
     }
 }
 
-unsafe fn lz4_renorm_dict_t(lz4_dict: *mut LZ4StreamInternal, next_size: c_int) {
+unsafe fn LZ4_renormDictT(LZ4_dict: *mut LZ4_stream_t_internal, nextSize: c_int) {
     unsafe {
-        let d = &mut *lz4_dict;
-        if (d.current_offset as u64) + (next_size as u32 as u64) > 0x8000_0000 {
-            let delta = d.current_offset.wrapping_sub(64 * 1024);
-            let dict_end = d.dictionary.wrapping_add(d.dict_size as usize);
+        if (*LZ4_dict).currentOffset.wrapping_add(nextSize as u32) > 0x80000000u32 {
+            let delta = (*LZ4_dict).currentOffset.wrapping_sub(64 * KB as u32);
+            let dictEnd = cadd((*LZ4_dict).dictionary, (*LZ4_dict).dictSize as usize);
             for i in 0..LZ4_HASH_SIZE_U32 {
-                if d.hash_table[i] < delta {
-                    d.hash_table[i] = 0;
+                if (*LZ4_dict).hashTable[i] < delta {
+                    (*LZ4_dict).hashTable[i] = 0;
                 } else {
-                    d.hash_table[i] -= delta;
+                    (*LZ4_dict).hashTable[i] -= delta;
                 }
             }
-            d.current_offset = 64 * 1024;
-            if d.dict_size > 64 * 1024 {
-                d.dict_size = 64 * 1024;
+            (*LZ4_dict).currentOffset = 64 * KB as u32;
+            if (*LZ4_dict).dictSize > 64 * KB as u32 {
+                (*LZ4_dict).dictSize = 64 * KB as u32;
             }
-            d.dictionary = dict_end.wrapping_sub(d.dict_size as usize);
+            (*LZ4_dict).dictionary = csub(dictEnd, (*LZ4_dict).dictSize as usize);
         }
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_compress_fast_continue(
-    lz4_stream: *mut LZ4Stream,
+    LZ4_stream: *mut LZ4_stream_t,
     source: *const c_char,
     dest: *mut c_char,
-    input_size: c_int,
-    max_output_size: c_int,
-    acceleration: c_int,
+    inputSize: c_int,
+    maxOutputSize: c_int,
+    mut acceleration: c_int,
 ) -> c_int {
     unsafe {
-        let table_type = ByU32;
-        let stream_ptr = lz4_stream as *mut LZ4StreamInternal;
-        let mut dict_end: *const c_char = if (*stream_ptr).dict_size != 0 {
-            ((*stream_ptr).dictionary as *const c_char)
-                .wrapping_add((*stream_ptr).dict_size as usize)
+        let tableType = byU32;
+        let streamPtr: *mut LZ4_stream_t_internal = LZ4_stream;
+        let mut dictEnd: *const c_char = if (*streamPtr).dictSize != 0 {
+            cadd((*streamPtr).dictionary, (*streamPtr).dictSize as usize) as *const c_char
         } else {
             core::ptr::null()
         };
 
-        lz4_renorm_dict_t(stream_ptr, input_size);
-        let mut acceleration = acceleration;
+        LZ4_renormDictT(streamPtr, inputSize);
         if acceleration < 1 {
             acceleration = LZ4_ACCELERATION_DEFAULT;
         }
@@ -1473,114 +1315,138 @@ pub unsafe extern "C" fn LZ4_compress_fast_continue(
         }
 
         /* invalidate tiny dictionaries */
-        if (*stream_ptr).dict_size < 4
-            && dict_end != source
-            && input_size > 0
-            && (*stream_ptr).dict_ctx.is_null()
+        if ((*streamPtr).dictSize < 4)
+            && (dictEnd != source)
+            && (inputSize > 0)
+            && (*streamPtr).dictCtx.is_null()
         {
-            (*stream_ptr).dict_size = 0;
-            (*stream_ptr).dictionary = source as *const u8;
-            dict_end = source;
+            (*streamPtr).dictSize = 0;
+            (*streamPtr).dictionary = source as *const u8;
+            dictEnd = source;
         }
 
         /* Check overlapping input/dictionary space */
         {
-            let source_end = source.wrapping_add(input_size as usize);
-            if source_end > (*stream_ptr).dictionary as *const c_char && source_end < dict_end {
-                (*stream_ptr).dict_size = (dict_end as usize - source_end as usize) as u32;
-                if (*stream_ptr).dict_size > 64 * 1024 {
-                    (*stream_ptr).dict_size = 64 * 1024;
+            let sourceEnd: *const c_char = cadd(source as *const u8, inputSize as usize) as *const c_char;
+            if (sourceEnd > (*streamPtr).dictionary as *const c_char) && (sourceEnd < dictEnd) {
+                (*streamPtr).dictSize = pdiff(dictEnd as *const u8, sourceEnd as *const u8) as u32;
+                if (*streamPtr).dictSize > 64 * KB as u32 {
+                    (*streamPtr).dictSize = 64 * KB as u32;
                 }
-                if (*stream_ptr).dict_size < 4 {
-                    (*stream_ptr).dict_size = 0;
+                if (*streamPtr).dictSize < 4 {
+                    (*streamPtr).dictSize = 0;
                 }
-                (*stream_ptr).dictionary =
-                    (dict_end as *const u8).wrapping_sub((*stream_ptr).dict_size as usize);
+                (*streamPtr).dictionary =
+                    csub(dictEnd as *const u8, (*streamPtr).dictSize as usize);
             }
         }
 
         /* prefix mode : source data follows dictionary */
-        if dict_end == source {
-            let dict_issue = if (*stream_ptr).dict_size < 64 * 1024
-                && (*stream_ptr).dict_size < (*stream_ptr).current_offset
+        if dictEnd == source {
+            if ((*streamPtr).dictSize < 64 * KB as u32)
+                && ((*streamPtr).dictSize < (*streamPtr).currentOffset)
             {
-                DictSmall
+                return LZ4_compress_generic(
+                    streamPtr,
+                    source,
+                    dest,
+                    inputSize,
+                    core::ptr::null_mut(),
+                    maxOutputSize,
+                    limitedOutput,
+                    tableType,
+                    withPrefix64k,
+                    dictSmall,
+                    acceleration,
+                );
             } else {
-                NoDictIssue
-            };
-            return lz4_compress_generic(
-                stream_ptr,
-                source,
-                dest,
-                input_size,
-                core::ptr::null_mut(),
-                max_output_size,
-                Limited,
-                table_type,
-                WithPrefix64k,
-                dict_issue,
-                acceleration,
-            );
+                return LZ4_compress_generic(
+                    streamPtr,
+                    source,
+                    dest,
+                    inputSize,
+                    core::ptr::null_mut(),
+                    maxOutputSize,
+                    limitedOutput,
+                    tableType,
+                    withPrefix64k,
+                    noDictIssue,
+                    acceleration,
+                );
+            }
         }
 
         /* external dictionary mode */
         {
-            let result;
-            if !(*stream_ptr).dict_ctx.is_null() {
-                if input_size > 4 * 1024 {
-                    core::ptr::copy_nonoverlapping((*stream_ptr).dict_ctx, stream_ptr, 1);
-                    result = lz4_compress_generic(
-                        stream_ptr,
+            let result: c_int;
+            if !(*streamPtr).dictCtx.is_null() {
+                if inputSize > (4 * KB) as c_int {
+                    LZ4_memcpy(
+                        streamPtr as *mut u8,
+                        (*streamPtr).dictCtx as *const u8,
+                        core::mem::size_of::<LZ4_stream_t_internal>(),
+                    );
+                    result = LZ4_compress_generic(
+                        streamPtr,
                         source,
                         dest,
-                        input_size,
+                        inputSize,
                         core::ptr::null_mut(),
-                        max_output_size,
-                        Limited,
-                        table_type,
-                        UsingExtDict,
-                        NoDictIssue,
+                        maxOutputSize,
+                        limitedOutput,
+                        tableType,
+                        usingExtDict,
+                        noDictIssue,
                         acceleration,
                     );
                 } else {
-                    result = lz4_compress_generic(
-                        stream_ptr,
+                    result = LZ4_compress_generic(
+                        streamPtr,
                         source,
                         dest,
-                        input_size,
+                        inputSize,
                         core::ptr::null_mut(),
-                        max_output_size,
-                        Limited,
-                        table_type,
-                        UsingDictCtx,
-                        NoDictIssue,
+                        maxOutputSize,
+                        limitedOutput,
+                        tableType,
+                        usingDictCtx,
+                        noDictIssue,
                         acceleration,
                     );
                 }
-            } else {
-                let dict_issue = if (*stream_ptr).dict_size < 64 * 1024
-                    && (*stream_ptr).dict_size < (*stream_ptr).current_offset
-                {
-                    DictSmall
-                } else {
-                    NoDictIssue
-                };
-                result = lz4_compress_generic(
-                    stream_ptr,
+            } else if ((*streamPtr).dictSize < 64 * KB as u32)
+                && ((*streamPtr).dictSize < (*streamPtr).currentOffset)
+            {
+                result = LZ4_compress_generic(
+                    streamPtr,
                     source,
                     dest,
-                    input_size,
+                    inputSize,
                     core::ptr::null_mut(),
-                    max_output_size,
-                    Limited,
-                    table_type,
-                    UsingExtDict,
-                    dict_issue,
+                    maxOutputSize,
+                    limitedOutput,
+                    tableType,
+                    usingExtDict,
+                    dictSmall,
+                    acceleration,
+                );
+            } else {
+                result = LZ4_compress_generic(
+                    streamPtr,
+                    source,
+                    dest,
+                    inputSize,
+                    core::ptr::null_mut(),
+                    maxOutputSize,
+                    limitedOutput,
+                    tableType,
+                    usingExtDict,
+                    noDictIssue,
                     acceleration,
                 );
             }
-            (*stream_ptr).dictionary = source as *const u8;
-            (*stream_ptr).dict_size = input_size as u32;
+            (*streamPtr).dictionary = source as *const u8;
+            (*streamPtr).dictSize = inputSize as u32;
             result
         }
     }
@@ -1588,39 +1454,51 @@ pub unsafe extern "C" fn LZ4_compress_fast_continue(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_compress_forceExtDict(
-    lz4_dict: *mut LZ4Stream,
+    LZ4_dict: *mut LZ4_stream_t,
     source: *const c_char,
     dest: *mut c_char,
-    src_size: c_int,
+    srcSize: c_int,
 ) -> c_int {
     unsafe {
-        let stream_ptr = lz4_dict as *mut LZ4StreamInternal;
+        let streamPtr: *mut LZ4_stream_t_internal = LZ4_dict;
+        let result: c_int;
 
-        lz4_renorm_dict_t(stream_ptr, src_size);
+        LZ4_renormDictT(streamPtr, srcSize);
 
-        let dict_issue = if (*stream_ptr).dict_size < 64 * 1024
-            && (*stream_ptr).dict_size < (*stream_ptr).current_offset
+        if ((*streamPtr).dictSize < 64 * KB as u32)
+            && ((*streamPtr).dictSize < (*streamPtr).currentOffset)
         {
-            DictSmall
+            result = LZ4_compress_generic(
+                streamPtr,
+                source,
+                dest,
+                srcSize,
+                core::ptr::null_mut(),
+                0,
+                notLimited,
+                byU32,
+                usingExtDict,
+                dictSmall,
+                1,
+            );
         } else {
-            NoDictIssue
-        };
-        let result = lz4_compress_generic(
-            stream_ptr,
-            source,
-            dest,
-            src_size,
-            core::ptr::null_mut(),
-            0,
-            NotLimited,
-            ByU32,
-            UsingExtDict,
-            dict_issue,
-            1,
-        );
+            result = LZ4_compress_generic(
+                streamPtr,
+                source,
+                dest,
+                srcSize,
+                core::ptr::null_mut(),
+                0,
+                notLimited,
+                byU32,
+                usingExtDict,
+                noDictIssue,
+                1,
+            );
+        }
 
-        (*stream_ptr).dictionary = source as *const u8;
-        (*stream_ptr).dict_size = src_size as u32;
+        (*streamPtr).dictionary = source as *const u8;
+        (*streamPtr).dictSize = srcSize as u32;
 
         result
     }
@@ -1628,51 +1506,55 @@ pub unsafe extern "C" fn LZ4_compress_forceExtDict(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_saveDict(
-    lz4_dict: *mut LZ4Stream,
-    safe_buffer: *mut c_char,
-    dict_size: c_int,
+    LZ4_dict: *mut LZ4_stream_t,
+    safeBuffer: *mut c_char,
+    mut dictSize: c_int,
 ) -> c_int {
     unsafe {
-        let dict = lz4_dict as *mut LZ4StreamInternal;
-        let mut dict_size = dict_size;
+        let dict: *mut LZ4_stream_t_internal = LZ4_dict;
 
-        if (dict_size as u32) > 64 * 1024 {
-            dict_size = 64 * 1024;
+        if (dictSize as u32) > 64 * KB as u32 {
+            dictSize = (64 * KB) as c_int;
         }
-        if (dict_size as u32) > (*dict).dict_size {
-            dict_size = (*dict).dict_size as c_int;
+        if (dictSize as u32) > (*dict).dictSize {
+            dictSize = (*dict).dictSize as c_int;
         }
 
-        if dict_size > 0 {
-            let previous_dict_end = (*dict).dictionary.wrapping_add((*dict).dict_size as usize);
-            mem_move(
-                safe_buffer as *mut u8,
-                previous_dict_end.wrapping_sub(dict_size as usize),
-                dict_size as usize,
+        if dictSize > 0 {
+            let previousDictEnd = cadd((*dict).dictionary, (*dict).dictSize as usize);
+            LZ4_memmove(
+                safeBuffer as *mut u8,
+                csub(previousDictEnd, dictSize as usize),
+                dictSize as usize,
             );
         }
 
-        (*dict).dictionary = safe_buffer as *const u8;
-        (*dict).dict_size = dict_size as u32;
+        (*dict).dictionary = safeBuffer as *const u8;
+        (*dict).dictSize = dictSize as u32;
 
-        dict_size
+        dictSize
     }
 }
 
-/* ===== decompression ===== */
+/* ===== Decompression ===== */
 
-#[inline]
-fn min_usize(a: usize, b: usize) -> usize {
+#[inline(always)]
+fn MINi(a: c_int, b: c_int) -> c_int {
+    if a < b { a } else { b }
+}
+#[inline(always)]
+fn MINu(a: usize, b: usize) -> usize {
     if a < b { a } else { b }
 }
 
-unsafe fn read_long_length_no_check(pp: &mut *const u8) -> usize {
+unsafe fn read_long_length_no_check(pp: *mut *const u8) -> usize {
     unsafe {
+        let mut b: usize;
         let mut l: usize = 0;
         loop {
-            let b = **pp as usize;
-            *pp = (*pp).add(1);
-            l = l.wrapping_add(b);
+            b = **pp as usize;
+            *pp = cadd(*pp, 1);
+            l += b;
             if b != 255 {
                 break;
             }
@@ -1681,37 +1563,39 @@ unsafe fn read_long_length_no_check(pp: &mut *const u8) -> usize {
     }
 }
 
-unsafe fn lz4_decompress_unsafe_generic(
+unsafe fn LZ4_decompress_unsafe_generic(
     istart: *const u8,
     ostart: *mut u8,
-    decompressed_size: c_int,
-    prefix_size: usize,
-    dict_start: *const u8,
-    dict_size: usize,
+    decompressedSize: c_int,
+    prefixSize: usize,
+    dictStart: *const u8,
+    dictSize: usize,
 ) -> c_int {
     unsafe {
+        let ip0 = istart;
         let mut ip = istart;
-        let mut op = ostart;
-        let oend = ostart.wrapping_add(decompressed_size as usize);
-        let prefix_start = ostart.wrapping_sub(prefix_size);
+        let mut op: *mut u8 = ostart;
+        let oend: *mut u8 = madd(ostart, decompressedSize as usize);
+        let prefixStart: *const u8 = msub(ostart, prefixSize);
 
         loop {
+            /* start new sequence */
             let token = *ip as u32;
-            ip = ip.add(1);
+            ip = cadd(ip, 1);
 
             /* literals */
             {
-                let mut ll = (token >> ML_BITS) as usize;
+                let mut ll: usize = (token >> ML_BITS) as usize;
                 if ll == 15 {
-                    ll = ll.wrapping_add(read_long_length_no_check(&mut ip));
+                    ll += read_long_length_no_check(&mut ip as *mut *const u8);
                 }
-                if (oend as usize - op as usize) < ll {
+                if (pdiff(oend as *const u8, op as *const u8) as usize) < ll {
                     return -1;
                 }
-                mem_move(op, ip, ll);
-                op = op.wrapping_add(ll);
-                ip = ip.wrapping_add(ll);
-                if (oend as usize - op as usize) < MFLIMIT {
+                LZ4_memmove(op, ip, ll);
+                op = madd(op, ll);
+                ip = cadd(ip, ll);
+                if (pdiff(oend as *const u8, op as *const u8) as usize) < MFLIMIT {
                     if op == oend {
                         break;
                     }
@@ -1721,165 +1605,180 @@ unsafe fn lz4_decompress_unsafe_generic(
 
             /* match */
             {
-                let mut ml = (token & 15) as usize;
-                let offset = read_le16(ip) as usize;
-                ip = ip.add(2);
+                let mut ml: usize = (token & 15) as usize;
+                let offset: usize = LZ4_readLE16(ip) as usize;
+                ip = cadd(ip, 2);
 
                 if ml == 15 {
-                    ml = ml.wrapping_add(read_long_length_no_check(&mut ip));
+                    ml += read_long_length_no_check(&mut ip as *mut *const u8);
                 }
                 ml += MINMATCH;
 
-                if (oend as usize - op as usize) < ml {
+                if (pdiff(oend as *const u8, op as *const u8) as usize) < ml {
                     return -1;
                 }
 
                 {
-                    let mut r#match = op.wrapping_sub(offset) as *const u8;
+                    let mut r#match: *const u8 = msub(op, offset);
 
-                    if offset > (op as usize - prefix_start as usize) + dict_size {
+                    if offset > (pdiff(op as *const u8, prefixStart) as usize) + dictSize {
                         return -1;
                     }
 
-                    if offset > (op as usize - prefix_start as usize) {
-                        let dict_end = dict_start.wrapping_add(dict_size);
-                        let ext_match = dict_end
-                            .wrapping_sub(offset - (op as usize - prefix_start as usize));
-                        let extml = dict_end as usize - ext_match as usize;
+                    if offset > (pdiff(op as *const u8, prefixStart) as usize) {
+                        let dictEnd = cadd(dictStart, dictSize);
+                        let extMatch = csub(
+                            dictEnd,
+                            offset - (pdiff(op as *const u8, prefixStart) as usize),
+                        );
+                        let extml = pdiff(dictEnd, extMatch) as usize;
                         if extml > ml {
-                            mem_move(op, ext_match, ml);
-                            op = op.wrapping_add(ml);
+                            LZ4_memmove(op, extMatch, ml);
+                            op = madd(op, ml);
                             ml = 0;
                         } else {
-                            mem_move(op, ext_match, extml);
-                            op = op.wrapping_add(extml);
+                            LZ4_memmove(op, extMatch, extml);
+                            op = madd(op, extml);
                             ml -= extml;
                         }
-                        r#match = prefix_start;
+                        r#match = prefixStart;
                     }
 
-                    for u in 0..ml {
-                        *op.add(u) = *r#match.add(u);
+                    let mut u = 0usize;
+                    while u < ml {
+                        *op.wrapping_add(u) = *r#match.wrapping_add(u);
+                        u += 1;
                     }
                 }
-                op = op.wrapping_add(ml);
-                if (oend as usize - op as usize) < LASTLITERALS {
+                op = madd(op, ml);
+                if (pdiff(oend as *const u8, op as *const u8) as usize) < LASTLITERALS {
                     return -1;
                 }
             }
         }
-        (ip as usize - istart as usize) as c_int
+        pdiff(ip, ip0) as c_int
     }
 }
 
-const RVL_ERROR: usize = usize::MAX;
+const rvl_error: usize = usize::MAX;
 
-unsafe fn read_variable_length(ip: &mut *const u8, ilimit: *const u8, initial_check: bool) -> usize {
+#[inline(always)]
+unsafe fn read_variable_length(
+    ip: *mut *const u8,
+    ilimit: *const u8,
+    initial_check: i32,
+) -> usize {
     unsafe {
+        let mut s: usize;
         let mut length: usize = 0;
-        if initial_check && *ip >= ilimit {
-            return RVL_ERROR;
+        if initial_check != 0 && (*ip >= ilimit) {
+            return rvl_error;
         }
-        let mut s = **ip as usize;
-        *ip = (*ip).add(1);
-        length = length.wrapping_add(s);
+        s = **ip as usize;
+        *ip = cadd(*ip, 1);
+        length += s;
         if *ip > ilimit {
-            return RVL_ERROR;
+            return rvl_error;
         }
         if s != 255 {
             return length;
         }
         loop {
             s = **ip as usize;
-            *ip = (*ip).add(1);
-            length = length.wrapping_add(s);
+            *ip = cadd(*ip, 1);
+            length += s;
             if *ip > ilimit {
-                return RVL_ERROR;
+                return rvl_error;
             }
-            if s == 255 {
-                continue;
+            if s != 255 {
+                break;
             }
-            break;
         }
         length
     }
 }
 
-unsafe fn lz4_decompress_generic(
+const ST_TOP: u32 = 0;
+const ST_LITERAL_COPY: u32 = 1;
+const ST_COPY_MATCH: u32 = 2;
+const ST_MATCH_COPY: u32 = 3;
+
+unsafe fn LZ4_decompress_generic(
     src: *const c_char,
     dst: *mut c_char,
-    src_size: c_int,
-    output_size: c_int,
-    partial_decoding: EarlyEnd,
-    dict: DictDirective,
-    low_prefix: *const u8,
-    dict_start: *const u8,
-    dict_size: usize,
+    srcSize: c_int,
+    outputSize: c_int,
+    partialDecoding: i32,
+    dict: i32,
+    lowPrefix: *const u8,
+    dictStart: *const u8,
+    dictSize: usize,
 ) -> c_int {
     unsafe {
-        if src.is_null() || output_size < 0 {
+        if src.is_null() || outputSize < 0 {
             return -1;
         }
 
-        let mut ip = src as *const u8;
-        let iend = ip.wrapping_add(src_size as usize);
+        let mut ip: *const u8 = src as *const u8;
+        let iend: *const u8 = cadd(ip, srcSize as usize);
 
-        let mut op = dst as *mut u8;
-        let oend = op.wrapping_add(output_size as usize);
+        let mut op: *mut u8 = dst as *mut u8;
+        let oend: *mut u8 = madd(op, outputSize as usize);
         let mut cpy: *mut u8;
 
-        let dict_end: *const u8 = if dict_start.is_null() {
+        let dictEnd: *const u8 = if dictStart.is_null() {
             core::ptr::null()
         } else {
-            dict_start.wrapping_add(dict_size)
+            cadd(dictStart, dictSize)
         };
 
-        let check_offset = dict_size < 64 * 1024;
+        let checkOffset: bool = dictSize < (64 * KB);
 
-        let shortiend = iend.wrapping_sub(14).wrapping_sub(2);
-        let shortoend = oend.wrapping_sub(14).wrapping_sub(18);
+        let shortiend: *const u8 = csub(iend, 14 + 2);
+        let shortoend: *mut u8 = msub(oend, 14 + 18);
 
         let mut r#match: *const u8 = core::ptr::null();
         let mut offset: usize = 0;
         let mut token: u32 = 0;
         let mut length: usize = 0;
 
-        let partial = partial_decoding == PartialDecode;
-
         macro_rules! output_error {
             () => {
-                return -((ip as isize - src as isize) as c_int) - 1;
+                return (-(pdiff(ip, src as *const u8) as c_int)) - 1;
             };
         }
 
-        if output_size == 0 {
-            if partial {
+        /* Special cases */
+        if outputSize == 0 {
+            if partialDecoding != 0 {
                 return 0;
             }
-            return if src_size == 1 && *ip == 0 { 0 } else { -1 };
+            return if (srcSize == 1) && (*ip == 0) { 0 } else { -1 };
         }
-        if src_size == 0 {
+        if srcSize == 0 {
             return -1;
         }
 
-        /* entry point into the safe loop: 0 = top, 1 = safe_literal_copy,
-         * 2 = _copy_match, 3 = safe_match_copy */
-        let mut entry: u32 = 0;
+        let mut state: u32 = ST_TOP;
 
-        if (oend as usize - op as usize) >= FASTLOOP_SAFE_DISTANCE {
+        /* ---- Fast decode loop ---- */
+        if pdiff(oend as *const u8, op as *const u8) >= FASTLOOP_SAFE_DISTANCE {
             'fast: loop {
                 token = *ip as u32;
-                ip = ip.add(1);
+                ip = cadd(ip, 1);
                 length = (token >> ML_BITS) as usize;
 
                 /* decode literal length */
                 if length == RUN_MASK as usize {
-                    let addl =
-                        read_variable_length(&mut ip, iend.wrapping_sub(RUN_MASK as usize), true);
-                    if addl == RVL_ERROR {
+                    let addl = read_variable_length(
+                        &mut ip as *mut *const u8,
+                        csub(iend, RUN_MASK as usize),
+                        1,
+                    );
+                    if addl == rvl_error {
                         output_error!();
                     }
-                    length = length.wrapping_add(addl);
+                    length += addl;
                     if (op as usize).wrapping_add(length) < (op as usize) {
                         output_error!();
                     }
@@ -1887,168 +1786,163 @@ unsafe fn lz4_decompress_generic(
                         output_error!();
                     }
 
-                    if op.wrapping_add(length) > oend.wrapping_sub(32)
-                        || ip.wrapping_add(length) > iend.wrapping_sub(32)
-                    {
-                        entry = 1;
+                    if (madd(op, length) > msub(oend, 32)) || (cadd(ip, length) > csub(iend, 32)) {
+                        state = ST_LITERAL_COPY;
                         break 'fast;
                     }
-                    wild_copy32(op, ip, op.wrapping_add(length));
-                    ip = ip.wrapping_add(length);
-                    op = op.wrapping_add(length);
-                } else if ip <= iend.wrapping_sub(16 + 1) {
-                    copy16(op, ip);
-                    ip = ip.wrapping_add(length);
-                    op = op.wrapping_add(length);
+                    LZ4_wildCopy32(op, ip, madd(op, length));
+                    ip = cadd(ip, length);
+                    op = madd(op, length);
+                } else if ip <= csub(iend, 16 + 1) {
+                    LZ4_memcpy(op, ip, 16);
+                    ip = cadd(ip, length);
+                    op = madd(op, length);
                 } else {
-                    entry = 1;
+                    state = ST_LITERAL_COPY;
                     break 'fast;
                 }
 
                 /* get offset */
-                offset = read_le16(ip) as usize;
-                ip = ip.add(2);
-                r#match = op.wrapping_sub(offset);
+                offset = LZ4_readLE16(ip) as usize;
+                ip = cadd(ip, 2);
+                r#match = msub(op, offset);
 
                 /* get matchlength */
                 length = (token & ML_MASK) as usize;
 
                 if length == ML_MASK as usize {
                     let addl = read_variable_length(
-                        &mut ip,
-                        iend.wrapping_sub(LASTLITERALS).wrapping_add(1),
-                        false,
+                        &mut ip as *mut *const u8,
+                        cadd(csub(iend, LASTLITERALS), 1),
+                        0,
                     );
-                    if addl == RVL_ERROR {
+                    if addl == rvl_error {
                         output_error!();
                     }
-                    length = length.wrapping_add(addl);
-                    length = length.wrapping_add(MINMATCH);
+                    length += addl;
+                    length += MINMATCH;
                     if (op as usize).wrapping_add(length) < (op as usize) {
                         output_error!();
                     }
-                    if op.wrapping_add(length) >= oend.wrapping_sub(FASTLOOP_SAFE_DISTANCE) {
-                        entry = 3;
+                    if madd(op, length) >= moff(oend, -FASTLOOP_SAFE_DISTANCE) {
+                        state = ST_MATCH_COPY;
                         break 'fast;
                     }
                 } else {
                     length += MINMATCH;
-                    if op.wrapping_add(length) >= oend.wrapping_sub(FASTLOOP_SAFE_DISTANCE) {
-                        entry = 3;
+                    if madd(op, length) >= moff(oend, -FASTLOOP_SAFE_DISTANCE) {
+                        state = ST_MATCH_COPY;
                         break 'fast;
                     }
 
-                    if dict == WithPrefix64k || r#match >= low_prefix {
+                    if (dict == withPrefix64k) || (r#match >= lowPrefix) {
                         if offset >= 8 {
-                            copy8(op, r#match);
-                            copy8(op.add(8), r#match.add(8));
-                            copy2(op.add(16), r#match.add(16));
-                            op = op.wrapping_add(length);
+                            LZ4_memcpy(op, r#match, 8);
+                            LZ4_memcpy(madd(op, 8), cadd(r#match, 8), 8);
+                            LZ4_memcpy(madd(op, 16), cadd(r#match, 16), 2);
+                            op = madd(op, length);
                             continue 'fast;
                         }
                     }
                 }
 
-                if check_offset && r#match.wrapping_add(dict_size) < low_prefix {
+                if checkOffset && (cadd(r#match, dictSize) < lowPrefix) {
                     output_error!();
                 }
-
                 /* match starting within external dictionary */
-                if dict == UsingExtDict && r#match < low_prefix {
-                    if op.wrapping_add(length) > oend.wrapping_sub(LASTLITERALS) {
-                        if partial {
-                            length = min_usize(length, oend as usize - op as usize);
+                if (dict == usingExtDict) && (r#match < lowPrefix) {
+                    if madd(op, length) > msub(oend, LASTLITERALS) {
+                        if partialDecoding != 0 {
+                            length = MINu(length, pdiff(oend as *const u8, op as *const u8) as usize);
                         } else {
                             output_error!();
                         }
                     }
 
-                    if length <= (low_prefix as usize - r#match as usize) {
-                        mem_move(
-                            op,
-                            dict_end.wrapping_sub(low_prefix as usize - r#match as usize),
-                            length,
-                        );
-                        op = op.wrapping_add(length);
+                    if length <= (pdiff(lowPrefix, r#match) as usize) {
+                        LZ4_memmove(op, csub(dictEnd, pdiff(lowPrefix, r#match) as usize), length);
+                        op = madd(op, length);
                     } else {
-                        let copy_size = low_prefix as usize - r#match as usize;
-                        let rest_size = length - copy_size;
-                        mem_copy(op, dict_end.wrapping_sub(copy_size), copy_size);
-                        op = op.wrapping_add(copy_size);
-                        if rest_size > (op as usize - low_prefix as usize) {
-                            let end_of_match = op.wrapping_add(rest_size);
-                            let mut copy_from = low_prefix;
-                            while op < end_of_match {
-                                *op = *copy_from;
-                                op = op.add(1);
-                                copy_from = copy_from.add(1);
+                        let copySize = pdiff(lowPrefix, r#match) as usize;
+                        let restSize = length - copySize;
+                        LZ4_memcpy(op, csub(dictEnd, copySize), copySize);
+                        op = madd(op, copySize);
+                        if restSize > (pdiff(op as *const u8, lowPrefix) as usize) {
+                            let endOfMatch = madd(op, restSize);
+                            let mut copyFrom = lowPrefix;
+                            while op < endOfMatch {
+                                *op = *copyFrom;
+                                op = madd(op, 1);
+                                copyFrom = cadd(copyFrom, 1);
                             }
                         } else {
-                            mem_copy(op, low_prefix, rest_size);
-                            op = op.wrapping_add(rest_size);
+                            LZ4_memcpy(op, lowPrefix, restSize);
+                            op = madd(op, restSize);
                         }
                     }
                     continue 'fast;
                 }
 
                 /* copy match within block */
-                cpy = op.wrapping_add(length);
+                cpy = madd(op, length);
 
                 if offset < 16 {
-                    lz4_memcpy_using_offset(op, r#match, cpy, offset);
+                    LZ4_memcpy_using_offset(op, r#match, cpy, offset);
                 } else {
-                    wild_copy32(op, r#match, cpy);
+                    LZ4_wildCopy32(op, r#match, cpy);
                 }
 
                 op = cpy;
             }
         }
 
-        /* safe_decode */
+        /* ---- Safe decode loop ---- */
         'safe: loop {
-            let mut e = entry;
-            entry = 0;
-
-            if e == 0 {
+            if state == ST_TOP {
                 token = *ip as u32;
-                ip = ip.add(1);
+                ip = cadd(ip, 1);
                 length = (token >> ML_BITS) as usize;
 
-                if length != RUN_MASK as usize && ((ip < shortiend) & (op <= shortoend)) {
+                let mut jumped_to_copy_match = false;
+                if (length != RUN_MASK as usize) && ((ip < shortiend) && (op <= shortoend)) {
                     /* Copy the literals */
-                    copy16(op, ip);
-                    op = op.wrapping_add(length);
-                    ip = ip.wrapping_add(length);
+                    LZ4_memcpy(op, ip, 16);
+                    op = madd(op, length);
+                    ip = cadd(ip, length);
 
                     length = (token & ML_MASK) as usize;
-                    offset = read_le16(ip) as usize;
-                    ip = ip.add(2);
-                    r#match = op.wrapping_sub(offset);
+                    offset = LZ4_readLE16(ip) as usize;
+                    ip = cadd(ip, 2);
+                    r#match = msub(op, offset);
 
-                    if length != ML_MASK as usize
-                        && offset >= 8
-                        && (dict == WithPrefix64k || r#match >= low_prefix)
+                    if (length != ML_MASK as usize)
+                        && (offset >= 8)
+                        && (dict == withPrefix64k || r#match >= lowPrefix)
                     {
-                        copy8(op, r#match);
-                        copy8(op.add(8), r#match.add(8));
-                        copy2(op.add(16), r#match.add(16));
-                        op = op.wrapping_add(length + MINMATCH);
+                        LZ4_memcpy(madd(op, 0), cadd(r#match, 0), 8);
+                        LZ4_memcpy(madd(op, 8), cadd(r#match, 8), 8);
+                        LZ4_memcpy(madd(op, 16), cadd(r#match, 16), 2);
+                        op = madd(op, length + MINMATCH);
                         continue 'safe;
                     }
 
-                    e = 2; /* goto _copy_match */
+                    jumped_to_copy_match = true;
+                }
+
+                if jumped_to_copy_match {
+                    state = ST_COPY_MATCH;
                 } else {
                     /* decode literal length */
                     if length == RUN_MASK as usize {
                         let addl = read_variable_length(
-                            &mut ip,
-                            iend.wrapping_sub(RUN_MASK as usize),
-                            true,
+                            &mut ip as *mut *const u8,
+                            csub(iend, RUN_MASK as usize),
+                            1,
                         );
-                        if addl == RVL_ERROR {
+                        if addl == rvl_error {
                             output_error!();
                         }
-                        length = length.wrapping_add(addl);
+                        length += addl;
                         if (op as usize).wrapping_add(length) < (op as usize) {
                             output_error!();
                         }
@@ -2056,197 +1950,203 @@ unsafe fn lz4_decompress_generic(
                             output_error!();
                         }
                     }
-                    e = 1;
+                    state = ST_LITERAL_COPY;
                 }
             }
 
-            if e <= 1 {
-                /* safe_literal_copy */
-                cpy = op.wrapping_add(length);
+            if state == ST_LITERAL_COPY {
+                /* safe_literal_copy: */
+                cpy = madd(op, length);
 
-                if cpy > oend.wrapping_sub(MFLIMIT)
-                    || ip.wrapping_add(length) > iend.wrapping_sub(2 + 1 + LASTLITERALS)
+                if (cpy > msub(oend, MFLIMIT))
+                    || (cadd(ip, length) > csub(iend, 2 + 1 + LASTLITERALS))
                 {
-                    if partial {
-                        if ip.wrapping_add(length) > iend {
-                            length = iend as usize - ip as usize;
-                            cpy = op.wrapping_add(length);
+                    if partialDecoding != 0 {
+                        if cadd(ip, length) > iend {
+                            length = pdiff(iend, ip) as usize;
+                            cpy = madd(op, length);
                         }
                         if cpy > oend {
                             cpy = oend;
-                            length = oend as usize - op as usize;
+                            length = pdiff(oend as *const u8, op as *const u8) as usize;
                         }
-                    } else {
-                        if ip.wrapping_add(length) != iend || cpy > oend {
-                            output_error!();
-                        }
+                    } else if (cadd(ip, length) != iend) || (cpy > oend) {
+                        output_error!();
                     }
-                    mem_move(op, ip, length);
-                    ip = ip.wrapping_add(length);
-                    op = op.wrapping_add(length);
-                    if !partial || cpy == oend || ip >= iend.wrapping_sub(2) {
+                    LZ4_memmove(op, ip, length);
+                    ip = cadd(ip, length);
+                    op = madd(op, length);
+                    if partialDecoding == 0 || (cpy == oend) || (ip >= csub(iend, 2)) {
                         break 'safe;
                     }
                 } else {
-                    wild_copy8(op, ip, cpy);
-                    ip = ip.wrapping_add(length);
+                    LZ4_wildCopy8(op, ip, cpy);
+                    ip = cadd(ip, length);
                     op = cpy;
                 }
 
                 /* get offset */
-                offset = read_le16(ip) as usize;
-                ip = ip.add(2);
-                r#match = op.wrapping_sub(offset);
+                offset = LZ4_readLE16(ip) as usize;
+                ip = cadd(ip, 2);
+                r#match = msub(op, offset);
 
                 /* get matchlength */
                 length = (token & ML_MASK) as usize;
-                e = 2;
+
+                state = ST_COPY_MATCH;
             }
 
-            if e <= 2 {
-                /* _copy_match */
+            if state == ST_COPY_MATCH {
+                /* _copy_match: */
                 if length == ML_MASK as usize {
                     let addl = read_variable_length(
-                        &mut ip,
-                        iend.wrapping_sub(LASTLITERALS).wrapping_add(1),
-                        false,
+                        &mut ip as *mut *const u8,
+                        cadd(csub(iend, LASTLITERALS), 1),
+                        0,
                     );
-                    if addl == RVL_ERROR {
+                    if addl == rvl_error {
                         output_error!();
                     }
-                    length = length.wrapping_add(addl);
+                    length += addl;
                     if (op as usize).wrapping_add(length) < (op as usize) {
                         output_error!();
                     }
                 }
-                length = length.wrapping_add(MINMATCH);
+                length += MINMATCH;
+                state = ST_MATCH_COPY;
             }
 
-            /* safe_match_copy */
-            if check_offset && r#match.wrapping_add(dict_size) < low_prefix {
-                output_error!();
-            }
-
-            if dict == UsingExtDict && r#match < low_prefix {
-                if op.wrapping_add(length) > oend.wrapping_sub(LASTLITERALS) {
-                    if partial {
-                        length = min_usize(length, oend as usize - op as usize);
-                    } else {
-                        output_error!();
-                    }
-                }
-
-                if length <= (low_prefix as usize - r#match as usize) {
-                    mem_move(
-                        op,
-                        dict_end.wrapping_sub(low_prefix as usize - r#match as usize),
-                        length,
-                    );
-                    op = op.wrapping_add(length);
-                } else {
-                    let copy_size = low_prefix as usize - r#match as usize;
-                    let rest_size = length - copy_size;
-                    mem_copy(op, dict_end.wrapping_sub(copy_size), copy_size);
-                    op = op.wrapping_add(copy_size);
-                    if rest_size > (op as usize - low_prefix as usize) {
-                        let end_of_match = op.wrapping_add(rest_size);
-                        let mut copy_from = low_prefix;
-                        while op < end_of_match {
-                            *op = *copy_from;
-                            op = op.add(1);
-                            copy_from = copy_from.add(1);
-                        }
-                    } else {
-                        mem_copy(op, low_prefix, rest_size);
-                        op = op.wrapping_add(rest_size);
-                    }
-                }
-                continue 'safe;
-            }
-
-            /* copy match within block */
-            cpy = op.wrapping_add(length);
-
-            if partial && cpy > oend.wrapping_sub(MATCH_SAFEGUARD_DISTANCE) {
-                let mlen = min_usize(length, oend as usize - op as usize);
-                let match_end = r#match.wrapping_add(mlen);
-                let copy_end = op.wrapping_add(mlen);
-                if match_end as usize > op as usize {
-                    while op < copy_end {
-                        *op = *r#match;
-                        op = op.add(1);
-                        r#match = r#match.add(1);
-                    }
-                } else {
-                    mem_copy(op, r#match, mlen);
-                }
-                op = copy_end;
-                if op == oend {
-                    break 'safe;
-                }
-                continue 'safe;
-            }
-
-            if offset < 8 {
-                write32(op, 0);
-                *op = *r#match;
-                *op.add(1) = *r#match.add(1);
-                *op.add(2) = *r#match.add(2);
-                *op.add(3) = *r#match.add(3);
-                r#match = r#match.wrapping_add(INC32TABLE[offset] as usize);
-                copy4(op.add(4), r#match);
-                r#match = r#match.wrapping_offset(-(DEC64TABLE[offset] as isize));
-            } else {
-                copy8(op, r#match);
-                r#match = r#match.wrapping_add(8);
-            }
-            op = op.wrapping_add(8);
-
-            if cpy > oend.wrapping_sub(MATCH_SAFEGUARD_DISTANCE) {
-                let o_copy_limit = oend.wrapping_sub(WILDCOPYLENGTH - 1);
-                if cpy > oend.wrapping_sub(LASTLITERALS) {
+            /* safe_match_copy: */
+            {
+                if checkOffset && (cadd(r#match, dictSize) < lowPrefix) {
                     output_error!();
                 }
-                if op < o_copy_limit {
-                    wild_copy8(op, r#match, o_copy_limit);
-                    r#match = r#match.wrapping_add(o_copy_limit as usize - op as usize);
-                    op = o_copy_limit;
+                /* match starting within external dictionary */
+                if (dict == usingExtDict) && (r#match < lowPrefix) {
+                    if madd(op, length) > msub(oend, LASTLITERALS) {
+                        if partialDecoding != 0 {
+                            length =
+                                MINu(length, pdiff(oend as *const u8, op as *const u8) as usize);
+                        } else {
+                            output_error!();
+                        }
+                    }
+
+                    if length <= (pdiff(lowPrefix, r#match) as usize) {
+                        LZ4_memmove(
+                            op,
+                            csub(dictEnd, pdiff(lowPrefix, r#match) as usize),
+                            length,
+                        );
+                        op = madd(op, length);
+                    } else {
+                        let copySize = pdiff(lowPrefix, r#match) as usize;
+                        let restSize = length - copySize;
+                        LZ4_memcpy(op, csub(dictEnd, copySize), copySize);
+                        op = madd(op, copySize);
+                        if restSize > (pdiff(op as *const u8, lowPrefix) as usize) {
+                            let endOfMatch = madd(op, restSize);
+                            let mut copyFrom = lowPrefix;
+                            while op < endOfMatch {
+                                *op = *copyFrom;
+                                op = madd(op, 1);
+                                copyFrom = cadd(copyFrom, 1);
+                            }
+                        } else {
+                            LZ4_memcpy(op, lowPrefix, restSize);
+                            op = madd(op, restSize);
+                        }
+                    }
+                    state = ST_TOP;
+                    continue 'safe;
                 }
-                while op < cpy {
-                    *op = *r#match;
-                    op = op.add(1);
-                    r#match = r#match.add(1);
+
+                /* copy match within block */
+                cpy = madd(op, length);
+
+                if partialDecoding != 0 && (cpy > msub(oend, MATCH_SAFEGUARD_DISTANCE)) {
+                    let mlen = MINu(length, pdiff(oend as *const u8, op as *const u8) as usize);
+                    let matchEnd = cadd(r#match, mlen);
+                    let copyEnd = madd(op, mlen);
+                    if matchEnd > op as *const u8 {
+                        while op < copyEnd {
+                            *op = *r#match;
+                            op = madd(op, 1);
+                            r#match = cadd(r#match, 1);
+                        }
+                    } else {
+                        LZ4_memcpy(op, r#match, mlen);
+                    }
+                    op = copyEnd;
+                    if op == oend {
+                        break 'safe;
+                    }
+                    state = ST_TOP;
+                    continue 'safe;
                 }
-            } else {
-                copy8(op, r#match);
-                if length > 16 {
-                    wild_copy8(op.add(8), r#match.add(8), cpy);
+
+                if offset < 8 {
+                    LZ4_write32(op, 0);
+                    *op.wrapping_add(0) = *r#match.wrapping_add(0);
+                    *op.wrapping_add(1) = *r#match.wrapping_add(1);
+                    *op.wrapping_add(2) = *r#match.wrapping_add(2);
+                    *op.wrapping_add(3) = *r#match.wrapping_add(3);
+                    r#match = cadd(r#match, inc32table[offset] as usize);
+                    LZ4_memcpy(madd(op, 4), r#match, 4);
+                    r#match = coff(r#match, -(dec64table[offset] as isize));
+                } else {
+                    LZ4_memcpy(op, r#match, 8);
+                    r#match = cadd(r#match, 8);
                 }
+                op = madd(op, 8);
+
+                if cpy > msub(oend, MATCH_SAFEGUARD_DISTANCE) {
+                    let oCopyLimit = msub(oend, WILDCOPYLENGTH - 1);
+                    if cpy > msub(oend, LASTLITERALS) {
+                        output_error!();
+                    }
+                    if op < oCopyLimit {
+                        LZ4_wildCopy8(op, r#match, oCopyLimit);
+                        r#match = coff(r#match, pdiff(oCopyLimit as *const u8, op as *const u8));
+                        op = oCopyLimit;
+                    }
+                    while op < cpy {
+                        *op = *r#match;
+                        op = madd(op, 1);
+                        r#match = cadd(r#match, 1);
+                    }
+                } else {
+                    LZ4_memcpy(op, r#match, 8);
+                    if length > 16 {
+                        LZ4_wildCopy8(madd(op, 8), cadd(r#match, 8), cpy);
+                    }
+                }
+                op = cpy;
             }
-            op = cpy;
+            state = ST_TOP;
         }
 
-        (op as usize - dst as usize) as c_int
+        pdiff(op as *const u8, dst as *const u8) as c_int
     }
 }
 
-/* ===== decoding API ===== */
+/* ===== Instantiate the API decoding functions ===== */
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_decompress_safe(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_decompressed_size: c_int,
+    compressedSize: c_int,
+    maxDecompressedSize: c_int,
 ) -> c_int {
     unsafe {
-        lz4_decompress_generic(
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            max_decompressed_size,
-            DecodeFullBlock,
-            NoDict,
+            compressedSize,
+            maxDecompressedSize,
+            decode_full_block,
+            noDict,
             dest as *const u8,
             core::ptr::null(),
             0,
@@ -2258,19 +2158,19 @@ pub unsafe extern "C" fn LZ4_decompress_safe(
 pub unsafe extern "C" fn LZ4_decompress_safe_partial(
     src: *const c_char,
     dst: *mut c_char,
-    compressed_size: c_int,
-    target_output_size: c_int,
-    dst_capacity: c_int,
+    compressedSize: c_int,
+    targetOutputSize: c_int,
+    dstCapacity: c_int,
 ) -> c_int {
     unsafe {
-        let dst_capacity = min_c_int(target_output_size, dst_capacity);
-        lz4_decompress_generic(
+        let dstCapacity = MINi(targetOutputSize, dstCapacity);
+        LZ4_decompress_generic(
             src,
             dst,
-            compressed_size,
-            dst_capacity,
-            PartialDecode,
-            NoDict,
+            compressedSize,
+            dstCapacity,
+            partial_decode,
+            noDict,
             dst as *const u8,
             core::ptr::null(),
             0,
@@ -2278,22 +2178,17 @@ pub unsafe extern "C" fn LZ4_decompress_safe_partial(
     }
 }
 
-#[inline]
-fn min_c_int(a: c_int, b: c_int) -> c_int {
-    if a < b { a } else { b }
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_decompress_fast(
     source: *const c_char,
     dest: *mut c_char,
-    original_size: c_int,
+    originalSize: c_int,
 ) -> c_int {
     unsafe {
-        lz4_decompress_unsafe_generic(
+        LZ4_decompress_unsafe_generic(
             source as *const u8,
             dest as *mut u8,
-            original_size,
+            originalSize,
             0,
             core::ptr::null(),
             0,
@@ -2305,41 +2200,41 @@ pub unsafe extern "C" fn LZ4_decompress_fast(
 pub unsafe extern "C" fn LZ4_decompress_safe_withPrefix64k(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_output_size: c_int,
+    compressedSize: c_int,
+    maxOutputSize: c_int,
 ) -> c_int {
     unsafe {
-        lz4_decompress_generic(
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            max_output_size,
-            DecodeFullBlock,
-            WithPrefix64k,
-            (dest as *const u8).wrapping_sub(64 * 1024),
+            compressedSize,
+            maxOutputSize,
+            decode_full_block,
+            withPrefix64k,
+            csub(dest as *const u8, 64 * KB),
             core::ptr::null(),
             0,
         )
     }
 }
 
-unsafe fn lz4_decompress_safe_partial_with_prefix64k(
+unsafe fn LZ4_decompress_safe_partial_withPrefix64k(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    target_output_size: c_int,
-    dst_capacity: c_int,
+    compressedSize: c_int,
+    targetOutputSize: c_int,
+    dstCapacity: c_int,
 ) -> c_int {
     unsafe {
-        let dst_capacity = min_c_int(target_output_size, dst_capacity);
-        lz4_decompress_generic(
+        let dstCapacity = MINi(targetOutputSize, dstCapacity);
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            dst_capacity,
-            PartialDecode,
-            WithPrefix64k,
-            (dest as *const u8).wrapping_sub(64 * 1024),
+            compressedSize,
+            dstCapacity,
+            partial_decode,
+            withPrefix64k,
+            csub(dest as *const u8, 64 * KB),
             core::ptr::null(),
             0,
         )
@@ -2350,60 +2245,60 @@ unsafe fn lz4_decompress_safe_partial_with_prefix64k(
 pub unsafe extern "C" fn LZ4_decompress_fast_withPrefix64k(
     source: *const c_char,
     dest: *mut c_char,
-    original_size: c_int,
+    originalSize: c_int,
 ) -> c_int {
     unsafe {
-        lz4_decompress_unsafe_generic(
+        LZ4_decompress_unsafe_generic(
             source as *const u8,
             dest as *mut u8,
-            original_size,
-            64 * 1024,
+            originalSize,
+            64 * KB,
             core::ptr::null(),
             0,
         )
     }
 }
 
-unsafe fn lz4_decompress_safe_with_small_prefix(
+unsafe fn LZ4_decompress_safe_withSmallPrefix(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_output_size: c_int,
-    prefix_size: usize,
+    compressedSize: c_int,
+    maxOutputSize: c_int,
+    prefixSize: usize,
 ) -> c_int {
     unsafe {
-        lz4_decompress_generic(
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            max_output_size,
-            DecodeFullBlock,
-            NoDict,
-            (dest as *const u8).wrapping_sub(prefix_size),
+            compressedSize,
+            maxOutputSize,
+            decode_full_block,
+            noDict,
+            csub(dest as *const u8, prefixSize),
             core::ptr::null(),
             0,
         )
     }
 }
 
-unsafe fn lz4_decompress_safe_partial_with_small_prefix(
+unsafe fn LZ4_decompress_safe_partial_withSmallPrefix(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    target_output_size: c_int,
-    dst_capacity: c_int,
-    prefix_size: usize,
+    compressedSize: c_int,
+    targetOutputSize: c_int,
+    dstCapacity: c_int,
+    prefixSize: usize,
 ) -> c_int {
     unsafe {
-        let dst_capacity = min_c_int(target_output_size, dst_capacity);
-        lz4_decompress_generic(
+        let dstCapacity = MINi(targetOutputSize, dstCapacity);
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            dst_capacity,
-            PartialDecode,
-            NoDict,
-            (dest as *const u8).wrapping_sub(prefix_size),
+            compressedSize,
+            dstCapacity,
+            partial_decode,
+            noDict,
+            csub(dest as *const u8, prefixSize),
             core::ptr::null(),
             0,
         )
@@ -2414,22 +2309,22 @@ unsafe fn lz4_decompress_safe_partial_with_small_prefix(
 pub unsafe extern "C" fn LZ4_decompress_safe_forceExtDict(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_output_size: c_int,
-    dict_start: *const c_void,
-    dict_size: usize,
+    compressedSize: c_int,
+    maxOutputSize: c_int,
+    dictStart: *const c_void,
+    dictSize: usize,
 ) -> c_int {
     unsafe {
-        lz4_decompress_generic(
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            max_output_size,
-            DecodeFullBlock,
-            UsingExtDict,
+            compressedSize,
+            maxOutputSize,
+            decode_full_block,
+            usingExtDict,
             dest as *const u8,
-            dict_start as *const u8,
-            dict_size,
+            dictStart as *const u8,
+            dictSize,
         )
     }
 }
@@ -2438,67 +2333,67 @@ pub unsafe extern "C" fn LZ4_decompress_safe_forceExtDict(
 pub unsafe extern "C" fn LZ4_decompress_safe_partial_forceExtDict(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    target_output_size: c_int,
-    dst_capacity: c_int,
-    dict_start: *const c_void,
-    dict_size: usize,
+    compressedSize: c_int,
+    targetOutputSize: c_int,
+    dstCapacity: c_int,
+    dictStart: *const c_void,
+    dictSize: usize,
 ) -> c_int {
     unsafe {
-        let dst_capacity = min_c_int(target_output_size, dst_capacity);
-        lz4_decompress_generic(
+        let dstCapacity = MINi(targetOutputSize, dstCapacity);
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            dst_capacity,
-            PartialDecode,
-            UsingExtDict,
+            compressedSize,
+            dstCapacity,
+            partial_decode,
+            usingExtDict,
             dest as *const u8,
-            dict_start as *const u8,
-            dict_size,
+            dictStart as *const u8,
+            dictSize,
         )
     }
 }
 
-unsafe fn lz4_decompress_fast_ext_dict(
+unsafe fn LZ4_decompress_fast_extDict(
     source: *const c_char,
     dest: *mut c_char,
-    original_size: c_int,
-    dict_start: *const c_void,
-    dict_size: usize,
+    originalSize: c_int,
+    dictStart: *const c_void,
+    dictSize: usize,
 ) -> c_int {
     unsafe {
-        lz4_decompress_unsafe_generic(
+        LZ4_decompress_unsafe_generic(
             source as *const u8,
             dest as *mut u8,
-            original_size,
+            originalSize,
             0,
-            dict_start as *const u8,
-            dict_size,
+            dictStart as *const u8,
+            dictSize,
         )
     }
 }
 
-unsafe fn lz4_decompress_safe_double_dict(
+unsafe fn LZ4_decompress_safe_doubleDict(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_output_size: c_int,
-    prefix_size: usize,
-    dict_start: *const c_void,
-    dict_size: usize,
+    compressedSize: c_int,
+    maxOutputSize: c_int,
+    prefixSize: usize,
+    dictStart: *const c_void,
+    dictSize: usize,
 ) -> c_int {
     unsafe {
-        lz4_decompress_generic(
+        LZ4_decompress_generic(
             source,
             dest,
-            compressed_size,
-            max_output_size,
-            DecodeFullBlock,
-            UsingExtDict,
-            (dest as *const u8).wrapping_sub(prefix_size),
-            dict_start as *const u8,
-            dict_size,
+            compressedSize,
+            maxOutputSize,
+            decode_full_block,
+            usingExtDict,
+            csub(dest as *const u8, prefixSize),
+            dictStart as *const u8,
+            dictSize,
         )
     }
 }
@@ -2506,119 +2401,118 @@ unsafe fn lz4_decompress_safe_double_dict(
 /* ===== streaming decompression ===== */
 
 #[unsafe(no_mangle)]
-pub extern "C" fn LZ4_createStreamDecode() -> *mut LZ4StreamDecode {
-    unsafe { alloc_and_zero(core::mem::size_of::<LZ4StreamDecode>()) as *mut LZ4StreamDecode }
+pub unsafe extern "C" fn LZ4_createStreamDecode() -> *mut LZ4_streamDecode_t {
+    unsafe { ALLOC_AND_ZERO(core::mem::size_of::<LZ4_streamDecode_t>()) as *mut LZ4_streamDecode_t }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn LZ4_freeStreamDecode(lz4_stream: *mut LZ4StreamDecode) -> c_int {
+pub unsafe extern "C" fn LZ4_freeStreamDecode(LZ4_stream: *mut LZ4_streamDecode_t) -> c_int {
     unsafe {
-        if lz4_stream.is_null() {
+        if LZ4_stream.is_null() {
             return 0;
         }
-        free(lz4_stream as *mut c_void);
+        FREEMEM(LZ4_stream as *mut c_void);
         0
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_setStreamDecode(
-    lz4_stream_decode: *mut LZ4StreamDecode,
+    LZ4_streamDecode: *mut LZ4_streamDecode_t,
     dictionary: *const c_char,
-    dict_size: c_int,
+    dictSize: c_int,
 ) -> c_int {
     unsafe {
-        let lz4sd = lz4_stream_decode as *mut LZ4StreamDecodeInternal;
-        (*lz4sd).prefix_size = dict_size as usize;
-        if dict_size != 0 {
-            (*lz4sd).prefix_end = (dictionary as *const u8).wrapping_add(dict_size as usize);
+        let lz4sd: *mut LZ4_streamDecode_t_internal = LZ4_streamDecode;
+        (*lz4sd).prefixSize = dictSize as usize;
+        if dictSize != 0 {
+            (*lz4sd).prefixEnd = cadd(dictionary as *const u8, dictSize as usize);
         } else {
-            (*lz4sd).prefix_end = dictionary as *const u8;
+            (*lz4sd).prefixEnd = dictionary as *const u8;
         }
-        (*lz4sd).external_dict = core::ptr::null();
-        (*lz4sd).ext_dict_size = 0;
+        (*lz4sd).externalDict = core::ptr::null();
+        (*lz4sd).extDictSize = 0;
         1
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn LZ4_decoderRingBufferSize(max_block_size: c_int) -> c_int {
-    let mut max_block_size = max_block_size;
-    if max_block_size < 0 {
+pub extern "C" fn LZ4_decoderRingBufferSize(mut maxBlockSize: c_int) -> c_int {
+    if maxBlockSize < 0 {
         return 0;
     }
-    if max_block_size > LZ4_MAX_INPUT_SIZE {
+    if maxBlockSize > LZ4_MAX_INPUT_SIZE as c_int {
         return 0;
     }
-    if max_block_size < 16 {
-        max_block_size = 16;
+    if maxBlockSize < 16 {
+        maxBlockSize = 16;
     }
-    65536 + 14 + max_block_size
+    65536 + 14 + maxBlockSize
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_decompress_safe_continue(
-    lz4_stream_decode: *mut LZ4StreamDecode,
+    LZ4_streamDecode: *mut LZ4_streamDecode_t,
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_output_size: c_int,
+    compressedSize: c_int,
+    maxOutputSize: c_int,
 ) -> c_int {
     unsafe {
-        let lz4sd = lz4_stream_decode as *mut LZ4StreamDecodeInternal;
-        let result;
+        let lz4sd: *mut LZ4_streamDecode_t_internal = LZ4_streamDecode;
+        let result: c_int;
 
-        if (*lz4sd).prefix_size == 0 {
-            result = LZ4_decompress_safe(source, dest, compressed_size, max_output_size);
+        if (*lz4sd).prefixSize == 0 {
+            result = LZ4_decompress_safe(source, dest, compressedSize, maxOutputSize);
             if result <= 0 {
                 return result;
             }
-            (*lz4sd).prefix_size = result as usize;
-            (*lz4sd).prefix_end = (dest as *const u8).wrapping_add(result as usize);
-        } else if (*lz4sd).prefix_end == dest as *const u8 {
-            if (*lz4sd).prefix_size >= 64 * 1024 - 1 {
+            (*lz4sd).prefixSize = result as usize;
+            (*lz4sd).prefixEnd = cadd(dest as *const u8, result as usize);
+        } else if (*lz4sd).prefixEnd == dest as *const u8 {
+            if (*lz4sd).prefixSize >= 64 * KB - 1 {
                 result =
-                    LZ4_decompress_safe_withPrefix64k(source, dest, compressed_size, max_output_size);
-            } else if (*lz4sd).ext_dict_size == 0 {
-                result = lz4_decompress_safe_with_small_prefix(
+                    LZ4_decompress_safe_withPrefix64k(source, dest, compressedSize, maxOutputSize);
+            } else if (*lz4sd).extDictSize == 0 {
+                result = LZ4_decompress_safe_withSmallPrefix(
                     source,
                     dest,
-                    compressed_size,
-                    max_output_size,
-                    (*lz4sd).prefix_size,
+                    compressedSize,
+                    maxOutputSize,
+                    (*lz4sd).prefixSize,
                 );
             } else {
-                result = lz4_decompress_safe_double_dict(
+                result = LZ4_decompress_safe_doubleDict(
                     source,
                     dest,
-                    compressed_size,
-                    max_output_size,
-                    (*lz4sd).prefix_size,
-                    (*lz4sd).external_dict as *const c_void,
-                    (*lz4sd).ext_dict_size,
+                    compressedSize,
+                    maxOutputSize,
+                    (*lz4sd).prefixSize,
+                    (*lz4sd).externalDict as *const c_void,
+                    (*lz4sd).extDictSize,
                 );
             }
             if result <= 0 {
                 return result;
             }
-            (*lz4sd).prefix_size += result as usize;
-            (*lz4sd).prefix_end = (*lz4sd).prefix_end.wrapping_add(result as usize);
+            (*lz4sd).prefixSize += result as usize;
+            (*lz4sd).prefixEnd = cadd((*lz4sd).prefixEnd, result as usize);
         } else {
-            (*lz4sd).ext_dict_size = (*lz4sd).prefix_size;
-            (*lz4sd).external_dict = (*lz4sd).prefix_end.wrapping_sub((*lz4sd).ext_dict_size);
+            (*lz4sd).extDictSize = (*lz4sd).prefixSize;
+            (*lz4sd).externalDict = csub((*lz4sd).prefixEnd, (*lz4sd).extDictSize);
             result = LZ4_decompress_safe_forceExtDict(
                 source,
                 dest,
-                compressed_size,
-                max_output_size,
-                (*lz4sd).external_dict as *const c_void,
-                (*lz4sd).ext_dict_size,
+                compressedSize,
+                maxOutputSize,
+                (*lz4sd).externalDict as *const c_void,
+                (*lz4sd).extDictSize,
             );
             if result <= 0 {
                 return result;
             }
-            (*lz4sd).prefix_size = result as usize;
-            (*lz4sd).prefix_end = (dest as *const u8).wrapping_add(result as usize);
+            (*lz4sd).prefixSize = result as usize;
+            (*lz4sd).prefixEnd = cadd(dest as *const u8, result as usize);
         }
 
         result
@@ -2627,51 +2521,51 @@ pub unsafe extern "C" fn LZ4_decompress_safe_continue(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_decompress_fast_continue(
-    lz4_stream_decode: *mut LZ4StreamDecode,
+    LZ4_streamDecode: *mut LZ4_streamDecode_t,
     source: *const c_char,
     dest: *mut c_char,
-    original_size: c_int,
+    originalSize: c_int,
 ) -> c_int {
     unsafe {
-        let lz4sd = lz4_stream_decode as *mut LZ4StreamDecodeInternal;
-        let result;
+        let lz4sd: *mut LZ4_streamDecode_t_internal = LZ4_streamDecode;
+        let result: c_int;
 
-        if (*lz4sd).prefix_size == 0 {
-            result = LZ4_decompress_fast(source, dest, original_size);
+        if (*lz4sd).prefixSize == 0 {
+            result = LZ4_decompress_fast(source, dest, originalSize);
             if result <= 0 {
                 return result;
             }
-            (*lz4sd).prefix_size = original_size as usize;
-            (*lz4sd).prefix_end = (dest as *const u8).wrapping_add(original_size as usize);
-        } else if (*lz4sd).prefix_end == dest as *const u8 {
-            result = lz4_decompress_unsafe_generic(
+            (*lz4sd).prefixSize = originalSize as usize;
+            (*lz4sd).prefixEnd = cadd(dest as *const u8, originalSize as usize);
+        } else if (*lz4sd).prefixEnd == dest as *const u8 {
+            result = LZ4_decompress_unsafe_generic(
                 source as *const u8,
                 dest as *mut u8,
-                original_size,
-                (*lz4sd).prefix_size,
-                (*lz4sd).external_dict,
-                (*lz4sd).ext_dict_size,
+                originalSize,
+                (*lz4sd).prefixSize,
+                (*lz4sd).externalDict,
+                (*lz4sd).extDictSize,
             );
             if result <= 0 {
                 return result;
             }
-            (*lz4sd).prefix_size += original_size as usize;
-            (*lz4sd).prefix_end = (*lz4sd).prefix_end.wrapping_add(original_size as usize);
+            (*lz4sd).prefixSize += originalSize as usize;
+            (*lz4sd).prefixEnd = cadd((*lz4sd).prefixEnd, originalSize as usize);
         } else {
-            (*lz4sd).ext_dict_size = (*lz4sd).prefix_size;
-            (*lz4sd).external_dict = (*lz4sd).prefix_end.wrapping_sub((*lz4sd).ext_dict_size);
-            result = lz4_decompress_fast_ext_dict(
+            (*lz4sd).extDictSize = (*lz4sd).prefixSize;
+            (*lz4sd).externalDict = csub((*lz4sd).prefixEnd, (*lz4sd).extDictSize);
+            result = LZ4_decompress_fast_extDict(
                 source,
                 dest,
-                original_size,
-                (*lz4sd).external_dict as *const c_void,
-                (*lz4sd).ext_dict_size,
+                originalSize,
+                (*lz4sd).externalDict as *const c_void,
+                (*lz4sd).extDictSize,
             );
             if result <= 0 {
                 return result;
             }
-            (*lz4sd).prefix_size = original_size as usize;
-            (*lz4sd).prefix_end = (dest as *const u8).wrapping_add(original_size as usize);
+            (*lz4sd).prefixSize = originalSize as usize;
+            (*lz4sd).prefixEnd = cadd(dest as *const u8, originalSize as usize);
         }
 
         result
@@ -2682,39 +2576,39 @@ pub unsafe extern "C" fn LZ4_decompress_fast_continue(
 pub unsafe extern "C" fn LZ4_decompress_safe_usingDict(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    max_output_size: c_int,
-    dict_start: *const c_char,
-    dict_size: c_int,
+    compressedSize: c_int,
+    maxOutputSize: c_int,
+    dictStart: *const c_char,
+    dictSize: c_int,
 ) -> c_int {
     unsafe {
-        if dict_size == 0 {
-            return LZ4_decompress_safe(source, dest, compressed_size, max_output_size);
+        if dictSize == 0 {
+            return LZ4_decompress_safe(source, dest, compressedSize, maxOutputSize);
         }
-        if dict_start.wrapping_add(dict_size as usize) == dest as *const c_char {
-            if dict_size >= 64 * 1024 - 1 {
+        if cadd(dictStart as *const u8, dictSize as usize) == dest as *const u8 {
+            if dictSize >= (64 * KB) as c_int - 1 {
                 return LZ4_decompress_safe_withPrefix64k(
                     source,
                     dest,
-                    compressed_size,
-                    max_output_size,
+                    compressedSize,
+                    maxOutputSize,
                 );
             }
-            return lz4_decompress_safe_with_small_prefix(
+            return LZ4_decompress_safe_withSmallPrefix(
                 source,
                 dest,
-                compressed_size,
-                max_output_size,
-                dict_size as usize,
+                compressedSize,
+                maxOutputSize,
+                dictSize as usize,
             );
         }
         LZ4_decompress_safe_forceExtDict(
             source,
             dest,
-            compressed_size,
-            max_output_size,
-            dict_start as *const c_void,
-            dict_size as usize,
+            compressedSize,
+            maxOutputSize,
+            dictStart as *const c_void,
+            dictSize as usize,
         )
     }
 }
@@ -2723,49 +2617,49 @@ pub unsafe extern "C" fn LZ4_decompress_safe_usingDict(
 pub unsafe extern "C" fn LZ4_decompress_safe_partial_usingDict(
     source: *const c_char,
     dest: *mut c_char,
-    compressed_size: c_int,
-    target_output_size: c_int,
-    dst_capacity: c_int,
-    dict_start: *const c_char,
-    dict_size: c_int,
+    compressedSize: c_int,
+    targetOutputSize: c_int,
+    dstCapacity: c_int,
+    dictStart: *const c_char,
+    dictSize: c_int,
 ) -> c_int {
     unsafe {
-        if dict_size == 0 {
+        if dictSize == 0 {
             return LZ4_decompress_safe_partial(
                 source,
                 dest,
-                compressed_size,
-                target_output_size,
-                dst_capacity,
+                compressedSize,
+                targetOutputSize,
+                dstCapacity,
             );
         }
-        if dict_start.wrapping_add(dict_size as usize) == dest as *const c_char {
-            if dict_size >= 64 * 1024 - 1 {
-                return lz4_decompress_safe_partial_with_prefix64k(
+        if cadd(dictStart as *const u8, dictSize as usize) == dest as *const u8 {
+            if dictSize >= (64 * KB) as c_int - 1 {
+                return LZ4_decompress_safe_partial_withPrefix64k(
                     source,
                     dest,
-                    compressed_size,
-                    target_output_size,
-                    dst_capacity,
+                    compressedSize,
+                    targetOutputSize,
+                    dstCapacity,
                 );
             }
-            return lz4_decompress_safe_partial_with_small_prefix(
+            return LZ4_decompress_safe_partial_withSmallPrefix(
                 source,
                 dest,
-                compressed_size,
-                target_output_size,
-                dst_capacity,
-                dict_size as usize,
+                compressedSize,
+                targetOutputSize,
+                dstCapacity,
+                dictSize as usize,
             );
         }
         LZ4_decompress_safe_partial_forceExtDict(
             source,
             dest,
-            compressed_size,
-            target_output_size,
-            dst_capacity,
-            dict_start as *const c_void,
-            dict_size as usize,
+            compressedSize,
+            targetOutputSize,
+            dstCapacity,
+            dictStart as *const c_void,
+            dictSize as usize,
         )
     }
 }
@@ -2774,50 +2668,50 @@ pub unsafe extern "C" fn LZ4_decompress_safe_partial_usingDict(
 pub unsafe extern "C" fn LZ4_decompress_fast_usingDict(
     source: *const c_char,
     dest: *mut c_char,
-    original_size: c_int,
-    dict_start: *const c_char,
-    dict_size: c_int,
+    originalSize: c_int,
+    dictStart: *const c_char,
+    dictSize: c_int,
 ) -> c_int {
     unsafe {
-        if dict_size == 0 || dict_start.wrapping_add(dict_size as usize) == dest as *const c_char {
-            return lz4_decompress_unsafe_generic(
+        if dictSize == 0 || cadd(dictStart as *const u8, dictSize as usize) == dest as *const u8 {
+            return LZ4_decompress_unsafe_generic(
                 source as *const u8,
                 dest as *mut u8,
-                original_size,
-                dict_size as usize,
+                originalSize,
+                dictSize as usize,
                 core::ptr::null(),
                 0,
             );
         }
-        lz4_decompress_fast_ext_dict(
+        LZ4_decompress_fast_extDict(
             source,
             dest,
-            original_size,
-            dict_start as *const c_void,
-            dict_size as usize,
+            originalSize,
+            dictStart as *const c_void,
+            dictSize as usize,
         )
     }
 }
 
-/* ===== obsolete functions ===== */
+/* ===== Obsolete Functions ===== */
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_compress_limitedOutput(
     source: *const c_char,
     dest: *mut c_char,
-    input_size: c_int,
-    max_output_size: c_int,
+    inputSize: c_int,
+    maxOutputSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_compress_default(source, dest, input_size, max_output_size) }
+    unsafe { LZ4_compress_default(source, dest, inputSize, maxOutputSize) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_compress(
     src: *const c_char,
     dest: *mut c_char,
-    src_size: c_int,
+    srcSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_compress_default(src, dest, src_size, lz4_compress_bound(src_size)) }
+    unsafe { LZ4_compress_default(src, dest, srcSize, LZ4_compressBound(srcSize)) }
 }
 
 #[unsafe(no_mangle)]
@@ -2825,10 +2719,10 @@ pub unsafe extern "C" fn LZ4_compress_limitedOutput_withState(
     state: *mut c_void,
     src: *const c_char,
     dst: *mut c_char,
-    src_size: c_int,
-    dst_size: c_int,
+    srcSize: c_int,
+    dstSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_compress_fast_extState(state, src, dst, src_size, dst_size, 1) }
+    unsafe { LZ4_compress_fast_extState(state, src, dst, srcSize, dstSize, 1) }
 }
 
 #[unsafe(no_mangle)]
@@ -2836,38 +2730,38 @@ pub unsafe extern "C" fn LZ4_compress_withState(
     state: *mut c_void,
     src: *const c_char,
     dst: *mut c_char,
-    src_size: c_int,
+    srcSize: c_int,
 ) -> c_int {
     unsafe {
-        LZ4_compress_fast_extState(state, src, dst, src_size, lz4_compress_bound(src_size), 1)
+        LZ4_compress_fast_extState(state, src, dst, srcSize, LZ4_compressBound(srcSize), 1)
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_compress_limitedOutput_continue(
-    lz4_stream: *mut LZ4Stream,
+    LZ4_stream: *mut LZ4_stream_t,
     src: *const c_char,
     dst: *mut c_char,
-    src_size: c_int,
-    dst_capacity: c_int,
+    srcSize: c_int,
+    dstCapacity: c_int,
 ) -> c_int {
-    unsafe { LZ4_compress_fast_continue(lz4_stream, src, dst, src_size, dst_capacity, 1) }
+    unsafe { LZ4_compress_fast_continue(LZ4_stream, src, dst, srcSize, dstCapacity, 1) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_compress_continue(
-    lz4_stream: *mut LZ4Stream,
+    LZ4_stream: *mut LZ4_stream_t,
     source: *const c_char,
     dest: *mut c_char,
-    input_size: c_int,
+    inputSize: c_int,
 ) -> c_int {
     unsafe {
         LZ4_compress_fast_continue(
-            lz4_stream,
+            LZ4_stream,
             source,
             dest,
-            input_size,
-            lz4_compress_bound(input_size),
+            inputSize,
+            LZ4_compressBound(inputSize),
             1,
         )
     }
@@ -2877,9 +2771,9 @@ pub unsafe extern "C" fn LZ4_compress_continue(
 pub unsafe extern "C" fn LZ4_uncompress(
     source: *const c_char,
     dest: *mut c_char,
-    output_size: c_int,
+    outputSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_decompress_fast(source, dest, output_size) }
+    unsafe { LZ4_decompress_fast(source, dest, outputSize) }
 }
 
 #[unsafe(no_mangle)]
@@ -2887,33 +2781,33 @@ pub unsafe extern "C" fn LZ4_uncompress_unknownOutputSize(
     source: *const c_char,
     dest: *mut c_char,
     isize_: c_int,
-    max_output_size: c_int,
+    maxOutputSize: c_int,
 ) -> c_int {
-    unsafe { LZ4_decompress_safe(source, dest, isize_, max_output_size) }
+    unsafe { LZ4_decompress_safe(source, dest, isize_, maxOutputSize) }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn LZ4_sizeofStreamState() -> c_int {
-    core::mem::size_of::<LZ4Stream>() as c_int
+    core::mem::size_of::<LZ4_stream_t>() as c_int
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_resetStreamState(
     state: *mut c_void,
-    _input_buffer: *mut c_char,
+    _inputBuffer: *mut c_char,
 ) -> c_int {
     unsafe {
-        LZ4_resetStream(state as *mut LZ4Stream);
+        LZ4_resetStream(state as *mut LZ4_stream_t);
         0
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn LZ4_create(_input_buffer: *mut c_char) -> *mut c_void {
-    LZ4_createStream() as *mut c_void
+pub unsafe extern "C" fn LZ4_create(_inputBuffer: *mut c_char) -> *mut c_void {
+    unsafe { LZ4_createStream() as *mut c_void }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn LZ4_slideInputBuffer(state: *mut c_void) -> *mut c_char {
-    unsafe { (*(state as *mut LZ4StreamInternal)).dictionary as *mut c_char }
+    unsafe { (*(state as *mut LZ4_stream_t)).dictionary as *mut c_char }
 }

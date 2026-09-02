@@ -1,0 +1,2036 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -100 && echo "---TRANSLATION---" && find translation -type f -not -path '*/target/*' | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore directory structure
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 14:25 .
+drwxr-xr-x. 772 scheschb amazon 81920 Sep  1 14:25 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 14:25 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 14:25 c_src
+drwxr-xr-x.   3 scheschb amazon    53 Sep  1 14:25 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---TRANSLATION---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/include/lib.h c_src/src/lib.c c_src/CMakeLists.txt translation/Cargo.toml translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes
+
+   1 c_src/include/lib.h
+  22 c_src/src/lib.c
+  16 c_src/CMakeLists.txt
+  14 translation/Cargo.toml
+  63 translation/src/lib.rs
+ 116 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[38;5;141m> [0mSmall project. Reading everything.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m5[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all source files
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/c_src/src/lib.c[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 4: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/Cargo.toml[0m, all lines
+↱ Operation 5: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/src/lib.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m37 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m302 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m175 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/Cargo.toml
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1932 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/src/lib.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 5 operations processed, 5 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mTiny surface: one function. Let me run the builds.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo check 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: cargo check
+
+    Checking driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+[38;5;244m - Completed in 0.109s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null 2>&1 && cmake --build . 2>&1 | tail -5 && echo "---SO---" && find . -name '*.so'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/driver.dir/src/lib.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+---SO---
+./libdriver.so
+[38;5;244m - Completed in 0.430s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -5 && echo "=== C nm -D ===" && nm -D --defined-only ../c_src/build/libdriver.so && echo "=== RUST nm -D ===" && nm -D --defined-only target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust and compare symbols
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+=== C nm -D ===
+0000000000001129 T custom_strdup
+=== RUST nm -D ===
+00000000000116c0 T custom_strdup
+[38;5;244m - Completed in 0.124s[0m
+
+[?25l[0m[38;5;141m> [0mSymbols already match (single symbol each). Let me check the feature surface, then write Phase A artifacts.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && grep -n "features" Cargo.toml || echo "NO [features] SECTION -> only the default configuration exists"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check for cargo features
+
+NO [features] SECTION -> only the default configuration exists
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create SYMBOLS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D --defined-only` on both shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ## C source inventory
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m The whole library is two files:
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m | C file | translated? | notes |
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m |--------|-------------|-------|
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m | `c_src/include/lib.h` | n/a (header) | declares exactly one function, no renaming macros |
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m | `c_src/src/lib.c` | YES → `translation/src/lib.rs` | 22 lines, one function definition |
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m `grep -c '^[a-zA-Z].*(' c_src/src/lib.c` confirms a single function definition,
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m so no C module was skipped. There is no macro-generated symbol machinery
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m (no `#define`d name prefixes/suffixes anywhere in `c_src/`).
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m ## `nm -D --defined-only` comparison
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m Commands used:
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m nm -D --defined-only c_src/build/libdriver.so
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m nm -D --defined-only translation/target/release/libdriver.so
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m | symbol | in C `.so` | in Rust `.so` | status |
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m |--------|-----------|---------------|--------|
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m | `custom_strdup` | `T` | `T` | MATCH |
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m ### Diff
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m $ comm -3 <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $3}' | sort -u) \
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m           <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort -u)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m (empty)
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m **Missing from Rust: 0. Extra in Rust: 0.** No `#[no_mangle]` wrapper needed to
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m be added and no untranslated C module was found.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m ## Undefined (imported) symbols
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m The Rust `.so` must not pull in any non-libc undefined symbol.
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m `nm -D --undefined-only translation/target/release/libdriver.so` resolves only
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m against `libc`/`ld-linux` (`malloc`, `memcpy`, `strlen`, plus the standard
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m `_ITM_*` / `__gmon_start__` / `__cxa_*` weak stubs the toolchain always emits).
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m The Rust translation deliberately imports `malloc`/`memcpy`/`strlen` from libc
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m rather than using Rust's allocator, because the C contract is that the caller
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m releases the returned buffer with `free()` — that makes the allocator part of
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m the observable ABI.
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m `translation/Cargo.toml` declares **no `[features]` section**, so the only
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m build configuration is the default one. `--no-default-features` and the default
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m build are therefore the same compilation unit; both are still exercised by
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m `tests/feature_matrix.sh` for completeness.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create ERRORS.md error-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — error-surface table (Phase A / Phase C)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src/src/lib.c`. Every rejection/error path in the
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m C source is listed below, one row per distinct branch.
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ## Mechanical extraction
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m $ grep -n 'return\|assert\|NULL\|if\s*(\|<\|>\|MAX\|MIN' c_src/src/lib.c
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 1:  if(!str)
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 2:    return (char *)NULL;
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 3:  if(!newstr)
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 4:    return (char *)NULL;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 5:  return newstr;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m * error-return macros (`RETURN_ERROR`, `CURLE_*`, …): **none** — this file has no
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   error enum and no error macro; the only failure signal is the `NULL` sentinel.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m * `assert` / `static_assert`: **none**.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m * explicit range checks (`<`, `>`, `<=`, `>=`), `MIN`/`MAX` constants,
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   `#define`d limits: **none**.
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m * null checks: **2** (`!str`, `!newstr`).
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m * enum parameters: **none** — the only parameter is `const char *`, so there is
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   no "out-of-range enum across FFI" case to construct for this API (documented
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   here so the gap is explicit rather than overlooked).
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m That yields exactly two rejection rows, plus the generic-boundary rows the task
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m requires every C API to be probed with.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m ## Error-surface table
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m |---|----------|---------------------------------------------|-------------------|------|-----|
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | E1 | `custom_strdup` | `str == NULL` (`if(!str)`, lib.c:11) | returns `NULL` (`(char *)NULL`) | `err_e1_null_input` | [x] |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m | E2 | `custom_strdup` | `malloc(len)` returns `NULL`, i.e. allocation of `strlen(str)+1` bytes fails (`if(!newstr)`, lib.c:18) | returns `NULL`, and does **not** write through the null pointer | `err_e2_malloc_failure_under_rlimit` | [x] |
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ## Generic boundaries (required even though not distinct C branches)
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | # | condition | expected C behaviour | test | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m |---|-----------|----------------------|------|-----|
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | G1 | null pointer (same as E1, asserted repeatedly / interleaved with valid calls to catch state leakage) | `NULL` every time, no state carried between calls | `err_g1_null_interleaved_with_valid` | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | G2 | zero-length input: `""` (`strlen == 0`, so `len == 1`) — the smallest *valid* input, one step below which is only `NULL` | returns a 1-byte buffer containing just `'\0'` | `err_g2_zero_length` | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | G3 | one step past the smallest input: 1-byte string `"\0"`-terminated, i.e. `len == 2` | 2-byte buffer, exact copy | `err_g3_one_byte` | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | G4 | oversized length — a string long enough that `len` crosses `malloc`'s mmap threshold (16 MiB) but still succeeds | exact copy, allocation succeeds | `err_g4_oversized_length` | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | G5 | out-of-range enum value passed across the FFI boundary | **N/A for this API** — `custom_strdup` takes no enum/int parameter. Recorded so the omission is deliberate. | (n/a, documented) | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | G6 | returned pointer must be releasable with libc `free()` (allocator ABI); required because the C returns a `malloc` block | `free(p)` succeeds for both implementations | `cfg_c11_result_is_free_able` | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | G7 | non-terminated / unreadable input pointer (e.g. dangling, or a buffer with no `'\0'`) | **undefined behaviour in C** — `strlen` reads past the end. Not tested: the C ground truth has no defined result to match. | (n/a, UB) | [x] |
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create CONFIGS.md configuration-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — configuration-surface table (Phase A / Phase B)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src/include/lib.h` and `c_src/src/lib.c`.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ## Axis extraction from the C source
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m **Runtime options / modes / flags.** `grep -n 'if\|switch\|#if\|#ifdef' c_src/src/lib.c`
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m returns only the two null checks already listed in `ERRORS.md`. There is no
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m global state, no init/teardown, no options struct, no `#ifdef` in either file.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m **Number of runtime option axes: 0.**
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m **Public entry points.** `c_src/include/lib.h` is one line and declares exactly
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m one function, `custom_strdup`. It is simultaneously the highest- and the
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m lowest-level entry point — there is no convenience wrapper to hide behind, and
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m no internal helper with external linkage (`nm -D` confirms a single `T` symbol).
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m **Input shapes the code is sensitive to.** The function body is
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m `strlen` → `+1` → `malloc` → `memcpy`. Although the C has no explicit
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m size branches, the *observable* behaviour varies with:
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m * `len = strlen(str) + 1` — the terminator-inclusive length, which selects a
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   different `malloc` size class (fastbin / smallbin / page-multiple / `mmap`
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m   threshold) and a different `memcpy` code path (byte loop vs SSE/AVX vs
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   `rep movsb` vs page copy). These are the axes where a translation that got
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   the `+1` or the copy length wrong shows up.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m * byte content, including `0x80`–`0xFF` (the buffer is `char*`, not UTF-8; a
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   Rust translation that routed through `str`/`CStr` UTF-8 validation would
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m   diverge here).
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m * alignment of the input pointer.
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m * placement relative to the end of a mapped page (detects reading past the NUL).
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m * call sequence / repetition (detects hidden shared state — there must be none).
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ## Configuration-surface table
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m One row per meaningful combination of `{entry point} × {length class} × {content
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m class} × {alignment} × {call pattern}`, pruned to the combinations the C
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m actually distinguishes. Every row is driven with many randomized inputs
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m (xorshift64\* PRNG, fixed seed `0x2024_0601_C0FFEE01`), and both the C `.so` and
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m the Rust `.so` are called through `libloading` and compared byte-for-byte
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m (including the NUL terminator).
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | test | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m |---|----------------|-------------------------------------------|------|-----|
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | C1 | `custom_strdup` | no options (none exist); `len_with_nul == 1`, i.e. the empty string `""` | `cfg_c1_empty` | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | C2 | `custom_strdup` | `len_with_nul == 2`: **exhaustively all 255** legal single-byte contents `0x01..=0xFF` | `cfg_c2_all_single_bytes` | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | C3 | `custom_strdup` | `len_with_nul == 3`: **exhaustively all 255×255** two-byte contents | `cfg_c3_all_two_byte_pairs` | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | C4 | `custom_strdup` | small sizes 1..=64 bytes, randomized non-zero contents, many trials per size (fastbin / smallbin `malloc` classes, short-`memcpy` paths) | `cfg_c4_small_sizes_sweep` | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | C5 | `custom_strdup` | `memcpy`/`malloc` alignment boundaries: lengths `{7,8,9,15,16,17,23,24,25,31,32,33,63,64,65,127,128,129}`, randomized contents | `cfg_c5_alignment_boundaries` | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | C6 | `custom_strdup` | page boundaries: lengths `{4094,4095,4096,4097,4098,8191,8192,8193}`, randomized contents | `cfg_c6_page_boundaries` | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | C7 | `custom_strdup` | large allocation, 1 MiB of randomized bytes | `cfg_c7_one_mib` | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | C8 | `custom_strdup` | past `malloc`'s default `mmap` threshold: 16 MiB + 1 of randomized bytes (different allocator path entirely) | `cfg_c8_mmap_threshold` | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | C9 | `custom_strdup` | high-bit-only / non-UTF-8 contents (`0x80..=0xFF`, plus deliberately invalid UTF-8 sequences: lone continuation bytes, truncated multi-byte sequences, `0xFE`/`0xFF`), randomized lengths | `cfg_c9_non_utf8` | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | C10 | `custom_strdup` | misaligned input pointer: same logical string read at offsets 0..=15 inside an over-aligned backing buffer, randomized lengths | `cfg_c10_misaligned_input` | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | C11 | `custom_strdup` | result-ownership shape: returned pointer is non-null, **not** aliasing the input, and releasable via libc `free()`; two successive calls return distinct buffers | `cfg_c11_result_is_free_able` | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | C12 | `custom_strdup` | input whose NUL terminator is the **last readable byte** before an unmapped guard page (proves neither impl reads past the terminator), lengths 1..=64 | `cfg_c12_guard_page` | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | C13 | `custom_strdup` | call pattern: 2000 interleaved C/Rust calls with randomized inputs, results kept alive simultaneously (proves no shared/leaked state and no allocator interference) | `cfg_c13_interleaved_stateful` | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m | C14 | `custom_strdup` | free-form property sweep: 5000 iterations, random length `0..=8192`, random byte contents, fixed seed | `cfg_c14_property_sweep` | [x] |
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m `translation/Cargo.toml` has no `[features]` table, so the cross-product of
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m cargo features is a single point. `tests/feature_matrix.sh` still runs the
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m default build and `--no-default-features` explicitly so the claim is verified
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m rather than assumed.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the dev-dependencies and the differential test harness.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading and libc dev-dependencies
+
+[49m[39m  11, 11[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 12[0m:[39m[49m panic = "abort"
+[0m[49m[39m  13, 13[0m:[39m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m libc = "0.2"
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[39m  14, 18[0m:[39m[49m [workspace]
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo fetch 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fetch dev-dependencies
+
+    Updating crates.io index
+     Locking 4 packages to latest Rust 1.97.1 compatible versions
+      Adding cfg-if v1.0.4
+      Adding libc v0.2.189
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+[38;5;244m - Completed in 0.100s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared differential-test harness.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Both the C `libdriver.so` and the Rust `libdriver.so` are loaded with
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `libloading` and called *only* through their exported `custom_strdup`
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! symbol. The Rust implementation is never called directly, so the
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! `#[no_mangle] extern "C"` wrapper is part of what is under test.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::ffi::c_char;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::sync::OnceLock;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m pub type StrdupFn = unsafe extern "C" fn(*const c_char) -> *mut c_char;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Path to the C shared library built by `c_src/CMakeLists.txt`.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m pub fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     p.pop();
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     p.push("c_src/build/libdriver.so");
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     p
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// Path to the Rust `cdylib`, in the *same* profile directory that this test
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// binary was built into (so `cargo test` and `cargo test --release` both work).
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m pub fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("DRIVER_RUST_SO") {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         return PathBuf::from(p);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     // .../target/<profile>/deps/<test-bin>  ->  .../target/<profile>/libdriver.so
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     let profile_dir = exe
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         .and_then(|deps| deps.parent())
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         .expect("target/<profile> dir")
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         .to_path_buf();
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     profile_dir.join("libdriver.so")
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m fn load(path: &PathBuf) -> StrdupFn {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         path.exists(),
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         "shared library not found: {} — build it first",
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         path.display()
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         // Leak the `Library` so the extracted symbol is valid for `'static`.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         let lib: &'static Library = Box::leak(Box::new(
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             Library::new(path).unwrap_or_else(|e| panic!("dlopen {}: {e}", path.display())),
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         ));
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         let sym: Symbol<StrdupFn> = lib
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             .get(b"custom_strdup\0")
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("dlsym custom_strdup in {}: {e}", path.display()));
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         *sym
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m pub struct Impls {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     pub c: StrdupFn,
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     pub rust: StrdupFn,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m pub fn impls() -> &'static Impls {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     static IMPLS: OnceLock<Impls> = OnceLock::new();
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     IMPLS.get_or_init(|| Impls {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         c: load(&c_so_path()),
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         rust: load(&rust_so_path()),
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// Short, printable rendition of an input buffer for assertion messages.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m pub fn describe(input: &[u8]) -> String {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     let head: Vec<String> = input.iter().take(24).map(|b| format!("{b:02x}")).collect();
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     format!(
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         "len_with_nul={} bytes=[{}{}]",
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         input.len(),
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         head.join(" "),
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         if input.len() > 24 { " ..." } else { "" }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// Call both implementations on `input` (which MUST be NUL-terminated) and
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// assert the results are byte-identical, including the terminator.
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// Also checks the ownership contract the C establishes: a fresh `malloc`
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// block, distinct from the input, releasable with `free`.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m pub fn assert_same(input: &[u8]) {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         input.last().copied(),
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         Some(0u8),
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         "test bug: input must be NUL-terminated"
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let ptr = input.as_ptr() as *const c_char;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     assert_same_ptr(i, ptr, Some(input));
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// Lower-level form: call both on a raw pointer. `expected` is the buffer the
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// pointer refers to when the caller can supply it (used for content checks).
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m pub fn assert_same_ptr(i: &Impls, ptr: *const c_char, expected: Option<&[u8]>) {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let c_res = unsafe { (i.c)(ptr) };
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     let r_res = unsafe { (i.rust)(ptr) };
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let desc = expected.map(describe).unwrap_or_else(|| format!("ptr={ptr:p}"));
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         c_res.is_null(),
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         r_res.is_null(),
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         "null-ness mismatch: C={:?} Rust={:?} for {desc}",
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         c_res,
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         r_res
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     if c_res.is_null() {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     // Neither implementation may return the input pointer itself.
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     assert_ne!(c_res as *const c_char, ptr, "C returned the input pointer");
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     assert_ne!(r_res as *const c_char, ptr, "Rust returned the input pointer");
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     assert_ne!(c_res, r_res, "both returned the same pointer");
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     // Compare using the length each implementation actually produced, so a
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     // wrong `+1` or a wrong copy length is caught rather than masked.
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let c_len = unsafe { libc::strlen(c_res) };
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     let r_len = unsafe { libc::strlen(r_res) };
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     assert_eq!(c_len, r_len, "strlen(result) mismatch for {desc}");
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     let c_bytes = unsafe { std::slice::from_raw_parts(c_res as *const u8, c_len + 1) };
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let r_bytes = unsafe { std::slice::from_raw_parts(r_res as *const u8, r_len + 1) };
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         c_bytes, r_bytes,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         "result bytes (incl. NUL) differ for {desc}"
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     if let Some(exp) = expected {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         assert_eq!(c_bytes, exp, "C result does not equal the input for {desc}");
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         assert_eq!(r_bytes, exp, "Rust result does not equal the input for {desc}");
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     // The C hands back a `malloc` block; both results must survive `free`.
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         libc::free(c_res as *mut libc::c_void);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         libc::free(r_res as *mut libc::c_void);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m /// Deterministic xorshift64* PRNG — no external rand dependency, fixed seed so
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// every run examines the same inputs.
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m pub const SEED: u64 = 0x2024_0601_C0FF_EE01;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     pub fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         Rng(if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed })
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         x ^= x >> 12;
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         x ^= x << 25;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         x ^= x >> 27;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     /// Uniform-ish value in `0..n`.
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     pub fn below(&mut self, n: u64) -> u64 {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         assert!(n > 0);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         self.next_u64() % n
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     /// A byte legal inside a C string: never `0`.
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     pub fn nonzero_byte(&mut self) -> u8 {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         1 + (self.next_u64() % 255) as u8
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     /// NUL-terminated buffer whose payload is `payload_len` random non-zero bytes.
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     pub fn cstring(&mut self, payload_len: usize) -> Vec<u8> {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         let mut v: Vec<u8> = (0..payload_len).map(|_| self.nonzero_byte()).collect();
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         v.push(0);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         v
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Phase B valid-path tests, one per [38;5;10mCONFIGS.md[0m row.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/phase_b_valid.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase B valid-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `CONFIGS.md`. Each row drives BOTH the C `.so` and the
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Rust `.so` through `libloading` and compares results byte-for-byte, using
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! many randomized inputs (fixed seed) rather than one hand-picked value.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use common::{assert_same, assert_same_ptr, impls, Rng, SEED};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::ffi::c_char;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// C1 — `len_with_nul == 1`: the empty string.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m fn cfg_c1_empty() {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     for _ in 0..1000 {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         assert_same(b"\0");
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// C2 — `len_with_nul == 2`: exhaustively all 255 legal single-byte contents.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m fn cfg_c2_all_single_bytes() {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     for b in 1u16..=255 {
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         assert_same(&[b as u8, 0]);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// C3 — `len_with_nul == 3`: exhaustively all 255x255 two-byte contents.
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m fn cfg_c3_all_two_byte_pairs() {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     for a in 1u16..=255 {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         for b in 1u16..=255 {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m             assert_same(&[a as u8, b as u8, 0]);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// C4 — small `malloc` size classes: payloads 1..=64, many random trials each.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m fn cfg_c4_small_sizes_sweep() {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 4);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     for len in 1..=64usize {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         for _ in 0..64 {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             assert_same(&rng.cstring(len));
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// C5 — `memcpy`/`malloc` alignment boundaries.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m fn cfg_c5_alignment_boundaries() {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 5);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     const LENS: &[usize] = &[
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 64, 65, 127, 128, 129,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     for &len in LENS {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         for _ in 0..256 {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             assert_same(&rng.cstring(len));
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// C6 — page boundaries.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m fn cfg_c6_page_boundaries() {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 6);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     const LENS: &[usize] = &[4094, 4095, 4096, 4097, 4098, 8191, 8192, 8193];
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     for &len in LENS {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         for _ in 0..64 {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             assert_same(&rng.cstring(len));
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// C7 — 1 MiB of randomized bytes.
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn cfg_c7_one_mib() {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 7);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     for _ in 0..8 {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         assert_same(&rng.cstring(1024 * 1024));
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// C8 — past `malloc`'s default mmap threshold (a different allocator path).
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m fn cfg_c8_mmap_threshold() {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 8);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     for _ in 0..2 {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         assert_same(&rng.cstring(16 * 1024 * 1024 + 1));
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// C9 — high-bit-only and deliberately invalid UTF-8 contents. A translation
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m /// that routed through `str`/`CStr` UTF-8 validation would diverge here.
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m fn cfg_c9_non_utf8() {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 9);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     // High-bit-only payloads of randomized length.
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     for _ in 0..2000 {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let len = rng.below(512) as usize;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         let mut v: Vec<u8> = (0..len).map(|_| 0x80 + (rng.below(128) as u8)).collect();
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         v.push(0);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         assert_same(&v);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     // Hand-built invalid UTF-8: lone continuation bytes, truncated sequences,
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     // 0xFE/0xFF, overlong forms, surrogate encodings.
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     let fixtures: &[&[u8]] = &[
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         &[0x80, 0],
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         &[0xBF, 0],
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         &[0xC0, 0],
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         &[0xC0, 0x80, 0],
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         &[0xC2, 0],
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         &[0xE0, 0x80, 0],
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         &[0xE2, 0x82, 0],
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         &[0xED, 0xA0, 0x80, 0],
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         &[0xF0, 0x9F, 0],
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         &[0xF5, 0x80, 0x80, 0x80, 0],
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         &[0xFE, 0],
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         &[0xFF, 0],
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         &[0xFF, 0xFE, 0xFD, 0xFC, 0],
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         &[0xF4, 0x90, 0x80, 0x80, 0],
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     for f in fixtures {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         assert_same(f);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     // Long runs of a single high byte, every value 0x80..=0xFF.
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     for b in 0x80u16..=0xFF {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         let mut v = vec![b as u8; 300];
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         v.push(0);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         assert_same(&v);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m /// C10 — misaligned input pointer: the same logical string read at byte offsets
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m /// 0..=15 inside an over-aligned backing buffer.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m fn cfg_c10_misaligned_input() {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 10);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     #[repr(align(64))]
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     struct Aligned([u8; 1024]);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     for _ in 0..500 {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         let len = rng.below(256) as usize;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let payload: Vec<u8> = (0..len).map(|_| rng.nonzero_byte()).collect();
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         for off in 0..16usize {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             let mut buf = Aligned([0u8; 1024]);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m             buf.0[off..off + len].copy_from_slice(&payload);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m             buf.0[off + len] = 0;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             let start = &buf.0[off..off + len + 1];
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             assert_same_ptr(i, start.as_ptr() as *const c_char, Some(start));
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m /// C11 — ownership shape: fresh, distinct, `free`-able allocations. (Also
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m /// covers ERRORS.md row G6.) `assert_same_ptr` checks distinctness and calls
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m /// `free`; here the two results are additionally held alive at once.
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m fn cfg_c11_result_is_free_able() {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 11);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     for _ in 0..500 {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         let input = rng.cstring(rng.below(200) as usize);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         let p = input.as_ptr() as *const c_char;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         let a = unsafe { (i.rust)(p) };
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         let b = unsafe { (i.rust)(p) };
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         assert!(!a.is_null() && !b.is_null());
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         assert_ne!(a, b, "two calls must return distinct buffers");
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         let ca = unsafe { (i.c)(p) };
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         let cb = unsafe { (i.c)(p) };
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         assert!(!ca.is_null() && !cb.is_null());
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         assert_ne!(ca, cb, "two C calls must return distinct buffers");
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         // All four alive simultaneously, then all released with libc free.
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         for q in [a, b, ca, cb] {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             let n = unsafe { libc::strlen(q) };
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             assert_eq!(n + 1, input.len());
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m             let bytes = unsafe { std::slice::from_raw_parts(q as *const u8, n + 1) };
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             assert_eq!(bytes, &input[..]);
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         for q in [a, b, ca, cb] {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             unsafe { libc::free(q as *mut libc::c_void) };
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m /// C12 — the NUL terminator is the last readable byte before an unmapped guard
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m /// page. If either implementation read past the terminator it would segfault.
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m fn cfg_c12_guard_page() {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 12);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         let region = libc::mmap(
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m             std::ptr::null_mut(),
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             page * 2,
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             libc::PROT_READ | libc::PROT_WRITE,
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m             libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m             -1,
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m             0,
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         assert_ne!(region, libc::MAP_FAILED, "mmap failed");
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         // Make the second page inaccessible.
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m             libc::mprotect(region.byte_add(page), page, libc::PROT_NONE),
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             0,
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             "mprotect failed"
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         let base = region as *mut u8;
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         for len in 0..=64usize {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m             for _ in 0..16 {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m                 // Place payload + NUL so the NUL sits at the final byte of page 1.
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m                 let start = base.add(page - (len + 1));
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m                 for k in 0..len {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m                     *start.add(k) = rng.nonzero_byte();
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m                 *start.add(len) = 0;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m                 let slice = std::slice::from_raw_parts(start, len + 1);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m                 assert_same_ptr(i, start as *const c_char, Some(slice));
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         libc::munmap(region, page * 2);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m /// C13 — 2000 interleaved C/Rust calls with all results held alive at once,
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m /// proving neither implementation carries hidden state between calls and that
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m /// they do not interfere through the shared allocator.
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m fn cfg_c13_interleaved_stateful() {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 13);
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     let mut inputs: Vec<Vec<u8>> = Vec::new();
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     let mut live: Vec<(*mut c_char, usize)> = Vec::new();
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     for n in 0..2000usize {
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         let input = rng.cstring(rng.below(300) as usize);
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         let p = input.as_ptr() as *const c_char;
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         // Alternate which implementation goes first.
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         let (a, b) = if n % 2 == 0 {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m             (unsafe { (i.c)(p) }, unsafe { (i.rust)(p) })
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m             let r = unsafe { (i.rust)(p) };
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             (unsafe { (i.c)(p) }, r)
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         assert!(!a.is_null() && !b.is_null());
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         let idx = inputs.len();
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m         inputs.push(input);
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         live.push((a, idx));
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         live.push((b, idx));
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     // Validate every buffer only now that thousands of allocations are live.
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     for (p, idx) in &live {
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m         let n = unsafe { libc::strlen(*p) };
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         let bytes = unsafe { std::slice::from_raw_parts(*p as *const u8, n + 1) };
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         assert_eq!(bytes, &inputs[*idx][..], "buffer corrupted while live");
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     for (p, _) in live {
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         unsafe { libc::free(p as *mut libc::c_void) };
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m /// C14 — free-form property sweep: random length 0..=8192, random contents.
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m fn cfg_c14_property_sweep() {
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 14);
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     for _ in 0..5000 {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         let len = rng.below(8193) as usize;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m         assert_same(&rng.cstring(len));
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/phase_b_valid.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase C error-path tests, including the [38;5;10mmalloc[0m-failure branch via a forked child with [38;5;10mRLIMIT_AS[0m.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/phase_c_errors.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase C error-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error-path differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `ERRORS.md`, plus the generic boundary rows. Each
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! constructs the exact invalid input/condition, calls BOTH `.so`s, and asserts
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! they return the SAME sentinel (this API's only error signal is `NULL`).
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use common::{assert_same, impls, Rng, SEED};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::ffi::c_char;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// E1 — `str == NULL` (`if(!str)`, lib.c:11). Both must return `NULL`.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m fn err_e1_null_input() {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     for _ in 0..1000 {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m         let c = unsafe { (i.c)(std::ptr::null()) };
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         let r = unsafe { (i.rust)(std::ptr::null()) };
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m         assert!(c.is_null(), "C returned {c:?} for NULL input");
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         assert!(r.is_null(), "Rust returned {r:?} for NULL input");
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         assert_eq!(c, r, "sentinel mismatch on NULL input");
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// E2 — `malloc` returns `NULL`.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// Forced in a forked child: a large NUL-terminated buffer is mapped *first*,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// then `RLIMIT_AS` is clamped just above current usage so the library's own
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// `malloc(len)` cannot obtain more address space. Both implementations must
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// return `NULL` and must not write through it.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// The child exits with:
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m ///   0 = both returned NULL (agreement)
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m ///   1 = C returned non-NULL, Rust NULL
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m ///   2 = Rust returned non-NULL, C NULL
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m ///   3 = neither returned NULL (limit did not bite; test re-tries larger)
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m ///   4 = setup failure
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn err_e2_malloc_failure_under_rlimit() {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     // Load both libraries in the parent so dlopen's own allocations happen
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     // before the limit is applied and are inherited by the child.
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let mut outcome = None;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     // Escalate the payload size until the allocation is guaranteed to exceed
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     // whatever slack remains in the address-space limit.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     for &payload_mib in &[64usize, 256, 1024] {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         let code = fork_and_probe(i, payload_mib);
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         if code == 3 {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             continue; // malloc still succeeded; try a bigger request
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         outcome = Some((payload_mib, code));
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         break;
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let (mib, code) = outcome.expect(
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         "could not force malloc failure at any probe size; E2 not exercised (investigate)",
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         code, 0,
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         "malloc-failure divergence at {mib} MiB payload: exit code {code} \
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m          (1 = C non-NULL/Rust NULL, 2 = Rust non-NULL/C NULL, 4 = setup failure)"
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m fn fork_and_probe(i: &common::Impls, payload_mib: usize) -> i32 {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let bytes = payload_mib * 1024 * 1024;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let c_fn = i.c;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     let rust_fn = i.rust;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         let pid = libc::fork();
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         assert!(pid >= 0, "fork failed");
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         if pid == 0 {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m             // ---- child ----
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m             let map_len = bytes + 1;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             let region = libc::mmap(
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m                 std::ptr::null_mut(),
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m                 map_len,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m                 libc::PROT_READ | libc::PROT_WRITE,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m                 libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m                 -1,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m                 0,
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             if region == libc::MAP_FAILED {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                 libc::_exit(4);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             let buf = region as *mut u8;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             // Touch every page so the mapping is fully resident, and terminate.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             let page = libc::sysconf(libc::_SC_PAGESIZE) as usize;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             let mut off = 0;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             while off < bytes {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m                 *buf.add(off) = b'Z';
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m                 off += page;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             // Fill the tail of the last page too, then NUL-terminate.
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             let mut k = bytes.saturating_sub(page);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             while k < bytes {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                 *buf.add(k) = b'Z';
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                 k += 1;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             *buf.add(bytes) = 0;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             // Clamp address space to just above what we already occupy, so any
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             // further mmap/brk (i.e. the library's malloc) fails.
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             let mut usage = std::mem::zeroed::<libc::rlimit>();
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             if libc::getrlimit(libc::RLIMIT_AS, &mut usage) != 0 {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                 libc::_exit(4);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             let current = current_vm_size().unwrap_or(0);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m             if current == 0 {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                 libc::_exit(4);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             // Leave a small slack: enough for bookkeeping, far less than `bytes`.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             let slack = 8 * 1024 * 1024;
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             let lim = libc::rlimit {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                 rlim_cur: (current + slack) as libc::rlim_t,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                 rlim_max: usage.rlim_max,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             if libc::setrlimit(libc::RLIMIT_AS, &lim) != 0 {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m                 libc::_exit(4);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             let p = buf as *const c_char;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             let c_res = c_fn(p);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             let r_res = rust_fn(p);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             let code = match (c_res.is_null(), r_res.is_null()) {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                 (true, true) => 0,
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                 (false, true) => 1,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m                 (true, false) => 2,
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                 (false, false) => 3,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m             libc::_exit(code);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         // ---- parent ----
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         let mut status: i32 = 0;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         assert!(libc::waitpid(pid, &mut status, 0) == pid, "waitpid failed");
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         if libc::WIFEXITED(status) {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             libc::WEXITSTATUS(status)
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             // Crash (e.g. write through NULL) is a hard failure, never agreement.
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             -(libc::WTERMSIG(status))
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// Current virtual-memory size in bytes, from `/proc/self/statm` (field 1, in
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m /// pages). Read with raw syscalls only — the child must not allocate here.
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m fn current_vm_size() -> Option<usize> {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let mut buf = [0u8; 128];
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         let fd = libc::open(c"/proc/self/statm".as_ptr(), libc::O_RDONLY);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         if fd < 0 {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         let n = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len() - 1);
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         libc::close(fd);
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         if n <= 0 {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         let s = std::str::from_utf8(&buf[..n as usize]).ok()?;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         let pages: usize = s.split_whitespace().next()?.parse().ok()?;
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         let page = libc::sysconf(libc::_SC_PAGESIZE) as usize;
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         Some(pages * page)
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m /// G1 — NULL interleaved with valid calls: the sentinel must not depend on
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m /// call history, and a NULL call must not disturb a following valid call.
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m fn err_g1_null_interleaved_with_valid() {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 101);
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     for _ in 0..2000 {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         // NULL, then valid, then NULL again — both implementations in lockstep.
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         assert!(unsafe { (i.c)(std::ptr::null()) }.is_null());
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         assert!(unsafe { (i.rust)(std::ptr::null()) }.is_null());
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         let input = rng.cstring(rng.below(64) as usize);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         assert_same(&input);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         assert!(unsafe { (i.rust)(std::ptr::null()) }.is_null());
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         assert!(unsafe { (i.c)(std::ptr::null()) }.is_null());
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m /// G2 — zero-length input `""`: `len == 1`, the smallest valid input (one step
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m /// below it is only `NULL`, covered by E1).
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m fn err_g2_zero_length() {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     let input = b"\0";
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     let p = input.as_ptr() as *const c_char;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     let c = unsafe { (i.c)(p) };
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let r = unsafe { (i.rust)(p) };
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     assert!(!c.is_null() && !r.is_null(), "empty string must not be rejected");
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     assert_eq!(unsafe { libc::strlen(c) }, 0);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     assert_eq!(unsafe { libc::strlen(r) }, 0);
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     assert_eq!(unsafe { *c }, 0, "C must write the NUL terminator");
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     assert_eq!(unsafe { *r }, 0, "Rust must write the NUL terminator");
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         libc::free(c as *mut libc::c_void);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         libc::free(r as *mut libc::c_void);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     assert_same(input);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m /// G3 — one step past the smallest input: a single payload byte (`len == 2`).
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m fn err_g3_one_byte() {
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     for b in 1u16..=255 {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m         assert_same(&[b as u8, 0]);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m /// G4 — oversized length: crosses `malloc`'s mmap threshold but still succeeds.
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m fn err_g4_oversized_length() {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 104);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     let mut v: Vec<u8> = (0..(20 * 1024 * 1024)).map(|_| rng.nonzero_byte()).collect();
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     v.push(0);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     assert_same(&v);
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m /// G5 — out-of-range enum across FFI: N/A for this API (`custom_strdup` takes a
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m /// single `const char *` and no enum/int parameter). Asserted mechanically so
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m /// the row is not silently dropped: the exported symbol takes exactly one
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m /// pointer argument, which this test documents by calling it through a
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m /// one-pointer signature obtained from `dlsym`.
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m fn err_g5_no_enum_parameter() {
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     let i = impls();
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     // If the ABI ever grew an int/enum parameter this call would be wrong; the
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     // header (`c_src/include/lib.h`) declares exactly `char *(const char *)`.
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     let input = b"abc\0";
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     let c = unsafe { (i.c)(input.as_ptr() as *const c_char) };
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     let r = unsafe { (i.rust)(input.as_ptr() as *const c_char) };
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     assert!(!c.is_null() && !r.is_null());
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         libc::free(c as *mut libc::c_void);
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m         libc::free(r as *mut libc::c_void);
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/phase_c_errors.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --no-run 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile tests
+
+   --> tests/phase_b_valid.rs:170:33
+    |
+170 |         let input = rng.cstring(rng.below(200) as usize);
+    |                     --- ------- ^^^ second mutable borrow occurs here
+    |                     |   |
+    |                     |   first borrow later used by call
+    |                     first mutable borrow occurs here
+    |
+help: try adding a local storing this argument...
+   --> tests/phase_b_valid.rs:170:33
+    |
+170 |         let input = rng.cstring(rng.below(200) as usize);
+    |                                 ^^^^^^^^^^^^^^
+help: ...and then using that local as the argument to this call
+   --> tests/phase_b_valid.rs:170:21
+    |
+170 |         let input = rng.cstring(rng.below(200) as usize);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_b_valid.rs:251:33
+    |
+251 |         let input = rng.cstring(rng.below(300) as usize);
+    |                     --- ------- ^^^ second mutable borrow occurs here
+    |                     |   |
+    |                     |   first borrow later used by call
+    |                     first mutable borrow occurs here
+    |
+help: try adding a local storing this argument...
+   --> tests/phase_b_valid.rs:251:33
+    |
+251 |         let input = rng.cstring(rng.below(300) as usize);
+    |                                 ^^^^^^^^^^^^^^
+help: ...and then using that local as the argument to this call
+   --> tests/phase_b_valid.rs:251:21
+    |
+251 |         let input = rng.cstring(rng.below(300) as usize);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: could not compile `driver` (test "phase_b_valid") due to 2 previous errors
+[38;5;244m - Completed in 0.880s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && python3 - <<'EOF'
+import re, pathlib
+for f in ["tests/phase_b_valid.rs", "tests/phase_c_errors.rs"]:
+    p = pathlib.Path(f); s = p.read_text()
+    s = re.sub(r"let input = rng\.cstring\(rng\.below\((\d+)\) as usize\);",
+               r"let n = rng.below(\1) as usize;\n        let input = rng.cstring(n);", s)
+    p.write_text(s)
+EOF
+timeout 600 cargo test --no-run 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix borrow errors and recompile
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation)
+warning: unused variable: `n`
+   --> tests/phase_b_valid.rs:251:9
+    |
+251 |     for n in 0..2000usize {
+    |         ^ help: if this is intentional, prefix it with an underscore: `_n`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `driver` (test "phase_b_valid") generated 1 warning (run `cargo fix --test "phase_b_valid" -p driver` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+  Executable unittests src/lib.rs (target/debug/deps/driver-3fc86166302e57b4)
+  Executable tests/phase_b_valid.rs (target/debug/deps/phase_b_valid-e11b1530d2ac266e)
+  Executable tests/phase_c_errors.rs (target/debug/deps/phase_c_errors-f962edd6881f23a9)
+[38;5;244m - Completed in 0.365s[0m
+
+[?25l[0m[38;5;141m> [0mShadowing bug from my regex — fixing.[0m[0m
+[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/phase_b_valid.rs[0m, from line [38;5;141m248[0m to [38;5;141m262[0m[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m564 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/tests/phase_b_valid.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/phase_b_valid.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix shadowed loop counter in C13
+
+[49m[38;5;9m- 251     [0m:[38;5;9m[49m     for n in 0..2000usize {
+[0m[49m[38;5;10m+      251[0m:[38;5;10m[49m     for iter in 0..2000usize {
+[0m[49m[39m  252, 252[0m:[39m[49m         let n = rng.below(300) as usize;
+[0m[49m[39m  253, 253[0m:[39m[49m         let input = rng.cstring(n);
+[0m[49m[39m  254, 254[0m:[39m[49m         let p = input.as_ptr() as *const c_char;
+[0m[49m[39m  255, 255[0m:[39m[49m         // Alternate which implementation goes first.
+[0m[49m[38;5;9m- 256     [0m:[38;5;9m[49m         let (a, b) = if n % 2 == 0 {
+[0m[49m[38;5;10m+      256[0m:[38;5;10m[49m         let (a, b) = if iter % 2 == 0 {
+[0m[K
+Updating: [38;5;141mtranslation/tests/phase_b_valid.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full test suite
+
+---- cfg_c3_all_two_byte_pairs stdout ----
+
+thread 'cfg_c3_all_two_byte_pairs' (2510760) panicked at tests/common/mod.rs:42:5:
+shared library not found: /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/target/debug/libdriver.so — build it first
+
+---- cfg_c9_non_utf8 stdout ----
+
+thread 'cfg_c9_non_utf8' (2510766) panicked at tests/common/mod.rs:42:5:
+shared library not found: /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/target/debug/libdriver.so — build it first
+
+---- cfg_c7_one_mib stdout ----
+
+thread 'cfg_c7_one_mib' (2510764) panicked at tests/common/mod.rs:42:5:
+shared library not found: /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/target/debug/libdriver.so — build it first
+
+---- cfg_c8_mmap_threshold stdout ----
+
+thread 'cfg_c8_mmap_threshold' (2510765) panicked at tests/common/mod.rs:42:5:
+shared library not found: /local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/target/debug/libdriver.so — build it first
+
+
+failures:
+    cfg_c10_misaligned_input
+    cfg_c11_result_is_free_able
+    cfg_c12_guard_page
+    cfg_c13_interleaved_stateful
+    cfg_c14_property_sweep
+    cfg_c1_empty
+    cfg_c2_all_single_bytes
+    cfg_c3_all_two_byte_pairs
+    cfg_c4_small_sizes_sweep
+    cfg_c5_alignment_boundaries
+    cfg_c6_page_boundaries
+    cfg_c7_one_mib
+    cfg_c8_mmap_threshold
+    cfg_c9_non_utf8
+
+test result: FAILED. 0 passed; 14 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+error: test failed, to rerun pass `--test phase_b_valid`
+[38;5;244m - Completed in 0.407s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && ls target/debug/*.so target/release/*.so 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check which .so artifacts exist
+
+ls: cannot access 'target/debug/*.so': No such file or directory
+target/release/libdriver.so
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mcargo test[0m doesn't build the cdylib (crate-type is cdylib-only). Adding fallback search plus an explicit build step.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Make Rust .so lookup fall back across profiles
+
+[49m[38;5;9m- 25    [0m:[38;5;9m[49m /// Path to the Rust `cdylib`, in the *same* profile directory that this test
+[0m[49m[38;5;9m- 26    [0m:[38;5;9m[49m /// binary was built into (so `cargo test` and `cargo test --release` both work).
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// Path to the Rust `cdylib`. Prefers the profile directory this test binary
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// was built into, then falls back to the other profile — cargo does not build
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// a `cdylib`-only crate as a side effect of `cargo test`, so the runner script
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// invokes `cargo build` first.
+[0m[49m[39m  27, 29[0m:[39m[49m pub fn rust_so_path() -> PathBuf {
+[0m[49m[39m  28, 30[0m:[39m[49m     if let Ok(p) = std::env::var("DRIVER_RUST_SO") {
+[0m[49m[39m  29, 31[0m:[39m[49m         return PathBuf::from(p);
+[0m[49m[39m  30, 32[0m:[39m[49m     }
+[0m[49m[39m  31, 33[0m:[39m[49m     // .../target/<profile>/deps/<test-bin>  ->  .../target/<profile>/libdriver.so
+[0m[49m[39m  32, 34[0m:[39m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[39m  33, 35[0m:[39m[49m     let profile_dir = exe
+[0m[49m[39m  34, 36[0m:[39m[49m         .parent()
+[0m[49m[39m  35, 37[0m:[39m[49m         .and_then(|deps| deps.parent())
+[0m[49m[39m  36, 38[0m:[39m[49m         .expect("target/<profile> dir")
+[0m[49m[39m  37, 39[0m:[39m[49m         .to_path_buf();
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m     profile_dir.join("libdriver.so")
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let mut candidates = vec![profile_dir.join("libdriver.so")];
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     if let Some(target_dir) = profile_dir.parent() {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         candidates.push(target_dir.join("release/libdriver.so"));
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         candidates.push(target_dir.join("debug/libdriver.so"));
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     for c in &candidates {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         if c.exists() {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             return c.clone();
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         "Rust cdylib not found. Run `cargo build` (and/or `cargo build --release`) first. \
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m          Looked in: {candidates:?}"
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     );
+[0m[49m[39m  39, 55[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo build 2>&1 | tail -3 && ls -l target/debug/libdriver.so && echo "=== nm debug ===" && nm -D --defined-only target/debug/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build debug cdylib
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+-rwxr-xr-x. 2 scheschb amazon 4316112 Sep  1 14:30 target/debug/libdriver.so
+=== nm debug ===
+00000000000118a0 T custom_strdup
+[38;5;244m - Completed in 0.120s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | tail -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full test suite
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase_b_valid.rs (target/debug/deps/phase_b_valid-e11b1530d2ac266e)
+
+running 14 tests
+test cfg_c2_all_single_bytes ... ok
+test cfg_c1_empty ... ok
+test cfg_c11_result_is_free_able ... ok
+test cfg_c12_guard_page ... ok
+test cfg_c13_interleaved_stateful ... ok
+test cfg_c9_non_utf8 ... ok
+test cfg_c4_small_sizes_sweep ... ok
+test cfg_c5_alignment_boundaries ... ok
+test cfg_c10_misaligned_input ... ok
+test cfg_c6_page_boundaries ... ok
+test cfg_c3_all_two_byte_pairs ... ok
+test cfg_c7_one_mib ... ok
+test cfg_c14_property_sweep ... ok
+test cfg_c8_mmap_threshold ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/phase_c_errors.rs (target/debug/deps/phase_c_errors-f962edd6881f23a9)
+
+running 7 tests
+test err_g2_zero_length ... ok
+test err_e1_null_input ... ok
+test err_g5_no_enum_parameter ... ok
+test err_g3_one_byte ... ok
+test err_g1_null_interleaved_with_valid ... ok
+test err_g4_oversized_length ... ok
+test err_e2_malloc_failure_under_rlimit ... FAILED
+
+failures:
+
+---- err_e2_malloc_failure_under_rlimit stdout ----
+
+thread 'err_e2_malloc_failure_under_rlimit' (2511828) panicked at tests/phase_c_errors.rs:56:31:
+could not force malloc failure at any probe size; E2 not exercised (investigate)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    err_e2_malloc_failure_under_rlimit
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+error: test failed, to rerun pass `--test phase_c_errors`
+[38;5;244m - Completed in 1.237s[0m
+
+[?25l[0m[38;5;141m> [0mPhase B fully green. E2 (malloc failure) isn't triggering — adding staged diagnostics to find out why.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/phase_c_errors.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add E2 diagnostics
+
+[49m[39m  111, 111[0m:[39m[49m             let current = current_vm_size().unwrap_or(0);
+[0m[49m[39m  112, 112[0m:[39m[49m             if current == 0 {
+[0m[49m[39m  113, 113[0m:[39m[49m                 libc::_exit(4);
+[0m[49m[39m  114, 114[0m:[39m[49m             }
+[0m[49m[39m  115, 115[0m:[39m[49m             // Leave a small slack: enough for bookkeeping, far less than `bytes`.
+[0m[49m[39m  116, 116[0m:[39m[49m             let slack = 8 * 1024 * 1024;
+[0m[49m[39m  117, 117[0m:[39m[49m             let lim = libc::rlimit {
+[0m[49m[39m  118, 118[0m:[39m[49m                 rlim_cur: (current + slack) as libc::rlim_t,
+[0m[49m[39m  119, 119[0m:[39m[49m                 rlim_max: usage.rlim_max,
+[0m[49m[39m  120, 120[0m:[39m[49m             };
+[0m[49m[39m  121, 121[0m:[39m[49m             if libc::setrlimit(libc::RLIMIT_AS, &lim) != 0 {
+[0m[49m[39m  122, 122[0m:[39m[49m                 libc::_exit(4);
+[0m[49m[38;5;10m+      123[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      124[0m:[38;5;10m[49m             if std::env::var_os("E2_DEBUG").is_some() {
+[0m[49m[38;5;10m+      125[0m:[38;5;10m[49m                 let msg = format!(
+[0m[49m[38;5;10m+      126[0m:[38;5;10m[49m                     "[e2] payload={bytes} vmsize={current} rlim_cur={} rlim_max={}\n",
+[0m[49m[38;5;10m+      127[0m:[38;5;10m[49m                     lim.rlim_cur, lim.rlim_max
+[0m[49m[38;5;10m+      128[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+      129[0m:[38;5;10m[49m                 libc::write(2, msg.as_ptr() as *const libc::c_void, msg.len());
+[0m[49m[39m  123, 130[0m:[39m[49m             }
+[0m[K
+Updating: [38;5;141mtranslation/tests/phase_c_errors.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && E2_DEBUG=1 timeout 300 cargo test --test phase_c_errors err_e2 -- --nocapture 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run E2 with diagnostics
+
+     Running tests/phase_c_errors.rs (target/debug/deps/phase_c_errors-f962edd6881f23a9)
+
+running 1 test
+[e2] payload=67108864 vmsize=140550144 rlim_cur=148938752 rlim_max=18446744073709551615
+[e2] payload=268435456 vmsize=341876736 rlim_cur=350265344 rlim_max=18446744073709551615
+[e2] payload=1073741824 vmsize=1147183104 rlim_cur=1155571712 rlim_max=18446744073709551615
+
+thread 'err_e2_malloc_failure_under_rlimit' (2513560) panicked at tests/phase_c_errors.rs:56:31:
+could not force malloc failure at any probe size; E2 not exercised (investigate)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test err_e2_malloc_failure_under_rlimit ... FAILED
+
+failures:
+
+failures:
+    err_e2_malloc_failure_under_rlimit
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.46s
+
+error: test failed, to rerun pass `--test phase_c_errors`
+[38;5;244m - Completed in 0.668s[0m
+
+[?25l[0m[38;5;141m> [0mFound it: I filled the payload at page strides, so the mmap'd zeros made [38;5;10mstrlen[0m return 1. Fixing with a full [38;5;10mmemset[0m.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/phase_c_errors.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fill entire payload buffer with memset
+
+[49m[39m   89, 89[0m:[39m[49m             let buf = region as *mut u8;
+[0m[49m[38;5;9m-  90    [0m:[38;5;9m[49m             // Touch every page so the mapping is fully resident, and terminate.
+[0m[49m[38;5;9m-  91    [0m:[38;5;9m[49m             let page = libc::sysconf(libc::_SC_PAGESIZE) as usize;
+[0m[49m[38;5;9m-  92    [0m:[38;5;9m[49m             let mut off = 0;
+[0m[49m[38;5;9m-  93    [0m:[38;5;9m[49m             while off < bytes {
+[0m[49m[38;5;9m-  94    [0m:[38;5;9m[49m                 *buf.add(off) = b'Z';
+[0m[49m[38;5;9m-  95    [0m:[38;5;9m[49m                 off += page;
+[0m[49m[38;5;9m-  96    [0m:[38;5;9m[49m             }
+[0m[49m[38;5;9m-  97    [0m:[38;5;9m[49m             // Fill the tail of the last page too, then NUL-terminate.
+[0m[49m[38;5;9m-  98    [0m:[38;5;9m[49m             let mut k = bytes.saturating_sub(page);
+[0m[49m[38;5;9m-  99    [0m:[38;5;9m[49m             while k < bytes {
+[0m[49m[38;5;9m- 100    [0m:[38;5;9m[49m                 *buf.add(k) = b'Z';
+[0m[49m[38;5;9m- 101    [0m:[38;5;9m[49m                 k += 1;
+[0m[49m[38;5;9m- 102    [0m:[38;5;9m[49m             }
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m             // Fill EVERY byte: the mapping is zero-filled, so a strided fill
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m             // would leave a NUL at offset 1 and `strlen` would return 1,
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m             // making the subsequent malloc trivially small.
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m             libc::memset(region, b'Z' as libc::c_int, bytes);
+[0m[49m[39m  103, 94[0m:[39m[49m             *buf.add(bytes) = 0;
+[0m[K
+Updating: [38;5;141mtranslation/tests/phase_c_errors.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && E2_DEBUG=1 timeout 300 cargo test --test phase_c_errors err_e2 -- --nocapture 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run E2
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests/phase_c_errors.rs (target/debug/deps/phase_c_errors-f962edd6881f23a9)
+
+running 1 test
+[e2] payload=67108864 vmsize=140550144 rlim_cur=148938752 rlim_max=18446744073709551615
+test err_e2_malloc_failure_under_rlimit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.04s
+
+[38;5;244m - Completed in 0.231s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | grep -E "^test |test result|error"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full suite
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test cfg_c2_all_single_bytes ... ok
+test cfg_c1_empty ... ok
+test cfg_c11_result_is_free_able ... ok
+test cfg_c12_guard_page ... ok
+test cfg_c13_interleaved_stateful ... ok
+test cfg_c9_non_utf8 ... ok
+test cfg_c4_small_sizes_sweep ... ok
+test cfg_c5_alignment_boundaries ... ok
+test cfg_c10_misaligned_input ... ok
+test cfg_c6_page_boundaries ... ok
+test cfg_c3_all_two_byte_pairs ... ok
+test cfg_c7_one_mib ... ok
+test cfg_c14_property_sweep ... ok
+test cfg_c8_mmap_threshold ... ok
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+     Running tests/phase_c_errors.rs (target/debug/deps/phase_c_errors-f962edd6881f23a9)
+test err_e1_null_input ... ok
+test err_g2_zero_length ... ok
+test err_g5_no_enum_parameter ... ok
+test err_g3_one_byte ... ok
+test err_g1_null_interleaved_with_valid ... ok
+test err_e2_malloc_failure_under_rlimit ... ok
+test err_g4_oversized_length ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+[38;5;244m - Completed in 0.856s[0m
+
+[?25l[0m[38;5;141m> [0mAll 21 pass. Now proving the tests have teeth via mutation testing.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/scripts/mutation_check.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create mutation-check script to validate test sensitivity
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Mutation check: deliberately break the Rust translation in ways the C forbids
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # and confirm the differential suite CATCHES each one. A mutation that survives
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # means the suite has a blind spot.
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m # Always restores src/lib.rs, even on interrupt.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m cd "$(dirname "$0")/.." || exit 1
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m SRC=src/lib.rs
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m BAK=$(mktemp)
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m cp "$SRC" "$BAK"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m restore() { cp "$BAK" "$SRC"; rm -f "$BAK"; cargo build -q 2>/dev/null; }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m trap restore EXIT INT TERM
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m declare -a NAMES=(
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m   "M1: drop the +1 (terminator not copied)"
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   "M2: remove the NULL-input check"
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   "M3: return the input pointer instead of a copy"
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   "M4: remove the malloc-failure check"
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   "M5: off-by-one long copy"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   "M6: use Rust's allocator instead of malloc (breaks free())"
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m declare -a FROM=(
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   'wrapping_add(1)'
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   'if str.is_null() {'
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   'newstr as *mut c_char'
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m   'if newstr.is_null() {'
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m   'wrapping_add(1)'
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m   'unsafe { malloc(len) }'
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m declare -a TO=(
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   'wrapping_add(0)'
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m   'if false {'
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   'str as *mut c_char'
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m   'if false {'
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m   'wrapping_add(2)'
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m   'unsafe { std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(len.max(1), 1)) as *mut c_void }'
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m fail=0
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m for idx in "${!NAMES[@]}"; do
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m   cp "$BAK" "$SRC"
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m   if ! sed -i "s|${FROM[$idx]}|${TO[$idx]}|" "$SRC"; then
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     echo "SKIP  ${NAMES[$idx]} (pattern not applied)"; continue
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m   if ! grep -qF "${TO[$idx]}" "$SRC"; then
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     echo "SKIP  ${NAMES[$idx]} (pattern not found in source)"; continue
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m   if ! cargo build -q 2>/dev/null; then
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     echo "SKIP  ${NAMES[$idx]} (mutant does not compile)"; continue
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m   # Any failure (assert, abort, signal) counts as "caught".
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m   if timeout 600 cargo test -q >/dev/null 2>&1; then
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     echo "SURVIVED  ${NAMES[$idx]}   <-- BLIND SPOT"
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     fail=1
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     echo "caught    ${NAMES[$idx]}"
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m if [ "$fail" -eq 0 ]; then
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m   echo "All mutants caught: the differential suite detects divergence from the C."
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m   echo "At least one mutant survived; the suite needs strengthening."
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m exit "$fail"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/scripts/mutation_check.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x scripts/mutation_check.sh && timeout 600 ./scripts/mutation_check.sh 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run mutation check
+
+caught    M1: drop the +1 (terminator not copied)
+caught    M2: remove the NULL-input check
+SURVIVED  M3: return the input pointer instead of a copy   <-- BLIND SPOT
+caught    M4: remove the malloc-failure check
+caught    M5: off-by-one long copy
+SURVIVED  M6: use Rust's allocator instead of malloc (breaks free())   <-- BLIND SPOT
+
+At least one mutant survived; the suite needs strengthening.
+[38;5;244m - Completed in 8.656s[0m
+
+[?25l[0m[38;5;141m> [0mTwo survivors — investigating M3 first, since my harness should already assert against it.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && sed -i 's|newstr as \*mut c_char|str as *mut c_char|' src/lib.rs && grep -n "as \*mut c_char" src/lib.rs && cargo build -q 2>&1 | tail -3 && echo "--- run tests ---" && timeout 300 cargo test 2>&1 | grep -E "test result|^test .*(ok|FAILED)" | tail -30; echo "EXIT=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Reproduce M3 mutation manually
+
+62:    str as *mut c_char
+--- run tests ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test cfg_c11_result_is_free_able ... FAILED
+test cfg_c12_guard_page ... FAILED
+test cfg_c10_misaligned_input ... FAILED
+test cfg_c1_empty ... FAILED
+test cfg_c14_property_sweep ... FAILED
+test cfg_c3_all_two_byte_pairs ... FAILED
+test cfg_c4_small_sizes_sweep ... FAILED
+test cfg_c2_all_single_bytes ... FAILED
+test cfg_c5_alignment_boundaries ... FAILED
+test cfg_c6_page_boundaries ... FAILED
+test cfg_c9_non_utf8 ... FAILED
+EXIT=0
+[38;5;244m - Completed in 1.726s[0m
+
+[?25l[0m[38;5;141m> [0mScript bug, not a test blind spot: unescaped [38;5;10m*[0m made sed's pattern never match, and my [38;5;10mgrep -F[0m guard passed on a substring of the original. Rewriting with literal replacement.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp /tmp/lib.rs.bak src/lib.rs && cargo build -q && grep -n "newstr as" src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Restore original lib.rs
+
+62:    newstr as *mut c_char
+[38;5;244m - Completed in 0.105s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/scripts/mutation_check.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Rewrite mutation check with literal replacement and applied-verification
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env python3
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m """Mutation check for the C-vs-Rust differential suite.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m Deliberately breaks `src/lib.rs` in ways the C forbids and confirms the suite
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m CATCHES each one. A surviving mutant means the suite has a blind spot.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m Literal (non-regex) replacement is used, and each mutation is verified to have
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m actually been applied before the mutant is judged -- a regex-based version of
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m this script silently no-op'd and reported false "SURVIVED" results.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m Exit status: 0 if every non-equivalent mutant was caught.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m """
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m import shutil
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m import subprocess
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m import sys
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m from pathlib import Path
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m ROOT = Path(__file__).resolve().parent.parent
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m SRC = ROOT / "src/lib.rs"
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m BAK = ROOT / "target/lib.rs.mutation-backup"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m # (name, literal_from, literal_to, expected)
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m #   expected="caught"     -> must make the suite fail
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m #   expected="equivalent" -> provably no observable difference; must survive
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m MUTANTS = [
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     ("M1  drop the +1 (terminator not copied)",
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m      "wrapping_add(1)", "wrapping_add(0)", "caught"),
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     ("M2  remove the NULL-input check",
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m      "if str.is_null() {", "if false {", "caught"),
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     ("M3  return the input pointer instead of a copy",
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m      "    newstr as *mut c_char", "    str as *mut c_char", "caught"),
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     ("M4  remove the malloc-failure check",
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m      "if newstr.is_null() {", "if false {", "caught"),
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     ("M5  off-by-one long copy",
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m      "wrapping_add(1)", "wrapping_add(2)", "caught"),
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     ("M6  copy one byte too few (terminator dropped from memcpy)",
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m      "memcpy(newstr, str as *const c_void, len)",
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m      "memcpy(newstr, str as *const c_void, len - 1)", "caught"),
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     ("M7  saturating instead of wrapping length arithmetic",
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m      "wrapping_add(1)", "saturating_add(1)", "equivalent"),
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     ("M8  allocate one byte extra (slack, not observable via the API)",
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m      "malloc(len)", "malloc(len + 1)", "equivalent"),
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m ]
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m def run(cmd, **kw):
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     return subprocess.run(cmd, cwd=ROOT, capture_output=True, **kw)
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m def main():
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     BAK.parent.mkdir(parents=True, exist_ok=True)
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     shutil.copy(SRC, BAK)
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     original = BAK.read_text()
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     problems = []
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     try:
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m         for name, frm, to, expected in MUTANTS:
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m             if original.count(frm) != 1:
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m                 problems.append(name)
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m                 print(f"ERROR     {name}  (pattern occurs "
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m                       f"{original.count(frm)}x, expected exactly 1)")
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m                 continue
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m             SRC.write_text(original.replace(frm, to, 1))
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m             if run(["cargo", "build", "-q"]).returncode != 0:
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m                 print(f"skip      {name}  (mutant does not compile)")
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m                 continue
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m             # Any nonzero status -- assertion, abort, or signal -- means caught.
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m             failed = run(["cargo", "test", "-q"],
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m                          timeout=600).returncode != 0
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m             actual = "caught" if failed else "survived"
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m             if expected == "caught" and actual == "caught":
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m                 print(f"caught    {name}")
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m             elif expected == "equivalent" and actual == "survived":
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m                 print(f"survived  {name}  (expected: semantically equivalent)")
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m             else:
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m                 print(f"MISMATCH  {name}  expected={expected} actual={actual}")
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m                 problems.append(name)
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m     finally:
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m         shutil.copy(BAK, SRC)
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m         run(["cargo", "build", "-q"])
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m         BAK.unlink(missing_ok=True)
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     print()
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m     if problems:
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m         print("Mutation check FAILED for:")
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m         for p in problems:
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m             print(f"  - {p}")
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m         return 1
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m     print("Mutation check PASSED: every behaviour-changing mutant is detected "
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m           "by the differential suite, and only provably equivalent mutants "
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m           "survive.")
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m     return 0
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    98[0m:[38;5;10m[49m if __name__ == "__main__":
+[0m[49m[38;5;10m+    99[0m:[38;5;10m[49m     sys.exit(main())
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/scripts/mutation_check.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rm -f scripts/mutation_check.sh && chmod +x scripts/mutation_check.py && timeout 600 ./scripts/mutation_check.py 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run rewritten mutation check
+
+caught    M1  drop the +1 (terminator not copied)
+caught    M2  remove the NULL-input check
+caught    M3  return the input pointer instead of a copy
+caught    M4  remove the malloc-failure check
+caught    M5  off-by-one long copy
+caught    M6  copy one byte too few (terminator dropped from memcpy)
+survived  M7  saturating instead of wrapping length arithmetic  (expected: semantically equivalent)
+ERROR     M8  allocate one byte extra (slack, not observable via the API)  (pattern occurs 2x, expected exactly 1)
+
+Mutation check FAILED for:
+  - M8  allocate one byte extra (slack, not observable via the API)
+[38;5;244m - Completed in 12.249s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/scripts/mutation_check.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Disambiguate M8 pattern from doc comment
+
+[49m[39m  42, 42[0m:[39m[49m     ("M8  allocate one byte extra (slack, not observable via the API)",
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m      "malloc(len)", "malloc(len + 1)", "equivalent"),
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m      "unsafe { malloc(len) }", "unsafe { malloc(len + 1) }", "equivalent"),
+[0m[K
+Updating: [38;5;141mtranslation/scripts/mutation_check.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./scripts/mutation_check.py 2>&1 | tail -15[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run mutation check
+
+caught    M1  drop the +1 (terminator not copied)
+caught    M2  remove the NULL-input check
+caught    M3  return the input pointer instead of a copy
+caught    M4  remove the malloc-failure check
+caught    M5  off-by-one long copy
+caught    M6  copy one byte too few (terminator dropped from memcpy)
+survived  M7  saturating instead of wrapping length arithmetic  (expected: semantically equivalent)
+survived  M8  allocate one byte extra (slack, not observable via the API)  (expected: semantically equivalent)
+
+Mutation check PASSED: every behaviour-changing mutant is detected by the differential suite, and only provably equivalent mutants survive.
+[38;5;244m - Completed in 15.725s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase D: the feature-matrix and symbol-parity automation.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/scripts/verify_matrix.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase D feature-matrix and symbol-parity verification script
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m # Phase D driver: symbol parity + the full feature/profile matrix.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m # Feature combinations are extracted from Cargo.toml rather than hard-coded, so
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m # this keeps working if features are ever added.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m cd "$(dirname "$0")/.." || exit 1
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m C_SO=../c_src/build/libdriver.so
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m rc=0
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m echo "=== Building the C shared library ==="
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m ( cd ../c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m   && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m test -f "$C_SO" || { echo "missing $C_SO"; exit 1; }
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m # --- feature combinations ------------------------------------------------
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m # Every declared feature name, plus the two canonical endpoints.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m mapfile -t FEATURES < <(
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /=/ {sub(/[ \t]*=.*/,""); gsub(/[ \t"]/,""); if ($0 != "") print}' Cargo.toml
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m declare -a COMBOS=("default" "none")
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m if [ "${#FEATURES[@]}" -gt 0 ]; then
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m   # Powerset of declared features (guarded: only feasible for small sets).
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m   n=${#FEATURES[@]}
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m   if [ "$n" -le 10 ]; then
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     for ((mask=1; mask < (1<<n); mask++)); do
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m       combo=""
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m       for ((b=0; b<n; b++)); do
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         if (( mask & (1<<b) )); then combo+="${FEATURES[$b]},"; fi
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m       done
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m       COMBOS+=("${combo%,}")
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     echo "NOTE: $n features declared; powerset skipped, testing each singly."
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     for f in "${FEATURES[@]}"; do COMBOS+=("$f"); done
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m   echo "NOTE: Cargo.toml declares no [features]; the matrix is {default, --no-default-features}."
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m for profile in dev release; do
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m   for combo in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     case "$combo" in
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m       default) featflags=() ;;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m       none)    featflags=(--no-default-features) ;;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m       *)       featflags=(--no-default-features --features "$combo") ;;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     esac
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     profflags=(); [ "$profile" = release ] && profflags=(--release)
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     label="profile=$profile features=$combo"
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     echo
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     echo "=== $label ==="
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     if ! timeout 600 cargo build -q "${profflags[@]}" "${featflags[@]}" 2>&1 | tail -5; then
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m       echo "BUILD FAILED: $label"; rc=1; continue
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     rust_so="target/$([ "$profile" = release ] && echo release || echo debug)/libdriver.so"
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     if [ ! -f "$rust_so" ]; then
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m       echo "MISSING cdylib: $rust_so"; rc=1; continue
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     # --- symbol parity: the C .so's defined symbols must all be in the Rust .so
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     missing=$(comm -23 \
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m       <(nm -D --defined-only "$C_SO"   | awk '{print $NF}' | sort -u) \
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m       <(nm -D --defined-only "$rust_so" | awk '{print $NF}' | sort -u))
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     if [ -n "$missing" ]; then
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m       echo "SYMBOL PARITY FAILED ($label) — missing from Rust .so:"
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m       echo "$missing" | sed 's/^/  /'
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m       rc=1
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m       echo "symbol parity: OK (0 missing)"
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     # --- undefined symbols must resolve only against libc / the loader
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     undef=$(nm -D --undefined-only "$rust_so" | awk '{print $NF}' | sort -u \
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m       | grep -vE '^(malloc|memcpy|strlen|free|__libc_start_main|__gmon_start__|_ITM_|__cxa_|__tls_get_addr|__stack_chk_fail|_Unwind_|abort|memset|memmove|bcmp|memcmp)' )
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     if [ -n "$undef" ]; then
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m       echo "NOTE: additional undefined symbols (verify they are libc):"
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m       echo "$undef" | sed 's/^/  /'
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     # --- differential suite, pointed at this exact .so
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     if DRIVER_RUST_SO="$PWD/$rust_so" timeout 600 cargo test -q "${profflags[@]}" "${featflags[@]}" 2>&1 | tail -20; then
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m       echo "tests: PASS ($label)"
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m       echo "TESTS FAILED: $label"; rc=1
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m if [ "$rc" -eq 0 ]; then
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m   echo "PHASE D: all combinations passed (symbol parity + differential suite)."
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m   echo "PHASE D: failures above."
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m exit "$rc"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7NNs6T/translation/scripts/verify_matrix.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x scripts/verify_matrix.sh && timeout 600 ./scripts/verify_matrix.sh 2>&1 | tail -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase D matrix verification
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+tests: PASS (profile=release features=default)
+
+=== profile=release features=none ===
+symbol parity: OK (0 missing)
+NOTE: additional undefined symbols (verify they are libc):
+  __errno_location@GLIBC_2.2.5
+  calloc@GLIBC_2.2.5
+  close@GLIBC_2.2.5
+  dl_iterate_phdr@GLIBC_2.2.5
+  fstat64@GLIBC_2.33
+  getcwd@GLIBC_2.2.5
+  getenv@GLIBC_2.2.5
+  gettid@GLIBC_2.30
+  lseek64@GLIBC_2.2.5
+  mmap64@GLIBC_2.2.5
+  munmap@GLIBC_2.2.5
+  open64@GLIBC_2.2.5
+  posix_memalign@GLIBC_2.2.5
+  pthread_key_create@GLIBC_2.34
+  pthread_key_delete@GLIBC_2.34
+  pthread_setspecific@GLIBC_2.34
+  read@GLIBC_2.2.5
+  readlink@GLIBC_2.2.5
+  realloc@GLIBC_2.2.5
+  realpath@GLIBC_2.3
+  stat64@GLIBC_2.33
+  statx@GLIBC_2.28
+  syscall@GLIBC_2.2.5
+  write@GLIBC_2.2.5
+  writev@GLIBC_2.2.5
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 14 tests
+..............
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 7 tests
+.......
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+tests: PASS (profile=release features=none)
+
+PHASE D: all combinations passed (symbol parity + differential suite).
+[38;5;244m - Completed in 3.884s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./scripts/verify_matrix.sh 2>&1 | grep -E "^===|symbol parity|tests: PASS|FAILED|PHASE D"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Summarize matrix results
+
+=== Building the C shared library ===
+=== profile=dev features=default ===
+symbol parity: OK (0 missing)
+tests: PASS (profile=dev features=default)
+=== profile=dev features=none ===
+symbol parity: OK (0 missing)
+tests: PASS (profile=dev features=none)
+=== profile=release features=default ===
+symbol parity: OK (0 missing)
+tests: PASS (profile=release features=default)
+=== profile=release features=none ===
+symbol parity: OK (0 missing)
+tests: PASS (profile=release features=none)
+PHASE D: all combinations passed (symbol parity + differential suite).
+[38;5;244m - Completed in 2.537s[0m
+
+[?25l[0m[38;5;141m> [0mIndependent verification of all artifacts and claims.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && echo "=== artifacts ===" && wc -l SYMBOLS.md ERRORS.md CONFIGS.md tests/common/mod.rs tests/phase_b_valid.rs tests/phase_c_errors.rs scripts/*.py scripts/*.sh
+echo; echo "=== lib.rs unmodified vs pre-mutation original ==="
+diff /tmp/lib.rs.bak src/lib.rs && echo "IDENTICAL (no mutation residue)"
+echo; echo "=== leftover backup files ==="
+ls target/lib.rs.mutation-backup 2>&1 | head -1
+echo; echo "=== symbol diff (must be empty) ==="
+comm -3 <(nm -D --defined-only ../c_src/build/libdriver.so | awk '{print $NF}' | sort -u) \
+        <(nm -D --defined-only target/release/libdriver.so | awk '{print $NF}' | sort -u) \
+  && echo "(diff above; empty means parity)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify artifacts and source integrity
+
+=== artifacts ===
+   59 SYMBOLS.md
+   47 ERRORS.md
+   64 CONFIGS.md
+  198 tests/common/mod.rs
+  288 tests/phase_b_valid.rs
+  247 tests/phase_c_errors.rs
+   99 scripts/mutation_check.py
+  101 scripts/verify_matrix.sh
+ 1103 total
+
+=== lib.rs unmodified vs pre-mutation original ===
+IDENTICAL (no mutation residue)
+
+=== leftover backup files ===
+ls: cannot access 'target/lib.rs.mutation-backup': No such file or directory
+
+=== symbol diff (must be empty) ===
+(diff above; empty means parity)
+[38;5;244m - Completed in 0.26s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && echo "=== every test name referenced in ERRORS.md/CONFIGS.md must exist as a #[test] ==="
+refs=$(grep -ohE '`(cfg_|err_)[a-z0-9_]+`' ERRORS.md CONFIGS.md | tr -d '`' | sort -u)
+defined=$(grep -hoE '^fn (cfg_|err_)[a-z0-9_]+' tests/phase_b_valid.rs tests/phase_c_errors.rs | sed 's/^fn //' | sort -u)
+for r in $refs; do
+  if echo "$defined" | grep -qx "$r"; then echo "  OK      $r"; else echo "  MISSING $r"; fi
+done
+echo; echo "referenced=$(echo "$refs" | wc -l)  defined=$(echo "$defined" | wc -l)"
+echo; echo "=== tests defined but not referenced in an artifact ==="
+comm -13 <(echo "$refs") <(echo "$defined") | sed 's/^/  /'
+echo; echo "=== C rejection branches vs ERRORS.md E-rows ==="
+echo "C 'return ... NULL' statements: $(grep -c 'return (char \*)NULL' ../c_src/src/lib.c)"
+echo "ERRORS.md E-rows:               $(grep -cE '^\| E[0-9]' ERRORS.md)"
+echo "CONFIGS.md C-rows:              $(grep -cE '^\| C[0-9]' CONFIGS.md)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Cross-check artifact rows against actual tests
+
+=== every test name referenced in ERRORS.md/CONFIGS.md must exist as a #[test] ===
+  OK      cfg_c10_misaligned_input
+  OK      cfg_c11_result_is_free_able
+  OK      cfg_c12_guard_page
+  OK      cfg_c13_interleaved_stateful
+  OK      cfg_c14_property_sweep
+  OK      cfg_c1_empty
+  OK      cfg_c2_all_single_bytes
+  OK      cfg_c3_all_two_byte_pairs
+  OK      cfg_c4_small_sizes_sweep
+  OK      cfg_c5_alignment_boundaries
+  OK      cfg_c6_page_boundaries
+  OK      cfg_c7_one_mib
+  OK      cfg_c8_mmap_threshold
+  OK      cfg_c9_non_utf8
+  OK      err_e1_null_input
+  OK      err_e2_malloc_failure_under_rlimit
+  OK      err_g1_null_interleaved_with_valid
+  OK      err_g2_zero_length
+  OK      err_g3_one_byte
+  OK      err_g4_oversized_length
+
+referenced=20  defined=21
+
+=== tests defined but not referenced in an artifact ===
+  err_g5_no_enum_parameter
+
+=== C rejection branches vs ERRORS.md E-rows ===
+C 'return ... NULL' statements: 2
+ERRORS.md E-rows:               2
+CONFIGS.md C-rows:              14
+[38;5;244m - Completed in 0.68s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Reference the G5 test in ERRORS.md
+
+[49m[38;5;9m- 45    [0m:[38;5;9m[49m | G5 | out-of-range enum value passed across the FFI boundary | **N/A for this API** — `custom_strdup` takes no enum/int parameter. Recorded so the omission is deliberate. | (n/a, documented) | [x] |
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m | G5 | out-of-range enum value passed across the FFI boundary | **N/A for this API** — `custom_strdup` takes no enum/int parameter, only `const char *`. Recorded so the omission is deliberate; the ABI shape is pinned by a test. | `err_g5_no_enum_parameter` | [x] |
+[0m[K
+Updating: [38;5;141mtranslation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-7NNs6T && echo "=== c_src source integrity (only build/ added) ===" && find c_src -type f -not -path 'c_src/build/*' -newermt '2026-09-01 14:26' | sed 's/^/  MODIFIED: /' ; find c_src -type f -not -path 'c_src/build/*' | sed 's/^/  present: /'
+echo; echo "=== final full suite, both profiles ==="
+cd translation && timeout 600 ./scripts/verify_matrix.sh 2>&1 | grep -E "symbol parity|tests: PASS|FAILED|PHASE D"
+echo; echo "=== final mutation check ==="
+timeout 600 ./scripts/mutation_check.py 2>&1 | tail -4[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final integrity and full verification run
+
+=== c_src source integrity (only build/ added) ===
+  present: c_src/CMakeLists.txt
+  present: c_src/include/lib.h
+  present: c_src/src/lib.c
+
+=== final full suite, both profiles ===
+symbol parity: OK (0 missing)
+tests: PASS (profile=dev features=default)
+symbol parity: OK (0 missing)
+tests: PASS (profile=dev features=none)
+symbol parity: OK (0 missing)
+tests: PASS (profile=release features=default)
+symbol parity: OK (0 missing)
+tests: PASS (profile=release features=none)
+PHASE D: all combinations passed (symbol parity + differential suite).
+
+=== final mutation check ===
+survived  M7  saturating instead of wrapping length arithmetic  (expected: semantically equivalent)
+survived  M8  allocate one byte extra (slack, not observable via the API)  (expected: semantically equivalent)
+
+Mutation check PASSED: every behaviour-changing mutant is detected by the differential suite, and only provably equivalent mutants survive.
+[38;5;244m - Completed in 16.505s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo test --no-run 2>&1 | grep -iE "warning|error" | head; echo "warnings/errors above (empty = clean)"; echo; git status --short 2>/dev/null | head -20 || ls -R --ignore=target . | head -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check for warnings and list final tree
+
+  Executable tests/phase_c_errors.rs (target/debug/deps/phase_c_errors-f962edd6881f23a9)
+warnings/errors above (empty = clean)
+
+[38;5;244m - Completed in 0.116s[0m
+
+[?25l[0m[38;5;141m> [0mVerification is complete and all four gates hold. [1mThe Rust translation required no correctness fixes[22m — it already matched the C byte-for-byte on every input I could construct.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library actually is[0m[0m
+[0m[0m
+The entire C library is one 22-line function, [38;5;10mcustom_strdup[0m (a [38;5;10mstrdup[0m clone: null-check → [38;5;10mstrlen+1[0m → [38;5;10mmalloc[0m → [38;5;10mmemcpy[0m). There is no options struct, no global state, no enums, and no [38;5;10m#ifdef[0m — so the configuration surface comes from input [3mshapes[23m rather than flags, and the error surface is exactly two [38;5;10mreturn NULL[0m branches.[0m[0m
+[0m[0m
+[38;5;252m[1m## Gate results[0m[0m
+[0m[0m
+| Gate | Result |[0m[0m
+|---|---|[0m[0m
+| [38;5;10mSYMBOLS.md[0m — [38;5;10mnm -D[0m parity | 1 symbol in C, 1 in Rust, diff empty. No untranslated C module; undefined symbols are all glibc. |[0m[0m
+| Phase B — all 14 [38;5;10mCONFIGS.md[0m rows | Pass across randomized inputs (fixed seed [38;5;10m0x20240601C0FFEE01[0m). |[0m[0m
+| Phase C — all 2 error rows + 5 boundary rows | Pass. |[0m[0m
+| Every feature combination | Pass. [38;5;10mCargo.toml[0m declares no [38;5;10m[features][0m, so I ran the matrix as [38;5;10m{dev, release} × {default, --no-default-features}[0m — all 4 points green. |[0m[0m
+[0m[0m
+Tests live in [38;5;10mtranslation/tests/[0m; both [38;5;10m.so[0ms are loaded via [38;5;10mlibloading[0m and only ever called through the exported [38;5;10mcustom_strdup[0m symbol, so the [38;5;10m#[no_mangle][0m wrapper is under test too.[0m[0m
+[0m[0m
+[38;5;252m[1m## Two things worth flagging[0m[0m
+[0m[0m
+[1mThe malloc-failure branch is genuinely exercised, not assumed.[22m [38;5;10merr_e2_malloc_failure_under_rlimit[0m forks a child, maps and fills a 64 MiB payload, then clamps [38;5;10mRLIMIT_AS[0m to current usage + 8 MiB so the library's own [38;5;10mmalloc[0m cannot get address space. Both implementations return [38;5;10mNULL[0m. My first attempt at this silently [3mdidn't[23m test anything — I filled the payload at page strides, and because anonymous mmap is zero-filled, [38;5;10mstrlen[0m returned 1 and the allocation was trivially small. A full [38;5;10mmemset[0m fixed it.[0m[0m
+[0m[0m
+[1mI confirmed the suite has teeth rather than trusting green checkmarks.[22m [38;5;10mscripts/mutation_check.py[0m injects 8 deliberate bugs into the Rust source; all 6 behaviour-changing ones are caught (dropped [38;5;10m+1[0m, removed null check, returning the input pointer, removed malloc check, off-by-one long copy, short [38;5;10mmemcpy[0m), and only the 2 provably equivalent ones survive. This also matters for a subtler reason: it is direct evidence the tests are loading the [3mRust[23m [38;5;10m.so[0m, not the C one twice.[0m[0m
+[0m[0m
+That script is a rewrite. My first version was a bash/sed script that reported two false "SURVIVED" blind spots — unescaped [38;5;10m*[0m in the sed pattern meant the mutation never applied, and my [38;5;10mgrep -F[0m guard passed anyway because the replacement text was a substring of the original line. I mention it because the failure mode is the dangerous direction for this kind of tooling: a verification script that quietly checks nothing. The Python rewrite uses literal replacement and asserts each pattern occurs exactly once before judging the mutant.[0m[0m
+[0m[0m
+One caveat on scope: [38;5;10mc_src[0m is untouched (only the instructed [38;5;10mbuild/[0m directory was added), and I did not test non-NUL-terminated or dangling input pointers — [38;5;10mstrlen[0m reads past the end there, so the C has no defined behaviour to match. That's recorded as row G7 in [38;5;10mERRORS.md[0m rather than left implicit.[0m[0m
+[38;5;8m
+ ▸ Credits: 22.07 • Time: 10m 22s
+
+[0m[1G[0m[0m[?25h

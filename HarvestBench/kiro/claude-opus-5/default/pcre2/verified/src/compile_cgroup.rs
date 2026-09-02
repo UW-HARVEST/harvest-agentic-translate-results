@@ -1,64 +1,61 @@
-//! Translation of `c_src/src/pcre2_compile_cgroup.c`.
-//!
-//! Named-capture-group helpers used by the compiler: hash computation, named
-//! group lookup, building the name/number table, finding duplicate-name
-//! details, and parsing the capture lists of scan-substring and recurse
+//! Translation of `pcre2_compile_cgroup.c` — capture-group name table
+//! handling and the argument parsers for scan-substring and recurse
 //! operations.
-
-#![allow(non_snake_case, non_upper_case_globals, unused_parens)]
+//!
+//! Naming quirk: the six exported symbols use `PCRE2_SUFFIX(_pcre2_compile_xxx)`
+//! *without* a trailing underscore in the C macro, so the final linker names
+//! end in `8` with no separating underscore (e.g.
+//! `_pcre2_compile_get_hash_from_name8`).
 
 use core::ffi::{c_int, c_void};
 use core::ptr;
 
+use crate::compile_h::*;
+use crate::consts::{META_CAPTURE_NAME, META_CAPTURE_NUMBER, META_OFFSET};
 use crate::internal::*;
-use crate::compile_internal::{
-    ERR15, ERR21, ERR53, META_CAPTURE_NAME, META_CAPTURE_NUMBER, META_OFFSET,
-    NAMED_GROUP_IS_DUPNAME, getplusoffset, meta_code, meta_data, named_group_get_hash,
-    readplusoffset, skipoffset,
-};
-use crate::string_utils::strncmp;
+use crate::string_utils::_pcre2_strncmp_8;
 
-/* Compute the hash code from a capture name.
+// ---------------------------------------------------------------------------
+// Compute the hash code from a capture name
+// ---------------------------------------------------------------------------
 
-This function returns with a simple hash code computed from the name of a
-capture group. */
-pub unsafe fn get_hash_from_name(name: PCRE2_SPTR, length: u32) -> u16 {
+/// `PRIV(compile_get_hash_from_name)` — returns a simple hash code computed from
+/// the name of a capture group.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn _pcre2_compile_get_hash_from_name8(
+    name: PCRE2_SPTR,
+    length: u32,
+) -> u16 {
     unsafe {
-        debug_assert!(length > 0);
-
-        let hash = ((*name.add(0) as u16) & 0x7f)
+        // PCRE2_ASSERT(length > 0);
+        let hash: u16 = ((*name.add(0) as u16) & 0x7f)
             | (((*name.add((length - 1) as usize) as u16) & 0xff) << 7);
-        debug_assert!(hash <= crate::compile_internal::NAMED_GROUP_HASH_MASK);
+        // PCRE2_ASSERT(hash <= NAMED_GROUP_HASH_MASK);
         hash
     }
 }
 
-/// Exported as `_pcre2_compile_get_hash_from_name8`.
+// ---------------------------------------------------------------------------
+// Get the descriptor of a known named capture
+// ---------------------------------------------------------------------------
+
+/// `PRIV(compile_find_named_group)` — returns the descriptor in the named group
+/// list of a known capture group, or NULL if not found.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_get_hash_from_name8(name: PCRE2_SPTR, length: u32) -> u16 {
-    unsafe { get_hash_from_name(name, length) }
-}
-
-/* Get the descriptor of a known named capture.
-
-This function returns the descriptor in the named group list of a known capture
-group.
-
-Returns: pointer to the descriptor when found, NULL otherwise. */
-pub unsafe fn find_named_group(
+pub unsafe extern "C" fn _pcre2_compile_find_named_group8(
     name: PCRE2_SPTR,
     length: u32,
     cb: *mut compile_block,
 ) -> *mut named_group {
     unsafe {
-        let hash = get_hash_from_name(name, length);
+        let hash = _pcre2_compile_get_hash_from_name8(name, length);
+        let mut ng = (*cb).named_groups;
         let end = (*cb).named_groups.add((*cb).names_found as usize);
 
-        let mut ng = (*cb).named_groups;
         while ng < end {
-            if length as u16 == (*ng).length
-                && hash == named_group_get_hash(ng)
-                && strncmp(name, (*ng).name, length as usize) == 0
+            if length == (*ng).length as u32
+                && hash == NAMED_GROUP_GET_HASH(ng)
+                && _pcre2_strncmp_8(name, (*ng).name, length as usize) == 0
             {
                 return ng;
             }
@@ -69,41 +66,29 @@ pub unsafe fn find_named_group(
     }
 }
 
-/// Exported as `_pcre2_compile_find_named_group8`.
+// ---------------------------------------------------------------------------
+// Add an entry to the name/number table
+// ---------------------------------------------------------------------------
+
+/// `PRIV(compile_add_name_to_table)` — adds an entry to the name/number table,
+/// maintaining alphabetical order, and returns the new table count.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_find_named_group8(
-    name: PCRE2_SPTR,
-    length: u32,
-    cb: *mut compile_block,
-) -> *mut named_group {
-    unsafe { find_named_group(name, length, cb) }
-}
-
-/* Add an entry to the name/number table.
-
-This function is called between compiling passes to add an entry to the
-name/number table, maintaining alphabetical order. Checking for permitted and
-forbidden duplicates has already been done.
-
-Returns: new tablecount. */
-pub unsafe fn add_name_to_table(
+pub unsafe extern "C" fn _pcre2_compile_add_name_to_table8(
     cb: *mut compile_block,
     ng: *mut named_group,
     mut tablecount: u32,
 ) -> u32 {
     unsafe {
-        let mut ng = ng;
-        let name = (*ng).name;
-        let length = (*ng).length as c_int;
+        let name: PCRE2_SPTR = (*ng).name;
+        let length: c_int = (*ng).length as c_int;
         let mut duplicate_count: u32 = 1;
 
-        let mut slot = (*cb).name_table;
+        let mut slot: *mut PCRE2_UCHAR = (*cb).name_table;
 
-        debug_assert!(length > 0);
+        // PCRE2_ASSERT(length > 0);
 
-        if ((*ng).hash_dup & NAMED_GROUP_IS_DUPNAME) != 0 {
+        if ((*ng).hash_dup & NAMED_GROUP_IS_DUPNAME_U) != 0 {
             let end = (*cb).named_groups.add((*cb).names_found as usize);
-
             let mut ng_it = ng.add(1);
             while ng_it < end {
                 if (*ng_it).name == name {
@@ -115,49 +100,44 @@ pub unsafe fn add_name_to_table(
 
         let mut i: u32 = 0;
         while i < tablecount {
-            let mut crc = memcmp(
-                name as *const c_void,
-                slot.add(IMM2_SIZE) as *const c_void,
-                cu2bytes(length as usize),
+            let mut crc = libc_memcmp(
+                name,
+                slot.add(IMM2_SIZE_U),
+                CU2BYTES(length as usize),
             );
-            if crc == 0 && *slot.add(IMM2_SIZE + length as usize) != 0 {
-                crc = -1; /* Current name is a substring */
+            if crc == 0 && *slot.add(IMM2_SIZE_U + length as usize) != 0 {
+                crc = -1; // Current name is a substring
             }
 
-            /* Make space in the table and break the loop for an earlier name. For a
-            duplicate or later name, carry on. We do this for duplicates so that in the
-            simple case (when ?(| is not used) they are in order of their numbers. In all
-            cases they are in the order in which they appear in the pattern. */
-
+            // Make space in the table and break the loop for an earlier name.
+            // For a duplicate or later name, carry on.
             if crc < 0 {
                 ptr::copy(
                     slot,
                     slot.add((*cb).name_entry_size as usize * duplicate_count as usize),
-                    cu2bytes((tablecount - i) as usize * (*cb).name_entry_size as usize),
+                    CU2BYTES((tablecount - i) as usize * (*cb).name_entry_size as usize),
                 );
                 break;
             }
 
-            /* Continue the loop for a later or duplicate name */
-
+            // Continue the loop for a later or duplicate name
             slot = slot.add((*cb).name_entry_size as usize);
             i += 1;
         }
 
         tablecount += duplicate_count;
 
+        let mut ng = ng;
         loop {
-            put2(slot, 0, (*ng).number);
-            ptr::copy_nonoverlapping(name, slot.add(IMM2_SIZE), cu2bytes(length as usize));
+            PUT2(slot, 0, (*ng).number);
+            ptr::copy_nonoverlapping(name, slot.add(IMM2_SIZE_U), CU2BYTES(length as usize));
 
-            /* Add a terminating zero and fill the rest of the slot with zeroes so that
-            the memory is all initialized. Otherwise valgrind moans about uninitialized
-            memory when saving serialized compiled patterns. */
-
+            // Add a terminating zero and fill the rest of the slot with zeroes
+            // so that the memory is all initialized.
             ptr::write_bytes(
-                slot.add(IMM2_SIZE + length as usize),
+                slot.add(IMM2_SIZE_U + length as usize),
                 0,
-                cu2bytes((*cb).name_entry_size as usize - length as usize - IMM2_SIZE),
+                CU2BYTES((*cb).name_entry_size as usize - length as usize - IMM2_SIZE_U),
             );
 
             duplicate_count -= 1;
@@ -179,24 +159,14 @@ pub unsafe fn add_name_to_table(
     }
 }
 
-/// Exported as `_pcre2_compile_add_name_to_table8`.
+// ---------------------------------------------------------------------------
+// Find details of duplicate group names
+// ---------------------------------------------------------------------------
+
+/// `PRIV(compile_find_dupname_details)` — finds the index and count of
+/// duplicates in the names table when processing named backreferences.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_add_name_to_table8(
-    cb: *mut compile_block,
-    ng: *mut named_group,
-    tablecount: u32,
-) -> u32 {
-    unsafe { add_name_to_table(cb, ng, tablecount) }
-}
-
-/* Find details of duplicate group names.
-
-This is called from compile_branch() when it needs to know the index and count
-of duplicates in the names table when processing named backreferences, either
-directly, or as conditions.
-
-Returns: TRUE if OK, FALSE if not, error code set. */
-pub unsafe fn find_dupname_details(
+pub unsafe extern "C" fn _pcre2_compile_find_dupname_details8(
     name: PCRE2_SPTR,
     length: u32,
     indexptr: *mut c_int,
@@ -205,14 +175,13 @@ pub unsafe fn find_dupname_details(
     cb: *mut compile_block,
 ) -> BOOL {
     unsafe {
-        let mut slot = (*cb).name_table;
+        let mut slot: *mut PCRE2_UCHAR = (*cb).name_table;
 
-        /* Find the first entry in the table */
-
+        // Find the first entry in the table
         let mut i: u32 = 0;
         while i < (*cb).names_found as u32 {
-            if strncmp(name, slot.add(IMM2_SIZE), length as usize) == 0
-                && *slot.add(IMM2_SIZE + length as usize) == 0
+            if _pcre2_strncmp_8(name, slot.add(IMM2_SIZE_U), length as usize) == 0
+                && *slot.add(IMM2_SIZE_U + length as usize) == 0
             {
                 break;
             }
@@ -220,27 +189,28 @@ pub unsafe fn find_dupname_details(
             i += 1;
         }
 
-        /* This should not occur, because this function is called only when we know we
-        have duplicate names. Give an internal error. */
-
-        /* LCOV_EXCL_START */
+        // This should not occur, because this function is called only when we
+        // know we have duplicate names. Give an internal error.
         if i >= (*cb).names_found as u32 {
+            // PCRE2_DEBUG_UNREACHABLE();
             *errorcodeptr = ERR53;
             (*cb).erroroffset = name.offset_from((*cb).start_pattern) as PCRE2_SIZE;
             return FALSE;
         }
-        /* LCOV_EXCL_STOP */
 
-        /* Record the index and then see how many duplicates there are, updating the
-        backref map and maximum back reference as we do. */
-
+        // Record the index and then see how many duplicates there are, updating
+        // the backref map and maximum back reference as we do.
         *indexptr = i as c_int;
         let mut count: c_int = 0;
 
         loop {
             count += 1;
-            let groupnumber = get2(slot, 0);
-            (*cb).backref_map |= if groupnumber < 32 { 1u32 << groupnumber } else { 1 };
+            let groupnumber = GET2(slot, 0);
+            (*cb).backref_map |= if groupnumber < 32 {
+                1u32 << groupnumber
+            } else {
+                1
+            };
             if groupnumber > (*cb).top_backref {
                 (*cb).top_backref = groupnumber;
             }
@@ -249,8 +219,8 @@ pub unsafe fn find_dupname_details(
                 break;
             }
             slot = slot.add((*cb).name_entry_size as usize);
-            if strncmp(name, slot.add(IMM2_SIZE), length as usize) != 0
-                || *(slot.add(IMM2_SIZE)).add(length as usize) != 0
+            if _pcre2_strncmp_8(name, slot.add(IMM2_SIZE_U), length as usize) != 0
+                || *slot.add(IMM2_SIZE_U).add(length as usize) != 0
             {
                 break;
             }
@@ -261,21 +231,15 @@ pub unsafe fn find_dupname_details(
     }
 }
 
-/// Exported as `_pcre2_compile_find_dupname_details8`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_find_dupname_details8(
-    name: PCRE2_SPTR,
-    length: u32,
-    indexptr: *mut c_int,
-    countptr: *mut c_int,
-    errorcodeptr: *mut c_int,
-    cb: *mut compile_block,
-) -> BOOL {
-    unsafe { find_dupname_details(name, length, indexptr, countptr, errorcodeptr, cb) }
-}
+// ---------------------------------------------------------------------------
+// Process the capture list of scan-substring and recurse operations
+// ---------------------------------------------------------------------------
 
-/* Process the capture list of scan substring and recurse operations. Since at
-least one argument must be present, a 0 return value represents error. */
+/// `PRIV(compile_process_capture_list)` — process the capture list of scan
+/// substring and recurse operations. Since at least one argument must be
+/// present, a `0` return value represents an error.
+///
+/// This is `static` in the C source (not exported), so it is a private Rust fn.
 unsafe fn process_capture_list(
     mut pptr: *mut u32,
     mut offset: PCRE2_SIZE,
@@ -289,19 +253,19 @@ unsafe fn process_capture_list(
         loop {
             pptr = pptr.add(1);
 
-            match meta_code(*pptr) {
+            match META_CODE(*pptr) as i64 {
                 META_OFFSET => {
-                    offset = getplusoffset(&mut pptr);
+                    offset = GETPLUSOFFSET(&mut pptr);
                     continue;
                 }
 
                 META_CAPTURE_NAME => {
-                    offset += meta_data(*pptr) as PCRE2_SIZE;
+                    offset += META_DATA(*pptr) as PCRE2_SIZE;
                     pptr = pptr.add(1);
                     let length = *pptr;
-                    let name = (*cb).start_pattern.add(offset);
+                    let name: PCRE2_SPTR = (*cb).start_pattern.add(offset);
 
-                    let mut ng = find_named_group(name, length, cb);
+                    let mut ng = _pcre2_compile_find_named_group8(name, length, cb);
 
                     if ng.is_null() {
                         *errorcodeptr = ERR15;
@@ -309,16 +273,16 @@ unsafe fn process_capture_list(
                         return 0;
                     }
 
-                    if ((*ng).hash_dup & NAMED_GROUP_IS_DUPNAME) == 0 {
-                        *pptr.sub(1) = META_CAPTURE_NUMBER;
-                        *pptr.add(0) = (*ng).number;
+                    if ((*ng).hash_dup & NAMED_GROUP_IS_DUPNAME_U) == 0 {
+                        *pptr.offset(-1) = META_CAPTURE_NUMBER as u32;
+                        *pptr.offset(0) = (*ng).number;
                         size += 1;
                         continue;
                     }
 
-                    /* Remains only for duplicated names. */
-                    *pptr.sub(1) = META_CAPTURE_NAME;
-                    *pptr.add(0) = ng.offset_from((*cb).named_groups) as u32;
+                    // Remains only for duplicated names.
+                    *pptr.offset(-1) = META_CAPTURE_NAME as u32;
+                    *pptr.offset(0) = ng.offset_from((*cb).named_groups) as u32;
                     size += 1;
                     let name = (*ng).name;
 
@@ -333,7 +297,7 @@ unsafe fn process_capture_list(
                 }
 
                 META_CAPTURE_NUMBER => {
-                    offset += meta_data(*pptr) as PCRE2_SIZE;
+                    offset += META_DATA(*pptr) as PCRE2_SIZE;
 
                     pptr = pptr.add(1);
                     let i = *pptr as PCRE2_SIZE;
@@ -343,7 +307,7 @@ unsafe fn process_capture_list(
                         return 0;
                     }
                     if i > (*cb).top_backref as PCRE2_SIZE {
-                        (*cb).top_backref = (i as u16) as u32;
+                        (*cb).top_backref = i as u16 as u32;
                     }
                     size += 1;
                     continue;
@@ -352,78 +316,72 @@ unsafe fn process_capture_list(
                 _ => {}
             }
 
-            debug_assert!(size > 0);
+            // PCRE2_ASSERT(size > 0);
             return size;
         }
     }
 }
 
-/* Parse the arguments of scan substring operations.
+// ---------------------------------------------------------------------------
+// Parse the arguments of scan-substring operations
+// ---------------------------------------------------------------------------
 
-Returns: pointer past the processed args, or NULL on error with an error code
-set. */
-pub unsafe fn parse_scan_substr_args(
+/// `PRIV(compile_parse_scan_substr_args)` — parse the arguments of scan
+/// substring operations.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn _pcre2_compile_parse_scan_substr_args8(
     mut pptr: *mut u32,
     errorcodeptr: *mut c_int,
     cb: *mut compile_block,
     lengthptr: *mut PCRE2_SIZE,
 ) -> *mut u32 {
     unsafe {
-        let mut bit: u8;
-        let mut name: PCRE2_SPTR;
-        let mut ng: *mut named_group;
         let end = (*cb).named_groups.add((*cb).names_found as usize);
-        let mut all_found: BOOL;
 
-        debug_assert!(*pptr == META_OFFSET);
-        if process_capture_list(pptr.sub(1), 0, errorcodeptr, cb) == 0 {
+        // PCRE2_ASSERT(*pptr == META_OFFSET);
+        if process_capture_list(pptr.offset(-1), 0, errorcodeptr, cb) == 0 {
             return ptr::null_mut();
         }
 
-        /* Align to bytes. Since the highest capture can be equal to bracount, +1 is
-        added before the aligning. */
-        let size: usize = (((*cb).bracount + 1 + 7) >> 3) as usize;
-        let captures = ((*(*cb).cx).memctl.malloc.unwrap())(size, (*(*cb).cx).memctl.memory_data)
-            as *mut u8;
+        // Align to bytes. Since the highest capture can be equal to bracount,
+        // +1 is added before the aligning.
+        let size: usize = ((*cb).bracount as usize + 1 + 7) >> 3;
+
+        let memctl = &(*(*cb).cx).memctl;
+        let captures = (memctl.malloc.unwrap())(size, memctl.memory_data) as *mut u8;
         if captures.is_null() {
             *errorcodeptr = ERR21;
-            (*cb).erroroffset = readplusoffset(pptr);
+            (*cb).erroroffset = READPLUSOFFSET(pptr);
             return ptr::null_mut();
         }
 
         ptr::write_bytes(captures, 0, size);
 
         loop {
-            match meta_code(*pptr) {
+            match META_CODE(*pptr) as i64 {
                 META_OFFSET => {
                     pptr = pptr.add(1);
-                    skipoffset(&mut pptr);
+                    SKIPOFFSET(&mut pptr);
                     continue;
                 }
 
                 META_CAPTURE_NAME => {
-                    ng = (*cb).named_groups.add(*pptr.add(1) as usize);
-                    debug_assert!(((*ng).hash_dup & NAMED_GROUP_IS_DUPNAME) != 0);
+                    let mut ng = (*cb).named_groups.add(*pptr.add(1) as usize);
+                    // PCRE2_ASSERT((ng->hash_dup & NAMED_GROUP_IS_DUPNAME) != 0);
                     pptr = pptr.add(2);
-                    name = (*ng).name;
+                    let name = (*ng).name;
 
-                    all_found = TRUE;
+                    let mut all_found: BOOL = TRUE;
                     loop {
-                        if (*ng).name != name {
-                            ng = ng.add(1);
-                            if !(ng < end) {
-                                break;
+                        if (*ng).name == name {
+                            let capture_ptr = captures.add(((*ng).number >> 3) as usize);
+                            // PCRE2_ASSERT(capture_ptr < captures + size);
+                            let bit: u8 = 1u8 << ((*ng).number & 0x7);
+
+                            if (*capture_ptr & bit) == 0 {
+                                *capture_ptr |= bit;
+                                all_found = FALSE;
                             }
-                            continue;
-                        }
-
-                        let capture_ptr = captures.add(((*ng).number >> 3) as usize);
-                        debug_assert!(capture_ptr < captures.add(size));
-                        bit = (1u32 << ((*ng).number & 0x7)) as u8;
-
-                        if (*capture_ptr & bit) == 0 {
-                            *capture_ptr |= bit;
-                            all_found = FALSE;
                         }
 
                         ng = ng.add(1);
@@ -433,29 +391,29 @@ pub unsafe fn parse_scan_substr_args(
                     }
 
                     if all_found == FALSE {
-                        *lengthptr += 1 + 2 * IMM2_SIZE;
+                        *lengthptr += 1 + 2 * IMM2_SIZE_U;
                         continue;
                     }
 
-                    *pptr.sub(2) = META_CAPTURE_NUMBER;
-                    *pptr.sub(1) = 0;
+                    *pptr.offset(-2) = META_CAPTURE_NUMBER as u32;
+                    *pptr.offset(-1) = 0;
                     continue;
                 }
 
                 META_CAPTURE_NUMBER => {
                     pptr = pptr.add(2);
 
-                    let capture_ptr = captures.add((*pptr.sub(1) >> 3) as usize);
-                    debug_assert!(capture_ptr < captures.add(size));
-                    bit = (1u32 << (*pptr.sub(1) & 0x7)) as u8;
+                    let capture_ptr = captures.add((*pptr.offset(-1) >> 3) as usize);
+                    // PCRE2_ASSERT(capture_ptr < captures + size);
+                    let bit: u8 = 1u8 << (*pptr.offset(-1) & 0x7);
 
                     if (*capture_ptr & bit) != 0 {
-                        *pptr.sub(1) = 0;
+                        *pptr.offset(-1) = 0;
                         continue;
                     }
 
                     *capture_ptr |= bit;
-                    *lengthptr += 1 + IMM2_SIZE;
+                    *lengthptr += 1 + IMM2_SIZE_U;
                     continue;
                 }
 
@@ -465,23 +423,16 @@ pub unsafe fn parse_scan_substr_args(
             break;
         }
 
-        ((*(*cb).cx).memctl.free.unwrap())(captures as *mut c_void, (*(*cb).cx).memctl.memory_data);
-        pptr.sub(1)
+        (memctl.free.unwrap())(captures as *mut c_void, memctl.memory_data);
+        pptr.offset(-1)
     }
 }
 
-/// Exported as `_pcre2_compile_parse_scan_substr_args8`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_parse_scan_substr_args8(
-    pptr: *mut u32,
-    errorcodeptr: *mut c_int,
-    cb: *mut compile_block,
-    lengthptr: *mut PCRE2_SIZE,
-) -> *mut u32 {
-    unsafe { parse_scan_substr_args(pptr, errorcodeptr, cb, lengthptr) }
-}
+// ---------------------------------------------------------------------------
+// Heapsort heapify for uint16_t arrays
+// ---------------------------------------------------------------------------
 
-/* Implement heapsort heapify algorithm. */
+/// `do_heapify_u16` — heapify step for the recurse-args capture sort (static).
 unsafe fn do_heapify_u16(captures: *mut u16, size: usize, mut i: usize) {
     unsafe {
         loop {
@@ -507,10 +458,14 @@ unsafe fn do_heapify_u16(captures: *mut u16, size: usize, mut i: usize) {
     }
 }
 
-/* Parse the arguments of recurse operations.
+// ---------------------------------------------------------------------------
+// Parse the arguments of recurse operations
+// ---------------------------------------------------------------------------
 
-Returns: TRUE if OK, FALSE if not, error code set. */
-pub unsafe fn parse_recurse_args(
+/// `PRIV(compile_parse_recurse_args)` — parse the arguments of recurse
+/// operations.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn _pcre2_compile_parse_recurse_args8(
     pptr_start: *mut u32,
     offset: PCRE2_SIZE,
     errorcodeptr: *mut c_int,
@@ -518,22 +473,18 @@ pub unsafe fn parse_recurse_args(
 ) -> BOOL {
     unsafe {
         let mut pptr = pptr_start;
-        let mut i: usize;
-        let size: usize;
-        let mut name: PCRE2_SPTR;
-        let mut ng: *mut named_group;
         let end = (*cb).named_groups.add((*cb).names_found as usize);
 
-        /* Process all arguments, compute the required size. */
-
-        size = process_capture_list(pptr, offset, errorcodeptr, cb);
+        // Process all arguments, compute the required size.
+        let size = process_capture_list(pptr, offset, errorcodeptr, cb);
         if size == 0 {
             return FALSE;
         }
 
-        let args = ((*(*cb).cx).memctl.malloc.unwrap())(
+        let memctl = &(*(*cb).cx).memctl;
+        let args = (memctl.malloc.unwrap())(
             core::mem::size_of::<recurse_arguments>() + size * core::mem::size_of::<u16>(),
-            (*(*cb).cx).memctl.memory_data,
+            memctl.memory_data,
         ) as *mut recurse_arguments;
 
         if args.is_null() {
@@ -543,9 +494,10 @@ pub unsafe fn parse_recurse_args(
         }
 
         (*args).header.next = ptr::null_mut();
+        // #ifdef PCRE2_DEBUG: args->header.type = CDATA_RECURSE_ARGS; (not built)
         (*args).size = size;
 
-        /* Caching the pre-processed capture list. */
+        // Caching the pre-processed capture list.
         if !(*cb).last_data.is_null() {
             (*(*cb).last_data).next = &mut (*args).header;
         } else {
@@ -554,27 +506,26 @@ pub unsafe fn parse_recurse_args(
 
         (*cb).last_data = &mut (*args).header;
 
-        /* Create the capture list size. */
-
+        // Create the capture list.
         let mut captures = args.add(1) as *mut u16;
 
         loop {
             pptr = pptr.add(1);
 
-            match meta_code(*pptr) {
+            match META_CODE(*pptr) as i64 {
                 META_OFFSET => {
-                    skipoffset(&mut pptr);
+                    SKIPOFFSET(&mut pptr);
                     continue;
                 }
 
                 META_CAPTURE_NAME => {
                     pptr = pptr.add(1);
-                    ng = (*cb).named_groups.add(*pptr as usize);
-                    debug_assert!(((*ng).hash_dup & NAMED_GROUP_IS_DUPNAME) != 0);
+                    let mut ng = (*cb).named_groups.add(*pptr as usize);
+                    // PCRE2_ASSERT((ng->hash_dup & NAMED_GROUP_IS_DUPNAME) != 0);
                     *captures = (*ng).number as u16;
                     captures = captures.add(1);
 
-                    name = (*ng).name;
+                    let name = (*ng).name;
 
                     ng = ng.add(1);
                     while ng < end {
@@ -600,17 +551,16 @@ pub unsafe fn parse_recurse_args(
             break;
         }
 
-        debug_assert!(size == captures.offset_from(args.add(1) as *mut u16) as usize);
+        // PCRE2_ASSERT(size == (captures - (uint16_t*)(args + 1)));
         (*args).skip_size = (pptr.offset_from(pptr_start) as usize) - 1;
 
         if size == 1 {
             return TRUE;
         }
 
-        /* Sort captures. */
-
-        captures = args.add(1) as *mut u16;
-        i = (size >> 1) - 1;
+        // Sort captures.
+        let mut captures = args.add(1) as *mut u16;
+        let mut i: usize = (size >> 1) - 1;
         loop {
             do_heapify_u16(captures, size, i);
             if i == 0 {
@@ -619,7 +569,7 @@ pub unsafe fn parse_recurse_args(
             i -= 1;
         }
 
-        i = size - 1;
+        let mut i = size - 1;
         while i > 0 {
             let tmp = *captures.add(0);
             *captures.add(0) = *captures.add(i);
@@ -629,8 +579,7 @@ pub unsafe fn parse_recurse_args(
             i -= 1;
         }
 
-        /* Remove duplicates. */
-
+        // Remove duplicates.
         let captures_end = captures.add(size);
         let mut tmp = *captures;
         captures = captures.add(1);
@@ -642,7 +591,6 @@ pub unsafe fn parse_recurse_args(
                 *captures = tmp;
                 captures = captures.add(1);
             }
-
             current = current.add(1);
         }
 
@@ -651,15 +599,23 @@ pub unsafe fn parse_recurse_args(
     }
 }
 
-/// Exported as `_pcre2_compile_parse_recurse_args8`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_compile_parse_recurse_args8(
-    pptr_start: *mut u32,
-    offset: PCRE2_SIZE,
-    errorcodeptr: *mut c_int,
-    cb: *mut compile_block,
-) -> BOOL {
-    unsafe { parse_recurse_args(pptr_start, offset, errorcodeptr, cb) }
-}
+// ---------------------------------------------------------------------------
+// Local memcmp helper (the C code calls the libc `memcmp`).
+// ---------------------------------------------------------------------------
 
-/* End of pcre2_compile_cgroup.c */
+/// Byte-wise `memcmp` matching the C `int memcmp(...)` contract.
+#[inline(always)]
+unsafe fn libc_memcmp(a: PCRE2_SPTR, b: PCRE2_SPTR, n: usize) -> c_int {
+    unsafe {
+        let mut i = 0usize;
+        while i < n {
+            let ca = *a.add(i);
+            let cb = *b.add(i);
+            if ca != cb {
+                return ca as c_int - cb as c_int;
+            }
+            i += 1;
+        }
+        0
+    }
+}

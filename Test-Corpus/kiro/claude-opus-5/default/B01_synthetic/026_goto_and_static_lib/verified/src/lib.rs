@@ -1,3 +1,7 @@
+// Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
+//
+// Original C license header reproduced for provenance:
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -21,68 +25,73 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Rust translation of `c_src/src/driver.c`.
-//!
-//! Output is emitted through C `printf` so that stream buffering and
-//! interleaving with any C-side output stay byte-for-byte identical to the
-//! original library.
+use core::ffi::{c_char, c_int};
+use core::sync::atomic::{AtomicI32, Ordering};
 
-use std::ffi::c_char;
-use std::ffi::c_int;
-use std::sync::atomic::{AtomicI32, Ordering};
-
+// The original uses C `printf`, so route all output through libc's `printf`.
+// This keeps stdio buffering, ordering and interleaving with any other C code
+// in the process byte-for-byte identical to the C library.
 unsafe extern "C" {
-    fn printf(format: *const c_char, ...) -> c_int;
+    #[link_name = "printf"]
+    fn c_printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// Emit a NUL-terminated literal through C `printf`.
-///
-/// The literal is used as the format string, mirroring the original C calls
-/// (none of them contain conversion specifiers).
-fn c_print(msg: &'static str) {
-    debug_assert!(msg.ends_with('\0'));
+/// `printf` with a literal format string that contains no conversions.
+fn print_lit(s: &core::ffi::CStr) {
     unsafe {
-        printf(msg.as_ptr() as *const c_char);
+        c_printf(s.as_ptr());
     }
 }
 
-/// `static int y = 123;` from driver.c — file-scope mutable state.
+/// File-scope `static int y = 123;` from driver.c.
+///
+/// Modelled as an atomic so the translation needs no `static mut`; the C code is
+/// single-threaded and always assigns `y` before reading it, so `Relaxed`
+/// accesses reproduce the original semantics exactly.
 static Y: AtomicI32 = AtomicI32::new(123);
 
-/// Translation of the file-local `multi_stage` helper.
+/// `static int multi_stage(int x, int z)` — internal, not part of the ABI.
 ///
-/// The C version uses `goto fail`, so every error path prints its specific
-/// message followed by "Operation failed", while the success path returns
-/// without printing it.
+/// The C control flow is a chain of guards that `goto fail`; the fail path
+/// prints "Operation failed" and returns the code, while the success path
+/// returns without printing it. Check order is preserved exactly.
 fn multi_stage(x: c_int, z: c_int) -> c_int {
-    let result: c_int;
+    let mut result: c_int = 0;
 
-    // Each check mirrors the C order exactly: x, then y, then z.
-    if x != 1 {
-        c_print("Error: x != 1\n\0");
-        result = 1;
-    } else if Y.load(Ordering::Relaxed) != 2 {
-        c_print("Error: x == 1 but y != 2\n\0");
-        result = 2;
-    } else if z != 3 {
-        c_print("Error: x == 1 and y == 2, but z != 3\n\0");
-        result = 3;
-    } else {
-        c_print("Ok!\n\0");
-        return 0; // `result` is still 0 here in the C original.
+    'fail: {
+        if x != 1 {
+            print_lit(c"Error: x != 1\n");
+            result = 1;
+            break 'fail;
+        }
+
+        if Y.load(Ordering::Relaxed) != 2 {
+            print_lit(c"Error: x == 1 but y != 2\n");
+            result = 2;
+            break 'fail;
+        }
+
+        if z != 3 {
+            print_lit(c"Error: x == 1 and y == 2, but z != 3\n");
+            result = 3;
+            break 'fail;
+        }
+
+        print_lit(c"Ok!\n");
+        return result;
     }
 
-    // `fail:` label.
-    c_print("Operation failed\n\0");
+    // fail:
+    print_lit(c"Operation failed\n");
     result
 }
 
-/// Translation of `void driver(int x, int local_y, int z)`.
+/// `void driver(int x, int local_y, int z)` — the library's only public symbol.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int, local_y: c_int, z: c_int) {
     Y.store(local_y, Ordering::Relaxed);
     let result = multi_stage(x, z);
     unsafe {
-        printf(c"Result: %d\n".as_ptr(), result);
+        c_printf(c"Result: %d\n".as_ptr(), result);
     }
 }

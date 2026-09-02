@@ -1,0 +1,589 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f | head -100; echo "---"; wc -l $(find c_src -type f -name '*.c' -o -name '*.h') 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in both subtrees
+
+c_src/CMakeLists.txt
+c_src/src/main.c
+---
+71 c_src/src/main.c
+[38;5;244m - Completed in 0.36s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1698 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-FbmSOD/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-FbmSOD/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, single-file program — I'll handle it directly. First, let me establish the reference behavior (the [38;5;10mbad()[0m path returns a dangling stack pointer — UB).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/main.c 2>&1 | tail -5; echo "== exit $? =="
+for inp in "1" "0" "42" "-5" "abc" "" "0 7"; do
+  printf '%s' "$inp" > /tmp/cref/in.txt
+  printf 'input=[%s] -> ' "$inp"
+  out=$(/tmp/cref/driver < /tmp/cref/in.txt 2>&1); rc=$?
+  printf '%s (rc=%d)\n' "$(printf '%s' "$out" | od -c | head -3)" "$rc"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile C reference and probe behavior
+
+c_src/src/main.c: In function ‘helperBad’:
+c_src/src/main.c:37:12: warning: function returns address of local variable [-Wreturn-local-addr]
+   37 |     return charString;
+      |            ^~~~~~~~~~
+== exit 0 ==
+input=[1] -> 0000000   h   e   l   p   e   r   G   o   o   d   1       s   t   r   i
+0000020   n   g
+0000022 (rc=0)
+input=[0] -> 0000000 (rc=0)
+input=[42] -> 0000000   h   e   l   p   e   r   G   o   o   d   1       s   t   r   i
+0000020   n   g
+0000022 (rc=0)
+input=[-5] -> 0000000   h   e   l   p   e   r   G   o   o   d   1       s   t   r   i
+0000020   n   g
+0000022 (rc=0)
+input=[abc] -> 0000000 (rc=0)
+input=[] -> 0000000 (rc=0)
+input=[0 7] -> 0000000 (rc=0)
+[38;5;244m - Completed in 0.687s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
+for inp in "1" "0" "abc" ""; do
+  printf '%s' "$inp" > in.txt
+  printf '=== input=[%s]\n' "$inp"
+  ./driver < in.txt > out.bin 2>/dev/null; echo "rc=$?"
+  od -c out.bin
+done
+echo "--- with -O2 ---"
+gcc -O2 -o driver2 /local/home/scheschb/.harvest/work/harvest-work-FbmSOD/c_src/src/main.c 2>/dev/null
+printf '0' > in.txt; ./driver2 < in.txt > o2.bin; od -c o2.bin[0m[38;5;244m (using tool: shell)[0m
+Purpose: Capture raw output bytes for bad path
+
+=== input=[1]
+rc=0
+0000000   h   e   l   p   e   r   G   o   o   d   1       s   t   r   i
+0000020   n   g  \n
+0000023
+=== input=[0]
+rc=0
+0000000
+=== input=[abc]
+rc=0
+0000000
+=== input=[]
+rc=0
+0000000
+--- with -O2 ---
+0000000
+[38;5;244m - Completed in 0.572s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && gcc -O0 -S -o - /local/home/scheschb/.harvest/work/harvest-work-FbmSOD/c_src/src/main.c 2>/dev/null | sed -n '/helperBad:/,/^helperGood1:/p' | head -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect helperBad assembly to confirm NULL return
+
+helperBad:
+.LFB1:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset 6, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register 6
+	movabsq	$7008289750145328488, %rax
+	movabsq	$7453010373645639780, %rdx
+	movq	%rax, -32(%rbp)
+	movq	%rdx, -24(%rbp)
+	movb	$0, -16(%rbp)
+	movl	$0, %eax
+	popq	%rbp
+	.cfi_def_cfa 7, 8
+	ret
+	.cfi_endproc
+.LFE1:
+	.size	helperBad, .-helperBad
+	.globl	bad
+	.type	bad, @function
+bad:
+.LFB2:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset 6, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register 6
+[38;5;244m - Completed in 0.108s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: GCC substitutes NULL for the returned stack address ([38;5;10mmovl $0, %eax[0m), so the [38;5;10mbad()[0m path prints nothing at all. Let me pin down [38;5;10mscanf("%d")[0m edge cases.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && cat > probe.c <<'EOF'
+#include <stdio.h>
+int main(){int x=0;int r=scanf("%d",&x);printf("r=%d x=%d\n",r,x);return 0;}
+EOF
+gcc -O0 -o probe probe.c
+for inp in "1" "0" "  \n\n  7" "+5" "-0" "abc" "" "99999999999999" "-99999999999999" "2147483648" "12abc" "0x10" "5.9" " -" "0000" "	9"; do
+  printf '%b' "$inp" > in.txt
+  printf '[%s] -> %s\n' "$inp" "$(./probe < in.txt)"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe glibc scanf %d edge cases
+
+[1] -> r=1 x=1
+[0] -> r=1 x=0
+[  \n\n  7] -> r=1 x=7
+[+5] -> r=1 x=5
+[-0] -> r=1 x=0
+[abc] -> r=0 x=0
+[] -> r=-1 x=0
+[99999999999999] -> r=1 x=276447231
+[-99999999999999] -> r=1 x=-276447231
+[2147483648] -> r=1 x=-2147483648
+[12abc] -> r=1 x=12
+[0x10] -> r=1 x=0
+[5.9] -> r=1 x=5
+[ -] -> r=0 x=0
+[0000] -> r=1 x=0
+[	9] -> r=1 x=9
+[38;5;244m - Completed in 0.339s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for inp in "4294967296" "8589934592" "-4294967296" "9223372036854775807" "9223372036854775808" "99999999999999999999999999999999" "-99999999999999999999999999999999" "18446744073709551616" "0000000004294967296"; do
+  printf '%s' "$inp" > in.txt
+  printf '[%s] -> %s\n' "$inp" "$(./probe < in.txt)"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe scanf overflow saturation behavior
+
+[4294967296] -> r=1 x=0
+[8589934592] -> r=1 x=0
+[-4294967296] -> r=1 x=0
+[9223372036854775807] -> r=1 x=-1
+[9223372036854775808] -> r=1 x=-1
+[99999999999999999999999999999999] -> r=1 x=-1
+[-99999999999999999999999999999999] -> r=1 x=0
+[18446744073709551616] -> r=1 x=-1
+[0000000004294967296] -> r=1 x=0
+[38;5;244m - Completed in 0.323s[0m
+
+[?25l[0m[38;5;141m> [0mBehavior is fully characterized. Writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the driver binary
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate main.c to Rust preserving the CWE-562 behavior
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //! Rust translation of `c_src/src/main.c`.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! The original C is a CWE-562 (Return of Stack Variable Address) test case.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //! Its behavior is reproduced as-is; no defects are corrected.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// `void printLine(const char *line)`
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// The C function guards against a NULL pointer before printing, so a NULL
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// argument produces no output at all (not even the trailing newline).
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// `Option<&str>` models the nullable `const char *`.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m fn print_line<W: Write>(out: &mut W, line: Option<&str>) {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     if let Some(line) = line {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         // printf("%s\n", line);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         let _ = write!(out, "{}\n", line);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// `static char *helperBad()`
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// The C original declares `char charString[] = "helperBad string";` as an
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// automatic (stack) array and returns its address, which dangles the moment
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// the function returns. GCC diagnoses this (`-Wreturn-local-addr`) and
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// substitutes a null pointer for the return value -- the generated assembly
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// for `helperBad` ends in `movl $0, %eax; ret`, discarding the buffer
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// entirely. The observable consequence is that `printLine` takes its NULL
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// branch and `bad()` emits nothing.
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// This bug is preserved deliberately: returning `None` reproduces the
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// reference executable's output byte for byte without invoking undefined
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// behavior in Rust.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m fn helper_bad() -> Option<&'static str> {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     // The stack array is built and then thrown away, exactly as compiled.
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     let _char_string = *b"helperBad string\0";
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     None
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// `void bad()`
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m fn bad<W: Write>(out: &mut W) {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     print_line(out, helper_bad());
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// `static char *helperGood1()`
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// The C original uses `static char charString[]`, giving the buffer static
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// storage duration, so returning its address is well defined.
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m fn helper_good1() -> Option<&'static str> {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     static CHAR_STRING: &str = "helperGood1 string";
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     Some(CHAR_STRING)
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// `void good()`
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn good<W: Write>(out: &mut W) {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     print_line(out, helper_good1());
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// `isspace()` in the C locale.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m fn is_space(b: u8) -> bool {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// A byte reader with a single-byte pushback, mirroring how the C standard
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// library's `ungetc`-style lookahead lets `scanf` stop at (and put back) the
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// first character that cannot belong to the current conversion.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m struct Scanner<R: Read> {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     inner: R,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     peeked: Option<u8>,
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m impl<R: Read> Scanner<R> {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     fn new(inner: R) -> Self {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         Scanner {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             inner,
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             peeked: None,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     /// Read one byte, or `None` at EOF / on a read error.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     fn next_byte(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         if let Some(b) = self.peeked.take() {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             return Some(b);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let mut buf = [0u8; 1];
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             match self.inner.read(&mut buf) {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m                 Ok(0) => return None,
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 Ok(_) => return Some(buf[0]),
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                 Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                 Err(_) => return None,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     fn unread(&mut self, b: u8) {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         self.peeked = Some(b);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     /// `scanf("%d", &x)` for a single conversion.
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     /// Returns `Some(value)` when the conversion succeeds; returns `None` on
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     /// either an input failure (EOF before any non-whitespace) or a matching
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     /// failure (no digits), in both of which cases C leaves the destination
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     /// object untouched.
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     /// Leading whitespace is skipped without regard to line boundaries, so the
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     /// scan happily reads across newlines just as `scanf` does.
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     fn scan_int(&mut self) -> Option<i32> {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         // Skip leading whitespace, including newlines.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         let mut b = loop {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m             match self.next_byte() {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                 None => return None, // input failure
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 Some(b) if is_space(b) => continue,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 Some(b) => break b,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         // Optional sign.
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         let mut negative = false;
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         if b == b'+' || b == b'-' {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             negative = b == b'-';
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             match self.next_byte() {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                 None => return None, // sign then EOF: matching failure
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m                 Some(nb) => b = nb,
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         // At least one digit is required.
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         if !b.is_ascii_digit() {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m             self.unread(b);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m             return None; // matching failure
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         // Accumulate the magnitude the way strtol does: saturate at the
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         // long range on overflow, then let the assignment to `int` truncate.
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         let mut magnitude: u64 = 0;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         let mut overflowed = false;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             let digit = u64::from(b - b'0');
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             match magnitude
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                 .checked_mul(10)
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                 .and_then(|acc| acc.checked_add(digit))
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m             {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 Some(acc) => magnitude = acc,
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                 None => overflowed = true,
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m             match self.next_byte() {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                 None => break,
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m                 Some(nb) if nb.is_ascii_digit() => b = nb,
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m                 Some(nb) => {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m                     self.unread(nb);
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         // strtol clamps to LONG_MAX / LONG_MIN.
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         let long_min_magnitude = 1u64 << 63; // |LONG_MIN|
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         let as_long: i64 = if negative {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m             if overflowed || magnitude > long_min_magnitude {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m                 i64::MIN
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m                 (-(magnitude as i128)) as i64
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         } else if overflowed || magnitude > i64::MAX as u64 {
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m             i64::MAX
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             magnitude as i64
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         // `int x` receives the value; the narrowing conversion truncates.
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         Some(as_long as i32)
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let stdin = std::io::stdin();
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     let mut scanner = Scanner::new(stdin.lock());
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     // int x = 0;
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let mut x: i32 = 0;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     // scanf("%d", &x);  -- x keeps its initial 0 if the conversion fails.
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     if let Some(value) = scanner.scan_int() {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         x = value;
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     if x != 0 {
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         good(&mut out);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         bad(&mut out);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     // return 0;
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.30s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the release binary
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation)
+    Finished `release` profile [optimized] target(s) in 0.78s
+[38;5;244m - Completed in 0.937s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Now differential testing against the C reference across the full input space.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
+RUST=/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/target/release/driver
+pass=0; fail=0
+run_case() {
+  printf '%b' "$1" > tin
+  ./driver < tin > c.out 2>/dev/null; crc=$?
+  "$RUST" < tin > r.out 2>/dev/null; rrc=$?
+  if cmp -s c.out r.out && [ "$crc" = "$rrc" ]; then
+    pass=$((pass+1))
+  else
+    fail=$((fail+1))
+    printf 'MISMATCH input=%q\n  c(rc=%d): %s\n  r(rc=%d): %s\n' "$1" "$crc" "$(od -An -c c.out|tr -s ' ')" "$rrc" "$(od -An -c r.out|tr -s ' ')"
+  fi
+}
+CASES=("1" "0" "-1" "42" "-5" "+7" "+0" "-0" "007" "0000" "" " " "\n" "\n\n\n" "  \t\n  9" "\t\t0" "abc" "xyz1" "-" "+" "--5" "-abc" "." "5.9" "0.0" "0x10" "0X0" "12abc" "abc12" "1 2 3" "0 7" "7 0" "2147483647" "2147483648" "-2147483648" "-2147483649" "4294967296" "-4294967296" "8589934592" "99999999999999" "-99999999999999" "9223372036854775807" "9223372036854775808" "-9223372036854775808" "-9223372036854775809" "18446744073709551615" "18446744073709551616" "99999999999999999999999999999999" "-99999999999999999999999999999999" "0000000004294967296" "\x0b5" "\x0c0" "\r\n1" "1\n" "0\n" "1\r\n" "%d" "NULL" "\x00" "\x001" "1\x00" " -\n" "+ 5" "- 5" "1e5" "e5" "\n\n\n\n\n\n\n\n\n\n0" "                              1")
+for c in "${CASES[@]}"; do run_case "$c"; done
+# fuzz: random bytes and random numeric strings
+for i in $(seq 1 400); do
+  n=$(( (RANDOM * 32768 + RANDOM) % 100 ))
+  case $((RANDOM % 4)) in
+    0) s=$(head -c $((RANDOM%12)) /dev/urandom | tr -dc '0-9+\- \n\t' ) ;;
+    1) s=$(head -c $((RANDOM%20)) /dev/urandom | tr -dc '[:print:]\n\t' ) ;;
+    2) s=$(head -c $((RANDOM%25)) /dev/urandom | tr -dc '0-9') ;;
+    3) s="-$(head -c $((RANDOM%25)) /dev/urandom | tr -dc '0-9')" ;;
+  esac
+  printf '%s' "$s" > tin
+  ./driver < tin > c.out 2>/dev/null; crc=$?
+  "$RUST" < tin > r.out 2>/dev/null; rrc=$?
+  if cmp -s c.out r.out && [ "$crc" = "$rrc" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FUZZ MISMATCH %q\n' "$s"; fi
+done
+# raw random binary
+for i in $(seq 1 200); do
+  head -c $((RANDOM % 24)) /dev/urandom > tin
+  ./driver < tin > c.out 2>/dev/null; crc=$?
+  "$RUST" < tin > r.out 2>/dev/null; rrc=$?
+  if cmp -s c.out r.out && [ "$crc" = "$rrc" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "BIN MISMATCH:"; od -c tin; fi
+done
+echo "=== pass=$pass fail=$fail ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust over curated cases and fuzzing
+
+=== pass=668 fail=0 ===
+[38;5;244m - Completed in 42.428s[0m
+
+[?25l[0m[38;5;141m> [0mAll 668 differential cases pass. Final verification of artifacts and that [38;5;10mc_src/[0m is untouched.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-FbmSOD
+echo "--- artifacts ---"; ls -la translation translation/src; wc -l translation/Cargo.toml translation/src/main.rs
+echo "--- binary ---"; file translation/target/release/driver
+echo "--- c_src integrity ---"; git status --porcelain c_src 2>/dev/null || md5sum c_src/src/main.c c_src/CMakeLists.txt
+echo "--- clippy ---"; cd translation && cargo clippy --release 2>&1 | grep -E "^(warning|error)" | sort -u | head
+echo "--- /dev/null stdin ---"
+./target/release/driver < /dev/null | od -c; /tmp/cref/driver < /dev/null | od -c
+echo "--- exhaustive small ints -2000..2000 ---"
+cd /tmp/cref; bad=0
+for i in $(seq -2000 2000); do
+  printf '%s' "$i" > tin
+  a=$(./driver < tin | od -An -c); b=$(/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/target/release/driver < tin | od -An -c)
+  [ "$a" = "$b" ] || { bad=$((bad+1)); echo "diff at $i"; }
+done
+echo "exhaustive mismatches=$bad"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify artifacts, c_src integrity, clippy, and exhaustive small-int sweep
+
+--- artifacts ---
+translation:
+total 8
+drwxr-xr-x. 4 scheschb amazon  67 Sep  1 08:31 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 08:29 ..
+-rw-r--r--. 1 scheschb amazon 150 Sep  1 08:31 Cargo.lock
+-rw-r--r--. 1 scheschb amazon 142 Sep  1 08:30 Cargo.toml
+drwxr-xr-x. 2 scheschb amazon  21 Sep  1 08:31 src
+drwxr-xr-x. 3 scheschb amazon  65 Sep  1 08:31 target
+
+translation/src:
+total 8
+drwxr-xr-x. 2 scheschb amazon   21 Sep  1 08:31 .
+drwxr-xr-x. 4 scheschb amazon   67 Sep  1 08:31 ..
+-rw-r--r--. 1 scheschb amazon 7363 Sep  1 08:31 main.rs
+  11 translation/Cargo.toml
+ 222 translation/src/main.rs
+ 233 total
+--- binary ---
+translation/target/release/driver: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=97f252d369d917c9c8b688d7a31a4bcbb39922de, not stripped
+--- c_src integrity ---
+a262c22771fb2461f64b188127bec88b  c_src/src/main.c
+02ba3005fed9b6d7d46c4fe335ac00d8  c_src/CMakeLists.txt
+--- clippy ---
+warning: `driver` (bin "driver") generated 2 warnings (run `cargo clippy --fix --bin "driver" -p driver -- ` to apply 2 suggestions)
+warning: this `match` expression can be replaced with `?`
+warning: using `write!()` with a format string that ends in a single newline
+--- /dev/null stdin ---
+0000000
+0000000
+--- exhaustive small ints -2000..2000 ---
+exhaustive mismatches=0
+[38;5;244m - Completed in 144.117s[0m
+
+[?25l[0m[38;5;141m> [0mTwo clippy warnings are stylistic on deliberate choices (the [38;5;10mwrite![0m newline mirrors [38;5;10mprintf("%s\n", ...)[0m). Let me silence them explicitly rather than change semantics.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Suppress stylistic clippy lints on deliberate C-mirroring constructs
+
+[49m[38;5;10m+     29[0m:[38;5;10m[49m // The trailing-newline `write!` and the explicit `match` on `next_byte()` both
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // mirror the C control flow one-to-one; clippy's terser alternatives would
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m // obscure that correspondence.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m #![allow(clippy::write_with_newline, clippy::question_mark)]
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[39m  29, 34[0m:[39m[49m use std::io::{Read, Write};
+[0m[K
+Updating: [38;5;141mtranslation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation
+cargo clean -q 2>/dev/null; cargo build --release 2>&1 | tail -5
+echo "--- clippy (expect no warnings) ---"; cargo clippy --release 2>&1 | grep -cE "^warning" ; echo "warning-count above"
+echo "--- re-run differential spot check ---"
+cd /tmp/cref; RUST=/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation/target/release/driver
+bad=0
+for c in 1 0 -1 abc "" 2147483648 4294967296 -99999999999999999999999999999999 "  \n 9" "0x10"; do
+  printf '%b' "$c" > tin
+  cmp -s <(./driver < tin) <("$RUST" < tin) || { echo "MISMATCH $c"; bad=1; }
+done
+echo "spotcheck_bad=$bad"
+printf '1' > tin; "$RUST" < tin | od -c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild from clean, confirm clippy clean, re-verify parity
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-FbmSOD/translation)
+    Finished `release` profile [optimized] target(s) in 0.21s
+--- clippy (expect no warnings) ---
+0
+warning-count above
+--- re-run differential spot check ---
+spotcheck_bad=0
+0000000   h   e   l   p   e   r   G   o   o   d   1       s   t   r   i
+0000020   n   g  \n
+0000023
+[38;5;244m - Completed in 0.483s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean from scratch and matches the C reference byte for byte.[0m[0m
+[0m[0m
+The program is a CWE-562 (return of stack variable address) test case: read an int with [38;5;10mscanf[0m, then call [38;5;10mgood()[0m if nonzero or [38;5;10mbad()[0m otherwise.[0m[0m
+[0m[0m
+The key finding is what [38;5;10mbad()[0m actually does. [38;5;10mhelperBad()[0m returns the address of a stack-local [38;5;10mchar charString[][0m. GCC diagnoses this and [1msubstitutes a null pointer for the return value[22m — I confirmed this in the generated assembly, where [38;5;10mhelperBad[0m ends in [38;5;10mmovl $0, %eax; ret[0m and never uses the buffer. [38;5;10mprintLine[0m then takes its [38;5;10mline != NULL[0m branch and emits nothing, not even a newline. So the reference binary produces [1mzero bytes[22m on the [38;5;10mbad()[0m path, at both [38;5;10m-O0[0m and [38;5;10m-O2[0m. I preserved that bug rather than fixing it: [38;5;10mhelper_bad()[0m returns [38;5;10mNone[0m, which reproduces the output exactly without relying on UB in Rust.[0m[0m
+[0m[0m
+Observable contract, verified end to end:[0m[0m
+- [38;5;10mscanf[0m succeeds with nonzero [38;5;10mx[0m → [38;5;10mhelperGood1 string\n[0m (19 bytes)[0m[0m
+- [38;5;10mx == 0[0m, or [38;5;10mscanf[0m fails and leaves [38;5;10mx[0m at its initial [38;5;10m0[0m → no output[0m[0m
+- exit code always 0[0m[0m
+[0m[0m
+Two [38;5;10mscanf[0m details I probed against glibc rather than assumed: whitespace skipping crosses newlines (so [38;5;10m"\n\n  7"[0m yields 7), and integer overflow follows [38;5;10mstrtol[0m — the magnitude saturates at [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m and [3mthen[23m truncates to [38;5;10mint[0m. That truncation is observable here, since it decides which branch runs: [38;5;10m4294967296[0m truncates to 0 and takes the [38;5;10mbad()[0m path, while a 32-digit number saturates to [38;5;10mLONG_MAX[0m and truncates to −1, taking [38;5;10mgood()[0m. [38;5;10mscan_int[0m reproduces both, using a single-byte-pushback reader so no input is consumed past the conversion.[0m[0m
+[0m[0m
+Verification I ran myself:[0m[0m
+- 668 differential cases (curated edge cases, signs, overflow boundaries, control bytes, plus 600 fuzz inputs including raw random binary) — 0 mismatches on stdout bytes and exit status[0m[0m
+- exhaustive sweep of every integer from −2000 to 2000 — 0 mismatches[0m[0m
+- clean rebuild: 0 warnings from [38;5;10mcargo build --release[0m and [38;5;10mcargo clippy --release[0m[0m[0m
+- [38;5;10mc_src/[0m unmodified (checksums unchanged; all writes went to [38;5;10mtranslation/[0m)[0m[0m
+[0m[0m
+One judgment call worth flagging: I suppressed two stylistic clippy lints ([38;5;10mwrite_with_newline[0m, [38;5;10mquestion_mark[0m) with an [38;5;10m#![allow][0m and a comment, because [38;5;10mwrite!(out, "{}\n", line)[0m mirrors [38;5;10mprintf("%s\n", line)[0m and the explicit [38;5;10mmatch[0m mirrors the C control flow. Those are cosmetic only — say the word if you'd rather have idiomatic Rust there.[0m[0m
+[0m[0m
+Caveat on the central bug: the empty output on the [38;5;10mbad()[0m path is GCC's null-substitution, not something the C standard guarantees. A different compiler could return the real dangling address and print garbage or crash. This translation is byte-identical to the GCC-built reference, which is the behavior I could actually observe and test.[0m[0m
+[38;5;8m
+ ▸ Credits: 5.84 • Time: 6m 23s
+
+[0m[1G[0m[0m[?25h

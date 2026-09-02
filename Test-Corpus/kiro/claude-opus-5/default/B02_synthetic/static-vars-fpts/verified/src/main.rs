@@ -1,78 +1,83 @@
-//! Translation of main.c
+//! Port of c_src/src/main.c
 
 mod analyzer;
-mod cio;
+pub mod cio;
 mod tokenizer;
 
-use analyzer::{AnalysisResult, Analyzer};
-use cio::{cstr, err_bytes, err_str, restore_default_sigpipe, sscanf_d, In, Out};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use tokenizer::{Tokenizer, MAX_BUFFER_SIZE, TOKEN_EOF};
+use std::os::unix::ffi::OsStrExt;
+
+use analyzer::{
+    analyze_text, analyzer_init, calculate_complexity_score, find_patterns,
+    print_token_distribution, AnalysisResult,
+};
+use cio::{cstr, out_bytes, truncate_at_newline, CStdin};
+use tokenizer::{get_tokenizer_ops, Token, TokenizerOps, TOKEN_EOF, MAX_BUFFER_SIZE};
 
 const MAX_INPUT_SIZE: usize = 4096;
-/// Size of main's `char input[256]` / `char line[256]` buffers, i.e. the `n`
-/// passed to fgets.
-const LINE_BUF: usize = 256;
 
-fn print_menu(out: &mut Out) {
-    out.str("\n=== Text Analyzer ===\n");
-    out.str("1. Analyze text\n");
-    out.str("2. Load text from file\n");
-    out.str("3. Show token distribution\n");
-    out.str("4. Calculate complexity score\n");
-    out.str("5. Find pattern\n");
-    out.str("6. Interactive tokenizer\n");
-    out.str("7. Exit\n");
-    out.str("Choice: ");
+fn print_menu() {
+    cprintf!("\n=== Text Analyzer ===\n");
+    cprintf!("1. Analyze text\n");
+    cprintf!("2. Load text from file\n");
+    cprintf!("3. Show token distribution\n");
+    cprintf!("4. Calculate complexity score\n");
+    cprintf!("5. Find pattern\n");
+    cprintf!("6. Interactive tokenizer\n");
+    cprintf!("7. Exit\n");
+    cprintf!("Choice: ");
 }
 
-fn print_analysis_result(out: &mut Out, result: &AnalysisResult) {
-    out.str("\n=== Analysis Results ===\n");
-    out.str(&format!("Words/Identifiers: {}\n", result.word_count));
-    out.str(&format!("Numbers: {}\n", result.number_count));
-    out.str(&format!("Keywords: {}\n", result.keyword_count));
-    out.str(&format!("Operators: {}\n", result.operator_count));
-    out.str(&format!("Comments: {}\n", result.comment_count));
-    out.str(&format!("Strings: {}\n", result.string_count));
-    out.str(&format!("Lines: {}\n", result.line_count));
-    out.str(&format!("Characters: {}\n", result.char_count));
+fn print_analysis_result(result: AnalysisResult) {
+    cprintf!("\n=== Analysis Results ===\n");
+    cprintf!("Words/Identifiers: {}\n", result.word_count);
+    cprintf!("Numbers: {}\n", result.number_count);
+    cprintf!("Keywords: {}\n", result.keyword_count);
+    cprintf!("Operators: {}\n", result.operator_count);
+    cprintf!("Comments: {}\n", result.comment_count);
+    cprintf!("Strings: {}\n", result.string_count);
+    cprintf!("Lines: {}\n", result.line_count);
+    cprintf!("Characters: {}\n", result.char_count);
 }
 
-/// `strncat(dest, src, MAX_INPUT_SIZE - strlen(dest) - 1)` where `src` is the
-/// C string held in the fgets buffer.
-fn strncat_bounded(dest: &mut Vec<u8>, src: &[u8]) {
-    let n = MAX_INPUT_SIZE - dest.len() - 1;
-    let k = if src.len() < n { src.len() } else { n };
-    dest.extend_from_slice(&src[..k]);
+/// `strncat(dst, src, MAX_INPUT_SIZE - strlen(dst) - 1)` where `dst` is a
+/// `char[MAX_INPUT_SIZE]` holding a C string.
+fn strncat_bounded(dst: &mut Vec<u8>, src: &[u8]) {
+    let n = MAX_INPUT_SIZE - dst.len() - 1;
+    let src = cstr(src);
+    let take = if src.len() < n { src.len() } else { n };
+    dst.extend_from_slice(&src[..take]);
 }
 
-/// Read lines until an empty line or EOF, accumulating into a 4096-byte buffer.
-fn read_block(inp: &mut In) -> Vec<u8> {
-    let mut text: Vec<u8> = Vec::new();
+/// Reads lines with fgets(line, 256, stdin) until an empty line or EOF,
+/// accumulating into a MAX_INPUT_SIZE C-string buffer.
+fn read_block(stdin: &mut CStdin) -> Vec<u8> {
+    let mut buffer: Vec<u8> = Vec::new();
 
-    while let Some(line) = inp.fgets(LINE_BUF) {
-        if line[0] == b'\n' {
+    while let Some(line) = stdin.fgets(256) {
+        if line.first() == Some(&b'\n') {
             break;
         }
-        strncat_bounded(&mut text, cstr(&line));
+        strncat_bounded(&mut buffer, &line);
     }
 
-    text
+    buffer
 }
 
-fn interactive_tokenizer(out: &mut Out, inp: &mut In, tk: &mut Tokenizer) {
-    out.str("\nEnter text (empty line to stop):\n");
+fn interactive_tokenizer(ops: TokenizerOps, stdin: &mut CStdin) {
+    cprintf!("\nEnter text (empty line to stop):\n");
 
-    let input = read_block(inp);
+    let input = read_block(stdin);
 
-    if tk.load_text(&input) != 0 {
-        out.str("Failed to load text\n");
+    if (ops.load_text)(&input) != 0 {
+        cprintf!("Failed to load text\n");
         return;
     }
 
-    out.str("\n=== Tokens ===\n");
+    cprintf!("\n=== Tokens ===\n");
 
-    let token_type_names: [&str; 12] = [
+    const TOKEN_TYPE_NAMES: [&str; 12] = [
         "EOF", "WORD", "NUMBER", "PUNCT", "SPACE", "NEWLINE", "IDENT", "KEYWORD", "OPERATOR",
         "STRING", "COMMENT", "ERROR",
     ];
@@ -80,165 +85,178 @@ fn interactive_tokenizer(out: &mut Out, inp: &mut In, tk: &mut Tokenizer) {
     let mut count: i32 = 0;
 
     loop {
-        let token = tk.next_token();
+        let token: Token = (ops.next_token)();
         if token.ttype == TOKEN_EOF {
             break;
         }
 
-        out.str(&format!("[{}] '", token_type_names[token.ttype]));
-        out.bytes(&token.value);
-        out.str(&format!("' (L{}:C{})\n", token.line, token.column));
+        let mut line: Vec<u8> = Vec::new();
+        line.extend_from_slice(b"[");
+        line.extend_from_slice(TOKEN_TYPE_NAMES[token.ttype].as_bytes());
+        line.extend_from_slice(b"] '");
+        line.extend_from_slice(&token.value);
+        line.extend_from_slice(b"' (L");
+        line.extend_from_slice(token.line.to_string().as_bytes());
+        line.extend_from_slice(b":C");
+        line.extend_from_slice(token.column.to_string().as_bytes());
+        line.extend_from_slice(b")\n");
+        out_bytes(&line);
+
         count += 1;
 
-        // Checked after the increment, so 101 tokens are printed before this trips.
         if count > 100 {
-            out.str("... (truncated, too many tokens)\n");
+            cprintf!("... (truncated, too many tokens)\n");
             break;
         }
     }
 }
 
-/// Returns the file contents as a C string (bytes up to the first NUL), or None
-/// on any of the error paths the C version reports.
+/// Returns the raw file contents as a C string (NUL-terminated in the C, so
+/// callers see the bytes up to the first NUL).
 fn read_file(filename: &[u8]) -> Option<Vec<u8>> {
-    use std::os::unix::ffi::OsStrExt;
-
     let path = std::ffi::OsStr::from_bytes(filename);
-    let file = std::fs::File::open(path);
-    let mut file = match file {
+
+    let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => {
-            err_str("Error: Could not open file '");
-            err_bytes(filename);
-            err_str("'\n");
+            let mut msg: Vec<u8> = Vec::new();
+            msg.extend_from_slice(b"Error: Could not open file '");
+            msg.extend_from_slice(filename);
+            msg.extend_from_slice(b"'\n");
+            cio::err_bytes(&msg);
             return None;
         }
     };
 
-    // fseek(END) / ftell / fseek(SET)
+    // fseek(file, 0, SEEK_END); size = ftell(file); fseek(file, 0, SEEK_SET);
     let size: i64 = match file.seek(SeekFrom::End(0)) {
-        Ok(s) => s as i64,
+        Ok(pos) => pos as i64,
         Err(_) => -1,
     };
     let _ = file.seek(SeekFrom::Start(0));
 
     if size > MAX_BUFFER_SIZE as i64 {
-        err_str("Error: File too large\n");
+        cio::err_bytes(b"Error: File too large\n");
         return None;
     }
 
-    // fread(content, 1, size, file); content[read_size] = '\0';
-    let mut content: Vec<u8> = Vec::new();
-    if size > 0 {
-        let mut handle = file.take(size as u64);
-        if handle.read_to_end(&mut content).is_err() {
-            content.clear();
+    let capacity = if size > 0 { size as usize } else { 0 };
+    let mut content = vec![0u8; capacity];
+
+    // fread(content, 1, size, file)
+    let mut read_size = 0usize;
+    while read_size < capacity {
+        match file.read(&mut content[read_size..]) {
+            Ok(0) => break,
+            Ok(n) => read_size += n,
+            Err(_) => break,
         }
     }
+    content.truncate(read_size);
 
+    // content[read_size] = '\0'  =>  the C string is the bytes up to the
+    // first embedded NUL.
     Some(cstr(&content).to_vec())
 }
 
-fn main() {
-    restore_default_sigpipe();
+fn real_main() -> i32 {
+    let mut stdin = CStdin::new();
 
-    let mut out = Out::new();
-    let mut inp = In::new();
+    // Get tokenizer operations (function pointers)
+    let ops = get_tokenizer_ops();
 
-    // Tokenizer state (C: file-scope statics) and analyzer initialization.
-    let mut tk = Tokenizer::new();
-    let mut an = Analyzer::new();
-    an.init();
+    // Initialize analyzer with function pointers
+    analyzer_init(ops);
 
-    out.str("Text Analysis and Tokenization System\n");
-    out.str("This system demonstrates function pointers and static globals\n");
+    cprintf!("Text Analysis and Tokenization System\n");
+    cprintf!("This system demonstrates function pointers and static globals\n");
 
     loop {
-        print_menu(&mut out);
+        print_menu();
 
-        let input = match inp.fgets(LINE_BUF) {
-            Some(l) => l,
+        let input = match stdin.fgets(256) {
+            Some(line) => line,
             None => break,
         };
 
-        let choice = match sscanf_d(cstr(&input)) {
-            Some(c) => c,
+        let choice = match cio::sscanf_int(cstr(&input)) {
+            Some(v) => v,
             None => {
-                out.str("Invalid input\n");
+                cprintf!("Invalid input\n");
                 continue;
             }
         };
 
         match choice {
             1 => {
-                out.str("Enter text to analyze (empty line to stop):\n");
-                let text = read_block(&mut inp);
+                cprintf!("Enter text to analyze (empty line to stop):\n");
+                let text = read_block(&mut stdin);
 
-                let result = an.analyze_text(&mut tk, &text);
-                print_analysis_result(&mut out, &result);
+                let result = analyze_text(&text);
+                print_analysis_result(result);
             }
 
             2 => {
-                out.str("Enter filename: ");
-                // On EOF the C code does `break`, which only leaves the switch;
-                // the menu is printed once more before the loop exits.
-                if let Some(line) = inp.fgets(LINE_BUF) {
-                    let filename = strip_newline(cstr(&line));
+                cprintf!("Enter filename: ");
+                // NOTE (faithful to the C): on EOF the C code's `break` leaves
+                // the switch, not the while loop, so the menu is shown again.
+                if let Some(line) = stdin.fgets(256) {
+                    let filename = truncate_at_newline(cstr(&line)).to_vec();
 
-                    if let Some(content) = read_file(filename) {
-                        let result = an.analyze_text(&mut tk, &content);
-                        print_analysis_result(&mut out, &result);
+                    if let Some(content) = read_file(&filename) {
+                        let result = analyze_text(&content);
+                        print_analysis_result(result);
                     }
                 }
             }
 
             3 => {
-                an.print_token_distribution(&mut out);
+                print_token_distribution();
             }
 
             4 => {
-                let score = an.calculate_complexity_score();
-                out.str(&format!("\nComplexity Score: {}\n", score));
+                let score = calculate_complexity_score();
+                cprintf!("\nComplexity Score: {}\n", score);
                 if score < 10 {
-                    out.str("Complexity: Low\n");
+                    cprintf!("Complexity: Low\n");
                 } else if score < 50 {
-                    out.str("Complexity: Medium\n");
+                    cprintf!("Complexity: Medium\n");
                 } else {
-                    out.str("Complexity: High\n");
+                    cprintf!("Complexity: High\n");
                 }
             }
 
             5 => {
-                out.str("Enter pattern to search: ");
-                if let Some(line) = inp.fgets(LINE_BUF) {
-                    let pattern = strip_newline(cstr(&line)).to_vec();
-                    an.find_patterns(&mut tk, &mut out, &pattern);
+                cprintf!("Enter pattern to search: ");
+                // NOTE (faithful to the C): on EOF the C code's `break` leaves
+                // the switch, not the while loop, so the menu is shown again.
+                if let Some(line) = stdin.fgets(256) {
+                    let pattern = truncate_at_newline(cstr(&line)).to_vec();
+
+                    find_patterns(&pattern);
                 }
             }
 
             6 => {
-                interactive_tokenizer(&mut out, &mut inp, &mut tk);
+                interactive_tokenizer(ops, &mut stdin);
             }
 
             7 => {
-                out.str("Goodbye!\n");
-                out.flush();
-                return;
+                cprintf!("Goodbye!\n");
+                return 0;
             }
 
             _ => {
-                out.str("Invalid choice\n");
+                cprintf!("Invalid choice\n");
             }
         }
     }
 
-    out.flush();
+    0
 }
 
-/// `s[strcspn(s, "\n")] = 0`
-fn strip_newline(s: &[u8]) -> &[u8] {
-    match s.iter().position(|&b| b == b'\n') {
-        Some(i) => &s[..i],
-        None => s,
-    }
+fn main() {
+    let code = real_main();
+    cio::out_flush();
+    std::process::exit(code);
 }

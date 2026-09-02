@@ -459,8 +459,7 @@ const MGF1_INBUF_MAX: usize = {
 /// Note that `inlen` should be sufficiently small that it still allows for an
 /// array to be allocated on the stack.  Typically `inp` is merely a seed.
 pub fn mgf1_256(out: &mut [u8], outlen: usize, inp: &[u8], inlen: usize) {
-    let mut vla = crate::vla::Vla::<{ MGF1_INBUF_MAX }>::new(inlen + 4);
-    let inbuf = vla.as_mut_slice();
+    let mut inbuf = [0u8; MGF1_INBUF_MAX];
     let mut outbuf = [0u8; SPX_SHA256_OUTPUT_BYTES];
 
     inbuf[..inlen].copy_from_slice(&inp[..inlen]);
@@ -493,8 +492,7 @@ pub fn mgf1_256(out: &mut [u8], outlen: usize, inp: &[u8], inlen: usize) {
 
 /// MGF1 based on the SHA-512 hash function.
 pub fn mgf1_512(out: &mut [u8], outlen: usize, inp: &[u8], inlen: usize) {
-    let mut vla = crate::vla::Vla::<{ MGF1_INBUF_MAX }>::new(inlen + 4);
-    let inbuf = vla.as_mut_slice();
+    let mut inbuf = [0u8; MGF1_INBUF_MAX];
     let mut outbuf = [0u8; SPX_SHA512_OUTPUT_BYTES];
 
     inbuf[..inlen].copy_from_slice(&inp[..inlen]);

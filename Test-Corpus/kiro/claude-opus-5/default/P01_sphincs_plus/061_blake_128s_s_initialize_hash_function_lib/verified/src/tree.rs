@@ -17,7 +17,6 @@ pub mod sign;
 pub mod thash;
 pub mod utils;
 pub mod utilsx1;
-pub mod vla;
 pub mod wots;
 pub mod wotsx1;
 

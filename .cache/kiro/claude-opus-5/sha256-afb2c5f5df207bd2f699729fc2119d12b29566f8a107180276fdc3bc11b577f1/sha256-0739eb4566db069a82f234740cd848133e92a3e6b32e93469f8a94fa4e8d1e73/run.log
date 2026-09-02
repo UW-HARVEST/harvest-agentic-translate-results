@@ -1,0 +1,748 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f | head -100; echo "---"; wc -l $(find c_src -type f -name '*.c' -o -name '*.h')[0m[38;5;244m (using tool: shell)[0m
+
+c_src/CMakeLists.txt
+c_src/src/main.c
+---
+82 c_src/src/main.c
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-3IFImW/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-3IFImW/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2474 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-3IFImW/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1202 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-3IFImW/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSingle file, 82 lines. Now let me check the toolchain and write the Rust.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mgcc --version | head -1; cargo --version; rustc --version; ldd --version | head -1; nproc[0m[38;5;244m (using tool: shell)[0m
+
+gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+cargo 1.97.1 (c980f4866 2026-06-30)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+ldd (GNU libc) 2.34
+48
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m opt-level = 3
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m codegen-units = 1
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Rust translation of the C driver
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //! Rust translation of `c_src/src/main.c`.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! Behaviour is preserved bit-for-bit, including:
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //!   * glibc's `srand`/`rand` (TYPE_3 additive-feedback generator) sequence,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //!   * C's `strtoul` parsing semantics (leading whitespace, sign, ERANGE),
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //!   * wrapping signed arithmetic, arithmetic right shift, truncating
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //!     division and C's `%` sign rules in the hot loop,
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //!   * the exact stdout/stderr text and exit statuses.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// 1MB assuming sizeof(int) = 4
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m const ARRAY_SIZE: usize = 256 * 1024;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m const ITERATIONS: i32 = 2000;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m const UINT_MAX: u64 = u32::MAX as u64;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m // glibc `srand` / `rand`
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// Re-implementation of glibc's default `random_r` generator (TYPE_3:
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// degree 31, separation 3), which is what `rand()` uses.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m struct GlibcRand {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     /// The 31 `int32_t` state words.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     state: [i32; DEG],
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     /// Index of the "front" pointer.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     fptr: usize,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     /// Index of the "rear" pointer.
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     rptr: usize,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m const DEG: usize = 31;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m const SEP: usize = 3;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m impl GlibcRand {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     /// Equivalent of `srand(seed)` (i.e. `__srandom_r`).
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     fn new(seed: u32) -> Self {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         // glibc: "We must make sure the seed is not 0."
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         let seed = if seed == 0 { 1 } else { seed };
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         let mut state = [0i32; DEG];
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         state[0] = seed as i32;
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         let mut word = seed as i32;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         for i in 1..DEG {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             // state[i] = (16807 * state[i - 1]) % 2147483647, computed
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             // without overflowing 31 bits (Schrage's method).
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             let hi = (word / 127773) as i64;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             let lo = (word % 127773) as i64;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             let mut w = 16807 * lo - 2836 * hi;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m             if w < 0 {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m                 w += 2147483647;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             word = w as i32;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             state[i] = word;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         let mut rng = GlibcRand {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             state,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             fptr: SEP,
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             rptr: 0,
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         // Discard the first `deg * 10` outputs.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         for _ in 0..(DEG * 10) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             rng.next_i32();
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         rng
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     /// Equivalent of `rand()` (i.e. `__random_r`).
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     fn next_i32(&mut self) -> i32 {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         let val = (self.state[self.fptr] as u32).wrapping_add(self.state[self.rptr] as u32);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         self.state[self.fptr] = val as i32;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         // "Chucking least random bit."
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         let result = (val >> 1) as i32;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         self.fptr += 1;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         if self.fptr >= DEG {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             self.fptr = 0;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         self.rptr += 1;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         if self.rptr >= DEG {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             self.rptr = 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         result
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m // C `strtoul` (base 10)
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m fn is_c_space(b: u8) -> bool {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m /// Result of `strtoul(nptr, &endptr, 10)`.
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m struct StrToUlResult {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     value: u64,
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     /// Offset of `endptr` within the input.
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     end: usize,
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     /// Whether `errno` was set to `ERANGE`.
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     erange: bool,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m fn strtoul_base10(s: &[u8]) -> StrToUlResult {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     while i < s.len() && is_c_space(s[i]) {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let mut negative = false;
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         negative = s[i] == b'-';
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     let digits_start = i;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     let mut value: u64 = 0;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     let mut overflow = false;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     while i < s.len() && s[i].is_ascii_digit() {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         let digit = u64::from(s[i] - b'0');
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         match value.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m             Some(v) => value = v,
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m             None => overflow = true,
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     if i == digits_start {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         // No conversion performed: endptr is set back to nptr and 0 returned.
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         return StrToUlResult {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             value: 0,
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             end: 0,
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m             erange: false,
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     if overflow {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         // glibc returns ULONG_MAX and sets ERANGE, regardless of sign.
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         return StrToUlResult {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             value: u64::MAX,
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             end: i,
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m             erange: true,
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     let value = if negative { value.wrapping_neg() } else { value };
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     StrToUlResult {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         value,
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         end: i,
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         erange: false,
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m // Workload
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m /// Perform expensive arithmetic on each element.
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m fn perform_expensive_operations(array: &mut [i32]) {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     for slot in array.iter_mut() {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         let mut x = *slot;
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         for _ in 0..100 {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m             x = x.wrapping_mul(3).wrapping_add(7);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m             x ^= x >> 3;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m             x = x.wrapping_sub(x.wrapping_shl(1));
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             x = (x / 2).wrapping_add(x % 7);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         *slot = x;
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m // main
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     std::process::exit(run());
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m fn run() -> i32 {
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     let argv: Vec<Vec<u8>> = argv_bytes();
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     let argc = argv.len();
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     if argc != 2 {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         let prog: &[u8] = argv.first().map(|a| a.as_slice()).unwrap_or(b"");
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         let mut msg = Vec::new();
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         msg.extend_from_slice(b"Usage: ");
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         msg.extend_from_slice(prog);
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         msg.extend_from_slice(b" <seed>\n");
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         write_stderr(&msg);
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     let arg = &argv[1];
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     let parsed = strtoul_base10(arg);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     let temp_seed = parsed.value;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     if parsed.end != arg.len() || parsed.erange || temp_seed > UINT_MAX {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         let mut msg = Vec::new();
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         msg.extend_from_slice(b"Invalid seed: '");
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         msg.extend_from_slice(arg);
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         msg.extend_from_slice(b"'\n");
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         write_stderr(&msg);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     let seed = temp_seed as u32;
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m     let mut rng = GlibcRand::new(seed);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     let mut array: Vec<i32> = vec![0; ARRAY_SIZE];
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     for slot in array.iter_mut() {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         *slot = rng.next_i32();
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     for _ in 0..ITERATIONS {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         perform_expensive_operations(&mut array);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     let mut xor_result: i32 = 0;
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     for &v in array.iter() {
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         xor_result ^= v;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     let mut out = std::io::stdout();
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     let _ = write!(out, "{}\n", xor_result);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m /// The raw bytes of the process arguments, mirroring C's `argv`.
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m fn argv_bytes() -> Vec<Vec<u8>> {
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     std::env::args_os()
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         .map(|a| a.as_os_str().as_bytes().to_vec())
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m         .collect()
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m fn write_stderr(bytes: &[u8]) {
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     let mut err = std::io::stderr();
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     let _ = err.write_all(bytes);
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     let _ = err.flush();
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation)
+    Finished `release` profile [optimized] target(s) in 0.21s
+[38;5;244m - Completed in 0.235s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+mkdir -p /tmp/cref && cd /tmp/cref
+cp /local/home/scheschb/.harvest/work/harvest-work-3IFImW/c_src/src/main.c ref.c
+gcc -O2 -o cdriver ref.c
+# reduced-iteration variants for fast differential testing
+sed 's/#define ITERATIONS 2000/#define ITERATIONS 3/' ref.c > ref3.c
+gcc -O2 -o cdriver3 ref3.c
+sed 's/#define ITERATIONS 2000/#define ITERATIONS 0/' ref.c > ref0.c
+gcc -O2 -o cdriver0 ref0.c
+ls -la[0m[38;5;244m (using tool: shell)[0m
+
+total 424
+drwxr-xr-x.    3 scheschb amazon    580 Sep  1 07:14 .
+drwxrwxrwt. 1061 root     root    84120 Sep  1 07:14 ..
+-rw-r--r--.    1 scheschb amazon  12840 Aug 31 03:31 CMakeCache.txt
+drwxr-xr-x.    5 scheschb amazon    240 Aug 31 04:08 CMakeFiles
+-rw-r--r--.    1 scheschb amazon  14725 Aug 31 03:31 Makefile
+-rw-r--r--.    1 scheschb amazon      0 Sep  1 07:03 c.err
+-rwxr-xr-x.    1 scheschb amazon  17048 Sep  1 07:14 cdriver
+-rwxr-xr-x.    1 scheschb amazon  17048 Sep  1 07:14 cdriver0
+-rwxr-xr-x.    1 scheschb amazon  17048 Sep  1 07:14 cdriver3
+-rw-r--r--.    1 scheschb amazon   1639 Aug 31 03:31 cmake_install.cmake
+-rw-r--r--.    1 scheschb amazon   1605 Sep  1 07:03 cmp.sh
+-rwxr-xr-x.    1 scheschb amazon  16928 Sep  1 07:03 driver
+-rw-r--r--.    1 scheschb amazon   4781 Sep  1 04:18 fuzz.py
+-rwxr-xr-x.    1 scheschb amazon 139128 Aug 31 03:31 libjansson.so
+-rw-r--r--.    1 scheschb amazon  27260 Sep  1 04:22 main.s
+-rwxr-xr-x.    1 scheschb amazon  16688 Sep  1 04:19 p
+-rw-r--r--.    1 scheschb amazon    899 Sep  1 04:19 p.c
+-rw-r--r--.    1 scheschb amazon      0 Sep  1 07:03 r.err
+-rw-r--r--.    1 scheschb amazon   2475 Sep  1 07:14 ref.c
+-rw-r--r--.    1 scheschb amazon   2472 Sep  1 07:14 ref0.c
+-rw-r--r--.    1 scheschb amazon   2472 Sep  1 07:14 ref3.c
+-rwxr-xr-x.    1 scheschb amazon  16752 Sep  1 04:29 sc
+-rw-r--r--.    1 scheschb amazon    120 Sep  1 04:29 sc.c
+-rwxr-xr-x.    1 scheschb amazon  16984 Sep  1 04:30 sc3
+-rw-r--r--.    1 scheschb amazon    207 Sep  1 04:30 sc3.c
+-rwxr-xr-x.    1 scheschb amazon  16984 Sep  1 04:31 si
+-rw-r--r--.    1 scheschb amazon    187 Sep  1 04:31 si.c
+-rwxr-xr-x.    1 scheschb amazon  16688 Sep  1 04:14 t
+-rw-r--r--.    1 scheschb amazon    437 Sep  1 04:14 t.c
+[38;5;244m - Completed in 0.168s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+rm -rf /tmp/rref && mkdir -p /tmp/rref/src
+W=/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation
+cp $W/Cargo.toml /tmp/rref/
+sed 's/const ITERATIONS: i32 = 2000;/const ITERATIONS: i32 = 3;/' $W/src/main.rs > /tmp/rref/src/main.rs
+grep -n "ITERATIONS: i32" /tmp/rref/src/main.rs
+cd /tmp/rref && cargo build --release 2>&1 | tail -3
+cp target/release/driver /tmp/rref/rdriver3
+sed 's/const ITERATIONS: i32 = 2000;/const ITERATIONS: i32 = 0;/' $W/src/main.rs > /tmp/rref/src/main.rs
+cargo build --release 2>&1 | tail -2
+cp target/release/driver /tmp/rref/rdriver0
+ls -l /tmp/rref/rdriver*[0m[38;5;244m (using tool: shell)[0m
+
+37:const ITERATIONS: i32 = 3;
+   Compiling driver v0.1.0 (/tmp/rref)
+    Finished `release` profile [optimized] target(s) in 0.22s
+   Compiling driver v0.1.0 (/tmp/rref)
+    Finished `release` profile [optimized] target(s) in 0.18s
+-rwxr-xr-x. 1 scheschb amazon 451728 Sep  1 07:14 /tmp/rref/rdriver0
+-rwxr-xr-x. 1 scheschb amazon 452064 Sep  1 07:14 /tmp/rref/rdriver3
+[38;5;244m - Completed in 0.451s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+rm -rf /tmp/dt && mkdir -p /tmp/dt/c /tmp/dt/r
+cp /tmp/cref/cdriver0 /tmp/dt/c/driver0; cp /tmp/cref/cdriver3 /tmp/dt/c/driver3
+cp /tmp/rref/rdriver0 /tmp/dt/r/driver0; cp /tmp/rref/rdriver3 /tmp/dt/r/driver3
+cat > /tmp/dt/cmp.sh <<'EOF'
+#!/bin/bash
+# usage: cmp.sh <variant 0|3> [args...]
+v=$1; shift
+cd /tmp/dt/c; co=$(./driver$v "$@" 2>/tmp/dt/ce); cs=$?; ce=$(cat /tmp/dt/ce)
+cd /tmp/dt/r; ro=$(./driver$v "$@" 2>/tmp/dt/re); rs=$?; re=$(cat /tmp/dt/re)
+ce=${ce//driver$v/driver}; re=${re//driver$v/driver}
+if [ "$co" == "$ro" ] && [ "$cs" == "$rs" ] && [ "$ce" == "$re" ]; then
+  echo "OK   v$v args=[$*] out=[$co] err=[$ce] rc=$cs"
+else
+  echo "FAIL v$v args=[$*]"
+  echo "  C: out=[$co] err=[$ce] rc=$cs"
+  echo "  R: out=[$ro] err=[$re] rc=$rs"
+fi
+EOF
+chmod +x /tmp/dt/cmp.sh
+for s in 0 1 2 3 7 42 12345 65535 65536 2147483647 2147483648 4294967295 4294967294 999999 1000000007; do /tmp/dt/cmp.sh 0 "$s"; done[0m[38;5;244m (using tool: shell)[0m
+
+OK   v0 args=[0] out=[1787679907] err=[] rc=0
+OK   v0 args=[1] out=[1787679907] err=[] rc=0
+OK   v0 args=[2] out=[222911962] err=[] rc=0
+OK   v0 args=[3] out=[255963910] err=[] rc=0
+OK   v0 args=[7] out=[1392998317] err=[] rc=0
+OK   v0 args=[42] out=[672701510] err=[] rc=0
+OK   v0 args=[12345] out=[666725144] err=[] rc=0
+OK   v0 args=[65535] out=[940083579] err=[] rc=0
+OK   v0 args=[65536] out=[1541121014] err=[] rc=0
+OK   v0 args=[2147483647] out=[2002719502] err=[] rc=0
+OK   v0 args=[2147483648] out=[1577982435] err=[] rc=0
+OK   v0 args=[4294967295] out=[271341985] err=[] rc=0
+OK   v0 args=[4294967294] out=[887478859] err=[] rc=0
+OK   v0 args=[999999] out=[1849752825] err=[] rc=0
+OK   v0 args=[1000000007] out=[1570656645] err=[] rc=0
+[38;5;244m - Completed in 0.226s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfor s in 0 1 42 12345 4294967295 2147483648 987654321; do /tmp/dt/cmp.sh 3 "$s"; done[0m[38;5;244m (using tool: shell)[0m
+
+OK   v3 args=[0] out=[191603433] err=[] rc=0
+OK   v3 args=[1] out=[191603433] err=[] rc=0
+OK   v3 args=[42] out=[374656826] err=[] rc=0
+OK   v3 args=[12345] out=[472823852] err=[] rc=0
+OK   v3 args=[4294967295] out=[438545231] err=[] rc=0
+OK   v3 args=[2147483648] out=[371252215] err=[] rc=0
+OK   v3 args=[987654321] out=[231540341] err=[] rc=0
+[38;5;244m - Completed in 6.396s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/dt
+# error / edge argument handling
+/tmp/dt/cmp.sh 0
+/tmp/dt/cmp.sh 0 1 2
+/tmp/dt/cmp.sh 0 ""
+/tmp/dt/cmp.sh 0 "abc"
+/tmp/dt/cmp.sh 0 "12abc"
+/tmp/dt/cmp.sh 0 "  42"
+/tmp/dt/cmp.sh 0 "+42"
+/tmp/dt/cmp.sh 0 "-0"
+/tmp/dt/cmp.sh 0 "-1"
+/tmp/dt/cmp.sh 0 "+-1"
+/tmp/dt/cmp.sh 0 "4294967296"
+/tmp/dt/cmp.sh 0 "18446744073709551615"
+/tmp/dt/cmp.sh 0 "18446744073709551616"
+/tmp/dt/cmp.sh 0 "99999999999999999999999999"
+/tmp/dt/cmp.sh 0 "-18446744073709547521"
+/tmp/dt/cmp.sh 0 "-18446744073709551615"
+/tmp/dt/cmp.sh 0 "0x10"
+/tmp/dt/cmp.sh 0 "010"
+/tmp/dt/cmp.sh 0 "42 "
+/tmp/dt/cmp.sh 0 $'\t\n\v\f\r 42'
+/tmp/dt/cmp.sh 0 "0000000000000000000000042"
+/tmp/dt/cmp.sh 0 "+"
+/tmp/dt/cmp.sh 0 "-"
+/tmp/dt/cmp.sh 0 " "
+/tmp/dt/cmp.sh 0 "42.0"
+/tmp/dt/cmp.sh 0 "1e5"
+/tmp/dt/cmp.sh 0 $'\xff\xfe'
+/tmp/dt/cmp.sh 0 "--1"
+/tmp/dt/cmp.sh 0 "-4294967295"
+/tmp/dt/cmp.sh 0 "9223372036854775808"[0m[38;5;244m (using tool: shell)[0m
+
+OK   v0 args=[] out=[] err=[Usage: ./driver <seed>] rc=1
+OK   v0 args=[1 2] out=[] err=[Usage: ./driver <seed>] rc=1
+OK   v0 args=[] out=[1787679907] err=[] rc=0
+OK   v0 args=[abc] out=[] err=[Invalid seed: 'abc'] rc=1
+OK   v0 args=[12abc] out=[] err=[Invalid seed: '12abc'] rc=1
+OK   v0 args=[  42] out=[672701510] err=[] rc=0
+OK   v0 args=[+42] out=[672701510] err=[] rc=0
+OK   v0 args=[-0] out=[1787679907] err=[] rc=0
+OK   v0 args=[-1] out=[] err=[Invalid seed: '-1'] rc=1
+OK   v0 args=[+-1] out=[] err=[Invalid seed: '+-1'] rc=1
+OK   v0 args=[4294967296] out=[] err=[Invalid seed: '4294967296'] rc=1
+OK   v0 args=[18446744073709551615] out=[] err=[Invalid seed: '18446744073709551615'] rc=1
+OK   v0 args=[18446744073709551616] out=[] err=[Invalid seed: '18446744073709551616'] rc=1
+OK   v0 args=[99999999999999999999999999] out=[] err=[Invalid seed: '99999999999999999999999999'] rc=1
+OK   v0 args=[-18446744073709547521] out=[1817244248] err=[] rc=0
+OK   v0 args=[-18446744073709551615] out=[1787679907] err=[] rc=0
+OK   v0 args=[0x10] out=[] err=[Invalid seed: '0x10'] rc=1
+OK   v0 args=[010] out=[1532268489] err=[] rc=0
+OK   v0 args=[42 ] out=[] err=[Invalid seed: '42 '] rc=1
+OK   v0 args=[	
+ 42] out=[672701510] err=[] rc=0
+OK   v0 args=[0000000000000000000000042] out=[672701510] err=[] rc=0
+OK   v0 args=[+] out=[] err=[Invalid seed: '+'] rc=1
+OK   v0 args=[-] out=[] err=[Invalid seed: '-'] rc=1
+OK   v0 args=[ ] out=[] err=[Invalid seed: ' '] rc=1
+OK   v0 args=[42.0] out=[] err=[Invalid seed: '42.0'] rc=1
+OK   v0 args=[1e5] out=[] err=[Invalid seed: '1e5'] rc=1
+OK   v0 args=[��] out=[] err=[Invalid seed: '��'] rc=1
+OK   v0 args=[--1] out=[] err=[Invalid seed: '--1'] rc=1
+OK   v0 args=[-4294967295] out=[] err=[Invalid seed: '-4294967295'] rc=1
+OK   v0 args=[9223372036854775808] out=[] err=[Invalid seed: '9223372036854775808'] rc=1
+[38;5;244m - Completed in 0.300s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/dt && for i in $(seq 1 40); do s=$((RANDOM * RANDOM % 4294967296)); /tmp/dt/cmp.sh 3 "$s"; done | grep -c OK; echo "fails:"; for i in $(seq 1 40); do s=$((RANDOM*RANDOM+RANDOM)); /tmp/dt/cmp.sh 0 "$s"; done | grep -v OK | head[0m[38;5;244m (using tool: shell)[0m
+
+40
+fails:
+[38;5;244m - Completed in 37.18s[0m
+
+[?25l[0m[38;5;141m> [0mNow the full 2000-iteration comparison (the real workload):[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/dt && cp /tmp/cref/cdriver c/driver && cp /local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation/target/release/driver r/driver
+( cd c && /usr/bin/time -f "C  real=%es" ./driver 42 > /tmp/dt/c_full.out 2>/tmp/dt/c_time ) &
+( cd r && /usr/bin/time -f "R  real=%es" ./driver 42 > /tmp/dt/r_full.out 2>/tmp/dt/r_time ) &
+wait
+cat /tmp/dt/c_time /tmp/dt/r_time
+echo "C out: $(cat /tmp/dt/c_full.out)"; echo "R out: $(cat /tmp/dt/r_full.out)"
+cmp /tmp/dt/c_full.out /tmp/dt/r_full.out && echo "BYTE-IDENTICAL"[0m[38;5;244m (using tool: shell)[0m
+
+bash: line 2: /usr/bin/time: No such file or directory
+bash: line 3: /usr/bin/time: No such file or directory
+C out: 
+R out: 
+BYTE-IDENTICAL
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/dt
+t0=$SECONDS
+( cd c && ./driver 42 > /tmp/dt/c_full.out 2>/tmp/dt/c_full.err; echo "C rc=$? t=$((SECONDS-t0))s" ) &
+( cd r && ./driver 42 > /tmp/dt/r_full.out 2>/tmp/dt/r_full.err; echo "R rc=$? t=$((SECONDS-t0))s" ) &
+wait
+echo "C: $(cat c_full.out) | R: $(cat r_full.out)"
+cmp c_full.out r_full.out && echo "STDOUT BYTE-IDENTICAL"
+cmp c_full.err r_full.err && echo "STDERR BYTE-IDENTICAL"
+od -c c_full.out; od -c r_full.out[0m[38;5;244m (using tool: shell)[0m
+
+C rc=0 t=286s
+R rc=0 t=311s
+C: 430392287 | R: 430392287
+STDOUT BYTE-IDENTICAL
+STDERR BYTE-IDENTICAL
+0000000   4   3   0   3   9   2   2   8   7  \n
+0000012
+0000000   4   3   0   3   9   2   2   8   7  \n
+0000012
+[38;5;244m - Completed in 311.234s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /tmp/cref && sed 's/#define ITERATIONS 2000/#define ITERATIONS 100/' ref.c > ref100.c && gcc -O2 -o cdriver100 ref100.c
+W=/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation
+sed 's/const ITERATIONS: i32 = 2000;/const ITERATIONS: i32 = 100;/' $W/src/main.rs > /tmp/rref/src/main.rs
+cd /tmp/rref && cargo build --release 2>&1|tail -1 && cp target/release/driver rdriver100
+for i in 1 2; do
+  s=$SECONDS; /tmp/cref/cdriver100 42 >/dev/null; echo "C   $((SECONDS-s))s"
+  s=$SECONDS; /tmp/rref/rdriver100 42 >/dev/null; echo "Rust $((SECONDS-s))s"
+done[0m[38;5;244m (using tool: shell)[0m
+
+    Finished `release` profile [optimized] target(s) in 0.19s
+C   14s
+Rust 16s
+C   14s
+Rust 16s
+[38;5;244m - Completed in 60.22s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && gcc -O2 -S -o - ref.c 2>/dev/null | sed -n '/perform_expensive/,/ret/p' | head -60[0m[38;5;244m (using tool: shell)[0m
+
+	.globl	perform_expensive_operations
+	.type	perform_expensive_operations, @function
+perform_expensive_operations:
+.LFB22:
+	.cfi_startproc
+	xorl	%edi, %edi
+.L3:
+	movl	array(,%rdi,4), %eax
+	movl	$100, %esi
+	.p2align 4,,10
+	.p2align 3
+.L2:
+	leal	7(%rax,%rax,2), %eax
+	movl	%eax, %edx
+	sarl	$3, %edx
+	xorl	%eax, %edx
+	negl	%edx
+	movl	%edx, %eax
+	movl	%edx, %r8d
+	shrl	$31, %eax
+	sarl	$31, %r8d
+	addl	%edx, %eax
+	sarl	%eax
+	movl	%eax, %ecx
+	movslq	%edx, %rax
+	imulq	$-1840700269, %rax, %rax
+	shrq	$32, %rax
+	addl	%edx, %eax
+	sarl	$2, %eax
+	subl	%r8d, %eax
+	leal	0(,%rax,8), %r8d
+	subl	%eax, %r8d
+	movl	%edx, %eax
+	subl	%r8d, %eax
+	addl	%ecx, %eax
+	subl	$1, %esi
+	jne	.L2
+	movl	%eax, array(,%rdi,4)
+	addq	$1, %rdi
+	cmpq	$262144, %rdi
+	jne	.L3
+	ret
+	.size	perform_expensive_operations, .-perform_expensive_operations
+	.section	.rodata.str1.1,"aMS",@progbits,1
+.LC0:
+	.string	"Usage: %s <seed>\n"
+.LC1:
+	.string	"Invalid seed: '%s'\n"
+.LC2:
+	.string	"%d\n"
+	.section	.text.startup,"ax",@progbits
+	.p2align 4
+	.globl	main
+	.type	main, @function
+main:
+.LFB23:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset 6, -16
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation && objdump -d target/release/driver --no-show-raw-insn | grep -A45 "perform_expensive" | head -60[0m[38;5;244m (using tool: shell)[0m
+
+[38;5;244m - Completed in 0.72s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation && objdump -d --no-show-raw-insn target/release/driver | awk '/imul.*1840700269|0xffffffff92492493/{found=1} found' | head -5; echo "=== loop ==="; objdump -d --no-show-raw-insn target/release/driver | grep -B4 -A32 "sar .*0x3,%e" | head -70[0m[38;5;244m (using tool: shell)[0m
+
+   14a40:	imul   $0xffffffff92492493,%rsi,%rsi
+   14a47:	shr    $0x20,%rsi
+   14a4b:	sub    %edi,%esi
+   14a4d:	mov    %esi,%r9d
+   14a50:	shr    $0x1f,%r9d
+=== loop ===
+   14a19:	nopl   0x0(%rax)
+   14a20:	lea    (%rsi,%rsi,2),%esi
+   14a23:	add    $0x7,%esi
+   14a26:	mov    %esi,%edi
+   14a28:	sar    $0x3,%edi
+   14a2b:	xor    %esi,%edi
+   14a2d:	mov    %edi,%r8d
+   14a30:	neg    %r8d
+   14a33:	movslq %r8d,%rsi
+   14a36:	shr    $0x1f,%r8d
+   14a3a:	sub    %edi,%r8d
+   14a3d:	sar    $1,%r8d
+   14a40:	imul   $0xffffffff92492493,%rsi,%rsi
+   14a47:	shr    $0x20,%rsi
+   14a4b:	sub    %edi,%esi
+   14a4d:	mov    %esi,%r9d
+   14a50:	shr    $0x1f,%r9d
+   14a54:	sar    $0x2,%esi
+   14a57:	add    %r9d,%esi
+   14a5a:	lea    0x0(,%rsi,8),%r9d
+   14a62:	sub    %r9d,%esi
+   14a65:	sub    %edi,%esi
+   14a67:	add    %r8d,%esi
+   14a6a:	dec    %edx
+   14a6c:	jne    14a20 <_RNvCshdxB7RAk5Td_6driver3run+0x930>
+   14a6e:	mov    %esi,(%r14,%rcx,1)
+   14a72:	add    $0x4,%rcx
+   14a76:	cmp    $0x100000,%rcx
+   14a7d:	jne    14a10 <_RNvCshdxB7RAk5Td_6driver3run+0x920>
+   14a7f:	inc    %eax
+   14a81:	cmp    $0x7d0,%eax
+   14a86:	jne    14a00 <_RNvCshdxB7RAk5Td_6driver3run+0x910>
+   14a8c:	pxor   %xmm0,%xmm0
+   14a90:	mov    $0x1c,%eax
+   14a95:	pxor   %xmm1,%xmm1
+   14a99:	nopl   0x0(%rax)
+   14aa0:	movdqu -0x70(%r14,%rax,4),%xmm2
+[38;5;244m - Completed in 0.78s[0m
+
+[?25l[0m[38;5;141m> [0mVerifying artifacts and that [38;5;10mc_src/[0m is untouched:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-3IFImW
+echo "== tree =="; find translation -type f -not -path '*/target/*' | sort
+echo "== c_src integrity (mtime/size/hash) =="; ls -l c_src/src/main.c c_src/CMakeLists.txt; md5sum c_src/src/main.c; md5sum /tmp/cref/ref.c
+echo "== clean rebuild =="; cd translation && touch src/main.rs && cargo build --release 2>&1 | tail -5
+echo "== binary =="; ls -l target/release/driver; wc -l src/main.rs Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+
+== tree ==
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/main.rs
+== c_src integrity (mtime/size/hash) ==
+-rw-r--r--. 1 scheschb amazon 1203 Sep  1 07:12 c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon 2475 Sep  1 07:12 c_src/src/main.c
+1576f919a34851575486df8ca64e338b  c_src/src/main.c
+1576f919a34851575486df8ca64e338b  /tmp/cref/ref.c
+== clean rebuild ==
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-3IFImW/translation)
+    Finished `release` profile [optimized] target(s) in 0.19s
+== binary ==
+-rwxr-xr-x. 2 scheschb amazon 451872 Sep  1 07:23 target/release/driver
+ 276 src/main.rs
+  13 Cargo.toml
+ 289 total
+[38;5;244m - Completed in 0.228s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean and produces byte-identical output to the C driver, verified against a gcc -O2 build of [38;5;10mc_src/src/main.c[0m (which is unmodified — md5 matches my read-only copy).[0m[0m
+[0m[0m
+What needed care in the translation:[0m[0m
+[0m[0m
+- **glibc [38;5;10mrand()[0m** — the C output depends entirely on the exact PRNG stream, so I reimplemented glibc's TYPE_3 additive-feedback [38;5;10mrandom_r[0m (31-word state, separation 3, Schrage seeding, 310 discarded outputs, [38;5;10m>> 1[0m on the [38;5;10mu32[0m sum). Includes the [38;5;10mseed == 0 → 1[0m fixup and the fact that seeds above [38;5;10mINT_MAX[0m make [38;5;10mstate[0][0m negative.[0m[0m
+- **[38;5;10mstrtoul[0m semantics** — reimplemented for base 10 with leading whitespace, [38;5;10m+[0m/[38;5;10m-[0m sign, wrapping negation, [38;5;10mendptr[0m-back-to-[38;5;10mnptr[0m on no digits, and [38;5;10mULONG_MAX[0m+ERANGE on overflow. This matters: [38;5;10m"-0"[0m and [38;5;10m"-18446744073709547521"[0m are [3maccepted[23m seeds in the C, and the validation order ([38;5;10m*endptr[0m → [38;5;10merrno[0m → [38;5;10m> UINT_MAX[0m) is preserved.[0m[0m
+- **Signed overflow / shifts** — the hot loop relies on UB that gcc compiles as wrapping, so I used [38;5;10mwrapping_mul/add/sub/shl[0m, arithmetic [38;5;10m>>[0m, and Rust's C-compatible truncating [38;5;10m/[0m and [38;5;10m%[0m. Argv is handled as raw bytes so non-UTF-8 arguments echo identically.[0m[0m
+[0m[0m
+Verification I ran myself:[0m[0m
+[0m[0m
+- rand stream + XOR (ITERATIONS=0 variants of both programs): 15 hand-picked seeds + 40 random seeds, all identical.[0m[0m
+- arithmetic loop (ITERATIONS=3): 40+ seeds including 0, [38;5;10m4294967295[0m, [38;5;10m2147483648[0m, all identical.[0m[0m
+- 30 argument edge cases (missing/extra args, whitespace, signs, overflow, [38;5;10m0x10[0m, [38;5;10m010[0m, trailing space, invalid UTF-8): stdout, stderr, and exit status all identical.[0m[0m
+- the real 2000-iteration workload for seed 42: both print [38;5;10m430392287[0m, [38;5;10mcmp[0m confirms byte-identical stdout and empty stderr. That run takes ~5 minutes per binary; Rust is ~14% slower than gcc -O2 on the same inner loop (21 vs 22 instructions, similar dependency chain), which I did not try to close further since output fidelity was the requirement.[0m[0m
+[38;5;8m
+ ▸ Credits: 9.00 • Time: 11m 36s
+
+[0m[1G[0m[0m[?25h

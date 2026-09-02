@@ -29,141 +29,139 @@ use std::cell::Cell;
 use std::io::Write;
 use std::process::ExitCode;
 
-thread_local! {
-    /// Mirrors `static int sum = 0;` inside `static_sum` in the C source.
-    static SUM: Cell<i32> = const { Cell::new(0) };
+/// Mirrors `int static_sum(int update)` with its function-local `static int sum = 0;`.
+///
+/// The C `static` lives for the whole process, so a thread-local `Cell` gives the
+/// same observable behavior for this single-threaded program while staying in
+/// safe Rust.
+mod static_sum_state {
+    use std::cell::Cell;
+    thread_local! {
+        pub static SUM: Cell<i32> = const { Cell::new(0) };
+    }
 }
 
-/// C:
-/// ```c
-/// int static_sum(int update) {
-///   static int sum = 0;
-///   sum += update;
-///   return sum;
-/// }
-/// ```
-/// Signed overflow is undefined behavior in C; gcc/clang wrap on two's
-/// complement targets, so `wrapping_add` reproduces the observed behavior.
 fn static_sum(update: i32) -> i32 {
-    SUM.with(|sum| {
-        let next = sum.get().wrapping_add(update);
-        sum.set(next);
-        next
+    static_sum_state::SUM.with(|sum: &Cell<i32>| {
+        // `sum += update;` on `int`. Signed overflow is UB in C but wraps in
+        // practice on the usual targets; reproduce the wrapping result.
+        let new = sum.get().wrapping_add(update);
+        sum.set(new);
+        new
     })
 }
 
-/// True for the characters `isspace()` accepts in the C locale.
-fn c_isspace(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
-}
-
-/// Faithful `strtol(nptr, &end, 10)`.
+/// Faithful re-implementation of C `strtol(nptr, &end, 10)`.
 ///
-/// Returns the parsed `long` value plus the offset that `end` would point at.
-/// An offset of 0 means nothing was parsed (C sets `end == nptr`). On range
-/// overflow the value saturates to `LONG_MAX`/`LONG_MIN`, matching glibc (the
-/// C code never inspects `errno`, so saturation is all that is observable).
-fn strtol_base10(s: &[u8]) -> (i64, usize) {
+/// Returns `(value, consumed)` where `consumed` is the number of bytes the
+/// equivalent of `end` would have advanced past the start of `nptr`. Per the C
+/// standard, if no conversion is performed `consumed` is 0 (i.e. `end == nptr`),
+/// which is exactly what the original program tests for.
+fn strtol_base10(nptr: &[u8]) -> (i64, usize) {
     let mut i = 0usize;
 
-    while i < s.len() && c_isspace(s[i]) {
+    // Skip leading white space, as recognized by isspace() in the "C" locale.
+    while i < nptr.len() && matches!(nptr[i], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
         i += 1;
     }
 
-    let mut negative = false;
-    if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
-        negative = s[i] == b'-';
-        i += 1;
-    }
+    // Optional sign.
+    let negative = match nptr.get(i) {
+        Some(b'-') => {
+            i += 1;
+            true
+        }
+        Some(b'+') => {
+            i += 1;
+            false
+        }
+        _ => false,
+    };
 
+    // Digit sequence.
     let digits_start = i;
     let mut acc: i64 = 0;
-    let mut saturated = false;
-
-    while i < s.len() && s[i].is_ascii_digit() {
-        let digit = i64::from(s[i] - b'0');
-        if !saturated {
-            // Accumulate the magnitude in the negative domain so that
-            // LONG_MIN is representable without overflowing.
-            match acc.checked_mul(10).and_then(|v| v.checked_sub(digit)) {
+    let mut overflow = false;
+    while i < nptr.len() && nptr[i].is_ascii_digit() {
+        let d = i64::from(nptr[i] - b'0');
+        if !overflow {
+            // Accumulate the magnitude, clamping like strtol does on ERANGE.
+            match acc.checked_mul(10).and_then(|v| {
+                if negative {
+                    v.checked_sub(d)
+                } else {
+                    v.checked_add(d)
+                }
+            }) {
                 Some(v) => acc = v,
-                None => saturated = true,
+                None => overflow = true,
             }
         }
         i += 1;
     }
 
     if i == digits_start {
-        // No digits consumed: value is 0 and end is reset to the start.
+        // No digits converted: strtol stores nptr in *endptr and returns 0.
         return (0, 0);
     }
 
-    let value = if saturated {
-        if negative {
-            i64::MIN
-        } else {
-            i64::MAX
-        }
-    } else if negative {
-        acc
-    } else {
-        // `-acc` cannot overflow here: an unnegatable magnitude would have
-        // been flagged as saturated above.
-        match acc.checked_neg() {
-            Some(v) => v,
-            None => i64::MAX,
-        }
-    };
+    if overflow {
+        // strtol returns LONG_MAX / LONG_MIN and sets errno to ERANGE.
+        acc = if negative { i64::MIN } else { i64::MAX };
+    }
 
-    (value, i)
+    (acc, i)
 }
 
-/// Bytes of a command-line argument exactly as the C `char *` would see them.
-fn arg_bytes(arg: &std::ffi::OsString) -> Vec<u8> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        arg.as_os_str().as_bytes().to_vec()
-    }
-    #[cfg(not(unix))]
-    {
-        arg.to_string_lossy().into_owned().into_bytes()
-    }
-}
-
-/// Maintain a running total using a static variable
 fn main() -> ExitCode {
+    // `argc` / `argv` as the C program sees them.
     let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let argc = argv.len();
 
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-
     if argc != 2 {
-        let _ = out.write_all(b"Error: should only be a single (integer) argument!\n");
-        let _ = out.flush();
+        print!("Error: should only be a single (integer) argument!\n");
+        flush();
         return ExitCode::from(1);
     }
 
-    let arg1 = arg_bytes(&argv[1]);
-    let (parsed, end) = strtol_base10(&arg1);
+    let arg1: &[u8] = os_str_bytes(&argv[1]);
 
-    // `int stride = strtol(...)`: truncate long -> int as gcc does.
-    let stride = parsed as i32;
+    let (parsed, consumed) = strtol_base10(arg1);
+    // `int stride = strtol(...)`: implicit long -> int conversion truncates.
+    let stride: i32 = parsed as i32;
 
-    if end == 0 {
+    if consumed == 0 {
         // end is set to start of string if nothing parsed
-        let _ = out.write_all(b"Error: first argument must be an integer!\n");
-        let _ = out.flush();
+        print!("Error: first argument must be an integer!\n");
+        flush();
         return ExitCode::from(1);
     }
 
     for i in 0..10i32 {
-        // `i * stride` is int multiplication in C; wrap like gcc does.
-        let value = static_sum(i.wrapping_mul(stride));
-        let _ = writeln!(out, "{}", value);
+        // `i * stride` on `int`; reproduce wrapping on overflow.
+        print!("{}\n", static_sum(i.wrapping_mul(stride)));
     }
 
-    let _ = out.flush();
+    flush();
     ExitCode::from(0)
+}
+
+fn flush() {
+    let _ = std::io::stdout().flush();
+}
+
+#[cfg(unix)]
+fn os_str_bytes(s: &std::ffi::OsString) -> &[u8] {
+    use std::os::unix::ffi::OsStrExt;
+    s.as_os_str().as_bytes()
+}
+
+#[cfg(not(unix))]
+fn os_str_bytes(s: &std::ffi::OsString) -> &[u8] {
+    // On non-unix targets argv is Unicode; the lossy path never allocates for
+    // valid UTF-8, and only the leading ASCII bytes matter to strtol.
+    match s.to_str() {
+        Some(v) => v.as_bytes(),
+        None => b"",
+    }
 }

@@ -1,36 +1,45 @@
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
-use crate::common::*;
+//! Translation of src/json.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
+
+use crate::jsi::*;
+
 use crate::jsarray::js_getlength;
 use crate::jsbuiltin::jsB_propf;
 use crate::jsintern::{js_putc, js_puts};
 use crate::jslex::{jsY_initlex, jsY_lexjson, jsY_tokenstring};
 use crate::jsproperty::jsV_newobject;
-use crate::jsrun::*;
 use crate::jsvalue::{js_itoa, js_newarray, js_newobject, jsV_numbertostring};
-use crate::types::*;
-use crate::utf::{jsU_chartorune, Rune};
-use crate::{js_syntaxerror, js_typeerror};
-use std::ffi::{c_char, c_int, c_void};
-use std::ptr;
+use crate::jsrun::{
+    js_call, js_copy, js_defglobal, js_defproperty, js_delproperty, js_free, js_getindex,
+    js_getproperty, js_gettop, js_hasproperty, js_iscallable, js_isarray, js_isboolean,
+    js_isnull, js_isnumber, js_isobject, js_isstring, js_isundefined,
+    js_nextiterator, js_pop, js_pushboolean, js_pushiterator, js_pushnull, js_pushnumber,
+    js_pushobject, js_pushstring, js_pushundefined, js_rot2, js_rot2pop1, js_setindex,
+    js_setproperty, js_throw, js_toboolean, js_tointeger, js_tonumber, js_toobject, js_tostring,
+};
+use crate::utf::jsU_chartorune;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_isnumberobject(J: *mut js_State, idx: c_int) -> c_int {
-    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).type_ == JS_CNUMBER) as c_int }
+    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).ty == JS_CNUMBER) as c_int }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_isstringobject(J: *mut js_State, idx: c_int) -> c_int {
-    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).type_ == JS_CSTRING) as c_int }
+    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).ty == JS_CSTRING) as c_int }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_isbooleanobject(J: *mut js_State, idx: c_int) -> c_int {
-    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).type_ == JS_CBOOLEAN) as c_int }
+    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).ty == JS_CBOOLEAN) as c_int }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C-unwind" fn js_isdateobject(J: *mut js_State, idx: c_int) -> c_int {
-    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).type_ == JS_CDATE) as c_int }
+    unsafe { (js_isobject(J, idx) != 0 && (*js_toobject(J, idx)).ty == JS_CDATE) as c_int }
 }
 
 unsafe fn jsonnext(J: *mut js_State) {
@@ -54,7 +63,7 @@ unsafe fn jsonexpect(J: *mut js_State, t: c_int) {
         if jsonaccept(J, t) == 0 {
             js_syntaxerror!(
                 J,
-                c"JSON: unexpected token: %s (expected %s)",
+                c"JSON: unexpected token: %s (expected %s)".as_ptr(),
                 jsY_tokenstring((*J).lookahead),
                 jsY_tokenstring(t)
             );
@@ -66,84 +75,69 @@ unsafe fn jsonvalue(J: *mut js_State) {
     unsafe {
         let mut i: c_int;
 
-        match (*J).lookahead {
-            TK_STRING => {
+        let la = (*J).lookahead;
+        if la == TK_STRING {
+            js_pushstring(J, (*J).text);
+            jsonnext(J);
+        } else if la == TK_NUMBER {
+            js_pushnumber(J, (*J).number);
+            jsonnext(J);
+        } else if la == '{' as c_int {
+            js_newobject(J);
+            jsonnext(J);
+            if jsonaccept(J, '}' as c_int) != 0 {
+                return;
+            }
+            loop {
+                if (*J).lookahead != TK_STRING {
+                    js_syntaxerror!(
+                        J,
+                        c"JSON: unexpected token: %s (expected string)".as_ptr(),
+                        jsY_tokenstring((*J).lookahead)
+                    );
+                }
                 js_pushstring(J, (*J).text);
                 jsonnext(J);
-            }
-
-            TK_NUMBER => {
-                js_pushnumber(J, (*J).number);
-                jsonnext(J);
-            }
-
-            x if x == '{' as c_int => {
-                js_newobject(J);
-                jsonnext(J);
-                if jsonaccept(J, '}' as c_int) != 0 {
-                    return;
+                jsonexpect(J, ':' as c_int);
+                jsonvalue(J);
+                js_setproperty(J, -3, js_tostring(J, -2));
+                js_pop(J, 1);
+                if jsonaccept(J, ',' as c_int) == 0 {
+                    break;
                 }
-                loop {
-                    if (*J).lookahead != TK_STRING {
-                        js_syntaxerror!(
-                            J,
-                            c"JSON: unexpected token: %s (expected string)",
-                            jsY_tokenstring((*J).lookahead)
-                        );
-                    }
-                    js_pushstring(J, (*J).text);
-                    jsonnext(J);
-                    jsonexpect(J, ':' as c_int);
-                    jsonvalue(J);
-                    js_setproperty(J, -3, js_tostring(J, -2));
-                    js_pop(J, 1);
-                    if jsonaccept(J, ',' as c_int) == 0 {
-                        break;
-                    }
+            }
+            jsonexpect(J, '}' as c_int);
+        } else if la == '[' as c_int {
+            js_newarray(J);
+            jsonnext(J);
+            i = 0;
+            if jsonaccept(J, ']' as c_int) != 0 {
+                return;
+            }
+            loop {
+                jsonvalue(J);
+                js_setindex(J, -2, i);
+                i += 1;
+                if jsonaccept(J, ',' as c_int) == 0 {
+                    break;
                 }
-                jsonexpect(J, '}' as c_int);
             }
-
-            x if x == '[' as c_int => {
-                js_newarray(J);
-                jsonnext(J);
-                i = 0;
-                if jsonaccept(J, ']' as c_int) != 0 {
-                    return;
-                }
-                loop {
-                    jsonvalue(J);
-                    js_setindex(J, -2, i);
-                    i += 1;
-                    if jsonaccept(J, ',' as c_int) == 0 {
-                        break;
-                    }
-                }
-                jsonexpect(J, ']' as c_int);
-            }
-
-            TK_TRUE => {
-                js_pushboolean(J, 1);
-                jsonnext(J);
-            }
-
-            TK_FALSE => {
-                js_pushboolean(J, 0);
-                jsonnext(J);
-            }
-
-            TK_NULL => {
-                js_pushnull(J);
-                jsonnext(J);
-            }
-
-            _ => {
-                js_syntaxerror!(
-                    J,
-                    c"JSON: unexpected token: %s",
-                    jsY_tokenstring((*J).lookahead)
-                );
-            }
+            jsonexpect(J, ']' as c_int);
+        } else if la == TK_TRUE {
+            js_pushboolean(J, 1);
+            jsonnext(J);
+        } else if la == TK_FALSE {
+            js_pushboolean(J, 0);
+            jsonnext(J);
+        } else if la == TK_NULL {
+            js_pushnull(J);
+            jsonnext(J);
+        } else {
+            js_syntaxerror!(
+                J,
+                c"JSON: unexpected token: %s".as_ptr(),
+                jsY_tokenstring((*J).lookahead)
+            );
         }
     }
 }
@@ -160,16 +154,16 @@ unsafe fn jsonrevive(J: *mut js_State, name: *const c_char) {
 
         if js_isobject(J, -1) != 0 {
             if js_isarray(J, -1) != 0 {
-                let mut i: c_int;
+                let mut i: c_int = 0;
                 let n = js_getlength(J, -1);
                 i = 0;
                 while i < n {
-                    jsonrevive(J, js_itoa(buf.as_mut_ptr(), i));
+                    jsonrevive(J, js_itoa((&raw mut buf) as *mut c_char, i));
                     if js_isundefined(J, -1) != 0 {
                         js_pop(J, 1);
-                        js_delproperty(J, -1, buf.as_ptr());
+                        js_delproperty(J, -1, (&raw mut buf) as *const c_char);
                     } else {
-                        js_setproperty(J, -2, buf.as_ptr());
+                        js_setproperty(J, -2, (&raw mut buf) as *const c_char);
                     }
                     i += 1;
                 }
@@ -230,45 +224,49 @@ unsafe fn fmtnum(J: *mut js_State, sb: *mut *mut js_Buffer, n: f64) {
             js_puts(J, sb, c"0".as_ptr());
         } else {
             let mut buf: [c_char; 40] = [0; 40];
-            js_puts(J, sb, jsV_numbertostring(J, buf.as_mut_ptr(), n));
+            js_puts(J, sb, jsV_numbertostring(J, (&raw mut buf) as *mut c_char, n));
         }
     }
 }
 
-unsafe fn fmtstr(J: *mut js_State, sb: *mut *mut js_Buffer, s: *const c_char) {
+unsafe fn fmtstr(J: *mut js_State, sb: *mut *mut js_Buffer, mut s: *const c_char) {
     unsafe {
         static HEX: &[u8; 17] = b"0123456789abcdef\0";
         let mut i: c_int;
         let mut n: c_int;
         let mut c: Rune = 0;
-        let mut s = s;
         js_putc(J, sb, '"' as c_int);
         while *s != 0 {
-            n = jsU_chartorune(&mut c, s);
-            match c {
-                x if x == '"' as Rune => js_puts(J, sb, c"\\\"".as_ptr()),
-                x if x == '\\' as Rune => js_puts(J, sb, c"\\\\".as_ptr()),
-                0x08 => js_puts(J, sb, c"\\b".as_ptr()),
-                0x0c => js_puts(J, sb, c"\\f".as_ptr()),
-                0x0a => js_puts(J, sb, c"\\n".as_ptr()),
-                0x0d => js_puts(J, sb, c"\\r".as_ptr()),
-                0x09 => js_puts(J, sb, c"\\t".as_ptr()),
-                _ => {
-                    if c < ' ' as Rune || (c >= 0xd800 && c <= 0xdfff) {
-                        js_putc(J, sb, '\\' as c_int);
-                        js_putc(J, sb, 'u' as c_int);
-                        js_putc(J, sb, HEX[((c >> 12) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[((c >> 8) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[((c >> 4) & 15) as usize] as c_int);
-                        js_putc(J, sb, HEX[(c & 15) as usize] as c_int);
-                    } else if c < 128 {
-                        js_putc(J, sb, c as c_int);
-                    } else {
-                        i = 0;
-                        while i < n {
-                            js_putc(J, sb, *s.offset(i as isize) as c_int);
-                            i += 1;
-                        }
+            n = jsU_chartorune(&raw mut c, s);
+            if c == '"' as c_int {
+                js_puts(J, sb, c"\\\"".as_ptr());
+            } else if c == '\\' as c_int {
+                js_puts(J, sb, c"\\\\".as_ptr());
+            } else if c == '\u{8}' as c_int {
+                js_puts(J, sb, c"\\b".as_ptr());
+            } else if c == '\u{c}' as c_int {
+                js_puts(J, sb, c"\\f".as_ptr());
+            } else if c == '\n' as c_int {
+                js_puts(J, sb, c"\\n".as_ptr());
+            } else if c == '\r' as c_int {
+                js_puts(J, sb, c"\\r".as_ptr());
+            } else if c == '\t' as c_int {
+                js_puts(J, sb, c"\\t".as_ptr());
+            } else {
+                if c < ' ' as c_int || (c >= 0xd800 && c <= 0xdfff) {
+                    js_putc(J, sb, '\\' as c_int);
+                    js_putc(J, sb, 'u' as c_int);
+                    js_putc(J, sb, HEX[((c >> 12) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[((c >> 8) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[((c >> 4) & 15) as usize] as c_int);
+                    js_putc(J, sb, HEX[(c & 15) as usize] as c_int);
+                } else if c < 128 {
+                    js_putc(J, sb, c);
+                } else {
+                    i = 0;
+                    while i < n {
+                        js_putc(J, sb, *s.offset(i as isize) as c_int);
+                        i += 1;
                     }
                 }
             }
@@ -278,9 +276,8 @@ unsafe fn fmtstr(J: *mut js_State, sb: *mut *mut js_Buffer, s: *const c_char) {
     }
 }
 
-unsafe fn fmtindent(J: *mut js_State, sb: *mut *mut js_Buffer, gap: *const c_char, level: c_int) {
+unsafe fn fmtindent(J: *mut js_State, sb: *mut *mut js_Buffer, gap: *const c_char, mut level: c_int) {
     unsafe {
-        let mut level = level;
         js_putc(J, sb, '\n' as c_int);
         while level != 0 {
             level -= 1;
@@ -292,7 +289,7 @@ unsafe fn fmtindent(J: *mut js_State, sb: *mut *mut js_Buffer, gap: *const c_cha
 unsafe fn filterprop(J: *mut js_State, key: *const c_char) -> c_int {
     unsafe {
         let mut i: c_int;
-        let n: c_int;
+        let mut n: c_int;
         let mut found: c_int;
         /* replacer/property-list is in stack slot 2 */
         if js_isarray(J, 2) != 0 {
@@ -320,20 +317,23 @@ unsafe fn filterprop(J: *mut js_State, key: *const c_char) -> c_int {
 unsafe fn fmtobject(
     J: *mut js_State,
     sb: *mut *mut js_Buffer,
-    _obj: *mut js_Object,
+    obj: *mut js_Object,
     gap: *const c_char,
     level: c_int,
 ) {
     unsafe {
         let mut key: *const c_char;
+        let mut save: c_int;
         let mut i: c_int;
         let mut n: c_int;
 
         n = js_gettop(J) - 1;
         i = 4;
         while i < n {
-            if js_isobject(J, i) != 0 && js_toobject(J, i) == js_toobject(J, -1) {
-                js_typeerror!(J, c"cyclic object value");
+            if js_isobject(J, i) != 0 {
+                if js_toobject(J, i) == js_toobject(J, -1) {
+                    js_typeerror!(J, c"cyclic object value".as_ptr());
+                }
             }
             i += 1;
         }
@@ -347,7 +347,7 @@ unsafe fn fmtobject(
                 break;
             }
             if filterprop(J, key) != 0 {
-                let save = (**sb).n;
+                save = (**sb).n;
                 if n != 0 {
                     js_putc(J, sb, ',' as c_int);
                 }
@@ -385,8 +385,10 @@ unsafe fn fmtarray(J: *mut js_State, sb: *mut *mut js_Buffer, gap: *const c_char
         n = js_gettop(J) - 1;
         i = 4;
         while i < n {
-            if js_isobject(J, i) != 0 && js_toobject(J, i) == js_toobject(J, -1) {
-                js_typeerror!(J, c"cyclic object value");
+            if js_isobject(J, i) != 0 {
+                if js_toobject(J, i) == js_toobject(J, -1) {
+                    js_typeerror!(J, c"cyclic object value".as_ptr());
+                }
             }
             i += 1;
         }
@@ -401,7 +403,7 @@ unsafe fn fmtarray(J: *mut js_State, sb: *mut *mut js_Buffer, gap: *const c_char
             if !gap.is_null() {
                 fmtindent(J, sb, gap, level + 1);
             }
-            if fmtvalue(J, sb, js_itoa(buf.as_mut_ptr(), i), gap, level + 1) == 0 {
+            if fmtvalue(J, sb, js_itoa((&raw mut buf) as *mut c_char, i), gap, level + 1) == 0 {
                 js_puts(J, sb, c"null".as_ptr());
             }
             i += 1;
@@ -450,10 +452,13 @@ unsafe fn fmtvalue(
 
         if js_isobject(J, -1) != 0 && js_iscallable(J, -1) == 0 {
             let obj = js_toobject(J, -1);
-            match (*obj).type_ {
-                JS_CNUMBER => fmtnum(J, sb, (*obj).u.number),
-                JS_CSTRING => fmtstr(J, sb, (*obj).u.s.string),
-                JS_CBOOLEAN => js_puts(
+            let ot = (*obj).ty;
+            if ot == JS_CNUMBER {
+                fmtnum(J, sb, (*obj).u.number);
+            } else if ot == JS_CSTRING {
+                fmtstr(J, sb, (*obj).u.s.string);
+            } else if ot == JS_CBOOLEAN {
+                js_puts(
                     J,
                     sb,
                     if (*obj).u.boolean != 0 {
@@ -461,9 +466,11 @@ unsafe fn fmtvalue(
                     } else {
                         c"false".as_ptr()
                     },
-                ),
-                JS_CARRAY => fmtarray(J, sb, gap, level),
-                _ => fmtobject(J, sb, obj, gap, level),
+                );
+            } else if ot == JS_CARRAY {
+                fmtarray(J, sb, gap, level);
+            } else {
+                fmtobject(J, sb, obj, gap, level);
             }
         } else if js_isboolean(J, -1) != 0 {
             js_puts(
@@ -493,15 +500,14 @@ unsafe fn fmtvalue(
 
 unsafe extern "C-unwind" fn JSON_stringify(J: *mut js_State) {
     unsafe {
-        let mut sb: *mut js_Buffer = ptr::null_mut();
+        let mut sb: *mut js_Buffer = core::ptr::null_mut();
         let mut buf: [c_char; 12] = [0; 12];
         /* NOTE: volatile to silence GCC warning about longjmp clobbering a variable */
-        let mut gap: *const c_char = ptr::null();
-        let gapp: *mut *const c_char = &raw mut gap;
-        let s: *const c_char;
+        let mut gap: *const c_char;
+        let mut s: *const c_char;
         let mut n: c_int;
 
-        ptr::write_volatile(gapp, ptr::null());
+        gap = core::ptr::null();
 
         if js_isnumber(J, 3) != 0 || js_isnumberobject(J, 3) != 0 {
             n = js_tointeger(J, 3);
@@ -511,10 +517,10 @@ unsafe extern "C-unwind" fn JSON_stringify(J: *mut js_State) {
             if n > 10 {
                 n = 10;
             }
-            memset(buf.as_mut_ptr() as *mut c_void, ' ' as c_int, n as usize);
+            memset((&raw mut buf) as *mut c_void, ' ' as c_int, n as size_t);
             buf[n as usize] = 0;
             if n > 0 {
-                ptr::write_volatile(gapp, buf.as_ptr());
+                gap = (&raw mut buf) as *const c_char;
             }
         } else if js_isstring(J, 3) != 0 || js_isstringobject(J, 3) != 0 {
             s = js_tostring(J, 3);
@@ -522,41 +528,31 @@ unsafe extern "C-unwind" fn JSON_stringify(J: *mut js_State) {
             if n > 10 {
                 n = 10;
             }
-            memcpy(buf.as_mut_ptr() as *mut c_void, s as *const c_void, n as usize);
+            memcpy((&raw mut buf) as *mut c_void, s as *const c_void, n as size_t);
             buf[n as usize] = 0;
             if n > 0 {
-                ptr::write_volatile(gapp, buf.as_ptr());
+                gap = (&raw mut buf) as *const c_char;
             }
         }
 
-        let sbp: *mut *mut js_Buffer = &raw mut sb;
-        if js_try(J, || {
+        if crate::except::js_try_run(J, || {
             js_newobject(J); /* wrapper */
             js_copy(J, 1);
             js_defproperty(J, -2, c"".as_ptr(), 0);
-            if fmtvalue(J, sbp, c"".as_ptr(), ptr::read_volatile(gapp), 0) == 0 {
+            if fmtvalue(J, &raw mut sb, c"".as_ptr(), gap, 0) == 0 {
                 js_pushundefined(J);
             } else {
-                js_putc(J, sbp, 0);
-                let cur = *sbp;
-                js_pushstring(
-                    J,
-                    if !cur.is_null() {
-                        (&raw const (*cur).s) as *const c_char
-                    } else {
-                        c"".as_ptr()
-                    },
-                );
+                js_putc(J, &raw mut sb, 0);
+                js_pushstring(J, if !sb.is_null() { sbs(sb) } else { c"".as_ptr() });
                 js_rot2pop1(J);
             }
-            js_endtry(J);
-        })
-        .is_err()
-        {
-            js_free(J, ptr::read_volatile(sbp) as *mut c_void);
+            crate::jsrun::js_endtry(J);
+        }) {
+            js_free(J, sb as *mut c_void);
             js_throw(J);
         }
-        js_free(J, ptr::read_volatile(sbp) as *mut c_void);
+
+        js_free(J, sb as *mut c_void);
     }
 }
 

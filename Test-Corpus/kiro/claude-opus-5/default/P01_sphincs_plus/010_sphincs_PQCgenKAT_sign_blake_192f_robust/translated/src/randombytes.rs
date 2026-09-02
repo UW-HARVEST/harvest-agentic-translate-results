@@ -1,58 +1,83 @@
 //! Translation of `app/src/randombytes.c` and `app/include/randombytes.h`.
 //!
-//! This code was taken from the SPHINCS reference implementation and is public
-//! domain.
+//! `app/CMakeLists.txt` builds two shared libraries out of the same core
+//! objects: `sphincs_core` links `randombytes.c` (this file) and
+//! `sphincs_core_det` links `rng.c`.  Both define a symbol named
+//! `randombytes`, so only one of them can be exported at a time; the `urandom`
+//! Cargo feature selects this one, and the default matches the `driver`
+//! executable, which links the deterministic core.
 
+use core::ffi::c_ulonglong;
 use std::fs::File;
 use std::io::Read;
-use std::sync::Mutex;
-use std::sync::OnceLock;
+use std::os::unix::io::{FromRawFd, IntoRawFd};
 
-/// Stands in for `static int fd = -1;`.
-fn urandom() -> &'static Mutex<File> {
-    static FD: OnceLock<Mutex<File>> = OnceLock::new();
-    FD.get_or_init(|| {
+static mut FD: i32 = -1;
+
+/// `void randombytes(unsigned char *x, unsigned long long xlen)`
+///
+/// Reads from `/dev/urandom`, retrying forever (with a one second sleep) until
+/// the requested number of bytes has been produced.
+pub fn randombytes_urandom(x: &mut [u8]) {
+    let fd = unsafe { &mut *core::ptr::addr_of_mut!(FD) };
+
+    if *fd == -1 {
         loop {
             match File::open("/dev/urandom") {
-                Ok(f) => return Mutex::new(f),
+                Ok(f) => {
+                    *fd = f.into_raw_fd();
+                    break;
+                }
                 Err(_) => std::thread::sleep(std::time::Duration::from_secs(1)),
             }
         }
-    })
-}
+    }
 
-/// The `randombytes()` from `randombytes.c`.
-pub fn randombytes_urandom(x: &mut [u8]) {
-    let file = urandom();
-    let mut guard = file.lock().unwrap();
+    let mut file = unsafe { std::mem::ManuallyDrop::new(File::from_raw_fd(*fd)) };
 
     let mut off = 0usize;
     let mut xlen = x.len();
-
     while xlen > 0 {
-        let want = if xlen < 1048576 { xlen } else { 1048576 };
+        let i = if xlen < 1048576 { xlen } else { 1048576 };
 
-        let i = match guard.read(&mut x[off..off + want]) {
-            Ok(i) => i,
+        let n = match file.read(&mut x[off..off + i]) {
+            Ok(n) => n,
             Err(_) => 0,
         };
-        if i < 1 {
+        if n < 1 {
             std::thread::sleep(std::time::Duration::from_secs(1));
             continue;
         }
 
-        off += i;
-        xlen -= i;
+        off += n;
+        xlen -= n;
     }
 }
 
-/// `void randombytes(unsigned char *x, unsigned long long xlen)`
-///
-/// Exported only with the `urandom` feature; see [`crate::rng::randombytes`]
-/// for the default (deterministic) implementation and the note in
-/// `Cargo.toml`.
-#[cfg(feature = "urandom")]
+/// The `randombytes()` used by `sign.c`, resolved the same way the CMake
+/// targets resolve it at link time.
+#[inline]
+pub fn randombytes_rs(x: &mut [u8]) {
+    #[cfg(rand_urandom)]
+    {
+        randombytes_urandom(x);
+    }
+    #[cfg(not(rand_urandom))]
+    {
+        crate::rng::randombytes_drbg(x);
+    }
+}
+
+#[cfg(rand_urandom)]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn randombytes(x: *mut u8, xlen: core::ffi::c_ulonglong) {
-    unsafe { randombytes_urandom(core::slice::from_raw_parts_mut(x, xlen as usize)) }
+pub unsafe extern "C" fn randombytes(x: *mut u8, xlen: c_ulonglong) {
+    let s = core::slice::from_raw_parts_mut(x, xlen as usize);
+    randombytes_urandom(s);
+}
+
+#[cfg(not(rand_urandom))]
+#[allow(dead_code)]
+pub unsafe fn randombytes_nondet(x: *mut u8, xlen: c_ulonglong) {
+    let s = core::slice::from_raw_parts_mut(x, xlen as usize);
+    randombytes_urandom(s);
 }

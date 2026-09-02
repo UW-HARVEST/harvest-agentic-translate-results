@@ -22,126 +22,150 @@
 // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Fidelity notes:
+//  * The C allocator (malloc/realloc/free) is used so that buffers created by
+//    `create_buffer` remain interchangeable with the C library's buffers and so
+//    that allocation-failure behaviour matches exactly.
+//  * The C formatted-output routines (`sprintf`, `printf`) are used so that the
+//    emitted bytes and the stdout buffering behaviour are byte-identical.
+//  * Integer arithmetic uses wrapping operations. The C code has signed
+//    overflow / INT_MIN-division paths that are UB in C but wrap on the target
+//    ABI; Rust would otherwise panic. Bugs in the C (missing NULL check on
+//    `create_buffer`'s result in `buffapp`, `data[0]` write when
+//    `initial_capacity == 0`, `int`-typed lengths) are preserved verbatim.
 
-use std::ffi::{c_char, c_int, c_void};
+#![allow(clippy::missing_safety_doc)]
 
-// The C code relies on the platform allocator (malloc/realloc/free) and on
-// stdio's `printf` for output. Both are used directly here so that the
-// allocation ownership semantics and the stdout buffering behaviour of the
-// original translation unit are preserved exactly.
-unsafe extern "C" {
+use core::ffi::{c_char, c_int, c_void};
+
+extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
-    fn printf(fmt: *const c_char, ...) -> c_int;
+
+    fn strlen(s: *const c_char) -> usize;
+    fn strcpy(dest: *mut c_char, src: *const c_char) -> *mut c_char;
+    fn strcmp(a: *const c_char, b: *const c_char) -> c_int;
+
+    fn sprintf(s: *mut c_char, format: *const c_char, ...) -> c_int;
+    fn printf(format: *const c_char, ...) -> c_int;
 }
 
+/// C `int / int`.
+///
+/// The C code guards against `b == 0`, but not against `INT_MIN / -1`, which is
+/// UB in C and raises SIGFPE (#DE) on x86-64 because it is compiled to `idiv`.
+/// `i32::wrapping_div` would quietly yield `INT_MIN` instead, so the raw `idiv`
+/// is issued directly to keep the observable behaviour identical.
+#[inline]
+fn c_div(a: c_int, b: c_int) -> c_int {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let quot: c_int;
+        unsafe {
+            core::arch::asm!(
+                "cdq",
+                "idiv {divisor:e}",
+                divisor = in(reg) b,
+                inout("eax") a => quot,
+                out("edx") _,
+                options(nomem, nostack),
+            );
+        }
+        quot
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        a.wrapping_div(b)
+    }
+}
+
+/// Mirrors the anonymous C struct:
+/// ```c
+/// typedef struct {
+///     char *data;
+///     int capacity;
+///     int length;
+/// } StringBuffer;
+/// ```
 #[repr(C)]
 pub struct StringBuffer {
-    data: *mut c_char,
-    capacity: c_int,
-    length: c_int,
+    pub data: *mut c_char,
+    pub capacity: c_int,
+    pub length: c_int,
 }
 
-/// `strlen` equivalent, returning the length as a C `int` exactly as the
-/// original code does (the C source assigns `strlen`'s `size_t` result to an
-/// `int`, so the truncation is part of the observable behaviour).
-unsafe fn c_strlen(s: *const c_char) -> usize {
-    let mut n: usize = 0;
-    unsafe {
-        while *s.add(n) != 0 {
-            n += 1;
-        }
-    }
-    n
-}
-
-/// Compare a NUL-terminated C string against a Rust byte literal (without the
-/// terminator), mirroring `strcmp(operation, "...") == 0`.
-unsafe fn c_str_eq(s: *const c_char, expected: &[u8]) -> bool {
-    unsafe {
-        let mut i = 0usize;
-        while i < expected.len() {
-            let b = *s.add(i) as u8;
-            if b != expected[i] {
-                return false;
-            }
-            i += 1;
-        }
-        *s.add(expected.len()) == 0
-    }
-}
-
+// ---------------------------------------------------------------------------
+// StringBuffer* create_buffer(int initial_capacity)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn create_buffer(initial_capacity: c_int) -> *mut StringBuffer {
-    unsafe {
-        let buffer = malloc(size_of::<StringBuffer>()) as *mut StringBuffer;
-        if buffer.is_null() {
-            return std::ptr::null_mut();
-        }
-
-        // `malloc(initial_capacity)` converts the `int` to `size_t`, which
-        // sign-extends on LP64; the `as usize` cast reproduces that.
-        let data = malloc(initial_capacity as usize) as *mut c_char;
-        if data.is_null() {
-            free(buffer as *mut c_void);
-            return std::ptr::null_mut();
-        }
-
-        (*buffer).data = data;
-        (*buffer).capacity = initial_capacity;
-        (*buffer).length = 0;
-        // Unconditional write, exactly as in the C (no capacity check).
-        *(*buffer).data = 0;
-
-        buffer
+    let buffer = malloc(core::mem::size_of::<StringBuffer>()) as *mut StringBuffer;
+    if buffer.is_null() {
+        return core::ptr::null_mut();
     }
+
+    // `int` -> `size_t` conversion in C sign-extends; `as usize` does the same.
+    let data = malloc(initial_capacity as usize) as *mut c_char;
+    (*buffer).data = data;
+    if data.is_null() {
+        free(buffer as *mut c_void);
+        return core::ptr::null_mut();
+    }
+
+    (*buffer).capacity = initial_capacity;
+    (*buffer).length = 0;
+    // Reproduced as-is: out of bounds when initial_capacity == 0.
+    *(*buffer).data = 0;
+
+    buffer
 }
 
+// ---------------------------------------------------------------------------
+// int append_to_buffer(StringBuffer *buffer, const char *str)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn append_to_buffer(buffer: *mut StringBuffer, str: *const c_char) -> c_int {
-    unsafe {
-        let str_len_usize = c_strlen(str);
-        let str_len: c_int = str_len_usize as c_int;
-        let required_capacity: c_int = (*buffer)
-            .length
-            .wrapping_add(str_len)
-            .wrapping_add(1);
+pub unsafe extern "C" fn append_to_buffer(buffer: *mut StringBuffer, str_: *const c_char) -> c_int {
+    // C truncates size_t -> int here.
+    let str_len: c_int = strlen(str_) as c_int;
+    let required_capacity: c_int = (*buffer).length.wrapping_add(str_len).wrapping_add(1);
 
-        if required_capacity > (*buffer).capacity {
-            let new_capacity: c_int = required_capacity.wrapping_mul(2);
-            let new_data =
-                realloc((*buffer).data as *mut c_void, new_capacity as usize) as *mut c_char;
+    if required_capacity > (*buffer).capacity {
+        let new_capacity: c_int = required_capacity.wrapping_mul(2);
+        let new_data =
+            realloc((*buffer).data as *mut c_void, new_capacity as usize) as *mut c_char;
 
-            if new_data.is_null() {
-                return -1;
-            }
-
-            (*buffer).data = new_data;
-            (*buffer).capacity = new_capacity;
+        if new_data.is_null() {
+            return -1;
         }
 
-        // strcpy(buffer->data + buffer->length, str)
-        let dst = (*buffer).data.offset((*buffer).length as isize);
-        std::ptr::copy_nonoverlapping(str, dst, str_len_usize + 1);
-        (*buffer).length = (*buffer).length.wrapping_add(str_len);
-
-        0
+        (*buffer).data = new_data;
+        (*buffer).capacity = new_capacity;
     }
+
+    strcpy((*buffer).data.offset((*buffer).length as isize), str_);
+    (*buffer).length = (*buffer).length.wrapping_add(str_len);
+
+    0
 }
 
+// ---------------------------------------------------------------------------
+// void destroy_buffer(StringBuffer *buffer)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_buffer(buffer: *mut StringBuffer) {
-    unsafe {
-        if !buffer.is_null() {
-            if !(*buffer).data.is_null() {
-                free((*buffer).data as *mut c_void);
-            }
-            free(buffer as *mut c_void);
+    if !buffer.is_null() {
+        if !(*buffer).data.is_null() {
+            free((*buffer).data as *mut c_void);
         }
+        free(buffer as *mut c_void);
     }
 }
 
+// ---------------------------------------------------------------------------
+// const char* get_operation_name(int op_code)
+// ---------------------------------------------------------------------------
 const OP_ADD: &[u8] = b"add\0";
 const OP_SUBTRACT: &[u8] = b"subtract\0";
 const OP_MULTIPLY: &[u8] = b"multiply\0";
@@ -160,36 +184,36 @@ pub extern "C" fn get_operation_name(op_code: c_int) -> *const c_char {
     s.as_ptr() as *const c_char
 }
 
+// ---------------------------------------------------------------------------
+// int perform_operation(int a, int b, const char *operation)
+// ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn perform_operation(a: c_int, b: c_int, operation: *const c_char) -> c_int {
-    unsafe {
-        // `wrapping_*` keeps the two's-complement result of the C code's
-        // signed overflow instead of panicking.
-        if c_str_eq(operation, b"add") {
-            a.wrapping_add(b)
-        } else if c_str_eq(operation, b"subtract") {
-            a.wrapping_sub(b)
-        } else if c_str_eq(operation, b"multiply") {
-            a.wrapping_mul(b)
-        } else if c_str_eq(operation, b"divide") {
-            if b != 0 {
-                a.wrapping_div(b)
-            } else {
-                0
-            }
-        } else {
-            0
+    if strcmp(operation, OP_ADD.as_ptr() as *const c_char) == 0 {
+        a.wrapping_add(b)
+    } else if strcmp(operation, OP_SUBTRACT.as_ptr() as *const c_char) == 0 {
+        a.wrapping_sub(b)
+    } else if strcmp(operation, OP_MULTIPLY.as_ptr() as *const c_char) == 0 {
+        a.wrapping_mul(b)
+    } else if strcmp(operation, OP_DIVIDE.as_ptr() as *const c_char) == 0 {
+        if b != 0 {
+            return c_div(a, b);
         }
+        0
+    } else {
+        0
     }
 }
 
-/// Renders into a NUL-terminated scratch buffer, standing in for
-/// `sprintf(temp, ...)` over `char temp[64]`.
-fn sprintf_temp(temp: &mut Vec<u8>, formatted: &str) {
-    temp.clear();
-    temp.extend_from_slice(formatted.as_bytes());
-    temp.push(0);
-}
+// ---------------------------------------------------------------------------
+// int buffapp(int param1, int param2, int param3, int param4)
+// ---------------------------------------------------------------------------
+const FMT_STARTING: &[u8] = b"Starting computation with %d parameters\n\0";
+const FMT_OP1: &[u8] = b"Operation 1: %s(%d, %d)\n\0";
+const FMT_OP2: &[u8] = b"Operation 2: %s(%d, %d)\n\0";
+const FMT_OP3: &[u8] = b"Operation 3: %s(%d, %d)\n\0";
+const FMT_FINAL: &[u8] = b"Final result: %d\n\0";
+const FMT_LOG: &[u8] = b"Computation Log:\n%s\n\0";
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn buffapp(
@@ -198,96 +222,70 @@ pub unsafe extern "C" fn buffapp(
     param3: c_int,
     param4: c_int,
 ) -> c_int {
-    unsafe {
-        let log_buffer = create_buffer(32);
-        let mut result: c_int = 0;
-        let mut temp: Vec<u8> = Vec::with_capacity(64);
+    let log_buffer: *mut StringBuffer = create_buffer(32);
+    let mut result: c_int = 0;
+    let mut temp = [0 as c_char; 64];
+    let temp_ptr = temp.as_mut_ptr();
 
-        // No NULL check in the C source; dereferencing a failed allocation is
-        // reproduced as-is.
-        (*log_buffer).length = 0;
+    // Reproduced as-is: the C code does not check `log_buffer` for NULL.
+    (*log_buffer).length = 0;
 
-        sprintf_temp(
-            &mut temp,
-            &format!("Starting computation with {} parameters\n", 4),
-        );
-        append_to_buffer(log_buffer, temp.as_ptr() as *const c_char);
+    sprintf(temp_ptr, FMT_STARTING.as_ptr() as *const c_char, 4 as c_int);
+    append_to_buffer(log_buffer, temp_ptr);
 
-        // C's `%` truncates toward zero, so a negative param yields a negative
-        // op code and therefore "unknown".
-        let op1 = get_operation_name(param1.wrapping_rem(4));
-        sprintf_temp(
-            &mut temp,
-            &format!(
-                "Operation 1: {}({}, {})\n",
-                cstr_display(op1),
-                param1,
-                param2
-            ),
-        );
-        append_to_buffer(log_buffer, temp.as_ptr() as *const c_char);
+    let op1: *const c_char = get_operation_name(param1.wrapping_rem(4));
+    sprintf(
+        temp_ptr,
+        FMT_OP1.as_ptr() as *const c_char,
+        op1,
+        param1,
+        param2,
+    );
+    append_to_buffer(log_buffer, temp_ptr);
 
-        let intermediate1 = perform_operation(param1, param2, op1);
-        result = result.wrapping_add(intermediate1);
+    let intermediate1: c_int = perform_operation(param1, param2, op1);
+    result = result.wrapping_add(intermediate1);
 
-        let op2 = get_operation_name(param3.wrapping_rem(4));
-        sprintf_temp(
-            &mut temp,
-            &format!(
-                "Operation 2: {}({}, {})\n",
-                cstr_display(op2),
-                param3,
-                param4
-            ),
-        );
-        append_to_buffer(log_buffer, temp.as_ptr() as *const c_char);
+    let op2: *const c_char = get_operation_name(param3.wrapping_rem(4));
+    sprintf(
+        temp_ptr,
+        FMT_OP2.as_ptr() as *const c_char,
+        op2,
+        param3,
+        param4,
+    );
+    append_to_buffer(log_buffer, temp_ptr);
 
-        let intermediate2 = perform_operation(param3, param4, op2);
-        result = result.wrapping_add(intermediate2);
+    let intermediate2: c_int = perform_operation(param3, param4, op2);
+    result = result.wrapping_add(intermediate2);
 
-        let op3 = OP_MULTIPLY.as_ptr() as *const c_char;
-        sprintf_temp(
-            &mut temp,
-            &format!(
-                "Operation 3: {}({}, {})\n",
-                cstr_display(op3),
-                intermediate1,
-                intermediate2
-            ),
-        );
-        append_to_buffer(log_buffer, temp.as_ptr() as *const c_char);
+    let op3: *const c_char = OP_MULTIPLY.as_ptr() as *const c_char;
+    sprintf(
+        temp_ptr,
+        FMT_OP3.as_ptr() as *const c_char,
+        op3,
+        intermediate1,
+        intermediate2,
+    );
+    append_to_buffer(log_buffer, temp_ptr);
 
-        let intermediate3 = perform_operation(intermediate1, intermediate2, op3);
+    let intermediate3: c_int = perform_operation(intermediate1, intermediate2, op3);
 
-        if intermediate3 != 0 {
-            result = result.wrapping_div(intermediate3);
-        } else {
-            result = param1
-                .wrapping_add(param2)
-                .wrapping_add(param3)
-                .wrapping_add(param4);
-        }
-
-        sprintf_temp(&mut temp, &format!("Final result: {}\n", result));
-        append_to_buffer(log_buffer, temp.as_ptr() as *const c_char);
-
-        printf(
-            b"Computation Log:\n%s\n\0".as_ptr() as *const c_char,
-            (*log_buffer).data,
-        );
-
-        destroy_buffer(log_buffer);
-
-        result
+    if intermediate3 != 0 {
+        result = c_div(result, intermediate3);
+    } else {
+        result = param1
+            .wrapping_add(param2)
+            .wrapping_add(param3)
+            .wrapping_add(param4);
     }
-}
 
-/// Borrow a NUL-terminated C string as `&str` for formatting. All call sites
-/// pass ASCII literals from `get_operation_name`.
-unsafe fn cstr_display(s: *const c_char) -> &'static str {
-    unsafe {
-        let len = c_strlen(s);
-        let bytes = std::slice::from_raw_parts(s as *const u8, len);
-        std::str::from_utf8_unchecked(bytes)
-    }
+    sprintf(temp_ptr, FMT_FINAL.as_ptr() as *const c_char, result);
+    append_to_buffer(log_buffer, temp_ptr);
+
+    printf(FMT_LOG.as_ptr() as *const c_char, (*log_buffer).data);
+
+    destroy_buffer(log_buffer);
+
+    result
 }

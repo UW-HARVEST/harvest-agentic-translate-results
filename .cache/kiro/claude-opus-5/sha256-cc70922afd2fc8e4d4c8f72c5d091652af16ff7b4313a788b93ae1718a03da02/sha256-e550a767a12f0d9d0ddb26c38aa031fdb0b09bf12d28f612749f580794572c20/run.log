@@ -1,0 +1,514 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "--- c_src ---" && find c_src -type f | head -200 && echo "--- count ---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+/local/home/scheschb/.harvest/work/harvest-work-k2RTYP
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 14:07 .
+drwxr-xr-x. 764 scheschb amazon 81920 Sep  1 14:07 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 14:07 .claude
+drwxr-xr-x.   4 scheschb amazon    73 Sep  1 14:07 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 14:07 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/license.txt
+c_src/src/lib.c
+--- count ---
+4
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && wc -l include/lib.h src/lib.c CMakeLists.txt license.txt && echo "=== CMakeLists ===" && cat CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+   1 include/lib.h
+ 126 src/lib.c
+  17 CMakeLists.txt
+  37 license.txt
+ 181 total
+=== CMakeLists ===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+target_link_libraries(${project_name} PRIVATE m)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/src/lib.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/license.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4078 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m23 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2509 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/license.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la .claude && cat .claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 14:07 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 14:07 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 14:07 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-k2RTYP"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-k2RTYP"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake -DCMAKE_BUILD_TYPE=Release /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src > cm.log 2>&1; tail -5 cm.log; make >> cm.log 2>&1; tail -15 cm.log; ls -la /tmp/cbuild/*.so[0m[38;5;244m (using tool: shell)[0m
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-uSRIuI/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-uSRIuI/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+CMake Error: The source directory "/local/home/scheschb/.harvest/work/harvest-work-uSRIuI/c_src" does not exist.
+Specify --help for usage, or press the help button on the CMake GUI.
+make: *** [Makefile:228: cmake_check_build_system] Error 1
+-rwxr-xr-x. 1 scheschb amazon 21536 Sep  1 14:00 /tmp/cbuild/libc_orig.so
+-rwxr-xr-x. 1 scheschb amazon 15984 Sep  1 13:55 /tmp/cbuild/libdriver.so
+[38;5;244m - Completed in 0.21s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cb_k2RTYP && mkdir -p /tmp/cb_k2RTYP && cd /tmp/cb_k2RTYP && cmake /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/c_src > cm.log 2>&1 && make >> cm.log 2>&1; tail -6 cm.log; ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cb_k2RTYP
+[ 50%] Building C object CMakeFiles/harvest-work-k2RTYP.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-k2RTYP.so
+[100%] Built target harvest-work-k2RTYP
+-rwxr-xr-x. 1 scheschb amazon 15928 Sep  1 14:08 libharvest-work-k2RTYP.so
+[38;5;244m - Completed in 0.428s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cb_k2RTYP && nm -D --defined-only libharvest-work-k2RTYP.so | sort | tee c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+
+000000000000151a T stbds_hash_bytes
+0000000000001547 T siphash
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[38;5;141m> [0mTwo exported symbols: [38;5;10mstbds_hash_bytes[0m and [38;5;10msiphash[0m. Now writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C library consists of a single translation unit (`src/lib.c`) that
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! provides the `stb_ds` SipHash-based byte hashing routine plus a small
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! table-printing helper. The exported ABI is:
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!   * `size_t stbds_hash_bytes(void *p, size_t len, size_t seed);`
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!   * `void   siphash(int init);`
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //! `stbds_siphash_bytes` is `static` in the C source and therefore not part of
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! the public ABI; it is kept private here as well.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //! The original C relies on several implementation-defined / undefined
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //! behaviours (signed `int` shift overflow followed by sign-extension into
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //! `size_t`). Those are reproduced bit-for-bit rather than "fixed", because the
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //! translation must be output-identical to the C build.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     fn printf(fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// Number of bits in a `size_t` on the supported targets (`sizeof(size_t) * 8`).
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m const SIZE_T_BITS: u32 = 64;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// One SipHash round, matching the `stbds_sipround` macro expansion that the C
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// source spells out inline.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// `(x << n) | (x >> (SIZE_T_BITS - n))` on an unsigned value is a rotate-left.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m macro_rules! sipround {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     ($v0:ident, $v1:ident, $v2:ident, $v3:ident) => {{
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         $v0 = $v0.wrapping_add($v1);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         $v1 = $v1.rotate_left(13);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         $v1 ^= $v0;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         $v0 = $v0.rotate_left(SIZE_T_BITS / 2);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         $v2 = $v2.wrapping_add($v3);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         $v3 = $v3.rotate_left(16);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         $v3 ^= $v2;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         $v2 = $v2.wrapping_add($v1);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         $v1 = $v1.rotate_left(17);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         $v1 ^= $v2;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         $v2 = $v2.rotate_left(SIZE_T_BITS / 2);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         $v0 = $v0.wrapping_add($v3);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         $v3 = $v3.rotate_left(21);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         $v3 ^= $v0;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     }};
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// Reproduces C's `d[k] << shift` where `d[k]` is an `unsigned char` promoted to
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// `int`, the shift may overflow the `int`, and the resulting (possibly
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// negative) `int` is then converted to `size_t` — sign-extending into the upper
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// 32 bits.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m fn int_shift_sext(byte: u8, shift: u32) -> usize {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     (((byte as u32) << shift) as i32) as i64 as u64 as usize
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// `static size_t stbds_siphash_bytes(void *p, size_t len, size_t seed)`
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m unsafe fn stbds_siphash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let mut d = p as *const u8;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     let mut i: usize;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     let j: u32;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let _ = j;
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let mut v0: usize;
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     let mut v1: usize;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     let mut v2: usize;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     let mut v3: usize;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     let mut data: usize;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     v0 = ((((0x736f_6d65usize) << 16) << 16).wrapping_add(0x7073_6575)) ^ seed;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     v1 = ((((0x646f_7261usize) << 16) << 16).wrapping_add(0x6e64_6f6d)) ^ !seed;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     v2 = ((((0x6c79_6765usize) << 16) << 16).wrapping_add(0x6e65_7261)) ^ seed;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     v3 = ((((0x7465_6462usize) << 16) << 16).wrapping_add(0x7974_6573)) ^ !seed;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     v0 ^= 0x0706_0504_0302_0100usize ^ seed;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     v1 ^= 0x0f0e_0d0c_0b0a_0908usize ^ !seed;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     v2 ^= 0x0706_0504_0302_0100usize ^ seed;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     v3 ^= 0x0f0e_0d0c_0b0a_0908usize ^ !seed;
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     // for (i = 0; i + sizeof(size_t) <= len; i += sizeof(size_t), d += sizeof(size_t))
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     i = 0;
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     while i + core::mem::size_of::<usize>() <= len {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         // data = d[0] | (d[1] << 8) | (d[2] << 16) | (d[3] << 24);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         //
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         // The right-hand side is an `int`; when d[3] >= 0x80 it becomes negative
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         // and is sign-extended when stored into the `size_t`. Preserved as-is.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         let lo = (*d.add(0) as u32)
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             | ((*d.add(1) as u32) << 8)
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             | ((*d.add(2) as u32) << 16)
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             | ((*d.add(3) as u32) << 24);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         data = (lo as i32) as i64 as u64 as usize;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         // data |= (size_t)(d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24)) << 16 << 16;
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         let hi = (*d.add(4) as u32)
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m             | ((*d.add(5) as u32) << 8)
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m             | ((*d.add(6) as u32) << 16)
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m             | ((*d.add(7) as u32) << 24);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         let hi_sext = (hi as i32) as i64 as u64 as usize;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         data |= (hi_sext << 16) << 16;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         v3 ^= data;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         for _j in 0..2 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             sipround!(v0, v1, v2, v3);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         v0 ^= data;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         i += core::mem::size_of::<usize>();
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         d = d.add(core::mem::size_of::<usize>());
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     // data = len << (sizeof(size_t) * 8 - 8);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     data = len << (SIZE_T_BITS - 8);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     // switch (len - i) { case 7: ... case 0: break; }  -- fall-through chain.
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let rem = len.wrapping_sub(i);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     if rem >= 7 {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         // data |= ((size_t)d[6] << 24) << 24;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         data |= ((*d.add(6) as usize) << 24) << 24;
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     if rem >= 6 {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         // data |= ((size_t)d[5] << 20) << 20;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         data |= ((*d.add(5) as usize) << 20) << 20;
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     if rem >= 5 {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         // data |= ((size_t)d[4] << 16) << 16;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         data |= ((*d.add(4) as usize) << 16) << 16;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     if rem >= 4 {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         // data |= (d[3] << 24);   <-- `int` shift, sign-extended on conversion.
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         data |= int_shift_sext(*d.add(3), 24);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     if rem >= 3 {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         // data |= (d[2] << 16);
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         data |= int_shift_sext(*d.add(2), 16);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     if rem >= 2 {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         // data |= (d[1] << 8);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         data |= int_shift_sext(*d.add(1), 8);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     if rem >= 1 {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         // data |= d[0];
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         data |= *d.add(0) as usize;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     v3 ^= data;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     for _j in 0..2 {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         sipround!(v0, v1, v2, v3);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     v0 ^= data;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     v2 ^= 0xff;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     for _j in 0..4 {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         sipround!(v0, v1, v2, v3);
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     v0 ^ v1 ^ v2 ^ v3
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m /// `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)`
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m pub unsafe extern "C" fn stbds_hash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     stbds_siphash_bytes(p, len, seed)
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m /// `void siphash(int init)`
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m pub unsafe extern "C" fn siphash(init: c_int) {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let mut mem: [u8; 64] = [0; 64];
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     let mut z: c_int = init;
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     // for (i=0; i < 64; ++i,z++) mem[i] = z;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     for i in 0..64usize {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         mem[i] = z as u8;
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         z = z.wrapping_add(1);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     for i in 0..64usize {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         let hash = stbds_hash_bytes(mem.as_mut_ptr() as *mut c_void, i, 0);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         printf(b"  { \0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         for j in 0..8usize {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m             let byte = ((hash >> (j * 8)) & 255) as u8;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             printf(b"0x%02x, \0".as_ptr() as *const c_char, byte as c_int);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         printf(b" },\n\0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation)
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.160s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  64, 64[0m:[39m[49m     let mut i: usize;
+[0m[49m[38;5;9m- 65    [0m:[38;5;9m[49m     let j: u32;
+[0m[49m[38;5;9m- 66    [0m:[38;5;9m[49m     let _ = j;
+[0m[49m[39m  67, 65[0m:[39m[49m 
+[0m[49m[39m  68, 66[0m:[39m[49m     let mut v0: usize;
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow verifying symbols and byte-identical output against the C build.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation && cargo build --release 2>&1 | tail -20 && echo "=== RUST SYMS ===" && nm -D --defined-only target/release/libharvest_translation.so | sort | tee /tmp/cb_k2RTYP/rust_syms.txt[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+=== RUST SYMS ===
+00000000000117e0 T siphash
+0000000000011920 T stbds_hash_bytes
+[38;5;244m - Completed in 0.145s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cb_k2RTYP && diff <(awk '{print $NF}' c_syms.txt | sort) <(awk '{print $NF}' rust_syms.txt | sort) && echo "SYMBOL DIFF EMPTY: OK"[0m[38;5;244m (using tool: shell)[0m
+
+SYMBOL DIFF EMPTY: OK
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cb_k2RTYP/driver.c[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef size_t (*hash_fn)(void *, size_t, size_t);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m typedef void (*siphash_fn)(int);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m   hash_fn hb = (hash_fn)dlsym(h, "stbds_hash_bytes");
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m   siphash_fn sp = (siphash_fn)dlsym(h, "siphash");
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   if (!hb || !sp) { fprintf(stderr, "dlsym failed\n"); return 1; }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   /* 1. siphash() stdout for a spread of init values */
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   int inits[] = {0, 1, 2, 7, 42, 127, 128, 200, 255, 256, -1, -128, -129,
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m                  1000, 65535, 65536, 123456789, -2147483648, 2147483647};
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   for (unsigned k = 0; k < sizeof(inits)/sizeof(inits[0]); ++k) {
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     printf("== siphash(%d) ==\n", inits[k]);
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     sp(inits[k]);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   fflush(stdout);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   /* 2. stbds_hash_bytes over deterministic pseudo-random buffers */
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m   unsigned char buf[300];
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m   uint64_t s = 0x12345678ULL;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m   for (unsigned t = 0; t < 4000; ++t) {
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     for (unsigned b = 0; b < sizeof(buf); ++b) {
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m       s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m       buf[b] = (unsigned char)(s >> 33);
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     size_t len = t % (sizeof(buf) + 1);
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     size_t seed = (size_t)(s >> 3);
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     printf("h %zu %zu -> %zu\n", len, seed, hb(buf, len, seed));
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     printf("h0 %zu -> %zu\n", len, hb(buf, len, 0));
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m   /* 3. edge cases: all-0x80.. high-bit bytes (exercises sign-extension bugs) */
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m   for (unsigned v = 0; v < 256; ++v) {
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     memset(buf, (int)v, sizeof(buf));
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     for (size_t len = 0; len <= 24; ++len)
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m       printf("e %u %zu -> %zu\n", v, len, hb(buf, len, 0));
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m   /* 4. NULL pointer with zero length (C reads nothing) */
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m   printf("null0 -> %zu\n", hb(NULL, 0, 0));
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m   printf("null0s -> %zu\n", hb(NULL, 0, 0xdeadbeefcafef00dULL));
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m   fflush(stdout);
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m   dlclose(h);
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m   return 0;
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/cb_k2RTYP/driver.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cb_k2RTYP && gcc -O2 -o driver driver.c -ldl && ./driver ./libharvest-work-k2RTYP.so > out_c.txt 2>&1; echo "c exit=$?"; ./driver /local/home/scheschb/.harvest/work/harvest-work-k2RTYP/translation/target/release/libharvest_translation.so > out_rust.txt 2>&1; echo "rust exit=$?"; wc -l out_c.txt out_rust.txt; cmp out_c.txt out_rust.txt && echo "BYTE-IDENTICAL: OK"[0m[38;5;244m (using tool: shell)[0m
+
+c exit=0
+rust exit=0
+  15637 out_c.txt
+  15637 out_rust.txt
+  31274 total
+BYTE-IDENTICAL: OK
+[38;5;244m - Completed in 0.81s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-k2RTYP && find translation -type f -not -path '*/target/*' | sort && echo "--- undefined deps ---" && nm -D --undefined-only translation/target/release/libharvest_translation.so | sort && echo "--- git status of c_src (must be clean) ---" && (cd c_src && git status --porcelain 2>/dev/null || md5sum src/lib.c include/lib.h CMakeLists.txt)[0m[38;5;244m (using tool: shell)[0m
+
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+--- undefined deps ---
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 U __errno_location@GLIBC_2.2.5
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U printf@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U puts@GLIBC_2.2.5
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 w __gmon_start__
+                 w gettid@GLIBC_2.30
+                 w statx@GLIBC_2.28
+--- git status of c_src (must be clean) ---
+83dcc94c7634c761bcea4ad972a124ba  src/lib.c
+e92cbb23f2725224d9df2675513879e6  include/lib.h
+7856754ef47525158a2550699ae845a3  CMakeLists.txt
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[38;5;141m> [0mDone and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## Scope[0m[0m
+The C library is a single translation unit ([38;5;10mc_src/src/lib.c[0m, 126 lines) built by CMake into one shared object. Its public header declares only [38;5;10msiphash[0m; [38;5;10mnm -D[0m on the C [38;5;10m.so[0m confirms exactly two exported symbols:[0m[0m
+[0m[0m
+[38;5;10mstbds_hash_bytes
+siphash
+[0m[0m[0m
+[0m[0m
+[38;5;10mstbds_siphash_bytes[0m is [38;5;10mstatic[0m, so it is not part of the ABI (kept private in Rust too). No namespace-renaming macros are present in the header.[0m[0m
+[0m[0m
+[38;5;252m[1m## Translation[0m[0m
+[38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m) and [38;5;10mtranslation/src/lib.rs[0m. Both exports use [38;5;10m#[unsafe(no_mangle)] extern "C"[0m with [38;5;10musize[0m/[38;5;10mc_int[0m/[38;5;10m*mut c_void[0m signatures matching C.[0m[0m
+[0m[0m
+Three details drove correctness:[0m[0m
+[0m[0m
+- The C code has two latent sign-extension bugs that must be reproduced, not fixed. [38;5;10mdata = d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24)[0m evaluates as [38;5;10mint[0m; when [38;5;10md[3] >= 0x80[0m the result is negative and sign-extends when stored into [38;5;10msize_t[0m, filling the upper 32 bits with ones, which the subsequent [38;5;10m|=[0m of the high word cannot clear. The same happens at [38;5;10mcase 4:[0m in the tail switch. I reproduced both via explicit [38;5;10mu32 → i32 → i64 → usize[0m conversion chains rather than clean [38;5;10mu64[0m shifts.[0m[0m
+- The [38;5;10mswitch (len - i)[0m fall-through chain (cases 7 down to 0) became a descending sequence of [38;5;10mif rem >= N[0m guards, preserving that [38;5;10mcase 6[0m also applies the [38;5;10md[3..0][0m terms.[0m[0m
+- [38;5;10msiphash[0m prints from inside a cdylib, where no Rust runtime exists to flush stdout at exit. I call libc [38;5;10mprintf[0m through an [38;5;10mextern "C"[0m variadic declaration instead of [38;5;10mprint![0m, so buffering and flush behavior match the C exactly.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+Symbol lists diffed empty. A [38;5;10mdlopen[0m-based driver ran both [38;5;10m.so[0m files over: [38;5;10msiphash()[0m for 19 [38;5;10minit[0m values including negatives and [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m; 8000 [38;5;10mstbds_hash_bytes[0m calls over pseudo-random buffers spanning lengths 0–300 with varying seeds; all 256 single-byte fill values at lengths 0–24 (this is what exercises the sign-extension paths); and null-pointer/zero-length calls. 15,637 lines of output, [38;5;10mcmp[0m-identical.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m was not modified — the build was done in [38;5;10m/tmp[0m.[0m[0m
+[38;5;8m
+ ▸ Credits: 6.76 • Time: 3m 13s
+
+[0m[1G[0m[0m[?25h

@@ -1,174 +1,20 @@
-//! Rust translation of `c_src/src/lib.c`.
+//! Rust translation of `c_src/src/lib.c` (OS uname string parser).
 //!
-//! Behaviour is intentionally byte-for-byte identical to the C original,
-//! including its quirks:
-//!
-//! * `parse_uname_string` mutates the caller's `uname` buffer in place.
-//! * All returned strings are `malloc`'d so the caller can `free` them.
-//! * `*(p + strlen(p) - 1) = '\0'` is reproduced verbatim, so an empty string
-//!   writes one byte *before* the buffer, exactly like the C.
-//! * `uname` is never NULL-checked (only `osd` is), matching the C.
+//! The translation is intentionally literal: it keeps the original evaluation
+//! order, the in-place mutation of the caller's buffer, the C allocator
+//! (`malloc`/`strdup`, so callers can `free()` the results) and the original
+//! out-of-bounds / undefined-behaviour quirks of the C code.
 
 #![allow(non_camel_case_types)]
 
 use std::ffi::{c_char, c_int, c_void};
-use std::io::Write;
+use std::mem::MaybeUninit;
 
 // ---------------------------------------------------------------------------
-// libc bindings
+// Public C types (from include/lib.h)
 // ---------------------------------------------------------------------------
 
-unsafe extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
-
-    fn regcomp(preg: *mut c_void, pattern: *const c_char, cflags: c_int) -> c_int;
-    fn regexec(
-        preg: *const c_void,
-        string: *const c_char,
-        nmatch: usize,
-        pmatch: *mut regmatch_t,
-        eflags: c_int,
-    ) -> c_int;
-    fn regfree(preg: *mut c_void);
-}
-
-/// POSIX `REG_EXTENDED` on glibc/musl.
-const REG_EXTENDED: c_int = 1;
-
-/// POSIX `regmatch_t`. `regoff_t` is `int` on glibc and musl.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct regmatch_t {
-    pub rm_so: c_int,
-    pub rm_eo: c_int,
-}
-
-/// Opaque stand-in for `regex_t`.
-///
-/// The real layout is libc-private, so we reserve a generously sized,
-/// over-aligned, zeroed block on the stack. `regcomp` initialises every field
-/// it uses, and the value never escapes `w_regexec`.
-#[repr(C, align(16))]
-struct RegexStorage([u8; 512]);
-
-impl RegexStorage {
-    fn new() -> Self {
-        RegexStorage([0u8; 512])
-    }
-
-    fn as_ptr(&mut self) -> *mut c_void {
-        self.0.as_mut_ptr() as *mut c_void
-    }
-}
-
-// ---------------------------------------------------------------------------
-// C string helpers (mirroring <string.h>)
-// ---------------------------------------------------------------------------
-
-/// `strlen`
-unsafe fn c_strlen(s: *const c_char) -> usize {
-    let mut n = 0usize;
-    while unsafe { *s.add(n) } != 0 {
-        n += 1;
-    }
-    n
-}
-
-/// `strstr`. Returns the haystack for an empty needle, like C.
-unsafe fn c_strstr(haystack: *const c_char, needle: &[u8]) -> *mut c_char {
-    if needle.is_empty() {
-        return haystack as *mut c_char;
-    }
-    let mut h = haystack;
-    loop {
-        let mut i = 0usize;
-        loop {
-            if i == needle.len() {
-                return h as *mut c_char;
-            }
-            let c = unsafe { *h.add(i) } as u8;
-            if c == 0 || c != needle[i] {
-                break;
-            }
-            i += 1;
-        }
-        if unsafe { *h } == 0 {
-            return std::ptr::null_mut();
-        }
-        h = unsafe { h.add(1) };
-    }
-}
-
-/// `strdup` of a NUL-terminated C string.
-unsafe fn c_strdup(s: *const c_char) -> *mut c_char {
-    let len = unsafe { c_strlen(s) };
-    let dst = unsafe { malloc(len + 1) } as *mut c_char;
-    if dst.is_null() {
-        return dst;
-    }
-    for i in 0..=len {
-        unsafe { *dst.add(i) = *s.add(i) };
-    }
-    dst
-}
-
-/// `strdup` of a Rust byte slice that has no interior NULs.
-unsafe fn c_strdup_bytes(s: &[u8]) -> *mut c_char {
-    let dst = unsafe { malloc(s.len() + 1) } as *mut c_char;
-    if dst.is_null() {
-        return dst;
-    }
-    for (i, &b) in s.iter().enumerate() {
-        unsafe { *dst.add(i) = b as c_char };
-    }
-    unsafe { *dst.add(s.len()) = 0 };
-    dst
-}
-
-/// Equivalent of `snprintf(dst, n + 1, "%.*s", n, src)`: copy at most `n`
-/// bytes, stopping early at a NUL, then always NUL-terminate.
-unsafe fn copy_precision(dst: *mut c_char, src: *const c_char, n: usize) {
-    let mut i = 0usize;
-    while i < n {
-        let c = unsafe { *src.add(i) };
-        if c == 0 {
-            break;
-        }
-        unsafe { *dst.add(i) = c };
-        i += 1;
-    }
-    unsafe { *dst.add(i) = 0 };
-}
-
-/// `*(p + strlen(p) - 1) = '\0'` — including the underflow when `p` is empty.
-unsafe fn strip_last_char(p: *mut c_char) {
-    let len = unsafe { c_strlen(p) } as isize;
-    unsafe { *p.offset(len - 1) = 0 };
-}
-
-/// Extract capture group 1 of `match` from `base` into a freshly `malloc`'d
-/// buffer, exactly as the C does with `malloc` + `snprintf`.
-unsafe fn dup_match(base: *const c_char, m: &regmatch_t) -> *mut c_char {
-    let match_size = m.rm_eo - m.rm_so;
-    let dst = unsafe { malloc(match_size as usize + 1) } as *mut c_char;
-    if dst.is_null() {
-        return dst;
-    }
-    unsafe {
-        copy_precision(
-            dst,
-            base.offset(m.rm_so as isize),
-            match_size as usize,
-        )
-    };
-    dst
-}
-
-// ---------------------------------------------------------------------------
-// os_data
-// ---------------------------------------------------------------------------
-
+/// Mirror of `typedef struct os_data { ... } os_data;`
 #[repr(C)]
 pub struct os_data {
     pub os_name: *mut c_char,
@@ -183,24 +29,83 @@ pub struct os_data {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// POSIX <regex.h> / libc bindings
 // ---------------------------------------------------------------------------
+
+/// `regoff_t` is `int` in glibc's default (non large-offset) configuration.
+pub type regoff_t = c_int;
+
+/// Mirror of `regmatch_t` (two `regoff_t`, 8 bytes total on this platform).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct regmatch_t {
+    pub rm_so: regoff_t,
+    pub rm_eo: regoff_t,
+}
+
+/// Opaque stand-in for glibc's `regex_t` (64 bytes, 8 byte alignment).
+#[repr(C)]
+struct regex_t {
+    _opaque: [u64; 8],
+}
+
+/// `REG_EXTENDED` on glibc / Linux.
+const REG_EXTENDED: c_int = 1;
+
+extern "C" {
+    fn regcomp(preg: *mut regex_t, pattern: *const c_char, cflags: c_int) -> c_int;
+    fn regexec(
+        preg: *const regex_t,
+        string: *const c_char,
+        nmatch: usize,
+        pmatch: *mut regmatch_t,
+        eflags: c_int,
+    ) -> c_int;
+    fn regfree(preg: *mut regex_t);
+
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+    fn strdup(s: *const c_char) -> *mut c_char;
+    fn strstr(haystack: *const c_char, needle: *const c_char) -> *mut c_char;
+    fn strlen(s: *const c_char) -> usize;
+    fn snprintf(s: *mut c_char, n: usize, format: *const c_char, ...) -> c_int;
+    fn fprintf(stream: *mut c_void, format: *const c_char, ...) -> c_int;
+
+    /// glibc's `extern FILE *stderr;`
+    static mut stderr: *mut c_void;
+}
+
+// ---------------------------------------------------------------------------
+// get_os_arch
+// ---------------------------------------------------------------------------
+
+/// Architectures probed, in the exact order of the C `ARCHS` array.
+static ARCHS: [&[u8]; 12] = [
+    b"x86_64\0",
+    b"i386\0",
+    b"i686\0",
+    b"sparc\0",
+    b"amd64\0",
+    b"i86pc\0",
+    b"ia64\0",
+    b"AIX\0",
+    b"armv6\0",
+    b"armv7\0",
+    b"aarch64\0",
+    b"arm64\0",
+];
 
 /// Looks for the OS architecture in a string.
 ///
-/// Returns a `malloc`'d string that the caller must `free`, or NULL.
+/// Returns a `malloc`'d copy of the matched architecture name, or NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_os_arch(os_header: *mut c_char) -> *mut c_char {
-    const ARCHS: [&[u8]; 12] = [
-        b"x86_64", b"i386", b"i686", b"sparc", b"amd64", b"i86pc", b"ia64", b"AIX", b"armv6",
-        b"armv7", b"aarch64", b"arm64",
-    ];
-
     let mut os_arch: *mut c_char = std::ptr::null_mut();
 
-    for arch in ARCHS {
-        if !unsafe { c_strstr(os_header, arch) }.is_null() {
-            os_arch = unsafe { c_strdup_bytes(arch) };
+    for arch in ARCHS.iter() {
+        let needle = arch.as_ptr() as *const c_char;
+        if !strstr(os_header, needle).is_null() {
+            os_arch = strdup(needle);
             break;
         }
     }
@@ -208,8 +113,12 @@ pub unsafe extern "C" fn get_os_arch(os_header: *mut c_char) -> *mut c_char {
     os_arch
 }
 
+// ---------------------------------------------------------------------------
+// w_regexec
+// ---------------------------------------------------------------------------
+
 /// Compiles `pattern` as a POSIX extended regex and matches it against
-/// `string`. Returns non-zero on a match.
+/// `string`. Returns non-zero on match, 0 otherwise (including on error).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn w_regexec(
     pattern: *const c_char,
@@ -217,137 +126,168 @@ pub unsafe extern "C" fn w_regexec(
     nmatch: usize,
     pmatch: *mut regmatch_t,
 ) -> c_int {
+    let mut regex: MaybeUninit<regex_t> = MaybeUninit::uninit();
+
     if !(!pattern.is_null() && !string.is_null()) {
         return 0;
     }
 
-    let mut regex = RegexStorage::new();
-
-    if unsafe { regcomp(regex.as_ptr(), pattern, REG_EXTENDED) } != 0 {
-        // fprintf(stderr, "Couldn't compile regular expression '%s'\n", pattern)
-        let mut msg: Vec<u8> = Vec::new();
-        msg.extend_from_slice(b"Couldn't compile regular expression '");
-        let len = unsafe { c_strlen(pattern) };
-        for i in 0..len {
-            msg.push(unsafe { *pattern.add(i) } as u8);
-        }
-        msg.extend_from_slice(b"'\n");
-        let _ = std::io::stderr().write_all(&msg);
+    if regcomp(regex.as_mut_ptr(), pattern, REG_EXTENDED) != 0 {
+        // NOTE: matches the C code, which does not call regfree() here.
+        fprintf(
+            stderr,
+            b"Couldn't compile regular expression '%s'\n\0".as_ptr() as *const c_char,
+            pattern,
+        );
         return 0;
     }
 
-    let result = unsafe { regexec(regex.as_ptr(), string, nmatch, pmatch, 0) };
-    unsafe { regfree(regex.as_ptr()) };
+    let result = regexec(regex.as_ptr(), string, nmatch, pmatch, 0);
+    regfree(regex.as_mut_ptr());
+
     (result == 0) as c_int
 }
 
-/// Parses an OS uname string, filling `osd` with `malloc`'d fields.
+// ---------------------------------------------------------------------------
+// parse_uname_string
+// ---------------------------------------------------------------------------
+
+/// Equivalent of the repeated C block:
 ///
-/// Note: `uname` is modified in place.
+/// ```c
+/// if (w_regexec(pattern, s, 2, match)) {
+///     match_size = match[1].rm_eo - match[1].rm_so;
+///     dst = malloc(match_size + 1);
+///     snprintf(dst, match_size + 1, "%.*s", match_size, s + match[1].rm_so);
+/// }
+/// ```
+///
+/// Returns `Some(ptr)` when the regex matched, `None` otherwise, leaving the
+/// destination field untouched in the latter case (as the C code does).
+unsafe fn capture_group1(
+    pattern: &[u8],
+    s: *const c_char,
+    m: *mut regmatch_t,
+) -> Option<*mut c_char> {
+    if w_regexec(pattern.as_ptr() as *const c_char, s, 2, m) != 0 {
+        let group = *m.add(1);
+        let match_size: c_int = group.rm_eo - group.rm_so;
+        // `match_size + 1` is an `int` promoted to `size_t` in C: sign-extend.
+        let size = (match_size + 1) as usize;
+        let dst = malloc(size) as *mut c_char;
+        snprintf(
+            dst,
+            size,
+            b"%.*s\0".as_ptr() as *const c_char,
+            match_size,
+            s.offset(group.rm_so as isize),
+        );
+        Some(dst)
+    } else {
+        None
+    }
+}
+
+/// Truncates the C string at `p` by one character:
+/// `*(p + strlen(p) - 1) = '\0';`
+///
+/// Reproduces the C behaviour verbatim, including the out-of-bounds write when
+/// the string is empty.
+unsafe fn strip_last_char(p: *mut c_char) {
+    let len = strlen(p);
+    *p.offset(len as isize - 1) = 0;
+}
+
+/// Parses an OS uname string, filling `osd`.
+///
+/// All the OUT parameters are `malloc`'d and must be freed by the caller.
+/// The input `uname` buffer is modified in place.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse_uname_string(uname: *mut c_char, osd: *mut os_data) {
     let mut str_tmp: *mut c_char;
-    let mut m: [regmatch_t; 2] = [regmatch_t { rm_so: 0, rm_eo: 0 }; 2];
+    // `regmatch_t match[2] = {{.rm_so = 0}};` -> fully zero initialised.
+    let mut match_: [regmatch_t; 2] = [regmatch_t { rm_so: 0, rm_eo: 0 }; 2];
+    let m = match_.as_mut_ptr();
 
     if osd.is_null() {
         return;
     }
-    let osd = unsafe { &mut *osd };
 
     // [Ver: os_major.os_minor.os_build]
-    str_tmp = unsafe { c_strstr(uname, b" [Ver: ") };
+    str_tmp = strstr(uname, b" [Ver: \0".as_ptr() as *const c_char);
     if !str_tmp.is_null() {
-        unsafe { *str_tmp = 0 };
-        str_tmp = unsafe { str_tmp.add(7) };
-        osd.os_name = unsafe { c_strdup(uname) };
-        unsafe { strip_last_char(str_tmp) };
+        *str_tmp = 0;
+        str_tmp = str_tmp.add(7);
+        (*osd).os_name = strdup(uname);
+        strip_last_char(str_tmp);
 
         // Get os_major
-        if unsafe { w_regexec(c"^([0-9]+)\\.*".as_ptr(), str_tmp, 2, m.as_mut_ptr()) } != 0 {
-            osd.os_major = unsafe { dup_match(str_tmp, &m[1]) };
+        if let Some(p) = capture_group1(b"^([0-9]+)\\.*\0", str_tmp, m) {
+            (*osd).os_major = p;
         }
 
         // Get os_minor
-        if unsafe { w_regexec(c"^[0-9]+\\.([0-9]+)\\.*".as_ptr(), str_tmp, 2, m.as_mut_ptr()) } != 0
-        {
-            osd.os_minor = unsafe { dup_match(str_tmp, &m[1]) };
+        if let Some(p) = capture_group1(b"^[0-9]+\\.([0-9]+)\\.*\0", str_tmp, m) {
+            (*osd).os_minor = p;
         }
 
         // Get os_build
-        if unsafe {
-            w_regexec(
-                c"^[0-9]+\\.[0-9]+\\.([0-9]+(\\.[0-9]+)*)\\.*".as_ptr(),
-                str_tmp,
-                2,
-                m.as_mut_ptr(),
-            )
-        } != 0
+        if let Some(p) = capture_group1(b"^[0-9]+\\.[0-9]+\\.([0-9]+(\\.[0-9]+)*)\\.*\0", str_tmp, m)
         {
-            osd.os_build = unsafe { dup_match(str_tmp, &m[1]) };
+            (*osd).os_build = p;
         }
 
-        osd.os_version = unsafe { c_strdup(str_tmp) };
-        osd.os_platform = unsafe { c_strdup_bytes(b"windows") };
+        (*osd).os_version = strdup(str_tmp);
+        (*osd).os_platform = strdup(b"windows\0".as_ptr() as *const c_char);
     } else {
-        str_tmp = unsafe { c_strstr(uname, b" [") };
+        str_tmp = strstr(uname, b" [\0".as_ptr() as *const c_char);
         if !str_tmp.is_null() {
-            unsafe { *str_tmp = 0 };
-            str_tmp = unsafe { str_tmp.add(2) };
-            osd.os_name = unsafe { c_strdup(str_tmp) };
+            *str_tmp = 0;
+            str_tmp = str_tmp.add(2);
+            (*osd).os_name = strdup(str_tmp);
 
-            str_tmp = unsafe { c_strstr(osd.os_name, b": ") };
+            str_tmp = strstr((*osd).os_name, b": \0".as_ptr() as *const c_char);
             if !str_tmp.is_null() {
-                unsafe { *str_tmp = 0 };
-                str_tmp = unsafe { str_tmp.add(2) };
-                osd.os_version = unsafe { c_strdup(str_tmp) };
-                unsafe { strip_last_char(osd.os_version) };
+                *str_tmp = 0;
+                str_tmp = str_tmp.add(2);
+                (*osd).os_version = strdup(str_tmp);
+                strip_last_char((*osd).os_version);
 
                 // os_major.os_minor (os_codename)
-                str_tmp = unsafe { c_strstr(osd.os_version, b" (") };
+                str_tmp = strstr((*osd).os_version, b" (\0".as_ptr() as *const c_char);
                 if !str_tmp.is_null() {
-                    unsafe { *str_tmp = 0 };
-                    str_tmp = unsafe { str_tmp.add(2) };
-                    osd.os_codename = unsafe { c_strdup(str_tmp) };
-                    unsafe { strip_last_char(osd.os_codename) };
+                    *str_tmp = 0;
+                    str_tmp = str_tmp.add(2);
+                    (*osd).os_codename = strdup(str_tmp);
+                    strip_last_char((*osd).os_codename);
                 }
 
                 // Get os_major
-                if unsafe {
-                    w_regexec(c"^([0-9]+)\\.*".as_ptr(), osd.os_version, 2, m.as_mut_ptr())
-                } != 0
-                {
-                    osd.os_major = unsafe { dup_match(osd.os_version, &m[1]) };
+                if let Some(p) = capture_group1(b"^([0-9]+)\\.*\0", (*osd).os_version, m) {
+                    (*osd).os_major = p;
                 }
 
                 // Get os_minor
-                if unsafe {
-                    w_regexec(
-                        c"^[0-9]+\\.([0-9]+)\\.*".as_ptr(),
-                        osd.os_version,
-                        2,
-                        m.as_mut_ptr(),
-                    )
-                } != 0
-                {
-                    osd.os_minor = unsafe { dup_match(osd.os_version, &m[1]) };
+                if let Some(p) = capture_group1(b"^[0-9]+\\.([0-9]+)\\.*\0", (*osd).os_version, m) {
+                    (*osd).os_minor = p;
                 }
             } else {
-                unsafe { strip_last_char(osd.os_name) };
+                strip_last_char((*osd).os_name);
             }
 
             // os_name|os_platform
-            str_tmp = unsafe { c_strstr(osd.os_name, b"|") };
+            str_tmp = strstr((*osd).os_name, b"|\0".as_ptr() as *const c_char);
             if !str_tmp.is_null() {
-                unsafe { *str_tmp = 0 };
-                str_tmp = unsafe { str_tmp.add(1) };
-                osd.os_platform = unsafe { c_strdup(str_tmp) };
+                *str_tmp = 0;
+                str_tmp = str_tmp.add(1);
+                (*osd).os_platform = strdup(str_tmp);
             }
         }
 
-        str_tmp = unsafe { get_os_arch(uname) };
+        str_tmp = get_os_arch(uname);
         if !str_tmp.is_null() {
-            osd.os_arch = unsafe { c_strdup(str_tmp) };
-            unsafe { free(str_tmp as *mut c_void) };
+            (*osd).os_arch = strdup(str_tmp);
+            free(str_tmp as *mut c_void);
         }
     }
 }

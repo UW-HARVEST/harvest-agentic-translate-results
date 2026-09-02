@@ -1,4 +1,4 @@
-// Rust translation of c_src/src/driver.c
+// Rust translation of c_src/ (MIT Lincoln Laboratory `driver` library).
 //
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
@@ -22,69 +22,114 @@
 // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Exported ABI (matches `nm -D` on the C build of libdriver.so):
+//   printLine, printIntLine, bad, good, driver
 
 #![allow(non_snake_case)]
 
 use std::ffi::{c_char, c_int};
+use std::mem::MaybeUninit;
 
+// Output is produced through the platform C `printf` (not Rust's `std::io`) so
+// that stream buffering, flushing and interleaving with any C caller's own
+// stdio writes are byte-for-byte identical to the original library.
 unsafe extern "C" {
-    // C stdio is used directly so that output bytes, and any interleaving with
-    // output produced by a C caller, match the original exactly.
-    #[link_name = "printf"]
-    unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
+    unsafe fn printf(format: *const c_char, ...) -> c_int;
 }
 
-/// `printf("%s\n", line)` for non-NULL `line`, otherwise nothing.
+/// C: `void printLine(const char * line)`
+///
+/// ```c
+/// if (line != NULL) { printf("%s\n", line); }
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
-        unsafe { c_printf(c"%s\n".as_ptr(), line) };
+        unsafe {
+            printf(c"%s\n".as_ptr(), line);
+        }
     }
 }
 
-/// `printf("%d\n", intNumber)`
+/// C: `void printIntLine(int intNumber)` -> `printf("%d\n", intNumber);`
 #[unsafe(no_mangle)]
 pub extern "C" fn printIntLine(intNumber: c_int) {
-    unsafe { c_printf(c"%d\n".as_ptr(), intNumber) };
+    unsafe {
+        printf(c"%d\n".as_ptr(), intNumber);
+    }
 }
 
-/// The original C allocates only `alloca(10)` bytes yet stores ten `int`s into
-/// it, overrunning the region. The bug is not fixed in the sense that the
-/// visible behaviour is preserved verbatim: `source` is zero-initialised, all
-/// ten stores are performed in the same order, and `data[0]` (always 0) is
-/// printed. The backing storage here is a properly sized stack buffer so the
-/// translation does not rely on out-of-bounds stack writes.
+/// C: `void bad(void)`
+///
+/// ```c
+/// int * data;
+/// data = (int *)alloca(10);            /* 10 BYTES, not 10 ints */
+/// { int source[10] = {0}; size_t i;
+///   for (i = 0; i < 10; i++) { data[i] = source[i]; }
+///   printIntLine(data[0]); }
+/// ```
+///
+/// The defect is preserved, not repaired: the allocation request is still the
+/// under-sized 10 *bytes* while 10 `int`s (40 bytes) are copied into it. The
+/// only observable result is `data[0]`, which is always `source[0] == 0`. The
+/// emulated `alloca` region is backed by enough stack space for the ten writes
+/// so the overrun cannot corrupt unrelated state in the Rust runtime, which
+/// leaves the printed output byte-identical to the C original.
 #[unsafe(no_mangle)]
+#[inline(never)]
 pub extern "C" fn bad() {
-    // `data = (int *)alloca(10);` -- 10 bytes in the original.
-    let mut data = [0i32; 10];
+    // alloca(10) -- undersized on purpose (see doc comment above). The size is
+    // routed through `black_box` so this body stays distinct from `good`'s and
+    // the linker cannot fold the two symbols onto one address, matching the C
+    // build where `bad` and `good` are separate code.
+    let _requested_bytes: usize = std::hint::black_box(10);
+    let mut region: [MaybeUninit<c_int>; 10] = [MaybeUninit::uninit(); 10];
+    let data: *mut c_int = region.as_mut_ptr().cast::<c_int>();
     {
-        let source = [0i32; 10];
+        let source: [c_int; 10] = [0; 10];
         let mut i: usize = 0;
         while i < 10 {
-            data[i] = source[i];
+            unsafe {
+                *data.add(i) = source[i];
+            }
             i += 1;
         }
-        printIntLine(data[0] as c_int);
+        printIntLine(unsafe { *data });
     }
 }
 
-/// `alloca(10 * sizeof(int))`, copy ten zeroed `int`s, print `data[0]`.
+/// C: `void good(void)`
+///
+/// ```c
+/// int * data;
+/// data = NULL;
+/// data = (int *)alloca(10*sizeof(int));
+/// { int source[10] = {0}; size_t i;
+///   for (i = 0; i < 10; i++) { data[i] = source[i]; }
+///   printIntLine(data[0]); }
+/// ```
 #[unsafe(no_mangle)]
+#[inline(never)]
 pub extern "C" fn good() {
-    // `data = NULL;` followed by the correctly sized allocation.
-    let mut data = [0i32; 10];
+    // data = NULL; then data = alloca(10 * sizeof(int)) -- correctly sized.
+    let _requested_bytes: usize = std::hint::black_box(10 * size_of::<c_int>());
+    let mut region: [MaybeUninit<c_int>; 10] = [MaybeUninit::uninit(); 10];
+    let data: *mut c_int = region.as_mut_ptr().cast::<c_int>();
     {
-        let source = [0i32; 10];
+        let source: [c_int; 10] = [0; 10];
         let mut i: usize = 0;
         while i < 10 {
-            data[i] = source[i];
+            unsafe {
+                *data.add(i) = source[i];
+            }
             i += 1;
         }
-        printIntLine(data[0] as c_int);
+        printIntLine(unsafe { *data });
     }
 }
 
+/// C: `void driver(int useGood)` -- public entry point declared in driver.h.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(useGood: c_int) {
     if useGood != 0 {

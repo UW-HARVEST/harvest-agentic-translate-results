@@ -1,11 +1,18 @@
-//! Direct translation of `c_src/src/lib.c`.
+//! Rust translation of the C library in `c_src/`.
 //!
-//! The header `c_src/include/lib.h` declares `float pow43(int x);` with no
-//! namespace-renaming macros, so the final linker symbol is plain `pow43`.
+//! Public ABI (from `nm -D` on the C shared object):
+//!   * `pow43`
+//!
+//! Source-level declaration (`c_src/include/lib.h`):
+//!   `float pow43(int x);`
+//!
+//! There are no namespace/renaming macros in the header, so the linker symbol
+//! is plainly `pow43`.
 
 use std::ffi::c_int;
 
-/// 129 + 16 entries, transcribed verbatim from the C translation unit.
+/// Direct transcription of `static const float g_pow43[129 + 16]` from
+/// `c_src/src/lib.c`. Static in C, so it is *not* part of the exported ABI.
 static G_POW43: [f32; 129 + 16] = [
     0.0,
     -1.0,
@@ -154,47 +161,71 @@ static G_POW43: [f32; 129 + 16] = [
     645.079578,
 ];
 
-/// `float pow43(int x)`
+/// Reproduces the C table access `g_pow43[i]` verbatim, *including* the
+/// out-of-bounds accesses the C code performs for inputs outside the range it
+/// implicitly assumes (e.g. `x < -16`, or `x` large enough that
+/// `16 + ((x + sign) >> 6)` exceeds the table). In C those reads are undefined
+/// behaviour but in practice just load adjacent memory; a bounds-checked Rust
+/// index would panic instead, which would be a behavioural divergence. So the
+/// raw pointer read is used to mirror the original as closely as possible.
+#[inline(always)]
+unsafe fn g_pow43_at(i: c_int) -> f32 {
+    unsafe { *G_POW43.as_ptr().offset(i as isize) }
+}
+
+/// `float pow43(int x);`
 ///
-/// Mirrors the C control flow exactly, including the unguarded table lookup on
-/// the `x < 129` path (the C code performs no lower-bound check, so `x < -16`
-/// reads outside the table; that behaviour is reproduced rather than fixed).
+/// ```c
+/// float pow43(int x) {
+///     float frac;
+///     int sign, mult = 256;
+///     if (x < 129) {
+///         return g_pow43[16 + x];
+///     }
+///     if (x < 1024) {
+///         mult = 16;
+///         x <<= 3;
+///     }
+///     sign = 2 * x & 64;
+///     frac = (float)((x & 63) - sign) / ((x & ~63) + sign);
+///     return g_pow43[16 + ((x + sign) >> 6)] *
+///            (1.f + frac * ((4.f / 3) + frac * (2.f / 9))) * mult;
+/// }
+/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn pow43(x: c_int) -> f32 {
     let mut x = x;
     let mut mult: c_int = 256;
 
     if x < 129 {
-        // C: return g_pow43[16 + x];  -- no lower bound check.
-        let idx = 16i64 + x as i64;
-        if (0..G_POW43.len() as i64).contains(&idx) {
-            return G_POW43[idx as usize];
-        }
-        // Out-of-bounds in the original; replicate the raw load.
-        return unsafe { *G_POW43.as_ptr().offset(idx as isize) };
+        // g_pow43[16 + x]
+        return unsafe { g_pow43_at(16i32.wrapping_add(x)) };
     }
     if x < 1024 {
         mult = 16;
+        // x <<= 3  (bits shifted out of an int are simply discarded)
         x = x.wrapping_shl(3);
     }
 
-    // C: sign = 2 * x & 64;  -> ((2 * x) & 64)
+    // sign = 2 * x & 64;   -- `*` binds tighter than `&`
     let sign: c_int = x.wrapping_mul(2) & 64;
 
-    // C: frac = (float)((x & 63) - sign) / ((x & ~63) + sign);
-    //    numerator is cast to float, denominator int is promoted to float.
-    let frac: f32 =
-        ((x & 63).wrapping_sub(sign)) as f32 / ((x & !63).wrapping_add(sign)) as f32;
+    // frac = (float)((x & 63) - sign) / ((x & ~63) + sign);
+    // The cast applies to the numerator only; the integer denominator is then
+    // converted to float, so this is a single-precision division. A zero
+    // denominator yields +/-inf or NaN exactly as it does in C.
+    let numerator = ((x & 63).wrapping_sub(sign)) as f32;
+    let denominator = ((x & !63i32).wrapping_add(sign)) as f32;
+    let frac: f32 = numerator / denominator;
 
-    let idx = (x.wrapping_add(sign)) >> 6;
-    let base = {
-        let i = 16i64 + idx as i64;
-        if (0..G_POW43.len() as i64).contains(&i) {
-            G_POW43[i as usize]
-        } else {
-            unsafe { *G_POW43.as_ptr().offset(i as isize) }
-        }
-    };
+    // g_pow43[16 + ((x + sign) >> 6)] * (1.f + frac * ((4.f/3) + frac*(2.f/9))) * mult
+    // `>>` on a signed int is an arithmetic shift with gcc/clang.
+    let idx = 16i32.wrapping_add(x.wrapping_add(sign) >> 6);
+    let table = unsafe { g_pow43_at(idx) };
 
-    base * (1.0f32 + frac * ((4.0f32 / 3.0f32) + frac * (2.0f32 / 9.0f32))) * mult as f32
+    // `4.f / 3` and `2.f / 9` are float-typed constant expressions in C.
+    const C43: f32 = 4.0f32 / 3.0f32;
+    const C29: f32 = 2.0f32 / 9.0f32;
+
+    table * (1.0f32 + frac * (C43 + frac * C29)) * (mult as f32)
 }

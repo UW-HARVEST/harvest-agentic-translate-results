@@ -1,15 +1,13 @@
-//! Rust translation of c_src/src/lib.c (float -> half-precision conversion).
+//! Rust translation of the C library in `c_src/`.
 //!
-//! Behaviour is a literal port of the original C, including its exact
-//! table-driven arithmetic and truncating cast semantics.
+//! Public ABI: `float2half` (see `c_src/include/lib.h`).
+//!
+//! The two lookup tables below are transcribed verbatim from the `static`
+//! arrays `m__base` and `m__shift` in `c_src/src/lib.c`. They are file-local
+//! in C (`static`), so they are deliberately NOT exported here either.
 
-#![allow(non_upper_case_globals)]
-
-use std::ffi::c_float;
-
-/// Table of half-precision bit patterns indexed by the top 9 bits
-/// (sign + exponent) of the input float.
-static m__base: [u16; 512] = [
+/// Verbatim copy of `static uint16_t m__base[512]` from `c_src/src/lib.c`.
+static M__BASE: [u16; 512] = [
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -69,9 +67,8 @@ static m__base: [u16; 512] = [
     0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
 ];
 
-/// Right-shift amounts applied to the 23-bit float mantissa, indexed the
-/// same way as `m__base`.
-static m__shift: [u8; 512] = [
+/// Verbatim copy of `static uint8_t m__shift[512]` from `c_src/src/lib.c`.
+static M__SHIFT: [u8; 512] = [
     0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
     0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
     0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
@@ -117,18 +114,36 @@ static m__shift: [u8; 512] = [
     0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x0d,
 ];
 
-/// Convert an IEEE-754 binary32 value to a binary16 bit pattern.
+/// Translation of:
 ///
-/// Mirrors the C implementation exactly: the float is reinterpreted as a
-/// `uint32_t`, the sign+exponent bits select a base value and a mantissa
-/// shift, and the sum is truncated to 16 bits.
+/// ```c
+/// uint16_t float2half(float flt) {
+///     union { float flt; uint32_t num; } in;
+///     uint32_t n, j;
+///     in.flt = flt;
+///     n = in.num;
+///     j = (n >> 23) & 0x1ff;
+///     return (uint16_t)((uint32_t)m__base[j] + ((n & 0x007fffff) >> m__shift[j]));
+/// }
+/// ```
+///
+/// The C code type-puns the `float` through a union to read its raw bits; the
+/// Rust equivalent is `f32::to_bits`, which is the same bit reinterpretation.
+///
+/// `j` is masked to 9 bits, so it is always in `0..=511` and both table
+/// indexes are in bounds. `m__shift` holds values in `0x0d..=0x18` (13..=24),
+/// always less than 32, so the shift is well defined and cannot panic.
+///
+/// The sum is computed in `uint32_t` and then truncated to `uint16_t`, so the
+/// addition is done in `u32` with wrapping semantics before the `as u16` cast,
+/// matching the C exactly.
 #[unsafe(no_mangle)]
-pub extern "C" fn float2half(flt: c_float) -> u16 {
-    // Equivalent to the C union { float flt; uint32_t num; }.
-    let n: u32 = flt.to_bits();
-    let j: usize = ((n >> 23) & 0x1ff) as usize;
-    let base = m__base[j] as u32;
-    let mantissa = (n & 0x007f_ffff) >> m__shift[j];
-    // The C code casts the 32-bit sum to uint16_t, discarding high bits.
-    base.wrapping_add(mantissa) as u16
+pub extern "C" fn float2half(flt: core::ffi::c_float) -> u16 {
+    let n: u32 = f32::to_bits(flt);
+    let j: u32 = (n >> 23) & 0x1ff;
+
+    let base = M__BASE[j as usize] as u32;
+    let shift = M__SHIFT[j as usize] as u32;
+
+    base.wrapping_add((n & 0x007f_ffff) >> shift) as u16
 }

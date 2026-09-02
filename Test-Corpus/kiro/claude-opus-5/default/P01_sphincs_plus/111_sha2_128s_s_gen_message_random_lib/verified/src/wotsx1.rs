@@ -1,49 +1,40 @@
 //! Translation of `app/src/wotsx1.c` and `app/include/wotsx1.h`.
 
-use crate::address::*;
-use crate::backend::{prf_addr, thash};
+use crate::address::{
+    addr_mut, set_chain_addr, set_hash_addr, set_keypair_addr, set_type, Addr, ZERO_ADDR,
+    SPX_ADDR_TYPE_WOTS, SPX_ADDR_TYPE_WOTSPRF,
+};
 use crate::context::SpxCtx;
+use crate::hash::prf_addr;
 use crate::params::*;
+use crate::thash::thash;
 
-/// `struct leaf_info_x1` exactly as declared in `app/include/wotsx1.h`.
+/// `leaf_info_x1`
 ///
-/// Only used to describe the C ABI of [`SPX_wots_gen_leafx1`] and
-/// [`crate::utilsx1::SPX_wots_treehashx1`]; the internal code path uses
-/// [`LeafInfoX1`] instead.
+/// This is here to provide an interface to the internal `wots_gen_leafx1`
+/// routine.  While this routine is not referenced in the package outside of
+/// `wots.c`, it is called from the stand-alone benchmark code to characterize
+/// the performance.
 #[repr(C)]
-pub struct LeafInfoX1Raw {
+pub struct LeafInfoX1 {
     pub wots_sig: *mut u8,
-    /// The index of the WOTS we're using to sign.
+    /// The index of the WOTS we're using to sign
     pub wots_sign_leaf: u32,
     pub wots_steps: *mut u32,
-    pub leaf_addr: [u32; 8],
-    pub pk_addr: [u32; 8],
-}
-
-/// The same information as `struct leaf_info_x1`, but with the two buffers the
-/// C struct points at kept separate so that borrows stay checkable.
-pub struct LeafInfoX1 {
-    /// The index of the WOTS we're using to sign.
-    pub wots_sign_leaf: u32,
-    pub wots_steps: [u32; SPX_WOTS_LEN],
-    pub leaf_addr: [u32; 8],
-    pub pk_addr: [u32; 8],
+    pub leaf_addr: Addr,
+    pub pk_addr: Addr,
 }
 
 impl LeafInfoX1 {
-    pub const fn new() -> Self {
+    /// `struct leaf_info_x1 info = { 0 };`
+    pub const fn zeroed() -> Self {
         LeafInfoX1 {
+            wots_sig: core::ptr::null_mut(),
             wots_sign_leaf: 0,
-            wots_steps: [0u32; SPX_WOTS_LEN],
-            leaf_addr: [0u32; 8],
-            pk_addr: [0u32; 8],
+            wots_steps: core::ptr::null_mut(),
+            leaf_addr: ZERO_ADDR,
+            pk_addr: ZERO_ADDR,
         }
-    }
-}
-
-impl Default for LeafInfoX1 {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -51,12 +42,11 @@ impl Default for LeafInfoX1 {
 ///
 /// It also generates the WOTS signature if `leaf_info` indicates that we're
 /// signing with this WOTS key.
-pub fn wots_gen_leafx1(
+pub unsafe fn wots_gen_leafx1(
     dest: &mut [u8],
     ctx: &SpxCtx,
     leaf_idx: u32,
     info: &mut LeafInfoX1,
-    wots_sig: &mut [u8],
 ) {
     let mut pk_buffer = [0u8; SPX_WOTS_BYTES];
 
@@ -74,15 +64,15 @@ pub fn wots_gen_leafx1(
 
     for i in 0..SPX_WOTS_LEN {
         /* Set wots_k to the step if we're generating a signature, ~0 if not */
-        let wots_k = info.wots_steps[i] | wots_k_mask;
+        let wots_k: u32 = *info.wots_steps.add(i) | wots_k_mask;
+        let buffer = &mut pk_buffer[i * SPX_N..(i + 1) * SPX_N];
 
         /* Start with the secret seed */
         set_chain_addr(&mut info.leaf_addr, i as u32);
         set_hash_addr(&mut info.leaf_addr, 0);
         set_type(&mut info.leaf_addr, SPX_ADDR_TYPE_WOTSPRF);
 
-        let mut buffer = [0u8; SPX_N];
-        prf_addr(&mut buffer, ctx, &info.leaf_addr);
+        prf_addr(buffer, ctx, &info.leaf_addr);
 
         set_type(&mut info.leaf_addr, SPX_ADDR_TYPE_WOTS);
 
@@ -92,31 +82,34 @@ pub fn wots_gen_leafx1(
             /* Check if this is the value that needs to be saved as a part of
                the WOTS signature */
             if k == wots_k {
-                wots_sig[i * SPX_N..(i + 1) * SPX_N].copy_from_slice(&buffer);
+                core::ptr::copy_nonoverlapping(
+                    buffer.as_ptr(),
+                    info.wots_sig.add(i * SPX_N),
+                    SPX_N,
+                );
             }
 
             /* Check if we hit the top of the chain */
-            if k == SPX_WOTS_W as u32 - 1 {
+            if k as usize == SPX_WOTS_W - 1 {
                 break;
             }
 
             /* Iterate one step on the chain */
             set_hash_addr(&mut info.leaf_addr, k);
 
-            let tmp = buffer;
-            thash(&mut buffer, &tmp, 1, ctx, &info.leaf_addr);
+            let mut src = [0u8; SPX_N];
+            src.copy_from_slice(buffer);
+            thash(buffer, &src, 1, ctx, &info.leaf_addr);
 
             k += 1;
         }
-
-        pk_buffer[i * SPX_N..(i + 1) * SPX_N].copy_from_slice(&buffer);
     }
 
     /* Do the final thash to generate the public keys */
     thash(
-        &mut dest[..SPX_N],
+        dest,
         &pk_buffer,
-        SPX_WOTS_LEN,
+        SPX_WOTS_LEN as u32,
         ctx,
         &info.pk_addr,
     );
@@ -131,36 +124,15 @@ pub unsafe extern "C" fn SPX_wots_gen_leafx1(
     dest: *mut u8,
     ctx: *const SpxCtx,
     leaf_idx: u32,
-    v_info: *mut LeafInfoX1Raw,
+    v_info: *mut LeafInfoX1,
 ) {
-    unsafe {
-        let raw = &mut *v_info;
-        let mut info = LeafInfoX1 {
-            wots_sign_leaf: raw.wots_sign_leaf,
-            wots_steps: [0u32; SPX_WOTS_LEN],
-            leaf_addr: raw.leaf_addr,
-            pk_addr: raw.pk_addr,
-        };
-        if !raw.wots_steps.is_null() {
-            info.wots_steps
-                .copy_from_slice(core::slice::from_raw_parts(raw.wots_steps, SPX_WOTS_LEN));
-        }
-        // `wots_sig` is only written when `leaf_idx == wots_sign_leaf`, which
-        // is exactly when the caller has provided a buffer.
-        let mut scratch = [0u8; SPX_WOTS_BYTES];
-        let sig: &mut [u8] = if raw.wots_sig.is_null() {
-            &mut scratch
-        } else {
-            core::slice::from_raw_parts_mut(raw.wots_sig, SPX_WOTS_BYTES)
-        };
-        wots_gen_leafx1(
-            core::slice::from_raw_parts_mut(dest, SPX_N),
-            &*ctx,
-            leaf_idx,
-            &mut info,
-            sig,
-        );
-        raw.leaf_addr = info.leaf_addr;
-        raw.pk_addr = info.pk_addr;
-    }
+    let dest_s = core::slice::from_raw_parts_mut(dest, SPX_N);
+    wots_gen_leafx1(dest_s, &*ctx, leaf_idx, &mut *v_info);
+}
+
+/// Not used by the library itself; kept so that `addr_mut` has a consumer in
+/// every configuration.
+#[allow(dead_code)]
+unsafe fn _unused(addr: *mut u32) -> &'static mut Addr {
+    addr_mut(addr)
 }

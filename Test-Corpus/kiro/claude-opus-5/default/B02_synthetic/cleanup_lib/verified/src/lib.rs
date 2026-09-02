@@ -23,111 +23,119 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int, c_ulong, c_void};
+use std::ffi::{c_char, c_int, c_void};
+use std::ptr;
 
-// libc functions used so that stdout buffering, allocation and output bytes
-// match the original C translation unit exactly.
+// The C translation unit uses the platform C library for all I/O and memory
+// management. We bind to the very same functions so that stdio buffering,
+// formatting and heap ownership are byte-for-byte identical to the original,
+// and so that a pointer handed to `cleanup_resources` may legitimately come
+// from (or go to) C `malloc`/`free`.
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
-    fn snprintf(buf: *mut c_char, size: usize, fmt: *const c_char, ...) -> c_int;
+    fn printf(format: *const c_char, ...) -> c_int;
+    fn snprintf(s: *mut c_char, n: usize, format: *const c_char, ...) -> c_int;
     fn malloc(size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
-    fn strlen(s: *const c_char) -> c_ulong;
-    fn strncmp(a: *const c_char, b: *const c_char, n: usize) -> c_int;
+    fn strncmp(s1: *const c_char, s2: *const c_char, n: usize) -> c_int;
+    fn strlen(s: *const c_char) -> usize;
 }
 
-/// `int cleanup(int a, int b, int c, int d);`
+/// ```c
+/// int cleanup(int a, int b, int c, int d);
+/// ```
+///
+/// Faithful translation, including:
+///   * the deliberate `switch` fall-through from `case 10` into `case 20`
+///     and from `case 30` into `case 40`;
+///   * `TO_STRING(numbers)`, which the C preprocessor stringizes to the
+///     literal text `numbers` (it is *not* the array contents);
+///   * the `goto cleanup` control flow, modelled with a labelled block.
 #[unsafe(no_mangle)]
-pub extern "C" fn cleanup(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
+pub unsafe extern "C" fn cleanup(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
     let numbers: [c_int; 4] = [a, b, c, d];
-    let mut dynamic_str: *mut c_char = std::ptr::null_mut();
+    let mut dynamic_str: *mut c_char = ptr::null_mut();
     let mut result: c_int = 0;
 
-    // const char *expected_str = "VALID";
-    // const char *input_str = "VALID";
-    let expected_str = c"VALID".as_ptr();
-    let input_str = c"VALID".as_ptr();
+    let expected_str: *const c_char = c"VALID".as_ptr();
+    let input_str: *const c_char = c"VALID".as_ptr();
 
-    // The C code compares two identical literals, so this branch is never
-    // taken; it is reproduced faithfully nonetheless.
-    let validation_failed =
-        unsafe { strncmp(input_str, expected_str, strlen(expected_str) as usize) } != 0;
-
-    if validation_failed {
-        unsafe {
-            printf(c"Input string validation failed.\n".as_ptr());
+    // `'cleanup: { ... break 'cleanup; }` reproduces `goto cleanup;`.
+    'cleanup: {
+        if unsafe { strncmp(input_str, expected_str, strlen(expected_str)) } != 0 {
+            unsafe { printf(c"Input string validation failed.\n".as_ptr()) };
+            break 'cleanup;
         }
-        // goto cleanup;
-    } else {
+
         for i in 0..4usize {
-            // Reproduces the C switch, including the intentional
-            // fall-through from `case 10` into `case 20` and from
-            // `case 30` into `case 40`.
             match numbers[i] {
                 10 => {
+                    // case 10: falls through into case 20
                     result = result.wrapping_add(10);
-                    // fall through
                     result = result.wrapping_add(20);
+                    // break
                 }
                 20 => {
                     result = result.wrapping_add(20);
+                    // break
                 }
                 30 => {
+                    // case 30: falls through into case 40
                     result = result.wrapping_add(30);
-                    // fall through
                     result = result.wrapping_add(40);
+                    // break
                 }
                 40 => {
                     result = result.wrapping_add(40);
+                    // break
                 }
-                n => {
-                    result = result.wrapping_add(n);
+                _ => {
+                    result = result.wrapping_add(numbers[i]);
+                    // break
                 }
             }
         }
 
-        dynamic_str = unsafe { malloc(50 * std::mem::size_of::<c_char>()) } as *mut c_char;
+        dynamic_str = unsafe { malloc(50 * core::mem::size_of::<c_char>()) } as *mut c_char;
         if dynamic_str.is_null() {
-            unsafe {
-                printf(c"Memory allocation failed.\n".as_ptr());
-            }
-            // goto cleanup;
-        } else {
-            // TO_STRING(numbers) stringizes the macro argument token, so the
-            // formatted text is literally "Processed numbers: numbers".
-            unsafe {
-                snprintf(
-                    dynamic_str,
-                    50,
-                    c"Processed numbers: %s".as_ptr(),
-                    c"numbers".as_ptr(),
-                );
-                printf(c"%s\n".as_ptr(), dynamic_str);
-            }
+            unsafe { printf(c"Memory allocation failed.\n".as_ptr()) };
+            break 'cleanup;
+        }
+
+        unsafe {
+            snprintf(
+                dynamic_str,
+                50,
+                c"Processed numbers: %s".as_ptr(),
+                c"numbers".as_ptr(),
+            );
+            printf(c"%s\n".as_ptr(), dynamic_str);
         }
     }
 
     // cleanup:
-    cleanup_resources(dynamic_str);
+    unsafe { cleanup_resources(dynamic_str) };
     result
 }
 
-/// `void print_result(const char *label, int result);`
+/// ```c
+/// void print_result(const char *label, int result);
+/// ```
 #[unsafe(no_mangle)]
-pub extern "C" fn print_result(label: *const c_char, result: c_int) {
-    unsafe {
-        printf(c"%s: %d\n".as_ptr(), label, result);
-    }
+pub unsafe extern "C" fn print_result(label: *const c_char, result: c_int) {
+    unsafe { printf(c"%s: %d\n".as_ptr(), label, result) };
 }
 
-/// `void cleanup_resources(char *dynamic_str);`
+/// ```c
+/// void cleanup_resources(char *dynamic_str);
+/// ```
+///
+/// The trailing `dynamic_str = NULL;` in the C source only clears the local
+/// parameter copy, so it has no observable effect and is intentionally left
+/// unreproduced (a comment marks where it was).
 #[unsafe(no_mangle)]
-pub extern "C" fn cleanup_resources(dynamic_str: *mut c_char) {
+pub unsafe extern "C" fn cleanup_resources(dynamic_str: *mut c_char) {
     if !dynamic_str.is_null() {
-        unsafe {
-            free(dynamic_str as *mut c_void);
-        }
-        // The C code nulls its local copy of the parameter, which has no
-        // observable effect; preserved as a no-op.
+        unsafe { free(dynamic_str as *mut c_void) };
+        // dynamic_str = NULL;  /* dead store on the local parameter */
     }
 }

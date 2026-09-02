@@ -1,53 +1,55 @@
-//! libpng 1.6.59, translated from C to Rust.
+//! libpng 1.6.59.git — Rust translation of the complete C library.
 //!
-//! The public interface, the linker symbol names, the error and warning
-//! strings, the chunk encoding and the compressed byte streams are all
-//! identical to the reference C build.
-
+//! Structure mirrors the C sources one module per `c_src/src/*.c` file.
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(unused_parens)]
-#![allow(unused_assignments)]
+#![allow(unused_unsafe)]
 #![allow(unused_variables)]
+#![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
-#![allow(unused_unsafe)]
+#![allow(unreachable_code)]
+#![allow(unused_comparisons)]
 #![allow(clippy::all)]
 
-pub mod pngpriv;
+pub mod consts;
+pub mod helpers;
+pub mod readctrl;
+pub mod srgb;
+pub mod sys;
+pub mod types;
 
-pub mod png;
-pub mod pngerror;
-pub mod pngget;
-pub mod pngmem;
-pub mod pngpread;
-pub mod pngread;
-pub mod pngrio;
-pub mod pngrtran;
-pub mod pngrutil;
-pub mod pngset;
-pub mod pngtrans;
-pub mod pngwio;
-pub mod pngwrite;
-pub mod pngwtran;
-pub mod pngwutil;
+pub(crate) mod prelude;
 
-pub use pngpriv::*;
-
-pub use png::*;
-pub use pngerror::*;
-pub use pngget::*;
-pub use pngmem::*;
-pub use pngpread::*;
-pub use pngread::*;
-pub use pngrio::*;
-pub use pngrtran::*;
-pub use pngrutil::*;
-pub use pngset::*;
-pub use pngtrans::*;
-pub use pngwio::*;
-pub use pngwrite::*;
-pub use pngwtran::*;
-pub use pngwutil::*;
+mod png;
+mod png2;
+mod png3;
+mod pngerror;
+mod pngget;
+mod pngmem;
+mod pngpread;
+mod pngread;
+mod pngread2;
+mod pngread3;
+mod pngrio;
+mod pngrtran;
+mod pngrtran2;
+mod pngrtran3;
+mod pngrtran4;
+mod pngrtran5;
+mod pngrutil;
+mod pngrutil2;
+mod pngrutil3;
+mod pngrutil4;
+mod pngset;
+mod pngset2;
+mod pngtrans;
+mod pngwio;
+mod pngwrite;
+mod pngwrite2;
+mod pngwtran;
+mod pngwutil;
+mod pngwutil2;

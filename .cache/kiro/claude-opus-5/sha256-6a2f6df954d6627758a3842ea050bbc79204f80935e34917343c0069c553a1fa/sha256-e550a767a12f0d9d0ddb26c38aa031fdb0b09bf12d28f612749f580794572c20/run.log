@@ -1,0 +1,688 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working dir and enumerate C source files
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 06:11 .
+drwxr-xr-x. 509 scheschb amazon 81920 Sep  1 06:11 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 06:11 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 06:11 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 06:11 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  15 c_src/CMakeLists.txt
+  16 c_src/include/lib.h
+ 163 c_src/src/lib.c
+ 194 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m481 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m7424 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5; ls[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+CMakeCache.txt
+CMakeFiles
+Makefile
+c_syms.txt
+cm.log
+cmake.log
+cmake_install.cmake
+diff
+diff.c
+libc_src.so
+libharvest-work-UWirmA.so
+rust_syms.txt
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild2 && mkdir -p /tmp/cbuild2 && cd /tmp/cbuild2 && cmake /local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src > /dev/null 2>&1 && make 2>&1 | tail -3; ls *.so; echo "=== nm -D ==="; nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fresh C build and symbol dump
+
+[ 50%] Building C object CMakeFiles/harvest-work-oB14XC.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-oB14XC.so
+[100%] Built target harvest-work-oB14XC
+libharvest-work-oB14XC.so
+=== nm -D ===
+00000000000011d1 T read_side_info
+[38;5;244m - Completed in 0.413s[0m
+
+[?25l[0m[38;5;141m> [0mSingle translation unit, one exported symbol ([38;5;10mread_side_info[0m). Writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-oB14XC"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_oB14XC"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of `c_src/src/lib.c` (MP3 layer-III side-info reader).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The translation is deliberately literal: pointer arithmetic, integer
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! wrapping and out-of-range table indexing all mirror the original C exactly,
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! including behaviour the C standard would call undefined. No bugs are fixed.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// Mirrors the C `bs_t` bit-stream cursor.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m pub struct bs_t {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     pub buf: *const u8,
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     pub pos: c_int,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     pub limit: c_int,
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// Mirrors the C `L3_gr_info_t` granule descriptor.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m pub struct L3_gr_info_t {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     pub sfbtab: *const u8,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     pub part_23_length: u16,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     pub big_values: u16,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     pub scalefac_compress: u16,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     pub global_gain: u8,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     pub block_type: u8,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     pub mixed_block_flag: u8,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     pub n_long_sfb: u8,
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     pub n_short_sfb: u8,
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     pub table_select: [u8; 3],
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     pub region_count: [u8; 3],
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     pub subblock_gain: [u8; 3],
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     pub preflag: u8,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     pub scalefac_scale: u8,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     pub count1_table: u8,
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     pub scfsi: u8,
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// Literal translation of the `static uint32_t get_bits(bs_t *, int)` helper.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// `bs` must be a valid pointer; `bs->buf` is read through raw pointers with
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// the same (possibly out-of-bounds) offsets the C code would use.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m unsafe fn get_bits(bs: *mut bs_t, n: c_int) -> u32 {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let mut next: u32;
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let mut cache: u32 = 0;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let s: u32 = unsafe { (*bs).pos & 7 } as u32;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let mut shl: c_int = n.wrapping_add(s as c_int);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let mut p: *const u8 = unsafe { (*bs).buf.offset(((*bs).pos >> 3) as isize) };
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         (*bs).pos = (*bs).pos.wrapping_add(n);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         if (*bs).pos > (*bs).limit {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     next = unsafe { (*p as u32) & (255u32 >> s) };
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     p = unsafe { p.add(1) };
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         shl = shl.wrapping_sub(8);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         if shl <= 0 {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         cache |= next.wrapping_shl(shl as u32);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         next = unsafe { *p as u32 };
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         p = unsafe { p.add(1) };
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     cache | next.wrapping_shr(shl.wrapping_neg() as u32)
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m static G_SCF_LONG: [[u8; 23]; 8] = [
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0,
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         12, 12, 12, 12, 12, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 76, 90, 2, 2, 2, 2, 2, 0,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 18, 22, 26, 32, 38, 46, 54, 62, 70, 76, 36, 0,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 38, 46, 52, 60, 68, 58, 54, 0,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 6, 6, 8, 8, 10, 12, 16, 20, 24, 28, 34, 42, 50, 54, 76, 158, 0,
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 10, 12, 16, 18, 22, 28, 34, 40, 46, 54, 54, 192, 0,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 6, 6, 8, 10, 12, 16, 20, 24, 30, 38, 46, 56, 68, 84, 102, 26, 0,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m static G_SCF_SHORT: [[u8; 40]; 8] = [
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0,
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         8, 8, 8, 8, 8, 8, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 24, 24, 24, 28, 28, 28, 36,
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         36, 36, 2, 2, 2, 2, 2, 2, 2, 2, 2, 26, 26, 26, 0,
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 14, 14, 14, 18, 18, 18,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         26, 26, 26, 32, 32, 32, 42, 42, 42, 18, 18, 18, 0,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18,
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         18, 24, 24, 24, 32, 32, 32, 44, 44, 44, 12, 12, 12, 0,
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         18, 18, 18, 22, 22, 22, 30, 30, 30, 56, 56, 56, 0,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 6, 10, 10, 10, 12, 12, 12, 14, 14, 14,
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         16, 16, 16, 20, 20, 20, 26, 26, 26, 66, 66, 66, 0,
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20,
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         26, 26, 26, 34, 34, 34, 42, 42, 42, 12, 12, 12, 0,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m // The C initialisers for rows 0..=4 and 5..=7 of `g_scf_mixed` are shorter than
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m // the declared row length of 40, so the trailing elements are zero-filled.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m static G_SCF_MIXED: [[u8; 40]; 8] = [
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24,
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0, 0, 0, 0,
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         12, 12, 12, 4, 4, 4, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 24, 24, 24, 28, 28, 28,
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         36, 36, 36, 2, 2, 2, 2, 2, 2, 2, 2, 2, 26, 26, 26, 0,
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 14, 14, 14, 18, 18, 18, 26, 26,
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         26, 32, 32, 32, 42, 42, 42, 18, 18, 18, 0, 0, 0, 0,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24,
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         24, 24, 32, 32, 32, 44, 44, 44, 12, 12, 12, 0, 0, 0, 0,
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18, 18, 24,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18, 0, 0, 0, 0,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 6, 6, 6, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         18, 18, 22, 22, 22, 30, 30, 30, 56, 56, 56, 0, 0,
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 6, 6, 6, 6, 6, 6, 10, 10, 10, 12, 12, 12, 14, 14, 14, 16,
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         16, 16, 20, 20, 20, 26, 26, 26, 66, 66, 66, 0, 0,
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     [
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         4, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 6, 6, 6, 8, 8, 8, 12, 12, 12, 16, 16, 16, 20, 20, 20, 26,
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         26, 26, 34, 34, 34, 42, 42, 42, 12, 12, 12, 0, 0,
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     ],
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m /// `int read_side_info(bs_t *bs, L3_gr_info_t *gr, const uint8_t *hdr)`
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m /// Same contract as the C function: all three pointers must be valid and `gr`
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m /// must point to enough granules for the header's granule count.
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m pub unsafe extern "C" fn read_side_info(
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     bs: *mut bs_t,
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     gr: *mut L3_gr_info_t,
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     hdr: *const u8,
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     let mut gr = gr;
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let mut tables: u32;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let mut scfsi: u32 = 0;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     let main_data_begin: c_int;
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     let mut part_23_sum: c_int = 0;
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     let hdr1 = unsafe { *hdr.add(1) } as c_int;
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     let hdr2 = unsafe { *hdr.add(2) } as c_int;
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     let hdr3 = unsafe { *hdr.add(3) } as c_int;
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     let mut sr_idx: c_int = ((hdr2 >> 2) & 3) + (((hdr1 >> 3) & 1) + ((hdr1 >> 4) & 1)) * 3;
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     sr_idx -= (sr_idx != 0) as c_int;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     let mut gr_count: c_int = if (hdr3 & 0xC0) == 0xC0 { 1 } else { 2 };
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     if (hdr1 & 0x8) != 0 {
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         gr_count = gr_count.wrapping_mul(2);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         main_data_begin = unsafe { get_bits(bs, 9) } as c_int;
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         scfsi = unsafe { get_bits(bs, 7 + gr_count) };
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         main_data_begin = (unsafe { get_bits(bs, 8 + gr_count) } >> gr_count) as c_int;
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         if (hdr3 & 0xC0) == 0xC0 {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m             scfsi = scfsi.wrapping_shl(4);
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         let part_23_length = unsafe { get_bits(bs, 12) } as u16;
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         unsafe { (*gr).part_23_length = part_23_length };
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         part_23_sum = part_23_sum.wrapping_add(part_23_length as c_int);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         let big_values = unsafe { get_bits(bs, 9) } as u16;
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         unsafe { (*gr).big_values = big_values };
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         if big_values > 288 {
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m             return -1;
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         unsafe { (*gr).global_gain = get_bits(bs, 8) as u8 };
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         let scalefac_compress =
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m             unsafe { get_bits(bs, if (hdr1 & 0x8) != 0 { 4 } else { 9 }) } as u16;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         unsafe { (*gr).scalefac_compress = scalefac_compress };
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         // Reproduces the C address computation `g_scf_*[sr_idx]` verbatim,
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         // including the out-of-range `sr_idx == 8` case.
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m             (*gr).sfbtab = (G_SCF_LONG.as_ptr() as *const u8).offset(sr_idx as isize * 23);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             (*gr).n_long_sfb = 22;
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m             (*gr).n_short_sfb = 0;
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         if unsafe { get_bits(bs, 1) } != 0 {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m             let block_type = unsafe { get_bits(bs, 2) } as u8;
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m             unsafe { (*gr).block_type = block_type };
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m             if block_type == 0 {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m                 return -1;
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m             let mixed_block_flag = unsafe { get_bits(bs, 1) } as u8;
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m                 (*gr).mixed_block_flag = mixed_block_flag;
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m                 (*gr).region_count[0] = 7;
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m                 (*gr).region_count[1] = 255;
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m             if block_type == 2 {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m                 scfsi &= 0x0F0F;
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m                 if mixed_block_flag == 0 {
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m                     unsafe {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m                         (*gr).region_count[0] = 8;
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m                         (*gr).sfbtab =
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m                             (G_SCF_SHORT.as_ptr() as *const u8).offset(sr_idx as isize * 40);
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m                         (*gr).n_long_sfb = 0;
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m                         (*gr).n_short_sfb = 39;
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m                     unsafe {
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m                         (*gr).sfbtab =
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m                             (G_SCF_MIXED.as_ptr() as *const u8).offset(sr_idx as isize * 40);
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m                         (*gr).n_long_sfb = if (hdr1 & 0x8) != 0 { 8 } else { 6 };
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m                         (*gr).n_short_sfb = 30;
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m             tables = unsafe { get_bits(bs, 10) };
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m             tables = tables.wrapping_shl(5);
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m                 (*gr).subblock_gain[0] = get_bits(bs, 3) as u8;
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m                 (*gr).subblock_gain[1] = get_bits(bs, 3) as u8;
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m                 (*gr).subblock_gain[2] = get_bits(bs, 3) as u8;
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m                 (*gr).block_type = 0;
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m                 (*gr).mixed_block_flag = 0;
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m             tables = unsafe { get_bits(bs, 15) };
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m                 (*gr).region_count[0] = get_bits(bs, 4) as u8;
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m                 (*gr).region_count[1] = get_bits(bs, 3) as u8;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m                 (*gr).region_count[2] = 255;
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m             (*gr).table_select[0] = (tables >> 10) as u8;
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             (*gr).table_select[1] = ((tables >> 5) & 31) as u8;
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m             (*gr).table_select[2] = (tables & 31) as u8;
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m             (*gr).preflag = if (hdr1 & 0x8) != 0 {
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m                 get_bits(bs, 1) as u8
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m                 ((*gr).scalefac_compress >= 500) as u8
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m             (*gr).scalefac_scale = get_bits(bs, 1) as u8;
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m             (*gr).count1_table = get_bits(bs, 1) as u8;
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m             (*gr).scfsi = ((scfsi >> 12) & 15) as u8;
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m         scfsi = scfsi.wrapping_shl(4);
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m         gr = unsafe { gr.add(1) };
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m         gr_count = gr_count.wrapping_sub(1);
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m         if gr_count == 0 {
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     let pos = unsafe { (*bs).pos };
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     let limit = unsafe { (*bs).limit };
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m     if part_23_sum.wrapping_add(pos) > limit.wrapping_add(main_data_begin.wrapping_mul(8)) {
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     main_data_begin
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling harvest-work-oB14XC v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation)
+    Finished `release` profile [optimized] target(s) in 0.17s
+[38;5;244m - Completed in 0.190s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-oB14XC
+nm -D --defined-only /tmp/cbuild2/libharvest-work-oB14XC.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libharvest_work_oB14XC.so | awk '{print $3}' | sort > /tmp/r_syms.txt
+echo "--- C syms ($(wc -l < /tmp/c_syms.txt)) ---"; cat /tmp/c_syms.txt
+echo "--- Rust syms ($(wc -l < /tmp/r_syms.txt)) ---"; cat /tmp/r_syms.txt
+echo "--- MISSING FROM RUST ---"; comm -23 /tmp/c_syms.txt /tmp/r_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+--- C syms (1) ---
+read_side_info
+--- Rust syms (1) ---
+read_side_info
+--- MISSING FROM RUST ---
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity confirmed. Now a differential test against the C library to check byte-identical behavior.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest/diff.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential harness: loads the C .so and the Rust .so and compares
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // read_side_info results field-by-field over randomized inputs.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     const uint8_t *buf;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     int pos, limit;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m } bs_t;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     const uint8_t *sfbtab;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     uint16_t part_23_length, big_values, scalefac_compress;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     uint8_t global_gain, block_type, mixed_block_flag, n_long_sfb, n_short_sfb;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     uint8_t table_select[3], region_count[3], subblock_gain[3];
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     uint8_t preflag, scalefac_scale, count1_table, scfsi;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m } L3_gr_info_t;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m typedef int (*fn_t)(bs_t *, L3_gr_info_t *, const uint8_t *);
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m static uint64_t rs = 0x12345678ABCDEF01ull;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     rs ^= rs << 13; rs ^= rs >> 7; rs ^= rs << 17;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     return (uint32_t)(rs >> 32);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m #define BUFSZ 4096
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m #define NGR 8
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     if (!hc || !hr) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     fn_t fc = (fn_t)dlsym(hc, "read_side_info");
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     fn_t fr = (fn_t)dlsym(hr, "read_side_info");
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     if (!fc || !fr) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     long iters = argc > 3 ? atol(argv[3]) : 200000;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     long mism = 0, sr8 = 0, retneg = 0;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     /* how far each granule advanced, to know how many are meaningful */
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     for (long it = 0; it < iters; it++) {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         uint8_t buf[BUFSZ];
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         uint8_t hdr[4];
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         for (int i = 0; i < BUFSZ; i++) buf[i] = (uint8_t)rnd();
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         for (int i = 0; i < 4; i++) hdr[i] = (uint8_t)rnd();
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         /* mix in structured header choices to hit all branches */
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         switch (it % 6) {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         case 0: hdr[1] |= 0x8; hdr[3] |= 0xC0; break;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         case 1: hdr[1] |= 0x8; hdr[3] &= ~0xC0; break;
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         case 2: hdr[1] &= ~0x8; hdr[3] |= 0xC0; break;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         case 3: hdr[1] &= ~0x8; hdr[3] &= ~0xC0; break;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         default: break;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         /* keep sr_idx in range most of the time */
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         if (it % 7) { hdr[1] &= ~0x10; hdr[2] &= ~0x0C; }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         int sr_idx = (((hdr[2] >> 2) & 3) +
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m                       (((hdr[1] >> 3) & 1) + ((hdr[1] >> 4) & 1)) * 3);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         sr_idx -= (sr_idx != 0);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         if (sr_idx >= 8) sr8++;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         int limit = (int)(rnd() % (BUFSZ * 8 - 64));
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         int pos = (int)(rnd() % (limit > 0 ? (unsigned)limit : 1u));
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         bs_t bc = {buf, pos, limit}, br = {buf, pos, limit};
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         L3_gr_info_t gc[NGR], grr[NGR];
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         memset(gc, 0xAA, sizeof gc);
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         memset(grr, 0xAA, sizeof grr);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         int rc = fc(&bc, gc, hdr);
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         int rr = fr(&br, grr, hdr);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         int bad = 0;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         if (rc != rr) bad = 1;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         if (bc.pos != br.pos || bc.limit != br.limit || bc.buf != br.buf) bad = 1;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         if (rc < 0) retneg++;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         for (int g = 0; g < NGR && !bad; g++) {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             /* compare everything after the sfbtab pointer verbatim */
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             if (memcmp((char *)&gc[g] + sizeof(void *),
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m                        (char *)&grr[g] + sizeof(void *),
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m                        sizeof(L3_gr_info_t) - sizeof(void *)) != 0)
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                 bad = 1;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             /* sfbtab: pointers differ across .so images, compare the table
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m                contents they select (only meaningful when sr_idx is in range) */
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             if (!bad && sr_idx < 8 && gc[g].sfbtab != (const uint8_t *)0xAAAAAAAAAAAAAAAAull &&
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 gc[g].sfbtab && grr[g].sfbtab) {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m                 if (memcmp(gc[g].sfbtab, grr[g].sfbtab, 23) != 0) bad = 1;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         if (bad) {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             mism++;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             if (mism <= 5) {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m                 printf("MISMATCH it=%ld rc=%d rr=%d pos=%d limit=%d hdr=%02x%02x%02x%02x\n",
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                        it, rc, rr, pos, limit, hdr[0], hdr[1], hdr[2], hdr[3]);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     printf("iters=%ld mismatches=%ld (sr_idx==8 cases=%ld, ret<0=%ld)\n",
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m            iters, mism, sr8, retneg);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     return mism != 0;
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest/diff.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && gcc -O1 -o diff diff.c -ldl 2>&1 | tail -20 && ./diff /tmp/cbuild2/libharvest-work-oB14XC.so /local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/target/release/libharvest_work_oB14XC.so 300000[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run differential test
+
+iters=300000 mismatches=0 (sr_idx==8 cases=2673, ret<0=242811)
+[38;5;244m - Completed in 4.365s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/difftest && cat > sz.c <<'EOF'
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include "lib.h"
+int main(void){
+  printf("bs_t size=%zu align=%zu off(buf)=%zu off(pos)=%zu off(limit)=%zu\n",
+     sizeof(bs_t), _Alignof(bs_t), offsetof(bs_t,buf), offsetof(bs_t,pos), offsetof(bs_t,limit));
+  printf("gr size=%zu align=%zu sfbtab=%zu p23=%zu bv=%zu sfc=%zu gg=%zu bt=%zu mbf=%zu nl=%zu ns=%zu ts=%zu rc=%zu sg=%zu pf=%zu ss=%zu c1=%zu scfsi=%zu\n",
+     sizeof(L3_gr_info_t), _Alignof(L3_gr_info_t),
+     offsetof(L3_gr_info_t,sfbtab),offsetof(L3_gr_info_t,part_23_length),
+     offsetof(L3_gr_info_t,big_values),offsetof(L3_gr_info_t,scalefac_compress),
+     offsetof(L3_gr_info_t,global_gain),offsetof(L3_gr_info_t,block_type),
+     offsetof(L3_gr_info_t,mixed_block_flag),offsetof(L3_gr_info_t,n_long_sfb),
+     offsetof(L3_gr_info_t,n_short_sfb),offsetof(L3_gr_info_t,table_select),
+     offsetof(L3_gr_info_t,region_count),offsetof(L3_gr_info_t,subblock_gain),
+     offsetof(L3_gr_info_t,preflag),offsetof(L3_gr_info_t,scalefac_scale),
+     offsetof(L3_gr_info_t,count1_table),offsetof(L3_gr_info_t,scfsi));
+  return 0;
+}
+EOF
+gcc -I/local/home/scheschb/.harvest/work/harvest-work-oB14XC/c_src/include -o sz sz.c && ./sz[0m[38;5;244m (using tool: shell)[0m
+Purpose: Dump C struct layout for comparison
+
+bs_t size=16 align=8 off(buf)=0 off(pos)=8 off(limit)=12
+gr size=32 align=8 sfbtab=0 p23=8 bv=10 sfc=12 gg=14 bt=15 mbf=16 nl=17 ns=18 ts=19 rc=22 sg=25 pf=28 ss=29 c1=30 scfsi=31
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/src/layout_check.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add compile-time layout assertions
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Compile-time assertions that the FFI structs match the C layout
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! (verified against gcc: bs_t = 16/8, L3_gr_info_t = 32/8 with the offsets
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! listed below).
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m use super::{L3_gr_info_t, bs_t};
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m const _: () = {
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m     assert!(size_of::<bs_t>() == 16);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     assert!(align_of::<bs_t>() == 8);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     assert!(size_of::<L3_gr_info_t>() == 32);
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     assert!(align_of::<L3_gr_info_t>() == 8);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(bs_t, buf) == 0);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(bs_t, pos) == 8);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(bs_t, limit) == 12);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, sfbtab) == 0);
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, part_23_length) == 8);
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, big_values) == 10);
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, scalefac_compress) == 12);
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, global_gain) == 14);
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, block_type) == 15);
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, mixed_block_flag) == 16);
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, n_long_sfb) == 17);
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, n_short_sfb) == 18);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, table_select) == 19);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, region_count) == 22);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, subblock_gain) == 25);
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, preflag) == 28);
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, scalefac_scale) == 29);
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, count1_table) == 30);
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     assert!(std::mem::offset_of!(L3_gr_info_t, scfsi) == 31);
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m };
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/src/layout_check.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Wire up layout check module
+
+[49m[38;5;9m- 9    [0m:[38;5;9m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m mod layout_check;
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation && cargo build --release 2>&1 | tail -20 && echo "=== SYMBOLS ===" && nm -D --defined-only target/release/libharvest_work_oB14XC.so && cd /tmp/difftest && sed -i 's/0x12345678ABCDEF01ull/0xDEADBEEF13579BDFull/' diff.c && gcc -O1 -o diff2 diff.c -ldl && ./diff2 /tmp/cbuild2/libharvest-work-oB14XC.so /local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation/target/release/libharvest_work_oB14XC.so 500000[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild, re-check symbols, rerun diff test with new seed
+
+   Compiling harvest-work-oB14XC v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-oB14XC/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+=== SYMBOLS ===
+00000000000119f0 T read_side_info
+iters=500000 mismatches=0 (sr_idx==8 cases=4429, ret<0=404579)
+[38;5;244m - Completed in 7.384s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-oB14XC && md5sum c_src/src/lib.c c_src/include/lib.h c_src/CMakeLists.txt && find translation -type f -not -path '*/target/*' && rm -rf /tmp/difftest /tmp/cbuild2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src unmodified, list deliverables, clean temp dirs
+
+8b4c41c6315b260bbc807825a425e1ea  c_src/src/lib.c
+1fcb752bc4eb33f554765156ea7085e5  c_src/include/lib.h
+8889366dbb1535b8a848547af64fbc79  c_src/CMakeLists.txt
+translation/Cargo.toml
+translation/src/lib.rs
+translation/src/layout_check.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The C library turned out to be small: one translation unit ([38;5;10mc_src/src/lib.c[0m, 163 lines) exporting exactly one public symbol.[0m[0m
+[0m[0m
+Surface enumeration (my definition of done):[0m[0m
+- Built the C library via CMake → [38;5;10mlibharvest-work-oB14XC.so[0m[0m[0m
+- [38;5;10mnm -D --defined-only[0m → exactly one export: [38;5;10mread_side_info[0m[0m[0m
+- Header declares only [38;5;10mread_side_info[0m plus two structs ([38;5;10mbs_t[0m, [38;5;10mL3_gr_info_t[0m); no namespace/renaming macros. [38;5;10mget_bits[0m is [38;5;10mstatic[0m, so not exported.[0m[0m
+[0m[0m
+Symbol diff between the C [38;5;10m.so[0m and my Rust [38;5;10m.so[0m is empty — both export [38;5;10mread_side_info[0m and nothing else.[0m[0m
+[0m[0m
+What I translated and the C quirks I preserved:[0m[0m
+- [38;5;10mget_bits[0m uses raw pointer reads with the same possibly-out-of-bounds byte advance, the same "check [38;5;10mpos > limit[0m [3mafter[23m incrementing" ordering, and wrapping shifts so [38;5;10mnext >> -shl[0m behaves as on x86.[0m[0m
+- [38;5;10msr_idx[0m can reach 8, which indexes one row past the end of the [38;5;10m[8][N][0m tables. Rust's bounds-checked indexing would panic, so [38;5;10msfbtab[0m is computed with raw pointer arithmetic ([38;5;10mbase.offset(sr_idx * stride)[0m), reproducing the C address computation exactly.[0m[0m
+- The [38;5;10mg_scf_mixed[0m and [38;5;10mg_scf_short[0m rows whose C initializers are shorter than the declared row length are explicitly zero-padded to match.[0m[0m
+- All integer arithmetic uses wrapping ops; error-check order ([38;5;10mbig_values > 288[0m, then [38;5;10mblock_type == 0[0m, then the final [38;5;10mpart_23_sum[0m bound) is unchanged. No bugs fixed.[0m[0m
+[0m[0m
+Verification:[0m[0m
+- [38;5;10mcargo build --release[0m succeeds with no warnings.[0m[0m
+- Compile-time [38;5;10moffset_of[0m/[38;5;10msize_of[0m assertions in [38;5;10msrc/layout_check.rs[0m pin the FFI struct layout to what gcc reports ([38;5;10mbs_t[0m 16/8; [38;5;10mL3_gr_info_t[0m 32/8, offsets 0/8/10/12/14/15/16/17/18/19/22/25/28/29/30/31).[0m[0m
+- A [38;5;10mdlopen[0m-based differential harness loaded both [38;5;10m.so[0m files and compared return value, mutated [38;5;10mbs_t[0m, and every [38;5;10mL3_gr_info_t[0m field across 800,000 randomized inputs (two seeds) covering all four [38;5;10mhdr[1]&8[0m × [38;5;10mhdr[3]&0xC0[0m branch combinations and including ~7,100 of the out-of-range [38;5;10msr_idx == 8[0m cases: zero mismatches. [38;5;10msfbtab[0m was compared by the table contents it selects, since the raw pointer necessarily differs between two shared objects.[0m[0m
+[0m[0m
+Temp build/test directories were removed; [38;5;10mc_src/[0m is unmodified.[0m[0m
+[38;5;8m
+ ▸ Credits: 8.46 • Time: 4m 16s
+
+[0m[1G[0m[0m[?25h

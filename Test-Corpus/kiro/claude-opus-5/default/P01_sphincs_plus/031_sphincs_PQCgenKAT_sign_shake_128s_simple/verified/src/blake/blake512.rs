@@ -242,8 +242,7 @@ pub fn blake512_final(state: &mut BlakeState512, digest: &mut [u8]) {
 pub fn blake512_mgf1(out: &mut [u8], outlen: c_ulong, inp: &[u8], inlen: c_ulong) {
     let inlen = inlen as usize;
     let outlen = outlen as usize;
-    let mut vla = crate::vla::Vla::<{ crate::blake::MGF1_INBUF_MAX }>::new(inlen + 4);
-    let inbuf = vla.as_mut_slice();
+    let mut inbuf = [0u8; crate::blake::MGF1_INBUF_MAX];
     let mut outbuf = [0u8; SPX_BLAKE512_OUTPUT_BYTES];
 
     inbuf[..inlen].copy_from_slice(&inp[..inlen]);

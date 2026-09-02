@@ -1,0 +1,463 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in working directory
+
+./c_src/CMakeLists.txt
+./c_src/include/lib.h
+./c_src/src/lib.c
+./.claude/settings.json
+---
+3
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/include/lib.h c_src/src/lib.c c_src/CMakeLists.txt; echo "==="; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and CMake config
+
+   1 c_src/include/lib.h
+ 174 c_src/src/lib.c
+  15 c_src/CMakeLists.txt
+ 190 total
+===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read the C source and header
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src/src/lib.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src/include/lib.h[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4271 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m41 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src/include/lib.h
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with CMake
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Debug cmake configure failure
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-rtD8pc/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild2 && mkdir -p /tmp/cbuild2 && cd /tmp/cbuild2 && cmake /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/c_src > /dev/null && make 2>&1 | tail -5 && ls -la *.so && echo "=== SYMBOLS ===" && nm -D *.so | grep -v ' U ' [0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library fresh and list dynamic symbols
+
+[ 50%] Building C object CMakeFiles/harvest-work-WSNYyE.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-WSNYyE.so
+[100%] Built target harvest-work-WSNYyE
+-rwxr-xr-x. 1 scheschb amazon 16208 Sep  1 16:22 libharvest-work-WSNYyE.so
+=== SYMBOLS ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+00000000000013e1 T memchra2
+[38;5;244m - Completed in 0.441s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-WSNYyE"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_WSNYyE"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the Rust translation of the C library
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// static int memchra(const char *str, int c, size_t n)
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// Counts the bytes of `str[0..n]` equal to `(char)c`. On the reference
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// platform `char` is signed, so the comparison is performed on the
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// truncated low byte of `c`.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m fn memchra(s: &[u8], c: c_int, n: usize) -> c_int {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     let mut count: c_int = 0;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     let target = c as u8; // (char)c
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     for i in 0..n {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         if s[i] == target {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             count = count.wrapping_add(1);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     count
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// static int process_buffer(char *buffer, size_t len)
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// `buffer` is modeled as the whole backing array; a NULL pointer cannot be
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// produced by the single caller, so only the "empty string" early return is
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// reachable. Bytes are accumulated as *signed* char values, matching the
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// `(int)(*i)` conversion of the C code on the reference platform.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m fn process_buffer(buffer: &[u8], len: usize) -> c_int {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     // if (buffer == NULL || *buffer == '\0') return -1;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     if buffer.is_empty() || buffer[0] == 0 {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     while i < len && buffer[i] != 0 {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         result = result.wrapping_add((buffer[i] as i8) as c_int);
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// static float int_to_float_bits(int value)
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// Type punning through a union: reinterpret the object representation of the
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// int as a float.
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m fn int_to_float_bits(value: c_int) -> f32 {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     f32::from_bits(value as u32)
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// static int process_strings(char **strings, int count, const char *target)
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// Counts the non-NULL, non-empty entries of `strings` that start with
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// `target` (`strncmp(*i, target, strlen(target)) == 0`).
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn process_strings(strings: &[&[u8]], count: c_int, target: &[u8]) -> c_int {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     // if (strings == NULL || count <= 0) return 0;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     if strings.is_empty() || count <= 0 {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let mut matches: c_int = 0;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     for entry in strings.iter().take(count as usize) {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         // if (*i == NULL || **i == '\0') continue;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         if entry.is_empty() || entry[0] == 0 {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         // strncmp(*i, target, strlen(target)) == 0
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         if strncmp_prefix(entry, target) {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             matches = matches.wrapping_add(1);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     matches
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// `strncmp(a, b, b.len()) == 0` where both operands are NUL-terminated C
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// strings represented here without their terminator.
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m fn strncmp_prefix(a: &[u8], b: &[u8]) -> bool {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     for i in 0..b.len() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         let ac = if i < a.len() { a[i] } else { 0 };
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         let bc = b[i];
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         if ac != bc {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             return false;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         if ac == 0 {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             return true;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     true
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// static int safe_sum_array(int *arr, size_t size)
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m fn safe_sum_array(arr: &[c_int], size: usize) -> c_int {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     // if (arr == NULL || size == 0) return 0;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     if arr.is_empty() || size == 0 {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     let mut sum: c_int = 0;
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     for i in 0..size {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         sum = sum.wrapping_add(arr[i]);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     sum
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// static int interpret_as_int(unsigned char *bytes, size_t len)
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m /// Reinterprets the first `sizeof(int)` bytes as an `int`; the reference
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m /// platform is little-endian.
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m fn interpret_as_int(bytes: &[u8], len: usize) -> c_int {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     // if (bytes == NULL || len < sizeof(int)) return 0;
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     if bytes.is_empty() || len < core::mem::size_of::<c_int>() {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     c_int::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m /// static int count_occurrences(const char *text, char ch)
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m fn count_occurrences(text: &[u8], ch: u8) -> c_int {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     // if (text == NULL || *text == '\0') return 0;
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     if text.is_empty() || text[0] == 0 {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     let len = c_strlen(text);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     memchra(text, ch as i8 as c_int, len)
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m /// static int complex_iteration(int *data, size_t count)
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m fn complex_iteration(data: &[c_int], count: usize) -> c_int {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     // if (data == NULL || count == 0) return -1;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     if data.is_empty() || count == 0 {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     for i in 0..count {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         let u = data[i] as u32;
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         result ^= (u & 0xFF) as c_int;
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m /// `strlen` over a byte buffer holding a NUL-terminated string.
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m fn c_strlen(buf: &[u8]) -> usize {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     match buf.iter().position(|&b| b == 0) {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         Some(p) => p,
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         None => buf.len(),
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m /// Emulates `snprintf(buffer, size, ...)` into a fixed-size `char` array:
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m /// at most `size - 1` bytes of `text` are copied, followed by a NUL byte.
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m fn snprintf_into(buffer: &mut [u8], text: &[u8]) {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     if buffer.is_empty() {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let max = buffer.len() - 1;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let n = if text.len() < max { text.len() } else { max };
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     buffer[..n].copy_from_slice(&text[..n]);
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     buffer[n] = 0;
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m pub extern "C" fn memchra2(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     // char buffer[64];
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     // snprintf(buffer, sizeof(buffer), "test%d-%d-%d-%d", a, b, c, d);
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     let mut buffer = [0u8; 64];
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let formatted = format!("test{}-{}-{}-{}", a, b, c, d);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     snprintf_into(&mut buffer, formatted.as_bytes());
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     let dash_count = count_occurrences(&buffer, b'-');
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     result = result.wrapping_add(dash_count.wrapping_mul(10));
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     let values: [c_int; 4] = [a, b, c, d];
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let sum = safe_sum_array(&values, 4);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     result = result.wrapping_add(sum);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     let test_strings: [&[u8]; 4] = [b"test1", b"test2", b"testing", b"other"];
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     let matches = process_strings(&test_strings, 4, b"test");
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     result = result.wrapping_add(matches.wrapping_mul(5));
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     let f = int_to_float_bits(a);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     if f > 0.0f32 && f < 1000.0f32 {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m         result = result.wrapping_add(f as c_int);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let buf_len = c_strlen(&buffer);
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     let buf_sum = process_buffer(&buffer, buf_len);
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     if buf_sum > 0 {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         result = result.wrapping_add(buf_sum % 256);
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     let mut bytes = [0u8; 4];
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     bytes[0] = (b & 0xFF) as u8;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     bytes[1] = (c & 0xFF) as u8;
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     bytes[2] = (d & 0xFF) as u8;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     bytes[3] = 0;
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     let interpreted = interpret_as_int(&bytes, 4);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     result ^= interpreted;
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     let complex_result = complex_iteration(&values, 4);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     result = result.wrapping_add(complex_result);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+   Compiling harvest-work-WSNYyE v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation)
+warning: crate `harvest_work_WSNYyE` should have a snake case name
+  |
+  = help: convert the identifier to snake case: `harvest_work_wsnyy_e`
+  = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `harvest-work-WSNYyE` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.180s[0m
+
+[?25l[0m[38;5;141m> [0mNow the symbol diff and a differential test against the C library.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-WSNYyE
+nm -D /tmp/cbuild2/libharvest-work-WSNYyE.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/c_syms.txt
+nm -D translation/target/release/libharvest_work_WSNYyE.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/rust_syms.txt
+echo "--- C exports:"; cat /tmp/c_syms.txt
+echo "--- Rust exports:"; cat /tmp/rust_syms.txt
+echo "--- MISSING FROM RUST:"; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared libraries
+
+--- C exports:
+memchra2
+--- Rust exports:
+memchra2
+--- MISSING FROM RUST:
+[38;5;244m - Completed in 0.38s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/difftest.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
+#include <limits.h>
+#include <stdint.h>
+
+typedef int (*fn_t)(int,int,int,int);
+
+static uint64_t s = 0x243F6A8885A308D3ULL;
+static uint64_t rnd(void){ s^=s<<13; s^=s>>7; s^=s<<17; return s; }
+
+int main(int argc, char**argv){
+    void *hc = dlopen(argv[1], RTLD_NOW);
+    void *hr = dlopen(argv[2], RTLD_NOW);
+    if(!hc||!hr){ fprintf(stderr,"dlopen: %s\n", dlerror()); return 2; }
+    fn_t fc = (fn_t)dlsym(hc,"memchra2");
+    fn_t fr = (fn_t)dlsym(hr,"memchra2");
+    if(!fc||!fr){ fprintf(stderr,"dlsym failed\n"); return 2; }
+
+    int edge[] = {0,1,-1,2,-2,7,-7,255,256,-255,-256,65535,-65536,
+                  INT_MAX,INT_MIN,INT_MAX-1,INT_MIN+1,
+                  0x3F800000, 0x447A0000, 0x449C4000, 0x00000001, 0x7F7FFFFF,
+                  0x7F800000, 0x7FC00000, (int)0x80000000, (int)0xFF800000,
+                  0x3DCCCCCD, 0x40490FDB, 1000, -1000, 12345, -12345,
+                  0x00800000, 0x007FFFFF, 0x447A0001, 0x3F7FFFFF};
+    int ne = sizeof(edge)/sizeof(edge[0]);
+    long fails=0, total=0;
+
+    for(int i=0;i<ne;i++)for(int j=0;j<ne;j++){
+        int a=edge[i], b=edge[j], c=edge[(i+j)%ne], d=edge[(i*3+j*7)%ne];
+        int rc=fc(a,b,c,d), rr=fr(a,b,c,d); total++;
+        if(rc!=rr){ if(fails<20) printf("MISMATCH a=%d b=%d c=%d d=%d C=%d R=%d\n",a,b,c,d,rc,rr); fails++; }
+    }
+    for(long k=0;k<400000;k++){
+        int a=(int)rnd(), b=(int)rnd(), c=(int)rnd(), d=(int)rnd();
+        if(k%5==0){ a = edge[rnd()%ne]; }
+        if(k%7==0){ b = (int)(rnd()%512) - 256; }
+        int rc=fc(a,b,c,d), rr=fr(a,b,c,d); total++;
+        if(rc!=rr){ if(fails<20) printf("MISMATCH a=%d b=%d c=%d d=%d C=%d R=%d\n",a,b,c,d,rc,rr); fails++; }
+    }
+    printf("total=%ld fails=%ld\n", total, fails);
+    return fails!=0;
+}
+EOF
+gcc -O2 -o /tmp/difftest /tmp/difftest.c -ldl && /tmp/difftest /tmp/cbuild2/libharvest-work-WSNYyE.so /local/home/scheschb/.harvest/work/harvest-work-WSNYyE/translation/target/release/libharvest_work_WSNYyE.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust over edge cases and 400k random inputs
+
+total=401296 fails=0
+[38;5;244m - Completed in 0.360s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -f /tmp/difftest /tmp/difftest.c /tmp/c_syms.txt /tmp/rust_syms.txt; rm -rf /tmp/cbuild /tmp/cbuild2; cd /local/home/scheschb/.harvest/work/harvest-work-WSNYyE && git status --short 2>/dev/null; find . -path ./translation/target -prune -o -type f -print | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temp artifacts and confirm c_src untouched
+
+./.claude/settings.json
+./c_src/CMakeLists.txt
+./c_src/include/lib.h
+./c_src/src/lib.c
+./translation/Cargo.lock
+./translation/Cargo.toml
+./translation/src/lib.rs
+[38;5;244m - Completed in 0.15s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+The library turned out to be small: [38;5;10mc_src/[0m is a single 174-line [38;5;10mlib.c[0m with one public header declaring one function. [38;5;10mnm -D[0m on the CMake-built C [38;5;10m.so[0m confirms exactly one exported code symbol, [38;5;10mmemchra2[0m; the other eight functions ([38;5;10mmemchra[0m, [38;5;10mprocess_buffer[0m, [38;5;10mint_to_float_bits[0m, [38;5;10mprocess_strings[0m, [38;5;10msafe_sum_array[0m, [38;5;10minterpret_as_int[0m, [38;5;10mcount_occurrences[0m, [38;5;10mcomplex_iteration[0m) are [38;5;10mstatic[0m and not part of the ABI. No namespace-renaming macros exist in the header.[0m[0m
+[0m[0m
+Verification I ran myself:[0m[0m
+- Symbol diff: [38;5;10mcomm -23[0m of C exports vs Rust exports is empty — Rust exports [38;5;10mmemchra2[0m and nothing is missing.[0m[0m
+- Differential test: a C harness [38;5;10mdlopen[0ms both [38;5;10m.so[0m files and compares [38;5;10mmemchra2[0m outputs across 36 hand-picked edge values (including [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m, raw float bit patterns for NaN/Inf/subnormals/values just inside and outside the [38;5;10m(0.0, 1000.0)[0m window) in a 36×36 grid plus 400,000 pseudorandom quadruples. 401,296 cases, 0 mismatches.[0m[0m
+[0m[0m
+Behaviors I deliberately preserved rather than cleaned up: the signed-[38;5;10mchar[0m accumulation in [38;5;10mprocess_buffer[0m, the little-endian type-punned read in [38;5;10minterpret_as_int[0m (the C casts a [38;5;10munsigned char[4][0m to [38;5;10mint*[0m, which is UB but reads as a little-endian [38;5;10mi32[0m on this platform), the union-based float reinterpretation, and wrapping signed arithmetic throughout. [38;5;10msnprintf[0m into [38;5;10mchar buffer[64][0m is emulated including truncation semantics, though with [38;5;10m%d[0m on four [38;5;10mint[0ms the output maxes out at 51 bytes and never truncates.[0m[0m
+[0m[0m
+[38;5;10mcargo build --release[0m succeeds; the only warning is the non-snake-case crate name, which follows from the directory name.[0m[0m
+[38;5;8m
+ ▸ Credits: 4.73 • Time: 2m 28s
+
+[0m[1G[0m[0m[?25h

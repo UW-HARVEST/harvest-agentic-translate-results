@@ -1,7 +1,3 @@
-// Rust translation of c_src/src/main.c
-//
-// Original copyright notice from the C source:
-//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -25,34 +21,41 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+//! Rust translation of c_src/src/main.c
+//!
+//! The C program dumps the raw bytes of a `house_t` struct as lowercase hex.
+//! Reproducing that byte-for-byte requires reproducing the platform's struct
+//! layout (x86-64 / LP64 System V ABI):
+//!
+//! ```text
+//! typedef struct {
+//!     int    floors;     // offset 0, 4 bytes
+//!     int    bedrooms;   // offset 4, 4 bytes
+//!     double bathrooms;  // offset 8, 8 bytes
+//! } house_t;             // sizeof == 16, no padding holes
+//! ```
+//!
+//! `house_t house = {0};` zero-initializes the object, so any padding reads as
+//! zero. With this layout there is no padding, so the serialized image is just
+//! the three fields in declaration order, little-endian.
+
 use std::io::{Read, Write};
 
-/// Mirrors:
-///
-/// ```c
-/// typedef struct {
-///     int floors;
-///     int bedrooms;
-///     double bathrooms;
-/// } house_t;
-/// ```
-///
-/// On the x86-64 SysV ABI (and every other mainstream 64-bit target) this lays
-/// out as: `floors` at offset 0, `bedrooms` at offset 4, `bathrooms` at offset
-/// 8, alignment 8, total size 16 — i.e. there are no padding holes. The C code
-/// zero-initializes the struct with `= {0}` before assigning every field, so the
-/// whole 16-byte image is fully determined.
+/// Size and field offsets of the C `house_t` on the reference platform.
+const HOUSE_SIZE: usize = 16;
+const OFF_FLOORS: usize = 0;
+const OFF_BEDROOMS: usize = 4;
+const OFF_BATHROOMS: usize = 8;
+
+/// Mirror of the C `house_t` struct.
 struct House {
     floors: i32,
     bedrooms: i32,
     bathrooms: f64,
 }
 
-/// Size of `house_t`, i.e. what `sizeof(house)` evaluates to in the C code.
-const HOUSE_SIZE: usize = 16;
-
 impl House {
-    /// `house_t house = {0};` — the object starts out as all-zero bytes.
+    /// Equivalent of `house_t house = {0};`
     fn zeroed() -> Self {
         House {
             floors: 0,
@@ -61,139 +64,173 @@ impl House {
         }
     }
 
-    /// Produces the raw object representation that the C code hands to
-    /// `print_hex` via `(unsigned char *)&house`.
-    ///
-    /// This is done by starting from the zeroed image (matching `= {0}`) and
-    /// writing each field's little-endian representation at its ABI offset,
-    /// which avoids any `unsafe` transmute of the struct itself.
-    fn to_object_representation(&self) -> [u8; HOUSE_SIZE] {
-        let mut bytes = [0u8; HOUSE_SIZE];
-        bytes[0..4].copy_from_slice(&self.floors.to_le_bytes());
-        bytes[4..8].copy_from_slice(&self.bedrooms.to_le_bytes());
-        bytes[8..16].copy_from_slice(&self.bathrooms.to_le_bytes());
-        bytes
+    /// The object representation of the struct, as `(unsigned char *)&house`
+    /// would see it. Padding bytes (none on this layout) stay zero, matching
+    /// the zero-initialization done in `driver`.
+    fn as_object_bytes(&self) -> [u8; HOUSE_SIZE] {
+        let mut buf = [0u8; HOUSE_SIZE];
+        buf[OFF_FLOORS..OFF_FLOORS + 4].copy_from_slice(&self.floors.to_le_bytes());
+        buf[OFF_BEDROOMS..OFF_BEDROOMS + 4].copy_from_slice(&self.bedrooms.to_le_bytes());
+        buf[OFF_BATHROOMS..OFF_BATHROOMS + 8].copy_from_slice(&self.bathrooms.to_le_bytes());
+        buf
     }
 }
 
 /// `static void print_hex(unsigned char *p, int len)`
-///
-/// Prints each byte as `%02x`, then a single newline.
-fn print_hex(out: &mut impl Write, p: &[u8]) {
-    let mut buf = String::with_capacity(p.len() * 2 + 1);
-    for &b in p {
-        // "%02x": lowercase hex, zero padded to two digits.
-        buf.push_str(&format!("{:02x}", b));
+fn print_hex<W: Write>(out: &mut W, p: &[u8], len: usize) {
+    for i in 0..len {
+        // printf("%02x", p[i]);
+        let _ = write!(out, "{:02x}", p[i]);
     }
-    buf.push('\n');
-    let _ = out.write_all(buf.as_bytes());
+    // printf("\n");
+    let _ = writeln!(out);
 }
 
 /// `void driver(int floors)`
-fn driver(out: &mut impl Write, floors: i32) {
+fn driver<W: Write>(out: &mut W, floors: i32) {
     let mut house = House::zeroed();
     house.floors = floors;
     house.bedrooms = 3;
-    house.bathrooms = 2.0;
-    print_hex(out, &house.to_object_representation());
+    house.bathrooms = 2.;
+    let bytes = house.as_object_bytes();
+    print_hex(out, &bytes, HOUSE_SIZE);
 }
 
-/// True for the characters `isspace()` accepts in the C locale; these are what
-/// a `%d` conversion silently skips over (newlines included).
+/// Byte-at-a-time stdin reader, so we consume exactly what `scanf` would.
+struct ByteReader<R: Read> {
+    inner: R,
+    peeked: Option<u8>,
+}
+
+impl<R: Read> ByteReader<R> {
+    fn new(inner: R) -> Self {
+        ByteReader {
+            inner,
+            peeked: None,
+        }
+    }
+
+    fn next_byte(&mut self) -> Option<u8> {
+        if let Some(b) = self.peeked.take() {
+            return Some(b);
+        }
+        let mut b = [0u8; 1];
+        match self.inner.read(&mut b) {
+            Ok(1) => Some(b[0]),
+            _ => None,
+        }
+    }
+
+    /// Push a byte back, as `scanf` does with the character that terminated a
+    /// conversion.
+    fn unget(&mut self, b: u8) {
+        self.peeked = Some(b);
+    }
+}
+
+/// True for the characters `isspace()` treats as whitespace in the C locale;
+/// `scanf`'s `%d` directive skips a run of these first.
 fn is_c_space(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
 }
 
-/// Emulates `scanf("%d", &x)` reading from the given buffer of stdin bytes.
+/// `scanf("%d", &x)`: returns `Some(value)` on a successful conversion and
+/// `None` on input failure (EOF before any character) or matching failure, in
+/// which case the C code leaves `x` untouched.
 ///
-/// Returns `Some(value)` when the conversion succeeds, or `None` on a matching
-/// failure or end of input — in which case the C code leaves `x` untouched.
-///
-/// Behavioral notes that this reproduces:
-/// * Leading whitespace, including newlines, is skipped, so the conversion
-///   happily reads across line boundaries.
-/// * An optional `+`/`-` sign may precede the digits; a sign with no following
-///   digit is a matching failure.
-/// * Only base-10 digits are consumed, so input like `0x10` yields `0`.
-/// * glibc accumulates the digits into a `long` (saturating at `LONG_MAX` /
-///   `LONG_MIN`, as `strtol` does) and then stores it through an `int *`,
-///   truncating the low 32 bits. Out-of-range input is undefined behavior in
-///   ISO C, but this is what the reference implementation actually does.
-fn scanf_int(input: &[u8]) -> Option<i32> {
-    let mut i = 0usize;
+/// glibc accumulates the digits and converts with `strtol`, which saturates at
+/// `LONG_MAX` / `LONG_MIN` on overflow, then stores the result through an
+/// `int *`, truncating to 32 bits. Both effects are reproduced here.
+fn scanf_d<R: Read>(r: &mut ByteReader<R>) -> Option<i32> {
+    // Skip leading whitespace.
+    let mut cur = loop {
+        match r.next_byte() {
+            Some(b) if is_c_space(b) => continue,
+            Some(b) => break b,
+            None => return None, // input failure
+        }
+    };
 
-    while i < input.len() && is_c_space(input[i]) {
-        i += 1;
-    }
-    if i >= input.len() {
-        return None; // EOF before any conversion.
-    }
-
-    let negative = match input[i] {
+    // Optional sign.
+    let negative = match cur {
         b'-' => {
-            i += 1;
+            negative_sign_seen(&mut cur, r)?;
             true
         }
         b'+' => {
-            i += 1;
+            negative_sign_seen(&mut cur, r)?;
             false
         }
         _ => false,
     };
 
-    let digits_start = i;
-    // Accumulate as a `long` (i64 on LP64) with strtol-style saturation.
-    let mut magnitude: i64 = 0;
+    // At least one digit is required, otherwise this is a matching failure.
+    if !cur.is_ascii_digit() {
+        r.unget(cur);
+        return None;
+    }
+
+    // Accumulate as C `long` (64-bit here) with strtol-style saturation.
+    let mut acc: i64 = 0;
     let mut saturated = false;
-    while i < input.len() && input[i].is_ascii_digit() {
-        let digit = i64::from(input[i] - b'0');
+    loop {
+        let digit = i64::from(cur - b'0');
         if !saturated {
-            match magnitude
+            match acc
                 .checked_mul(10)
-                .and_then(|acc| acc.checked_add(digit))
+                .and_then(|v| v.checked_add(if negative { -digit } else { digit }))
             {
-                Some(next) => magnitude = next,
+                Some(v) => acc = v,
                 None => saturated = true,
             }
         }
-        i += 1;
-    }
 
-    if i == digits_start {
-        return None; // No digits: matching failure, `x` keeps its old value.
-    }
-
-    let as_long: i64 = if saturated {
-        if negative {
-            i64::MIN
-        } else {
-            i64::MAX
+        match r.next_byte() {
+            Some(b) if b.is_ascii_digit() => cur = b,
+            Some(b) => {
+                r.unget(b);
+                break;
+            }
+            None => break,
         }
-    } else if negative {
-        magnitude.wrapping_neg()
-    } else {
-        magnitude
-    };
+    }
 
-    // Stored through an `int *`: keep the low 32 bits.
-    Some(as_long as i32)
+    if saturated {
+        acc = if negative { i64::MIN } else { i64::MAX };
+    }
+
+    // Store through `int *`: truncate the long to 32 bits.
+    Some(acc as i32)
+}
+
+/// Consume the character after a sign; EOF right after a sign is a matching
+/// failure in glibc (nothing is stored).
+fn negative_sign_seen<R: Read>(cur: &mut u8, r: &mut ByteReader<R>) -> Option<()> {
+    match r.next_byte() {
+        Some(b) => {
+            *cur = b;
+            Some(())
+        }
+        None => None,
+    }
 }
 
 fn main() {
-    let mut input = Vec::new();
-    // `scanf` pulls from the stdin stream on demand; since this program performs
-    // exactly one conversion and then exits, slurping the stream up front is
-    // observationally equivalent.
-    let _ = std::io::stdin().read_to_end(&mut input);
-
-    // `int x = 0;` — the initial value survives a failed conversion.
-    let mut x: i32 = 0;
-    if let Some(value) = scanf_int(&input) {
-        x = value;
-    }
+    let stdin = std::io::stdin();
+    let mut reader = ByteReader::new(stdin.lock());
 
     let stdout = std::io::stdout();
-    let mut out = stdout.lock();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+
+    // int x = 0;
+    let mut x: i32 = 0;
+    // scanf("%d", &x);  -- x keeps its value if the conversion fails
+    if let Some(v) = scanf_d(&mut reader) {
+        x = v;
+    }
+    // driver(x);
     driver(&mut out, x);
+
     let _ = out.flush();
+    // return 0;
 }

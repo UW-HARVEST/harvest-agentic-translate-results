@@ -1,0 +1,549 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory contents
+
+./c_src/CMakeLists.txt
+./c_src/src/main.c
+./.claude/settings.json
+---
+     25 c_src/CMakeLists.txt
+      0 c_src/src
+     25 total
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/c_src/src/main.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/c_src/CMakeLists.txt[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1650 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7vgXH4/c_src/src/main.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-7vgXH4/c_src/CMakeLists.txt
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwhich gcc cc cargo rustc; gcc --version 2>&1|head -1; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain availability
+
+/usr/bin/gcc
+/usr/bin/cc
+/home/scheschb/.cargo/bin/cargo
+/home/scheschb/.cargo/bin/rustc
+gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O2 -o /tmp/cref/driver c_src/src/main.c && for i in 0 1 -1 7 2147483647 -2147483648 4294967296 99999999999999999999 " 42" "abc" "" "+5" "-" "12abc" "0x10" "007"; do printf '%s' "$i" | /tmp/cref/driver > /tmp/cref/out.txt 2>&1; echo "IN=[$i] OUT=$(cat /tmp/cref/out.txt)"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C reference and probe scanf edge cases
+
+IN=[0] OUT=00000000030000000000000000000040
+IN=[1] OUT=01000000030000000000000000000040
+IN=[-1] OUT=ffffffff030000000000000000000040
+IN=[7] OUT=07000000030000000000000000000040
+IN=[2147483647] OUT=ffffff7f030000000000000000000040
+IN=[-2147483648] OUT=00000080030000000000000000000040
+IN=[4294967296] OUT=00000000030000000000000000000040
+IN=[99999999999999999999] OUT=ffffffff030000000000000000000040
+IN=[ 42] OUT=2a000000030000000000000000000040
+IN=[abc] OUT=00000000030000000000000000000040
+IN=[] OUT=00000000030000000000000000000040
+IN=[+5] OUT=05000000030000000000000000000040
+IN=[-] OUT=00000000030000000000000000000040
+IN=[12abc] OUT=0c000000030000000000000000000040
+IN=[0x10] OUT=00000000030000000000000000000040
+IN=[007] OUT=07000000030000000000000000000040
+[38;5;244m - Completed in 0.95s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for i in '-99999999999999999999' '9223372036854775807' '9223372036854775808' '-9223372036854775808' '4294967297' '8589934592' $'\n\n\t  -3xyz' '  +0000000000000012' '1e5' '--5' '+-5' '2147483648'; do printf '%s' "$i" | ./driver > o.txt 2>&1; echo "IN=[$(printf '%s' "$i"|cat -A|tr -d '\n')] OUT=$(cat o.txt)"; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Probe more scanf overflow/whitespace cases
+
+IN=[-99999999999999999999] OUT=00000000030000000000000000000040
+IN=[9223372036854775807] OUT=ffffffff030000000000000000000040
+IN=[9223372036854775808] OUT=ffffffff030000000000000000000040
+IN=[-9223372036854775808] OUT=00000000030000000000000000000040
+IN=[4294967297] OUT=01000000030000000000000000000040
+IN=[8589934592] OUT=00000000030000000000000000000040
+IN=[$$^I  -3xyz] OUT=fdffffff030000000000000000000040
+IN=[  +0000000000000012] OUT=0c000000030000000000000000000040
+IN=[1e5] OUT=01000000030000000000000000000040
+IN=[--5] OUT=00000000030000000000000000000040
+IN=[+-5] OUT=00000000030000000000000000000040
+IN=[2147483648] OUT=00000080030000000000000000000040
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translated executable
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate main.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //! Rust translation of c_src/src/main.c
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! The C program dumps the raw bytes of a `house_t` struct as lowercase hex.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //! Reproducing that byte-for-byte requires reproducing the platform's struct
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //! layout (x86-64 / LP64 System V ABI):
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //! ```text
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //! typedef struct {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //!     int    floors;     // offset 0, 4 bytes
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m //!     int    bedrooms;   // offset 4, 4 bytes
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m //!     double bathrooms;  // offset 8, 8 bytes
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m //! } house_t;             // sizeof == 16, no padding holes
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m //! ```
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m //! `house_t house = {0};` zero-initializes the object, so any padding reads as
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m //! zero. With this layout there is no padding, so the serialized image is just
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m //! the three fields in declaration order, little-endian.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// Size and field offsets of the C `house_t` on the reference platform.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m const HOUSE_SIZE: usize = 16;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m const OFF_FLOORS: usize = 0;
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m const OFF_BEDROOMS: usize = 4;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m const OFF_BATHROOMS: usize = 8;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// Mirror of the C `house_t` struct.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m struct House {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     floors: i32,
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     bedrooms: i32,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     bathrooms: f64,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m impl House {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     /// Equivalent of `house_t house = {0};`
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     fn zeroed() -> Self {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         House {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             floors: 0,
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             bedrooms: 0,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             bathrooms: 0.0,
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     /// The object representation of the struct, as `(unsigned char *)&house`
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     /// would see it. Padding bytes (none on this layout) stay zero, matching
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     /// the zero-initialization done in `driver`.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     fn as_object_bytes(&self) -> [u8; HOUSE_SIZE] {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         let mut buf = [0u8; HOUSE_SIZE];
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         buf[OFF_FLOORS..OFF_FLOORS + 4].copy_from_slice(&self.floors.to_le_bytes());
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         buf[OFF_BEDROOMS..OFF_BEDROOMS + 4].copy_from_slice(&self.bedrooms.to_le_bytes());
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         buf[OFF_BATHROOMS..OFF_BATHROOMS + 8].copy_from_slice(&self.bathrooms.to_le_bytes());
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         buf
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// `static void print_hex(unsigned char *p, int len)`
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m fn print_hex<W: Write>(out: &mut W, p: &[u8], len: usize) {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     for i in 0..len {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         // printf("%02x", p[i]);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         let _ = write!(out, "{:02x}", p[i]);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     // printf("\n");
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let _ = writeln!(out);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// `void driver(int floors)`
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m fn driver<W: Write>(out: &mut W, floors: i32) {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let mut house = House::zeroed();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     house.floors = floors;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     house.bedrooms = 3;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     house.bathrooms = 2.;
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let bytes = house.as_object_bytes();
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     print_hex(out, &bytes, HOUSE_SIZE);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// Byte-at-a-time stdin reader, so we consume exactly what `scanf` would.
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m struct ByteReader<R: Read> {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     inner: R,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     peeked: Option<u8>,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m impl<R: Read> ByteReader<R> {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     fn new(inner: R) -> Self {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         ByteReader {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             inner,
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m             peeked: None,
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     fn next_byte(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         if let Some(b) = self.peeked.take() {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             return Some(b);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         let mut b = [0u8; 1];
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         match self.inner.read(&mut b) {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             Ok(1) => Some(b[0]),
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             _ => None,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     /// Push a byte back, as `scanf` does with the character that terminated a
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     /// conversion.
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     fn unget(&mut self, b: u8) {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         self.peeked = Some(b);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m /// True for the characters `isspace()` treats as whitespace in the C locale;
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// `scanf`'s `%d` directive skips a run of these first.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m fn is_c_space(b: u8) -> bool {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m /// `scanf("%d", &x)`: returns `Some(value)` on a successful conversion and
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m /// `None` on input failure (EOF before any character) or matching failure, in
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m /// which case the C code leaves `x` untouched.
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m /// glibc accumulates the digits and converts with `strtol`, which saturates at
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m /// `LONG_MAX` / `LONG_MIN` on overflow, then stores the result through an
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m /// `int *`, truncating to 32 bits. Both effects are reproduced here.
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m fn scanf_d<R: Read>(r: &mut ByteReader<R>) -> Option<i32> {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     // Skip leading whitespace.
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     let mut cur = loop {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         match r.next_byte() {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             Some(b) if is_c_space(b) => continue,
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             Some(b) => break b,
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             None => return None, // input failure
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     // Optional sign.
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     let negative = match cur {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         b'-' => {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             negative_sign_seen(&mut cur, r)?;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             true
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         b'+' => {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m             negative_sign_seen(&mut cur, r)?;
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             false
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         _ => false,
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     // At least one digit is required, otherwise this is a matching failure.
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     if !cur.is_ascii_digit() {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         r.unget(cur);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         return None;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     // Accumulate as C `long` (64-bit here) with strtol-style saturation.
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     let mut acc: i64 = 0;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     let mut saturated = false;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         let digit = i64::from(cur - b'0');
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         if !saturated {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             match acc
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m                 .checked_mul(10)
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m                 .and_then(|v| v.checked_add(if negative { -digit } else { digit }))
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m             {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m                 Some(v) => acc = v,
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m                 None => saturated = true,
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         match r.next_byte() {
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m             Some(b) if b.is_ascii_digit() => cur = b,
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m             Some(b) => {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m                 r.unget(b);
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     if saturated {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         acc = if negative { i64::MIN } else { i64::MAX };
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     // Store through `int *`: truncate the long to 32 bits.
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     Some(acc as i32)
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m /// Consume the character after a sign; EOF right after a sign is a matching
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m /// failure in glibc (nothing is stored).
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m fn negative_sign_seen<R: Read>(cur: &mut u8, r: &mut ByteReader<R>) -> Option<()> {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     match r.next_byte() {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         Some(b) => {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m             *cur = b;
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m             Some(())
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         None => None,
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     let stdin = std::io::stdin();
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let mut reader = ByteReader::new(stdin.lock());
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     let mut out = std::io::BufWriter::new(stdout.lock());
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     // int x = 0;
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     let mut x: i32 = 0;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     // scanf("%d", &x);  -- x keeps its value if the conversion fails
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     if let Some(v) = scanf_d(&mut reader) {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m         x = v;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     // driver(x);
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     driver(&mut out, x);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     // return 0;
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation)
+    Finished `release` profile [optimized] target(s) in 0.19s
+[38;5;244m - Completed in 0.212s[0m
+
+[?25l[0m[38;5;141m> [0mNow differential testing against the C binary.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && R=/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/target/release/driver
+pass=0; fail=0
+run() { # $1 = raw payload via printf
+  a=$(printf '%b' "$1" | ./driver | xxd -p); b=$(printf '%b' "$1" | $R | xxd -p)
+  if [ "$a" = "$b" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "MISMATCH [$1]"; echo "  C=$a"; echo "  R=$b"; fi
+}
+for t in '' '0' '1' '-1' '7' '42' '  42' '\n\n\t 42' '2147483647' '2147483648' '-2147483648' '-2147483649' \
+ '4294967295' '4294967296' '4294967297' '8589934592' '9223372036854775807' '9223372036854775808' \
+ '-9223372036854775808' '-9223372036854775809' '99999999999999999999' '-99999999999999999999' \
+ 'abc' 'x' '+5' '-5' '+' '-' '+-5' '--5' '12abc' '0x10' '007' '1e5' '3.9' '-0' '+0' \
+ '000000000000000000000' '  \t\n  -3xyz' '5\n9' '5 9' '\n' ' ' '\t\t\t' '\x0b42' '\x0c-7' '\r13' \
+ '  +0000000000000012' '1234567890123456789012345678901234567890' '-2147483648abc' '2147483647999' \
+ '\x00' '\x0042' '4\x005' 'NaN' 'inf' '1_000' ' -  5' '9999999999' '-9999999999'; do run "$t"; done
+echo "PASS=$pass FAIL=$fail"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust across edge cases
+
+PASS=60 FAIL=0
+[38;5;244m - Completed in 0.197s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && R=/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/target/release/driver
+fail=0; n=0
+# random decimal ints (incl. huge), random junk bytes
+for i in $(seq 1 400); do
+  case $((i % 4)) in
+    0) v=$(( (RANDOM<<17) ^ (RANDOM<<2) ^ RANDOM )); [ $((i%8)) -eq 0 ] && v="-$v";;
+    1) v=$(head -c $((RANDOM % 25 + 1)) /dev/urandom | tr -dc '0-9+- \n\t' );;
+    2) v=$(head -c $((RANDOM % 12 + 1)) /dev/urandom | tr -dc '[:print:]');;
+    3) v=$(python3 -c "import random;print(random.choice(['','-','+'])+''.join(random.choice('0123456789') for _ in range(random.randint(1,25))))");;
+  esac
+  a=$(printf '%s' "$v" | ./driver | xxd -p; echo "rc=$?")
+  b=$(printf '%s' "$v" | $R | xxd -p; echo "rc=$?")
+  n=$((n+1))
+  [ "$a" = "$b" ] || { fail=$((fail+1)); echo "MISMATCH [$v] C=$a R=$b"; }
+done
+# raw binary fuzz
+for i in $(seq 1 200); do
+  head -c $((RANDOM % 32 + 1)) /dev/urandom > f.bin
+  a=$(./driver < f.bin | xxd -p); b=$($R < f.bin | xxd -p); n=$((n+1))
+  [ "$a" = "$b" ] || { fail=$((fail+1)); echo "BINMISMATCH $(xxd -p f.bin) C=$a R=$b"; }
+done
+echo "TOTAL=$n FAIL=$fail"
+# exit code + stderr check
+printf '5' | ./driver >/dev/null 2>e1; c1=$?; printf '5' | $R >/dev/null 2>e2; c2=$?
+echo "exit C=$c1 R=$c2 stderr_sizes=$(wc -c <e1)/$(wc -c <e2)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fuzz 600 random inputs including binary, compare outputs and exit codes
+
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+tr: range-endpoints of '+- ' are in reverse collating sequence order
+TOTAL=600 FAIL=0
+exit C=0 R=0 stderr_sizes=0/0
+[38;5;244m - Completed in 4.328s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && R=/local/home/scheschb/.harvest/work/harvest-work-7vgXH4/translation/target/release/driver
+fail=0; n=0
+for i in $(seq 1 300); do
+  python3 -c "
+import random,sys
+alpha='0123456789+- \t\n\v\f\rabcxX.'
+sys.stdout.write(''.join(random.choice(alpha) for _ in range(random.randint(0,20))))" > f.bin
+  a=$(./driver < f.bin | xxd -p); b=$($R < f.bin | xxd -p); n=$((n+1))
+  [ "$a" = "$b" ] || { fail=$((fail+1)); echo "MISMATCH $(xxd -p f.bin) C=$a R=$b"; }
+done
+echo "whitespace-fuzz TOTAL=$n FAIL=$fail"
+cd /local/home/scheschb/.harvest/work/harvest-work-7vgXH4 && echo "--- artifacts ---" && find translation -type f -not -path '*/target/*' | sort && ls -l translation/target/release/driver && echo "--- c_src integrity ---" && md5sum c_src/src/main.c c_src/CMakeLists.txt && git status --porcelain 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Whitespace-mixed fuzz round plus artifact and c_src integrity verification
+
+whitespace-fuzz TOTAL=300 FAIL=0
+--- artifacts ---
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/main.rs
+-rwxr-xr-x. 2 scheschb amazon 451176 Sep  1 10:48 translation/target/release/driver
+--- c_src integrity ---
+85fa2b0317e34ba5f9a13a1f65b7cc14  c_src/src/main.c
+02ba3005fed9b6d7d46c4fe335ac00d8  c_src/CMakeLists.txt
+[38;5;244m - Completed in 5.278s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean and matches the C binary byte-for-byte on 960 differential tests.[0m[0m
+[0m[0m
+The C program is small but its output is entirely a memory-layout artifact: it dumps the raw object representation of a stack struct as lowercase hex.[0m[0m
+[0m[0m
+[1mc
+[0m[38;5;10mtypedef struct { int floors; int bedrooms; double bathrooms; } house_t;
+[0m[0m[0m
+[0m[0m
+On x86-64 SysV that's [38;5;10mfloors@0[0m, [38;5;10mbedrooms@4[0m, [38;5;10mbathrooms@8[0m, [38;5;10msizeof == 16[0m with no padding holes. So the output is always 32 hex chars + [38;5;10m\n[0m: the input integer little-endian, then [38;5;10m03000000[0m, then [38;5;10m0000000000000040[0m (2.0 as IEEE-754 double). I reproduced the layout explicitly with offset constants and [38;5;10mto_le_bytes[0m rather than transmuting a [38;5;10m#[repr(C)][0m struct, so it stays safe Rust and the assumption is documented instead of implicit.[0m[0m
+[0m[0m
+The interesting fidelity work was [38;5;10mscanf("%d", &x)[0m. I probed the C binary to pin down glibc's actual behavior rather than assume:[0m[0m
+[0m[0m
+- Skip C-locale whitespace across newlines, one optional sign, base-10 digits only ([38;5;10m0x10[0m → [38;5;10m0[0m, [38;5;10m1e5[0m → [38;5;10m1[0m).[0m[0m
+- On matching failure ([38;5;10mabc[0m, [38;5;10m-[0m, [38;5;10m+-5[0m, EOF) nothing is stored and [38;5;10mx[0m keeps its initial [38;5;10m0[0m.[0m[0m
+- Overflow: glibc converts via [38;5;10mstrtol[0m, which saturates at [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m, then stores through an [38;5;10mint *[0m, truncating. That's why [38;5;10m99999999999999999999[0m prints [38;5;10mffffffff[0m (−1) and [38;5;10m-9223372036854775808[0m prints [38;5;10m00000000[0m. A naive [38;5;10mi32[0m parse would get both wrong, so the Rust accumulates into [38;5;10mi64[0m with saturation and then does [38;5;10mas i32[0m.[0m[0m
+[0m[0m
+Verification I ran myself: 60 hand-picked edge cases, 400 random decimal/junk inputs, 200 raw [38;5;10m/dev/urandom[0m binary inputs, and 300 whitespace-and-sign-heavy strings — 960 total, zero mismatches, plus matching exit codes and empty stderr. [38;5;10mc_src/[0m is unmodified (checksums recorded above); the C reference binary was built in [38;5;10m/tmp[0m.[0m[0m
+[0m[0m
+One caveat worth stating: byte-identity here is tied to the x86-64 LP64 little-endian layout I verified against. On a different ABI the C output itself would change, and the Rust hardcodes the x86-64 offsets.[0m[0m
+[38;5;8m
+ ▸ Credits: 4.29 • Time: 2m 13s
+
+[0m[1G[0m[0m[?25h

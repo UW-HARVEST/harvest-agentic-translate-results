@@ -1,20 +1,35 @@
 //! Translation of `app/src/PQCgenKAT_sign.c`.
 //!
-//! Originally provided by NIST (Bassham, Lawrence E (Fed), 8/29/17) and altered
-//! by the SPHINCS+ authors to no longer perform file IO: it runs an in-memory
-//! sign/verify test and prints a digest over the whole transcript.
+//! Performs an in-memory test of signing and verification before producing a
+//! digest of the signature transcript with the selected hash backend.
 //!
-//! Just like the CMake `driver` target (which links `sphincs_core_det`), this
-//! binary always uses the deterministic `rng.c` DRBG.
+//! `crate-type` of the library is `cdylib`, which cannot be linked by a binary
+//! in the same package, so the driver declares the same module tree itself.
 
-#![allow(clippy::missing_safety_doc)]
-#![allow(clippy::too_many_arguments)]
-#![allow(clippy::needless_range_loop)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
+#![allow(clippy::all)]
 
-include!("tree.rs");
+mod address;
+mod backend;
+mod context;
+mod fors;
+mod hash;
+mod merkle;
+mod params;
+mod randombytes;
+mod rng;
+mod sign;
+mod thash;
+mod utils;
+mod utilsx1;
+mod wots;
+mod wotsx1;
 
-use crate::params::*;
+use params::*;
 
+const MAX_MARKER_LEN: usize = 50;
 const BASE_MLEN: usize = 33;
 const LOOP_COUNT: usize = 7;
 
@@ -25,377 +40,319 @@ const KAT_CRYPTO_FAILURE: i32 = -2;
 // ===========================================================================
 // #ifdef BLAKE_TR
 // ===========================================================================
-#[cfg(feature = "blake")]
+#[cfg(backend_blake)]
 mod kat {
-    use super::*;
-    use crate::blake::blake256::{blake256_final, blake256_init, blake256_update};
-    use crate::blake::blake512::{blake512_final, blake512_init, blake512_update};
-    use crate::blake::{BlakeState256, BlakeState512};
+    #[cfg(not(spx_n_ge_24))]
+    use crate::backend::blake::blake256::SPX_BLAKE256_OUTPUT_BYTES;
+    #[cfg(spx_n_ge_24)]
+    use crate::backend::blake::blake512::SPX_BLAKE512_OUTPUT_BYTES;
+    use crate::backend::blake::hash::{blakex_final, blakex_init, blakex_update, BlakeStateX};
 
-    /// `blakeX_output_bytes`
-    const BLAKE_X_OUTPUT_BYTES: usize = if SPX_N >= 24 { 64 } else { 32 };
-    /// Selects `blakestate512`/`blake512_*` over `blakestate256`/`blake256_*`.
-    const USE_512: bool = SPX_N >= 24;
+    #[cfg(spx_n_ge_24)]
+    const BLAKEX_OUTPUT_BYTES: usize = SPX_BLAKE512_OUTPUT_BYTES;
+    #[cfg(not(spx_n_ge_24))]
+    const BLAKEX_OUTPUT_BYTES: usize = SPX_BLAKE256_OUTPUT_BYTES;
 
-    /// `kat_tr_ctx` (either a `blakestate256` or a `blakestate512`).
-    pub struct KatTrCtx {
-        s256: BlakeState256,
-        s512: BlakeState512,
+    pub struct KatTr {
+        s: BlakeStateX,
     }
 
-    impl KatTrCtx {
+    impl KatTr {
         pub fn new() -> Self {
-            KatTrCtx {
-                s256: BlakeState256::new(),
-                s512: BlakeState512::new(),
+            let mut s = BlakeStateX::new();
+            blakex_init(&mut s);
+
+            let tag: &[u8] = b"KAT-TRANSCRIPT-v1-BLAKE";
+            blakex_update(&mut s, tag, tag.len() as u64);
+
+            let sep = [0u8; 1];
+            blakex_update(&mut s, &sep, 1);
+
+            KatTr { s }
+        }
+
+        pub fn absorb_label(&mut self, label: &str) {
+            let p = label.as_bytes();
+            blakex_update(&mut self.s, p, p.len() as u64);
+
+            let sep = [0u8; 1];
+            blakex_update(&mut self.s, &sep, 1);
+        }
+
+        pub fn absorb_u64(&mut self, x: u64) {
+            let le = x.to_le_bytes();
+            let lenle = 8u64.to_le_bytes();
+            blakex_update(&mut self.s, &lenle, 8);
+            blakex_update(&mut self.s, &le, 8);
+        }
+
+        pub fn absorb_bytes(&mut self, buf: &[u8]) {
+            let lenle = (buf.len() as u64).to_le_bytes();
+            blakex_update(&mut self.s, &lenle, 8);
+            if !buf.is_empty() {
+                blakex_update(&mut self.s, buf, buf.len() as u64);
             }
         }
-    }
 
-    /// `blakeX_update`.  Note that the C driver passes byte counts where the
-    /// BLAKE reference implementation expects a bit count; that behaviour is
-    /// reproduced verbatim.
-    fn update(ctx: &mut KatTrCtx, data: &[u8], datalen: u64) {
-        if USE_512 {
-            blake512_update(&mut ctx.s512, data, datalen);
-        } else {
-            blake256_update(&mut ctx.s256, data, datalen);
+        pub fn final32(&mut self) -> [u8; 32] {
+            let mut outbuf = [0u8; BLAKEX_OUTPUT_BYTES];
+            blakex_final(&mut self.s, &mut outbuf);
+            let mut out32 = [0u8; 32];
+            out32.copy_from_slice(&outbuf[..32]);
+            out32
         }
-    }
-
-    pub fn kat_tr_init(ctx: &mut KatTrCtx) {
-        if USE_512 {
-            blake512_init(&mut ctx.s512);
-        } else {
-            blake256_init(&mut ctx.s256);
-        }
-
-        let tag: &[u8] = b"KAT-TRANSCRIPT-v1-BLAKE";
-        update(ctx, tag, tag.len() as u64);
-
-        let sep = [0x00u8];
-        update(ctx, &sep, 1);
-    }
-
-    pub fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &str) {
-        let p = label.as_bytes();
-        let n = p.len();
-        update(ctx, p, n as u64);
-
-        let sep = [0x00u8];
-        update(ctx, &sep, 1);
-    }
-
-    pub fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
-        let le = x.to_le_bytes();
-        let lenle = 8u64.to_le_bytes();
-
-        update(ctx, &lenle, 8);
-        update(ctx, &le, 8);
-    }
-
-    pub fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8]) {
-        let len = buf.len();
-        let lenle = (len as u64).to_le_bytes();
-        update(ctx, &lenle, 8);
-        if len != 0 {
-            update(ctx, buf, len as u64);
-        }
-    }
-
-    pub fn kat_tr_final(ctx: &mut KatTrCtx, out32: &mut [u8; 32]) {
-        let mut outbuf = [0u8; BLAKE_X_OUTPUT_BYTES];
-        if USE_512 {
-            blake512_final(&mut ctx.s512, &mut outbuf);
-        } else {
-            blake256_final(&mut ctx.s256, &mut outbuf);
-        }
-        out32.copy_from_slice(&outbuf[..32]);
     }
 }
 
 // ===========================================================================
 // #elif HARAKA_TR
 // ===========================================================================
-#[cfg(not(any(feature = "blake", feature = "shake", feature = "sha2")))]
+#[cfg(backend_haraka)]
 mod kat {
-    use super::*;
-    use crate::context::SpxCtx;
-    use crate::haraka::haraka::{
-        haraka_s_inc_absorb, haraka_s_inc_finalize, haraka_s_inc_init, haraka_s_inc_squeeze,
-        tweak_constants,
+    use crate::backend::haraka::haraka::{
+        haraka_s_inc_absorb_rs, haraka_s_inc_finalize_rs, haraka_s_inc_init_rs,
+        haraka_s_inc_squeeze_rs, tweak_constants_rs,
     };
+    use crate::context::SpxCtx;
+    use crate::params::SPX_N;
 
-    /// `kat_tr_ctx`
-    pub struct KatTrCtx {
+    pub struct KatTr {
         inner: SpxCtx,
         s: [u8; 65],
     }
 
-    impl KatTrCtx {
+    impl KatTr {
         pub fn new() -> Self {
-            KatTrCtx {
-                inner: SpxCtx::new(),
-                s: [0u8; 65],
+            let mut inner = SpxCtx::new();
+            for i in 0..SPX_N {
+                inner.pub_seed[i] = 0;
+                inner.sk_seed[i] = 0;
+            }
+
+            tweak_constants_rs(&mut inner);
+            let mut s = [0u8; 65];
+            haraka_s_inc_init_rs(&mut s);
+
+            let tag: &[u8] = b"KAT-TRANSCRIPT-v1-HARAKA";
+            haraka_s_inc_absorb_rs(&mut s, tag, &inner);
+
+            let sep = [0u8; 1];
+            haraka_s_inc_absorb_rs(&mut s, &sep, &inner);
+
+            KatTr { inner, s }
+        }
+
+        pub fn absorb_label(&mut self, label: &str) {
+            let p = label.as_bytes();
+            haraka_s_inc_absorb_rs(&mut self.s, p, &self.inner);
+
+            let sep = [0u8; 1];
+            haraka_s_inc_absorb_rs(&mut self.s, &sep, &self.inner);
+        }
+
+        pub fn absorb_u64(&mut self, x: u64) {
+            let le = x.to_le_bytes();
+            let lenle = 8u64.to_le_bytes();
+            haraka_s_inc_absorb_rs(&mut self.s, &lenle, &self.inner);
+            haraka_s_inc_absorb_rs(&mut self.s, &le, &self.inner);
+        }
+
+        pub fn absorb_bytes(&mut self, buf: &[u8]) {
+            let lenle = (buf.len() as u64).to_le_bytes();
+            haraka_s_inc_absorb_rs(&mut self.s, &lenle, &self.inner);
+            if !buf.is_empty() {
+                haraka_s_inc_absorb_rs(&mut self.s, buf, &self.inner);
             }
         }
-    }
 
-    pub fn kat_tr_init(ctx: &mut KatTrCtx) {
-        for i in 0..SPX_N {
-            ctx.inner.pub_seed[i] = 0;
-            ctx.inner.sk_seed[i] = 0;
+        pub fn final32(&mut self) -> [u8; 32] {
+            haraka_s_inc_finalize_rs(&mut self.s);
+            let mut out32 = [0u8; 32];
+            haraka_s_inc_squeeze_rs(&mut out32, &mut self.s, &self.inner);
+            out32
         }
-
-        tweak_constants(&mut ctx.inner);
-        haraka_s_inc_init(&mut ctx.s);
-
-        let tag: &[u8] = b"KAT-TRANSCRIPT-v1-HARAKA";
-        haraka_s_inc_absorb(&mut ctx.s, tag, tag.len(), &ctx.inner);
-
-        let sep = [0x00u8];
-        haraka_s_inc_absorb(&mut ctx.s, &sep, 1, &ctx.inner);
-    }
-
-    pub fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &str) {
-        let p = label.as_bytes();
-        haraka_s_inc_absorb(&mut ctx.s, p, p.len(), &ctx.inner);
-
-        let sep = [0x00u8];
-        haraka_s_inc_absorb(&mut ctx.s, &sep, 1, &ctx.inner);
-    }
-
-    pub fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
-        let le = x.to_le_bytes();
-        let lenle = 8u64.to_le_bytes();
-
-        haraka_s_inc_absorb(&mut ctx.s, &lenle, 8, &ctx.inner);
-        haraka_s_inc_absorb(&mut ctx.s, &le, 8, &ctx.inner);
-    }
-
-    pub fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8]) {
-        let len = buf.len();
-        let lenle = (len as u64).to_le_bytes();
-        haraka_s_inc_absorb(&mut ctx.s, &lenle, 8, &ctx.inner);
-        if len != 0 {
-            haraka_s_inc_absorb(&mut ctx.s, buf, len, &ctx.inner);
-        }
-    }
-
-    pub fn kat_tr_final(ctx: &mut KatTrCtx, out32: &mut [u8; 32]) {
-        haraka_s_inc_finalize(&mut ctx.s);
-        let inner = ctx.inner;
-        haraka_s_inc_squeeze(out32, 32, &mut ctx.s, &inner);
     }
 }
 
 // ===========================================================================
 // #elif SHA2_TR
 // ===========================================================================
-#[cfg(all(feature = "sha2", not(any(feature = "blake", feature = "shake"))))]
+#[cfg(backend_sha2)]
 mod kat {
-    use super::*;
-    use crate::sha2::sha2::{
-        sha256_inc_blocks, sha256_inc_finalize, sha256_inc_init, sha512_inc_blocks,
-        sha512_inc_finalize, sha512_inc_init,
+    use crate::backend::sha2::hash::{
+        shax_inc_blocks, shax_inc_finalize, shax_inc_init, SHAX_STATE_LEN,
+        SPX_SHAX_BLOCK_BYTES, SPX_SHAX_OUTPUT_BYTES,
     };
 
-    const USE_512: bool = SPX_N >= 24;
-    const SHAX_STATE_LEN: usize = if SPX_N >= 24 { 72 } else { 40 };
-    const SHAX_BLOCK_BYTES: usize = if SPX_N >= 24 { 128 } else { 64 };
-    const SHAX_OUTPUT_BYTES: usize = if SPX_N >= 24 { 64 } else { 32 };
+    const BLK: usize = SPX_SHAX_BLOCK_BYTES;
+    const OUT: usize = SPX_SHAX_OUTPUT_BYTES;
 
-    /// `kat_tr_ctx`
-    pub struct KatTrCtx {
+    pub struct KatTr {
         s: [u8; SHAX_STATE_LEN],
     }
 
-    impl KatTrCtx {
+    impl KatTr {
         pub fn new() -> Self {
-            KatTrCtx {
-                s: [0u8; SHAX_STATE_LEN],
+            let tag: &[u8] = b"KAT-TRANSCRIPT-v1-SHA2";
+            let mut block = [0u8; BLK];
+
+            for i in 0..tag.len() {
+                block[i] = tag[i];
             }
-        }
-    }
-
-    fn inc_init(ctx: &mut KatTrCtx) {
-        if USE_512 {
-            sha512_inc_init(&mut ctx.s);
-        } else {
-            sha256_inc_init(&mut ctx.s);
-        }
-    }
-
-    fn inc_blocks(ctx: &mut KatTrCtx, inp: &[u8], inblocks: usize) {
-        if USE_512 {
-            sha512_inc_blocks(&mut ctx.s, inp, inblocks);
-        } else {
-            sha256_inc_blocks(&mut ctx.s, inp, inblocks);
-        }
-    }
-
-    fn inc_finalize(out: &mut [u8], ctx: &mut KatTrCtx, inp: &[u8], inlen: usize) {
-        if USE_512 {
-            sha512_inc_finalize(out, &mut ctx.s, inp, inlen);
-        } else {
-            sha256_inc_finalize(out, &mut ctx.s, inp, inlen);
-        }
-    }
-
-    pub fn kat_tr_init(ctx: &mut KatTrCtx) {
-        let tag: &[u8] = b"KAT-TRANSCRIPT-v1-SHA2";
-        let mut block = [0u8; SHAX_BLOCK_BYTES];
-
-        for i in 0..tag.len() {
-            block[i] = tag[i];
-        }
-        for i in tag.len()..SHAX_BLOCK_BYTES {
-            block[i] = 0;
-        }
-
-        inc_init(ctx);
-        inc_blocks(ctx, &block, 1);
-    }
-
-    pub fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &str) {
-        let p = label.as_bytes();
-        let n = p.len();
-        let block_count = (n + 1 + (SHAX_BLOCK_BYTES - 1)) / SHAX_BLOCK_BYTES;
-
-        for i in 0..block_count {
-            let mut block = [0u8; SHAX_BLOCK_BYTES];
-            let mut j = 0usize;
-
-            while i * SHAX_BLOCK_BYTES + j < n && j < SHAX_BLOCK_BYTES {
-                block[j] = p[i * SHAX_BLOCK_BYTES + j];
-                j += 1;
+            for i in tag.len()..BLK {
+                block[i] = 0;
             }
 
-            if i * SHAX_BLOCK_BYTES + j == n && j < SHAX_BLOCK_BYTES {
-                block[j] = 0x00;
-                j += 1;
-            }
+            let mut s = [0u8; SHAX_STATE_LEN];
+            shax_inc_init(&mut s);
+            shax_inc_blocks(&mut s, &block, 1);
 
-            while j < SHAX_BLOCK_BYTES {
-                block[j] = 0;
-                j += 1;
-            }
-
-            inc_blocks(ctx, &block, 1);
-        }
-    }
-
-    pub fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
-        let mut block = [0u8; SHAX_BLOCK_BYTES];
-        let le = x.to_le_bytes();
-        let lenle = 8u64.to_le_bytes();
-
-        block[..8].copy_from_slice(&lenle);
-        block[8..16].copy_from_slice(&le);
-        for i in 16..SHAX_BLOCK_BYTES {
-            block[i] = 0;
+            KatTr { s }
         }
 
-        inc_blocks(ctx, &block, 1);
-    }
+        pub fn absorb_label(&mut self, label: &str) {
+            let p = label.as_bytes();
+            let n = p.len();
+            let block_count = (n + 1 + (BLK - 1)) / BLK;
 
-    pub fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8]) {
-        let len = buf.len();
-        let mut lenle = [0u8; SHAX_BLOCK_BYTES];
-        lenle[..8].copy_from_slice(&(len as u64).to_le_bytes());
-
-        let block_count = (len + (SHAX_BLOCK_BYTES - 1)) / SHAX_BLOCK_BYTES;
-        inc_blocks(ctx, &lenle, 1);
-
-        if len != 0 {
             for i in 0..block_count {
-                let mut block = [0u8; SHAX_BLOCK_BYTES];
+                let mut block = [0u8; BLK];
                 let mut j = 0usize;
 
-                while i * SHAX_BLOCK_BYTES + j < len && j < SHAX_BLOCK_BYTES {
-                    block[j] = buf[i * SHAX_BLOCK_BYTES + j];
+                while i * BLK + j < n && j < BLK {
+                    block[j] = p[i * BLK + j];
                     j += 1;
                 }
-                while j < SHAX_BLOCK_BYTES {
+
+                if i * BLK + j == n && j < BLK {
+                    block[j] = 0x00;
+                    j += 1;
+                }
+
+                while j < BLK {
                     block[j] = 0;
                     j += 1;
                 }
 
-                inc_blocks(ctx, &block, 1);
+                shax_inc_blocks(&mut self.s, &block, 1);
             }
         }
-    }
 
-    pub fn kat_tr_final(ctx: &mut KatTrCtx, out32: &mut [u8; 32]) {
-        let mut outbuf = [0u8; SHAX_OUTPUT_BYTES];
-        let final_block = [0u8; SHAX_BLOCK_BYTES];
-        inc_finalize(&mut outbuf, ctx, &final_block, 1);
-        out32.copy_from_slice(&outbuf[..32]);
+        pub fn absorb_u64(&mut self, x: u64) {
+            let mut block = [0u8; BLK];
+            let le = x.to_le_bytes();
+            let lenle = 8u64.to_le_bytes();
+
+            block[..8].copy_from_slice(&lenle);
+            block[8..16].copy_from_slice(&le);
+            for i in 16..BLK {
+                block[i] = 0;
+            }
+
+            shax_inc_blocks(&mut self.s, &block, 1);
+        }
+
+        pub fn absorb_bytes(&mut self, buf: &[u8]) {
+            let len = buf.len();
+            let mut lenle = [0u8; BLK];
+            lenle[..8].copy_from_slice(&(len as u64).to_le_bytes());
+
+            let block_count = (len + (BLK - 1)) / BLK;
+            shax_inc_blocks(&mut self.s, &lenle, 1);
+
+            if len != 0 {
+                for i in 0..block_count {
+                    let mut block = [0u8; BLK];
+                    let mut j = 0usize;
+
+                    while i * BLK + j < len && j < BLK {
+                        block[j] = buf[i * BLK + j];
+                        j += 1;
+                    }
+                    while j < BLK {
+                        block[j] = 0;
+                        j += 1;
+                    }
+
+                    shax_inc_blocks(&mut self.s, &block, 1);
+                }
+            }
+        }
+
+        pub fn final32(&mut self) -> [u8; 32] {
+            let mut outbuf = [0u8; OUT];
+            let final_block = [0u8; BLK];
+            shax_inc_finalize(&mut outbuf, &mut self.s, &final_block[..1]);
+            let mut out32 = [0u8; 32];
+            out32.copy_from_slice(&outbuf[..32]);
+            out32
+        }
     }
 }
 
 // ===========================================================================
 // #elif SHAKE_TR
 // ===========================================================================
-#[cfg(all(feature = "shake", not(feature = "blake")))]
+#[cfg(backend_shake)]
 mod kat {
-    use crate::shake::fips202::{
-        shake256_inc_absorb, shake256_inc_finalize, shake256_inc_init, shake256_inc_squeeze,
+    use crate::backend::shake::fips202::{
+        shake256_inc_absorb_rs, shake256_inc_finalize_rs, shake256_inc_init_rs,
+        shake256_inc_squeeze_rs,
     };
 
-    /// `kat_tr_ctx`
-    pub struct KatTrCtx {
+    pub struct KatTr {
         s: [u64; 26],
     }
 
-    impl KatTrCtx {
+    impl KatTr {
         pub fn new() -> Self {
-            KatTrCtx { s: [0u64; 26] }
+            let mut s = [0u64; 26];
+            shake256_inc_init_rs(&mut s);
+
+            let tag: &[u8] = b"KAT-TRANSCRIPT-v1-SHAKE";
+            shake256_inc_absorb_rs(&mut s, tag);
+
+            let sep = [0u8; 1];
+            shake256_inc_absorb_rs(&mut s, &sep);
+
+            KatTr { s }
         }
-    }
 
-    pub fn kat_tr_init(ctx: &mut KatTrCtx) {
-        shake256_inc_init(&mut ctx.s);
+        pub fn absorb_label(&mut self, label: &str) {
+            let p = label.as_bytes();
+            shake256_inc_absorb_rs(&mut self.s, p);
 
-        let tag: &[u8] = b"KAT-TRANSCRIPT-v1-SHAKE";
-        shake256_inc_absorb(&mut ctx.s, tag, tag.len());
-
-        let sep = [0x00u8];
-        shake256_inc_absorb(&mut ctx.s, &sep, 1);
-    }
-
-    pub fn kat_tr_absorb_label(ctx: &mut KatTrCtx, label: &str) {
-        let p = label.as_bytes();
-        shake256_inc_absorb(&mut ctx.s, p, p.len());
-
-        let sep = [0x00u8];
-        shake256_inc_absorb(&mut ctx.s, &sep, 1);
-    }
-
-    pub fn kat_tr_absorb_u64(ctx: &mut KatTrCtx, x: u64) {
-        let le = x.to_le_bytes();
-        let lenle = 8u64.to_le_bytes();
-
-        shake256_inc_absorb(&mut ctx.s, &lenle, 8);
-        shake256_inc_absorb(&mut ctx.s, &le, 8);
-    }
-
-    pub fn kat_tr_absorb_bytes(ctx: &mut KatTrCtx, buf: &[u8]) {
-        let len = buf.len();
-        let lenle = (len as u64).to_le_bytes();
-        shake256_inc_absorb(&mut ctx.s, &lenle, 8);
-        if len != 0 {
-            shake256_inc_absorb(&mut ctx.s, buf, len);
+            let sep = [0u8; 1];
+            shake256_inc_absorb_rs(&mut self.s, &sep);
         }
-    }
 
-    pub fn kat_tr_final(ctx: &mut KatTrCtx, out32: &mut [u8; 32]) {
-        shake256_inc_finalize(&mut ctx.s);
-        shake256_inc_squeeze(out32, 32, &mut ctx.s);
+        pub fn absorb_u64(&mut self, x: u64) {
+            let le = x.to_le_bytes();
+            let lenle = 8u64.to_le_bytes();
+            shake256_inc_absorb_rs(&mut self.s, &lenle);
+            shake256_inc_absorb_rs(&mut self.s, &le);
+        }
+
+        pub fn absorb_bytes(&mut self, buf: &[u8]) {
+            let lenle = (buf.len() as u64).to_le_bytes();
+            shake256_inc_absorb_rs(&mut self.s, &lenle);
+            if !buf.is_empty() {
+                shake256_inc_absorb_rs(&mut self.s, buf);
+            }
+        }
+
+        pub fn final32(&mut self) -> [u8; 32] {
+            shake256_inc_finalize_rs(&mut self.s);
+            let mut out32 = [0u8; 32];
+            shake256_inc_squeeze_rs(&mut out32, &mut self.s);
+            out32
+        }
     }
 }
 
-use kat::*;
+fn main() {
+    std::process::exit(run());
+}
 
 fn run() -> i32 {
     let mut m = vec![0u8; BASE_MLEN * LOOP_COUNT];
@@ -411,27 +368,26 @@ fn run() -> i32 {
     for i in 0..48 {
         entropy_input[i] = i as u8;
     }
-    rng::randombytes_init_impl(&entropy_input, None);
+    rng::randombytes_init_rs(&entropy_input, None);
 
     // Initialize Transcript
-    let mut tctx = KatTrCtx::new();
-    kat_tr_init(&mut tctx);
-    kat_tr_absorb_label(&mut tctx, "CRYPTO_ALGNAME");
-    kat_tr_absorb_bytes(&mut tctx, CRYPTO_ALGNAME.as_bytes());
-    kat_tr_absorb_label(&mut tctx, "SKBYTES");
-    kat_tr_absorb_u64(&mut tctx, CRYPTO_SECRETKEYBYTES as u64);
-    kat_tr_absorb_label(&mut tctx, "PKBYTES");
-    kat_tr_absorb_u64(&mut tctx, CRYPTO_PUBLICKEYBYTES as u64);
-    kat_tr_absorb_label(&mut tctx, "SIGBYTES");
-    kat_tr_absorb_u64(&mut tctx, CRYPTO_BYTES as u64);
+    let mut tctx = kat::KatTr::new();
+    tctx.absorb_label("CRYPTO_ALGNAME");
+    tctx.absorb_bytes(CRYPTO_ALGNAME.as_bytes());
+    tctx.absorb_label("SKBYTES");
+    tctx.absorb_u64(CRYPTO_SECRETKEYBYTES as u64);
+    tctx.absorb_label("PKBYTES");
+    tctx.absorb_u64(CRYPTO_PUBLICKEYBYTES as u64);
+    tctx.absorb_label("SIGBYTES");
+    tctx.absorb_u64(CRYPTO_BYTES as u64);
 
     for i in 0..LOOP_COUNT {
         rng::randombytes_drbg(&mut seed);
 
-        kat_tr_absorb_label(&mut tctx, "count");
-        kat_tr_absorb_u64(&mut tctx, i as u64);
-        kat_tr_absorb_label(&mut tctx, "seed");
-        kat_tr_absorb_bytes(&mut tctx, &seed);
+        tctx.absorb_label("count");
+        tctx.absorb_u64(i as u64);
+        tctx.absorb_label("seed");
+        tctx.absorb_bytes(&seed);
 
         let mlen = BASE_MLEN * (i + 1);
         if mlen > BASE_MLEN * LOOP_COUNT {
@@ -439,50 +395,68 @@ fn run() -> i32 {
             return KAT_OVERFLOW;
         }
 
-        kat_tr_absorb_label(&mut tctx, "mlen");
-        kat_tr_absorb_u64(&mut tctx, mlen as u64);
+        tctx.absorb_label("mlen");
+        tctx.absorb_u64(mlen as u64);
 
         rng::randombytes_drbg(&mut msg[..mlen]);
-        kat_tr_absorb_label(&mut tctx, "msg");
-        kat_tr_absorb_bytes(&mut tctx, &msg[..mlen]);
+        tctx.absorb_label("msg");
+        tctx.absorb_bytes(&msg[..mlen]);
 
-        m[..mlen].fill(0);
-        m1[..mlen + CRYPTO_BYTES].fill(0);
-        sm[..mlen + CRYPTO_BYTES].fill(0);
+        for b in m[..mlen].iter_mut() {
+            *b = 0;
+        }
+        for b in m1[..mlen + CRYPTO_BYTES].iter_mut() {
+            *b = 0;
+        }
+        for b in sm[..mlen + CRYPTO_BYTES].iter_mut() {
+            *b = 0;
+        }
         m[..mlen].copy_from_slice(&msg[..mlen]);
 
         // Keypair
-        let ret = sign::crypto_sign_keypair_impl(&mut pk, &mut sk);
+        let ret = sign::crypto_sign_keypair_rs(&mut pk, &mut sk);
         if ret != 0 {
-            eprintln!("crypto_sign_keypair={ret}");
+            eprintln!("crypto_sign_keypair={}", ret);
             return KAT_CRYPTO_FAILURE;
         }
-        kat_tr_absorb_label(&mut tctx, "pk");
-        kat_tr_absorb_bytes(&mut tctx, &pk);
-        kat_tr_absorb_label(&mut tctx, "sk");
-        kat_tr_absorb_bytes(&mut tctx, &sk);
+        tctx.absorb_label("pk");
+        tctx.absorb_bytes(&pk);
+        tctx.absorb_label("sk");
+        tctx.absorb_bytes(&sk);
 
         // Sign
-        let (ret, smlen) = sign::crypto_sign_impl(
-            &mut sm[..CRYPTO_BYTES + mlen],
-            &m[..mlen],
-            &sk,
-        );
+        let mut smlen: core::ffi::c_ulonglong = 0;
+        let ret = unsafe {
+            sign::crypto_sign(
+                sm.as_mut_ptr(),
+                &mut smlen,
+                m.as_ptr(),
+                mlen as core::ffi::c_ulonglong,
+                sk.as_ptr(),
+            )
+        };
         if ret != 0 {
-            eprintln!("crypto_sign={ret}");
+            eprintln!("crypto_sign={}", ret);
             return KAT_CRYPTO_FAILURE;
         }
-        let smlen = smlen as usize;
-        kat_tr_absorb_label(&mut tctx, "smlen");
-        kat_tr_absorb_u64(&mut tctx, smlen as u64);
-        kat_tr_absorb_label(&mut tctx, "sm");
-        kat_tr_absorb_bytes(&mut tctx, &sm[..smlen]);
+        tctx.absorb_label("smlen");
+        tctx.absorb_u64(smlen as u64);
+        tctx.absorb_label("sm");
+        tctx.absorb_bytes(&sm[..smlen as usize]);
 
         // Verify
-        let (ret, mlen1) =
-            sign::crypto_sign_open_impl(&mut m1[..smlen], &sm[..smlen], &pk);
+        let mut mlen1: core::ffi::c_ulonglong = 0;
+        let ret = unsafe {
+            sign::crypto_sign_open(
+                m1.as_mut_ptr(),
+                &mut mlen1,
+                sm.as_ptr(),
+                smlen,
+                pk.as_ptr(),
+            )
+        };
         if ret != 0 {
-            eprintln!("crypto_sign_open={ret}");
+            eprintln!("crypto_sign_open={}", ret);
             return KAT_CRYPTO_FAILURE;
         }
         if mlen1 as usize != mlen {
@@ -496,20 +470,13 @@ fn run() -> i32 {
     }
 
     // Finalize transcript digest
-    let mut digest = [0u8; 32];
-    kat_tr_final(&mut tctx, &mut digest);
+    let digest = tctx.final32();
 
     print!("KAT transcript digest = ");
-    for i in 0..32 {
-        print!("{:02X}", digest[i]);
+    for b in digest.iter() {
+        print!("{:02X}", b);
     }
     println!();
 
     KAT_SUCCESS
-}
-
-fn main() {
-    let code = run();
-    // The C `main` returns 0/-1/-2; the shell observes them as 0/255/254.
-    std::process::exit(code & 0xFF);
 }

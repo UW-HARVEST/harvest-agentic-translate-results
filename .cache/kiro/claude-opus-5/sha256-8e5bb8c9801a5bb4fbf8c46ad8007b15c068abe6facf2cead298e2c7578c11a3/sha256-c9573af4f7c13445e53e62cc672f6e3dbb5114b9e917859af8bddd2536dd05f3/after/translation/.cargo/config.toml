@@ -1,0 +1,6 @@
+# Match the C library's lazy PLT binding. A Rust cdylib is linked `-z now` by
+# default; the C `.so` built by c_src/CMakeLists.txt is lazily bound, and the
+# dynamic resolver's stack footprint on the first PLT call is observable through
+# the uninitialised-stack read in `bad()`.
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))']
+rustflags = ["-C", "link-arg=-Wl,-z,lazy"]

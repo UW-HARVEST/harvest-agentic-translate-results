@@ -1,0 +1,159 @@
+# SYMBOLS.md — Exported symbol parity (C `.so` vs Rust `.so`)
+
+Regenerated mechanically by `translation/scripts/verify_all.sh` from:
+```
+nm -D --defined-only c_src/build/libjansson.so
+nm -D --defined-only translation/target/release/libjansson.so
+```
+
+| | count |
+|---|---|
+| symbols exported by the C `.so`    | 130 |
+| symbols exported by the Rust `.so` | 130 |
+| **exported by C but MISSING in Rust** | **0** |
+| exported by Rust but not by C (extra) | 0 |
+| undefined non-libc symbols in the Rust `.so` | 0 |
+
+Every undefined entry in the Rust `.so` is a glibc import or a
+`_Unwind_*` / `_ITM_*` / `__cxa_*` runtime symbol; there are no
+unresolved jansson symbols. Verified under every cargo feature combination
+(see `scripts/verify_all.sh`).
+
+Two symbols are exported *variables*, not functions, and are checked
+separately by `tests/t00_smoke.rs`: `hashtable_seed` (`volatile uint32_t`)
+and `dtoa_divmax` (`int`).
+
+## Full symbol table
+
+| # | symbol | C .so | Rust .so |
+|---|--------|-------|----------|
+| 1 | `do_deep_copy` | yes | yes |
+| 2 | `do_object_update_recursive` | yes | yes |
+| 3 | `dtoa` | yes | yes |
+| 4 | `dtoa_divmax` | yes | yes |
+| 5 | `dtoa_r` | yes | yes |
+| 6 | `freedtoa` | yes | yes |
+| 7 | `gethex` | yes | yes |
+| 8 | `hashtable_clear` | yes | yes |
+| 9 | `hashtable_close` | yes | yes |
+| 10 | `hashtable_del` | yes | yes |
+| 11 | `hashtable_get` | yes | yes |
+| 12 | `hashtable_init` | yes | yes |
+| 13 | `hashtable_iter` | yes | yes |
+| 14 | `hashtable_iter_at` | yes | yes |
+| 15 | `hashtable_iter_key` | yes | yes |
+| 16 | `hashtable_iter_key_len` | yes | yes |
+| 17 | `hashtable_iter_next` | yes | yes |
+| 18 | `hashtable_iter_set` | yes | yes |
+| 19 | `hashtable_iter_value` | yes | yes |
+| 20 | `hashtable_seed` | yes | yes |
+| 21 | `hashtable_set` | yes | yes |
+| 22 | `jansson_version_cmp` | yes | yes |
+| 23 | `jansson_version_str` | yes | yes |
+| 24 | `json_array` | yes | yes |
+| 25 | `json_array_append_new` | yes | yes |
+| 26 | `json_array_clear` | yes | yes |
+| 27 | `json_array_extend` | yes | yes |
+| 28 | `json_array_get` | yes | yes |
+| 29 | `json_array_insert_new` | yes | yes |
+| 30 | `json_array_remove` | yes | yes |
+| 31 | `json_array_set_new` | yes | yes |
+| 32 | `json_array_size` | yes | yes |
+| 33 | `json_copy` | yes | yes |
+| 34 | `json_deep_copy` | yes | yes |
+| 35 | `json_delete` | yes | yes |
+| 36 | `json_dump_callback` | yes | yes |
+| 37 | `json_dump_file` | yes | yes |
+| 38 | `json_dumpb` | yes | yes |
+| 39 | `json_dumpf` | yes | yes |
+| 40 | `json_dumpfd` | yes | yes |
+| 41 | `json_dumps` | yes | yes |
+| 42 | `json_equal` | yes | yes |
+| 43 | `json_false` | yes | yes |
+| 44 | `json_get_alloc_funcs` | yes | yes |
+| 45 | `json_get_alloc_funcs2` | yes | yes |
+| 46 | `json_integer` | yes | yes |
+| 47 | `json_integer_set` | yes | yes |
+| 48 | `json_integer_value` | yes | yes |
+| 49 | `json_load_callback` | yes | yes |
+| 50 | `json_load_file` | yes | yes |
+| 51 | `json_loadb` | yes | yes |
+| 52 | `json_loadf` | yes | yes |
+| 53 | `json_loadfd` | yes | yes |
+| 54 | `json_loads` | yes | yes |
+| 55 | `json_null` | yes | yes |
+| 56 | `json_number_value` | yes | yes |
+| 57 | `json_object` | yes | yes |
+| 58 | `json_object_clear` | yes | yes |
+| 59 | `json_object_del` | yes | yes |
+| 60 | `json_object_deln` | yes | yes |
+| 61 | `json_object_get` | yes | yes |
+| 62 | `json_object_getn` | yes | yes |
+| 63 | `json_object_iter` | yes | yes |
+| 64 | `json_object_iter_at` | yes | yes |
+| 65 | `json_object_iter_key` | yes | yes |
+| 66 | `json_object_iter_key_len` | yes | yes |
+| 67 | `json_object_iter_next` | yes | yes |
+| 68 | `json_object_iter_set_new` | yes | yes |
+| 69 | `json_object_iter_value` | yes | yes |
+| 70 | `json_object_key_to_iter` | yes | yes |
+| 71 | `json_object_seed` | yes | yes |
+| 72 | `json_object_set_new` | yes | yes |
+| 73 | `json_object_set_new_nocheck` | yes | yes |
+| 74 | `json_object_setn_new` | yes | yes |
+| 75 | `json_object_setn_new_nocheck` | yes | yes |
+| 76 | `json_object_size` | yes | yes |
+| 77 | `json_object_update` | yes | yes |
+| 78 | `json_object_update_existing` | yes | yes |
+| 79 | `json_object_update_missing` | yes | yes |
+| 80 | `json_object_update_recursive` | yes | yes |
+| 81 | `json_pack` | yes | yes |
+| 82 | `json_pack_ex` | yes | yes |
+| 83 | `json_real` | yes | yes |
+| 84 | `json_real_set` | yes | yes |
+| 85 | `json_real_value` | yes | yes |
+| 86 | `json_set_alloc_funcs` | yes | yes |
+| 87 | `json_set_alloc_funcs2` | yes | yes |
+| 88 | `json_sprintf` | yes | yes |
+| 89 | `json_string` | yes | yes |
+| 90 | `json_string_length` | yes | yes |
+| 91 | `json_string_nocheck` | yes | yes |
+| 92 | `json_string_set` | yes | yes |
+| 93 | `json_string_set_nocheck` | yes | yes |
+| 94 | `json_string_setn` | yes | yes |
+| 95 | `json_string_setn_nocheck` | yes | yes |
+| 96 | `json_string_value` | yes | yes |
+| 97 | `json_stringn` | yes | yes |
+| 98 | `json_stringn_nocheck` | yes | yes |
+| 99 | `json_true` | yes | yes |
+| 100 | `json_unpack` | yes | yes |
+| 101 | `json_unpack_ex` | yes | yes |
+| 102 | `json_vpack_ex` | yes | yes |
+| 103 | `json_vsprintf` | yes | yes |
+| 104 | `json_vunpack_ex` | yes | yes |
+| 105 | `jsonp_dtostr` | yes | yes |
+| 106 | `jsonp_error_init` | yes | yes |
+| 107 | `jsonp_error_set` | yes | yes |
+| 108 | `jsonp_error_set_source` | yes | yes |
+| 109 | `jsonp_error_vset` | yes | yes |
+| 110 | `jsonp_free` | yes | yes |
+| 111 | `jsonp_loop_check` | yes | yes |
+| 112 | `jsonp_malloc` | yes | yes |
+| 113 | `jsonp_realloc` | yes | yes |
+| 114 | `jsonp_stringn_nocheck_own` | yes | yes |
+| 115 | `jsonp_strndup` | yes | yes |
+| 116 | `jsonp_strtod` | yes | yes |
+| 117 | `strbuffer_append_byte` | yes | yes |
+| 118 | `strbuffer_append_bytes` | yes | yes |
+| 119 | `strbuffer_clear` | yes | yes |
+| 120 | `strbuffer_close` | yes | yes |
+| 121 | `strbuffer_init` | yes | yes |
+| 122 | `strbuffer_pop` | yes | yes |
+| 123 | `strbuffer_steal_value` | yes | yes |
+| 124 | `strbuffer_value` | yes | yes |
+| 125 | `strtod__unused` | yes | yes |
+| 126 | `utf8_check_first` | yes | yes |
+| 127 | `utf8_check_full` | yes | yes |
+| 128 | `utf8_check_string` | yes | yes |
+| 129 | `utf8_encode` | yes | yes |
+| 130 | `utf8_iterate` | yes | yes |

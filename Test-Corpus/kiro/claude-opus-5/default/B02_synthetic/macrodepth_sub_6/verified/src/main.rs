@@ -1,39 +1,29 @@
-//! Translation of `c_src/src/mdmain.c` — the `driver` executable.
-//!
-//! `[lib] crate-type = ["cdylib"]` means this binary cannot link against the
-//! library target, so it compiles the same modules directly, exactly like the
-//! CMake target compiles both `mdcore.c` and `mdmain.c` into `driver`.
+// Translation of c_src/src/mdmain.c
+//
+// The C build links mdmain.c against mdcore.c directly. The Rust library is a
+// `cdylib` (so it cannot be linked as a Rust dependency), therefore the binary
+// compiles the same modules into itself, exactly like the C driver does.
 
-// `mdcore` mirrors a C translation unit: it defines the whole operation family
-// and the exported helpers whether or not the driver calls every one of them.
 #![allow(dead_code)]
 
+#[path = "mdcore.rs"]
 mod mdcore;
+#[path = "mdmacros.rs"]
 mod mdmacros;
 
-use core::ffi::{CStr, c_int};
+use std::ffi::c_int;
 use std::io::Write;
-use std::process::ExitCode;
+use std::os::unix::ffi::OsStrExt;
 
-use mdcore::{OP_FN, g_op, g_op_name, helper_call, helper_ptr, use_generated};
-use mdmacros::{INIT, REPEAT, run_loop};
-
-/// `atoi` from `<stdlib.h>`.
+/// `atoi(3)`: optional leading whitespace, optional sign, then decimal digits;
+/// parsing stops at the first non-digit. No error is reported.
 ///
-/// glibc implements it as `(int) strtol(nptr, NULL, 10)`: leading whitespace is
-/// skipped, an optional sign is consumed, digits are accumulated, trailing junk
-/// is ignored and there is no error reporting. On overflow `strtol` saturates to
-/// `LONG_MIN`/`LONG_MAX` (64-bit here) and the cast to `int` truncates — e.g.
-/// `atoi("99999999999999999999")` yields `-1`. Reproduced as-is.
-fn c_atoi(bytes: &[u8]) -> c_int {
-    let mut idx = 0;
+/// glibc implements it as `(int)strtol(...)`, so out-of-range input saturates
+/// at `long` bounds and is then truncated to `int`.
+fn atoi(bytes: &[u8]) -> c_int {
+    let mut idx = 0usize;
 
-    // isspace()
-    while idx < bytes.len()
-        && matches!(
-            bytes[idx],
-            b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r'
-        )
+    while idx < bytes.len() && matches!(bytes[idx], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
     {
         idx += 1;
     }
@@ -47,8 +37,8 @@ fn c_atoi(bytes: &[u8]) -> c_int {
     let mut acc: i64 = 0;
     let mut saturated = false;
     while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+        let digit = i64::from(bytes[idx] - b'0');
         if !saturated {
-            let digit = i64::from(bytes[idx] - b'0');
             match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
                 Some(v) => acc = v,
                 None => saturated = true,
@@ -57,8 +47,12 @@ fn c_atoi(bytes: &[u8]) -> c_int {
         idx += 1;
     }
 
-    let value: i64 = if saturated {
-        if negative { i64::MIN } else { i64::MAX }
+    let value = if saturated {
+        if negative {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
     } else if negative {
         -acc
     } else {
@@ -68,51 +62,43 @@ fn c_atoi(bytes: &[u8]) -> c_int {
     value as c_int
 }
 
-/// Raw argument bytes, so operands and `argv[0]` round-trip exactly like in C.
-fn arg_bytes(arg: &std::ffi::OsString) -> Vec<u8> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        arg.as_os_str().as_bytes().to_vec()
-    }
-    #[cfg(not(unix))]
-    {
-        arg.to_string_lossy().into_owned().into_bytes()
-    }
-}
-
-fn main() -> ExitCode {
+fn main() {
     let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let argc = argv.len();
 
-    // if (argc < 3) { fprintf(stderr, "usage: %s A B\n", argv[0]); return 2; }
     if argc < 3 {
-        let prog = argv.first().map(arg_bytes).unwrap_or_default();
+        let program = argv
+            .first()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let mut stderr = std::io::stderr();
-        let _ = stderr.write_all(b"usage: ");
-        let _ = stderr.write_all(&prog);
-        let _ = stderr.write_all(b" A B\n");
+        let _ = write!(stderr, "usage: {} A B\n", program);
         let _ = stderr.flush();
-        return ExitCode::from(2);
+        std::process::exit(2);
     }
 
-    let a = c_atoi(&arg_bytes(&argv[1]));
-    let b = c_atoi(&arg_bytes(&argv[2]));
+    let a = atoi(argv[1].as_bytes());
+    let b = atoi(argv[2].as_bytes());
 
-    let r_call = OP_FN(a, b);
+    // int r_call = (OP_FN(OP))(a, b);
+    let r_call = (mdmacros::OP_FN)(a, b);
 
     // int acc = INIT_FOR(OP); RUN_LOOP(OP, acc, REPEAT);
-    let acc = run_loop(INIT);
+    let acc = mdmacros::run_loop(mdmacros::INIT);
 
-    let x1 = helper_call(a, b);
-    let x2 = helper_ptr(a, b);
-    let x3 = use_generated(REPEAT);
-    let g_fn = g_op();
-    let g = g_fn(a, b);
+    let x1 = mdcore::helper_call(a, b);
+    let x2 = mdcore::helper_ptr(a, b);
+    let x3 = mdcore::use_generated(mdmacros::REPEAT);
+    // `int g = G_OP(a, b);` -- reads the mutable global function pointer.
+    let g = unsafe { (mdcore::G_OP)(a, b) };
 
-    // printf("op=%s call=%d acc=%d g.call=%d\n", G_OP_NAME, ...)
-    let op_name = unsafe { CStr::from_ptr(g_op_name()) }.to_string_lossy();
-    println!("op={op_name} call={r_call} acc={acc} g.call={g}");
+    println!(
+        "op={} call={} acc={} g.call={}",
+        mdmacros::op_name_str(),
+        r_call,
+        acc,
+        g
+    );
 
     let summary = r_call
         .wrapping_add(acc)
@@ -120,7 +106,5 @@ fn main() -> ExitCode {
         .wrapping_add(x2)
         .wrapping_add(x3)
         .wrapping_add(g);
-    println!("summary={summary}");
-
-    ExitCode::SUCCESS
+    println!("summary={}", summary);
 }

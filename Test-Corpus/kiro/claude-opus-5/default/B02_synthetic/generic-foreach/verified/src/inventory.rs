@@ -1,16 +1,16 @@
-//! Translation of `inventory.h` / `inventory.c`.
+// inventory.rs
+//
+// Translation of c_src/include/inventory.h and c_src/src/inventory.c.
+
+#![allow(dead_code)]
 
 use crate::containers::{Array, List};
-use crate::cstr::{cstr_eq, cstr_from, cstr_str};
+use crate::stdio::out_raw;
 
 pub const MAX_NAME_LENGTH: usize = 64;
 pub const MAX_CATEGORY_LENGTH: usize = 32;
 
-/// `item_t`
-///
-/// `name` and `category` stay as fixed-size NUL-terminated byte buffers so that
-/// `create_item`'s `strncpy` truncation behaviour is reproduced exactly.
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 pub struct Item {
     pub id: i32,
     pub name: [u8; MAX_NAME_LENGTH],
@@ -19,82 +19,95 @@ pub struct Item {
     pub quantity: i32,
 }
 
-/// `order_t`
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone)]
 pub struct Order {
     pub customer_id: i32,
     pub customer_name: [u8; MAX_NAME_LENGTH],
     pub total_amount: f64,
 }
 
-/// ```c
-/// printf("  [%d] %s\n", item.id, item.name);
-/// printf("      Category: %s\n", item.category);
-/// printf("      Price: $%.2f\n", item.price);
-/// printf("      Quantity: %d\n", item.quantity);
-/// ```
-pub fn print_item(out: &mut impl std::io::Write, item: &Item) {
-    let _ = write!(out, "  [{}] {}\n", item.id, cstr_str(&item.name));
-    let _ = write!(out, "      Category: {}\n", cstr_str(&item.category));
-    let _ = write!(out, "      Price: ${:.2}\n", item.price);
-    let _ = write!(out, "      Quantity: {}\n", item.quantity);
+/// `strncpy(dst, src, N - 1); dst[N - 1] = '\0';`
+///
+/// Copies at most `N - 1` bytes and zero-fills the remainder, so the result is
+/// always NUL-terminated and any longer source is silently truncated.
+fn strncpy_terminated<const N: usize>(src: &str) -> [u8; N] {
+    let mut dst = [0u8; N];
+    let bytes = src.as_bytes();
+    let n = if bytes.len() < N - 1 {
+        bytes.len()
+    } else {
+        N - 1
+    };
+    dst[..n].copy_from_slice(&bytes[..n]);
+    dst
 }
 
-/// ```c
-/// printf("  Order - Customer ID: %d, Name: %s\n", order.customer_id, order.customer_name);
-/// printf("          Total: $%.2f\n", order.total_amount);
-/// ```
-pub fn print_order(out: &mut impl std::io::Write, order: &Order) {
-    let _ = write!(
-        out,
-        "  Order - Customer ID: {}, Name: {}\n",
-        order.customer_id,
-        cstr_str(&order.customer_name)
-    );
-    let _ = write!(out, "          Total: ${:.2}\n", order.total_amount);
+/// The `%s` view of a fixed-size char buffer: bytes up to the first NUL.
+pub fn c_str(buf: &[u8]) -> &[u8] {
+    match buf.iter().position(|&b| b == 0) {
+        Some(n) => &buf[..n],
+        None => buf,
+    }
 }
 
-/// `create_item` - `strncpy` into fixed buffers, then force the last byte NUL.
+/// `strcmp(buf, s) == 0` for a NUL-terminated char buffer.
+fn c_str_eq(buf: &[u8], s: &str) -> bool {
+    c_str(buf) == s.as_bytes()
+}
+
+pub fn print_item(item: &Item) {
+    printf!("  [{}] ", item.id);
+    out_raw(c_str(&item.name));
+    printf!("\n");
+    printf!("      Category: ");
+    out_raw(c_str(&item.category));
+    printf!("\n");
+    printf!("      Price: ${:.2}\n", item.price);
+    printf!("      Quantity: {}\n", item.quantity);
+}
+
+pub fn print_order(order: &Order) {
+    printf!("  Order - Customer ID: {}, Name: ", order.customer_id);
+    out_raw(c_str(&order.customer_name));
+    printf!("\n");
+    printf!("          Total: ${:.2}\n", order.total_amount);
+}
+
 pub fn create_item(id: i32, name: &str, category: &str, price: f64, quantity: i32) -> Item {
     Item {
         id,
-        name: cstr_from::<MAX_NAME_LENGTH>(name),
-        category: cstr_from::<MAX_CATEGORY_LENGTH>(category),
+        name: strncpy_terminated::<MAX_NAME_LENGTH>(name),
+        category: strncpy_terminated::<MAX_CATEGORY_LENGTH>(category),
         price,
         quantity,
     }
 }
 
-/// `create_order`
 pub fn create_order(customer_id: i32, customer_name: &str, total_amount: f64) -> Order {
     Order {
         customer_id,
-        customer_name: cstr_from::<MAX_NAME_LENGTH>(customer_name),
+        customer_name: strncpy_terminated::<MAX_NAME_LENGTH>(customer_name),
         total_amount,
     }
 }
 
-/// `calculate_inventory_stats(array_item_t_t *items)`
-pub fn calculate_inventory_stats(out: &mut impl std::io::Write, items: &Array<Item>) {
-    // The C code checks `!items || items->size == 0` first; the null case cannot
-    // arise here because the caller always passes a live container.
+pub fn calculate_inventory_stats(items: &Array<Item>) {
     if items.size() == 0 {
-        let _ = write!(out, "No items in inventory\n");
+        printf!("No items in inventory\n");
         return;
     }
 
-    let _ = write!(out, "\n=== Inventory Statistics (Array) ===\n");
+    printf!("\n=== Inventory Statistics (Array) ===\n");
 
     let mut total_value: f64 = 0.0;
     let mut total_items: i32 = 0;
-    // NOTE: matches the C source exactly - max_price seeds from 0.0 while
-    // min_price seeds from the first element's price.
+    // Note: `max_price` starts at 0.0 rather than at the first element's price.
     let mut max_price: f64 = 0.0;
     let mut min_price: f64 = items.get(0).price;
 
     for item in items.iter() {
-        total_value += item.price * f64::from(item.quantity);
-        total_items = total_items.wrapping_add(item.quantity);
+        total_value += item.price * item.quantity as f64;
+        total_items += item.quantity;
         if item.price > max_price {
             max_price = item.price;
         }
@@ -103,26 +116,24 @@ pub fn calculate_inventory_stats(out: &mut impl std::io::Write, items: &Array<It
         }
     }
 
-    let _ = write!(out, "Total unique items: {}\n", items.size());
-    let _ = write!(out, "Total item count: {}\n", total_items);
-    let _ = write!(out, "Total inventory value: ${:.2}\n", total_value);
-    let _ = write!(
-        out,
+    printf!("Total unique items: {}\n", items.size());
+    printf!("Total item count: {}\n", total_items);
+    printf!("Total inventory value: ${:.2}\n", total_value);
+    printf!(
         "Average item price: ${:.2}\n",
-        total_value / f64::from(total_items)
+        total_value / total_items as f64
     );
-    let _ = write!(out, "Most expensive item: ${:.2}\n", max_price);
-    let _ = write!(out, "Least expensive item: ${:.2}\n", min_price);
+    printf!("Most expensive item: ${:.2}\n", max_price);
+    printf!("Least expensive item: ${:.2}\n", min_price);
 }
 
-/// `calculate_order_stats(list_order_t_t *orders)`
-pub fn calculate_order_stats(out: &mut impl std::io::Write, orders: &List<Order>) {
+pub fn calculate_order_stats(orders: &List<Order>) {
     if orders.size() == 0 {
-        let _ = write!(out, "No orders to analyze\n");
+        printf!("No orders to analyze\n");
         return;
     }
 
-    let _ = write!(out, "\n=== Order Statistics (List) ===\n");
+    printf!("\n=== Order Statistics (List) ===\n");
 
     let mut total_revenue: f64 = 0.0;
     let mut max_order: f64 = 0.0;
@@ -138,52 +149,50 @@ pub fn calculate_order_stats(out: &mut impl std::io::Write, orders: &List<Order>
         }
     }
 
-    let _ = write!(out, "Total orders: {}\n", orders.size());
-    let _ = write!(out, "Total revenue: ${:.2}\n", total_revenue);
-    let _ = write!(
-        out,
+    printf!("Total orders: {}\n", orders.size());
+    printf!("Total revenue: ${:.2}\n", total_revenue);
+    printf!(
         "Average order value: ${:.2}\n",
         total_revenue / orders.size() as f64
     );
-    let _ = write!(out, "Largest order: ${:.2}\n", max_order);
-    let _ = write!(out, "Smallest order: ${:.2}\n", min_order);
+    printf!("Largest order: ${:.2}\n", max_order);
+    printf!("Smallest order: ${:.2}\n", min_order);
 }
 
-/// `find_items_by_category(array_item_t_t *items, const char *category)`
-pub fn find_items_by_category(out: &mut impl std::io::Write, items: &Array<Item>, category: &str) {
-    let _ = write!(out, "\n=== Items in category '{}' ===\n", category);
+pub fn find_items_by_category(items: &Array<Item>, category: &str) {
+    printf!("\n=== Items in category '{}' ===\n", category);
 
     let mut found: i32 = 0;
+
     for item in items.iter() {
-        if cstr_eq(&item.category, category) {
-            print_item(out, item);
+        if c_str_eq(&item.category, category) {
+            print_item(item);
             found += 1;
         }
     }
 
     if found == 0 {
-        let _ = write!(out, "No items found in this category\n");
+        printf!("No items found in this category\n");
     } else {
-        let _ = write!(out, "Found {} items\n", found);
+        printf!("Found {} items\n", found);
     }
 }
 
-/// `find_expensive_items(list_item_t_t *items, double min_price)`
-#[allow(dead_code)]
-pub fn find_expensive_items(out: &mut impl std::io::Write, items: &List<Item>, min_price: f64) {
-    let _ = write!(out, "\n=== Items priced above ${:.2} ===\n", min_price);
+pub fn find_expensive_items(items: &List<Item>, min_price: f64) {
+    printf!("\n=== Items priced above ${:.2} ===\n", min_price);
 
     let mut found: i32 = 0;
+
     for item in items.iter() {
         if item.price >= min_price {
-            print_item(out, item);
+            print_item(item);
             found += 1;
         }
     }
 
     if found == 0 {
-        let _ = write!(out, "No items found above this price\n");
+        printf!("No items found above this price\n");
     } else {
-        let _ = write!(out, "Found {} items\n", found);
+        printf!("Found {} items\n", found);
     }
 }

@@ -1,0 +1,660 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src structure
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 15:47 .
+drwxr-xr-x. 815 scheschb amazon 81920 Sep  1 15:47 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 15:47 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 15:47 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 15:47 translation
+---
+c_src/CMakeLists.txt
+c_src/include/goto.h
+c_src/src/goto.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/goto.h c_src/src/goto.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Count lines in C files
+
+  38 c_src/CMakeLists.txt
+  26 c_src/include/goto.h
+  81 c_src/src/goto.c
+ 145 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[38;5;11m
+WARNING: [0mRetry #2, retrying within 10.0s..
+[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/include/goto.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/src/goto.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1519 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1177 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/include/goto.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2063 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src/src/goto.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 3 files. Let me build the C library and enumerate its exported symbols.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-iQhbxm/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1; tail -5 cmake.log; ls -la /tmp/cbuild/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
+
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cbuild
+[ 50%] Building C object CMakeFiles/driver.dir/src/goto.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+-rwxr-xr-x. 1 scheschb amazon 16216 Sep  1 15:48 /tmp/cbuild/libdriver.so
+[38;5;244m - Completed in 0.424s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libdriver.so | sort | tee c_syms_raw.txt; echo "=== filtered (T/D/B/R text+data, non-internal) ==="; nm -D --defined-only libdriver.so | awk '{print $3}' | grep -v '^_' | sort -u | tee c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols from C .so
+
+0000000000001190 T forward_goto_example
+00000000000011e0 T open_with_cleanup
+0000000000001290 T driver
+=== filtered (T/D/B/R text+data, non-internal) ===
+driver
+forward_goto_example
+open_with_cleanup
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/src/cstdio.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create C stdio FFI bindings module
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Minimal bindings to the host C standard I/O library.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The translated library must produce *byte-identical* output to the original
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! C code. Output ordering between `stdout` and `stderr` depends on the exact
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! buffering behaviour of the C runtime (`stdout` is line-buffered on a TTY but
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! fully buffered when redirected to a file or pipe, `stderr` is unbuffered).
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! Re-implementing this on top of Rust's own `std::io` buffers would interleave
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! differently, so we call straight through to the platform's `stdio` instead.
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_long, c_void};
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m /// Opaque stand-in for C's `FILE`.
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m /// Declared as a zero-sized `repr(C)` struct so that `*mut FILE` is a plain
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m /// thin pointer that is ABI-identical to the C type, while remaining
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m /// impossible to dereference or construct by accident from Rust.
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m pub struct FILE {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     _opaque: [u8; 0],
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     /// `extern FILE *stdout;` from `<stdio.h>`.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     pub static mut stdout: *mut FILE;
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     /// `extern FILE *stderr;` from `<stdio.h>`.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     pub static mut stderr: *mut FILE;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     pub fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     pub fn fprintf(stream: *mut FILE, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     pub fn fopen(filename: *const c_char, mode: *const c_char) -> *mut FILE;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     pub fn fclose(stream: *mut FILE) -> c_int;
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     pub fn fgets(buf: *mut c_char, n: c_int, stream: *mut FILE) -> *mut c_char;
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     pub fn ferror(stream: *mut FILE) -> c_int;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m // Silence "unused" warnings for the imports that only exist to document the
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m // shape of the C API surface we depend on.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m #[allow(dead_code)]
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m type _UnusedCLong = c_long;
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m #[allow(dead_code)]
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m type _UnusedCVoid = c_void;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/src/cstdio.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/src/goto.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate goto.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Translation of `c_src/src/goto.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The original file demonstrates C `goto`-based control flow. Rust has no
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `goto`, so each jump is re-expressed with the equivalent structured control
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! flow. The observable behaviour — return values, stream writes, and the order
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! in which they happen — is preserved exactly, including the original's quirks
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! (see the notes on `open_with_cleanup` below).
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::ptr;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use crate::cstdio::{FILE, fclose, ferror, fgets, fopen, fprintf, printf, stderr};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// Size of the read buffer in `open_with_cleanup`, matching `char buffer[100]`.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m const BUFFER_LEN: usize = 100;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// `int forward_goto_example(int x)`
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// C source:
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// if (x < 0) {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m ///   goto error;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// printf("Processing: %d\n", x);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// return x * 2;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// error:
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ///   fprintf(stderr, "Error: negative input\n");
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m ///   return -1;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// The `error` label is only reachable via the explicit `goto` (the success path
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// returns before falling into it), so the forward jump collapses into a plain
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// early-return branch.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m pub extern "C" fn forward_goto_example(x: c_int) -> c_int {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     if x < 0 {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         // error:
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             fprintf(stderr, c"Error: negative input\n".as_ptr());
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         printf(c"Processing: %d\n".as_ptr(), x);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     // `x * 2` overflows for large `x`, which is undefined behaviour in C but in
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     // practice compiles to a wrapping multiply. Spell that out explicitly so the
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     // Rust build does not panic in debug or miscompile in release.
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     x.wrapping_mul(2)
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// `FILE* open_with_cleanup(const char *filename)`
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// C source:
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// FILE* fp = fopen(filename, "r");
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// if (!fp) {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m ///   goto cleanup;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// char buffer[100];
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// while (fgets(buffer, sizeof(buffer), fp)) {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ///     printf("%s", buffer);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// if (ferror(fp)) {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ///     goto cleanup;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// return fp;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// cleanup:
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ///   fprintf(stderr, "Error: opening or processing file %s\n", filename);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///   if(fp) fclose(fp);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///   return NULL;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// Behaviour preserved verbatim, including two oddities of the original that are
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// deliberately **not** fixed:
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// * On success the file has already been read to EOF but is returned still
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m ///   open, leaving the caller to close it.
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m /// * The `cleanup` label is shared by both failure paths, so the `if (fp)` guard
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m ///   is a no-op on the `fopen`-failed path and a real `fclose` on the
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m ///   `ferror` path.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// `filename` is forwarded to `fopen` and to `fprintf`'s `%s` conversion exactly
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// as the C code does; it must be a valid NUL-terminated string (a null pointer
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// is passed straight through, matching the original).
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m pub unsafe extern "C" fn open_with_cleanup(filename: *const c_char) -> *mut FILE {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let fp: *mut FILE = unsafe { fopen(filename, c"r".as_ptr()) };
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     if !fp.is_null() {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         // C leaves `buffer` uninitialized; `fgets` NUL-terminates whatever it
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         // stores, so zeroing here is observationally equivalent.
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let mut buffer: [c_char; BUFFER_LEN] = [0; BUFFER_LEN];
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         while !unsafe { fgets(buffer.as_mut_ptr(), BUFFER_LEN as c_int, fp) }.is_null() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 printf(c"%s".as_ptr(), buffer.as_ptr());
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         if unsafe { ferror(fp) } == 0 {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             return fp;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         // otherwise: fall through to cleanup with `fp` still non-null
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     // cleanup:
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         fprintf(
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             stderr,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             c"Error: opening or processing file %s\n".as_ptr(),
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             filename,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     if !fp.is_null() {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             fclose(fp);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     ptr::null_mut()
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m /// `int driver(int num, const char* filename)`
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m /// The library's documented entry point (the only symbol declared in
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m /// `include/goto.h`). Returns `-1` if `forward_goto_example` reported an error,
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m /// `-2` if the file could not be opened or read, and `0` on success.
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m /// `filename` is forwarded to [`open_with_cleanup`]; the same requirements apply.
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(num: c_int, filename: *const c_char) -> c_int {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     let res = forward_goto_example(num);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     if res == -1 {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m             printf(c"Goto output: %d\n".as_ptr(), res);
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     let out: *mut FILE = unsafe { open_with_cleanup(filename) };
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     if out.is_null() {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         return -2;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             fclose(out);
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/src/goto.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create lib.rs root module
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Exports the same public ABI as the C shared library built by
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! `c_src/CMakeLists.txt` (`libdriver.so`): `driver`, `forward_goto_example`,
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! and `open_with_cleanup`. No preprocessor namespace macros are involved, so
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! the linker symbol names are identical to the source-level names.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m mod cstdio;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m mod goto;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m pub use goto::{driver, forward_goto_example, open_with_cleanup};
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation)
+warning: static `stdout` is never used
+  --> src/cstdio.rs:24:20
+   |
+24 |     pub static mut stdout: *mut FILE;
+   |                    ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `driver` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.157s[0m
+
+[?25l[0m[38;5;141m> [0mBuilds clean. Removing the unused binding, then verifying the symbol diff.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/cstdio.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 10    [0m:[38;5;9m[49m use std::ffi::{c_char, c_int, c_long, c_void};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[K
+Updating: [38;5;141mtranslation/src/cstdio.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/cstdio.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  22, 22[0m:[39m[49m unsafe extern "C" {
+[0m[49m[38;5;9m- 23    [0m:[38;5;9m[49m     /// `extern FILE *stdout;` from `<stdio.h>`.
+[0m[49m[38;5;9m- 24    [0m:[38;5;9m[49m     pub static mut stdout: *mut FILE;
+[0m[49m[39m  25, 23[0m:[39m[49m     /// `extern FILE *stderr;` from `<stdio.h>`.
+[0m[49m[39m  26, 24[0m:[39m[49m     pub static mut stderr: *mut FILE;
+[0m[49m[39m  27, 25[0m:[39m[49m 
+[0m[49m[39m  28, 26[0m:[39m[49m     pub fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[39m  29, 27[0m:[39m[49m     pub fn fprintf(stream: *mut FILE, format: *const c_char, ...) -> c_int;
+[0m[49m[39m  30, 28[0m:[39m[49m 
+[0m[49m[39m  31, 29[0m:[39m[49m     pub fn fopen(filename: *const c_char, mode: *const c_char) -> *mut FILE;
+[0m[49m[39m  32, 30[0m:[39m[49m     pub fn fclose(stream: *mut FILE) -> c_int;
+[0m[49m[39m  33, 31[0m:[39m[49m     pub fn fgets(buf: *mut c_char, n: c_int, stream: *mut FILE) -> *mut c_char;
+[0m[49m[39m  34, 32[0m:[39m[49m     pub fn ferror(stream: *mut FILE) -> c_int;
+[0m[49m[39m  35, 33[0m:[39m[49m }
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m // Silence "unused" warnings for the imports that only exist to document the
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m // shape of the C API surface we depend on.
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m #[allow(dead_code)]
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m type _UnusedCLong = c_long;
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m #[allow(dead_code)]
+[0m[49m[38;5;9m- 42    [0m:[38;5;9m[49m type _UnusedCVoid = c_void;
+[0m[K
+Updating: [38;5;141mtranslation/src/cstdio.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20; echo "=== rust exports ==="; nm -D --defined-only target/release/libdriver.so | awk '{print $3}' | grep -v '^_' | sort -u | tee /tmp/cbuild/rust_syms.txt; echo "=== DIFF (< C only, > Rust only) ==="; diff /tmp/cbuild/c_syms.txt /tmp/cbuild/rust_syms.txt && echo "SYMBOL DIFF EMPTY"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and diff exported symbols against C .so
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+=== rust exports ===
+driver
+forward_goto_example
+open_with_cleanup
+=== DIFF (< C only, > Rust only) ===
+SYMBOL DIFF EMPTY
+[38;5;244m - Completed in 0.118s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity confirmed. Now verifying byte-identical behavior with a differential harness that dlopens both [38;5;10m.so[0m files.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cbuild/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /* Differential harness: dlopen a .so and exercise its full exported surface.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m  * Both stdout and stderr are inherited (redirected to files by the runner), so
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m  * the captured bytes include the real interleaving produced by libc buffering.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m  */
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <limits.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m typedef int (*fge_t)(int);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m typedef FILE *(*owc_t)(const char *);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m typedef int (*drv_t)(int, const char *);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m   if (argc < 4) {
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     fprintf(stderr, "usage: %s <so> <case> <datadir>\n", argv[0]);
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     return 99;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   const char *so = argv[1];
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   const char *which = argv[2];
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m   const char *dir = argv[3];
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   void *h = dlopen(so, RTLD_NOW);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   if (!h) { fprintf(stderr, "dlopen failed: %s\n", dlerror()); return 98; }
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m   fge_t fge = (fge_t)dlsym(h, "forward_goto_example");
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m   owc_t owc = (owc_t)dlsym(h, "open_with_cleanup");
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m   drv_t drv = (drv_t)dlsym(h, "driver");
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m   if (!fge || !owc || !drv) { fprintf(stderr, "dlsym failed\n"); return 97; }
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   char path[4096];
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   if (strcmp(which, "fge") == 0) {
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     /* forward_goto_example across boundary + overflow values */
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     int xs[] = {0, 1, 2, 7, 42, -1, -2, -100, INT_MAX, INT_MAX - 1,
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                 INT_MIN, INT_MIN + 1, 1073741824, 1073741823, -0};
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(xs) / sizeof(xs[0]); i++) {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m       int r = fge(xs[i]);
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m       printf("fge(%d) = %d\n", xs[i], r);
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m   if (strcmp(which, "owc") == 0) {
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     /* open_with_cleanup on every fixture, incl. dir and missing file */
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     const char *names[] = {"simple.txt",  "empty.txt",   "noeol.txt",
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m                            "long.txt",    "nul.txt",     "binary.bin",
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m                            "onechar.txt", "blank.txt",   "crlf.txt",
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m                            "missing.txt", "subdir"};
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m       snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m       FILE *f = owc(path);
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m       printf("owc(%s) = %s\n", names[i], f ? "open" : "NULL");
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m       if (f) fclose(f);
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m   if (strcmp(which, "drv") == 0) {
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     /* driver: cross product of interesting nums and files */
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     int nums[] = {-1, -5, 0, 3, 21, INT_MAX};
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     const char *names[] = {"simple.txt", "empty.txt", "noeol.txt", "long.txt",
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m                            "nul.txt",    "missing.txt", "subdir"};
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     for (unsigned n = 0; n < sizeof(nums) / sizeof(nums[0]); n++) {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m       for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m         snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         int r = drv(nums[i % 7 == 0 ? n : n], path);
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         printf("driver(%d, %s) = %d\n", nums[n], names[i], r);
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         (void)r;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m       }
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m   }
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m   fprintf(stderr, "unknown case %s\n", which);
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m   return 96;
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/cbuild/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /tmp/cbuild
+gcc -O2 -o harness harness.c -ldl
+D=/tmp/cbuild/data
+rm -rf "$D"; mkdir -p "$D/subdir"
+printf 'alpha\nbeta\ngamma\n'            > "$D/simple.txt"
+: > "$D/empty.txt"
+printf 'no trailing newline'             > "$D/noeol.txt"
+python3 -c "import sys; sys.stdout.write('X'*250+'\n'+'Y'*99+'\n'+'Z'*100+'\n')" > "$D/long.txt"
+printf 'be\x00fore\nafter\n'             > "$D/nul.txt"
+head -c 512 /dev/urandom                 > "$D/binary.bin"
+printf 'q'                               > "$D/onechar.txt"
+printf '\n\n\n'                          > "$D/blank.txt"
+printf 'a\r\nb\r\n'                      > "$D/crlf.txt"
+ls -la "$D"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile harness and create test fixtures
+
+total 32
+drwxr-xr-x. 3 scheschb amazon 240 Sep  1 15:50 .
+drwxr-xr-x. 4 scheschb amazon 280 Sep  1 15:50 ..
+-rw-r--r--. 1 scheschb amazon 512 Sep  1 15:50 binary.bin
+-rw-r--r--. 1 scheschb amazon   3 Sep  1 15:50 blank.txt
+-rw-r--r--. 1 scheschb amazon   6 Sep  1 15:50 crlf.txt
+-rw-r--r--. 1 scheschb amazon   0 Sep  1 15:50 empty.txt
+-rw-r--r--. 1 scheschb amazon 452 Sep  1 15:50 long.txt
+-rw-r--r--. 1 scheschb amazon  19 Sep  1 15:50 noeol.txt
+-rw-r--r--. 1 scheschb amazon  14 Sep  1 15:50 nul.txt
+-rw-r--r--. 1 scheschb amazon   1 Sep  1 15:50 onechar.txt
+-rw-r--r--. 1 scheschb amazon  17 Sep  1 15:50 simple.txt
+drwxr-xr-x. 2 scheschb amazon  40 Sep  1 15:50 subdir
+[38;5;244m - Completed in 0.82s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild
+C_SO=/tmp/cbuild/libdriver.so
+R_SO=/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/target/release/libdriver.so
+FAIL=0
+for CASE in fge owc drv; do
+  for MODE in redirect; do
+    ./harness "$C_SO" "$CASE" /tmp/cbuild/data > c.$CASE.out 2> c.$CASE.err; ec_c=$?
+    ./harness "$R_SO" "$CASE" /tmp/cbuild/data > r.$CASE.out 2> r.$CASE.err; ec_r=$?
+    if cmp -s c.$CASE.out r.$CASE.out && cmp -s c.$CASE.err r.$CASE.err && [ "$ec_c" = "$ec_r" ]; then
+      echo "PASS $CASE  (stdout $(wc -c < c.$CASE.out)B, stderr $(wc -c < c.$CASE.err)B, exit $ec_c)"
+    else
+      echo "FAIL $CASE"; FAIL=1
+      diff <(xxd c.$CASE.out) <(xxd r.$CASE.out) | head -20
+      diff c.$CASE.err r.$CASE.err | head -20
+    fi
+  done
+done
+echo "--- interleaved (stdout+stderr to SAME file, tests buffer-flush ordering) ---"
+for CASE in fge owc drv; do
+  ./harness "$C_SO" "$CASE" /tmp/cbuild/data > c.$CASE.both 2>&1
+  ./harness "$R_SO" "$CASE" /tmp/cbuild/data > r.$CASE.both 2>&1
+  if cmp -s c.$CASE.both r.$CASE.both; then echo "PASS interleaved $CASE ($(wc -c < c.$CASE.both)B)";
+  else echo "FAIL interleaved $CASE"; FAIL=1; diff <(xxd c.$CASE.both) <(xxd r.$CASE.both) | head -20; fi
+done
+echo "OVERALL_FAIL=$FAIL"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential comparison of C vs Rust output
+
+PASS fge  (stdout 432B, stderr 110B, exit 0)
+PASS owc  (stdout 1047B, stderr 121B, exit 0)
+PASS drv  (stdout 4018B, stderr 792B, exit 0)
+--- interleaved (stdout+stderr to SAME file, tests buffer-flush ordering) ---
+PASS interleaved fge (542B)
+PASS interleaved owc (1168B)
+PASS interleaved drv (4810B)
+OVERALL_FAIL=0
+[38;5;244m - Completed in 0.58s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild
+C_SO=/tmp/cbuild/libdriver.so
+R_SO=/local/home/scheschb/.harvest/work/harvest-work-iQhbxm/translation/target/release/libdriver.so
+FAIL=0
+for CASE in fge owc drv; do
+  script -qec "./harness $C_SO $CASE /tmp/cbuild/data" /dev/null > c.$CASE.tty 2>&1
+  script -qec "./harness $R_SO $CASE /tmp/cbuild/data" /dev/null > r.$CASE.tty 2>&1
+  if cmp -s c.$CASE.tty r.$CASE.tty; then echo "PASS tty(line-buffered) $CASE ($(wc -c < c.$CASE.tty)B)";
+  else echo "FAIL tty $CASE"; FAIL=1; diff <(xxd c.$CASE.tty) <(xxd r.$CASE.tty) | head -20; fi
+done
+echo "--- pipe (block-buffered stdout, unbuffered stderr) ---"
+for CASE in fge owc drv; do
+  ./harness "$C_SO" "$CASE" /tmp/cbuild/data 2>&1 | cat > c.$CASE.pipe
+  ./harness "$R_SO" "$CASE" /tmp/cbuild/data 2>&1 | cat > r.$CASE.pipe
+  cmp -s c.$CASE.pipe r.$CASE.pipe && echo "PASS pipe $CASE ($(wc -c < c.$CASE.pipe)B)" || { echo "FAIL pipe $CASE"; FAIL=1; }
+done
+echo "OVERALL_FAIL=$FAIL"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test tty line-buffered and pipe block-buffered ordering
+
+PASS tty(line-buffered) fge (572B)
+PASS tty(line-buffered) owc (1195B)
+PASS tty(line-buffered) drv (4958B)
+--- pipe (block-buffered stdout, unbuffered stderr) ---
+PASS pipe fge (542B)
+PASS pipe owc (1168B)
+PASS pipe drv (4810B)
+OVERALL_FAIL=0
+[38;5;244m - Completed in 0.195s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-word-iQhbxm 2>/dev/null; cd /local/home/scheschb/.harvest/work/harvest-work-iQhbxm
+echo "=== deliverables ==="; find translation -type f -not -path '*/target/*' | sort
+echo; echo "=== crate-type ==="; grep -A2 '^\[lib\]' translation/Cargo.toml
+echo; echo "=== no_mangle count ==="; grep -c 'unsafe(no_mangle)' translation/src/goto.rs
+echo; echo "=== full nm -D side by side ==="
+paste <(nm -D --defined-only /tmp/cbuild/libdriver.so | awk '{print $2, $3}' | sort -k2) <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $2, $3}' | sort -k2)
+echo; echo "=== c_src unmodified (all mtimes at checkout time) ==="; find c_src -type f -printf '%T@ %p\n' | sort
+echo; echo "=== warning-free rebuild ==="; cd translation && touch src/lib.rs && cargo build --release 2>&1 | grep -c warning[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final consolidated verification
+
+=== deliverables ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/cstdio.rs
+translation/src/goto.rs
+translation/src/lib.rs
+
+=== crate-type ===
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+
+=== no_mangle count ===
+3
+
+=== full nm -D side by side ===
+T driver	T driver
+T forward_goto_example	T forward_goto_example
+T open_with_cleanup	T open_with_cleanup
+
+=== c_src unmodified (all mtimes at checkout time) ===
+1788277655.6571733880 c_src/CMakeLists.txt
+1788277655.6571733880 c_src/include/goto.h
+1788277655.6571733880 c_src/src/goto.c
+
+=== warning-free rebuild ===
+0
+[38;5;244m - Completed in 0.131s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+Far smaller than the brief anticipated — [38;5;10mc_src/[0m is 3 files (145 lines total, ~55 lines of actual code): a CMake file, [38;5;10minclude/goto.h[0m, and [38;5;10msrc/goto.c[0m. It's a [38;5;10mgoto[0m-control-flow demo. The C build exports exactly three symbols, and there are no namespace-renaming macros, so linker names match source names 1:1.[0m[0m
+[0m[0m
+[38;5;252m[1m## Symbol parity (the completion gate)[0m[0m
+[0m[0m
+[38;5;10mC libdriver.so          Rust libdriver.so
+T driver             ->  T driver
+T forward_goto_example-> T forward_goto_example
+T open_with_cleanup  ->  T open_with_cleanup
+[0m[0m[0m
+[0m[0m
+[38;5;10mdiff[0m of the two [38;5;10mnm -D[0m lists is empty. Note that [38;5;10mopen_with_cleanup[0m and [38;5;10mforward_goto_example[0m are exported even though only [38;5;10mdriver[0m is declared in the public header — I covered all three.[0m[0m
+[0m[0m
+[38;5;252m[1m## Key translation decision[0m[0m
+[0m[0m
+Byte-identical output required calling straight through to the host libc [38;5;10mstdio[0m ([38;5;10mprintf[0m, [38;5;10mfprintf[0m, [38;5;10mfopen[0m, [38;5;10mfgets[0m, [38;5;10mferror[0m, [38;5;10mfclose[0m, and the [38;5;10mstderr[0m global) rather than rebuilding on Rust's [38;5;10mstd::io[0m. The C code writes to both [38;5;10mstdout[0m and [38;5;10mstderr[0m, and the interleaving of those writes depends on libc's buffering mode — line-buffered on a TTY, block-buffered on a pipe, with [38;5;10mstderr[0m unbuffered. Rust's own buffers would flush at different points and reorder the output. [38;5;10msrc/cstdio.rs[0m holds those bindings; [38;5;10msrc/goto.rs[0m is the translated logic.[0m[0m
+[0m[0m
+Each [38;5;10mgoto[0m collapsed into structured control flow: the forward jump in [38;5;10mforward_goto_example[0m became an early return; the shared [38;5;10mcleanup[0m label in [38;5;10mopen_with_cleanup[0m became a fall-through out of an [38;5;10mif[0m block, which preserves the fact that [38;5;10mfp[0m is null on one path and non-null on the other.[0m[0m
+[0m[0m
+Two original quirks preserved rather than fixed: [38;5;10mopen_with_cleanup[0m returns the file already read to EOF but still open, and [38;5;10mx * 2[0m can overflow (C UB, compiled as a wrapping multiply — spelled as [38;5;10mwrapping_mul[0m so Rust neither panics nor miscompiles).[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+[0m[0m
+Beyond compiling warning-free, I built a C harness that [38;5;10mdlopen[0ms each [38;5;10m.so[0m and calls all three exported functions, then compared captured bytes. Fixtures covered empty files, no trailing newline, lines at and over the 100-byte [38;5;10mfgets[0m buffer boundary, embedded NUL bytes, random binary, CRLF, a nonexistent path, and a directory (which makes [38;5;10mfopen[0m succeed but [38;5;10mfgets[0m fail, exercising the [38;5;10mferror[0m cleanup path). Integer inputs included [38;5;10m0[0m, negatives, [38;5;10mINT_MAX[0m, and [38;5;10mINT_MIN[0m.[0m[0m
+[0m[0m
+All 12 comparisons matched byte-for-byte across three output configurations — separate files, merged into one file, a pipe, and a real pty — with identical exit codes. I ran every check myself; no sub-agents were used, since the library was small enough that delegation would have added risk without saving work.[0m[0m
+[38;5;8m
+ ▸ Credits: 7.06 • Time: 3m 28s
+
+[0m[1G[0m[0m[?25h

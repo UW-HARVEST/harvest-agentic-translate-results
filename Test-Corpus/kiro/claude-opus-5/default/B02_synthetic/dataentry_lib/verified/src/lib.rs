@@ -24,14 +24,32 @@
 // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// The C library exports exactly one public symbol: `dataentry`. Everything
+// else in the translation unit is `static` and therefore has internal linkage.
+// The helpers below are kept as private Rust functions with the same names and
+// the same observable behavior, including the original quirks (dead checks,
+// leaked allocation on the `count <= 0` path, unused `max_len` parameter,
+// signed wraparound arithmetic).
 
 use std::ffi::c_int;
 
+/// `#define NAME_LENGTH 32`
 const NAME_LENGTH: usize = 32;
 
-/// Mirror of the C `DataEntry` struct. `name` is a fixed-size NUL-terminated
-/// byte buffer, exactly like `char name[NAME_LENGTH]`.
+/// `#define MAX_ENTRIES 10` — declared but never used by the C code.
+#[allow(dead_code)]
+const MAX_ENTRIES: usize = 10;
+
+/// ```c
+/// typedef struct {
+///     int id;
+///     int value;
+///     char name[NAME_LENGTH];
+/// } DataEntry;
+/// ```
 #[derive(Clone, Copy)]
+#[repr(C)]
 struct DataEntry {
     id: c_int,
     value: c_int,
@@ -48,7 +66,14 @@ impl DataEntry {
     }
 }
 
-/// `static int lookup_table[4][3]`
+/// ```c
+/// static int lookup_table[4][3] = {
+///     {10, 20, 30},
+///     {40, 50, 60},
+///     {70, 80, 90},
+///     {100, 110, 120}
+/// };
+/// ```
 static LOOKUP_TABLE: [[c_int; 3]; 4] = [
     [10, 20, 30],
     [40, 50, 60],
@@ -56,35 +81,53 @@ static LOOKUP_TABLE: [[c_int; 3]; 4] = [
     [100, 110, 120],
 ];
 
-/// Equivalent of C `strlen` over a fixed NUL-terminated buffer.
-fn c_strlen(buf: &[u8]) -> usize {
-    match buf.iter().position(|&b| b == 0) {
-        Some(n) => n,
-        // A buffer without a terminator would be UB in C; treat the whole
-        // buffer as the string, which is the closest well-defined behaviour.
-        None => buf.len(),
+/// Byte-for-byte equivalent of `strcpy(dest, src)` where `src` is a
+/// NUL-terminated byte slice: copies bytes up to and including the terminator.
+fn strcpy(dest: &mut [u8], src: &[u8]) {
+    for (i, &b) in src.iter().enumerate() {
+        dest[i] = b;
+        if b == 0 {
+            return;
+        }
     }
 }
 
-/// Equivalent of C `strcpy(dest, src)` where `src` is a NUL-terminated view.
-/// Copies the bytes up to and including the terminator.
-fn c_strcpy(dest: &mut [u8], src: &[u8]) {
-    let len = c_strlen(src);
-    dest[..len].copy_from_slice(&src[..len]);
-    dest[len] = 0;
+/// `strcpy(dest, literal)` where the Rust literal carries no NUL of its own.
+fn strcpy_str(dest: &mut [u8], src: &str) {
+    let bytes = src.as_bytes();
+    dest[..bytes.len()].copy_from_slice(bytes);
+    dest[bytes.len()] = 0;
 }
 
-/// `static DataEntry* find_entry(DataEntry*, int, int)`
+/// Equivalent of `strlen` over a NUL-terminated byte buffer.
+fn strlen(buf: &[u8]) -> usize {
+    buf.iter().position(|&b| b == 0).unwrap_or(buf.len())
+}
+
+/// ```c
+/// static DataEntry* find_entry(DataEntry* entries, int count, int target_id) {
+///     DataEntry* ptr = entries;
+///     DataEntry* end = entries + count;
+///     while (ptr < end) {
+///         if (ptr->id == target_id) { return ptr; }
+///         ptr++;
+///     }
+///     return NULL;
+/// }
+/// ```
 ///
-/// Returns the index of the first entry whose id matches, or `None`.
-/// Note that a negative `count` yields `end < entries`, so the loop body never
-/// runs and `NULL` is returned - matching the C pointer comparison.
+/// Returns the index of the match rather than a raw pointer. `count` is used
+/// exactly as the C code uses it: as the pointer-arithmetic end bound. A
+/// negative or oversized `count` would be out-of-bounds in C as well; here the
+/// walk is clamped to the live slice, which is the same set of elements the C
+/// loop visits for every `count` the public entry point can produce.
 fn find_entry(entries: &[DataEntry], count: c_int, target_id: c_int) -> Option<usize> {
     if count <= 0 {
+        // `ptr < end` is false immediately.
         return None;
     }
-    let count = count as usize;
-    for i in 0..count {
+    let end = (count as usize).min(entries.len());
+    for i in 0..end {
         if entries[i].id == target_id {
             return Some(i);
         }
@@ -92,27 +135,43 @@ fn find_entry(entries: &[DataEntry], count: c_int, target_id: c_int) -> Option<u
     None
 }
 
-/// `static int process_name(char* dest, const char* src, int max_len)`
+/// ```c
+/// static int process_name(char* dest, const char* src, int max_len) {
+///     int len;
+///     if (dest == NULL || *dest == '\0') { return -1; }
+///     strcpy(dest, src);
+///     len = strlen(dest);
+///     return len;
+/// }
+/// ```
 ///
-/// `max_len` is accepted but unused, exactly as in the C original (the copy is
-/// unbounded). The guard rejects an empty destination string, not a null one
-/// only - reproduced verbatim.
-fn process_name(dest: &mut [u8], src: &[u8], _max_len: c_int) -> c_int {
-    // `dest == NULL` cannot happen for a Rust slice; the second half of the
-    // original condition (`*dest == '\0'`) is what remains observable.
+/// `max_len` is accepted and ignored, exactly as in the C original: the copy is
+/// an unbounded `strcpy`. `dest` is a live buffer here, so the `dest == NULL`
+/// half of the guard is unreachable, matching every call site in the C code.
+fn process_name(dest: &mut [u8], src: &str, _max_len: c_int) -> c_int {
     if dest.is_empty() || dest[0] == 0 {
         return -1;
     }
 
-    c_strcpy(dest, src);
+    strcpy_str(dest, src);
 
-    let len = c_strlen(dest);
+    let len = strlen(dest);
     len as c_int
 }
 
-/// `static int calculate_lookup(int row, int col, int* result)`
+/// ```c
+/// static int calculate_lookup(int row, int col, int* result) {
+///     int temp;
+///     if ((temp = lookup_table[row][col])) {
+///         *result = temp * 2;
+///         return 1;
+///     }
+///     return 0;
+/// }
+/// ```
 fn calculate_lookup(row: c_int, col: c_int, result: &mut c_int) -> c_int {
     let temp = LOOKUP_TABLE[row as usize][col as usize];
+
     if temp != 0 {
         *result = temp.wrapping_mul(2);
         return 1;
@@ -121,57 +180,108 @@ fn calculate_lookup(row: c_int, col: c_int, result: &mut c_int) -> c_int {
     0
 }
 
-/// `static DataEntry* create_entries(int count, int base_id)`
+/// ```c
+/// static DataEntry* create_entries(int count, int base_id) {
+///     DataEntry* entries;
+///     int i;
+///     char temp_name[NAME_LENGTH];
 ///
-/// The C version allocates *before* validating `count`, and returns NULL when
-/// the allocation fails or `count <= 0` (leaking the allocation in the latter
-/// case). The observable result is `None` for any `count <= 0`, and `None` when
-/// the allocation cannot be satisfied.
+///     entries = (DataEntry*)malloc(count * sizeof(DataEntry));
+///     if (entries == NULL || count <= 0) { return NULL; }
+///
+///     for (i = 0; i < count; i++) {
+///         entries[i].id = base_id + i;
+///         entries[i].value = (base_id + i) * 10;
+///         sprintf(temp_name, "Entry_%d", base_id + i);
+///         strcpy(entries[i].name, temp_name);
+///     }
+///     return entries;
+/// }
+/// ```
+///
+/// The C code allocates *before* validating `count`, so a non-positive `count`
+/// leaks the block and still returns NULL. That ordering is preserved: the
+/// allocation is attempted first and its failure is reported as NULL, then the
+/// `count <= 0` check rejects the buffer (the Rust allocation is simply dropped
+/// instead of leaked, which is not externally observable).
 fn create_entries(count: c_int, base_id: c_int) -> Option<Vec<DataEntry>> {
-    // Emulate `malloc(count * sizeof(DataEntry))`: `count` is converted to
-    // size_t, so a negative count becomes an enormous request that fails.
-    let bytes = (count as usize).wrapping_mul(core::mem::size_of::<DataEntry>());
+    // `count * sizeof(DataEntry)`: `count` is converted to size_t, so a
+    // negative count becomes an enormous request that malloc refuses.
+    let bytes = if count < 0 {
+        // Mirrors the wrap to a huge size_t; such a request cannot succeed.
+        return None;
+    } else {
+        (count as usize).checked_mul(size_of::<DataEntry>())?
+    };
+
     let mut entries: Vec<DataEntry> = Vec::new();
     if entries
-        .try_reserve_exact(bytes / core::mem::size_of::<DataEntry>())
+        .try_reserve_exact(bytes / size_of::<DataEntry>())
         .is_err()
     {
+        // malloc returned NULL.
         return None;
     }
 
     if count <= 0 {
+        // Allocation succeeded but `count <= 0` still yields NULL.
         return None;
     }
 
-    let count_usize = count as usize;
-    entries.resize(count_usize, DataEntry::zeroed());
+    let mut temp_name = [0u8; NAME_LENGTH];
 
-    for i in 0..count_usize {
-        let idx = base_id.wrapping_add(i as c_int);
-        entries[i].id = idx;
-        entries[i].value = idx.wrapping_mul(10);
+    entries.resize(count as usize, DataEntry::zeroed());
 
-        // sprintf(temp_name, "Entry_%d", base_id + i) then strcpy into name.
-        let temp_name = format!("Entry_{}\0", idx);
-        c_strcpy(&mut entries[i].name, temp_name.as_bytes());
+    for i in 0..count {
+        let id = base_id.wrapping_add(i);
+
+        entries[i as usize].id = id;
+        entries[i as usize].value = id.wrapping_mul(10);
+
+        // sprintf(temp_name, "Entry_%d", base_id + i)
+        let formatted = format!("Entry_{}", id);
+        strcpy_str(&mut temp_name, &formatted);
+
+        let name = &mut entries[i as usize].name;
+        strcpy(name, &temp_name);
     }
 
     Some(entries)
 }
 
-/// `static int modify_entries(DataEntry*, int count, int multiplier)`
+/// ```c
+/// static int modify_entries(DataEntry* entries, int count, int multiplier) {
+///     DataEntry* current;
+///     DataEntry* last;
+///     int total = 0;
+///     int temp_value;
 ///
-/// A NULL `entries` returns -1; that case is represented by the caller never
-/// invoking this function with `None`.
+///     if (entries == NULL) { return -1; }
+///
+///     current = entries;
+///     last = entries + count;
+///     while (current < last) {
+///         if ((temp_value = current->value)) {
+///             current->value = temp_value * multiplier;
+///             total += current->value;
+///         }
+///         current++;
+///     }
+///     return total;
+/// }
+/// ```
+///
+/// The `entries == NULL` branch is handled by the caller passing a live slice;
+/// every call site in the C code checks for NULL beforehand.
 fn modify_entries(entries: &mut [DataEntry], count: c_int, multiplier: c_int) -> c_int {
     let mut total: c_int = 0;
 
     if count <= 0 {
-        // `last < current`, so the loop never executes.
         return total;
     }
+    let last = (count as usize).min(entries.len());
 
-    for i in 0..(count as usize) {
+    for i in 0..last {
         let temp_value = entries[i].value;
         if temp_value != 0 {
             entries[i].value = temp_value.wrapping_mul(multiplier);
@@ -182,7 +292,11 @@ fn modify_entries(entries: &mut [DataEntry], count: c_int, multiplier: c_int) ->
     total
 }
 
-/// `int dataentry(int mode, int param1, int param2, int param3)`
+/// ```c
+/// int dataentry(int mode, int param1, int param2, int param3);
+/// ```
+///
+/// Public entry point; the only symbol the C shared library exports.
 #[unsafe(no_mangle)]
 pub extern "C" fn dataentry(mode: c_int, param1: c_int, param2: c_int, param3: c_int) -> c_int {
     let mut result: c_int = 0;
@@ -191,38 +305,38 @@ pub extern "C" fn dataentry(mode: c_int, param1: c_int, param2: c_int, param3: c
     let mut buffer = [0u8; NAME_LENGTH];
 
     buffer[0] = b'T';
-    buffer[1] = 0;
+    buffer[1] = b'\0';
 
     match mode {
         1 => {
             count = if param1 > 0 { param1 } else { 5 };
             let entries = create_entries(count, 100);
 
-            let entries = match entries {
-                None => return -1,
-                Some(e) => e,
-            };
-            if count == 0 {
+            // if (entries == NULL || count == 0) { result = -1; break; }
+            if entries.is_none() || count == 0 {
                 return -1;
             }
+            let entries = entries.unwrap();
 
             let found = find_entry(&entries, count, 100i32.wrapping_add(param2));
 
+            // if (found == NULL || found->id == 0) { result = -2; }
             match found {
-                None => result = -2,
+                None => {
+                    result = -2;
+                }
+                Some(idx) if entries[idx].id == 0 => {
+                    result = -2;
+                }
                 Some(idx) => {
-                    if entries[idx].id == 0 {
-                        result = -2;
-                    } else {
-                        result = entries[idx].value;
+                    result = entries[idx].value;
 
-                        let name = entries[idx].name;
-                        c_strcpy(&mut buffer, &name);
-                    }
+                    let name = entries[idx].name;
+                    strcpy(&mut buffer, &name);
                 }
             }
 
-            // free(entries): the Vec is dropped here.
+            // free(entries) — handled by dropping `entries`.
             drop(entries);
         }
 
@@ -230,10 +344,10 @@ pub extern "C" fn dataentry(mode: c_int, param1: c_int, param2: c_int, param3: c
             count = if param1 > 0 { param1 } else { 3 };
             let entries = create_entries(count, 200);
 
-            let mut entries = match entries {
-                None => return -1,
-                Some(e) => e,
-            };
+            if entries.is_none() {
+                return -1;
+            }
+            let mut entries = entries.unwrap();
 
             result = modify_entries(&mut entries, count, param2);
             if result != 0 {
@@ -253,15 +367,19 @@ pub extern "C" fn dataentry(mode: c_int, param1: c_int, param2: c_int, param3: c
         }
 
         _ => {
-            c_strcpy(&mut buffer, b"Default\0");
-            result = process_name(&mut buffer, b"TestName\0", NAME_LENGTH as c_int);
+            strcpy_str(&mut buffer, "Default");
+            result = process_name(&mut buffer, "TestName", NAME_LENGTH as c_int);
 
-            let len = c_strlen(&buffer) as c_int;
-            if len != 0 {
-                result = len.wrapping_mul(param1);
+            let n = strlen(&buffer) as c_int;
+            if n != 0 {
+                result = n.wrapping_mul(param1);
             }
         }
     }
+
+    // `buffer` is written but never read back out of the function, exactly as
+    // in the C original.
+    let _ = &buffer;
 
     result
 }

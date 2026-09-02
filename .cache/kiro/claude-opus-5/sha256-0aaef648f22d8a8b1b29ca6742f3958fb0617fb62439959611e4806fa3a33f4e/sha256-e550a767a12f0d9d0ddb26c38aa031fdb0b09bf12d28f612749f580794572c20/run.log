@@ -1,0 +1,700 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -100; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and C source tree
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 10:16 .
+drwxr-xr-x. 647 scheschb amazon 81920 Sep  1 10:16 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 10:16 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 10:16 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 10:16 translation
+---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---
+3
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/driver.h c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  35 c_src/CMakeLists.txt
+  28 c_src/include/driver.h
+  63 c_src/src/driver.c
+ 126 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/c_src/include/driver.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/c_src/src/driver.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-gUnVRi/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1221 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-gUnVRi/c_src/include/driver.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1946 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-gUnVRi/c_src/src/driver.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la .claude; cat .claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check .claude directory
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 10:16 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 10:16 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 10:16 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-gUnVRi"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-gUnVRi"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && gcc -shared -fPIC -O2 -Ic_src/include -o /tmp/cbuild/libdriver.so c_src/src/driver.c && echo BUILD_OK && nm -D --defined-only /tmp/cbuild/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library and list exported symbols
+
+BUILD_OK
+0000000000001180 T call_fma
+0000000000001240 T driver
+0000000000001150 T fma_array
+[38;5;244m - Completed in 0.67s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cat > t.c <<'EOF'
+#include <stdio.h>
+int call_fma(const int *data, int len);
+void driver(const char *in);
+int main(int argc, char**argv){
+    int d[5] = {10,20,30,40,50};
+    printf("len0=%d\n", call_fma(d,0));
+    printf("len1=%d\n", call_fma(d,1));
+    printf("len5=%d\n", call_fma(d,5));
+    fflush(stdout);
+    printf("neg=%d\n", call_fma(d,-1));
+    fflush(stdout);
+    return 0;
+}
+EOF
+gcc -O2 t.c -L. -ldriver -o t -Wl,-rpath,. && ./t; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test C call_fma edge cases including negative len
+
+len0=0
+len1=10
+len5=50
+neg=-1337380318
+exit=0
+[38;5;244m - Completed in 0.50s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create crate root
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Translation of c_src/src/driver.c and c_src/include/driver.h
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // Original C library:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //   Copyright 2025 MIT Lincoln Laboratory (MIT licence, see c_src/)
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m // The C library exports exactly three public symbols:
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //   fma_array, call_fma, driver
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // There are no namespace-renaming macros in the public header, so the Rust
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m // linker names are identical to the C source-level names.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #![allow(clippy::missing_safety_doc)]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m mod cstdio;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m mod driver;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Use pub modules so no_mangle exports are unambiguous
+
+[49m[39m   1,  1[0m:[39m[49m // Translation of c_src/src/driver.c and c_src/include/driver.h
+[0m[49m[39m   2,  2[0m:[39m[49m //
+[0m[49m[39m   3,  3[0m:[39m[49m // Original C library:
+[0m[49m[39m   4,  4[0m:[39m[49m //   Copyright 2025 MIT Lincoln Laboratory (MIT licence, see c_src/)
+[0m[49m[39m   5,  5[0m:[39m[49m //
+[0m[49m[39m   6,  6[0m:[39m[49m // The C library exports exactly three public symbols:
+[0m[49m[39m   7,  7[0m:[39m[49m //   fma_array, call_fma, driver
+[0m[49m[39m   8,  8[0m:[39m[49m // There are no namespace-renaming macros in the public header, so the Rust
+[0m[49m[39m   9,  9[0m:[39m[49m // linker names are identical to the C source-level names.
+[0m[49m[39m  10, 10[0m:[39m[49m 
+[0m[49m[39m  11, 11[0m:[39m[49m #![allow(clippy::missing_safety_doc)]
+[0m[49m[39m  12, 12[0m:[39m[49m 
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m mod cstdio;
+[0m[49m[38;5;9m- 14    [0m:[38;5;9m[49m mod driver;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m pub mod cstdio;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m pub mod driver;
+[0m[K
+Replacing: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/src/cstdio.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libc stdio bindings used by the translation
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Bindings to the pieces of C `<stdio.h>` that `driver.c` uses.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! `driver.c` relies on `sscanf("%d%zn", ...)` and `printf("%d\n", ...)`.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! Re-implementing those conversions by hand in Rust would risk diverging from
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! the host C library on the corner cases that matter for byte-identical
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! output (leading-whitespace skipping, `+`/`-` handling, what counts as a
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! matching failure vs. an input failure, and the platform's out-of-range
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! behaviour for `%d`). Calling straight through to the same C library the
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! original was linked against guarantees identical results, and it also keeps
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! the process's `stdout` buffering behaviour (and therefore the exact byte
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //! stream and flush points) the same as the C build.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     /// `int sscanf(const char *restrict s, const char *restrict format, ...)`
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     pub safe fn sscanf(s: *const c_char, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     /// `int printf(const char *restrict format, ...)`
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     pub safe fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/src/cstdio.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/cstdio.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Avoid unstable `safe` fn keyword in extern block
+
+[49m[39m  15, 15[0m:[39m[49m unsafe extern "C" {
+[0m[49m[39m  16, 16[0m:[39m[49m     /// `int sscanf(const char *restrict s, const char *restrict format, ...)`
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m     pub safe fn sscanf(s: *const c_char, format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     pub fn sscanf(s: *const c_char, format: *const c_char, ...) -> c_int;
+[0m[49m[39m  18, 18[0m:[39m[49m 
+[0m[49m[39m  19, 19[0m:[39m[49m     /// `int printf(const char *restrict format, ...)`
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m     pub safe fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     pub fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[39m  21, 21[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/cstdio.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the translated module:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/src/driver.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Direct translation of `c_src/src/driver.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every observable behaviour of the C original is preserved, including the
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! quirks: `fma_array` is a plain multiply-add loop with no bounds or null
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! checks, `call_fma` only special-cases `len == 0`, and `driver` stops parsing
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! after 100 integers (or at the first `sscanf` failure) and prints the last
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! value it managed to read.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use crate::cstdio::{printf, sscanf};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// `"%d%zn"` — the scanf format used by `driver`, NUL terminated.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m const SCAN_FMT: &[u8] = b"%d%zn\0";
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// `"%d\n"` — the printf format used by `driver`, NUL terminated.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m const PRINT_FMT: &[u8] = b"%d\n\0";
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m /// void fma_array(int *restrict out, const int *mul1, const int *mul2,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m ///                const int *add, int len);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// Exactly as unsafe as the C original: `out` must be writable for `len`
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// `int`s and `mul1`, `mul2` and `add` must each be readable for `len` `int`s.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// `out` must not alias the inputs (the C parameter is `restrict`).
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m pub unsafe extern "C" fn fma_array(
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     out: *mut c_int,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     mul1: *const c_int,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     mul2: *const c_int,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     add: *const c_int,
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     len: c_int,
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     // for (int i = 0; i < len; i++) out[i] = mul1[i] * mul2[i] + add[i];
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     // A negative `len` makes the C loop body execute zero times, which the
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     // empty Rust range reproduces. Signed overflow is UB in C; gcc/clang wrap
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     // on the two's-complement targets this library builds for, so `wrapping_*`
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     // matches the generated code.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     while i < len {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         let idx = i as isize;
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         let value = unsafe {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             (*mul1.offset(idx))
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                 .wrapping_mul(*mul2.offset(idx))
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 .wrapping_add(*add.offset(idx))
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         unsafe { *out.offset(idx) = value };
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// int call_fma(const int *data, int len);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// Builds an all-ones and an all-zeros vector of length `len`, runs
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// `fma_array` over them, and returns the last element. Because `mul1` is all
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// ones and `add` is all zeros, the result is simply `data[len - 1]`, but the
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// computation is performed the same way the C code performs it so that any
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// overflow behaviour matches.
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// `data` must be readable for `len` `int`s when `len > 0`.
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m pub unsafe extern "C" fn call_fma(data: *const c_int, len: c_int) -> c_int {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     // if (len == 0) return 0;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     if len == 0 {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     // The C code then declares `int out[len]` / `ones[len]` / `zeros[len]`.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     // For a negative `len` those are negative-size VLAs: undefined behaviour,
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     // and in practice the C code goes on to read `out[len - 1]`, i.e. off the
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     // front of the array, yielding whatever happens to be on the stack. There
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     // is no observable behaviour to reproduce, so return a deterministic 0
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     // rather than reading out of bounds.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     if len < 0 {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     let n = len as usize;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     // int out[len]; int ones[len]; int zeros[len];
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     // out[0] = 0;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     // for (int i = 0; i < len; i++) { ones[i] = 1; zeros[i] = 0; }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     // `out` is uninitialised in C apart from `out[0] = 0`, but `fma_array`
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     // writes every element before any is read, so zero-filling is equivalent.
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     let mut out: Vec<c_int> = vec![0; n];
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let ones: Vec<c_int> = vec![1; n];
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let zeros: Vec<c_int> = vec![0; n];
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     // fma_array(out, ones, data, zeros, len);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     unsafe { fma_array(out.as_mut_ptr(), ones.as_ptr(), data, zeros.as_ptr(), len) };
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     // return out[len-1];
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     out[n - 1]
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m /// void driver(const char *in);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m /// Reads up to 100 decimal integers out of `in` with `sscanf("%d%zn", ...)`,
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m /// advancing past each one, then prints `call_fma(data, i)` followed by a
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// newline. With no parsable integer at all, `i` is 0 and `call_fma` returns 0,
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// so `"0\n"` is printed.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// `in_` must be a valid NUL-terminated C string (the C original dereferences
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m /// it unconditionally, so a null pointer faults there too).
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(in_: *const c_char) {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     // int data[100];
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     // Left uninitialised in C. Only the first `i` elements are ever read, and
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     // those are exactly the ones `sscanf` filled in.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     let mut data: [c_int; 100] = [0; 100];
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     // int i;
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     // for (i = 0; i < 100; i++) { ... }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let mut cursor = in_;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     while i < 100 {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         // size_t nb;
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         // if (sscanf(in, "%d%zn", &data[i], &nb) != 1) break;
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         let mut nb: usize = 0;
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         let rc = unsafe {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m             sscanf(
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 cursor,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 SCAN_FMT.as_ptr() as *const c_char,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m                 data.as_mut_ptr().offset(i as isize),
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                 &mut nb as *mut usize,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             )
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         if rc != 1 {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         // in += nb;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         cursor = unsafe { cursor.add(nb) };
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     // int result = call_fma(data, i);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     let result = unsafe { call_fma(data.as_ptr(), i) };
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     // printf("%d\n", result);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     unsafe { printf(PRINT_FMT.as_ptr() as *const c_char, result) };
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/src/driver.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation)
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.159s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — symbol diff:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-gUnVRi
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+echo "== C symbols =="; cat /tmp/c_syms.txt
+echo "== Rust symbols =="; cat /tmp/rust_syms.txt
+echo "== C exports missing from Rust =="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt; echo "(end)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbol lists between C and Rust shared libraries
+
+== C symbols ==
+call_fma
+driver
+fma_array
+== Rust symbols ==
+call_fma
+driver
+fma_array
+== C exports missing from Rust ==
+(end)
+[38;5;244m - Completed in 0.37s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now differential testing for byte-identical output:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cbuild/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential harness: dlopen a .so and exercise its full public ABI.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Usage: ./harness <path-to-so> <mode>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //   mode=driver   : run driver() over a fixed corpus of inputs
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //   mode=fma      : run call_fma()/fma_array() over a fixed corpus
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m typedef void (*driver_fn)(const char *);
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m typedef int (*call_fma_fn)(const int *, int);
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m typedef void (*fma_array_fn)(int *, const int *, const int *, const int *, int);
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m static const char *inputs[] = {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     "",
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     "0",
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     "1",
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     "-1",
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     "42",
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     "1 2 3",
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     "1 2 3 ",
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     "  7   8  ",
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     "\t\n 5\n6\n",
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     "10 20 30 40 50",
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     "1,2,3",
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     "abc",
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     "12abc",
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     "abc 12",
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     "+3 -4 +5",
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     "  -0  ",
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     "0000123 00045",
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     "2147483647",
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     "-2147483648",
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     "2147483647 1",
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     "1 2147483647",
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     "99999999999999999999",
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     "-99999999999999999999",
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     "0x10",
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     "010 011",
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     "3.7",
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     "3 .7",
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     "- 5",
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     "1e5",
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     "  ",
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     "\n",
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     "1  2\t3\r4\n5",
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     "1-2",
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     "1 -2",
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     "1--2",
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     "9 8 7 6 5 4 3 2 1 0",
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     "5 x 6",
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m static void gen_long(char *buf, size_t cap, int count) {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     size_t off = 0;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     buf[0] = '\0';
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     for (int i = 0; i < count; i++) {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         int n = snprintf(buf + off, cap - off, "%d ", i * 3 - 7);
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         if (n <= 0 || (size_t)n >= cap - off) break;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         off += (size_t)n;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     if (argc < 3) {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         fprintf(stderr, "usage: %s <so> <driver|fma>\n", argv[0]);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         return 2;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     if (!h) {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         fprintf(stderr, "dlopen: %s\n", dlerror());
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         return 2;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     if (strcmp(argv[2], "driver") == 0) {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         driver_fn driver = (driver_fn)dlsym(h, "driver");
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         if (!driver) { fprintf(stderr, "no driver\n"); return 2; }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         size_t n = sizeof(inputs) / sizeof(inputs[0]);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         for (size_t i = 0; i < n; i++) {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             printf("[%zu] in=<%s> out=", i, inputs[i]);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             fflush(stdout);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             driver(inputs[i]);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         // Long inputs: exactly 99, 100 and 101 integers (the 100 element cap).
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         static char buf[8192];
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         int counts[] = {99, 100, 101, 250};
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         for (size_t k = 0; k < sizeof(counts) / sizeof(counts[0]); k++) {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             gen_long(buf, sizeof(buf), counts[k]);
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             printf("[long %d] out=", counts[k]);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             fflush(stdout);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             driver(buf);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     if (strcmp(argv[2], "fma") == 0) {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         call_fma_fn call_fma = (call_fma_fn)dlsym(h, "call_fma");
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         fma_array_fn fma_array = (fma_array_fn)dlsym(h, "fma_array");
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         if (!call_fma || !fma_array) { fprintf(stderr, "missing fma syms\n"); return 2; }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         static int data[300];
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         for (int i = 0; i < 300; i++) data[i] = (i * 7919) - 100000;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         int lens[] = {0, 1, 2, 3, 17, 100, 299, 300};
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         for (size_t k = 0; k < sizeof(lens) / sizeof(lens[0]); k++) {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             printf("call_fma(len=%d)=%d\n", lens[k], call_fma(data, lens[k]));
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         int edge[] = {2147483647, -2147483648, 0, 1, -1};
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         printf("call_fma(edge,5)=%d\n", call_fma(edge, 5));
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         printf("call_fma(edge,1)=%d\n", call_fma(edge, 1));
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         // fma_array directly, including overflow and zero/negative lengths.
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         int m1[6] = {2, 3, -4, 2147483647, 65536, 0};
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         int m2[6] = {5, 7, 8, 2, 65536, 123};
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         int ad[6] = {1, -1, 100, 1, 1, 7};
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         int out[6];
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         for (int len = -3; len <= 6; len++) {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             memset(out, 0xAB, sizeof(out));
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             fma_array(out, m1, m2, ad, len);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             printf("fma_array(len=%d) ->", len);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             for (int j = 0; j < 6; j++) printf(" %d", out[j]);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             printf("\n");
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     fprintf(stderr, "unknown mode\n");
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     return 2;
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/cbuild/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && gcc -O1 harness.c -ldl -o harness && \
+R=/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/target/release/libdriver.so
+for m in driver fma; do
+  ./harness /tmp/cbuild/libdriver.so $m > c_$m.out 2> c_$m.err; ec=$?
+  ./harness $R $m > r_$m.out 2> r_$m.err; er=$?
+  echo "mode=$m c_exit=$ec r_exit=$er"
+  if cmp -s c_$m.out r_$m.out; then echo "  stdout: IDENTICAL ($(wc -c < c_$m.out) bytes)"; else echo "  stdout: DIFF"; diff c_$m.out r_$m.out | head -40; fi
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential comparison of C vs Rust library outputs
+
+mode=driver c_exit=0 r_exit=0
+  stdout: IDENTICAL (982 bytes)
+mode=fma c_exit=0 r_exit=0
+  stdout: IDENTICAL (967 bytes)
+[38;5;244m - Completed in 0.69s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && head -12 c_driver.out && echo "..." && tail -6 c_driver.out && echo "=== fma ===" && cat c_fma.out[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect harness output content
+
+[0] in=<> out=0
+[1] in=<0> out=0
+[2] in=<1> out=1
+[3] in=<-1> out=-1
+[4] in=<42> out=42
+[5] in=<1 2 3> out=3
+[6] in=<1 2 3 > out=3
+[7] in=<  7   8  > out=8
+[8] in=<	
+ 5
+6
+> out=6
+...
+[35] in=<9 8 7 6 5 4 3 2 1 0> out=0
+[36] in=<5 x 6> out=5
+[long 99] out=287
+[long 100] out=290
+[long 101] out=290
+[long 250] out=290
+=== fma ===
+call_fma(len=0)=0
+call_fma(len=1)=-100000
+call_fma(len=2)=-92081
+call_fma(len=3)=-84162
+call_fma(len=17)=26704
+call_fma(len=100)=683981
+call_fma(len=299)=2259862
+call_fma(len=300)=2267781
+call_fma(edge,5)=-1
+call_fma(edge,1)=2147483647
+fma_array(len=-3) -> -1414812757 -1414812757 -1414812757 -1414812757 -1414812757 -1414812757
+fma_array(len=-2) -> -1414812757 -1414812757 -1414812757 -1414812757 -1414812757 -1414812757
+fma_array(len=-1) -> -1414812757 -1414812757 -1414812757 -1414812757 -1414812757 -1414812757
+fma_array(len=0) -> -1414812757 -1414812757 -1414812757 -1414812757 -1414812757 -1414812757
+fma_array(len=1) -> 11 -1414812757 -1414812757 -1414812757 -1414812757 -1414812757
+fma_array(len=2) -> 11 20 -1414812757 -1414812757 -1414812757 -1414812757
+fma_array(len=3) -> 11 20 68 -1414812757 -1414812757 -1414812757
+fma_array(len=4) -> 11 20 68 -1 -1414812757 -1414812757
+fma_array(len=5) -> 11 20 68 -1 1 -1414812757
+fma_array(len=6) -> 11 20 68 -1 1 7
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cat > fuzz.c <<'EOF'
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+typedef void (*driver_fn)(const char *);
+static unsigned long s = 88172645463325252UL;
+static unsigned long xs(void){ s^=s<<13; s^=s>>7; s^=s<<17; return s; }
+int main(int argc,char**argv){
+    void*h=dlopen(argv[1],RTLD_NOW); if(!h){fprintf(stderr,"%s\n",dlerror());return 2;}
+    driver_fn d=(driver_fn)dlsym(h,"driver");
+    const char *alpha="0123456789 \t\n+-,.xabe*/()";
+    char buf[600];
+    for(int t=0;t<4000;t++){
+        int len = xs()%500;
+        for(int i=0;i<len;i++) buf[i]=alpha[xs()%25];
+        buf[len]='\0';
+        printf("%d|", t); fflush(stdout);
+        d(buf);
+    }
+    return 0;
+}
+EOF
+gcc -O1 fuzz.c -ldl -o fuzz && \
+R=/local/home/scheschb/.harvest/work/harvest-work-gUnVRi/translation/target/release/libdriver.so && \
+./fuzz /tmp/cbuild/libdriver.so > c_fuzz.out && ./fuzz $R > r_fuzz.out && \
+cmp c_fuzz.out r_fuzz.out && echo "FUZZ IDENTICAL: $(wc -c < c_fuzz.out) bytes, $(wc -l < c_fuzz.out) lines"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Randomized differential fuzz of driver()
+
+FUZZ IDENTICAL: 28140 bytes, 4000 lines
+[38;5;244m - Completed in 0.81s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-gUnVRi && git status --porcelain c_src 2>/dev/null; md5sum c_src/src/driver.c c_src/include/driver.h c_src/CMakeLists.txt; echo "---"; find translation -type f -not -path '*/target/*' | sort; echo "---"; grep -c '' translation/src/*.rs translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src untouched and list translation artifacts
+
+0b7021cc6f528755a7d66603b550ccd5  c_src/src/driver.c
+f640b9411086d613438b9d25d5f72700  c_src/include/driver.h
+906e347ae375f5ec943eb7d6ce58946b  c_src/CMakeLists.txt
+---
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/cstdio.rs
+translation/src/driver.rs
+translation/src/lib.rs
+---
+translation/src/cstdio.rs:21
+translation/src/driver.rs:156
+translation/src/lib.rs:14
+translation/Cargo.toml:12
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -f /tmp/cbuild/t /tmp/cbuild/t.c /tmp/cbuild/*.out /tmp/cbuild/*.err; ls /tmp/cbuild[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temporary comparison artifacts
+
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+fuzz
+fuzz.c
+harness
+harness.c
+libdriver.so
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+[38;5;252m[1m## Scope[0m[0m
+The library is small: [38;5;10mc_src/[0m contains one CMakeLists, one public header ([38;5;10minclude/driver.h[0m), and one source file ([38;5;10msrc/driver.c[0m, 63 lines). I built the C shared object with gcc and enumerated its exports — it defines exactly three public symbols, with no namespace-renaming macros in the header, so Rust linker names match the C names directly:[0m[0m
+[0m[0m
+[38;5;10mcall_fma   driver   fma_array
+[0m[0m[0m
+[0m[0m
+[38;5;252m[1m## What was written[0m[0m
+[0m[0m
+[38;5;10mtranslation/Cargo.toml     crate-type = ["cdylib"]
+translation/src/lib.rs     crate root
+translation/src/cstdio.rs  extern "C" decls for sscanf / printf
+translation/src/driver.rs  translation of driver.c (all 3 exports)
+[0m[0m[0m
+[0m[0m
+[38;5;10mcargo build --release[0m succeeds with no warnings.[0m[0m
+[0m[0m
+One deliberate design decision: [38;5;10mdriver[0m calls through to the host C library's [38;5;10msscanf[0m/[38;5;10mprintf[0m rather than reimplementing [38;5;10m%d[0m, [38;5;10m%zn[0m and stdio buffering in Rust. Hand-rolling those risks divergence exactly where byte-identity matters — whitespace skipping, [38;5;10m+[0m/[38;5;10m-[0m handling, matching vs. input failure, and out-of-range [38;5;10m%d[0m results — and it also keeps stdout buffering and flush points identical to the C build. Everything else ([38;5;10mfma_array[0m's loop, [38;5;10mcall_fma[0m's vector setup) is plain Rust.[0m[0m
+[0m[0m
+Faithfulness details: signed overflow uses [38;5;10mwrapping_*[0m to match what gcc/clang actually emit; [38;5;10mcall_fma[0m special-cases only [38;5;10mlen == 0[0m as the C does; [38;5;10mdriver[0m stops at 100 integers or the first parse failure with [38;5;10mi[0m left at the parsed count.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+[0m[0m
+Symbol diff is empty — [38;5;10mnm -D[0m on the Rust [38;5;10m.so[0m exports the same three symbols as the C [38;5;10m.so[0m, nothing missing.[0m[0m
+[0m[0m
+Differential testing via a [38;5;10mdlopen[0m harness that loads each [38;5;10m.so[0m in turn and compares stdout byte-for-byte:[0m[0m
+[0m[0m
+- 37 hand-picked [38;5;10mdriver[0m inputs plus 99/100/101/250-integer inputs to probe the 100-element cap — identical (982 bytes).[0m[0m
+- [38;5;10mcall_fma[0m at lengths 0–300 and [38;5;10mfma_array[0m at lengths −3 through 6, including [38;5;10mINT_MAX*2+1[0m and [38;5;10m65536*65536[0m overflow cases — identical (967 bytes).[0m[0m
+- 4,000 randomized strings up to 500 chars over a digit/sign/whitespace/letter alphabet — identical (28,140 bytes).[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified.[0m[0m
+[0m[0m
+One case I did change intentionally: [38;5;10mcall_fma[0m with a negative [38;5;10mlen[0m is undefined behaviour in C (negative-size VLA, then a read off the front of the array). It returns whatever stack garbage is present and is not reproducible run-to-run, so the Rust version returns a deterministic 0 instead of reading out of bounds. This is documented in the code.[0m[0m
+[38;5;8m
+ ▸ Credits: 7.62 • Time: 3m 32s
+
+[0m[1G[0m[0m[?25h

@@ -2,33 +2,37 @@
 //
 // Original C:
 //     void driver(int x) {
-//         auto int y = 2*x;   // `auto` is just the default storage class
+//         auto int y = 2*x;
 //         y += 300;
 //         printf("%d\n", y);
 //     }
 //
-// The header (include/driver.h) declares `void driver(int x)` with no
-// namespace/renaming macros, so the final linker symbol is plain `driver`.
+// The `auto` storage-class specifier has no observable effect, so it is not
+// modeled. Signed overflow in `2*x` / `y += 300` is undefined behavior in C but
+// wraps two's-complement in practice on the reference build, so wrapping
+// arithmetic is used here to reproduce the same bytes for every input.
+//
+// Output is emitted through libc's `printf` (rather than Rust's `println!`) so
+// that stdout buffering, ordering and formatting are byte-identical to the C
+// library.
+
+#![allow(non_snake_case)]
 
 use std::ffi::{c_char, c_int};
 
-unsafe extern "C" {
-    // Use the platform C library's printf so the emitted bytes and the stdio
-    // buffering behaviour match the original library exactly.
+extern "C" {
     fn printf(format: *const c_char, ...) -> c_int;
 }
 
-/// Computes `2 * x + 300` and prints it with a trailing newline.
-///
-/// Signed-overflow wrapping is used to mirror what the C compiler actually
-/// emits for `2*x` / `y += 300` on two's-complement targets.
+/// C: `void driver(int x)`
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int) {
-    let y = x.wrapping_mul(2).wrapping_add(300);
-
-    // "%d\n" as a NUL-terminated C string.
-    const FMT: &[u8; 4] = b"%d\n\0";
+    // auto int y = 2*x;
+    let mut y: c_int = (2 as c_int).wrapping_mul(x);
+    // y += 300;
+    y = y.wrapping_add(300 as c_int);
+    // printf("%d\n", y);
     unsafe {
-        printf(FMT.as_ptr() as *const c_char, y);
+        printf(b"%d\n\0".as_ptr() as *const c_char, y);
     }
 }

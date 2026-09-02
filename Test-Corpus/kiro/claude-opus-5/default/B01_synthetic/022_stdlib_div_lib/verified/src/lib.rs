@@ -1,3 +1,5 @@
+// Rust translation of c_src/src/driver.c
+//
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
 // to any person obtaining a copy of this software
@@ -21,66 +23,57 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Rust translation of `c_src/src/driver.c`.
-//!
-//! The C implementation is:
-//!
-//! ```c
-//! void driver(int x, int y) {
-//!     div_t result = div(x, y);
-//!     printf("quotient: %d, remainder: %d\n", result.quot, result.rem);
-//! }
-//! ```
-//!
-//! `div()` truncates the quotient toward zero and computes the remainder as
-//! `x - quot * y`, which is exactly what Rust's `/` and `%` operators do for
-//! signed integers. The degenerate inputs (`y == 0`, and `x == INT_MIN` with
-//! `y == -1`) are undefined behaviour in C; see [`c_div`] for how they are
-//! reproduced here.
+use std::ffi::{c_char, c_int};
 
-use std::ffi::c_int;
-use std::io::Write;
+unsafe extern "C" {
+    /// The C source uses `printf` from <stdio.h>. Calling libc's `printf`
+    /// directly (rather than Rust's `println!`) keeps the write going through
+    /// the exact same `stdout` FILE stream and buffering discipline as the C
+    /// library, so byte-for-byte output and flush ordering are preserved.
+    fn printf(fmt: *const c_char, ...) -> c_int;
+}
 
-/// Result of the C `div()` function.
+/// Rust equivalent of C's `div_t`.
+#[repr(C)]
+#[derive(Copy, Clone)]
 struct DivT {
     quot: c_int,
     rem: c_int,
 }
 
-/// Reproduces C's `div(numer, denom)`.
+/// Equivalent of C's `div()` from <stdlib.h>.
 ///
-/// For the two input combinations that C leaves undefined we deliberately
-/// mirror the behaviour of the hardware instruction that a C compiler emits
-/// rather than Rust's checked semantics, so that no Rust panic message is ever
-/// written to stderr:
-///
-/// * `denom == 0` and `INT_MIN / -1` trap on x86-64 (`SIGFPE`), so the raw
-///   `idiv` instruction is used there.
-/// * Elsewhere we fall back to wrapping arithmetic, which matches the
-///   non-trapping division instructions of those targets.
+/// C's `div` performs plain `numer / denom` and `numer % denom` on `int`,
+/// which on x86-64 lowers to a single `idiv` instruction. That means the two
+/// non-representable cases -- division by zero, and `INT_MIN / -1` -- raise
+/// SIGFPE rather than returning a value. Rust's `/` operator would instead
+/// panic (printing a message to stderr and aborting), which is observably
+/// different. Emitting `idiv` directly reproduces the original C behavior
+/// exactly, including the fatal signal.
 #[cfg(target_arch = "x86_64")]
+#[inline]
 fn c_div(numer: c_int, denom: c_int) -> DivT {
-    let quot: i32;
-    let rem: i32;
-    // SAFETY: `idiv` is the instruction a C compiler emits for this division.
-    // It faithfully reproduces the C behaviour, including the hardware trap on
-    // a zero divisor or on `INT_MIN / -1`.
+    let quot: c_int;
+    let rem: c_int;
     unsafe {
         std::arch::asm!(
             "cdq",
             "idiv {denom:e}",
             denom = in(reg) denom,
-            inlateout("eax") numer => quot,
-            lateout("edx") rem,
-            // Deliberately not `pure`: the trap on a degenerate divisor is an
-            // observable side effect that must not be optimised away.
-            options(nomem, nostack),
+            inout("eax") numer => quot,
+            out("edx") rem,
+            options(pure, nomem, nostack),
         );
     }
     DivT { quot, rem }
 }
 
+/// Portable fallback for non-x86-64 targets. `wrapping_div`/`wrapping_rem`
+/// avoid Rust's overflow panic for `INT_MIN / -1` (yielding `INT_MIN`, the
+/// value the truncated hardware result also produces); division by zero still
+/// aborts, matching the C program's fatal termination.
 #[cfg(not(target_arch = "x86_64"))]
+#[inline]
 fn c_div(numer: c_int, denom: c_int) -> DivT {
     DivT {
         quot: numer.wrapping_div(denom),
@@ -88,15 +81,23 @@ fn c_div(numer: c_int, denom: c_int) -> DivT {
     }
 }
 
-/// Translation of the C `driver` function. The header declares no namespacing
-/// macro, so the exported linker symbol is plain `driver`.
+/// void driver(int x, int y);
+///
+/// Translation of:
+/// ```c
+/// void driver(int x, int y) {
+///     div_t result = div(x, y);
+///     printf("quotient: %d, remainder: %d\n", result.quot, result.rem);
+/// }
+/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: c_int, y: c_int) {
     let result = c_div(x, y);
-    let out = format!("quotient: {}, remainder: {}\n", result.quot, result.rem);
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    // Ignore write errors, exactly as the C code ignores printf's return value.
-    let _ = lock.write_all(out.as_bytes());
-    let _ = lock.flush();
+    unsafe {
+        printf(
+            c"quotient: %d, remainder: %d\n".as_ptr(),
+            result.quot,
+            result.rem,
+        );
+    }
 }

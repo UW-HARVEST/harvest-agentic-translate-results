@@ -1,16 +1,18 @@
 // Rust translation of c_src/src/driver.c
 //
-// Original copyright 2025 MIT Lincoln Laboratory (MIT-style license, see c_src).
+// Public ABI: `void driver(int x)` (see c_src/include/driver.h).
 //
-// Behavior must be byte-identical to the C original: the raw in-memory bytes of
-// a `house_t` value are printed as lowercase two-digit hex, followed by a
-// newline. Output goes through libc's `printf` so that it shares the C stdout
-// stream/buffering with any C code in the same process.
+// Behaviour is reproduced exactly, including the use of C `stdio` `printf` so
+// that buffering/interleaving with any C caller's own stdio output matches the
+// original library byte for byte.
 
-use std::ffi::{c_char, c_double, c_int, c_uchar};
+use core::ffi::{c_char, c_int};
 
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
+    /// C `printf` from libc, used so output goes through the very same FILE
+    /// buffer the original library wrote to.
+    #[link_name = "printf"]
+    unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
 }
 
 /// Mirror of the C `house_t`:
@@ -23,53 +25,60 @@ unsafe extern "C" {
 /// } house_t;
 /// ```
 ///
-/// `repr(C)` gives the same field order, offsets, alignment and total size
-/// (including any tail/interior padding) as the C compiler produces.
+/// `repr(C)` gives the identical layout (offsets 0, 4, 8; size 16, align 8 on
+/// the LP64 targets the C library is built for), so the raw byte dump below is
+/// the same as the C version's.
 #[repr(C)]
-#[derive(Copy, Clone)]
-struct House {
+#[derive(Clone, Copy)]
+struct HouseT {
     floors: c_int,
     bedrooms: c_int,
-    bathrooms: c_double,
+    bathrooms: f64,
 }
 
-/// Translation of the C `static void print_hex(unsigned char *p, int len)`.
-///
-/// Kept private, matching the `static` linkage of the original.
-fn print_hex(p: &[c_uchar], len: c_int) {
-    let mut i: c_int = 0;
-    while i < len {
+/// Translation of the file-static `print_hex`. Kept private, exactly like the
+/// C `static` function, so it contributes no dynamic symbol.
+fn print_hex(p: &[u8]) {
+    // `for (int i = 0; i < len; i++) printf("%02x", p[i]);`
+    for &b in p {
         unsafe {
-            printf(c"%02x".as_ptr(), c_int::from(p[i as usize]));
+            c_printf(c"%02x".as_ptr(), c_int::from(b));
         }
-        i += 1;
     }
+    // `printf("\n");`
     unsafe {
-        printf(c"\n".as_ptr());
+        c_printf(c"\n".as_ptr());
     }
 }
 
-/// Translation of the C `void driver(int floors)`.
-///
-/// The header `driver.h` declares plain `driver` with no namespace/rename
-/// macros, so the exported linker symbol is `driver`.
+/// `void driver(int floors)`
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(floors: c_int) {
-    // house_t house = {0};  -> every byte, including padding, starts as zero.
-    let mut house: House = unsafe { std::mem::zeroed() };
-    house.floors = floors;
-    house.bedrooms = 3;
-    house.bathrooms = 2.;
-
-    // char raw[sizeof(house)]; memcpy(raw, &house, sizeof(house));
-    let mut raw = [0u8; std::mem::size_of::<House>()];
-    let src = unsafe {
-        std::slice::from_raw_parts(
-            (&raw const house).cast::<u8>(),
-            std::mem::size_of::<House>(),
-        )
+    // house_t house = {0};
+    let mut house = HouseT {
+        floors: 0,
+        bedrooms: 0,
+        bathrooms: 0.0,
     };
-    raw.copy_from_slice(src);
 
-    print_hex(&raw, std::mem::size_of::<House>() as c_int);
+    // house.floors = floors;
+    house.floors = floors;
+    // house.bedrooms = 3;
+    house.bedrooms = 3;
+    // house.bathrooms = 2.;
+    house.bathrooms = 2.0;
+
+    // char raw[sizeof(house)];
+    // memcpy(raw, &house, sizeof(house));
+    let mut raw = [0u8; core::mem::size_of::<HouseT>()];
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            (&raw const house).cast::<u8>(),
+            raw.as_mut_ptr(),
+            core::mem::size_of::<HouseT>(),
+        );
+    }
+
+    // print_hex((unsigned char *)&raw, sizeof(raw));
+    print_hex(&raw);
 }

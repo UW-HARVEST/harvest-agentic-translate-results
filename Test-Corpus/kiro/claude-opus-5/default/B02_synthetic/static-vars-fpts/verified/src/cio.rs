@@ -1,120 +1,170 @@
-//! C stdio emulation: fully-buffered stdout, unbuffered stderr, and `fgets`.
-//!
-//! The original program never calls `fflush`, so when stdout is a pipe glibc
-//! buffers everything and only writes it out at exit. `Out` mirrors that with a
-//! BufWriter whose capacity matches glibc's usual pipe buffer size.
+//! C stdio emulation helpers: buffered stdout (like glibc's fully-buffered
+//! stdout when redirected), unbuffered stderr, and `fgets` semantics on stdin.
 
-use std::io::{self, BufReader, Read, Write};
+use std::cell::RefCell;
+use std::io::{BufRead, BufReader, Stdin, Write};
 
-/// Restore the default disposition for `SIGPIPE`.
-///
-/// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main` runs, so a write
-/// to a closed pipe returns `EPIPE` and the process goes on to exit 0. A C
-/// program keeps the default disposition and is killed by the signal instead,
-/// exiting with status 141 (128 + SIGPIPE). Resetting it here makes the exit
-/// status match the C program when the reader closes the pipe early.
-pub fn restore_default_sigpipe() {
-    const SIGPIPE: i32 = 13;
-    const SIG_DFL: usize = 0;
-    extern "C" {
-        fn signal(signum: i32, handler: usize) -> usize;
-    }
-    unsafe {
-        signal(SIGPIPE, SIG_DFL);
-    }
+/// glibc's default stdio buffer size for a pipe/file is st_blksize (4096).
+const STDOUT_BUF_SIZE: usize = 4096;
+
+thread_local! {
+    static OUT: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(STDOUT_BUF_SIZE));
 }
 
-/// Buffered stdout writer (mirrors C's fully-buffered `stdout`).
-pub struct Out {
-    w: io::BufWriter<io::Stdout>,
+fn drain(buf: &mut Vec<u8>) {
+    if buf.is_empty() {
+        return;
+    }
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    let _ = lock.write_all(buf);
+    let _ = lock.flush();
+    buf.clear();
 }
 
-impl Out {
+/// Write raw bytes to the emulated stdout stream.
+pub fn out_bytes(data: &[u8]) {
+    OUT.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let mut rest = data;
+        while !rest.is_empty() {
+            let space = STDOUT_BUF_SIZE - buf.len();
+            if space == 0 {
+                drain(&mut buf);
+                continue;
+            }
+            let n = if space < rest.len() { space } else { rest.len() };
+            buf.extend_from_slice(&rest[..n]);
+            rest = &rest[n..];
+        }
+    });
+}
+
+/// Flush the emulated stdout stream (called at process exit).
+pub fn out_flush() {
+    OUT.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        drain(&mut buf);
+    });
+}
+
+/// Write raw bytes to stderr (unbuffered, like C's stderr).
+pub fn err_bytes(data: &[u8]) {
+    let stderr = std::io::stderr();
+    let mut lock = stderr.lock();
+    let _ = lock.write_all(data);
+    let _ = lock.flush();
+}
+
+/// `printf`-alike for UTF-8 formatted text.
+#[macro_export]
+macro_rules! cprintf {
+    ($($arg:tt)*) => {
+        $crate::cio::out_bytes(format!($($arg)*).as_bytes())
+    };
+}
+
+/// `fprintf(stderr, ...)`-alike for UTF-8 formatted text.
+#[macro_export]
+macro_rules! ceprintf {
+    ($($arg:tt)*) => {
+        $crate::cio::err_bytes(format!($($arg)*).as_bytes())
+    };
+}
+
+/// Wrapper around stdin providing C `fgets` semantics.
+pub struct CStdin {
+    reader: BufReader<Stdin>,
+}
+
+impl CStdin {
     pub fn new() -> Self {
-        Out {
-            w: io::BufWriter::with_capacity(4096, io::stdout()),
+        CStdin {
+            reader: BufReader::new(std::io::stdin()),
         }
     }
 
-    /// Write raw bytes (equivalent to `fputs`/`printf` of already formatted text).
-    pub fn bytes(&mut self, b: &[u8]) {
-        let _ = self.w.write_all(b);
-    }
-
-    pub fn str(&mut self, s: &str) {
-        self.bytes(s.as_bytes());
-    }
-
-    pub fn flush(&mut self) {
-        let _ = self.w.flush();
-    }
-}
-
-/// Write to stderr immediately (C's `stderr` is unbuffered).
-pub fn err_bytes(b: &[u8]) {
-    let mut e = io::stderr();
-    let _ = e.write_all(b);
-    let _ = e.flush();
-}
-
-pub fn err_str(s: &str) {
-    err_bytes(s.as_bytes());
-}
-
-/// Line reader replicating `fgets` semantics.
-pub struct In {
-    r: BufReader<io::Stdin>,
-}
-
-impl In {
-    pub fn new() -> Self {
-        In {
-            r: BufReader::new(io::stdin()),
+    /// `fgets(buf, size, stdin)`: reads at most `size - 1` bytes, stopping
+    /// after a newline (which is retained). Returns `None` on EOF with no
+    /// bytes read (i.e. when C's fgets returns NULL).
+    pub fn fgets(&mut self, size: usize) -> Option<Vec<u8>> {
+        if size <= 1 {
+            return None;
         }
-    }
+        let max = size - 1;
+        let mut out: Vec<u8> = Vec::new();
 
-    /// `fgets(buf, n, stdin)`: read at most `n - 1` bytes, stopping after a
-    /// newline (which is kept). Returns `None` only when EOF is hit before any
-    /// byte is read, matching fgets' NULL return.
-    pub fn fgets(&mut self, n: usize) -> Option<Vec<u8>> {
-        let mut v: Vec<u8> = Vec::new();
-        while v.len() + 1 < n {
-            let mut b = [0u8; 1];
-            match self.r.read(&mut b) {
-                Ok(0) => break,
-                Ok(_) => {
-                    v.push(b[0]);
-                    if b[0] == b'\n' {
-                        break;
-                    }
+        while out.len() < max {
+            let (chunk, found_newline) = {
+                let buf = match self.reader.fill_buf() {
+                    Ok(b) => b,
+                    Err(_) => break,
+                };
+                if buf.is_empty() {
+                    break;
                 }
-                Err(_) => break,
+                let remaining = max - out.len();
+                let avail = if buf.len() < remaining {
+                    buf.len()
+                } else {
+                    remaining
+                };
+                match buf[..avail].iter().position(|&b| b == b'\n') {
+                    Some(pos) => (buf[..=pos].to_vec(), true),
+                    None => (buf[..avail].to_vec(), false),
+                }
+            };
+            self.reader.consume(chunk.len());
+            out.extend_from_slice(&chunk);
+            if found_newline {
+                return Some(out);
             }
         }
-        if v.is_empty() {
+
+        if out.is_empty() {
             None
         } else {
-            Some(v)
+            Some(out)
         }
     }
 }
 
-/// Reinterpret a raw buffer as a C string: everything up to the first NUL.
-pub fn cstr(buf: &[u8]) -> &[u8] {
-    match buf.iter().position(|&b| b == 0) {
-        Some(i) => &buf[..i],
-        None => buf,
+/// The C-string view of a buffer: everything up to the first NUL byte.
+pub fn cstr(bytes: &[u8]) -> &[u8] {
+    match bytes.iter().position(|&b| b == 0) {
+        Some(pos) => &bytes[..pos],
+        None => bytes,
     }
 }
 
-/// `sscanf(s, "%d", &out)`: returns None when the conversion fails (the C code
-/// treats any return value other than 1 as invalid input).
-///
-/// glibc converts via `strtol`, saturating at LONG_MIN/LONG_MAX on overflow,
-/// then truncates the `long` to `int`. That truncation is reproduced here.
-pub fn sscanf_d(s: &[u8]) -> Option<i32> {
+/// `strcspn(s, "\n")` followed by `s[n] = 0`: truncate at the first newline.
+pub fn truncate_at_newline(bytes: &[u8]) -> &[u8] {
+    match bytes.iter().position(|&b| b == b'\n') {
+        Some(pos) => &bytes[..pos],
+        None => bytes,
+    }
+}
+
+/// `strstr(haystack, needle) != NULL`
+pub fn strstr(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+/// `sscanf(s, "%d", &out)`: returns the parsed value if the conversion
+/// succeeded (i.e. sscanf would return 1), otherwise `None`.
+pub fn sscanf_int(s: &[u8]) -> Option<i32> {
     let mut i = 0usize;
-    while i < s.len() && is_space(s[i]) {
+
+    // %d skips leading whitespace.
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
         i += 1;
     }
 
@@ -125,68 +175,37 @@ pub fn sscanf_d(s: &[u8]) -> Option<i32> {
     }
 
     let digits_start = i;
-    let mut acc: i128 = 0;
+    let mut value: i64 = 0;
     let mut overflow = false;
     while i < s.len() && s[i].is_ascii_digit() {
+        let digit = (s[i] - b'0') as i64;
         if !overflow {
-            acc = acc * 10 + i128::from(s[i] - b'0');
-            if acc > i128::from(i64::MAX) {
-                overflow = true;
+            match value.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+                Some(v) => value = v,
+                None => overflow = true,
             }
         }
         i += 1;
     }
 
     if i == digits_start {
-        // No digits converted: sscanf returns 0 or EOF, never 1.
+        // Matching failure (or input failure): sscanf returns 0 or EOF.
         return None;
     }
 
-    let value: i64 = if overflow {
+    // glibc converts via strtol semantics, saturating at LONG_MIN/LONG_MAX,
+    // then stores the (truncated) value into the int object.
+    let wide = if overflow {
         if negative {
             i64::MIN
         } else {
             i64::MAX
         }
     } else if negative {
-        -(acc as i64)
+        -value
     } else {
-        acc as i64
+        value
     };
 
-    Some(value as i32)
-}
-
-// --- ctype.h helpers -------------------------------------------------------
-//
-// The C code passes plain `char` values to isspace/isalpha/... On x86 `char` is
-// signed, so bytes >= 0x80 arrive as negative values; in the "C" locale glibc
-// classifies none of those as alpha/digit/space. Restricting these helpers to
-// ASCII therefore matches the original behavior.
-
-pub fn is_space(c: u8) -> bool {
-    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
-}
-
-pub fn is_alpha(c: u8) -> bool {
-    c.is_ascii_alphabetic()
-}
-
-pub fn is_digit(c: u8) -> bool {
-    c.is_ascii_digit()
-}
-
-pub fn is_alnum(c: u8) -> bool {
-    c.is_ascii_alphanumeric()
-}
-
-/// `strstr(haystack, needle) != NULL`
-pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    if needle.len() > haystack.len() {
-        return false;
-    }
-    haystack.windows(needle.len()).any(|w| w == needle)
+    Some(wide as i32)
 }

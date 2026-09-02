@@ -1,0 +1,527 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -100; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src structure
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 10:12 .
+drwxr-xr-x. 643 scheschb amazon 81920 Sep  1 10:12 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 10:12 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 10:12 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 10:12 translation
+---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && wc -l CMakeLists.txt include/driver.h src/driver.c && echo "=== CMakeLists ===" && cat CMakeLists.txt && echo "=== driver.h ===" && cat include/driver.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists and header
+
+  35 CMakeLists.txt
+  28 include/driver.h
+  46 src/driver.c
+ 109 total
+=== CMakeLists ===
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_library(driver SHARED
+    src/driver.c)
+
+target_include_directories(driver PUBLIC include)
+target_include_directories(driver PRIVATE src)
+
+install(TARGETS driver
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=== driver.h ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef DRIVER_H_
+#define DRIVER_H_
+
+void driver(const int *data, int len);
+
+#endif //DRIVER_H_[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && cat src/driver.c; echo "=== .claude ==="; ls -la ../.claude; cat ../.claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read driver.c and .claude dir
+
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "driver.h"
+
+#include <stdio.h>
+#include <string.h>
+
+void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len) {
+    for (int i = 0; i < len; i++) {
+        out[i] = mul1[i] * mul2[i] + add[i];
+    }
+}
+
+static void inner(int *out, int len) {
+    fma_array(out, out, out, out, len);
+    for (int i = 0; i < len; i++) {
+        printf("%d\n", out[i]);
+    }
+}
+
+void driver(const int *data, int len) {
+    int out[len];
+    memcpy(out, data, len * sizeof(int));
+    inner(out, len);
+}
+=== .claude ===
+total 4
+drwxr-xr-x. 2 scheschb amazon  35 Sep  1 10:12 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 10:12 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 10:12 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-RZpDCl"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-RZpDCl"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild && mkdir cbuild && cd cbuild && cmake -DCMAKE_BUILD_TYPE=Release /local/home/scheschb/.harvest/work/harvest-work-RZpDCl/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== nm -D ===" && nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+[ 50%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+=== nm -D ===
+0000000000001250 T driver
+0000000000001130 T fma_array
+[38;5;244m - Completed in 0.434s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // Public ABI reproduced (as exported by the C shared library):
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //   void driver(const int *data, int len);
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //   void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len);
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m // `inner` is `static` in the C source and therefore has no external linkage;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // it is translated as a private Rust function.
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m // Use the platform C library directly so that stdout buffering, formatting and
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m // byte-level output are identical to the original C code.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     fn printf(fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m /// `%d\n` format string used by the C `printf` call in `inner`.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m static FMT_D_NL: [c_char; 4] = [b'%' as c_char, b'd' as c_char, b'\n' as c_char, 0];
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m /// void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len)
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m /// out[i] = mul1[i] * mul2[i] + add[i] for i in [0, len).
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m /// Signed overflow is UB in C; the generated code wraps, so `wrapping_*` is used
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m /// here to reproduce the same values without panicking.
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m pub unsafe extern "C" fn fma_array(
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     out: *mut c_int,
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     mul1: *const c_int,
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     mul2: *const c_int,
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     add: *const c_int,
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     len: c_int,
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     while i < len {
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         let idx = i as isize;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m             let m1 = *mul1.offset(idx);
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m             let m2 = *mul2.offset(idx);
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             let a = *add.offset(idx);
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m             *out.offset(idx) = m1.wrapping_mul(m2).wrapping_add(a);
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m /// static void inner(int *out, int len)
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m fn inner(out: *mut c_int, len: c_int) {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         fma_array(out, out, out, out, len);
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     while i < len {
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m             printf(FMT_D_NL.as_ptr(), *out.offset(i as isize));
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m /// void driver(const int *data, int len)
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m /// The C version declares a variable-length array `int out[len]` and copies
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m /// `len * sizeof(int)` bytes into it. The byte count is computed exactly as C
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m /// does (the `int` `len` is converted to `size_t`, i.e. sign-extended, before
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m /// being multiplied), so non-positive lengths behave as they do in the original.
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(data: *const c_int, len: c_int) {
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     let elems = if len > 0 { len as usize } else { 0 };
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     let mut out: Vec<c_int> = vec![0; elems];
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m     let n_bytes = (len as isize as usize).wrapping_mul(core::mem::size_of::<c_int>());
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         memcpy(
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m             out.as_mut_ptr() as *mut c_void,
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m             data as *const c_void,
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m             n_bytes,
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     inner(out.as_mut_ptr(), len);
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation)
+    Finished `release` profile [optimized] target(s) in 0.16s
+[38;5;244m - Completed in 0.183s[0m
+
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only target/release/libdriver.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+echo "C symbols:"; cat /tmp/c_syms.txt
+echo "Rust symbols:"; cat /tmp/rust_syms.txt
+echo "=== MISSING FROM RUST (C - Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== END DIFF ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust .so
+
+C symbols:
+driver
+fma_array
+Rust symbols:
+driver
+fma_array
+=== MISSING FROM RUST (C - Rust) ===
+=== END DIFF ===
+[38;5;244m - Completed in 0.39s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create equivalence test harness
+
+[49m[38;5;9m-  1    [0m:[38;5;9m[49m // Differential harness: dlopen a .so, call driver() over many inputs.
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m #include <dlfcn.h>
+[0m[49m[39m   3,  1[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m   4,  2[0m:[39m[49m #include <stdlib.h>
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m #include <string.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <limits.h>
+[0m[49m[39m   6,  5[0m:[39m[49m 
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m typedef void (*driver_fn)(const char *, const char *);
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m static unsigned long rng_state;
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m static unsigned long rnd(void) {
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m     rng_state = rng_state * 6364136223846793005UL + 1442695040888963407UL;
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m     return (rng_state >> 33);
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m }
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m typedef void (*driver_fn)(const int *, int);
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m typedef void (*fma_fn)(int *, const int *, const int *, const int *, int);
+[0m[49m[39m  14,  8[0m:[39m[49m 
+[0m[49m[39m  15,  9[0m:[39m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m     if (argc < 2) { fprintf(stderr, "usage: %s <so>\n", argv[0]); return 2; }
+[0m[49m[39m  17, 10[0m:[39m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+[0m[49m[39m  19, 12[0m:[39m[49m     driver_fn driver = (driver_fn)dlsym(h, "driver");
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m     if (!driver) { fprintf(stderr, "dlsym: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     fma_fn fma_array = (fma_fn)dlsym(h, "fma_array");
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     if (!driver || !fma_array) { fprintf(stderr, "dlsym failed\n"); return 1; }
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     int a[] = {1, 2, 3, 4, 5};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     driver(a, 5);
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     int b[] = {0, -1, -2, 7, 100, -100};
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     driver(b, 6);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     int c[] = {INT_MAX, INT_MIN, 65536, -65536, 46341, -46341};
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     driver(c, 6);
+[0m[49m[39m  21, 24[0m:[39m[49m 
+[0m[49m[38;5;9m- 22    [0m:[38;5;9m[49m     /* --- hand-picked edge cases --- */
+[0m[49m[38;5;9m- 23    [0m:[38;5;9m[49m     const char *cases[][2] = {
+[0m[49m[38;5;9m- 24    [0m:[38;5;9m[49m         {"", ""},
+[0m[49m[38;5;9m- 25    [0m:[38;5;9m[49m         {"", "abc"},
+[0m[49m[38;5;9m- 26    [0m:[38;5;9m[49m         {"abc", ""},
+[0m[49m[38;5;9m- 27    [0m:[38;5;9m[49m         {"abcdef", "f"},
+[0m[49m[38;5;9m- 28    [0m:[38;5;9m[49m         {"abcdef", "a"},
+[0m[49m[38;5;9m- 29    [0m:[38;5;9m[49m         {"abcdef", "xyz"},
+[0m[49m[38;5;9m- 30    [0m:[38;5;9m[49m         {"abcdef", "fedcba"},
+[0m[49m[38;5;9m- 31    [0m:[38;5;9m[49m         {"hello world", " "},
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m         {"hello world", "dlrow "},
+[0m[49m[38;5;9m- 33    [0m:[38;5;9m[49m         {"aaaaa", "a"},
+[0m[49m[38;5;9m- 34    [0m:[38;5;9m[49m         {"aaaaa", "b"},
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m         {"12345abc", "abcdefghijklmnopqrstuvwxyz"},
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m         {"no-delims-here", "\t\n"},
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m         {"tab\there", "\t"},
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m         {"\x01\x02\x03", "\x03"},
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m         {"\xff\xfe\xfd", "\xfd"},
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m         {"\xff\xfe\xfd", "\x7f"},
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m         {"high\xc3\xa9byte", "\xa9"},
+[0m[49m[38;5;9m- 42    [0m:[38;5;9m[49m         {"same", "same"},
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m         {"prefix:suffix", ":"},
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m         {"a", "a"},
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m         {"a", "b"},
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m         {"  leading", " "},
+[0m[49m[38;5;9m- 47    [0m:[38;5;9m[49m         {"trailing  ", " "},
+[0m[49m[38;5;9m- 48    [0m:[38;5;9m[49m         {"mixed123!@#", "!@#"},
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m         {"mixed123!@#", "#@!"},
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m         {"looooooooooooooooooooooooooooong string with no reject set members", "ZQ"},
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m         {"looooooooooooooooooooooooooooong string with a reject at the end!", "!"},
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m     };
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m     size_t ncases = sizeof(cases) / sizeof(cases[0]);
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m     for (size_t i = 0; i < ncases; i++) {
+[0m[49m[38;5;9m- 55    [0m:[38;5;9m[49m         driver(cases[i][0], cases[i][1]);
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     int d[] = {42};
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     driver(d, 1);
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     driver(a, 0);          /* zero length */
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     driver(NULL, 0);       /* zero length, null data */
+[0m[49m[39m  57, 30[0m:[39m[49m 
+[0m[49m[38;5;9m- 58    [0m:[38;5;9m[49m     /* --- randomized fuzzing over the full non-NUL byte range --- */
+[0m[49m[38;5;9m- 59    [0m:[38;5;9m[49m     rng_state = 0x123456789abcdefUL;
+[0m[49m[38;5;9m- 60    [0m:[38;5;9m[49m     for (int iter = 0; iter < 20000; iter++) {
+[0m[49m[38;5;9m- 61    [0m:[38;5;9m[49m         char s1[257], s2[65];
+[0m[49m[38;5;9m- 62    [0m:[38;5;9m[49m         size_t l1 = rnd() % 256;
+[0m[49m[38;5;9m- 63    [0m:[38;5;9m[49m         size_t l2 = rnd() % 64;
+[0m[49m[38;5;9m- 64    [0m:[38;5;9m[49m         /* narrow alphabet half the time so matches are frequent */
+[0m[49m[38;5;9m- 65    [0m:[38;5;9m[49m         int narrow = (iter % 2) == 0;
+[0m[49m[38;5;9m- 66    [0m:[38;5;9m[49m         for (size_t i = 0; i < l1; i++) {
+[0m[49m[38;5;9m- 67    [0m:[38;5;9m[49m             s1[i] = narrow ? (char)('a' + (rnd() % 4)) : (char)(1 + (rnd() % 255));
+[0m[49m[38;5;9m- 68    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 69    [0m:[38;5;9m[49m         s1[l1] = 0;
+[0m[49m[38;5;9m- 70    [0m:[38;5;9m[49m         for (size_t i = 0; i < l2; i++) {
+[0m[49m[38;5;9m- 71    [0m:[38;5;9m[49m             s2[i] = narrow ? (char)('a' + (rnd() % 4)) : (char)(1 + (rnd() % 255));
+[0m[49m[38;5;9m- 72    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 73    [0m:[38;5;9m[49m         s2[l2] = 0;
+[0m[49m[38;5;9m- 74    [0m:[38;5;9m[49m         driver(s1, s2);
+[0m[49m[38;5;9m- 75    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     /* direct fma_array, distinct buffers */
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     int m1[] = {1, -2, 3, INT_MAX, 0};
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     int m2[] = {10, 20, -30, 2, 12345};
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     int ad[] = {5, -5, 0, 1, INT_MIN};
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     int out[5];
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     fma_array(out, m1, m2, ad, 5);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     for (int i = 0; i < 5; i++) printf("fma %d\n", out[i]);
+[0m[49m[39m  76, 38[0m:[39m[49m 
+[0m[49m[38;5;9m- 77    [0m:[38;5;9m[49m     /* --- long strings, reject byte walked across every position --- */
+[0m[49m[38;5;9m- 78    [0m:[38;5;9m[49m     for (int pos = 0; pos < 512; pos++) {
+[0m[49m[38;5;9m- 79    [0m:[38;5;9m[49m         char big[600];
+[0m[49m[38;5;9m- 80    [0m:[38;5;9m[49m         memset(big, 'x', sizeof(big));
+[0m[49m[38;5;9m- 81    [0m:[38;5;9m[49m         big[599] = 0;
+[0m[49m[38;5;9m- 82    [0m:[38;5;9m[49m         big[pos] = 'Q';
+[0m[49m[38;5;9m- 83    [0m:[38;5;9m[49m         driver(big, "Q");
+[0m[49m[38;5;9m- 84    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     /* aliasing: out == mul1 */
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     int e[] = {3, 4, 5};
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     fma_array(e, e, m2, ad, 3);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     for (int i = 0; i < 3; i++) printf("alias %d\n", e[i]);
+[0m[49m[39m  85, 43[0m:[39m[49m 
+[0m[49m[38;5;9m- 86    [0m:[38;5;9m[49m     fflush(stdout);
+[0m[49m[38;5;9m- 87    [0m:[38;5;9m[49m     dlclose(h);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     /* negative / zero len on fma_array */
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     fma_array(out, m1, m2, ad, 0);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     fma_array(out, m1, m2, ad, -7);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     printf("done\n");
+[0m[49m[39m  88, 48[0m:[39m[49m     return 0;
+[0m[49m[39m  89, 49[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o harness harness.c -ldl && ./harness /tmp/cbuild/libdriver.so > c_out.txt 2>&1; echo "C exit=$?"
+./harness /local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation/target/release/libdriver.so > rust_out.txt 2>&1; echo "Rust exit=$?"
+echo "=== diff ==="; diff c_out.txt rust_out.txt && echo "IDENTICAL ($(wc -l < c_out.txt) lines)"
+echo "=== md5 ==="; md5sum c_out.txt rust_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run harness against both libraries and compare output
+
+C exit=0
+Rust exit=0
+=== diff ===
+IDENTICAL (27 lines)
+=== md5 ===
+1aef12a267e6cd55728af7b795d47211  c_out.txt
+1aef12a267e6cd55728af7b795d47211  rust_out.txt
+[38;5;244m - Completed in 0.62s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && cat > fuzz.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
+typedef void (*driver_fn)(const int *, int);
+int main(int argc, char **argv) {
+    void *h = dlopen(argv[1], RTLD_NOW);
+    driver_fn driver = (driver_fn)dlsym(h, "driver");
+    srand(12345);
+    for (int t = 0; t < 200; t++) {
+        int len = rand() % 64;
+        int *buf = malloc((len ? len : 1) * sizeof(int));
+        for (int i = 0; i < len; i++) buf[i] = (rand() << 1) ^ rand();
+        driver(buf, len);
+        free(buf);
+    }
+    int big = 100000;
+    int *b = malloc(big * sizeof(int));
+    for (int i = 0; i < big; i++) b[i] = i - 50000;
+    driver(b, big);
+    printf("fuzz done\n");
+    return 0;
+}
+EOF
+gcc -O2 -o fuzz fuzz.c -ldl && ./fuzz /tmp/cbuild/libdriver.so > cf.txt 2>&1; echo "C exit=$?"
+./fuzz /local/home/scheschb/.harvest/work/harvest-work-RZpDCl/translation/target/release/libdriver.so > rf.txt 2>&1; echo "Rust exit=$?"
+diff cf.txt rf.txt && echo "IDENTICAL ($(wc -l < cf.txt) lines)"; md5sum cf.txt rf.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Randomized fuzz equivalence test including large array
+
+C exit=0
+Rust exit=0
+IDENTICAL (106445 lines)
+202bbd76c1088575c370fc0f787655b7  cf.txt
+202bbd76c1088575c370fc0f787655b7  rf.txt
+[38;5;244m - Completed in 0.81s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-RZpDCl && find translation -type f -not -path '*/target/*' | sort && echo "---" && wc -l translation/src/lib.rs translation/Cargo.toml && echo "--- so ---" && ls -l translation/target/release/libdriver.so && echo "--- c_src untouched ---" && find c_src -newer c_src/CMakeLists.txt -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final artifact verification
+
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+---
+  83 translation/src/lib.rs
+  12 translation/Cargo.toml
+  95 total
+--- so ---
+-rwxr-xr-x. 2 scheschb amazon 402896 Sep  1 10:13 translation/target/release/libdriver.so
+--- c_src untouched ---
+0
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library turned out to be small — the whole of [38;5;10mc_src/[0m is one CMakeLists, one header, and one 46-line source file — so I translated it directly rather than delegating.[0m[0m
+[0m[0m
+Surface enumeration (the definition of done): I built the C library with CMake and ran [38;5;10mnm -D --defined-only[0m on [38;5;10mlibdriver.so[0m, which exports exactly two symbols, [38;5;10mdriver[0m and [38;5;10mfma_array[0m. [38;5;10mdriver.h[0m declares only [38;5;10mdriver[0m and contains no namespace/renaming macros, so no macro-generated linker names to reconcile. [38;5;10minner[0m is [38;5;10mstatic[0m in the C and has no external linkage, so it stays a private Rust function.[0m[0m
+[0m[0m
+Verification I ran myself:[0m[0m
+- Symbol diff ([38;5;10mcomm -23[0m of the two sorted [38;5;10mnm -D[0m lists) is empty — Rust exports every C symbol.[0m[0m
+- A [38;5;10mdlopen[0m harness exercising both [38;5;10m.so[0m files across normal arrays, signed-overflow inputs ([38;5;10mINT_MAX[0m, [38;5;10mINT_MIN[0m, ±46341, ±65536), [38;5;10mlen == 1[0m, [38;5;10mlen == 0[0m, null data, direct [38;5;10mfma_array[0m calls with distinct and aliased buffers, and negative [38;5;10mlen[0m: output is byte-identical (same md5).[0m[0m
+- A seeded 200-iteration fuzz plus a 100,000-element array: 106,445 lines of output, byte-identical.[0m[0m
+- [38;5;10mc_src/[0m unmodified.[0m[0m
+[0m[0m
+Translation notes worth knowing:[0m[0m
+- [38;5;10mprintf[0m and [38;5;10mmemcpy[0m are called through the platform C library via [38;5;10mextern "C"[0m declarations rather than Rust's [38;5;10mstd::io[0m, so stdout buffering and integer formatting match exactly. The harness interleaved its own [38;5;10mprintf[0m calls with the library's and the ordering matched, confirming a shared stdout buffer.[0m[0m
+- C's signed-overflow UB in [38;5;10mmul1[i] * mul2[i] + add[i][0m compiles to wrapping arithmetic, so I used [38;5;10mwrapping_mul[0m/[38;5;10mwrapping_add[0m to reproduce the same values without a Rust panic.[0m[0m
+- The C VLA [38;5;10mint out[len][0m becomes a heap [38;5;10mVec[0m. I kept the byte count computed the way C does it ([38;5;10mlen[0m sign-extended to [38;5;10msize_t[0m, then multiplied), so non-positive lengths behave as in the original instead of being "fixed" — [38;5;10mlen == 0[0m copies nothing and prints nothing, and a negative [38;5;10mlen[0m still produces a wild memcpy size.[0m[0m
+- No external crates, so the build needs no network.[0m[0m
+[38;5;8m
+ ▸ Credits: 4.15 • Time: 1m 56s
+
+[0m[1G[0m[0m[?25h

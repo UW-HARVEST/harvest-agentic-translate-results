@@ -1,75 +1,67 @@
 [package]
 name = "driver"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
-# Mirrors the CMake project: one shared library plus the `driver` executable.
+# The C project builds an executable from src/mdcore.c + src/mdmain.c.
+# Here we additionally expose the mdcore.c public functions/globals as a
+# shared library, as required.
 [lib]
 name = "driver"
-crate-type = ["cdylib"]
 path = "src/lib.rs"
+crate-type = ["cdylib"]
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
-# The CMake cache variables become Cargo features, named after the *values* those
-# variables can take (lowercased):
+# CMake cache variables become Cargo features, one feature per value:
 #
-#   set(OP     "add" CACHE STRING ...)  ->  features `add`, `sub`, `mul`
-#   set(REPEAT "5"   CACHE STRING ...)  ->  features `0` .. `7`
+#   set(OP     "add" CACHE STRING "operation leveraged")  -> add | sub | mul
+#   set(REPEAT "5"   CACHE STRING "iterations tested")    -> 0 .. 7
 #
-# `default = []` reproduces the `#ifndef OP / #ifndef REPEAT` fallbacks in
-# mdmacros.h (OP=add, REPEAT=5), so a plain `cargo build` matches a plain
-# `cmake` configure. Because no default feature is forced on, selecting a
-# feature explicitly is never ambiguous.
+# The REPEAT values are exposed both under their bare CMake value ("0".."7")
+# and under a readable `repeat_N` alias; enabling either one is equivalent.
 #
-# Readable aliases (`op_add`, `repeat_5`, ...) are provided as well; each simply
-# turns on the canonical feature. Every combination of features compiles: when
-# several values of the same variable are enabled, resolution is deterministic
-# (for OP: mul > sub > add; for REPEAT: the lowest enabled value wins).
-[dev-dependencies]
-libloading = "0.8"
-libc = "0.2"
-
-# `level3_helpers` redirects file descriptor 1 to capture what the loaded
-# objects `printf`/`println!`. libtest's own progress output goes to the same
-# descriptor from other threads, so this target runs without the default
-# harness and prints its results itself.
-[[test]]
-name = "level3_helpers"
-path = "tests/level3_helpers.rs"
-harness = false
-
+# Valid REPEAT values are 0..7 because mdmacros.h only defines REP0..REP7,
+# so CHOOSE_REP(REPEAT) would not compile for anything else.
 [features]
-default = []
+default = ["add", "repeat_5"]
 
 # ---- OP ----
 add = []
 sub = []
 mul = []
 
-# ---- REPEAT ----
-"0" = []
-"1" = []
-"2" = []
-"3" = []
-"4" = []
-"5" = []
-"6" = []
-"7" = []
-
-# ---- aliases ----
+# Readable aliases of the OP values (used by verify.sh).
 op_add = ["add"]
 op_sub = ["sub"]
 op_mul = ["mul"]
-repeat_0 = ["0"]
-repeat_1 = ["1"]
-repeat_2 = ["2"]
-repeat_3 = ["3"]
-repeat_4 = ["4"]
-repeat_5 = ["5"]
-repeat_6 = ["6"]
-repeat_7 = ["7"]
+
+# ---- REPEAT ----
+repeat_0 = []
+repeat_1 = []
+repeat_2 = []
+repeat_3 = []
+repeat_4 = []
+repeat_5 = []
+repeat_6 = []
+repeat_7 = []
+
+# Bare CMake values, kept as aliases of the above.
+"0" = ["repeat_0"]
+"1" = ["repeat_1"]
+"2" = ["repeat_2"]
+"3" = ["repeat_3"]
+"4" = ["repeat_4"]
+"5" = ["repeat_5"]
+"6" = ["repeat_6"]
+"7" = ["repeat_7"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
 
 [workspace]

@@ -1,0 +1,740 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "--- c_src ---" && find c_src -type f | head -100 && echo "--- count ---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+/local/home/scheschb/.harvest/work/harvest-work-yyYHXf
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 15:01 .
+drwxr-xr-x. 783 scheschb amazon 81920 Sep  1 15:01 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 15:01 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 15:01 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 15:01 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+--- count ---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+
+  38 c_src/CMakeLists.txt
+  24 c_src/include/lib.h
+ 185 c_src/src/lib.c
+ 247 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1541 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1164 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4850 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild && mkdir cbuild && cd cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && ls *.so[0m[38;5;244m (using tool: shell)[0m
+
+[ 50%] Building C object CMakeFiles/harvest-work-yyYHXf.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-yyYHXf.so
+[100%] Built target harvest-work-yyYHXf
+libharvest-work-yyYHXf.so
+[38;5;244m - Completed in 0.464s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libharvest-work-yyYHXf.so | sort | tee /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+
+0000000000001150 T add_operation
+0000000000001160 T multiply_operation
+0000000000001170 T subtract_operation
+0000000000001180 T modulo_operation
+00000000000011a0 T safe_double_to_int
+00000000000011d0 T compute_scaled_value
+00000000000011f0 T compare_results_in_array
+0000000000001230 T init_result_array
+00000000000015d0 T process_with_foreach
+0000000000001660 T compute_weighted_sum
+0000000000001700 T arrayfunc
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_yyYHXf"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m use std::ffi::{c_double, c_int};
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// `typedef int (*operation_func)(int a, int b, int unused1, int unused2);`
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m pub type OperationFunc = extern "C" fn(c_int, c_int, c_int, c_int) -> c_int;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m ///     int value;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m ///     double scaled;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m ///     int rank;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// } Result;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m #[derive(Clone, Copy)]
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m pub struct Result {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     pub value: c_int,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     pub scaled: c_double,
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     pub rank: c_int,
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ///     Result data[10];
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m ///     int count;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// } ResultArray;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m pub struct ResultArray {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     pub data: [Result; 10],
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     pub count: c_int,
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m // Operations
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m pub extern "C" fn add_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     // C signed overflow is UB; gcc/clang produce two's-complement wraparound.
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     a.wrapping_add(b)
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m pub extern "C" fn multiply_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     a.wrapping_mul(b)
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m pub extern "C" fn subtract_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     a.wrapping_sub(b)
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m pub extern "C" fn modulo_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     if b == 0 {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     // `INT_MIN % -1` is UB in C; hardware/compilers yield 0.
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     a.wrapping_rem(b)
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m // Numeric helpers
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// Exact order of checks preserved: upper bound, lower bound, then NaN.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// (NaN fails both relational tests, so it reaches the `d != d` case.)
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m pub extern "C" fn safe_double_to_int(d: c_double) -> c_int {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     if d >= c_int::MAX as c_double {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         return c_int::MAX;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     if d <= c_int::MIN as c_double {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         return c_int::MIN;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     if d != d {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     // Value is strictly inside the int range here, so truncation matches C.
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     d as c_int
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m pub extern "C" fn compute_scaled_value(base: c_int, scale_factor: c_double) -> c_int {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let scaled = base as c_double * scale_factor;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     safe_double_to_int(scaled)
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m // ResultArray operations
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// Compares the *addresses* of two elements, exactly as the C does. No lower
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m /// bound check on the indices is performed (faithful to the original).
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m pub unsafe extern "C" fn compare_results_in_array(
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     arr: *mut ResultArray,
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     idx1: c_int,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     idx2: c_int,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let count = (*arr).count;
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     if idx1 >= count || idx2 >= count {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let base = (&raw mut (*arr).data) as *mut Result;
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     let ptr1 = base.offset(idx1 as isize);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let ptr2 = base.offset(idx2 as isize);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     if ptr1 < ptr2 {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         -1
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     } else if ptr1 > ptr2 {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         1
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         0
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m pub unsafe extern "C" fn init_result_array(
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     arr: *mut ResultArray,
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     values: *mut c_int,
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     count: c_int,
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     (*arr).count = if count < 10 { count } else { 10 };
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     let base = (&raw mut (*arr).data) as *mut Result;
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     while i < (*arr).count {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         let v = *values.offset(i as isize);
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         *base.offset(i as isize) = Result {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             value: v,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             scaled: v as c_double * 1.5,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m             rank: i,
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m /// Translation of the `FOREACH` macro loop: walks `arr->data[0 .. arr->count)`.
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m pub unsafe extern "C" fn process_with_foreach(arr: *mut ResultArray, op: OperationFunc) -> c_int {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     let mut total: c_int = 0;
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     let base = (&raw mut (*arr).data) as *mut Result;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let size = (*arr).count;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let mut count_iter: c_int = 0;
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     while count_iter != size {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         let item = base.offset(count_iter as isize);
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         let result = op((*item).value, (*item).rank, 0, 0);
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         total = total.wrapping_add(result);
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         let temp = result as c_double * 0.75;
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         (*item).scaled = temp;
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         (*item).value = safe_double_to_int(temp);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         count_iter += 1;
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     total
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m pub unsafe extern "C" fn compute_weighted_sum(arr: *mut ResultArray) -> c_int {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     let mut sum: c_int = 0;
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     let base_ptr = (&raw mut (*arr).data) as *mut Result;
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     let count = (*arr).count;
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     while i < count {
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         let current = base_ptr.offset(i as isize);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         let base = base_ptr;
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         // `current - base` is the element index; 1 is used for the first slot.
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         let weight: c_int = if current > base {
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m             current.offset_from(base) as c_int
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m             1
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         let weighted = (*current).value as c_double * weight as c_double * 0.8;
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         sum = sum.wrapping_add(safe_double_to_int(weighted));
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     sum
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m // Public entry point
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m pub extern "C" fn arrayfunc(
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     param1: c_int,
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     param2: c_int,
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     param3: c_int,
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     param4: c_int,
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     let operations: [OperationFunc; 4] = [
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m         add_operation,
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         multiply_operation,
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         subtract_operation,
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         modulo_operation,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     let mut values: [c_int; 8] = [
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         param1,
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         param2,
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         param3,
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         param4,
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         param1.wrapping_add(param2),
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         param2.wrapping_sub(param3),
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m         param3.wrapping_mul(2),
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         (param4 / 2).wrapping_add(1),
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     // `ResultArray arr = {.count = 0};` zero-initializes the whole aggregate.
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     let mut arr = ResultArray {
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         data: [Result {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m             value: 0,
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m             scaled: 0.0,
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m             rank: 0,
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         }; 10],
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         count: 0,
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         init_result_array(&mut arr, values.as_mut_ptr(), 8);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     for i in 0..4 {
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         result = result.wrapping_add(unsafe { process_with_foreach(&mut arr, operations[i]) });
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     result = result.wrapping_add(unsafe { compute_weighted_sum(&mut arr) });
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     let mut i: c_int = 0;
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     while i < arr.count - 1 {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         let cmp = unsafe { compare_results_in_array(&mut arr, i, i + 1) };
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         result = result.wrapping_add(cmp);
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     let final_scale = result as c_double * 0.333;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     result = safe_double_to_int(final_scale);
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation)
+warning: crate `harvest_work_yyYHXf` should have a snake case name
+  |
+  = help: convert the identifier to snake case: `harvest_work_yy_yhxf`
+  = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `harvest_translation` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.15s
+[38;5;244m - Completed in 0.177s[0m
+
+[?25l[0m[38;5;141m> [0mNow the symbol diff.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation && ls target/release/*.so && nm -D --defined-only target/release/*.so | awk '{print $3}' | sort > /tmp/rust_syms_all.txt && awk '{print $3}' /tmp/c_syms.txt | sort > /tmp/c_names.txt && echo "=== C symbols missing from Rust ===" && comm -23 /tmp/c_names.txt /tmp/rust_syms_all.txt && echo "(end)" && echo "=== C count: $(wc -l < /tmp/c_names.txt) ===" && grep -x -f /tmp/c_names.txt /tmp/rust_syms_all.txt | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+target/release/libharvest_work_yyYHXf.so
+=== C symbols missing from Rust ===
+(end)
+=== C count: 11 ===
+11
+[38;5;244m - Completed in 0.30s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now differential testing against the C library.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m typedef int (*operation_func)(int, int, int, int);
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m typedef struct { int value; double scaled; int rank; } Result;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m typedef struct { Result data[10]; int count; } ResultArray;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef struct {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     operation_func add, mul, sub, mod;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     int (*safe_double_to_int)(double);
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     int (*compute_scaled_value)(int, double);
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     int (*compare_results_in_array)(ResultArray*, int, int);
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     void (*init_result_array)(ResultArray*, int*, int);
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     int (*process_with_foreach)(ResultArray*, operation_func);
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     int (*compute_weighted_sum)(ResultArray*);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     int (*arrayfunc)(int,int,int,int);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m } Lib;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m static void load(Lib *l, const char *path) {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m #define S(f) do { *(void**)&l->f = dlsym(h, #f); if (!l->f) { fprintf(stderr,"missing %s in %s\n", #f, path); exit(2);} } while(0)
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     *(void**)&l->add = dlsym(h, "add_operation");
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     *(void**)&l->mul = dlsym(h, "multiply_operation");
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     *(void**)&l->sub = dlsym(h, "subtract_operation");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     *(void**)&l->mod = dlsym(h, "modulo_operation");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     S(safe_double_to_int); S(compute_scaled_value); S(compare_results_in_array);
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     S(init_result_array); S(process_with_foreach); S(compute_weighted_sum); S(arrayfunc);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     if (!l->add||!l->mul||!l->sub||!l->mod) { fprintf(stderr,"missing ops in %s\n", path); exit(2); }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m #undef S
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m static long fails = 0, checks = 0;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m static void ck(const char *what, long long a, long long b) {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     checks++;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     if (a != b) { fails++; if (fails < 40) printf("MISMATCH %s: C=%lld RUST=%lld\n", what, a, b); }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m static void ckd(const char *what, double a, double b) {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     checks++;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     /* bitwise comparison: byte-identical requirement */
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     if (memcmp(&a, &b, sizeof(double)) != 0) {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         checks++;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         if (isnan(a) && isnan(b)) return;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         fails++; if (fails < 40) printf("MISMATCH %s: C=%.17g RUST=%.17g\n", what, a, b);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     Lib C, R;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     load(&C, argv[1]);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     load(&R, argv[2]);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     /* --- scalar ops, including overflow / INT_MIN edge cases --- */
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     int vals[] = {0,1,-1,2,-2,3,7,-7,10,100,-100,32767,65536,
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m                   INT32_MAX, INT32_MIN, INT32_MAX-1, INT32_MIN+1, 1<<16, -(1<<16)};
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     int nv = (int)(sizeof(vals)/sizeof(vals[0]));
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     for (int i = 0; i < nv; i++) for (int j = 0; j < nv; j++) {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         int a = vals[i], b = vals[j];
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         ck("add", C.add(a,b,0,0), R.add(a,b,0,0));
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         ck("mul", C.mul(a,b,0,0), R.mul(a,b,0,0));
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         ck("sub", C.sub(a,b,0,0), R.sub(a,b,0,0));
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         ck("mod", C.mod(a,b,0,0), R.mod(a,b,0,0));
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         ck("mod-junk", C.mod(a,b,a,b), R.mod(a,b,a,b));
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     /* --- safe_double_to_int --- */
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     double ds[] = {0.0,-0.0,0.5,-0.5,1.0,-1.0,1.9,-1.9,2.5,-2.5,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m                    2147483646.0,2147483647.0,2147483647.5,2147483648.0,
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m                    -2147483647.0,-2147483648.0,-2147483649.0,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m                    1e18,-1e18,1e-300,-1e-300,
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m                    (double)INT32_MAX, (double)INT32_MIN,
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m                    nextafter((double)INT32_MAX,0.0), nextafter((double)INT32_MIN,0.0),
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m                    INFINITY,-INFINITY,NAN,-NAN, 0.333, -0.333, 123456.789};
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     int nd = (int)(sizeof(ds)/sizeof(ds[0]));
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     for (int i = 0; i < nd; i++)
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         ck("s2i", C.safe_double_to_int(ds[i]), R.safe_double_to_int(ds[i]));
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     /* --- compute_scaled_value --- */
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     for (int i = 0; i < nv; i++) for (int j = 0; j < nd; j++)
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         ck("csv", C.compute_scaled_value(vals[i], ds[j]), R.compute_scaled_value(vals[i], ds[j]));
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     /* --- init_result_array + compare + weighted + foreach on identical inputs --- */
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     operation_func cops[4], rops[4];
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     cops[0]=C.add; cops[1]=C.mul; cops[2]=C.sub; cops[3]=C.mod;
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     rops[0]=R.add; rops[1]=R.mul; rops[2]=R.sub; rops[3]=R.mod;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     for (int trial = 0; trial < 4000; trial++) {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         int n = trial % 14;               /* includes 0 and >10 to exercise clamping */
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         int buf[32];
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         for (int k = 0; k < 32; k++) {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             int t = (trial*31 + k*7);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             switch (t % 6) {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m                 case 0: buf[k] = t; break;
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                 case 1: buf[k] = -t; break;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                 case 2: buf[k] = INT32_MAX - t; break;
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                 case 3: buf[k] = INT32_MIN + t; break;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m                 case 4: buf[k] = 0; break;
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m                 default: buf[k] = (t*2654435761u) & 0x7fffffff; break;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         ResultArray ca, ra;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         memset(&ca, 0, sizeof ca); memset(&ra, 0, sizeof ra);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         ca.count = 0; ra.count = 0;
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         C.init_result_array(&ca, buf, n);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         R.init_result_array(&ra, buf, n);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         checks++;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         if (memcmp(&ca, &ra, sizeof ca) != 0) {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             fails++; if (fails<40) printf("MISMATCH init_result_array struct bytes (trial %d n %d)\n", trial, n);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         for (int i1 = -3; i1 < 13; i1++) for (int i2 = -3; i2 < 13; i2++) {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             if (i1 < 0 || i2 < 0) continue; /* negative idx would read OOB in both, skip */
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             ck("cmp", C.compare_results_in_array(&ca, i1, i2),
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                       R.compare_results_in_array(&ra, i1, i2));
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         ck("wsum", C.compute_weighted_sum(&ca), R.compute_weighted_sum(&ra));
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         checks++; if (memcmp(&ca,&ra,sizeof ca)) { fails++; if(fails<40) printf("MISMATCH wsum sideeffect %d\n",trial); }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         for (int o = 0; o < 4; o++) {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             ck("foreach", C.process_with_foreach(&ca, cops[o]),
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m                           R.process_with_foreach(&ra, rops[o]));
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             checks++;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             if (memcmp(&ca, &ra, sizeof ca) != 0) {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                 fails++; if (fails<40) printf("MISMATCH foreach struct bytes trial %d op %d\n", trial, o);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             for (int e = 0; e < 10; e++) ckd("scaled", ca.data[e].scaled, ra.data[e].scaled);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     /* cross-library op pointers: rust foreach driving C op fn and vice versa */
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     for (int trial = 0; trial < 200; trial++) {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         int buf[10]; for (int k=0;k<10;k++) buf[k] = trial*17 - k*5;
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         ResultArray ca, ra; memset(&ca,0,sizeof ca); memset(&ra,0,sizeof ra);
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         C.init_result_array(&ca, buf, 10); R.init_result_array(&ra, buf, 10);
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         ck("xfe", C.process_with_foreach(&ca, R.add), R.process_with_foreach(&ra, C.add));
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         checks++; if (memcmp(&ca,&ra,sizeof ca)) { fails++; if(fails<40) printf("MISMATCH xfe %d\n", trial); }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     /* --- arrayfunc: the public entry point --- */
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     for (int i = 0; i < nv; i++) for (int j = 0; j < nv; j++)
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         for (int k = 0; k < nv; k++) {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             int a=vals[i], b=vals[j], c=vals[k], d=vals[(i+j+k)%nv];
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             ck("arrayfunc", C.arrayfunc(a,b,c,d), R.arrayfunc(a,b,c,d));
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     unsigned int seed = 12345;
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     for (long t = 0; t < 400000; t++) {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         seed = seed*1103515245u + 12345u;
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         int a = (int)seed; seed = seed*1103515245u + 12345u;
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         int b = (int)seed; seed = seed*1103515245u + 12345u;
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         int c = (int)seed; seed = seed*1103515245u + 12345u;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         int d = (int)seed;
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         if (t % 4 == 0) { a %= 1000; b %= 1000; c %= 1000; d %= 1000; }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         ck("arrayfunc-rand", C.arrayfunc(a,b,c,d), R.arrayfunc(a,b,c,d));
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     printf("checks=%ld fails=%ld\n", checks, fails);
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     return fails ? 1 : 0;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest difftest.c -ldl -lm 2>&1 | head -20 && ./difftest /tmp/cbuild/libharvest-work-yyYHXf.so /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/target/release/libharvest_work_yyYHXf.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+
+exit=136
+bash: line 1: 2861042 Floating point exception(core dumped) ./difftest /tmp/cbuild/libharvest-work-yyYHXf.so /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/target/release/libharvest_work_yyYHXf.so
+[38;5;244m - Completed in 1.744s[0m
+
+[?25l[0m[38;5;141m> [0mThe C library traps (SIGFPE) on [38;5;10mmodulo_operation(INT_MIN, -1)[0m — real UB in the original. Let me reproduce that faithfully rather than diverge.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+      78[0m:[38;5;10m[49m /// Signed remainder with C's exact machine semantics.
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m /// On x86-64 the compiler emits `idiv`, which raises `#DE` (SIGFPE) for
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m /// `INT_MIN % -1`. Rust's `%` would instead panic there, so the instruction is
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m /// emitted directly to keep the observable behaviour identical to the C.
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m #[cfg(target_arch = "x86_64")]
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m fn c_rem_i32(a: c_int, b: c_int) -> c_int {
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m     let rem: c_int;
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m         std::arch::asm!(
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m             "cdq",
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m             "idiv {divisor:e}",
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m             divisor = in(reg) b,
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m             inout("eax") a => _,
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m             out("edx") rem,
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m             options(nomem, nostack),
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m     rem
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m #[cfg(not(target_arch = "x86_64"))]
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m fn c_rem_i32(a: c_int, b: c_int) -> c_int {
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m     a.wrapping_rem(b)
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m 
+[0m[49m[39m  78, 106[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  79, 107[0m:[39m[49m pub extern "C" fn modulo_operation(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
+[0m[49m[39m  80, 108[0m:[39m[49m     if b == 0 {
+[0m[49m[39m  81, 109[0m:[39m[49m         return 0;
+[0m[49m[39m  82, 110[0m:[39m[49m     }
+[0m[49m[38;5;9m- 83     [0m:[38;5;9m[49m     // `INT_MIN % -1` is UB in C; hardware/compilers yield 0.
+[0m[49m[38;5;9m- 84     [0m:[38;5;9m[49m     a.wrapping_rem(b)
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m     c_rem_i32(a, b)
+[0m[49m[39m  85, 112[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation && cargo build --release 2>&1 | grep -v "snake case\|snake_case\|^  |\|^$\|nonstandard" | tail -20[0m[38;5;244m (using tool: shell)[0m
+
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation)
+warning: `harvest_translation` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.144s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/traptest.c[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "%s\n", dlerror()); return 3; }
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m     int (*mod)(int,int,int,int) = dlsym(h, "modulo_operation");
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     int a = atoi(argv[2]), b = atoi(argv[3]);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     printf("%d\n", mod(a,b,0,0));
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     fflush(stdout);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/traptest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o traptest traptest.c -ldl && CS=/tmp/cbuild/libharvest-work-yyYHXf.so && RS=/local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/target/release/libharvest_work_yyYHXf.so && for args in "-2147483648 -1" "7 3" "-7 3" "7 -3" "-7 -3" "5 0" "-2147483648 1" "-2147483648 2" "2147483647 -1"; do
+  co=$(./traptest $CS $args 2>/dev/null); cr=$?
+  ro=$(./traptest $RS $args 2>/dev/null); rr=$?
+  printf "mod(%s): C=[%s] rc=%d | RUST=[%s] rc=%d %s\n" "$args" "$co" "$cr" "$ro" "$rr" "$([ "$co" = "$ro" ] && [ "$cr" = "$rr" ] && echo OK || echo DIFF)"
+done[0m[38;5;244m (using tool: shell)[0m
+
+mod(-2147483648 -1): C=[] rc=136 | RUST=[] rc=136 OK
+mod(7 3): C=[1] rc=0 | RUST=[1] rc=0 OK
+mod(-7 3): C=[-1] rc=0 | RUST=[-1] rc=0 OK
+mod(7 -3): C=[1] rc=0 | RUST=[1] rc=0 OK
+mod(-7 -3): C=[-1] rc=0 | RUST=[-1] rc=0 OK
+mod(5 0): C=[0] rc=0 | RUST=[0] rc=0 OK
+mod(-2147483648 1): C=[0] rc=0 | RUST=[0] rc=0 OK
+mod(-2147483648 2): C=[0] rc=0 | RUST=[0] rc=0 OK
+mod(2147483647 -1): C=[0] rc=0 | RUST=[0] rc=0 OK
+[38;5;244m - Completed in 2.10s[0m
+
+[?25l[0m[38;5;141m> [0mTrap parity confirmed (both exit 136 / SIGFPE). Now the full differential sweep, excluding the trapping input.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && sed -i 's|        ck("mod", C.mod(a,b,0,0), R.mod(a,b,0,0));|        if (!(a == INT32_MIN \&\& b == -1)) {\n        ck("mod", C.mod(a,b,0,0), R.mod(a,b,0,0));|; s|        ck("mod-junk", C.mod(a,b,a,b), R.mod(a,b,a,b));|        ck("mod-junk", C.mod(a,b,a,b), R.mod(a,b,a,b)); }|' difftest.c && gcc -O1 -o difftest difftest.c -ldl -lm 2>&1|head && ./difftest /tmp/cbuild/libharvest-work-yyYHXf.so /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/target/release/libharvest_work_yyYHXf.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+
+checks=1289702 fails=0
+exit=0
+[38;5;244m - Completed in 0.230s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild0 && mkdir cbuild0 && cd cbuild0 && cmake /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/c_src >/dev/null 2>&1 && make 2>&1|tail -2 && nm -D --defined-only *.so | awk '{print $3}'|sort > /tmp/c_names0.txt && diff /tmp/c_names0.txt /tmp/c_names.txt && echo "symbols identical across build types" && cd /tmp && ./difftest /tmp/cbuild0/libharvest-work-yyYHXf.so /local/home/scheschb/.harvest/work/harvest-work-yyYHXf/translation/target/release/libharvest_work_yyYHXf.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+
+[100%] Linking C shared library libharvest-work-yyYHXf.so
+[100%] Built target harvest-work-yyYHXf
+symbols identical across build types
+checks=1289702 fails=0
+exit=0
+[38;5;244m - Completed in 0.667s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yyYHXf && echo "=== files ===" && find translation -name target -prune -o -type f -print && echo && echo "=== C exports (11) vs Rust exports ===" && nm -D --defined-only /tmp/cbuild/libharvest-work-yyYHXf.so | awk '{print $3}' | sort > /tmp/c_names.txt && nm -D --defined-only translation/target/release/*.so | awk '{print $3}' | sort > /tmp/r_names.txt && echo "missing in Rust:" && comm -23 /tmp/c_names.txt /tmp/r_names.txt && echo "(none above = complete)" && echo && paste <(cat /tmp/c_names.txt) <(for s in $(cat /tmp/c_names.txt); do grep -qx "$s" /tmp/r_names.txt && echo present || echo MISSING; done) && echo && echo "=== c_src unmodified ===" && ls -la --time-style=+ c_src/src/lib.c c_src/include/lib.h && rm -f /tmp/difftest /tmp/difftest.c /tmp/traptest /tmp/traptest.c && rm -rf /tmp/cbuild /tmp/cbuild0[0m[38;5;244m (using tool: shell)[0m
+
+=== files ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+
+=== C exports (11) vs Rust exports ===
+missing in Rust:
+(none above = complete)
+
+add_operation	present
+arrayfunc	present
+compare_results_in_array	present
+compute_scaled_value	present
+compute_weighted_sum	present
+init_result_array	present
+modulo_operation	present
+multiply_operation	present
+process_with_foreach	present
+safe_double_to_int	present
+subtract_operation	present
+
+=== c_src unmodified ===
+-rw-r--r--. 1 scheschb amazon 1165  c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 5036  c_src/src/lib.c
+[38;5;244m - Completed in 0.70s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
+[0m[0m
+[1mScope[22m: The C library is small — one translation unit ([38;5;10mc_src/src/lib.c[0m, 185 lines) globbed into a shared library by CMake, exporting [1m11 public symbols[22m. No namespace-renaming macros exist in the header ([38;5;10mlib.h[0m declares only [38;5;10marrayfunc[0m; the other 10 symbols are non-static definitions in [38;5;10mlib.c[0m), so linker names equal source names.[0m[0m
+[0m[0m
+[1mSymbol gate[22m: [38;5;10mnm -D[0m on the Rust [38;5;10m.so[0m exports all 11 C symbols. Diff is empty.[0m[0m
+[0m[0m
+[38;5;10madd_operation[0m, [38;5;10mmultiply_operation[0m, [38;5;10msubtract_operation[0m, [38;5;10mmodulo_operation[0m, [38;5;10msafe_double_to_int[0m, [38;5;10mcompute_scaled_value[0m, [38;5;10mcompare_results_in_array[0m, [38;5;10minit_result_array[0m, [38;5;10mprocess_with_foreach[0m, [38;5;10mcompute_weighted_sum[0m, [38;5;10marrayfunc[0m[0m[0m
+[0m[0m
+[1mBehavioral verification[22m: I built a [38;5;10mdlopen[0m-based differential harness loading both libraries side by side and ran [1m1,289,702 comparisons with 0 mismatches[22m, against C builds at both [38;5;10m-O0[0m and [38;5;10m-O3[0m (identical results). Coverage included:[0m[0m
+- All four operations across INT_MAX/INT_MIN overflow boundaries[0m[0m
+- [38;5;10msafe_double_to_int[0m across ±INT range boundaries, [38;5;10mnextafter[0m edges, infinities, NaN, and signed zero[0m[0m
+- [38;5;10mResultArray[0m compared [1mbyte-for-byte[22m with [38;5;10mmemcmp[0m after every mutating call, so the [38;5;10mscaled[0m doubles and struct padding match bitwise, not just the return values[0m[0m
+- [38;5;10minit_result_array[0m with counts 0–13 to exercise the clamp at 10[0m[0m
+- Cross-library function pointers (Rust's [38;5;10mprocess_with_foreach[0m driving C's [38;5;10madd_operation[0m and vice versa)[0m[0m
+- ~400k randomized [38;5;10marrayfunc[0m calls plus exhaustive triples over edge values[0m[0m
+[0m[0m
+[1mBugs preserved rather than fixed[22m:[0m[0m
+- [38;5;10mcompare_results_in_array[0m checks only the upper index bound, never negative indices — reproduced.[0m[0m
+- The C compares element [3maddresses[23m rather than values, so it degenerates to comparing indices — reproduced as index comparison via the same pointer arithmetic.[0m[0m
+- [38;5;10mcompute_weighted_sum[0m uses [38;5;10m1[0m as the weight for element 0 and the element index thereafter, an off-by-one relative to any sensible weighting — reproduced.[0m[0m
+- Signed overflow (UB in C) uses wrapping arithmetic, matching what gcc/clang actually emit.[0m[0m
+[0m[0m
+One case needed special handling: [38;5;10mmodulo_operation(INT_MIN, -1)[0m is UB in C and the emitted [38;5;10midiv[0m raises SIGFPE. Rust's [38;5;10m%[0m would instead panic, which is observably different, so I emit [38;5;10midiv[0m via inline asm on x86-64 (with a [38;5;10mwrapping_rem[0m fallback for other architectures). I confirmed both libraries die with exit code 136 on that input while agreeing on all other divisor/dividend combinations.[0m[0m
+[38;5;8m
+ ▸ Credits: 8.06 • Time: 3m 40s
+
+[0m[1G[0m[0m[?25h

@@ -1,33 +1,24 @@
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
-use crate::common::*;
+//! Translation of src/jsmath.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
+
+use crate::jsi::*;
+
 use crate::jsbuiltin::{jsB_propf, jsB_propn};
 use crate::jsproperty::jsV_newobject;
 use crate::jsrun::{
     js_defglobal, js_gettop, js_pushnumber, js_pushobject, js_tonumber,
 };
-use crate::types::*;
-use std::ffi::{c_long, c_uint};
 
 unsafe fn jsM_round(x: f64) -> f64 {
     unsafe {
-        if isnan(x) {
-            return x;
-        }
-        if isinf(x) {
-            return x;
-        }
-        if x == 0.0 {
-            return x;
-        }
-        if x > 0.0 && x < 0.5 {
-            return 0.0;
-        }
-        if x < 0.0 && x >= -0.5 {
-            // NOTE: the C original writes `return -0;` -- that is the *integer*
-            // literal 0 negated, which converts to POSITIVE zero. Do not use
-            // -0.0 here.
-            return 0.0;
-        }
+        if isnan(x) { return x; }
+        if isinf(x) { return x; }
+        if x == 0.0 { return x; }
+        if x > 0.0 && x < 0.5 { return 0.0; }
+        if x < 0.0 && x >= -0.5 { return -0.0; }
         floor(x + 0.5)
     }
 }
@@ -110,7 +101,7 @@ unsafe extern "C-unwind" fn Math_random(J: *mut js_State) {
     unsafe {
         /* Lehmer generator with a=48271 and m=2^31-1 */
         /* Park & Miller (1988). Random Number Generators: Good ones are hard to find. */
-        (*J).seed = ((*J).seed as u64 * 48271 % 0x7fffffff) as c_uint;
+        (*J).seed = ((((*J).seed as u64).wrapping_mul(48271)) % 0x7fffffff) as c_uint;
         js_pushnumber(J, (*J).seed as f64 / 0x7fffffff as f64);
     }
 }
@@ -119,7 +110,7 @@ unsafe fn Math_init_random(J: *mut js_State) {
     unsafe {
         /* Pick initial seed by scrambling current time with Xorshift. */
         /* Marsaglia (2003). Xorshift RNGs. */
-        (*J).seed = (time(std::ptr::null_mut::<c_long>()) as c_long + 123) as c_uint;
+        (*J).seed = (time(core::ptr::null_mut()) as c_uint).wrapping_add(123);
         (*J).seed ^= (*J).seed << 13;
         (*J).seed ^= (*J).seed >> 17;
         (*J).seed ^= (*J).seed << 5;

@@ -23,9 +23,9 @@
  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! Rust translation of `c_src/src/main.c`.
+//! Direct translation of `c_src/src/main.c`.
 
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::process::ExitCode;
 
 use driver::process_decisions;
@@ -34,29 +34,29 @@ const MAX_INPUT_SIZE: usize = 1024;
 
 fn main() -> ExitCode {
     let stdin = io::stdin();
-    let mut stdin = stdin.lock();
+    let mut reader = BufReader::new(stdin.lock());
 
-    /* The C reuses a single stack buffer for all three reads. Bytes left
-     * over from a previous read stay in place; they are simply never
-     * looked at because `strlen` stops at the NUL that fgets writes. */
     let mut input_buffer = [0u8; MAX_INPUT_SIZE];
+    let operation: i32;
+    let param: i32;
+    let result: i32;
 
     /* Read operation number */
-    if !fgets(&mut input_buffer, &mut stdin) {
+    if !fgets(&mut reader, &mut input_buffer) {
         eprint!("Error reading operation\n");
         return ExitCode::from(1);
     }
-    let operation = atoi(c_str(&input_buffer));
+    operation = atoi(&input_buffer);
 
     /* Read parameter */
-    if !fgets(&mut input_buffer, &mut stdin) {
+    if !fgets(&mut reader, &mut input_buffer) {
         eprint!("Error reading parameter\n");
         return ExitCode::from(1);
     }
-    let param = atoi(c_str(&input_buffer));
+    param = atoi(&input_buffer);
 
     /* Read decision string */
-    if !fgets(&mut input_buffer, &mut stdin) {
+    if !fgets(&mut reader, &mut input_buffer) {
         eprint!("Error reading decision string\n");
         return ExitCode::from(1);
     }
@@ -69,79 +69,80 @@ fn main() -> ExitCode {
     }
 
     /* Call the library function */
-    let result = process_decisions(&input_buffer, len, operation, param);
+    result = process_decisions(Some(&input_buffer[..len]), len, operation, param);
 
     /* Print result to stdout */
-    let stdout = io::stdout();
-    let mut stdout = stdout.lock();
-    let _ = write!(stdout, "{}\n", result);
-    let _ = stdout.flush();
+    print!("{}\n", result);
+    let _ = io::stdout().flush();
 
-    ExitCode::SUCCESS
+    ExitCode::from(0)
 }
 
-/// Equivalent of `fgets(buf, buf.len(), stdin)`.
-///
-/// At most `buf.len() - 1` bytes are stored; reading stops after a
-/// newline (which is kept) or at end of input. A NUL terminator is
-/// written after the last stored byte. Returns `false` where C would
-/// return `NULL`, i.e. when end-of-file or an error occurs before any
-/// byte is read.
-fn fgets<R: Read>(buf: &mut [u8], input: &mut R) -> bool {
-    let capacity = buf.len();
-    if capacity == 0 {
-        return false;
-    }
+/// Length of the NUL-terminated string held in `buf`, like C's `strlen`.
+fn strlen(buf: &[u8]) -> usize {
+    buf.iter().position(|&c| c == 0).unwrap_or(buf.len())
+}
 
-    let mut i = 0usize;
-    let mut byte = [0u8; 1];
-    while i + 1 < capacity {
-        match input.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) => {
-                buf[i] = byte[0];
-                i += 1;
-                if byte[0] == b'\n' {
-                    break;
+/// Emulates `fgets(buf, buf.len(), stdin)`.
+///
+/// Reads at most `buf.len() - 1` bytes, stopping after the first newline
+/// (which is kept in the buffer) or at end of file, and NUL-terminates.
+/// Returns `false` (C's NULL) when end of file is reached with no bytes read,
+/// or on a read error. Bytes past a long line stay in the stream for the next
+/// call, exactly as with `fgets`.
+fn fgets<R: BufRead>(reader: &mut R, buf: &mut [u8]) -> bool {
+    let cap = buf.len() - 1;
+    let mut n = 0usize;
+
+    while n < cap {
+        let (copied, stop) = {
+            let avail = match reader.fill_buf() {
+                Ok(a) => a,
+                Err(_) => return false,
+            };
+            if avail.is_empty() {
+                /* End of file. */
+                if n == 0 {
+                    return false;
+                }
+                break;
+            }
+            let take = if avail.len() < cap - n {
+                avail.len()
+            } else {
+                cap - n
+            };
+            match avail[..take].iter().position(|&c| c == b'\n') {
+                Some(pos) => {
+                    buf[n..n + pos + 1].copy_from_slice(&avail[..pos + 1]);
+                    (pos + 1, true)
+                }
+                None => {
+                    buf[n..n + take].copy_from_slice(&avail[..take]);
+                    (take, false)
                 }
             }
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
+        };
+        reader.consume(copied);
+        n += copied;
+        if stop {
+            break;
         }
     }
 
-    if i == 0 {
-        /* EOF or error with nothing read: fgets returns NULL. */
-        return false;
-    }
-
-    buf[i] = 0;
+    buf[n] = 0;
     true
 }
 
-/// Length of the NUL-terminated string held in `buf` (C `strlen`).
-fn strlen(buf: &[u8]) -> usize {
-    match buf.iter().position(|&b| b == 0) {
-        Some(pos) => pos,
-        None => buf.len(),
-    }
-}
-
-/// The NUL-terminated string held in `buf`, without the terminator.
-fn c_str(buf: &[u8]) -> &[u8] {
-    &buf[..strlen(buf)]
-}
-
-/// Equivalent of glibc's `atoi`, which is `(int)strtol(s, NULL, 10)`:
-/// leading whitespace and an optional sign are skipped, digits are
-/// consumed, out-of-range values saturate at `LONG_MAX`/`LONG_MIN` and
-/// the result is then truncated to `int`.
-fn atoi(s: &[u8]) -> i32 {
+/// Emulates glibc's `atoi`, which is `(int) strtol(nptr, NULL, 10)`:
+/// leading whitespace is skipped, an optional sign is accepted, digits are
+/// consumed until a non-digit, overflow saturates at `long` bounds and the
+/// result is truncated to `int`.
+fn atoi(buf: &[u8]) -> i32 {
+    let s = &buf[..strlen(buf)];
     let mut i = 0usize;
 
-    while i < s.len()
-        && matches!(s[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
-    {
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
         i += 1;
     }
 
@@ -152,19 +153,19 @@ fn atoi(s: &[u8]) -> i32 {
     }
 
     let mut acc: i64 = 0;
-    let mut overflowed = false;
+    let mut overflow = false;
     while i < s.len() && s[i].is_ascii_digit() {
-        if !overflowed {
-            let digit = i64::from(s[i] - b'0');
+        let digit = i64::from(s[i] - b'0');
+        if !overflow {
             match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
                 Some(v) => acc = v,
-                None => overflowed = true,
+                None => overflow = true,
             }
         }
         i += 1;
     }
 
-    let value: i64 = if overflowed {
+    let value: i64 = if overflow {
         if negative {
             i64::MIN
         } else {

@@ -1,0 +1,935 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+
+./c_src/CMakeLists.txt
+./c_src/src/luggage.c
+./.claude/settings.json
+---
+     27 c_src/CMakeLists.txt
+      0 c_src/src
+     27 total
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/src/luggage.c; echo ---; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+131 c_src/src/luggage.c
+---
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+
+add_executable(driver src/luggage.c)
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/c_src/src/luggage.c[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m3920 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/c_src/src/luggage.c
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow I understand the semantics. Let me set up the crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translated executable
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Rust translation of luggage.c with faithful scanf emulation
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/luggage.c (original C by Jan Wrobel <wrr@mixedbit.org>).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // The goal is byte-identical behaviour with the C program, including its quirks:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //   * `scanf` semantics (whitespace skipping, field widths, EOF vs. matching
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //     failure, partial assignment) are emulated faithfully.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //   * Only `== EOF` is treated as a reason to stop reading; a matching failure
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //     leaves the destination buffers untouched, exactly like the C code where
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //     the loop-local stack buffers keep whatever the previous iteration left in
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //     them.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //   * The odd `supersedes()` logic (it stops at the *first* later directive with
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //     a matching luggage id) is preserved as-is.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //   * `%80[^\n]` does not skip whitespace, so comments keep their leading blank,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //     which yields a double space in the output. That is reproduced.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::io::{self, BufRead, Write};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m const LUGGAGE_ID_LENGTH: usize = 8;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m const FLIGHT_ID_LENGTH: usize = 6;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m const AIRPORT_CODE_LENGTH: usize = 3;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m const COMMENTS_LENGTH: usize = 80;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// One parsed routing directive. The C version stored NUL-terminated char
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// arrays; here the strings are byte vectors holding the same contents.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m struct RoutingDirective {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     time_stamp: u32,
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     luggage_id: Vec<u8>,
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     flight_id: Vec<u8>,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     departure: Vec<u8>,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     arrival: Vec<u8>,
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     comments: Vec<u8>,
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m // scanf emulation
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// Reason a conversion did not produce a value.
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[derive(PartialEq, Eq, Debug)]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m enum ScanErr {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     /// Input failure: end of input before any character of the item was read.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     Eof,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     /// Matching failure: characters were available but did not match.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     Fail,
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// `isspace()` in the C locale.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m fn is_space(c: u8) -> bool {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// Byte-oriented input with a one-character lookahead, mirroring the way
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// `scanf` consumes stdin (lazily, pushing back at most one character).
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m struct Input<R: BufRead> {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     reader: R,
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m impl<R: BufRead> Input<R> {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     fn new(reader: R) -> Self {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         Input { reader }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     /// Look at the next byte without consuming it. `None` means end of input
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     /// (read errors are treated like EOF, as stdio would report them here).
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     fn peek(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             let res = self.reader.fill_buf();
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             match res {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m                 Ok(buf) => return buf.first().copied(),
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m                 Err(_) => return None,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     fn bump(&mut self) {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         self.reader.consume(1);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     /// A whitespace directive in a format string: consume zero or more
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     /// whitespace characters. Never fails.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     fn skip_ws(&mut self) {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         while let Some(c) = self.peek() {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             if is_space(c) {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m                 self.bump();
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// `%d` into an `unsigned int*` (as the C code does). Leading whitespace is
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// skipped, an optional sign is accepted, then decimal digits. Out-of-range
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m /// values clamp like `strtol` and are then truncated to `int`, matching glibc
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m /// on a 64-bit platform.
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m fn scan_int<R: BufRead>(inp: &mut Input<R>) -> Result<u32, ScanErr> {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     inp.skip_ws();
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let first = match inp.peek() {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         None => return Err(ScanErr::Eof),
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         Some(c) => c,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     let mut negative = false;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     if first == b'+' || first == b'-' {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         negative = first == b'-';
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         inp.bump();
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     let mut digits = 0usize;
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let mut acc: u128 = 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let mut overflow = false;
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     while let Some(c) = inp.peek() {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         if !c.is_ascii_digit() {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         inp.bump();
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         digits += 1;
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         if !overflow {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m             acc = acc * 10 + u128::from(c - b'0');
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m             if acc > (i64::MAX as u128) + 1 {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                 overflow = true;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     if digits == 0 {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         // Matching failure. The offending character stays in the stream; the
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         // sign, if any, has already been consumed (same as glibc).
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         return Err(ScanErr::Fail);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     let value: i64 = if overflow {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         if negative {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m             i64::MIN
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             i64::MAX
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     } else if negative {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         if acc > i64::MAX as u128 {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             i64::MIN
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             -(acc as i64)
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     } else if acc > i64::MAX as u128 {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         i64::MAX
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         acc as i64
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     Ok(value as i32 as u32)
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m /// `%<width>[set]`. No leading whitespace is skipped. At least one character
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m /// must match, otherwise the destination is left untouched.
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m fn scan_set<R: BufRead, F: Fn(u8) -> bool>(
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     inp: &mut Input<R>,
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     width: usize,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     in_set: F,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     out: &mut Vec<u8>,
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m ) -> Result<(), ScanErr> {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let mut collected: Vec<u8> = Vec::with_capacity(width);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     while collected.len() < width {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         match inp.peek() {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m             Some(c) => {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                 if in_set(c) {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                     inp.bump();
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m                     collected.push(c);
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     if collected.is_empty() {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         // No character was stored: end of input is an input failure, anything
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         // else is a matching failure.
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         return if inp.peek().is_none() {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m             Err(ScanErr::Eof)
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m             Err(ScanErr::Fail)
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     out.clear();
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     out.extend_from_slice(&collected);
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     Ok(())
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m fn is_alnum_upper(c: u8) -> bool {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     c.is_ascii_uppercase() || c.is_ascii_digit()
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m fn is_upper(c: u8) -> bool {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     c.is_ascii_uppercase()
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m fn is_not_newline(c: u8) -> bool {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     c != b'\n'
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m // Directive list
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m /// Equivalent of `addRoutingDirectiveToList`: insert before the first directive
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m /// with a strictly greater time stamp, so equal time stamps keep insertion
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m /// order.
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m fn add_routing_directive_to_list(list: &mut Vec<RoutingDirective>, new_directive: RoutingDirective) {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     let pos = list
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         .iter()
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         .position(|d| d.time_stamp > new_directive.time_stamp)
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         .unwrap_or(list.len());
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     list.insert(pos, new_directive);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m /// Equivalent of `supersedes`: walk forward to the first directive with the
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m /// same luggage id and report whether its departure matches. The search stops
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m /// there even when it does not match.
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m fn supersedes(list: &[RoutingDirective], start: usize, luggage_id: &[u8], departure: &[u8]) -> bool {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     for directive in &list[start..] {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         if directive.luggage_id != luggage_id {
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         return directive.departure == departure;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     false
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m /// Equivalent of `superseded`: start the search after the given directive.
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m fn superseded(list: &[RoutingDirective], index: usize) -> bool {
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     let directive = &list[index];
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     supersedes(
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         list,
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         index + 1,
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         &directive.luggage_id,
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         &directive.departure,
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m /// Equivalent of `matches`: a leading '-' in the expected value is a wildcard.
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m fn matches(expected: &[u8], actual: &[u8]) -> bool {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     expected.first() == Some(&b'-') || expected == actual
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m fn print_matching_directives<W: Write>(
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     out: &mut W,
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     list: &[RoutingDirective],
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     expected_luggage_id: &[u8],
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     expected_flight_id: &[u8],
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     expected_departure: &[u8],
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     expected_arrival: &[u8],
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m ) -> io::Result<()> {
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     for (index, directive) in list.iter().enumerate() {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         if !superseded(list, index)
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m             && matches(expected_luggage_id, &directive.luggage_id)
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             && matches(expected_flight_id, &directive.flight_id)
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             && matches(expected_departure, &directive.departure)
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             && matches(expected_arrival, &directive.arrival)
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m             // printf("%010u %s %s %s %s %s\n", ...)
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m             write!(out, "{:010}", directive.time_stamp)?;
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m             for field in [
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m                 &directive.luggage_id,
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m                 &directive.flight_id,
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m                 &directive.departure,
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m                 &directive.arrival,
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m                 &directive.comments,
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m             ] {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m                 out.write_all(b" ")?;
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m                 out.write_all(field)?;
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m             out.write_all(b"\n")?;
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     Ok(())
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m // main
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m fn arg_bytes(arg: &std::ffi::OsString) -> Vec<u8> {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         arg.as_os_str().as_bytes().to_vec()
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     #[cfg(not(unix))]
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         arg.to_string_lossy().into_owned().into_bytes()
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     if argv.len() != 5 {
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m         let mut stderr = io::stderr();
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m         let _ = stderr.write_all(b"Command line error: 4 arguments expected\n");
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m         let _ = stderr.flush();
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m         std::process::exit(1);
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     let stdin = io::stdin();
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     let mut inp = Input::new(stdin.lock());
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m     let mut directive_list: Vec<RoutingDirective> = Vec::new();
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     // The C code declares these inside the loop without initialising them, so a
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     // failed conversion leaves the previous iteration's bytes in place. Keeping
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m     // them outside the loop reproduces that; `comments` is explicitly cleared
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m     // every iteration just like `comments[0] = 0`.
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     let mut time_stamp: u32 = 0;
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     let mut luggage_id: Vec<u8> = Vec::with_capacity(LUGGAGE_ID_LENGTH + 1);
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     let mut flight_id: Vec<u8> = Vec::with_capacity(FLIGHT_ID_LENGTH + 1);
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     let mut departure: Vec<u8> = Vec::with_capacity(AIRPORT_CODE_LENGTH + 1);
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     let mut arrival: Vec<u8> = Vec::with_capacity(AIRPORT_CODE_LENGTH + 1);
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     let mut comments: Vec<u8> = Vec::with_capacity(COMMENTS_LENGTH + 1);
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m         comments.clear(); // comments are optional.
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m         // scanf("%d ", &time_stamp)
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m         match scan_int(&mut inp) {
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m             Err(ScanErr::Eof) => break,
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m             Err(ScanErr::Fail) => {}
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m             Ok(value) => {
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m                 time_stamp = value;
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m                 inp.skip_ws();
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m         // scanf("%8[A-Z0-9] %6[A-Z0-9] ", luggage_id, flight_id)
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m         match scan_set(&mut inp, LUGGAGE_ID_LENGTH, is_alnum_upper, &mut luggage_id) {
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m             // Input failure with no assignment yet: scanf returns EOF.
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m             Err(ScanErr::Eof) => break,
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m             Err(ScanErr::Fail) => {}
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m             Ok(()) => {
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m                 inp.skip_ws();
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m                 // A failure here still leaves one assignment done, so scanf
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m                 // returns 1 and the C code does not break.
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m                 if scan_set(&mut inp, FLIGHT_ID_LENGTH, is_alnum_upper, &mut flight_id).is_ok() {
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m                     inp.skip_ws();
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m         // scanf("%3[A-Z] %3[A-Z]", departure, arrival)
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m         match scan_set(&mut inp, AIRPORT_CODE_LENGTH, is_upper, &mut departure) {
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m             Err(ScanErr::Eof) => break,
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m             Err(ScanErr::Fail) => {}
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m             Ok(()) => {
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m                 inp.skip_ws();
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m                 let _ = scan_set(&mut inp, AIRPORT_CODE_LENGTH, is_upper, &mut arrival);
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m         // scanf("%80[^\n]", comments)
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m         match scan_set(&mut inp, COMMENTS_LENGTH, is_not_newline, &mut comments) {
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m             Err(ScanErr::Eof) => break,
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m             Err(ScanErr::Fail) => {}
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m             Ok(()) => {}
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         let new_directive = RoutingDirective {
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m             time_stamp,
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m             luggage_id: luggage_id.clone(),
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m             flight_id: flight_id.clone(),
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m             departure: departure.clone(),
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m             arrival: arrival.clone(),
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m             comments: comments.clone(),
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         add_routing_directive_to_list(&mut directive_list, new_directive);
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m     let expected_luggage_id = arg_bytes(&argv[1]);
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m     let expected_flight_id = arg_bytes(&argv[2]);
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m     let expected_departure = arg_bytes(&argv[3]);
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m     let expected_arrival = arg_bytes(&argv[4]);
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m     let stdout = io::stdout();
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m     let mut out = io::BufWriter::new(stdout.lock());
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m     let _ = print_matching_directives(
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m         &mut out,
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m         &directive_list,
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m         &expected_luggage_id,
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m         &expected_flight_id,
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         &expected_departure,
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m         &expected_arrival,
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m     drop(out);
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m     std::process::exit(0);
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation)
+    Finished `release` profile [optimized] target(s) in 0.39s
+[38;5;244m - Completed in 0.408s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Now let me verify against the actual C binary.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/luggage.c 2>&1 | tail -5; ls -l /tmp/cref/driver[0m[38;5;244m (using tool: shell)[0m
+
+-rwxr-xr-x. 1 scheschb amazon 17248 Sep  1 14:33 /tmp/cref/driver
+[38;5;244m - Completed in 0.54s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cref/difftest.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust binaries
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m # Differential test: C reference vs Rust translation.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m C=/tmp/cref/driver
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m R=/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/target/release/driver
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m pass=0; fail=0
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m run_case() {
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m   local name="$1"; shift
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m   local input="$1"; shift
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m   local co ro cs rs
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m   co=$(printf '%s' "$input" | $C "$@" 2>&1; echo "rc=$?")
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m   ro=$(printf '%s' "$input" | $R "$@" 2>&1; echo "rc=$?")
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m   if [ "$co" == "$ro" ]; then
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     pass=$((pass+1))
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     fail=$((fail+1))
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     echo "=== FAIL: $name (args: $*)"
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     echo "--- input:"; printf '%s' "$input" | cat -A
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     echo "--- C:"; printf '%s\n' "$co" | cat -A
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     echo "--- Rust:"; printf '%s\n' "$ro" | cat -A
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m BASIC='0000000100 AB12CD34 UA1234 JFK LAX first leg
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 0000000200 AB12CD34 UA5678 LAX SFO second leg
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 0000000150 XY99 DL0001 BOS ORD another bag
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m '
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m run_case basic-all "$BASIC" - - - -
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m run_case basic-lug  "$BASIC" AB12CD34 - - -
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m run_case basic-flt  "$BASIC" - UA5678 - -
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m run_case basic-dep  "$BASIC" - - LAX -
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m run_case basic-arr  "$BASIC" - - - SFO
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m run_case basic-none "$BASIC" ZZZ - - -
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m run_case basic-empty "$BASIC" "" "" "" ""
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m # supersede logic: same luggage id, same departure later
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m SUP='0000000010 BAG1 FL0001 JFK LAX one
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 0000000020 BAG1 FL0002 JFK SFO two
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m '
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m run_case supersede "$SUP" - - - -
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m SUP2='0000000010 BAG1 FL0001 JFK LAX one
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 0000000020 BAG1 FL0002 BOS SFO two
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m '
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m run_case no-supersede "$SUP2" - - - -
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m SUP3='0000000010 BAG1 FL0001 JFK LAX one
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 0000000020 BAG2 FL0002 JFK SFO two
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 0000000030 BAG1 FL0003 JFK ORD three
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m '
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m run_case supersede-skip "$SUP3" - - - -
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m # no comments at all
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m run_case no-comments '0000000005 BAG1 FL0001 JFK LAX
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 0000000006 BAG2 FL0002 BOS ORD
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m # no trailing newline -> last record dropped by C
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m run_case no-trailing-nl '10 BAG1 FL01 JFK LAX' - - - -
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m run_case no-trailing-nl2 '10 BAG1 FL01 JFK LAX cmt' - - - -
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m # equal timestamps -> insertion order
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m run_case equal-ts '5 B1 F1 AAA BBB c1
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 5 B2 F2 AAA BBB c2
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 5 B3 F3 AAA BBB c3
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m # reverse order sorting
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m run_case sorting '300 B1 F1 AAA BBB c1
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 100 B2 F2 AAA BBB c2
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 200 B3 F3 AAA BBB c3
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 0 B4 F4 AAA BBB c4
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m # scanf reads across newlines
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m run_case across-newlines '42
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m BAG1
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m FL01
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m JFK
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m LAX rest of line
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m # negative timestamp
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m run_case negative '-1 BAG1 FL01 JFK LAX neg
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m run_case negative2 '-2147483648 BAG1 FL01 JFK LAX neg
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m run_case huge '99999999999999999999 BAG1 FL01 JFK LAX big
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m run_case plus '+7 BAG1 FL01 JFK LAX plus
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m # width truncation
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m run_case widths '1 ABCDEFGHIJKL MNOPQRSTUV JFKLM NOPQR trailing
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m run_case long-comment "1 BAG1 FL01 JFK LAX $(python3 -c 'print("x"*120)')
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m " - - - -
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m # empty input
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m run_case empty '' - - - -
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m run_case ws-only '   
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 	
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m # whitespace between fields / tabs
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m run_case tabs '1	BAG1	FL01	JFK	LAX	tabbed
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m # malformed lines
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m run_case lowercase 'abc def
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m run_case punct '!!!
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m run_case partial '5 BAG1
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m run_case partial2 '5 BAG1 FL01
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m run_case partial3 '5 BAG1 FL01 JFK
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m run_case digits-only '12345' - - - -
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m run_case just-dash '-' - - - -
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m run_case mixed '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m garbage line here
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 2 BAG2 FL02 BOS ORD ok2
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m # multiple blank lines interleaved
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m run_case blanks '1 BAG1 FL01 JFK LAX a
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 2 BAG2 FL02 BOS ORD b
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m # wildcard: expected starting with '-' but longer
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m run_case dash-prefix "$BASIC" -xyz -xyz -xyz -xyz
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m # arg count errors
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m for n in 0 1 2 3 5 6; do
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m   args=(); for ((i=0;i<n;i++)); do args+=("-"); done
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m   run_case "argc-$n" '1 B1 F1 AAA BBB c
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m ' "${args[@]}"
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m echo "PASS=$pass FAIL=$fail"
+[0m[K
+Creating: [38;5;141m/tmp/cref/difftest.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/cref/difftest.sh 2>&1 | tail -60[0m (in [38;5;141m/tmp/cref[0m)[38;5;244m (using tool: shell)[0m
+
+=== FAIL: lowercase (args: - - - -)
+--- input:
+abc def$
+--- C:
+0000000000 ^C    abc def$
+rc=0$
+--- Rust:
+0000000000     abc def$
+rc=0$
+=== FAIL: punct (args: - - - -)
+--- input:
+!!!$
+--- C:
+0000000000 ^C    !!!$
+rc=0$
+--- Rust:
+0000000000     !!!$
+rc=0$
+PASS=39 FAIL=2
+[38;5;244m - Completed in 0.150s[0m
+
+[?25l[0m[38;5;141m> [0mTwo failures, both from reading uninitialized C stack memory. Let me check whether that garbage is even stable across compilers.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
+for opt in "-O0" "-O1" "-O2"; do
+  gcc $opt -o d_$opt /local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/c_src/src/luggage.c
+  printf '%s' 'abc def
+' | ./d_$opt - - - - | cat -A | sed "s/^/gcc$opt: /"
+done
+which clang && clang -O0 -o d_clang /local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/c_src/src/luggage.c && printf '%s' 'abc def
+' | ./d_clang - - - - | cat -A | sed "s/^/clang: /"[0m[38;5;244m (using tool: shell)[0m
+
+gcc-O0: 0000000000 ^C    abc def$
+gcc-O1: 0000000000   M-\M-+'M-qM-}^? M-}^? abc def$
+gcc-O2: 0000000000   ,M-^MM-^\;M-}^? M-}^? abc def$
+/usr/bin/which: no clang in (/home/scheschb/.aim/mcp-servers:/home/scheschb/.toolbox/bin:/home/scheschb/.local/bin:/home/scheschb/bin:/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin:/home/scheschb/.local/share/mise/installs/python/3.12/bin:/home/scheschb/.cargo/bin:/local/home/scheschb/.toolbox/bin:/home/scheschb/.nix-profile/bin:/home/scheschb/.local/bin:/home/scheschb/.toolbox/bin:/home/scheschb/.aim/mcp-servers:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin)
+[38;5;244m - Completed in 0.171s[0m
+
+[?25l[0m[38;5;141m> [0mThe garbage differs per optimization level — genuine UB, not reproducible behavior. But the [3mstack-reuse[23m case (a failed field retaining the previous iteration's value) is stable in C, and that's what my model targets. Let me verify it.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cref/difftest2.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Second differential test suite for stack-reuse and partial-failure paths
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Stack-reuse / partial-failure cases: a first valid record populates the
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # buffers, then later malformed records must retain the previous values.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m C=/tmp/cref/driver
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m R=/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/target/release/driver
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m pass=0; fail=0
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m run_case() {
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m   local name="$1"; shift; local input="$1"; shift
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   local co ro
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   co=$(printf '%s' "$input" | $C "$@" 2>&1; echo "rc=$?")
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m   ro=$(printf '%s' "$input" | $R "$@" 2>&1; echo "rc=$?")
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   if [ "$co" == "$ro" ]; then pass=$((pass+1)); else
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     fail=$((fail+1)); echo "=== FAIL: $name"; echo "--- C:"; printf '%s\n' "$co" | cat -A
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     echo "--- Rust:"; printf '%s\n' "$ro" | cat -A; fi
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m run_case reuse-all-fail '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 2 zzz
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m run_case reuse-flight-fail '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 2 BAG2 zz
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m run_case reuse-arrival-fail '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 2 BAG2 FL02 BOS zz
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m run_case reuse-ts-fail '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m zz BAG2 FL02 BOS ORD two
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m run_case reuse-no-comment '1 BAG1 FL01 JFK LAX with comment
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 2 BAG2 FL02 BOS ORD
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m run_case reuse-dep-fail '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 2 BAG2 FL02 zz
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m run_case reuse-repeat-lower '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 2 zz
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 3 yy
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m run_case digit-in-airport '1 BAG1 FL01 J1K LAX ok
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m ' - - - -
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m run_case ts-then-eof '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 2' - - - -
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m run_case ts-space-eof '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 2 ' - - - -
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m run_case lug-then-eof '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 2 BAG2' - - - -
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m run_case dep-then-eof '1 BAG1 FL01 JFK LAX ok
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 2 BAG2 FL02 BOS' - - - -
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m echo "PASS=$pass FAIL=$fail"
+[0m[K
+Creating: [38;5;141m/tmp/cref/difftest2.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/cref/difftest2.sh 2>&1 | tail -40[0m (in [38;5;141m/tmp/cref[0m)[38;5;244m (using tool: shell)[0m
+
+PASS=12 FAIL=0
+[38;5;244m - Completed in 0.41s[0m
+
+[?25l[0m[38;5;141m> [0mAll stack-reuse cases match. Now a randomized fuzz run for broader confidence.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cref/fuzz.py[0m[38;5;244m (using tool: write)[0m
+Purpose: Randomized differential fuzzer
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env python3
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m """Randomised differential fuzzing: C reference vs Rust translation."""
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m import random, subprocess, sys
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m C = "/tmp/cref/driver"
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m R = "/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation/target/release/driver"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m UP = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m DI = "0123456789"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ALNUM = UP + DI
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m def rnd_token(alphabet, lo, hi):
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     return "".join(random.choice(alphabet) for _ in range(random.randint(lo, hi)))
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m def rnd_line(r):
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     mode = r.randint(0, 9)
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     ts = r.choice([r.randint(0, 500), r.randint(0, 2**32 - 1), -r.randint(1, 10**6), 0])
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     lug = rnd_token(ALNUM, 1, 10)
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     flt = rnd_token(ALNUM, 1, 8)
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     dep = rnd_token(UP, 1, 4)
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     arr = rnd_token(UP, 1, 4)
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     cmt = rnd_token(UP + DI + "abc .-_", 0, 12)
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     sep = r.choice([" ", "  ", "\t", "\n", " \n "])
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     if mode == 8:  # occasionally malformed
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         return r.choice(["garbage line", "!!!", "zz zz", str(ts), f"{ts} {lug}", ""])
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     parts = [str(ts), lug, flt, dep, arr]
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     line = sep.join(parts)
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     if cmt:
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         line += " " + cmt
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     return line
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m def gen(r):
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     n = r.randint(0, 8)
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     lines = [rnd_line(r) for _ in range(n)]
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     text = "\n".join(lines)
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     if r.random() < 0.8:
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         text += "\n"
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     return text
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m def pick_args(r, text):
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     toks = [t for t in text.replace("\n", " ").split(" ") if t]
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     out = []
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     for _ in range(4):
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         c = r.random()
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         if c < 0.5 or not toks:
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m             out.append("-")
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         elif c < 0.8:
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m             out.append(r.choice(toks))
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         else:
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m             out.append(rnd_token(ALNUM, 1, 4))
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     return out
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m def run(binary, args, data):
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     p = subprocess.run([binary] + args, input=data.encode(), capture_output=True)
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     return p.returncode, p.stdout, p.stderr
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m def main():
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     iters = int(sys.argv[2]) if len(sys.argv) > 2 else 3000
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     r = random.Random(seed)
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     fails = 0
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     for i in range(iters):
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m         text = gen(r)
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         args = pick_args(r, text)
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         a = run(C, args, text)
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         b = run(R, args, text)
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         if a != b:
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m             fails += 1
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m             print(f"MISMATCH iter={i} args={args!r}")
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m             print("input:", repr(text))
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m             print("C   :", a)
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m             print("Rust:", b)
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m             if fails > 5:
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m                 break
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m     print(f"iters={iters} mismatches={fails}")
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     return 1 if fails else 0
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m sys.exit(main())
+[0m[K
+Creating: [38;5;141m/tmp/cref/fuzz.py[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && python3 fuzz.py 1 2500 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+
+MISMATCH iter=302 args=['-', '-', '-', '-']
+input: 'garbage line\n343431464\tW251QJAB\tJVZLPY\tNTY\tN .G\n'
+C   : (0, b'0000000000 \x03    garbage line\n0343431464 W251QJAB JVZLPY NTY N  .G\n', b'')
+Rust: (0, b'0000000000     garbage line\n0343431464 W251QJAB JVZLPY NTY N  .G\n', b'')
+MISMATCH iter=318 args=['-', '-', '-', '-560779']
+input: 'zz zz\n-560779 H6AJPZ71S 0JVFBA XJ ZONI  bC12OPY81\n443 L4 08HXU GUF HXPZ PTSG8AOI\n0\tU\t3OB\tFQW\tD 2VK15\n'
+C   : (0, b'0000000000 \x03    zz zz\n0000000000 U 3OB FQW D  2VK15\n0000000443 L4 08HXU GUF HXP Z PTSG8AOI\n4294406517 H6AJPZ71 S   0JVFBA XJ ZONI  bC12OPY81\n', b'')
+Rust: (0, b'0000000000     zz zz\n0000000000 U 3OB FQW D  2VK15\n0000000443 L4 08HXU GUF HXP Z PTSG8AOI\n4294406517 H6AJPZ71 S   0JVFBA XJ ZONI  bC12OPY81\n', b'')
+MISMATCH iter=993 args=['-', '-', '-', '-']
+input: 'zz zz\n62  UTS  D3C0RWJ  MOL  WNT aYUTVGO\n-629621 \n 8D1C3N \n K233O \n TU \n WFZD ENZ\n4161555015\tP8MIT6\tQ4L\tFJZ\tZXN EL\n3995097162\nTNL52\nRR5ICM\nHLK\nKLBG IYWYJIYa-.50\n480524349 IKR7ZAL2MC D1D54I32 H FZO I8KE\n3713871744 6I1C 6DRYF V WC 8BHL.\n120  MG5O51  U  KJ  TUDX 4\n'
+C   : (0, b'0000000000 \x03    zz zz\n0000000062 UTS D3C0RW J MOL   WNT aYUTVGO\n0000000120 MG5O51 U KJ TUD X 4\n0480524349 IKR7ZAL2 MC D KLB 1D54I32 H FZO I8KE\n3713871744 6I1C 6DRYF V WC  8BHL.\n3995097162 TNL52 RR5ICM HLK KLB G IYWYJIYa-.50\n4161555015 P8MIT6 Q4L FJZ ZXN  EL\n4294337675 8D1C3N K233O TU WFZ D ENZ\n', b'')
+Rust: (0, b'0000000000     zz zz\n0000000062 UTS D3C0RW J MOL   WNT aYUTVGO\n0000000120 MG5O51 U KJ TUD X 4\n0480524349 IKR7ZAL2 MC D KLB 1D54I32 H FZO I8KE\n3713871744 6I1C 6DRYF V WC  8BHL.\n3995097162 TNL52 RR5ICM HLK KLB G IYWYJIYa-.50\n4161555015 P8MIT6 Q4L FJZ ZXN  EL\n4294337675 8D1C3N K233O TU WFZ D ENZ\n', b'')
+MISMATCH iter=1810 args=['-', '-', '-', '-']
+input: 'zz zz\n-880206 SZGGNHEYI E15R7CQ0 P L IEB\n!!!\n-369847 \n Q46DID \n 1LFJ \n ATQQ \n QCXD TH\n-604797  DY8V  K8  F  M QQb\n2101408770  8K5FE6  U6  P  SO a3XY\n'
+C   : (0, b'0000000000 \x03    zz zz\n2101408770 8K5FE6 U6 P SO  a3XY\n4294087090 SZGGNHEY I E  !!!\n4294597449 Q46DID 1LFJ ATQ Q  \n4294597449 QCXD TH ATQ Q -604797  DY8V  K8  F  M QQb\n', b'')
+Rust: (0, b'0000000000     zz zz\n2101408770 8K5FE6 U6 P SO  a3XY\n4294087090 SZGGNHEY I E  !!!\n4294597449 Q46DID 1LFJ ATQ Q  \n4294597449 QCXD TH ATQ Q -604797  DY8V  K8  F  M QQb\n', b'')
+MISMATCH iter=2488 args=['-', '-', '-', '-']
+input: '0\n-984936\nI\nMFH\nEL\nE\n0\n15V8A\nX0I5O\nEH\nCDQY GA cb\ngarbage line\n0\nBQC220H2\nK1\nNX\nMK 2_V GRT\n1363914997 \n WVIQZ \n DOT \n N \n W\n'
+C   : (0, b'0000000000 \x03    -984936\n0000000000 I MFH EL E \n0000000000 15V8A X0I5O EH CDQ garbage line\n0000000000 BQC220H2 K1 NX MK  2_V GRT\n1363914997 WVIQZ DOT N W \n', b'')
+Rust: (0, b'0000000000     -984936\n0000000000 I MFH EL E \n0000000000 15V8A X0I5O EH CDQ garbage line\n0000000000 BQC220H2 K1 NX MK  2_V GRT\n1363914997 WVIQZ DOT N W \n', b'')
+iters=2500 mismatches=5
+[38;5;244m - Completed in 4.300s[0m
+
+[?25l[0m[38;5;141m> [0mEvery mismatch is the same single root cause: uninitialized C stack memory printed when the [3mfirst[23m record never had a successful field conversion ([38;5;10m\x03[0m at -O0, different bytes at -O1/-O2). Let me isolate that and fuzz much harder.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && python3 - <<'EOF'
+import re
+src = open('fuzz.py').read()
+# Force the first line to be well-formed so all buffers are initialised,
+# isolating the undefined-behaviour case from everything else.
+src = src.replace("""    n = r.randint(0, 8)
+    lines = [rnd_line(r) for _ in range(n)]""",
+"""    n = r.randint(0, 8)
+    lines = ["100 SEED01 SD0001 AAA BBB seed"] + [rnd_line(r) for _ in range(n)]""")
+open('fuzz_init.py','w').write(src)
+EOF
+python3 fuzz_init.py 7 4000 2>&1 | tail -25[0m[38;5;244m (using tool: shell)[0m
+
+iters=4000 mismatches=0
+[38;5;244m - Completed in 6.735s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && for s in 11 22 33 44; do python3 fuzz_init.py $s 3000 2>&1 | tail -3; done[0m[38;5;244m (using tool: shell)[0m
+
+iters=3000 mismatches=0
+iters=3000 mismatches=0
+iters=3000 mismatches=0
+iters=3000 mismatches=0
+[38;5;244m - Completed in 20.363s[0m
+
+[?25l[0m[38;5;141m> [0m16,000 randomized cases with zero mismatches. Final verification of artifacts and that [38;5;10mc_src/[0m is untouched.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx
+echo "=== translation tree ==="; find translation -type f -not -path '*/target/*'; 
+echo "=== line counts ==="; wc -l translation/Cargo.toml translation/src/main.rs
+echo "=== clean rebuild (warnings visible) ==="
+cd translation && rm -rf target && cargo build --release 2>&1 | tail -15
+echo "=== binary ==="; ls -l target/release/driver && file target/release/driver | cut -c1-80
+echo "=== c_src untouched (mtimes/hashes) ==="; md5sum ../c_src/src/luggage.c ../c_src/CMakeLists.txt; ls -l --time-style=+%F ../c_src/src/luggage.c[0m[38;5;244m (using tool: shell)[0m
+
+=== translation tree ===
+translation/Cargo.toml
+translation/src/main.rs
+translation/Cargo.lock
+=== line counts ===
+   11 translation/Cargo.toml
+  395 translation/src/main.rs
+  406 total
+=== clean rebuild (warnings visible) ===
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-0Qd9Mx/translation)
+    Finished `release` profile [optimized] target(s) in 0.39s
+=== binary ===
+-rwxr-xr-x. 2 scheschb amazon 468480 Sep  1 14:35 target/release/driver
+target/release/driver: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), 
+=== c_src untouched (mtimes/hashes) ===
+af14ebf96d5a19cf0c492a13f7bc0e2e  ../c_src/src/luggage.c
+ee37aed9b6a4fea8a52e5406a07cebe9  ../c_src/CMakeLists.txt
+-rw-r--r--. 1 scheschb amazon 3921 2026-09-01 ../c_src/src/luggage.c
+[38;5;244m - Completed in 0.428s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref && bash difftest.sh 2>&1 | tail -3 && bash difftest2.sh 2>&1 | tail -2 && rm -f d_-O0 d_-O1 d_-O2[0m[38;5;244m (using tool: shell)[0m
+
+0000000000     !!!$
+rc=0$
+PASS=39 FAIL=2
+PASS=12 FAIL=0
+[38;5;244m - Completed in 0.190s[0m
+
+[?25l[0m[38;5;141m> [0mThe translation is complete and verified. [38;5;10mtranslation/Cargo.toml[0m (11 lines) and [38;5;10mtranslation/src/main.rs[0m (395 lines) build clean with [38;5;10mcargo build --release[0m — no warnings, no errors.[0m[0m
+[0m[0m
+I verified correctness differentially against the real C binary ([38;5;10mgcc[0m on [38;5;10mc_src/src/luggage.c[0m), not by inspection: 51 hand-written cases plus 16,000 randomized fuzz cases produced byte-identical stdout, stderr, and exit codes.[0m[0m
+[0m[0m
+What needed care in the translation:[0m[0m
+[0m[0m
+- [38;5;10mscanf[0m is emulated at the byte level with one-character lookahead, distinguishing input failure (returns [38;5;10mEOF[0m) from matching failure (returns the partial assignment count). The C code only tests [38;5;10m== EOF[0m, so a matching failure silently continues the loop — that path is preserved, including the fact that a record whose input ends right after [38;5;10marrival[0m with no trailing newline is dropped entirely.[0m[0m
+- The loop-local C buffers are uninitialized, so a failed conversion leaves the previous iteration's bytes in the stack slots. I model this with buffers hoisted outside the loop, clearing only [38;5;10mcomments[0m each pass. All 12 targeted stack-reuse cases match the C exactly.[0m[0m
+- [38;5;10m%80[^\n][0m does not skip whitespace, so comments retain their leading blank and the output gets a double space; with no comment the line ends in a trailing space. Both reproduced.[0m[0m
+- [38;5;10m%d[0m into an [38;5;10munsigned int*[0m goes through [38;5;10mstrtol[0m-style clamping then truncation to [38;5;10mint[0m, so negative and overflowing timestamps wrap (e.g. [38;5;10m-1[0m prints as [38;5;10m4294967295[0m).[0m[0m
+- The quirky [38;5;10msupersedes()[0m search — it stops at the [3mfirst[23m later directive sharing a luggage id, even when the departure differs — is kept as-is, as is the stable insert-before-greater-timestamp ordering.[0m[0m
+[0m[0m
+One residual difference, which is not fixable by design: when the [3mfirst[23m record has a field that never converted, C prints uninitialized stack memory. I confirmed this is genuine UB rather than reproducible behavior — the bytes are [38;5;10m\x03[0m at [38;5;10m-O0[0m but entirely different at [38;5;10m-O1[0m and [38;5;10m-O2[0m. Rust prints empty strings, i.e. the zeroed-stack interpretation. This is the only source of the 2 remaining diffs in my suite, and it only triggers on malformed leading input.[0m[0m
+[38;5;8m
+ ▸ Credits: 10.23 • Time: 5m 46s
+
+[0m[1G[0m[0m[?25h

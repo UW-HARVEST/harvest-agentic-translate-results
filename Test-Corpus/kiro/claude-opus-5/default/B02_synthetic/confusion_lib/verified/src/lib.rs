@@ -1,63 +1,55 @@
 // Rust translation of c_src/src/lib.c
 //
-// Original C code: Copyright 2025 MIT Lincoln Laboratory (MIT license, see
-// c_src/src/lib.c for the full notice).
+// Original copyright notice from the C source:
 //
-// The translation is deliberately faithful: it reproduces the original
-// behaviour byte-for-byte, including quirks such as C's truncating `%`
-// operator (so `param4 % 4` can be negative and fall through the `switch`
-// without matching any `case`), signed `char`, x86-64 float-to-int
-// conversion semantics, and the exact ordering of the `printf` calls.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// All formatted output goes through the C library's `printf`/`snprintf` so
-// that the emitted bytes and the stdout buffering behaviour are identical to
-// the original.
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_float, c_int, c_uint, c_void};
+#![allow(non_snake_case)]
+#![allow(dead_code)]
+
+use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
 
 // ---------------------------------------------------------------------------
-// libc bindings
+// libc bindings.
+//
+// The C library performs all of its I/O through `printf`/`snprintf` and all of
+// its memory management through `malloc`/`free`.  We bind directly to the same
+// libc entry points so that formatting, stdout buffering and allocation
+// failure behaviour are bit-for-bit identical to the original.
 // ---------------------------------------------------------------------------
-
 unsafe extern "C" {
-    fn printf(fmt: *const c_char, ...) -> c_int;
-    fn snprintf(buf: *mut c_char, size: usize, fmt: *const c_char, ...) -> c_int;
     fn malloc(size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
     fn strlen(s: *const c_char) -> usize;
-    fn memchr(s: *const c_void, c: c_int, n: usize) -> *mut c_void;
-}
-
-// Format strings, expanded exactly as the C preprocessor would expand
-// DEBUG_VAR / LOG_OPERATION.
-const FMT_DEBUG_PARAM1: &[u8] = b"Debug: param1 = %d\n\0";
-const FMT_DEBUG_PARAM2: &[u8] = b"Debug: param2 = %d\n\0";
-const FMT_DEBUG_PARAM3: &[u8] = b"Debug: param3 = %d\n\0";
-const FMT_DEBUG_PARAM4: &[u8] = b"Debug: param4 = %d\n\0";
-const FMT_DEBUG_COUNTER: &[u8] = b"Debug: state->flags.counter = %d\n\0";
-const FMT_LOG_MEMCHR: &[u8] = b"Operation: memchr_found with value %d\n\0";
-const FMT_ERR_STATE_ALLOC: &[u8] = b"Error: Failed to allocate memory for state\n\0";
-const FMT_ERR_BUFFER_ALLOC: &[u8] = b"Error: Failed to allocate buffer\n\0";
-const FMT_ERR_NULL_PROCESS: &[u8] = b"Error: Null pointer in process_buffer\n\0";
-const FMT_STATE_BUFFER: &[u8] = b"State:%d:Mode:%d\0";
-const FMT_BIT_FIELDS: &[u8] = b"Bit fields - flag1:%d flag2:%d flag3:%d mode:%d\n\0";
-const FMT_SET_AS_INT: &[u8] = b"Set as int: %d\n\0";
-const FMT_READ_AS_FLOAT: &[u8] = b"Read as float: %f\n\0";
-const FMT_READ_AS_UINT: &[u8] = b"Read as uint: %u\n\0";
-const FMT_READ_AS_BYTES: &[u8] = b"Read as bytes: [%d, %d, %d, %d]\n\0";
-const FMT_FINAL_RESULT: &[u8] = b"Final result: %d\n\0";
-
-#[inline]
-fn cstr(bytes: &'static [u8]) -> *const c_char {
-    bytes.as_ptr() as *const c_char
+    fn printf(fmt: *const c_char, ...) -> c_int;
+    fn snprintf(s: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
 }
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/// Mirrors the C bit-field struct:
-///
 /// ```c
 /// typedef struct {
 ///     unsigned int flag1 : 1;
@@ -70,120 +62,100 @@ fn cstr(bytes: &'static [u8]) -> *const c_char {
 /// } PackedFlags;
 /// ```
 ///
-/// GCC/Clang on little-endian targets pack these least-significant-bit first
-/// into a single 4-byte storage unit, which is what the bit offsets below
-/// encode.
+/// The System V x86-64 ABI (as implemented by gcc/clang) allocates these
+/// bit-fields from the least significant bit of a single 4-byte storage unit:
+///
+/// | field    | bits  | mask       |
+/// |----------|-------|------------|
+/// | flag1    | 0     | 0x00000001 |
+/// | flag2    | 1     | 0x00000002 |
+/// | flag3    | 2     | 0x00000004 |
+/// | counter  | 3..7  | 0x000000f8 |
+/// | mode     | 8..10 | 0x00000700 |
+/// | status   | 11..15| 0x0000f800 |
+/// | reserved | 16..31| 0xffff0000 |
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct PackedFlags {
-    bits: u32,
+#[derive(Copy, Clone, Default)]
+struct PackedFlags {
+    raw: c_uint,
+}
+
+macro_rules! bitfield {
+    ($get:ident, $set:ident, $shift:expr, $width:expr) => {
+        #[inline]
+        fn $get(&self) -> c_uint {
+            (self.raw >> $shift) & ((1u32 << $width) - 1)
+        }
+        #[inline]
+        fn $set(&mut self, value: c_uint) {
+            let mask: c_uint = ((1u32 << $width) - 1) << $shift;
+            self.raw = (self.raw & !mask) | ((value << $shift) & mask);
+        }
+    };
 }
 
 impl PackedFlags {
-    const OFF_FLAG1: u32 = 0;
-    const OFF_FLAG2: u32 = 1;
-    const OFF_FLAG3: u32 = 2;
-    const OFF_COUNTER: u32 = 3;
-    const OFF_MODE: u32 = 8;
-    const OFF_STATUS: u32 = 11;
-    const OFF_RESERVED: u32 = 16;
-
-    #[inline]
-    fn get(&self, offset: u32, width: u32) -> c_uint {
-        let mask: u32 = if width >= 32 { u32::MAX } else { (1u32 << width) - 1 };
-        (self.bits >> offset) & mask
-    }
-
-    #[inline]
-    fn set(&mut self, offset: u32, width: u32, value: c_uint) {
-        let mask: u32 = if width >= 32 { u32::MAX } else { (1u32 << width) - 1 };
-        self.bits = (self.bits & !(mask << offset)) | ((value & mask) << offset);
-    }
-
-    #[inline]
-    fn flag1(&self) -> c_uint {
-        self.get(Self::OFF_FLAG1, 1)
-    }
-    #[inline]
-    fn set_flag1(&mut self, v: c_uint) {
-        self.set(Self::OFF_FLAG1, 1, v)
-    }
-    #[inline]
-    fn flag2(&self) -> c_uint {
-        self.get(Self::OFF_FLAG2, 1)
-    }
-    #[inline]
-    fn set_flag2(&mut self, v: c_uint) {
-        self.set(Self::OFF_FLAG2, 1, v)
-    }
-    #[inline]
-    fn flag3(&self) -> c_uint {
-        self.get(Self::OFF_FLAG3, 1)
-    }
-    #[inline]
-    fn set_flag3(&mut self, v: c_uint) {
-        self.set(Self::OFF_FLAG3, 1, v)
-    }
-    #[inline]
-    fn counter(&self) -> c_uint {
-        self.get(Self::OFF_COUNTER, 5)
-    }
-    #[inline]
-    fn set_counter(&mut self, v: c_uint) {
-        self.set(Self::OFF_COUNTER, 5, v)
-    }
-    #[inline]
-    fn mode(&self) -> c_uint {
-        self.get(Self::OFF_MODE, 3)
-    }
-    #[inline]
-    fn set_mode(&mut self, v: c_uint) {
-        self.set(Self::OFF_MODE, 3, v)
-    }
-    #[inline]
-    fn set_status(&mut self, v: c_uint) {
-        self.set(Self::OFF_STATUS, 5, v)
-    }
-    #[inline]
-    fn set_reserved(&mut self, v: c_uint) {
-        self.set(Self::OFF_RESERVED, 16, v)
-    }
+    bitfield!(flag1, set_flag1, 0, 1);
+    bitfield!(flag2, set_flag2, 1, 1);
+    bitfield!(flag3, set_flag3, 2, 1);
+    bitfield!(counter, set_counter, 3, 5);
+    bitfield!(mode, set_mode, 8, 3);
+    bitfield!(status, set_status, 11, 5);
+    bitfield!(reserved, set_reserved, 16, 16);
 }
 
-/// Mirrors the C union; all members are 4 bytes wide, so a single `u32`
-/// storage unit reproduces both the layout and the aliasing behaviour.
+/// ```c
+/// typedef union {
+///     int int_val;
+///     float float_val;
+///     unsigned int uint_val;
+///     char bytes[4];
+/// } TypeConfusion;
+/// ```
+///
+/// All members are 4 bytes wide, so the union is modelled as a single 4-byte
+/// storage unit that is reinterpreted on access.
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct TypeConfusion {
-    storage: u32,
+#[derive(Copy, Clone, Default)]
+struct TypeConfusion {
+    raw: c_uint,
 }
 
 impl TypeConfusion {
     #[inline]
     fn int_val(&self) -> c_int {
-        self.storage as c_int
+        self.raw as c_int
     }
     #[inline]
-    fn set_int_val(&mut self, v: c_int) {
-        self.storage = v as u32;
+    fn set_int_val(&mut self, value: c_int) {
+        self.raw = value as c_uint;
     }
     #[inline]
-    fn float_val(&self) -> c_float {
-        f32::from_bits(self.storage)
+    fn float_val(&self) -> f32 {
+        f32::from_bits(self.raw)
     }
     #[inline]
     fn uint_val(&self) -> c_uint {
-        self.storage
+        self.raw
     }
-    /// `char` is signed on the x86-64 SysV ABI, and the bytes are stored
-    /// little-endian.
+    /// `bytes[i]` — `char` is signed on x86-64 Linux, and the target is
+    /// little-endian, so byte `i` is bits `8*i .. 8*i+7`.
     #[inline]
-    fn bytes(&self) -> [i8; 4] {
-        let b = self.storage.to_le_bytes();
-        [b[0] as i8, b[1] as i8, b[2] as i8, b[3] as i8]
+    fn byte(&self, i: usize) -> c_char {
+        (self.raw >> (8 * i)) as u8 as c_char
     }
 }
 
+/// ```c
+/// typedef struct {
+///     PackedFlags flags;
+///     TypeConfusion data;
+///     char* buffer;
+///     int capacity;
+/// } ProcessState;
+/// ```
+///
+/// Verified layout: size 24, offsets flags=0, data=4, buffer=8, capacity=16.
 #[repr(C)]
 pub struct ProcessState {
     flags: PackedFlags,
@@ -196,17 +168,19 @@ pub struct ProcessState {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Reproduces the x86-64 `cvttss2si` behaviour used by GCC/Clang for a
-/// `(int)` cast of a `float`: truncate towards zero, and yield `INT_MIN`
-/// ("integer indefinite") for NaN or out-of-range values. Rust's `as i32`
-/// saturates instead, so it cannot be used directly here.
+/// Emulates the x86 `cvttss2si` instruction that gcc emits for
+/// `(int)some_float`.  Truncates toward zero; values that are NaN or outside
+/// the range of `int` yield the "integer indefinite" value `INT_MIN`.
+///
+/// Rust's `as` cast saturates instead, so it cannot be used directly.
 #[inline]
-fn float_to_int_trunc(v: c_float) -> c_int {
+fn f32_to_c_int_trunc(v: f32) -> c_int {
     if v.is_nan() {
         return c_int::MIN;
     }
     let t = v.trunc();
-    // 2147483648.0 is exactly representable as f32; INT_MAX is not.
+    // -2^31 is exactly representable as f32; 2^31 is the first f32 above the
+    // representable range of `int`.
     if t >= -2147483648.0f32 && t < 2147483648.0f32 {
         t as c_int
     } else {
@@ -215,160 +189,208 @@ fn float_to_int_trunc(v: c_float) -> c_int {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public ABI
 // ---------------------------------------------------------------------------
 
+/// ```c
+/// ProcessState* create_state(int initial_val, int capacity);
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn create_state(initial_val: c_int, capacity: c_int) -> *mut ProcessState {
-    let state = malloc(core::mem::size_of::<ProcessState>()) as *mut ProcessState;
+    let state = unsafe { malloc(size_of::<ProcessState>()) } as *mut ProcessState;
 
     if state.is_null() {
-        printf(cstr(FMT_ERR_STATE_ALLOC));
-        return core::ptr::null_mut();
+        unsafe {
+            printf(c"Error: Failed to allocate memory for state\n".as_ptr());
+        }
+        return std::ptr::null_mut();
     }
 
-    let flags = &mut (*state).flags;
-    // The C code assigns each bit field individually over the freshly
-    // malloc'd (indeterminate) storage; `reserved` is the last write and
-    // covers the remaining bits, so the whole unit ends up defined.
-    flags.bits = 0;
-    flags.set_flag1(1);
-    flags.set_flag2(0);
-    flags.set_flag3(1);
-    flags.set_counter(0);
-    flags.set_mode(3);
-    flags.set_status(15);
-    flags.set_reserved(0);
+    let s = unsafe { &mut *state };
 
-    (*state).data.set_int_val(initial_val);
+    // The C code assigns every bit-field of `flags`, which together cover all
+    // 32 bits of the storage unit, so the resulting value is fully defined.
+    s.flags = PackedFlags { raw: 0 };
+    s.flags.set_flag1(1);
+    s.flags.set_flag2(0);
+    s.flags.set_flag3(1);
+    s.flags.set_counter(0);
+    s.flags.set_mode(3);
+    s.flags.set_status(15);
+    s.flags.set_reserved(0);
 
-    (*state).capacity = capacity;
-    // `malloc(capacity)` converts the (possibly negative) int to size_t.
-    (*state).buffer = malloc(capacity as usize) as *mut c_char;
+    s.data = TypeConfusion { raw: 0 };
+    s.data.set_int_val(initial_val);
 
-    if (*state).buffer.is_null() {
-        printf(cstr(FMT_ERR_BUFFER_ALLOC));
-        free(state as *mut c_void);
-        return core::ptr::null_mut();
+    s.capacity = capacity;
+    // `malloc(capacity)` — a negative `int` converts to a huge `size_t`, which
+    // makes the allocation fail.  Sign-extending `as usize` reproduces that.
+    s.buffer = unsafe { malloc(capacity as usize) } as *mut c_char;
+
+    if s.buffer.is_null() {
+        unsafe {
+            printf(c"Error: Failed to allocate buffer\n".as_ptr());
+            free(state as *mut c_void);
+        }
+        return std::ptr::null_mut();
     }
 
-    snprintf(
-        (*state).buffer,
-        capacity as usize,
-        cstr(FMT_STATE_BUFFER),
-        initial_val,
-        (*state).flags.mode(),
-    );
+    unsafe {
+        snprintf(
+            s.buffer,
+            capacity as usize,
+            c"State:%d:Mode:%d".as_ptr(),
+            initial_val,
+            s.flags.mode() as c_int,
+        );
+    }
 
     state
 }
 
+/// ```c
+/// void destroy_state(ProcessState* state);
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_state(state: *mut ProcessState) {
     if !state.is_null() {
-        if !(*state).buffer.is_null() {
-            free((*state).buffer as *mut c_void);
+        let s = unsafe { &mut *state };
+        if !s.buffer.is_null() {
+            unsafe { free(s.buffer as *mut c_void) };
         }
-        free(state as *mut c_void);
+        unsafe { free(state as *mut c_void) };
     }
 }
 
+/// ```c
+/// int process_buffer(ProcessState* state, char target);
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_buffer(state: *mut ProcessState, target: c_char) -> c_int {
-    if state.is_null() || (*state).buffer.is_null() {
-        printf(cstr(FMT_ERR_NULL_PROCESS));
+    if state.is_null() || unsafe { (*state).buffer }.is_null() {
+        unsafe {
+            printf(c"Error: Null pointer in process_buffer\n".as_ptr());
+        }
         return -1;
     }
 
+    let s = unsafe { &mut *state };
+
     let mut count: c_int = 0;
-    let mut ptr: *const c_char = (*state).buffer;
-    let mut remaining: usize = strlen((*state).buffer);
+    let mut ptr = s.buffer;
+    let mut remaining = unsafe { strlen(s.buffer) };
+
+    // `memchr` compares bytes as `unsigned char`.
+    let needle = target as u8;
 
     while remaining > 0 {
-        // memchr takes the character as an int and compares it as an
-        // unsigned char.
-        let found = memchr(ptr as *const c_void, target as c_int, remaining) as *const c_char;
+        let haystack = unsafe { std::slice::from_raw_parts(ptr as *const u8, remaining) };
 
-        if found.is_null() {
-            break;
+        let found = match haystack.iter().position(|&b| b == needle) {
+            Some(idx) => unsafe { ptr.add(idx) },
+            None => break,
+        };
+
+        count = count.wrapping_add(1);
+        unsafe {
+            printf(
+                c"Operation: memchr_found with value %d\n".as_ptr(),
+                count,
+            );
         }
 
-        count += 1;
-        printf(cstr(FMT_LOG_MEMCHR), count);
-
-        remaining -= (found.offset_from(ptr) + 1) as usize;
-        ptr = found.add(1);
+        let consumed = unsafe { found.offset_from(ptr) } as usize + 1;
+        remaining -= consumed;
+        ptr = unsafe { found.add(1) };
     }
 
     count
 }
 
+/// ```c
+/// void update_flags(ProcessState* state, int param);
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn update_flags(state: *mut ProcessState, param: c_int) {
     if state.is_null() {
         return;
     }
 
-    let flags = &mut (*state).flags;
+    let s = unsafe { &mut *state };
 
     // 5-bit counter
-    flags.set_counter((flags.counter().wrapping_add(1)) & 0x1F);
-    flags.set_flag1((param & 1) as c_uint);
-    flags.set_flag2(((param & 2) >> 1) as c_uint);
-    flags.set_flag3(((param & 4) >> 2) as c_uint);
-    // Arithmetic right shift, matching C's implementation-defined signed
-    // shift on GCC/Clang.
-    flags.set_mode(((param >> 3) & 0x7) as c_uint);
+    s.flags
+        .set_counter((s.flags.counter().wrapping_add(1)) & 0x1F);
+    s.flags.set_flag1((param & 1) as c_uint);
+    s.flags.set_flag2(((param & 2) >> 1) as c_uint);
+    s.flags.set_flag3(((param & 4) >> 2) as c_uint);
+    // `param >> 3` is an arithmetic shift for signed `int` on gcc.
+    s.flags.set_mode(((param >> 3) & 0x7) as c_uint);
 
-    printf(cstr(FMT_DEBUG_COUNTER), flags.counter() as c_int);
-    printf(
-        cstr(FMT_BIT_FIELDS),
-        flags.flag1() as c_int,
-        flags.flag2() as c_int,
-        flags.flag3() as c_int,
-        flags.mode() as c_int,
-    );
+    unsafe {
+        printf(
+            c"Debug: state->flags.counter = %d\n".as_ptr(),
+            s.flags.counter() as c_int,
+        );
+        printf(
+            c"Bit fields - flag1:%d flag2:%d flag3:%d mode:%d\n".as_ptr(),
+            s.flags.flag1() as c_int,
+            s.flags.flag2() as c_int,
+            s.flags.flag3() as c_int,
+            s.flags.mode() as c_int,
+        );
+    }
 }
 
+/// ```c
+/// int confuse_types(ProcessState* state, int operation);
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn confuse_types(state: *mut ProcessState, operation: c_int) -> c_int {
     if state.is_null() {
         return 0;
     }
 
+    let s = unsafe { &mut *state };
+
     let mut result: c_int = 0;
 
-    // A plain `match` would need an arm for every other value; the C switch
-    // simply falls through when `operation` matches nothing (which happens
-    // for the negative values C's `%` can produce).
     match operation {
         0 => {
-            (*state).data.set_int_val(1078530011);
-            printf(cstr(FMT_SET_AS_INT), (*state).data.int_val());
+            s.data.set_int_val(1078530011);
+            unsafe {
+                printf(c"Set as int: %d\n".as_ptr(), s.data.int_val());
+            }
         }
 
         1 => {
-            let f = (*state).data.float_val();
-            // Promoted to double for the variadic call, exactly as in C.
-            printf(cstr(FMT_READ_AS_FLOAT), f as f64);
-            result = float_to_int_trunc(f * 100.0f32);
+            unsafe {
+                printf(
+                    c"Read as float: %f\n".as_ptr(),
+                    s.data.float_val() as c_double,
+                );
+            }
+            result = f32_to_c_int_trunc(s.data.float_val() * 100.0f32);
         }
 
         2 => {
-            printf(cstr(FMT_READ_AS_UINT), (*state).data.uint_val());
-            result = ((*state).data.uint_val() & 0xFF) as c_int;
+            unsafe {
+                printf(c"Read as uint: %u\n".as_ptr(), s.data.uint_val());
+            }
+            result = (s.data.uint_val() & 0xFF) as c_int;
         }
 
         3 => {
-            let b = (*state).data.bytes();
-            printf(
-                cstr(FMT_READ_AS_BYTES),
-                b[0] as c_int,
-                b[1] as c_int,
-                b[2] as c_int,
-                b[3] as c_int,
-            );
-            result = (b[0] as c_int).wrapping_add(b[1] as c_int);
+            unsafe {
+                printf(
+                    c"Read as bytes: [%d, %d, %d, %d]\n".as_ptr(),
+                    s.data.byte(0) as c_int,
+                    s.data.byte(1) as c_int,
+                    s.data.byte(2) as c_int,
+                    s.data.byte(3) as c_int,
+                );
+            }
+            result = (s.data.byte(0) as c_int).wrapping_add(s.data.byte(1) as c_int);
         }
 
         _ => {}
@@ -377,6 +399,9 @@ pub unsafe extern "C" fn confuse_types(state: *mut ProcessState, operation: c_in
     result
 }
 
+/// ```c
+/// int confusion(int param1, int param2, int param3, int param4);
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn confusion(
     param1: c_int,
@@ -384,36 +409,39 @@ pub unsafe extern "C" fn confusion(
     param3: c_int,
     param4: c_int,
 ) -> c_int {
-    printf(cstr(FMT_DEBUG_PARAM1), param1);
-    printf(cstr(FMT_DEBUG_PARAM2), param2);
-    printf(cstr(FMT_DEBUG_PARAM3), param3);
-    printf(cstr(FMT_DEBUG_PARAM4), param4);
+    unsafe {
+        printf(c"Debug: param1 = %d\n".as_ptr(), param1);
+        printf(c"Debug: param2 = %d\n".as_ptr(), param2);
+        printf(c"Debug: param3 = %d\n".as_ptr(), param3);
+        printf(c"Debug: param4 = %d\n".as_ptr(), param4);
+    }
 
     let mut result: c_int = 0;
 
-    let state = create_state(param1, 128);
+    let state = unsafe { create_state(param1, 128) };
 
     if state.is_null() {
         return -1;
     }
 
-    update_flags(state, param2);
+    unsafe { update_flags(state, param2) };
 
-    // C's `%` truncates towards zero, so a negative param3 yields a negative
-    // remainder and therefore a search character below '0'.
-    let search_char = (b'0' as c_int + (param3 % 10)) as c_char;
-    let found_count = process_buffer(state, search_char);
+    let search_char = (b'0' as c_int).wrapping_add(param3 % 10) as c_char;
+    let found_count = unsafe { process_buffer(state, search_char) };
     result = result.wrapping_add(found_count.wrapping_mul(10));
 
-    let confusion_result = confuse_types(state, param4 % 4);
+    let confusion_result = unsafe { confuse_types(state, param4 % 4) };
     result = result.wrapping_add(confusion_result);
 
-    result = result.wrapping_add(((*state).flags.counter() as c_int).wrapping_mul(5));
-    result = result.wrapping_add(((*state).flags.mode() as c_int).wrapping_mul(3));
+    let s = unsafe { &*state };
+    result = result.wrapping_add((s.flags.counter() as c_int).wrapping_mul(5));
+    result = result.wrapping_add((s.flags.mode() as c_int).wrapping_mul(3));
 
-    printf(cstr(FMT_FINAL_RESULT), result);
+    unsafe {
+        printf(c"Final result: %d\n".as_ptr(), result);
+    }
 
-    destroy_state(state);
+    unsafe { destroy_state(state) };
 
     result
 }

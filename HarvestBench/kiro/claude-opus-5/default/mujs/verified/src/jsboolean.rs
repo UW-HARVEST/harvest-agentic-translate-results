@@ -1,13 +1,16 @@
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
-use crate::common::*;
-use crate::jsbuiltin::jsB_propf;
+//! Translation of src/jsboolean.c
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused)]
+
+use crate::jsi::*;
+
 use crate::jsrun::{
     js_defglobal, js_pushboolean, js_pushliteral, js_pushobject, js_toboolean, js_toobject,
 };
 use crate::jsvalue::{js_newboolean, js_newcconstructor};
-use crate::types::*;
-use crate::js_typeerror;
-use std::ffi::c_int;
+use crate::jsbuiltin::jsB_propf;
 
 unsafe extern "C-unwind" fn jsB_new_Boolean(J: *mut js_State) {
     unsafe {
@@ -23,9 +26,9 @@ unsafe extern "C-unwind" fn jsB_Boolean(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Bp_toString(J: *mut js_State) {
     unsafe {
-        let self_ = js_toobject(J, 0);
-        if (*self_).type_ as c_int != JS_CBOOLEAN {
-            js_typeerror!(J, c"not a boolean");
+        let self_: *mut js_Object = js_toobject(J, 0);
+        if (*self_).ty != JS_CBOOLEAN {
+            js_typeerror!(J, c"not a boolean".as_ptr());
         }
         js_pushliteral(
             J,
@@ -40,9 +43,9 @@ unsafe extern "C-unwind" fn Bp_toString(J: *mut js_State) {
 
 unsafe extern "C-unwind" fn Bp_valueOf(J: *mut js_State) {
     unsafe {
-        let self_ = js_toobject(J, 0);
-        if (*self_).type_ as c_int != JS_CBOOLEAN {
-            js_typeerror!(J, c"not a boolean");
+        let self_: *mut js_Object = js_toobject(J, 0);
+        if (*self_).ty != JS_CBOOLEAN {
+            js_typeerror!(J, c"not a boolean".as_ptr());
         }
         js_pushboolean(J, (*self_).u.boolean);
     }

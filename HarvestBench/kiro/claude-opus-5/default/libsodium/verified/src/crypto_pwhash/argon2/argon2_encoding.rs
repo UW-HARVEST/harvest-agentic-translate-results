@@ -1,134 +1,113 @@
-//! Translation of c_src/libsodium/crypto_pwhash/argon2/argon2-encoding.c
+//! Translation of `crypto_pwhash/argon2/argon2-encoding.c`.
 
-use core::ffi::{c_char, c_int, c_ulong};
+use core::ffi::{c_char, c_int, c_void};
 
-const ARGON2_OK: c_int = 0;
-const ARGON2_DECODING_FAIL: c_int = -32;
-const ARGON2_INCORRECT_TYPE: c_int = -26;
-const ARGON2_ENCODING_FAIL: c_int = -31;
+use crate::common::memcpy;
+use crate::sodium_codecs::{sodium_base642bin, sodium_bin2base64};
 
-const ARGON2_VERSION_NUMBER: u32 = 0x13;
+use super::argon2_core::*;
 
-const Argon2_i: c_int = 1;
-const Argon2_id: c_int = 2;
+/* sodium_base64_VARIANT_ORIGINAL_NO_PADDING == 3 (utils.h) */
+const SODIUM_BASE64_VARIANT_ORIGINAL_NO_PADDING: c_int = 3;
 
-// sodium_base64_VARIANT_ORIGINAL_NO_PADDING (utils.h)
-const sodium_base64_VARIANT_ORIGINAL_NO_PADDING: c_int = 3;
+/* ULONG_MAX on LP64 */
+const ULONG_MAX: u64 = u64::MAX;
 
-const U32_STR_MAXSIZE: usize = 11;
-
-#[repr(C)]
-struct argon2_context {
-    out: *mut u8,
-    outlen: u32,
-    pwd: *mut u8,
-    pwdlen: u32,
-    salt: *mut u8,
-    saltlen: u32,
-    secret: *mut u8,
-    secretlen: u32,
-    ad: *mut u8,
-    adlen: u32,
-    t_cost: u32,
-    m_cost: u32,
-    lanes: u32,
-    threads: u32,
-    flags: u32,
+/* ---- local C string helpers ---- */
+unsafe fn strlen(s: *const c_char) -> usize {
+    let mut n: usize = 0;
+    while *s.add(n) != 0 {
+        n += 1;
+    }
+    n
 }
 
-extern "C" {
-    // argon2-core.c -> _sodium_argon2_validate_inputs
-    fn _sodium_argon2_validate_inputs(context: *const argon2_context) -> c_int;
-    // exported utils
-    fn sodium_bin2base64(
-        b64: *mut c_char,
-        b64_maxlen: usize,
-        bin: *const u8,
-        bin_len: usize,
-        variant: c_int,
-    ) -> *mut c_char;
-    fn sodium_base642bin(
-        bin: *mut u8,
-        bin_maxlen: usize,
-        b64: *const c_char,
-        b64_len: usize,
-        ignore: *const c_char,
-        bin_len: *mut usize,
-        b64_end: *mut *const c_char,
-        variant: c_int,
-    ) -> c_int;
-    // libc
-    fn strlen(s: *const c_char) -> usize;
-    fn strncmp(s1: *const c_char, s2: *const c_char, n: usize) -> c_int;
+/* strncmp semantics on signed char (target has signed char). */
+unsafe fn strncmp(s1: *const c_char, s2: *const c_char, n: usize) -> c_int {
+    let mut i: usize = 0;
+    while i < n {
+        let c1 = *s1.add(i);
+        let c2 = *s2.add(i);
+        if c1 != c2 {
+            /* compare as unsigned char, per C standard */
+            return (c1 as u8 as c_int) - (c2 as u8 as c_int);
+        }
+        if c1 == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    0
 }
 
 /*
  * Decode decimal integer from 'str'; the value is written in '*v'.
+ * Returns a pointer to the next non-decimal character, or NULL on failure.
  */
-unsafe fn decode_decimal(mut str_: *const c_char, v: *mut c_ulong) -> *const c_char {
+unsafe fn decode_decimal(str: *const c_char, v: *mut u64) -> *const c_char {
     let orig: *const c_char;
-    let mut acc: c_ulong;
+    let mut acc: u64;
+    let mut s = str;
 
     acc = 0;
-    orig = str_;
+    orig = s;
     loop {
-        let mut c: c_int;
-
-        c = *str_ as c_int;
-        if c < b'0' as c_int || c > b'9' as c_int {
+        let c_char_val = *s;
+        let mut c: c_int = c_char_val as c_int;
+        if c < ('0' as c_int) || c > ('9' as c_int) {
             break;
         }
-        c -= b'0' as c_int;
-        if acc > (c_ulong::MAX / 10) {
-            return core::ptr::null(); /* LCOV_EXCL_LINE */
+        c -= '0' as c_int;
+        if acc > (ULONG_MAX / 10) {
+            return core::ptr::null();
         }
         acc = acc.wrapping_mul(10);
-        if (c as c_ulong) > (c_ulong::MAX - acc) {
-            return core::ptr::null(); /* LCOV_EXCL_LINE */
+        if (c as u64) > (ULONG_MAX - acc) {
+            return core::ptr::null();
         }
-        acc = acc.wrapping_add(c as c_ulong);
-
-        str_ = str_.add(1);
+        acc = acc.wrapping_add(c as u64);
+        s = s.add(1);
     }
-    if str_ == orig || (*orig == b'0' as c_char && str_ != orig.add(1)) {
-        return core::ptr::null(); /* LCOV_EXCL_LINE */
+    if s == orig || (*orig == ('0' as c_char) && s != orig.add(1)) {
+        return core::ptr::null();
     }
     *v = acc;
-    str_
+    s
 }
 
-// argon2_decode_string -> _sodium_argon2_decode_string
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _sodium_argon2_decode_string(
     ctx: *mut argon2_context,
-    mut str_: *const c_char,
-    type_: c_int,
+    str: *const c_char,
+    type_: argon2_type,
 ) -> c_int {
-    // CC(prefix): check literal prefix, advance str; return DECODING_FAIL on mismatch.
+    let mut str = str;
+
+    /* CC(prefix): compare literal prefix. */
     macro_rules! cc {
         ($prefix:expr) => {{
-            let prefix: &[u8] = $prefix; // NUL-terminated byte literal
-            let cc_len = strlen(prefix.as_ptr() as *const c_char);
-            if strncmp(str_, prefix.as_ptr() as *const c_char, cc_len) != 0 {
+            let prefix: &[u8] = $prefix;
+            let cc_len = prefix.len();
+            if strncmp(str, prefix.as_ptr() as *const c_char, cc_len) != 0 {
                 return ARGON2_DECODING_FAIL;
             }
-            str_ = str_.add(cc_len);
+            str = str.add(cc_len);
         }};
     }
 
-    // DECIMAL_U32(x): decode decimal, fail if NULL or > UINT32_MAX.
+    /* DECIMAL_U32(x) */
     macro_rules! decimal_u32 {
         ($x:expr) => {{
-            let mut dec_x: c_ulong = 0;
-            str_ = decode_decimal(str_, &mut dec_x);
-            if str_.is_null() || dec_x > u32::MAX as c_ulong {
+            let mut dec_x: u64 = 0;
+            str = decode_decimal(str, &mut dec_x);
+            if str.is_null() || dec_x > u32::MAX as u64 {
                 return ARGON2_DECODING_FAIL;
             }
             $x = dec_x as u32;
         }};
     }
 
-    // BIN(buf, max_len, len): base64 decode.
+    /* BIN(buf, max_len, len) */
     macro_rules! bin {
         ($buf:expr, $max_len:expr, $len:expr) => {{
             let mut bin_len: usize = $max_len;
@@ -136,19 +115,19 @@ pub unsafe extern "C" fn _sodium_argon2_decode_string(
             if sodium_base642bin(
                 $buf,
                 $max_len,
-                str_,
-                strlen(str_),
+                str,
+                strlen(str),
                 core::ptr::null(),
                 &mut bin_len,
                 &mut str_end,
-                sodium_base64_VARIANT_ORIGINAL_NO_PADDING,
+                SODIUM_BASE64_VARIANT_ORIGINAL_NO_PADDING,
             ) != 0
                 || bin_len > u32::MAX as usize
             {
                 return ARGON2_DECODING_FAIL;
             }
             $len = bin_len as u32;
-            str_ = str_end;
+            str = str_end;
         }};
     }
 
@@ -161,101 +140,114 @@ pub unsafe extern "C" fn _sodium_argon2_decode_string(
     (*ctx).outlen = 0;
 
     if type_ == Argon2_id {
-        cc!(b"$argon2id\0");
+        cc!(b"$argon2id");
     } else if type_ == Argon2_i {
-        cc!(b"$argon2i\0");
+        cc!(b"$argon2i");
     } else {
-        return ARGON2_INCORRECT_TYPE; /* LCOV_EXCL_LINE */
+        return ARGON2_INCORRECT_TYPE;
     }
-    cc!(b"$v=\0");
+    cc!(b"$v=");
     decimal_u32!(version);
     if version != ARGON2_VERSION_NUMBER {
         return ARGON2_INCORRECT_TYPE;
     }
-    cc!(b"$m=\0");
+    cc!(b"$m=");
     decimal_u32!((*ctx).m_cost);
     if (*ctx).m_cost > u32::MAX {
-        return ARGON2_INCORRECT_TYPE; /* LCOV_EXCL_LINE */
+        return ARGON2_INCORRECT_TYPE;
     }
-    cc!(b",t=\0");
+    cc!(b",t=");
     decimal_u32!((*ctx).t_cost);
     if (*ctx).t_cost > u32::MAX {
-        return ARGON2_INCORRECT_TYPE; /* LCOV_EXCL_LINE */
+        return ARGON2_INCORRECT_TYPE;
     }
-    cc!(b",p=\0");
+    cc!(b",p=");
     decimal_u32!((*ctx).lanes);
     if (*ctx).lanes > u32::MAX {
-        return ARGON2_INCORRECT_TYPE; /* LCOV_EXCL_LINE */
+        return ARGON2_INCORRECT_TYPE;
     }
     (*ctx).threads = (*ctx).lanes;
 
-    cc!(b"$\0");
+    cc!(b"$");
     bin!((*ctx).salt, maxsaltlen, (*ctx).saltlen);
-    cc!(b"$\0");
+    cc!(b"$");
     bin!((*ctx).out, maxoutlen, (*ctx).outlen);
     validation_result = _sodium_argon2_validate_inputs(ctx);
     if validation_result != ARGON2_OK {
         return validation_result;
     }
-    if *str_ == 0 {
+    if *str == 0 {
         return ARGON2_OK;
     }
     ARGON2_DECODING_FAIL
 }
 
-unsafe fn u32_to_string(str_: *mut c_char, mut x: u32) {
+const U32_STR_MAXSIZE: usize = 11;
+
+unsafe fn u32_to_string(str: *mut c_char, mut x: u32) {
     let mut tmp: [c_char; U32_STR_MAXSIZE - 1] = [0; U32_STR_MAXSIZE - 1];
     let mut i: usize;
 
-    i = core::mem::size_of_val(&tmp); // sizeof tmp == 10
+    i = core::mem::size_of_val(&tmp); /* sizeof tmp == 10 */
     loop {
         i -= 1;
-        tmp[i] = ((x % 10u32) as u8 + b'0') as c_char;
+        tmp[i] = ((x % 10u32) as u8 as c_char).wrapping_add('0' as c_char);
         x /= 10u32;
         if !(x != 0 && i != 0) {
             break;
         }
     }
-    core::ptr::copy_nonoverlapping(
-        tmp.as_ptr().add(i),
-        str_,
+    memcpy(
+        str as *mut u8,
+        tmp.as_ptr().add(i) as *const u8,
         core::mem::size_of_val(&tmp) - i,
     );
-    *str_.add(core::mem::size_of_val(&tmp) - i) = 0;
+    *str.add(core::mem::size_of_val(&tmp) - i) = 0;
 }
 
-// argon2_encode_string -> _sodium_argon2_encode_string
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _sodium_argon2_encode_string(
-    mut dst: *mut c_char,
-    mut dst_len: usize,
+    dst: *mut c_char,
+    dst_len: usize,
     ctx: *mut argon2_context,
-    type_: c_int,
+    type_: argon2_type,
 ) -> c_int {
-    // SS(str): append a NUL-terminated string (incl. its NUL), advance dst.
+    let mut dst = dst;
+    let mut dst_len = dst_len;
+
+    /* SS(str): append NUL-terminated string. */
     macro_rules! ss {
-        ($lit:expr) => {{
-            let src: *const c_char = $lit;
-            let pp_len = strlen(src);
+        ($s:expr) => {{
+            let s: &[u8] = $s;
+            let pp_len = s.len(); /* strlen of the literal (no trailing NUL in slice) */
             if pp_len >= dst_len {
                 return ARGON2_ENCODING_FAIL;
             }
-            core::ptr::copy_nonoverlapping(src, dst, pp_len + 1);
+            /* memcpy(dst, str, pp_len + 1): copies the terminating NUL too. */
+            memcpy(dst as *mut u8, s.as_ptr(), pp_len);
+            *dst.add(pp_len) = 0;
             dst = dst.add(pp_len);
             dst_len -= pp_len;
         }};
     }
 
-    // SX(x): format u32 then SS it.
+    /* SX(x) */
     macro_rules! sx {
         ($x:expr) => {{
             let mut tmp: [c_char; U32_STR_MAXSIZE] = [0; U32_STR_MAXSIZE];
             u32_to_string(tmp.as_mut_ptr(), $x);
-            ss!(tmp.as_ptr());
+            /* SS(tmp): tmp is NUL-terminated; compute its length. */
+            let pp_len = strlen(tmp.as_ptr());
+            if pp_len >= dst_len {
+                return ARGON2_ENCODING_FAIL;
+            }
+            memcpy(dst as *mut u8, tmp.as_ptr() as *const u8, pp_len + 1);
+            dst = dst.add(pp_len);
+            dst_len -= pp_len;
         }};
     }
 
-    // SB(buf, len): base64 encode into dst.
+    /* SB(buf, len) */
     macro_rules! sb {
         ($buf:expr, $len:expr) => {{
             let sb_len: usize;
@@ -264,7 +256,7 @@ pub unsafe extern "C" fn _sodium_argon2_encode_string(
                 dst_len,
                 $buf,
                 $len,
-                sodium_base64_VARIANT_ORIGINAL_NO_PADDING,
+                SODIUM_BASE64_VARIANT_ORIGINAL_NO_PADDING,
             )
             .is_null()
             {
@@ -279,32 +271,26 @@ pub unsafe extern "C" fn _sodium_argon2_encode_string(
     let validation_result: c_int;
 
     match type_ {
-        x if x == Argon2_id => {
-            ss!(b"$argon2id$v=\0".as_ptr() as *const c_char);
-        }
-        x if x == Argon2_i => {
-            ss!(b"$argon2i$v=\0".as_ptr() as *const c_char);
-        }
-        _ => {
-            return ARGON2_ENCODING_FAIL; /* LCOV_EXCL_LINE */
-        }
+        x if x == Argon2_id => ss!(b"$argon2id$v="),
+        x if x == Argon2_i => ss!(b"$argon2i$v="),
+        _ => return ARGON2_ENCODING_FAIL,
     }
     validation_result = _sodium_argon2_validate_inputs(ctx);
     if validation_result != ARGON2_OK {
-        return validation_result; /* LCOV_EXCL_LINE */
+        return validation_result;
     }
     sx!(ARGON2_VERSION_NUMBER);
-    ss!(b"$m=\0".as_ptr() as *const c_char);
+    ss!(b"$m=");
     sx!((*ctx).m_cost);
-    ss!(b",t=\0".as_ptr() as *const c_char);
+    ss!(b",t=");
     sx!((*ctx).t_cost);
-    ss!(b",p=\0".as_ptr() as *const c_char);
+    ss!(b",p=");
     sx!((*ctx).lanes);
 
-    ss!(b"$\0".as_ptr() as *const c_char);
+    ss!(b"$");
     sb!((*ctx).salt, (*ctx).saltlen as usize);
 
-    ss!(b"$\0".as_ptr() as *const c_char);
+    ss!(b"$");
     sb!((*ctx).out, (*ctx).outlen as usize);
     ARGON2_OK
 }

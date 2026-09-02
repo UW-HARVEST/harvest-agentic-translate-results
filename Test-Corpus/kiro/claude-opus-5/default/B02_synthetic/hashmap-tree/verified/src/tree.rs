@@ -1,18 +1,20 @@
-//! Translation of `c_src/src/tree.c` / `c_src/include/tree.h`.
-//!
-//! The C code hands out `tree_node_t *` pointers stored as `void *` inside the
-//! hashmap. Here nodes live in an arena (`Vec<TreeNode>`) and the hashmap stores
-//! arena indices, which gives the same identity/aliasing semantics without unsafe
-//! code. "Freeing" a node simply drops it out of the map; the arena slot is never
-//! reused, matching the fact that the C program never observes recycled node
-//! addresses.
+// tree.rs
+//
+// Faithful translation of c_src/src/tree.c and c_src/include/tree.h.
+//
+// The C implementation heap-allocates each `tree_node_t` and stores the raw
+// pointer in the hashmap. Rust replaces the raw pointers with indices into an
+// arena (`Tree::arena`); "freeing" a node clears its arena slot. The slot is
+// never reused, which mirrors the fact that a freed pointer is never handed
+// back out by this program.
 
-use crate::cout::out_write;
+use crate::cstdio;
 use crate::hashmap::{Hashmap, TreeId};
 
 pub const MAX_CHILDREN: usize = 32;
 pub const MAX_DATA_LENGTH: usize = 256;
 
+/// Mirrors `tree_node_t`.
 #[derive(Clone)]
 pub struct TreeNode {
     pub id: TreeId,
@@ -23,6 +25,9 @@ pub struct TreeNode {
 }
 
 impl TreeNode {
+    /// Contents of a fresh `malloc(sizeof(tree_node_t))` are indeterminate in
+    /// C; every field this program reads is assigned before use, so starting
+    /// from zeroes is behaviourally equivalent.
     fn new() -> TreeNode {
         TreeNode {
             id: 0,
@@ -33,9 +38,9 @@ impl TreeNode {
         }
     }
 
-    /// The bytes `printf("%s", node->data)` would emit: everything up to the first
-    /// NUL byte.
-    pub fn data_bytes(&self) -> &[u8] {
+    /// The bytes `printf("%s", node->data)` would emit: everything up to the
+    /// first NUL terminator.
+    pub fn data_cstr(&self) -> &[u8] {
         let end = self
             .data
             .iter()
@@ -45,24 +50,24 @@ impl TreeNode {
     }
 }
 
-/// `strncpy(dst, src, MAX_DATA_LENGTH - 1)` followed by
-/// `dst[MAX_DATA_LENGTH - 1] = '\0'`: copies at most 255 bytes, NUL-padding the
-/// remainder of that range when `src` is shorter.
-fn strncpy_data(dst: &mut [u8; MAX_DATA_LENGTH], src: &[u8]) {
-    let n = MAX_DATA_LENGTH - 1;
-    for i in 0..n {
-        dst[i] = if i < src.len() { src[i] } else { 0 };
-    }
-    dst[MAX_DATA_LENGTH - 1] = 0;
-}
-
+/// Mirrors `tree_t`.
 pub struct Tree {
-    pub node_map: Hashmap<usize>,
-    /// Backing storage for the individually malloc'd nodes of the C version.
-    pub nodes: Vec<TreeNode>,
+    pub node_map: Hashmap,
     pub root_id: TreeId,
     pub has_root: i32,
     pub node_count: usize,
+    /// Backing storage standing in for the individually `malloc`'d nodes.
+    arena: Vec<Option<TreeNode>>,
+}
+
+/// `strncpy(dst, src, MAX_DATA_LENGTH - 1)` followed by
+/// `dst[MAX_DATA_LENGTH - 1] = '\0'`, over a zero-initialised buffer.
+fn strncpy_data(dst: &mut [u8; MAX_DATA_LENGTH], src: &[u8]) {
+    let n = MAX_DATA_LENGTH - 1;
+    let copy = if src.len() < n { src.len() } else { n };
+    dst[..copy].copy_from_slice(&src[..copy]);
+    // Remaining bytes are already NUL (strncpy zero-pads up to n).
+    dst[MAX_DATA_LENGTH - 1] = 0;
 }
 
 impl Tree {
@@ -70,46 +75,40 @@ impl Tree {
     pub fn create() -> Tree {
         Tree {
             node_map: Hashmap::create(),
-            nodes: Vec::new(),
             root_id: 0,
             has_root: 0,
             node_count: 0,
+            arena: Vec::new(),
         }
     }
 
-    /// `tree_delete`
-    pub fn delete(self) {
-        // Dropping the tree releases every node and the hashmap storage.
+    /// `tree_free_node`
+    fn free_node(&mut self, idx: usize) {
+        self.arena[idx] = None;
     }
 
-    fn node_index(&self, id: TreeId) -> Option<usize> {
-        self.node_map.get(id)
-    }
-
-    /// `tree_get_node`
-    pub fn get_node(&self, id: TreeId) -> Option<&TreeNode> {
-        self.node_index(id).map(|i| &self.nodes[i])
-    }
-
-    /// `tree_contains`
-    pub fn contains(&self, id: TreeId) -> i32 {
-        if self.get_node(id).is_some() {
-            1
-        } else {
-            0
+    /// `tree_delete`. Nothing observable happens, but the walk order is kept
+    /// for fidelity.
+    pub fn delete(mut self) {
+        let capacity = self.node_map.capacity;
+        let mut to_free = Vec::new();
+        for i in 0..capacity {
+            if self.node_map.entries[i].occupied && !self.node_map.entries[i].deleted {
+                if let Some(idx) = self.node_map.entries[i].value {
+                    to_free.push(idx);
+                }
+            }
         }
-    }
-
-    /// `tree_size`
-    pub fn size(&self) -> usize {
-        self.node_count
+        for idx in to_free {
+            self.free_node(idx);
+        }
     }
 
     /// `tree_add_node`
-    pub fn add_node(&mut self, id: TreeId, parent_id: TreeId, data: Option<&str>) -> i32 {
+    pub fn add_node(&mut self, id: TreeId, parent_id: TreeId, data: Option<&[u8]>) -> i32 {
         // Check if node already exists
         if self.contains(id) != 0 {
-            crate::c_eprintf!("Error: Node with ID {} already exists\n", id);
+            c_eprintln!("Error: Node with ID {} already exists", id);
             return -1;
         }
 
@@ -121,7 +120,7 @@ impl Tree {
         node.child_count = 0;
 
         match data {
-            Some(s) => strncpy_data(&mut node.data, s.as_bytes()),
+            Some(d) => strncpy_data(&mut node.data, d),
             None => node.data[0] = 0,
         }
 
@@ -132,30 +131,32 @@ impl Tree {
             node.parent_id = 0; // Root has no parent
         } else {
             // Find parent and add this node as a child
-            let parent_index = match self.node_index(parent_id) {
-                Some(i) => i,
+            let parent_idx = match self.get_node(parent_id) {
+                Some(p) => p,
                 None => {
-                    crate::c_eprintf!("Error: Parent node {} not found\n", parent_id);
+                    c_eprintln!("Error: Parent node {} not found", parent_id);
+                    // `free(node)`: nothing to do, `node` is dropped here.
                     return -1;
                 }
             };
 
-            if self.nodes[parent_index].child_count as usize >= MAX_CHILDREN {
-                crate::c_eprintf!("Error: Parent has maximum children\n");
+            if self.arena[parent_idx].as_ref().unwrap().child_count as usize >= MAX_CHILDREN {
+                c_eprintln!("Error: Parent has maximum children");
                 return -1;
             }
 
-            let slot = self.nodes[parent_index].child_count as usize;
-            self.nodes[parent_index].child_ids[slot] = id;
-            self.nodes[parent_index].child_count += 1;
+            let parent = self.arena[parent_idx].as_mut().unwrap();
+            let slot = parent.child_count as usize;
+            parent.child_ids[slot] = id;
+            parent.child_count += 1;
         }
 
         // Add to hashmap
-        let index = self.nodes.len();
-        self.nodes.push(node);
-        if self.node_map.put(id, index) != 0 {
-            crate::c_eprintf!("Error: Failed to add node to hashmap\n");
-            self.nodes.pop();
+        let idx = self.arena.len();
+        self.arena.push(Some(node));
+        if self.node_map.put(id, Some(idx)) != 0 {
+            c_eprintln!("Error: Failed to add node to hashmap");
+            self.free_node(idx);
             return -1;
         }
 
@@ -165,20 +166,21 @@ impl Tree {
 
     /// `tree_remove_subtree`
     fn remove_subtree(&mut self, id: TreeId) -> i32 {
-        let index = match self.node_index(id) {
+        let idx = match self.get_node(id) {
             Some(i) => i,
             None => return -1,
         };
 
         // Recursively remove all children first
-        let child_count = self.nodes[index].child_count;
-        let child_ids = self.nodes[index].child_ids;
+        let child_count = self.arena[idx].as_ref().unwrap().child_count;
         for i in 0..child_count {
-            self.remove_subtree(child_ids[i as usize]);
+            let child_id = self.arena[idx].as_ref().unwrap().child_ids[i as usize];
+            self.remove_subtree(child_id);
         }
 
         // Remove this node from hashmap
-        if self.node_map.remove(id).is_some() {
+        if let Some(removed) = self.node_map.remove(id) {
+            self.free_node(removed);
             self.node_count -= 1;
         }
 
@@ -187,10 +189,10 @@ impl Tree {
 
     /// `tree_remove_node`
     pub fn remove_node(&mut self, id: TreeId) -> i32 {
-        let node_index = match self.node_index(id) {
+        let idx = match self.get_node(id) {
             Some(i) => i,
             None => {
-                crate::c_eprintf!("Error: Node {} not found\n", id);
+                c_eprintln!("Error: Node {} not found", id);
                 return -1;
             }
         };
@@ -204,22 +206,18 @@ impl Tree {
         }
 
         // Remove from parent's child list
-        let parent_id = self.nodes[node_index].parent_id;
-        if let Some(parent_index) = self.node_index(parent_id) {
-            let mut i = 0;
-            while i < self.nodes[parent_index].child_count {
-                if self.nodes[parent_index].child_ids[i as usize] == id {
+        let parent_id = self.arena[idx].as_ref().unwrap().parent_id;
+        if let Some(parent_idx) = self.get_node(parent_id) {
+            let parent = self.arena[parent_idx].as_mut().unwrap();
+            for i in 0..parent.child_count {
+                if parent.child_ids[i as usize] == id {
                     // Shift remaining children
-                    let mut j = i;
-                    while j < self.nodes[parent_index].child_count - 1 {
-                        let next = self.nodes[parent_index].child_ids[(j + 1) as usize];
-                        self.nodes[parent_index].child_ids[j as usize] = next;
-                        j += 1;
+                    for j in i..(parent.child_count - 1) {
+                        parent.child_ids[j as usize] = parent.child_ids[(j + 1) as usize];
                     }
-                    self.nodes[parent_index].child_count -= 1;
+                    parent.child_count -= 1;
                     break;
                 }
-                i += 1;
             }
         }
 
@@ -229,34 +227,52 @@ impl Tree {
         0
     }
 
+    /// `tree_get_node`
+    pub fn get_node(&self, id: TreeId) -> Option<usize> {
+        self.node_map.get(id)
+    }
+
+    /// Borrow a node the way C dereferences the pointer from `tree_get_node`.
+    pub fn node(&self, id: TreeId) -> Option<&TreeNode> {
+        self.get_node(id).and_then(|i| self.arena[i].as_ref())
+    }
+
+    /// `tree_contains`
+    pub fn contains(&self, id: TreeId) -> i32 {
+        i32::from(self.get_node(id).is_some())
+    }
+
+    /// `tree_size`
+    pub fn size(&self) -> usize {
+        self.node_count
+    }
+
     /// `tree_print_helper`
     fn print_helper(&self, id: TreeId, depth: i32) {
-        let node = match self.get_node(id) {
+        let node = match self.node(id) {
             Some(n) => n,
             None => return,
         };
 
         // Print indentation
         for _ in 0..depth {
-            out_write(b"  ");
+            cstdio::out(b"  ");
         }
 
-        out_write(format!("[{}] ", node.id).as_bytes());
-        out_write(node.data_bytes());
-        out_write(b"\n");
+        cstdio::out(format!("[{}] ", node.id).as_bytes());
+        cstdio::out(node.data_cstr());
+        cstdio::out(b"\n");
 
         // Print children
-        let child_count = node.child_count;
-        let child_ids = node.child_ids;
-        for i in 0..child_count {
-            self.print_helper(child_ids[i as usize], depth + 1);
+        for i in 0..node.child_count {
+            self.print_helper(node.child_ids[i as usize], depth + 1);
         }
     }
 
     /// `tree_print`
     pub fn print(&self) {
         if self.has_root == 0 {
-            out_write(b"(empty tree)\n");
+            cstdio::out(b"(empty tree)\n");
             return;
         }
 
@@ -269,11 +285,11 @@ impl Tree {
             return -1;
         }
 
-        let mut depth: i32 = 0;
+        let mut depth = 0;
         let mut current_id = id;
 
         while current_id != self.root_id {
-            let node = match self.get_node(current_id) {
+            let node = match self.node(current_id) {
                 Some(n) => n,
                 None => return -1,
             };
@@ -286,7 +302,7 @@ impl Tree {
 
     /// `tree_get_height`
     pub fn get_height(&self, id: TreeId) -> i32 {
-        let node = match self.get_node(id) {
+        let node = match self.node(id) {
             Some(n) => n,
             None => return -1,
         };
@@ -295,12 +311,9 @@ impl Tree {
             return 0;
         }
 
-        let child_count = node.child_count;
-        let child_ids = node.child_ids;
-
-        let mut max_height: i32 = 0;
-        for i in 0..child_count {
-            let child_height = self.get_height(child_ids[i as usize]);
+        let mut max_height = 0;
+        for i in 0..node.child_count {
+            let child_height = self.get_height(node.child_ids[i as usize]);
             if child_height > max_height {
                 max_height = child_height;
             }
@@ -311,18 +324,15 @@ impl Tree {
 
     /// `tree_count_descendants`
     pub fn count_descendants(&self, id: TreeId) -> i32 {
-        let node = match self.get_node(id) {
+        let node = match self.node(id) {
             Some(n) => n,
             None => return -1,
         };
 
-        let child_count = node.child_count;
-        let child_ids = node.child_ids;
-
-        let mut count: i32 = 0;
-        for i in 0..child_count {
+        let mut count = 0;
+        for i in 0..node.child_count {
             count += 1; // Count the child
-            count += self.count_descendants(child_ids[i as usize]);
+            count += self.count_descendants(node.child_ids[i as usize]);
         }
 
         count
@@ -347,7 +357,7 @@ impl Tree {
                 break;
             }
 
-            let node = match self.get_node(current_id) {
+            let node = match self.node(current_id) {
                 Some(n) => n,
                 None => return -1,
             };

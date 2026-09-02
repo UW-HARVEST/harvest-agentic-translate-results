@@ -1,164 +1,215 @@
 // Rust translation of c_src/src/main.c
 //
-// Behavioral notes (the C semantics that are reproduced verbatim):
+// Original copyright notice from the C source:
 //
-//  * `scanf("%d", &data[i])` skips *any* leading whitespace, including newlines,
-//    so a single number per line and all numbers on one line are equivalent.
-//  * The loop stops as soon as `scanf` does not return 1, i.e. on EOF or on a
-//    matching failure (a non-numeric token). `i` then holds the count of values
-//    successfully read, and only those are processed/printed.
-//  * glibc implements `%d` on a 64-bit platform by running `strtol` and then
-//    assigning the `long` result to an `int`. `strtol` saturates at
-//    `LONG_MIN`/`LONG_MAX` on overflow, and the assignment truncates. That
-//    two-step behaviour is emulated here (see `saturate_then_truncate`).
-//  * `fma_array(out, out, out, out, len)` passes the same buffer for every
-//    parameter, so each element becomes `x * x + x` computed from its own
-//    current value. Signed overflow is undefined behaviour in C; the compiled
-//    code wraps, so wrapping arithmetic is used.
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the "Software"),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
 //
-// The `restrict`-free aliasing, the argument order, and the error-check order
-// are all preserved as in the original.
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 
-/// Byte-level view of stdin with a single-byte "unget", mirroring the way
-/// `scanf` consumes characters from a `FILE *` stream.
+/// Minimal `stdin` wrapper that reads one byte at a time and supports a
+/// single-byte pushback, mirroring how C's `scanf` peeks at the next
+/// character and ungets it when it does not belong to the conversion.
 struct Scanner {
-    buf: Vec<u8>,
-    pos: usize,
+    input: io::Stdin,
+    /// Byte that was read but pushed back (C's `ungetc`).
+    pushback: Option<u8>,
+    /// Sticky end-of-file flag, matching C's stream EOF indicator.
+    eof: bool,
 }
 
 impl Scanner {
-    fn new() -> Scanner {
-        let mut buf = Vec::new();
-        // A read error is indistinguishable from EOF for this program's
-        // purposes: `scanf` would return EOF and the loop would break.
-        let _ = std::io::stdin().read_to_end(&mut buf);
-        Scanner { buf, pos: 0 }
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.buf.get(self.pos).copied()
-    }
-
-    fn bump(&mut self) {
-        if self.pos < self.buf.len() {
-            self.pos += 1;
+    fn new() -> Self {
+        Scanner {
+            input: io::stdin(),
+            pushback: None,
+            eof: false,
         }
     }
 
-    /// C's `isspace` for the default locale.
-    fn is_space(c: u8) -> bool {
-        matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
-    }
-
-    /// Equivalent of `scanf("%d", out)`, returning the number of items
-    /// assigned: `Some(v)` for a successful conversion, `None` for either EOF
-    /// or a matching failure (both make the C code `break`).
-    fn scan_i32(&mut self) -> Option<i32> {
-        while let Some(c) = self.peek() {
-            if Scanner::is_space(c) {
-                self.bump();
-            } else {
-                break;
+    fn next_byte(&mut self) -> Option<u8> {
+        if let Some(b) = self.pushback.take() {
+            return Some(b);
+        }
+        if self.eof {
+            return None;
+        }
+        let mut buf = [0u8; 1];
+        loop {
+            match self.input.read(&mut buf) {
+                Ok(0) => {
+                    self.eof = true;
+                    return None;
+                }
+                Ok(_) => return Some(buf[0]),
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => {
+                    self.eof = true;
+                    return None;
+                }
             }
         }
+    }
 
-        // EOF before any conversion: `scanf` returns EOF.
-        self.peek()?;
+    fn unget(&mut self, b: u8) {
+        self.pushback = Some(b);
+    }
 
+    /// Equivalent of `scanf("%d", &out)`.
+    ///
+    /// Returns `Some(value)` when exactly one item was converted (the C return
+    /// value of 1) and `None` for either a matching failure (return 0) or an
+    /// input failure / EOF (return EOF). The original C code treats both
+    /// non-1 outcomes identically by breaking out of the read loop, so they do
+    /// not need to be distinguished here.
+    fn scan_int(&mut self) -> Option<i32> {
+        // `%d` first skips any amount of leading whitespace, including
+        // newlines, so a conversion can span line boundaries.
+        let mut b = loop {
+            match self.next_byte() {
+                Some(c) if is_c_space(c) => continue,
+                Some(c) => break c,
+                // Input failure: EOF before any conversion.
+                None => return None,
+            }
+        };
+
+        // Optional sign.
         let mut negative = false;
-        match self.peek() {
-            Some(b'-') => {
-                negative = true;
-                self.bump();
+        if b == b'+' || b == b'-' {
+            negative = b == b'-';
+            match self.next_byte() {
+                Some(c) => b = c,
+                None => return None,
             }
-            Some(b'+') => {
-                self.bump();
-            }
-            _ => {}
         }
 
-        let mut digits = 0usize;
-        // Accumulate in i128 with saturation so arbitrarily long digit runs
-        // cannot panic; the magnitude is clamped to the `long` range below.
-        let mut magnitude: i128 = 0;
-        while let Some(c) = self.peek() {
-            if !c.is_ascii_digit() {
-                break;
-            }
-            digits += 1;
-            if magnitude <= OVERFLOW_GUARD {
-                magnitude = magnitude * 10 + i128::from(c - b'0');
-            }
-            self.bump();
-        }
-
-        // No digits consumed: matching failure, `scanf` returns 0.
-        if digits == 0 {
+        // At least one decimal digit is required, otherwise this is a matching
+        // failure and the offending character stays in the stream.
+        if !b.is_ascii_digit() {
+            self.unget(b);
             return None;
         }
 
-        Some(saturate_then_truncate(negative, magnitude))
-    }
-}
+        // glibc collects the digits and converts them with `strtol`, which
+        // saturates at the `long` limits on overflow; the result is then
+        // narrowed to `int`. Reproduce that (implementation-defined) behavior.
+        let mut acc: i64 = 0;
+        let mut saturated = false;
+        loop {
+            let digit = i64::from(b - b'0');
+            if !saturated {
+                match acc
+                    .checked_mul(10)
+                    .and_then(|v| v.checked_add(digit))
+                {
+                    Some(v) => acc = v,
+                    None => saturated = true,
+                }
+            }
 
-/// Past this point further digits cannot change the saturated result.
-const OVERFLOW_GUARD: i128 = i64::MAX as i128;
-
-/// glibc's `%d` path: `strtol` clamps to the `long` range and sets `ERANGE`,
-/// then the result is stored into an `int`, truncating the upper bits.
-fn saturate_then_truncate(negative: bool, magnitude: i128) -> i32 {
-    let as_long: i64 = if negative {
-        let signed = -magnitude;
-        if signed < i64::MIN as i128 {
-            i64::MIN
-        } else {
-            signed as i64
+            match self.next_byte() {
+                Some(c) if c.is_ascii_digit() => b = c,
+                Some(c) => {
+                    self.unget(c);
+                    break;
+                }
+                None => break,
+            }
         }
-    } else if magnitude > i64::MAX as i128 {
-        i64::MAX
-    } else {
-        magnitude as i64
-    };
-    as_long as i32
+
+        let value: i64 = if saturated {
+            if negative {
+                i64::MIN
+            } else {
+                i64::MAX
+            }
+        } else if negative {
+            // `acc` is the magnitude; negating cannot overflow because a
+            // magnitude large enough to reach i64::MIN would have saturated.
+            -acc
+        } else {
+            acc
+        };
+
+        // Narrowing `long` -> `int`, as glibc's `%d` store does.
+        Some(value as i32)
+    }
 }
 
-/// `void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len)`
+/// C's whitespace set as recognized by `isspace` in the default locale.
+fn is_c_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// Translation of:
 ///
-/// The C version is called with all four pointers aliasing the same buffer, so
-/// this is expressed as an in-place transform over one slice to stay in safe
-/// Rust while producing identical results.
-fn fma_array_aliased(out: &mut [i32], len: usize) {
+/// ```c
+/// void fma_array(int *out, const int *mul1, const int *mul2,
+///                const int *add, int len)
+/// ```
+///
+/// The only call site passes the same pointer for all four arguments, so every
+/// element is updated in place as `out[i] * out[i] + out[i]`. Element `i` is
+/// read before it is written, so the aliasing does not change the result of any
+/// individual iteration. Signed overflow (undefined behavior in C) is
+/// reproduced as the two's-complement wraparound that the compiled C actually
+/// exhibits.
+fn fma_array_all_aliased(out: &mut [i32], len: usize) {
     for i in 0..len {
-        out[i] = out[i].wrapping_mul(out[i]).wrapping_add(out[i]);
+        let v = out[i];
+        out[i] = v.wrapping_mul(v).wrapping_add(v);
     }
 }
 
-/// `void driver(int *out, int len)`
-fn driver<W: Write>(w: &mut W, out: &mut [i32], len: usize) {
-    fma_array_aliased(out, len);
+/// Translation of `void driver(int *out, int len)`.
+fn driver(out: &mut [i32], len: usize, stdout: &mut impl Write) -> io::Result<()> {
+    fma_array_all_aliased(out, len);
     for i in 0..len {
-        let _ = writeln!(w, "{}", out[i]);
+        writeln!(stdout, "{}", out[i])?;
     }
+    Ok(())
 }
 
 fn main() {
-    // `int data[100];` — only the first `i` entries are ever read back.
+    // `int data[100];` is uninitialized in C, but `driver` only ever touches
+    // the first `i` elements, all of which are written by the read loop.
     let mut data = [0i32; 100];
-    let mut scanner = Scanner::new();
 
+    let mut scanner = Scanner::new();
     let mut i = 0usize;
     while i < 100 {
-        match scanner.scan_i32() {
+        match scanner.scan_int() {
             Some(v) => data[i] = v,
             None => break,
         }
         i += 1;
     }
 
-    let stdout = std::io::stdout();
-    let mut w = std::io::BufWriter::new(stdout.lock());
-    driver(&mut w, &mut data, i);
-    let _ = w.flush();
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    if driver(&mut data, i, &mut out).is_err() {
+        return;
+    }
+    let _ = out.flush();
 }

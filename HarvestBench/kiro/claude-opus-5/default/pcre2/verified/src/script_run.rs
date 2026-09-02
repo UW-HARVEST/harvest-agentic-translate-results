@@ -1,115 +1,108 @@
-//! Translation of `c_src/src/pcre2_script_run.c`.
+//! Translation of `pcre2_script_run.c`.
 //!
-//! Contains the function for checking a script run. `SUPPORT_UNICODE` is
-//! defined, so the real implementation is translated.
-
-#![allow(non_snake_case, non_upper_case_globals)]
+//! This module contains the function for checking a script run.
 
 use crate::internal::*;
-use crate::ucp::*;
+use core::ffi::c_int;
 
-/* These are states in the checking process. */
-
-const SCRIPT_UNSET: u32 = 0; /* Requirement as yet unknown */
-const SCRIPT_MAP: u32 = 1; /* Bitmap contains acceptable scripts */
-const SCRIPT_HANPENDING: u32 = 2; /* Have had only Han characters */
-const SCRIPT_HANHIRAKATA: u32 = 3; /* Expect Han or Hirikata */
-const SCRIPT_HANBOPOMOFO: u32 = 4; /* Expect Han or Bopomofo */
-const SCRIPT_HANHANGUL: u32 = 5; /* Expect Han or Hangul */
+// These are states in the checking process.
+const SCRIPT_UNSET: u32 = 0; // Requirement as yet unknown
+const SCRIPT_MAP: u32 = 1; // Bitmap contains acceptable scripts
+const SCRIPT_HANPENDING: u32 = 2; // Have had only Han characters
+const SCRIPT_HANHIRAKATA: u32 = 3; // Expect Han or Hirikata
+const SCRIPT_HANBOPOMOFO: u32 = 4; // Expect Han or Bopomofo
+const SCRIPT_HANHANGUL: u32 = 5; // Expect Han or Hangul
 
 const UCD_MAPSIZE: usize = (ucp_Unknown as usize) / 32 + 1;
 const FULL_MAPSIZE: usize = (ucp_Script_Count as usize) / 32 + 1;
 
+// These mirror the local #defines used inside the SCRIPT_HANPENDING case.
 const FOUND_BOPOMOFO: u32 = 1;
 const FOUND_HIRAGANA: u32 = 2;
 const FOUND_KATAKANA: u32 = 4;
 const FOUND_HANGUL: u32 = 8;
 
-/// `PRIV(script_run)`
-///
-/// Check a script run.
+/// `MAPSET(map, x)` — set bit `x` in a 32-bit-word bitmap.
+#[inline(always)]
+unsafe fn MAPSET(map: *mut u32, x: u32) {
+    unsafe {
+        *map.add((x as usize) / 32) |= 1u32 << ((x as usize) % 32);
+    }
+}
+
+/// `PRIV(script_run)` — return TRUE if this is a valid script run.
 ///
 /// Arguments:
-/// * `ptr`    - point to the first character
-/// * `endptr` - point after the last character
-/// * `utf`    - TRUE if in UTF mode
+///   ptr       point to the first character
+///   endptr    point after the last character
+///   utf       TRUE if in UTF mode
 ///
-/// Returns: TRUE if this is a valid script run.
-pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> BOOL {
+/// Returns:    TRUE if this is a valid script run
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn _pcre2_script_run_8(
+    ptr: PCRE2_SPTR,
+    endptr: PCRE2_SPTR,
+    utf: BOOL,
+) -> BOOL {
     unsafe {
+        // SUPPORT_UNICODE is defined in this configuration.
         let mut require_state: u32 = SCRIPT_UNSET;
-        let mut require_map: [u32; FULL_MAPSIZE] = [0; FULL_MAPSIZE];
-        let mut map: [u32; FULL_MAPSIZE] = [0; FULL_MAPSIZE];
+        let mut require_map = [0u32; FULL_MAPSIZE];
+        let mut map = [0u32; FULL_MAPSIZE];
         let mut require_digitset: u32 = 0;
         let mut c: u32;
 
-        /* Any string containing fewer than 2 characters is a valid script run. */
+        let utf = utf != FALSE;
 
+        let mut ptr = ptr;
+
+        // Any string containing fewer than 2 characters is a valid script run.
         if ptr >= endptr {
             return TRUE;
         }
-        c = getcharinctest(&mut ptr, utf != FALSE);
+        c = GETCHARINCTEST(&mut ptr, utf);
         if ptr >= endptr {
             return TRUE;
         }
 
-        /* Initialize the require map. This is a full-size bitmap that has a bit for
-        every script, as opposed to the maps in ucd_script_sets, which only have bits
-        for scripts less than ucp_Unknown - those that appear in script extension
-        lists. */
-
+        // Initialize the require map. This is a full-size bitmap that has a bit
+        // for every script.
         for i in 0..FULL_MAPSIZE {
             require_map[i] = 0;
         }
 
-        /* Scan strings of two or more characters, checking the Unicode
-        characteristics of each code point. */
-
+        // Scan strings of two or more characters.
         loop {
-            let ucd: &UcdRecord = get_ucd(c);
-            let script: u32 = ucd.script as u32;
+            let ucd: &UcdRecord = GET_UCD(c);
+            let script = ucd.script as u32;
 
-            /* If the script is Unknown, the string is not a valid script run. Such
-            characters can only form script runs of length one (see test above). */
-
+            // If the script is Unknown, the string is not a valid script run.
             if script == ucp_Unknown {
                 return FALSE;
             }
 
-            /* A character without any script extensions whose script is Inherited or
-            Common is always accepted with any script. If there are extensions, the
-            following processing happens for all scripts. */
-
-            if ucd_scriptx_prop(ucd) != 0
+            // A character without any script extensions whose script is
+            // Inherited or Common is always accepted with any script.
+            if UCD_SCRIPTX_PROP(ucd) != 0
                 || (script != ucp_Inherited && script != ucp_Common)
             {
-                let mut OK: BOOL;
+                let mut ok: BOOL;
 
-                /* Set up a full-sized map for this character that can include bits for
-                all scripts. Copy the scriptx map for this character (which covers those
-                scripts that appear in script extension lists), set the remaining values
-                to zero, and then, except for Common or Inherited, add this script's bit
-                to the map. */
-
-                memcpy(
-                    map.as_mut_ptr(),
-                    UCD_SCRIPT_SETS.as_ptr().add(ucd_scriptx_prop(ucd) as usize),
-                    UCD_MAPSIZE,
-                );
-                memset(
-                    map.as_mut_ptr().add(UCD_MAPSIZE) as *mut u8,
-                    0,
-                    (FULL_MAPSIZE - UCD_MAPSIZE) * core::mem::size_of::<u32>(),
-                );
+                // Set up a full-sized map for this character.
+                let src = (crate::tables::_pcre2_ucd_script_sets)
+                    .as_ptr()
+                    .add(UCD_SCRIPTX_PROP(ucd) as usize);
+                core::ptr::copy_nonoverlapping(src, map.as_mut_ptr(), UCD_MAPSIZE);
+                for i in UCD_MAPSIZE..FULL_MAPSIZE {
+                    map[i] = 0;
+                }
                 if script != ucp_Common && script != ucp_Inherited {
-                    mapset(&mut map, script);
+                    MAPSET(map.as_mut_ptr(), script);
                 }
 
-                /* Handle the different checking states */
-
+                // Handle the different checking states.
                 match require_state {
-                    /* First significant character - it might follow Common or Inherited
-                    characters that do not have any script extensions. */
+                    // First significant character.
                     SCRIPT_UNSET => match script {
                         s if s == ucp_Han => {
                             require_state = SCRIPT_HANPENDING;
@@ -124,33 +117,32 @@ pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> 
                             require_state = SCRIPT_HANHANGUL;
                         }
                         _ => {
-                            memcpy(require_map.as_mut_ptr(), map.as_ptr(), FULL_MAPSIZE);
+                            require_map.copy_from_slice(&map);
                             require_state = SCRIPT_MAP;
                         }
                     },
 
-                    /* The first significant character was Han. */
+                    // The first significant character was Han.
                     SCRIPT_HANPENDING => {
-                        if script != ucp_Han
-                        /* Another Han does nothing */
-                        {
+                        if script != ucp_Han {
+                            // Another Han does nothing
                             let mut chspecial: u32 = 0;
 
-                            if mapbit(&map, ucp_Bopomofo) != 0 {
+                            if MAPBIT(map.as_ptr(), ucp_Bopomofo) != 0 {
                                 chspecial |= FOUND_BOPOMOFO;
                             }
-                            if mapbit(&map, ucp_Hiragana) != 0 {
+                            if MAPBIT(map.as_ptr(), ucp_Hiragana) != 0 {
                                 chspecial |= FOUND_HIRAGANA;
                             }
-                            if mapbit(&map, ucp_Katakana) != 0 {
+                            if MAPBIT(map.as_ptr(), ucp_Katakana) != 0 {
                                 chspecial |= FOUND_KATAKANA;
                             }
-                            if mapbit(&map, ucp_Hangul) != 0 {
+                            if MAPBIT(map.as_ptr(), ucp_Hangul) != 0 {
                                 chspecial |= FOUND_HANGUL;
                             }
 
                             if chspecial == 0 {
-                                return FALSE; /* Not allowed with Han */
+                                return FALSE; // Not allowed with Han
                             }
 
                             if chspecial == FOUND_BOPOMOFO {
@@ -159,17 +151,15 @@ pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> 
                                 require_state = SCRIPT_HANHIRAKATA;
                             }
 
-                            /* Otherwise this character must be allowed with all of them,
-                            so remain in the pending state. */
+                            // Otherwise remain in the pending state.
                         }
                     }
 
-                    /* Previously encountered one of the "with Han" scripts. Check that
-                    this character is appropriate. */
+                    // Previously encountered one of the "with Han" scripts.
                     SCRIPT_HANHIRAKATA => {
-                        if mapbit(&map, ucp_Han)
-                            + mapbit(&map, ucp_Hiragana)
-                            + mapbit(&map, ucp_Katakana)
+                        if MAPBIT(map.as_ptr(), ucp_Han)
+                            + MAPBIT(map.as_ptr(), ucp_Hiragana)
+                            + MAPBIT(map.as_ptr(), ucp_Katakana)
                             == 0
                         {
                             return FALSE;
@@ -177,36 +167,39 @@ pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> 
                     }
 
                     SCRIPT_HANBOPOMOFO => {
-                        if mapbit(&map, ucp_Han) + mapbit(&map, ucp_Bopomofo) == 0 {
+                        if MAPBIT(map.as_ptr(), ucp_Han) + MAPBIT(map.as_ptr(), ucp_Bopomofo)
+                            == 0
+                        {
                             return FALSE;
                         }
                     }
 
                     SCRIPT_HANHANGUL => {
-                        if mapbit(&map, ucp_Han) + mapbit(&map, ucp_Hangul) == 0 {
+                        if MAPBIT(map.as_ptr(), ucp_Han) + MAPBIT(map.as_ptr(), ucp_Hangul)
+                            == 0
+                        {
                             return FALSE;
                         }
                     }
 
-                    /* Previously encountered one or more characters that are allowed
-                    with a list of scripts. */
+                    // Previously encountered one or more characters that are
+                    // allowed with a list of scripts.
                     SCRIPT_MAP => {
-                        OK = FALSE;
+                        ok = FALSE;
 
                         for i in 0..FULL_MAPSIZE {
                             if (require_map[i] & map[i]) != 0 {
-                                OK = TRUE;
+                                ok = TRUE;
                                 break;
                             }
                         }
 
-                        if OK == FALSE {
+                        if ok == FALSE {
                             return FALSE;
                         }
 
-                        /* The rest of the string must be in this script, but we have to
-                        allow for the Han complications. */
-
+                        // The rest of the string must be in this script, but we
+                        // have to allow for the Han complications.
                         match script {
                             s if s == ucp_Han => {
                                 require_state = SCRIPT_HANPENDING;
@@ -220,8 +213,8 @@ pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> 
                             s if s == ucp_Hangul => {
                                 require_state = SCRIPT_HANHANGUL;
                             }
-                            /* Compute the intersection of the required list of scripts
-                            and the allowed scripts for this character. */
+                            // Compute the intersection of the required list of
+                            // scripts and the allowed scripts for this character.
                             _ => {
                                 for i in 0..FULL_MAPSIZE {
                                     require_map[i] &= map[i];
@@ -232,29 +225,29 @@ pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> 
 
                     _ => {}
                 }
-            } /* End checking character's script and extensions. */
+            } // End checking character's script and extensions.
 
-            /* The character is in an acceptable script. We must now ensure that all
-            decimal digits in the string come from the same set. */
-
+            // The character is in an acceptable script. Ensure all decimal
+            // digits in the string come from the same set.
             if ucd.chartype as u32 == ucp_Nd {
                 let digitset: u32;
 
-                if c <= UCD_DIGIT_SETS[1] {
+                let digit_sets = &crate::tables::_pcre2_ucd_digit_sets;
+
+                if c <= digit_sets[1] {
                     digitset = 1;
                 } else {
                     let mut mid: i32;
                     let mut bot: i32 = 1;
-                    let mut top: i32 = UCD_DIGIT_SETS[0] as i32;
+                    let mut top: i32 = digit_sets[0] as i32;
                     loop {
-                        if top <= bot + 1
-                        /* <= rather than == is paranoia */
-                        {
+                        if top <= bot + 1 {
+                            // <= rather than == is paranoia
                             digitset = top as u32;
                             break;
                         }
                         mid = (top + bot) / 2;
-                        if c <= UCD_DIGIT_SETS[mid as usize] {
+                        if c <= digit_sets[mid as usize] {
                             top = mid;
                         } else {
                             bot = mid;
@@ -262,31 +255,23 @@ pub unsafe fn script_run(mut ptr: PCRE2_SPTR, endptr: PCRE2_SPTR, utf: BOOL) -> 
                     }
                 }
 
-                /* A required value of 0 means "unset". */
-
+                // A required value of 0 means "unset".
                 if require_digitset == 0 {
                     require_digitset = digitset;
                 } else if digitset != require_digitset {
                     return FALSE;
                 }
-            } /* End digit handling */
+            } // End digit handling
 
-            /* If we haven't yet got to the end, pick up the next character. */
-
+            // If we haven't yet got to the end, pick up the next character.
             if ptr >= endptr {
                 return TRUE;
             }
-            c = getcharinctest(&mut ptr, utf != FALSE);
-        } /* End checking loop */
+            c = GETCHARINCTEST(&mut ptr, utf);
+        } // End checking loop
     }
 }
 
-/// Exported as `_pcre2_script_run_8`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn _pcre2_script_run_8(
-    ptr: PCRE2_SPTR,
-    endptr: PCRE2_SPTR,
-    utf: BOOL,
-) -> BOOL {
-    unsafe { script_run(ptr, endptr, utf) }
-}
+// Silence unused-import lints for c_int if not otherwise referenced.
+#[allow(unused_imports)]
+use c_int as _;

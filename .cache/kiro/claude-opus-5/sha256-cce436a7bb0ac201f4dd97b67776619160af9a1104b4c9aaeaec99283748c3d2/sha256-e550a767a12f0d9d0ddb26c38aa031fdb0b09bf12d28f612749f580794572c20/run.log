@@ -1,0 +1,479 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -maxdepth 2 -type d | head -50; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+
+I will run the following command: [38;5;141mls -la; cat translation/Cargo.toml 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+
+.
+./c_src
+./c_src/include
+./c_src/src
+./translation
+./.claude
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.11s[0m
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 06:36 .
+drwxr-xr-x. 527 scheschb amazon 81920 Sep  1 06:36 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 06:36 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 06:36 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 06:36 translation
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+
+ 15 c_src/CMakeLists.txt
+  3 c_src/include/lib.h
+ 21 c_src/src/lib.c
+ 39 total
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m82 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m426 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; tail -5 cm.log; ls *.so[0m[38;5;244m (using tool: shell)[0m
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-4E6CTX/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+libharvest-work-4E6CTX.so
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild2 && mkdir -p /tmp/cbuild2 && cd /tmp/cbuild2 && cmake /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; tail -3 cm.log; ls *.so; nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+
+[ 50%] Building C object CMakeFiles/harvest-work-aAUYEZ.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-aAUYEZ.so
+[100%] Built target harvest-work-aAUYEZ
+libharvest-work-aAUYEZ.so
+0000000000001100 T wcscat
+[38;5;244m - Completed in 0.410s[0m
+
+[?25l[0m[38;5;141m> [0mFull surface is a single exported symbol: [38;5;10mwcscat[0m. Writing the crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate wcscat to Rust
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Public ABI (as exported by the C shared library):
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //!   int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src);
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! The C behaviour is reproduced exactly, including its quirks:
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //!   * the return codes 22 (EINVAL) and 34 (ERANGE) are hard-coded literals,
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //!   * `dst[0]` is zeroed on the `!src` and overflow paths,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //!   * an unterminated `dst` buffer makes the copy loop run zero times, so the
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //!     function truncates `dst` and reports 34 without touching `src`,
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //!   * the bounds check is `ptr < dst + numElem`, i.e. the terminating NUL is
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //!     allowed to occupy the last element of the buffer.
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m use std::ffi::{c_int, c_uint};
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m /// `wchar_t` on the Linux/glibc targets this library is built for (4 bytes,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m /// signed). Declared explicitly so the ABI matches the C compiler's `wchar_t`.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m #[cfg(not(windows))]
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m pub type wchar_t = c_int;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m /// On Windows `wchar_t` is a 16-bit unsigned type.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m #[cfg(windows)]
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m pub type wchar_t = u16;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m // `size_t` == `usize` on every platform Rust supports.
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m #[allow(non_camel_case_types)]
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m type size_t = usize;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m const _: () = {
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     // Keep the unused import of c_uint meaningful only if needed; guard the
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     // assumption that `wchar_t` is 4 bytes on non-Windows targets.
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     #[cfg(not(windows))]
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     assert!(core::mem::size_of::<wchar_t>() == core::mem::size_of::<c_uint>());
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m /// Appends `src` to the wide string in `dst`, which holds at most `numElem`
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m /// elements.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m /// Returns 0 on success, 22 for invalid arguments, 34 when the result does not
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m /// fit.
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m /// Same contract as the C original: `dst`, when non-null, must point to
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m /// `numElem` writable `wchar_t`s and `src`, when non-null, must point to a
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m /// NUL-terminated wide string.
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m pub unsafe extern "C" fn wcscat(
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     dst: *mut wchar_t,
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     numElem: size_t,
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     src: *const wchar_t,
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     // `wchar_t *ptr = dst;` happens before any validation in the C source.
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     let mut ptr = dst;
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     if dst.is_null() || numElem == 0 {
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         return 22;
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     // One-past-the-end bound; `dst + numElem` in C.
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     let end = unsafe { dst.add(numElem) };
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     if src.is_null() {
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         unsafe { *dst = 0 };
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         return 22;
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     // Seek the existing terminator, but never past the end of the buffer.
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     while ptr < end && unsafe { *ptr } != 0 {
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         ptr = unsafe { ptr.add(1) };
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     let mut s = src;
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     while ptr < end {
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m         let ch = unsafe { *s };
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m         unsafe { *ptr = ch };
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m         ptr = unsafe { ptr.add(1) };
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         s = unsafe { s.add(1) };
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m         if ch == 0 {
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     unsafe { *dst = 0 };
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m     34
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation)
+warning: variable `numElem` should have a snake case name
+  --> src/lib.rs:52:5
+   |
+52 |     numElem: size_t,
+   |     ^^^^^^^ help: convert the identifier to snake case: `num_elem`
+   |
+   = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `translation` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.145s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Silence non_snake_case warning
+
+[49m[39m  49, 49[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m #[allow(non_snake_case)]
+[0m[49m[39m  50, 51[0m:[39m[49m pub unsafe extern "C" fn wcscat(
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -3; echo "=== C symbols ==="; nm -D --defined-only /tmp/cbuild2/libharvest-work-aAUYEZ.so | awk '{print $3}' | sort > /tmp/c_syms.txt; cat /tmp/c_syms.txt; echo "=== Rust symbols ==="; nm -D --defined-only target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/r_syms.txt; cat /tmp/r_syms.txt; echo "=== MISSING FROM RUST ==="; comm -23 /tmp/c_syms.txt /tmp/r_syms.txt[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+=== C symbols ===
+wcscat
+=== Rust symbols ===
+wcscat
+=== MISSING FROM RUST ===
+[38;5;244m - Completed in 0.128s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now a differential test against the C build to confirm identical behavior.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust wcscat
+
+[49m[39m   1,  1[0m:[39m[49m #include <dlfcn.h>
+[0m[49m[39m   2,  2[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m   3,  3[0m:[39m[49m #include <stdlib.h>
+[0m[49m[39m   4,  4[0m:[39m[49m #include <string.h>
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m #include "lib.h"
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <wchar.h>
+[0m[49m[39m   6,  6[0m:[39m[49m 
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m typedef void (*fn_t)(tflac *);
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m typedef int (*fn_t)(wchar_t *, size_t, const wchar_t *);
+[0m[49m[39m   8,  8[0m:[39m[49m 
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m static const tflac_u32 blocksizes[] = {
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m     0, 1, 2, 191, 192, 193, 255, 256, 257, 511, 512, 513, 575, 576, 577,
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m     1023, 1024, 1025, 1151, 1152, 1153, 2047, 2048, 2049, 2303, 2304, 2305,
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m     4095, 4096, 4097, 4607, 4608, 4609, 8191, 8192, 8193, 16383, 16384, 16385,
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m     32767, 32768, 32769, 65535, 65536, 0xFFFFFFFFu
+[0m[49m[38;5;9m- 14    [0m:[38;5;9m[49m };
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m #define CAP 16
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m static int fails = 0;
+[0m[49m[39m  15, 11[0m:[39m[49m 
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m static const tflac_u32 samplerates[] = {
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m     0, 1, 7, 10, 100, 999, 1000, 8000, 16000, 22050, 24000, 32000, 44100,
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m     48000, 88200, 96000, 176400, 192000, 255000, 256000, 257000, 65535, 65536,
+[0m[49m[38;5;9m- 19    [0m:[38;5;9m[49m     65530, 655350, 655360, 882000, 384000, 1000000, 2550000, 12345, 0xFFFFFFFFu,
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m     0xFFFFFFF6u, 4294960000u
+[0m[49m[38;5;9m- 21    [0m:[38;5;9m[49m };
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m static void run(fn_t f, const char *tag, const wchar_t *init, size_t initlen,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m                 size_t numElem, const wchar_t *src, int *rc,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m                 wchar_t out[CAP]) {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     wchar_t buf[CAP];
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     for (int i = 0; i < CAP; i++) buf[i] = 0x7f7f7f7f;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     if (init) memcpy(buf, init, initlen * sizeof(wchar_t));
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     *rc = f(buf, numElem, src);
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     memcpy(out, buf, CAP * sizeof(wchar_t));
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     (void)tag;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m }
+[0m[49m[39m  22, 22[0m:[39m[49m 
+[0m[49m[38;5;9m- 23    [0m:[38;5;9m[49m static const tflac_u32 bitdepths[] = {0, 1, 4, 8, 12, 16, 17, 20, 24, 28, 32, 33, 64, 0xFFFFFFFFu};
+[0m[49m[38;5;9m- 24    [0m:[38;5;9m[49m static const tflac_u32 channelses[] = {0, 1, 2, 3, 8, 16, 255, 256, 0xFFFFFFFFu};
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m static void cmp(fn_t c, fn_t r, const char *name, const wchar_t *init,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m                 size_t initlen, size_t numElem, const wchar_t *src) {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     int rc1, rc2;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     wchar_t o1[CAP], o2[CAP];
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     run(c, "C", init, initlen, numElem, src, &rc1, o1);
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     run(r, "R", init, initlen, numElem, src, &rc2, o2);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     int same = (rc1 == rc2) && memcmp(o1, o2, sizeof(o1)) == 0;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     if (!same) {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         fails++;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         printf("MISMATCH %-28s rc C=%d R=%d\n  C:", name, rc1, rc2);
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         for (int i = 0; i < CAP; i++) printf(" %08x", (unsigned)o1[i]);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         printf("\n  R:");
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         for (int i = 0; i < CAP; i++) printf(" %08x", (unsigned)o2[i]);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         printf("\n");
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         printf("ok       %-28s rc=%d\n", name, rc1);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m }
+[0m[49m[39m  25, 41[0m:[39m[49m 
+[0m[49m[39m  26, 42[0m:[39m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;9m- 27    [0m:[38;5;9m[49m     if (argc != 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;9m- 28    [0m:[38;5;9m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;9m- 29    [0m:[38;5;9m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;9m- 30    [0m:[38;5;9m[49m     if (!hc || !hr) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m- 31    [0m:[38;5;9m[49m     fn_t fc = (fn_t)dlsym(hc, "update_frame_header");
+[0m[49m[38;5;9m- 32    [0m:[38;5;9m[49m     fn_t fr = (fn_t)dlsym(hr, "update_frame_header");
+[0m[49m[38;5;9m- 33    [0m:[38;5;9m[49m     if (!fc || !fr) { fprintf(stderr, "dlsym failed\n"); return 2; }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW | RTLD_LOCAL);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     if (!hc || !hr) { printf("dlopen: %s\n", dlerror()); return 1; }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     fn_t c = (fn_t)dlsym(hc, "wcscat");
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     fn_t r = (fn_t)dlsym(hr, "wcscat");
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     if (!c || !r) { printf("dlsym failed\n"); return 1; }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     (void)argc;
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     /* NULL dst / zero numElem: call directly, no buffer involved. */
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     if (c(NULL, 8, L"x") != r(NULL, 8, L"x")) { fails++; printf("MISMATCH null dst\n"); }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     else printf("ok       null dst\n");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     if (c(NULL, 0, NULL) != r(NULL, 0, NULL)) { fails++; printf("MISMATCH null dst 0\n"); }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     else printf("ok       null dst numElem=0\n");
+[0m[49m[39m  34, 56[0m:[39m[49m 
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m     unsigned long long n = 0, bad = 0;
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m     for (size_t bi = 0; bi < sizeof(blocksizes)/sizeof(*blocksizes); bi++)
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m     for (size_t si = 0; si < sizeof(samplerates)/sizeof(*samplerates); si++)
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m     for (size_t di = 0; di < sizeof(bitdepths)/sizeof(*bitdepths); di++)
+[0m[49m[38;5;9m- 39    [0m:[38;5;9m[49m     for (size_t ci = 0; ci < sizeof(channelses)/sizeof(*channelses); ci++)
+[0m[49m[38;5;9m- 40    [0m:[38;5;9m[49m     for (unsigned m = 0; m < 256; m += 1) {
+[0m[49m[38;5;9m- 41    [0m:[38;5;9m[49m         /* fill whole struct with a poison pattern so padding/layout diffs show up */
+[0m[49m[38;5;9m- 42    [0m:[38;5;9m[49m         tflac a, b;
+[0m[49m[38;5;9m- 43    [0m:[38;5;9m[49m         memset(&a, 0xA5, sizeof(a));
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m         memset(&b, 0xA5, sizeof(b));
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m         a.cur_blocksize = b.cur_blocksize = blocksizes[bi];
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m         a.samplerate    = b.samplerate    = samplerates[si];
+[0m[49m[38;5;9m- 47    [0m:[38;5;9m[49m         a.bitdepth      = b.bitdepth      = bitdepths[di];
+[0m[49m[38;5;9m- 48    [0m:[38;5;9m[49m         a.channels      = b.channels      = channelses[ci];
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m         a.channel_mode  = b.channel_mode  = (tflac_u8)m;
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m         fc(&a);
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m         fr(&b);
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m         n++;
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m         if (memcmp(&a, &b, sizeof(tflac)) != 0) {
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m             if (bad < 10) {
+[0m[49m[38;5;9m- 55    [0m:[38;5;9m[49m                 printf("MISMATCH bs=%u sr=%u bd=%u ch=%u mode=%u : C=0x%08X RS=0x%08X\n",
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m                        a.cur_blocksize, a.samplerate, a.bitdepth, a.channels, m,
+[0m[49m[38;5;9m- 57    [0m:[38;5;9m[49m                        a.frame_header, b.frame_header);
+[0m[49m[38;5;9m- 58    [0m:[38;5;9m[49m             }
+[0m[49m[38;5;9m- 59    [0m:[38;5;9m[49m             bad++;
+[0m[49m[38;5;9m- 60    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     wchar_t z0[CAP] = {0};
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     cmp(c, r, "numElem=0", z0, 1, 0, L"abc");
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     cmp(c, r, "src NULL", L"hi\0", 3, 8, NULL);
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     cmp(c, r, "src NULL numElem=1", L"h\0", 2, 1, NULL);
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     cmp(c, r, "empty dst + empty src", L"\0", 1, 8, L"");
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     cmp(c, r, "empty dst + abc", L"\0", 1, 8, L"abc");
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     cmp(c, r, "hi + abc", L"hi\0", 3, 8, L"abc");
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     cmp(c, r, "exact fit", L"hi\0", 3, 6, L"abc");     /* "hiabc" + NUL == 6 */
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     cmp(c, r, "one too long", L"hi\0", 3, 5, L"abc");
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     cmp(c, r, "no room for NUL", L"abc\0", 4, 4, L"");
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     cmp(c, r, "unterminated dst", L"abcd", 4, 4, L"x");
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     cmp(c, r, "unterminated dst len8", L"abcdefgh", 8, 8, L"");
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     cmp(c, r, "numElem=1 empty dst", L"\0", 1, 1, L"a");
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     cmp(c, r, "numElem=1 empty src", L"\0", 1, 1, L"");
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     cmp(c, r, "numElem=1 nonempty dst", L"a", 1, 1, L"b");
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     cmp(c, r, "numElem beyond terminator", L"ab\0\0\0", 5, 3, L"c");
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     cmp(c, r, "embedded NUL then junk", L"a\0zz\0", 5, 8, L"bc");
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     cmp(c, r, "wide/negative chars", L"\x263a\0", 2, 8, L"\x1f600\x263b");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         wchar_t neg[3] = { (wchar_t)-5, 0, 0 };
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         cmp(c, r, "negative wchar in dst", neg, 3, 8, L"q");
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         wchar_t nsrc[3] = { (wchar_t)-1, (wchar_t)0x7fffffff, 0 };
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         cmp(c, r, "extreme wchar in src", L"\0", 1, 8, nsrc);
+[0m[49m[39m  61, 80[0m:[39m[49m     }
+[0m[49m[38;5;9m- 62    [0m:[38;5;9m[49m     printf("cases=%llu mismatches=%llu\n", n, bad);
+[0m[49m[38;5;9m- 63    [0m:[38;5;9m[49m     return bad ? 1 : 0;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     cmp(c, r, "fill to capacity", L"abcdefg\0", 8, 8, L"h");
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     cmp(c, r, "overflow by many", L"abcd\0", 5, 6, L"efghij");
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     printf("\n%s (%d mismatches)\n", fails ? "FAILED" : "ALL MATCH", fails);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     return fails != 0;
+[0m[49m[39m  64, 86[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest difftest.c -ldl && ./difftest /tmp/cbuild2/libharvest-work-aAUYEZ.so /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+
+ok       null dst
+ok       null dst numElem=0
+ok       numElem=0                    rc=22
+ok       src NULL                     rc=22
+ok       src NULL numElem=1           rc=22
+ok       empty dst + empty src        rc=0
+ok       empty dst + abc              rc=0
+ok       hi + abc                     rc=0
+ok       exact fit                    rc=0
+ok       one too long                 rc=34
+ok       no room for NUL              rc=0
+ok       unterminated dst             rc=34
+ok       unterminated dst len8        rc=34
+ok       numElem=1 empty dst          rc=34
+ok       numElem=1 empty src          rc=0
+ok       numElem=1 nonempty dst       rc=34
+ok       numElem beyond terminator    rc=34
+ok       embedded NUL then junk       rc=0
+ok       wide/negative chars          rc=0
+ok       negative wchar in dst        rc=0
+ok       extreme wchar in src         rc=0
+ok       fill to capacity             rc=34
+ok       overflow by many             rc=34
+
+ALL MATCH (0 mismatches)
+[38;5;244m - Completed in 0.61s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/fuzz.c <<'EOF'
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+typedef int (*fn_t)(wchar_t*,size_t,const wchar_t*);
+#define CAP 24
+int main(int argc,char**argv){
+  void*hc=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL),*hr=dlopen(argv[2],RTLD_NOW|RTLD_LOCAL);
+  if(!hc||!hr){puts(dlerror());return 1;}
+  fn_t c=(fn_t)dlsym(hc,"wcscat"),r=(fn_t)dlsym(hr,"wcscat");
+  srand(12345); int fails=0;
+  for(long it=0;it<300000;it++){
+    wchar_t seed[CAP], src[CAP], b1[CAP], b2[CAP];
+    for(int i=0;i<CAP;i++){ int k=rand()%5; seed[i]= k==0?0:(wchar_t)(rand()%0x110000 - (k==4?0x200000:0)); }
+    int sl=rand()%(CAP-1); for(int i=0;i<sl;i++){int k=rand()%6; src[i]= k==0?0:(wchar_t)(rand()%0x110000);} src[sl]=0;
+    size_t n=(size_t)(rand()%(CAP+1));
+    memcpy(b1,seed,sizeof seed); memcpy(b2,seed,sizeof seed);
+    int rc1=c(b1,n,src), rc2=r(b2,n,src);
+    if(rc1!=rc2||memcmp(b1,b2,sizeof b1)){ fails++; printf("MISMATCH it=%ld n=%zu rc %d/%d\n",it,n,rc1,rc2); if(fails>5)break; }
+  }
+  printf("%s (%d mismatches / 300000 cases)\n", fails?"FAILED":"ALL MATCH", fails);
+  return fails!=0;
+}
+EOF
+cd /tmp && gcc -O1 -o fuzz fuzz.c -ldl && ./fuzz /tmp/cbuild2/libharvest-work-aAUYEZ.so /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ/translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+
+ALL MATCH (0 mismatches / 300000 cases)
+[38;5;244m - Completed in 0.376s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-aAUYEZ && git status --porcelain c_src 2>/dev/null; ls -la translation translation/src; nm -D --defined-only translation/target/release/libtranslation.so; rm -f /tmp/difftest.c /tmp/difftest /tmp/fuzz.c /tmp/fuzz /tmp/c_syms.txt /tmp/r_syms.txt; rm -rf /tmp/cbuild2[0m[38;5;244m (using tool: shell)[0m
+
+translation:
+total 8
+drwxr-xr-x. 4 scheschb amazon  67 Sep  1 06:37 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 06:36 ..
+-rw-r--r--. 1 scheschb amazon 155 Sep  1 06:37 Cargo.lock
+-rw-r--r--. 1 scheschb amazon 152 Sep  1 06:37 Cargo.toml
+drwxr-xr-x. 2 scheschb amazon  20 Sep  1 06:37 src
+drwxr-xr-x. 3 scheschb amazon  65 Sep  1 06:37 target
+
+translation/src:
+total 4
+drwxr-xr-x. 2 scheschb amazon   20 Sep  1 06:37 .
+drwxr-xr-x. 4 scheschb amazon   67 Sep  1 06:37 ..
+-rw-r--r--. 1 scheschb amazon 2738 Sep  1 06:37 lib.rs
+0000000000011690 T wcscat
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library turned out to be small: [38;5;10mc_src[0m contains one translation unit ([38;5;10msrc/lib.c[0m, 21 lines) and one header, and [38;5;10mnm -D[0m on the C [38;5;10m.so[0m exports exactly one public symbol, [38;5;10mwcscat[0m — no namespace macros, no hidden modules. That single symbol is the complete definition of done, and the Rust [38;5;10m.so[0m exports it with an empty diff.[0m[0m
+[0m[0m
+The function is a bounds-checked wide-string append ([38;5;10mwcscat_s[0m-style) that shadows libc's name. I reproduced it pointer-for-pointer rather than rewriting it idiomatically, because its behavior is quirky in ways a "clean" version would silently fix:[0m[0m
+[0m[0m
+- The bound is [38;5;10mptr < dst + numElem[0m, so the terminating NUL may occupy the final slot; [38;5;10mwcscat(buf, 4, L"")[0m onto [38;5;10m"abc"[0m returns 0, not an error.[0m[0m
+- If [38;5;10mdst[0m has no NUL within [38;5;10mnumElem[0m, the scan loop leaves [38;5;10mptr[0m at the end, the copy loop never executes, and the function truncates [38;5;10mdst[0m to [38;5;10m""[0m and returns 34 without reading [38;5;10msrc[0m at all.[0m[0m
+- Return codes are the literals 22 and 34 (EINVAL/ERANGE values), and the [38;5;10m!src[0m path writes [38;5;10mdst[0] = 0[0m before returning 22.[0m[0m
+[0m[0m
+Verification, all run by me against a freshly built C [38;5;10m.so[0m:[0m[0m
+[0m[0m
+- [38;5;10mcargo build --release[0m clean, no warnings.[0m[0m
+- Symbol diff ([38;5;10mcomm -23[0m of the two [38;5;10mnm -D[0m lists) empty.[0m[0m
+- A [38;5;10mdlopen[0m harness loading both libraries side by side: 23 hand-picked edge cases (NULL args, [38;5;10mnumElem == 0[0m, exact fit, off-by-one overflow, unterminated [38;5;10mdst[0m, embedded NULs, negative and out-of-range [38;5;10mwchar_t[0m) plus 300,000 randomized cases comparing both the return code and all 24 buffer elements. Zero mismatches.[0m[0m
+[0m[0m
+[38;5;10mc_src[0m is untouched. [38;5;10mwchar_t[0m is declared as [38;5;10mc_int[0m on non-Windows with a compile-time size assertion; the Windows [38;5;10mu16[0m arm is unexercised here.[0m[0m
+[38;5;8m
+ ▸ Credits: 4.28 • Time: 2m 0s
+
+[0m[1G[0m[0m[?25h

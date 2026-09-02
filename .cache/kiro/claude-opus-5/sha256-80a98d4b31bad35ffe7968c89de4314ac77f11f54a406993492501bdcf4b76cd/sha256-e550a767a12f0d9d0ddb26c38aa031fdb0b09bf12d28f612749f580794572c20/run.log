@@ -1,0 +1,879 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---COUNT---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 15:13 .
+drwxr-xr-x. 791 scheschb amazon 81920 Sep  1 15:13 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 15:13 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 15:13 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 15:13 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---COUNT---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  38 c_src/CMakeLists.txt
+  24 c_src/include/lib.h
+ 210 c_src/src/lib.c
+ 272 total
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C source files
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1541 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/CMakeLists.txt
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1164 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m6203 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library out-of-tree
+
+[ 50%] Building C object CMakeFiles/harvest-work-I4UEgV.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-I4UEgV.so
+[100%] Built target harvest-work-I4UEgV
+libharvest-work-I4UEgV.so
+[38;5;244m - Completed in 0.429s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libharvest-work-I4UEgV.so | sort | tee /tmp/c_syms_raw.txt && echo "=== filtered (T/D/B only, non-internal) ===" && nm -D --defined-only libharvest-work-I4UEgV.so | awk '{print $3}' | sort > /tmp/c_syms.txt && cat /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols from C .so
+
+00000000000011b9 T increment_counter
+00000000000011d9 T decrement_counter
+00000000000011f7 T multiply_counter
+0000000000001216 T reset_counter
+000000000000122e T is_string_empty
+000000000000125d T find_char_in_buffer
+0000000000001299 T create_buffer
+00000000000012f7 T validate_uint16_range
+0000000000001322 T apply_operation
+000000000000134c T charinbuf
+=== filtered (T/D/B only, non-internal) ===
+apply_operation
+charinbuf
+create_buffer
+decrement_counter
+find_char_in_buffer
+increment_counter
+is_string_empty
+multiply_counter
+reset_counter
+validate_uint16_range
+[38;5;244m - Completed in 0.34s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version; ls ~/.cargo/registry 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+CACHEDIR.TAG
+cache
+index
+src
+[38;5;244m - Completed in 0.35s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — 10 exported symbols, one translation unit. I'll do this directly.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest-work-I4UEgV"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Simplify crate name
+
+[49m[39m   1,  1[0m:[39m[49m [package]
+[0m[49m[38;5;9m-  2    [0m:[38;5;9m[49m name = "harvest_translation"
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[39m   3,  3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4,  4[0m:[39m[49m edition = "2024"
+[0m[49m[39m   5,  5[0m:[39m[49m 
+[0m[49m[39m   6,  6[0m:[39m[49m [lib]
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m name = "harvest-work-I4UEgV"
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m name = "translation"
+[0m[49m[39m   8,  8[0m:[39m[49m crate-type = ["cdylib"]
+[0m[49m[39m   9,  9[0m:[39m[49m path = "src/lib.rs"
+[0m[49m[39m  10, 10[0m:[39m[49m 
+[0m[49m[39m  11, 11[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 12[0m:[39m[49m panic = "abort"
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/cruntime.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: libc declarations module
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Declarations for the C runtime routines used by the original library.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The translation deliberately calls straight through to libc rather than
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! reimplementing formatting or allocation in Rust. `charinbuf` writes to the
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! process' C `stdout`, and buffers returned by `create_buffer` are expected to
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! be releasable with `free()`, so both must be the genuine libc versions in
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! order for the observable behaviour to stay byte-identical.
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     /// `int printf(const char *restrict format, ...)`
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     pub safe fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     /// `void *malloc(size_t size)`
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     pub fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     /// `void free(void *ptr)`
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     pub fn free(ptr: *mut c_void);
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     /// `size_t strlen(const char *s)`
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     pub fn strlen(s: *const c_char) -> usize;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     /// `char *strcpy(char *dest, const char *src)`
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     pub fn strcpy(dest: *mut c_char, src: *const c_char) -> *mut c_char;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     /// `void *memchr(const void *s, int c, size_t n)`
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     pub fn memchr(s: *const c_void, c: c_int, n: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/cruntime.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/cruntime.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 13    [0m:[38;5;9m[49m     pub safe fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     pub fn printf(format: *const c_char, ...) -> c_int;
+[0m[K
+Updating: [38;5;141mtranslation/src/cruntime.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the counter module (the file-scope [38;5;10mstatic int counter[0m):[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/counter.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Counter statics and four exported mutators
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! The file-scope `static int counter;` from `src/lib.c` and the four exported
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! functions that mutate it.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! The C original is not thread safe (a plain non-atomic `static int` touched
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! from exported entry points), and signed overflow in the arithmetic is
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! technically undefined behaviour that GCC/Clang compile into plain wrapping
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! `add`/`sub`/`imul`. Both traits are preserved here: the state lives in an
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! `UnsafeCell` with no synchronisation, and the arithmetic uses the explicit
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! `wrapping_*` operators so the release build cannot diverge and the debug
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! build cannot panic.
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m use core::cell::UnsafeCell;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m /// `static int counter = 0;`
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m struct Counter(UnsafeCell<c_int>);
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m // SAFETY: This is a faithful model of a C file-scope `static int`, which comes
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m // with no synchronisation of its own. Every access happens through the exported
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m // entry points below, exactly as in the C original.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m unsafe impl Sync for Counter {}
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m static COUNTER: Counter = Counter(UnsafeCell::new(0));
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m /// Read the file-scope counter.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m pub(crate) fn get() -> c_int {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     // SAFETY: no concurrent access is guarded against, matching the C original.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     unsafe { *COUNTER.0.get() }
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m /// Overwrite the file-scope counter.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m pub(crate) fn set(value: c_int) {
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     // SAFETY: see `get`.
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     unsafe { *COUNTER.0.get() = value }
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m /// int increment_counter(int value) {
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m ///     counter += value;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m ///     return counter;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m pub extern "C" fn increment_counter(value: c_int) -> c_int {
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     let updated = get().wrapping_add(value);
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     set(updated);
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     updated
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m /// int decrement_counter(int value) {
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ///     counter -= value;
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m ///     return counter;
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m pub extern "C" fn decrement_counter(value: c_int) -> c_int {
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     let updated = get().wrapping_sub(value);
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     set(updated);
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     updated
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m /// int multiply_counter(int value) {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m ///     counter *= value;
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m ///     return counter;
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m pub extern "C" fn multiply_counter(value: c_int) -> c_int {
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m     let updated = get().wrapping_mul(value);
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     set(updated);
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     updated
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m /// int reset_counter(int value) {
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m ///     counter = value;
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m ///     return counter;
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m pub extern "C" fn reset_counter(value: c_int) -> c_int {
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     set(value);
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m     value
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/counter.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/helpers.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: String/buffer/validation helper exports
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! String, buffer and validation helpers exported by `src/lib.c`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_void};
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m use core::ptr;
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use crate::cruntime;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m /// `typedef int (*operation_func)(int);`
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m /// Modelled as an `Option<...>` so that the C-side NULL is representable while
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// keeping the same single-pointer ABI (null pointer optimisation).
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m pub type OperationFunc = Option<unsafe extern "C" fn(c_int) -> c_int>;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m /// int is_string_empty(const char *str) {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m ///     if (!str) return 1;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m ///     if (*str) {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m ///         return 0;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m ///     return 1;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// Note the NULL pointer and the empty string are conflated into the same `1`
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// result; that is the C behaviour and is kept as-is.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m pub unsafe extern "C" fn is_string_empty(str: *const c_char) -> c_int {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     if str.is_null() {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     // SAFETY: non-NULL was just established; the caller guarantees the pointer
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     // is dereferenceable, exactly as the C original requires.
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     if unsafe { *str } != 0 {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// char* find_char_in_buffer(const char *buffer, size_t size, char target) {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m ///     if (!buffer) return NULL;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m ///     return (char*)memchr(buffer, target, size);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// `target` is a `char`, which on the x86-64 SysV ABI is signed. C promotes it
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// to `int` (sign extending) for the `memchr` call, and `memchr` then truncates
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// back to `unsigned char`; casting through `c_int` here reproduces that chain.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m pub unsafe extern "C" fn find_char_in_buffer(
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     buffer: *const c_char,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     size: usize,
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     target: c_char,
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m ) -> *mut c_char {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     if buffer.is_null() {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         return ptr::null_mut();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     // SAFETY: delegated to libc's memchr under the same contract the C code
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     // imposes on its callers (`buffer` readable for `size` bytes).
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     unsafe { cruntime::memchr(buffer as *const c_void, target as c_int, size) as *mut c_char }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// char* create_buffer(const char *initial) {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m ///     if (!initial) return NULL;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m ///     size_t len = strlen(initial);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ///     char *buffer = (char*)malloc(len + 1);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m ///     if (buffer) {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m ///         strcpy(buffer, initial);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m ///     return buffer;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// The allocation must come from libc `malloc`: the returned pointer is handed
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// to callers (and to `charinbuf`) that release it with `free`.
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m pub unsafe extern "C" fn create_buffer(initial: *const c_char) -> *mut c_char {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     if initial.is_null() {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         return ptr::null_mut();
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     // SAFETY: `initial` is a non-NULL NUL-terminated string per the C contract.
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     let len = unsafe { cruntime::strlen(initial) };
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     // `len + 1` is written exactly as in C, including its wrap-around behaviour
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     // on a (practically unreachable) SIZE_MAX-length string.
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let buffer = unsafe { cruntime::malloc(len.wrapping_add(1)) } as *mut c_char;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     if !buffer.is_null() {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         // SAFETY: `buffer` holds `len + 1` bytes, enough for the string plus NUL.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         unsafe { cruntime::strcpy(buffer, initial) };
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     buffer
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// int validate_uint16_range(int value) {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m ///     if (value < 0) return 0;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m ///     if (value > UINT16_MAX) return 0;
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m ///     return 1;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m pub extern "C" fn validate_uint16_range(value: c_int) -> c_int {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     if value < 0 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     if value > crate::UINT16_MAX {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         return 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     1
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// int apply_operation(operation_func op, int value) {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m ///     if (!op) return -1;
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m ///     return op(value);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// The `-1` sentinel for a NULL callback is indistinguishable from an operation
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// that legitimately returns `-1`; that ambiguity exists in the C and is kept.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m pub unsafe extern "C" fn apply_operation(op: OperationFunc, value: c_int) -> c_int {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     match op {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         None => -1,
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         // SAFETY: the caller supplies a valid `int (*)(int)`, as in C.
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         Some(op) => unsafe { op(value) },
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/helpers.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/charinbuf.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate charinbuf driver
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! `charinbuf` — the single function declared in `include/lib.h` and the driver
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! that exercises the rest of the library.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Every message is emitted through libc `printf` with the original format
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! string byte-for-byte, so stdout content, ordering and buffering behaviour are
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! identical to the C build.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use core::ptr;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use crate::cruntime::{free, printf, strlen};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use crate::helpers::{
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     OperationFunc, apply_operation, create_buffer, find_char_in_buffer, is_string_empty,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use crate::{UINT16_MAX, counter};
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Convenience for turning a NUL-terminated byte literal into `*const c_char`.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m macro_rules! cstr {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     ($bytes:literal) => {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         concat!($bytes, "\0").as_ptr() as *const c_char
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// int charinbuf(int mode, int value, int opt1, int opt2);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// Declared in `include/lib.h`. There is no namespace macro in the header, so
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// the linker symbol is plain `charinbuf`.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m pub extern "C" fn charinbuf(mode: c_int, value: c_int, opt1: c_int, opt2: c_int) -> c_int {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let mut result: c_int = 0;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     let mut buffer: *mut c_char = ptr::null_mut();
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     let mut found_pos: *mut c_char;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     let test_string = cstr!("");
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     let non_empty_string = cstr!("Hello, World!");
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     let mut current_op: OperationFunc;
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     counter::set(0);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     // SAFETY: every call below is a variadic libc call whose argument types
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     // match the corresponding conversion specifier, or a helper invoked on a
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     // pointer this function itself produced.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         match mode {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             0 => {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                 printf(cstr!("Mode 0: UINT16_MAX validation\n"));
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 printf(
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m                     cstr!("Checking if value %d is within uint16_t range...\n"),
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                     value,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m                 if crate::helpers::validate_uint16_range(value) != 0 {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m                     printf(
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                         cstr!("Value %d is valid (0 <= value <= %u)\n"),
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                         value,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m                         UINT16_MAX as core::ffi::c_uint,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m                     );
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m                     result = value;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m                     printf(cstr!("Value %d is out of range for uint16_t\n"), value);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m                     result = -1;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m                 printf(
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m                     cstr!("UINT16_MAX constant value: %u\n"),
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m                     UINT16_MAX as core::ffi::c_uint,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             1 => {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m                 printf(cstr!("Mode 1: String empty check by dereference\n"));
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m                 if is_string_empty(test_string) != 0 {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m                     printf(cstr!("Test string is empty (checked with *string)\n"));
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m                     result = 0;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m                     printf(cstr!("Test string is not empty\n"));
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m                     result = 1;
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m                 if is_string_empty(non_empty_string) != 0 {
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m                     printf(cstr!("Non-empty string check failed!\n"));
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m                     printf(cstr!("Non-empty string correctly identified\n"));
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                     result = result.wrapping_add(10);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             2 => {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m                 printf(cstr!("Mode 2: Dynamic memory allocation and free\n"));
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m                 buffer = create_buffer(cstr!("Testing malloc and free"));
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m                 if !buffer.is_null() {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m                     printf(cstr!("Buffer allocated: '%s'\n"), buffer);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m                     printf(cstr!("Buffer length: %zu\n"), strlen(buffer));
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                     result = strlen(buffer) as c_int;
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                     free(buffer as *mut core::ffi::c_void);
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m                     printf(cstr!("Buffer freed successfully\n"));
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m                     buffer = ptr::null_mut();
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                     printf(cstr!("Failed to allocate buffer\n"));
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                     result = -1;
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             3 => {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 printf(cstr!("Mode 3: Function pointers with static counter\n"));
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                 current_op = Some(counter::reset_counter);
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m                 result = apply_operation(current_op, value);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                 printf(cstr!("Counter reset to: %d\n"), result);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                 current_op = Some(counter::increment_counter);
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                 result = apply_operation(current_op, opt1);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                 printf(cstr!("Counter after increment by %d: %d\n"), opt1, result);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                 current_op = Some(counter::multiply_counter);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m                 result = apply_operation(current_op, opt2);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m                 printf(cstr!("Counter after multiply by %d: %d\n"), opt2, result);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                 current_op = Some(counter::decrement_counter);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m                 result = apply_operation(current_op, 5);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m                 printf(cstr!("Counter after decrement by 5: %d\n"), result);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m                 printf(cstr!("Final static counter value: %d\n"), counter::get());
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             4 => {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                 printf(cstr!("Mode 4: Using memchr to find character\n"));
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                 buffer = create_buffer(cstr!("Search for character X in this buffer"));
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 if !buffer.is_null() {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m                     let buf_size = strlen(buffer);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                     let search_char: c_char = b'X' as c_char;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m                     printf(
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m                         cstr!("Searching for '%c' in: '%s'\n"),
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                         search_char as c_int,
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m                         buffer,
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m                     );
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                     found_pos = find_char_in_buffer(buffer, buf_size, search_char);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m                     if !found_pos.is_null() {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m                         result = found_pos.offset_from(buffer) as c_int;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m                         printf(
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m                             cstr!("Found '%c' at position: %d\n"),
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m                             search_char as c_int,
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m                             result,
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m                         );
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m                     } else {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m                         printf(cstr!("Character '%c' not found\n"), search_char as c_int);
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                         result = -1;
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m                     free(buffer as *mut core::ffi::c_void);
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m                     buffer = ptr::null_mut();
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m             _ => {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                 printf(cstr!("Invalid mode: %d\n"), mode);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 result = -1;
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     // `buffer` is cleared on every path that allocated it, mirroring the C code;
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     // the assignments exist only for parity and are otherwise dead.
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     let _ = buffer;
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     result
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/charinbuf.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Crate root wiring modules together
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `../c_src`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! The C build globs `src/lib.c` into one shared object exporting ten symbols:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! `increment_counter`, `decrement_counter`, `multiply_counter`,
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! `reset_counter`, `is_string_empty`, `find_char_in_buffer`, `create_buffer`,
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! `validate_uint16_range`, `apply_operation` and `charinbuf`. All ten are
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! re-exported here with the same names and signatures; `include/lib.h` defines
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! no namespace macros, so no symbol renaming is involved.
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! Guiding rules for this translation:
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //! * Observable behaviour is preserved, bugs included. Nothing is "fixed".
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //! * Error checks stay in their original order.
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //! * Formatted output goes through libc `printf` with the original format
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //!   strings, and heap buffers come from libc `malloc`, so stdout bytes and the
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m //!   `free()`-ability of returned pointers are unchanged.
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m mod charinbuf;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m mod counter;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m mod cruntime;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m mod helpers;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m /// `UINT16_MAX` from `<stdint.h>`, which the preprocessor expands to `65535`.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m /// In the C source it appears both in an `int` comparison
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m /// (`value > UINT16_MAX`) and as a `%u` argument, so it is kept as a `c_int`
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m /// and cast at the `printf` call sites.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m pub(crate) const UINT16_MAX: c_int = 65535;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -40[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation)
+warning: variable does not need to be mutable
+  --> src/charinbuf.rs:34:9
+   |
+34 |     let mut found_pos: *mut c_char;
+   |         ----^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `translation` (lib) generated 1 warning (run `cargo fix --lib -p translation` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.15s
+[38;5;244m - Completed in 0.170s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/charinbuf.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;9m- 34    [0m:[38;5;9m[49m     let mut found_pos: *mut c_char;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     let found_pos: *mut c_char;
+[0m[K
+Updating: [38;5;141mtranslation/src/charinbuf.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20 && echo "=== RUST SYMBOLS ===" && nm -D --defined-only target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rust_syms_all.txt && grep -vE '^(_init|_fini|__|rust_)' /tmp/rust_syms_all.txt > /tmp/rust_syms.txt; cat /tmp/rust_syms.txt && echo "=== DIFF (C vs Rust) ===" && diff /tmp/c_syms.txt /tmp/rust_syms.txt && echo "NO DIFF - all C symbols present"[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and diff symbol lists
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation)
+    Finished `release` profile [optimized] target(s) in 0.09s
+=== RUST SYMBOLS ===
+apply_operation
+charinbuf
+create_buffer
+decrement_counter
+find_char_in_buffer
+increment_counter
+is_string_empty
+multiply_counter
+reset_counter
+validate_uint16_range
+=== DIFF (C vs Rust) ===
+NO DIFF - all C symbols present
+[38;5;244m - Completed in 0.136s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now a differential test to confirm byte-identical output.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only target/release/libtranslation.so | sort[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Full raw symbol table of Rust .so
+
+0000000000011db0 T apply_operation
+0000000000011dd0 T charinbuf
+00000000000120d0 T create_buffer
+0000000000012100 T decrement_counter
+0000000000012110 T find_char_in_buffer
+0000000000012130 T increment_counter
+0000000000012140 T is_string_empty
+0000000000012160 T multiply_counter
+0000000000012170 T reset_counter
+0000000000012180 T validate_uint16_range
+[38;5;244m - Completed in 0.19s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Differential harness: dlopen a .so and exercise every exported symbol.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m // Not part of the deliverable; used only to compare C vs Rust output.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m typedef int (*op_t)(int);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     int (*charinbuf)(int,int,int,int)      = dlsym(h, "charinbuf");
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     int (*inc)(int)                        = dlsym(h, "increment_counter");
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     int (*dec)(int)                        = dlsym(h, "decrement_counter");
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     int (*mul)(int)                        = dlsym(h, "multiply_counter");
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     int (*rst)(int)                        = dlsym(h, "reset_counter");
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     int (*ise)(const char*)                = dlsym(h, "is_string_empty");
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     char* (*fcb)(const char*, size_t, char)= dlsym(h, "find_char_in_buffer");
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     char* (*cb)(const char*)               = dlsym(h, "create_buffer");
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     int (*vur)(int)                        = dlsym(h, "validate_uint16_range");
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     int (*ao)(op_t,int)                    = dlsym(h, "apply_operation");
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     if (!charinbuf||!inc||!dec||!mul||!rst||!ise||!fcb||!cb||!vur||!ao) {
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         fprintf(stderr, "missing symbol\n"); return 3;
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     // --- counter family, including overflow wrap-around ---
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     printf("rst(0)=%d\n", rst(0));
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     printf("inc(5)=%d\n", inc(5));
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     printf("inc(-9)=%d\n", inc(-9));
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     printf("dec(3)=%d\n", dec(3));
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     printf("mul(-7)=%d\n", mul(-7));
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     printf("rst(2147483647)=%d\n", rst(2147483647));
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     printf("inc(1)=%d\n", inc(1));          // signed overflow
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     printf("mul(2)=%d\n", mul(2));          // signed overflow
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     printf("rst(-2147483648)=%d\n", rst(-2147483648));
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     printf("dec(1)=%d\n", dec(1));          // signed underflow
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     printf("mul(0)=%d\n", mul(0));
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     // --- is_string_empty ---
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     printf("ise(NULL)=%d\n", ise(NULL));
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     printf("ise(\"\")=%d\n", ise(""));
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     printf("ise(\"a\")=%d\n", ise("a"));
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     printf("ise(\"\\0x\")=%d\n", ise("\0x"));
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     // --- validate_uint16_range boundaries ---
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     int vs[] = {-2147483648, -1, 0, 1, 65534, 65535, 65536, 2147483647};
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(vs)/sizeof(vs[0]); i++)
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         printf("vur(%d)=%d\n", vs[i], vur(vs[i]));
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     // --- create_buffer / find_char_in_buffer ---
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     printf("cb(NULL)=%p\n", (void*)cb(NULL));
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     char *b = cb("");
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     printf("cb(\"\") len=%zu content='%s'\n", strlen(b), b);
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     free(b);
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     b = cb("abcXdefX");
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     printf("cb len=%zu content='%s'\n", strlen(b), b);
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     printf("fcb(NULL)=%p\n", (void*)fcb(NULL, 8, 'X'));
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     printf("fcb X off=%ld\n", (long)(fcb(b, 8, 'X') - b));
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     printf("fcb a off=%ld\n", (long)(fcb(b, 8, 'a') - b));
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     printf("fcb z=%p\n", (void*)fcb(b, 8, 'z'));
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     printf("fcb size0=%p\n", (void*)fcb(b, 0, 'a'));
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     printf("fcb NUL off=%ld\n", (long)(fcb(b, 9, '\0') - b));
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     printf("fcb X in 3=%p\n", (void*)fcb(b, 3, 'X'));
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     // high-bit char: exercises the signed-char -> int -> unsigned char chain
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     char *hb = cb("ab\xC3\xA9z");
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     printf("fcb hi off=%ld\n", (long)(fcb(hb, strlen(hb), (char)0xC3) - hb));
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     free(hb);
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     free(b);
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     // --- apply_operation ---
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     printf("ao(NULL,7)=%d\n", ao(NULL, 7));
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     printf("ao(rst,42)=%d\n", ao(rst, 42));
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     printf("ao(inc,8)=%d\n", ao(inc, 8));
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     printf("ao(mul,3)=%d\n", ao(mul, 3));
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m     printf("ao(dec,150)=%d\n", ao(dec, 150));
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m     printf("ao(vur,65536)=%d\n", ao(vur, 65536));
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     // --- charinbuf: all modes plus interesting args ---
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     int modes[] = {0,1,2,3,4,5,-1,100,-2147483648,2147483647};
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m     int args[][3] = {{0,0,0},{65535,1,2},{65536,-1,-3},{-1,7,0},{2147483647,2147483647,2}};
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m     for (unsigned m = 0; m < sizeof(modes)/sizeof(modes[0]); m++) {
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m         for (unsigned a = 0; a < sizeof(args)/sizeof(args[0]); a++) {
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m             printf("--- charinbuf(%d,%d,%d,%d) ---\n",
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m                    modes[m], args[a][0], args[a][1], args[a][2]);
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m             printf("=> %d\n", charinbuf(modes[m], args[a][0], args[a][1], args[a][2]));
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m     // counter state must survive charinbuf (it resets to 0 on entry)
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m     printf("post-charinbuf inc(0)=%d\n", inc(0));
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m     dlclose(h);
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    98[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O0 -w -o harness harness.c -ldl 2>&1 | tail -5 && ./harness /tmp/cbuild/libharvest-work-I4UEgV.so > c_out.txt 2>&1; echo "c exit=$?"; ./harness /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/target/release/libtranslation.so > rust_out.txt 2>&1; echo "rust exit=$?"; wc -l c_out.txt rust_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run harness against both libraries
+
+c exit=0
+rust exit=0
+  266 c_out.txt
+  266 rust_out.txt
+  532 total
+[38;5;244m - Completed in 0.54s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && grep -v '^cb(NULL)=\|^fcb(NULL)=\|^fcb z=\|^fcb size0=\|^fcb X in 3=' c_out.txt > c_n.txt; grep -v '^cb(NULL)=\|^fcb(NULL)=\|^fcb z=\|^fcb size0=\|^fcb X in 3=' rust_out.txt > r_n.txt; if diff -u c_n.txt r_n.txt; then echo "IDENTICAL (excluding pointer-valued lines)"; fi; echo "--- pointer lines (should all be nil) ---"; grep '=0x\|=(nil)' c_out.txt; echo "vs"; grep '=0x\|=(nil)' rust_out.txt; echo "--- md5 of full outputs ---"; md5sum c_out.txt rust_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust outputs
+
+IDENTICAL (excluding pointer-valued lines)
+--- pointer lines (should all be nil) ---
+cb(NULL)=(nil)
+fcb(NULL)=(nil)
+fcb z=(nil)
+fcb size0=(nil)
+fcb X in 3=(nil)
+vs
+cb(NULL)=(nil)
+fcb(NULL)=(nil)
+fcb z=(nil)
+fcb size0=(nil)
+fcb X in 3=(nil)
+--- md5 of full outputs ---
+0a9d74e4f223335f9fae0cfb25f1769b  c_out.txt
+0a9d74e4f223335f9fae0cfb25f1769b  rust_out.txt
+[38;5;244m - Completed in 0.16s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/harness /tmp/harness.c /tmp/c_out.txt /tmp/rust_out.txt /tmp/c_n.txt /tmp/r_n.txt /tmp/cbuild /tmp/c_syms.txt /tmp/c_syms_raw.txt /tmp/rust_syms.txt /tmp/rust_syms_all.txt; find /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation -type f -not -path '*/target/*' | sort; echo "--- c_src untouched ---"; ls -l --time-style=+%F_%T /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/src /local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/include[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean temp files, list deliverables, confirm c_src untouched
+
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/Cargo.lock
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/Cargo.toml
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/charinbuf.rs
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/counter.rs
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/cruntime.rs
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/helpers.rs
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/translation/src/lib.rs
+--- c_src untouched ---
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/include:
+total 4
+-rw-r--r--. 1 scheschb amazon 1165 2026-09-01_15:13:46 lib.h
+
+/local/home/scheschb/.harvest/work/harvest-work-I4UEgV/c_src/src:
+total 8
+-rw-r--r--. 1 scheschb amazon 6414 2026-09-01_15:13:46 lib.c
+[38;5;244m - Completed in 0.14s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -3 && nm -D --defined-only target/release/libtranslation.so | wc -l[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Final clean build confirmation
+
+    Finished `release` profile [optimized] target(s) in 0.01s
+10
+[38;5;244m - Completed in 0.44s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library turned out to be small — a single translation unit ([38;5;10mc_src/src/lib.c[0m, 210 lines) globbed by CMake into one shared object exporting exactly 10 symbols. I enumerated it with [38;5;10mnm -D[0m on the built C [38;5;10m.so[0m rather than guessing, and that list is fully covered.[0m[0m
+[0m[0m
+[1mSymbol parity[22m — [38;5;10mdiff[0m of the two [38;5;10mnm -D[0m lists is empty, all 10 as [38;5;10mT[0m:[0m[0m
+[38;5;10mapply_operation[0m, [38;5;10mcharinbuf[0m, [38;5;10mcreate_buffer[0m, [38;5;10mdecrement_counter[0m, [38;5;10mfind_char_in_buffer[0m, [38;5;10mincrement_counter[0m, [38;5;10mis_string_empty[0m, [38;5;10mmultiply_counter[0m, [38;5;10mreset_counter[0m, [38;5;10mvalidate_uint16_range[0m. [38;5;10minclude/lib.h[0m contains no namespace/renaming macros, so no mangled-name translation was needed.[0m[0m
+[0m[0m
+[1mBehavioral parity[22m — I wrote a [38;5;10mdlopen[0m harness that exercises every export (counter arithmetic including signed overflow/underflow, all [38;5;10mvalidate_uint16_range[0m boundaries at −1/0/65535/65536, NULL and embedded-NUL string cases, [38;5;10mmemchr[0m with a high-bit [38;5;10mchar[0m to exercise the signed-[38;5;10mchar[0m→[38;5;10mint[0m→[38;5;10munsigned char[0m chain, NULL function pointers, and all 5 [38;5;10mcharinbuf[0m modes plus out-of-range modes across 5 argument sets). Both [38;5;10m.so[0ms produced 266 identical lines with matching md5.[0m[0m
+[0m[0m
+Key fidelity decisions:[0m[0m
+- All formatted output calls libc [38;5;10mprintf[0m with the original format strings verbatim, so stdout bytes, ordering, and buffering match rather than approximating with Rust formatting.[0m[0m
+- [38;5;10mcreate_buffer[0m allocates via libc [38;5;10mmalloc[0m/[38;5;10mstrcpy[0m, since callers (and [38;5;10mcharinbuf[0m itself) release the pointer with [38;5;10mfree[0m.[0m[0m
+- The file-scope [38;5;10mstatic int counter[0m is modelled as a non-synchronized [38;5;10mUnsafeCell[0m, matching the C original's thread-unsafety. Arithmetic uses explicit [38;5;10mwrapping_*[0m so the signed-overflow UB compiles to the same wrapping behavior GCC emits, without a debug-build panic.[0m[0m
+- Preserved as-is, not fixed: [38;5;10mis_string_empty[0m conflating NULL with empty, [38;5;10mapply_operation[0m returning [38;5;10m-1[0m both for a NULL callback and for a callback that legitimately returns [38;5;10m-1[0m, and [38;5;10mcharinbuf[0m mode 4 falling through with [38;5;10mresult == 0[0m and no output when allocation fails.[0m[0m
+[0m[0m
+Layout: [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m) plus [38;5;10msrc/{lib,counter,helpers,charinbuf,cruntime}.rs[0m. Nothing in [38;5;10mc_src/[0m was modified, and the temporary C build directory and harness were removed.[0m[0m
+[38;5;8m
+ ▸ Credits: 8.65 • Time: 3m 32s
+
+[0m[1G[0m[0m[?25h

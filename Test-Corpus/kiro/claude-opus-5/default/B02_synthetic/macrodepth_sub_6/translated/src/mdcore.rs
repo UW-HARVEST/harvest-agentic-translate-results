@@ -1,77 +1,51 @@
-//! Translation of `c_src/src/mdcore.c`.
-//!
-//! Every function that has external linkage in the C file keeps its exact
-//! linker symbol (`op_add`, `op_sub`, `op_mul`, `helper_call`, `helper_ptr`,
-//! `use_generated`) and the C ABI. `mdmacros.h` declares no namespace/renaming
-//! macros, so the source-level names are already the final symbols.
-//!
-//! `accum_<OP>` is `static` in C and therefore stays private here.
+// Translation of c_src/src/mdcore.c
 
-use core::ffi::{c_char, c_int};
+use std::ffi::{c_char, c_int};
 
-use crate::mdmacros::{INIT, OP_NAME, dispatch_rep, run_loop};
+use crate::mdmacros;
 
-/* ---------- Define operations ----------
- * int op_add(int a,int b){ return a + b; }
- * int op_sub(int a,int b){ return a - b; }
- * int op_mul(int a,int b){ return a * b; }
- */
+/// `int (*)(int, int)` -- the operation function pointer type.
+pub type OpFn = extern "C" fn(c_int, c_int) -> c_int;
 
+/* ---------- Define operations ---------- */
+
+/// `int op_add(int a, int b) { return a + b; }`
 #[unsafe(no_mangle)]
 pub extern "C" fn op_add(a: c_int, b: c_int) -> c_int {
     a.wrapping_add(b)
 }
 
+/// `int op_sub(int a, int b) { return a - b; }`
 #[unsafe(no_mangle)]
 pub extern "C" fn op_sub(a: c_int, b: c_int) -> c_int {
     a.wrapping_sub(b)
 }
 
+/// `int op_mul(int a, int b) { return a * b; }`
 #[unsafe(no_mangle)]
 pub extern "C" fn op_mul(a: c_int, b: c_int) -> c_int {
     a.wrapping_mul(b)
 }
 
-/// `OP_FN(OP)` — the operation picked by the build configuration.
-#[cfg(feature = "mul")]
-pub const OP_FN: extern "C" fn(c_int, c_int) -> c_int = op_mul;
-#[cfg(all(not(feature = "mul"), feature = "sub"))]
-pub const OP_FN: extern "C" fn(c_int, c_int) -> c_int = op_sub;
-#[cfg(all(not(feature = "mul"), not(feature = "sub")))]
-pub const OP_FN: extern "C" fn(c_int, c_int) -> c_int = op_add;
+/* ---------- Global macro uses at file scope ---------- */
 
-/* ---------- DEFINE_ACCUM(OP) ----------
- * static int accum_<OP>(int n) {
- *   int acc = INIT_FOR(op);
- *   DISPATCH_REP(op, acc, n);
- *   return acc;
- * }
- */
-
-/// `accum_<OP>` — `static` in the C translation unit, so private here.
-fn accum_op(n: c_int) -> c_int {
-    let acc = INIT;
-    dispatch_rep(acc, n)
-}
-
-/* ---------- Global macro uses at file scope ----------
- * int (*G_OP)(int,int) = OP_FN(OP);
- * const char *G_OP_NAME = STR(OP);
- */
-
+/// `int (*G_OP)(int,int) = OP_FN(OP);`
 #[unsafe(no_mangle)]
-pub static G_OP: extern "C" fn(c_int, c_int) -> c_int = OP_FN;
+pub static G_OP: OpFn = mdmacros::OP_FN;
 
-/// Newtype so a `*const c_char` can live in a `static`; `repr(transparent)`
-/// keeps the exported symbol a plain pointer, matching `const char *G_OP_NAME`.
+/// Newtype so a raw `*const c_char` can live in a `static` (raw pointers are
+/// not `Sync`). `repr(transparent)` keeps the exported symbol a bare pointer,
+/// identical in layout to the C `const char *G_OP_NAME`.
 #[repr(transparent)]
-pub struct OpNamePtr(pub *const c_char);
+pub struct CStrPtr(pub *const c_char);
 
-// The pointer targets a `'static` string constant and is never written.
-unsafe impl Sync for OpNamePtr {}
+// Safety: the pointee is a `'static` read-only ASCII string literal, and the
+// pointer itself is never mutated.
+unsafe impl Sync for CStrPtr {}
 
+/// `const char *G_OP_NAME = STR(OP);`
 #[unsafe(no_mangle)]
-pub static G_OP_NAME: OpNamePtr = OpNamePtr(OP_NAME.as_ptr());
+pub static G_OP_NAME: CStrPtr = CStrPtr(mdmacros::OP_NAME.as_ptr() as *const c_char);
 
 /* ---------- Helpers ---------- */
 
@@ -86,8 +60,8 @@ pub static G_OP_NAME: OpNamePtr = OpNamePtr(OP_NAME.as_ptr());
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
-    let r = OP_FN(a, b);
-    let acc = run_loop(INIT);
+    let r = (mdmacros::OP_FN)(a, b);
+    let acc = mdmacros::run_loop(mdmacros::INIT);
     println!("helper.call={} helper.acc={}", r, acc);
     r.wrapping_add(acc)
 }
@@ -102,7 +76,7 @@ pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
-    let fp: extern "C" fn(c_int, c_int) -> c_int = OP_FN;
+    let fp: OpFn = mdmacros::OP_FN;
     let r = fp(a, b);
     println!("helper.ptr={}", r);
     r
@@ -117,7 +91,7 @@ pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn use_generated(n: c_int) -> c_int {
-    let r = accum_op(n);
+    let r = mdmacros::accum(n);
     println!("gen.acc={}", r);
     r
 }

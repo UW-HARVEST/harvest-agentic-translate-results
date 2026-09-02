@@ -1,0 +1,516 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100; echo "---"; wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory files
+
+./c_src/CMakeLists.txt
+./c_src/src/main.c
+./.claude/settings.json
+---
+     27 c_src/CMakeLists.txt
+      0 c_src/src
+     27 total
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/src/main.c; echo "---"; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check main.c size and CMakeLists
+
+72 c_src/src/main.c
+---
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(StaticAlias)
+add_executable(driver
+    src/main.c)
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/c_src/src/main.c[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2164 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/c_src/src/main.c
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, self-contained program — no need to delegate. Key semantics to preserve: the pointer aliasing between [38;5;10minitial_value[0m and the [38;5;10mstatic inner[0m, [38;5;10mstrtol[0m parsing/saturation followed by truncation to [38;5;10mint[0m, and the exact error-check order.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translation crate
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [[bin]]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/main.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Simplify Cargo.toml
+
+[49m[39m   1, 1[0m:[39m[49m [package]
+[0m[49m[39m   2, 2[0m:[39m[49m name = "driver"
+[0m[49m[39m   3, 3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4, 4[0m:[39m[49m edition = "2021"
+[0m[49m[39m   5, 5[0m:[39m[49m 
+[0m[49m[39m   6, 6[0m:[39m[49m [[bin]]
+[0m[49m[39m   7, 7[0m:[39m[49m name = "driver"
+[0m[49m[39m   8, 8[0m:[39m[49m path = "src/main.rs"
+[0m[49m[38;5;9m-  9   [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 10   [0m:[38;5;9m[49m [profile.release]
+[0m[49m[38;5;9m- 11   [0m:[38;5;9m[49m panic = "abort"
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the Rust translation of main.c
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c -- behaviour-preserving, including
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m // the original's quirks (no trailing-garbage rejection, integer truncation
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // of strtol results, wrapping arithmetic).
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m use std::io::Write;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// Identifies which of the two `int` objects a "pointer" currently designates.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// The C program passes around a raw `int *` that may alias either the
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m /// function-local `initial_value` in `main` or the `static int inner` inside
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// `static_alias`. Rather than reproducing that with raw pointers, we model the
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// pointee identity explicitly so the aliasing effects stay observable while
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// the code remains safe.
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m enum Target {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     /// `&inner` (the static inside `static_alias`)
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     Inner,
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     /// `&initial_value` (the local in `main`)
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     Initial,
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// The two mutable `int` objects the program manipulates.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m struct Vars {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     /// `static int inner = 1;`
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     inner: i32,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     /// `int initial_value = strtol(argv[1], &end, 10);`
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     initial_value: i32,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m impl Vars {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     fn load(&self, t: Target) -> i32 {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         match t {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             Target::Inner => self.inner,
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             Target::Initial => self.initial_value,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     fn store(&mut self, t: Target, v: i32) {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         match t {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             Target::Inner => self.inner = v,
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             Target::Initial => self.initial_value = v,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// int *
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// static_alias(int *outer) {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m ///   static int inner = 1;
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m ///   if(*outer >= inner) {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m ///     inner += *outer;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ///     return &inner;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///   } else {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///     *outer += inner;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m ///     return outer;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m ///   }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// `outer` names the object the incoming pointer designates; the return value
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// names the object the returned pointer designates. When `outer` is
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m /// `Target::Inner` the comparison `*outer >= inner` is trivially true, so the
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// `else` branch is only reachable for `Target::Initial`; it is still written
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// generically so the translation mirrors the C statement for statement.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m fn static_alias(vars: &mut Vars, outer: Target) -> Target {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     let outer_val = vars.load(outer);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     if outer_val >= vars.inner {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         // inner += *outer;  (wrapping: C would be signed overflow / UB, gcc wraps)
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         vars.inner = vars.inner.wrapping_add(outer_val);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         Target::Inner
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         // *outer += inner;
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         let sum = outer_val.wrapping_add(vars.inner);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         vars.store(outer, sum);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         outer
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// True for the characters `isspace` accepts in the C locale.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m fn is_c_space(b: u8) -> bool {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m /// `strtol(nptr, &end, 10)`.
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m /// Returns the parsed `long` value plus the byte offset of `end` within
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m /// `nptr`. When no conversion is performed the offset is 0, which is how the C
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// code detects failure (`end == argv[1]`). Out-of-range input saturates to
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// `LONG_MAX` / `LONG_MIN`, as required of `strtol`.
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m fn strtol_base10(nptr: &[u8]) -> (i64, usize) {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let mut i = 0usize;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     // Skip leading whitespace.
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     while i < nptr.len() && is_c_space(nptr[i]) {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     // Optional sign.
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     let mut negative = false;
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     if i < nptr.len() && (nptr[i] == b'+' || nptr[i] == b'-') {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         negative = nptr[i] == b'-';
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     let digits_start = i;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let mut acc: u64 = 0;
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     let mut overflowed = false;
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     while i < nptr.len() && nptr[i].is_ascii_digit() {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         if !overflowed {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m             let digit = u64::from(nptr[i] - b'0');
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m             match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                 Some(v) => acc = v,
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                 None => overflowed = true,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     if i == digits_start {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         // No digits consumed: strtol stores nptr in *endptr and returns 0.
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         return (0, 0);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     // Magnitude limit for LONG_MIN is 2^63, for LONG_MAX it is 2^63 - 1.
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     let limit: u64 = if negative {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         1u64 << 63
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         i64::MAX as u64
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     if overflowed || acc > limit {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         return (if negative { i64::MIN } else { i64::MAX }, i);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     // `acc <= 2^63` here, so the negative case relies on wrapping to reach
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     // LONG_MIN exactly.
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     let value = if negative {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         (acc as i64).wrapping_neg()
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         acc as i64
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     (value, i)
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m /// Argument bytes exactly as the OS supplied them, so that non-UTF-8 arguments
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m /// behave the way `char **argv` would in C.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m fn arg_bytes() -> Vec<Vec<u8>> {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     #[cfg(unix)]
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         use std::os::unix::ffi::OsStrExt;
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         std::env::args_os()
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m             .map(|a| a.as_os_str().as_bytes().to_vec())
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m             .collect()
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     #[cfg(not(unix))]
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         std::env::args_os()
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m             .map(|a| a.to_string_lossy().into_owned().into_bytes())
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m             .collect()
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m /// Maintain a sum leveraging multiple references to a static variable
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     let argv = arg_bytes();
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     let argc = argv.len();
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     if argc != 3 {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         let _ = write!(out, "Error: should only be two (integer) arguments!\n");
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         let _ = out.flush();
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         std::process::exit(1);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     let (raw_initial, end) = strtol_base10(&argv[1]);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     if end == 0 {
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         // end is set to start of string if nothing parsed
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m         let _ = write!(out, "Error: first argument must be an integer!\n");
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         let _ = out.flush();
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         std::process::exit(1);
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     // Implicit long -> int conversion (truncating, as on gcc/x86-64).
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let initial_value = raw_initial as i32;
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     let (raw_iterations, end) = strtol_base10(&argv[2]);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     if end == 0 {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         // end is set to start of string if nothing parsed
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         let _ = write!(out, "Error: second argument must be an integer!\n");
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         let _ = out.flush();
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         std::process::exit(1);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     let iterations = raw_iterations as i32;
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     let mut vars = Vars {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         inner: 1,
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         initial_value,
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     let mut running_sum = Target::Initial;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     let mut i: i32 = 0;
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     while i < iterations {
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         running_sum = static_alias(&mut vars, running_sum);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         let _ = write!(out, "{}\n", vars.load(running_sum));
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         i += 1;
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     std::process::exit(0);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/translation)
+    Finished `release` profile [optimized] target(s) in 0.23s
+[38;5;244m - Completed in 0.252s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles. Now I'll build the C reference (output outside [38;5;10mc_src/[0m) and diff behavior across a range of inputs.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O2 -o /tmp/cref/driver c_src/src/main.c 2>&1 | tail -5; ls -l /tmp/cref/driver[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile the original C to a temp location
+
+-rwxr-xr-x. 1 scheschb amazon 16864 Sep  1 07:02 /tmp/cref/driver
+[38;5;244m - Completed in 0.54s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cref/cmp.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Compare C reference vs Rust translation byte-for-byte (stdout, stderr, exit code).
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m C=/tmp/cref/driver
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m R=/local/home/scheschb/.harvest/work/harvest-work-YGYpGQ/translation/target/release/driver
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m fail=0
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m total=0
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m run_case() {
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m   total=$((total+1))
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   co=$("$C" "$@" 2>/tmp/cref/c.err); cr=$?
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   ro=$("$R" "$@" 2>/tmp/cref/r.err); rr=$?
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m   if [ "$co" != "$ro" ] || [ "$cr" != "$rr" ] || ! diff -q /tmp/cref/c.err /tmp/cref/r.err >/dev/null; then
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     fail=$((fail+1))
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     echo "MISMATCH args: $(printf '[%s] ' "$@")"
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     echo "  C  (rc=$cr): $(printf '%q' "$co")"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     echo "  Rs (rc=$rr): $(printf '%q' "$ro")"
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m # no / wrong arg counts
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m run_case
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m run_case 1
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m run_case 1 2 3
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m run_case "" ""
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m # normal operation
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m for iv in 0 1 2 3 5 -1 -5 -100 7 10 -3; do
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   for it in 0 1 2 3 5 8 -1 -4; do
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     run_case "$iv" "$it"
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m # malformed integers
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m run_case abc 5
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m run_case 5 abc
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m run_case "" 5
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m run_case 5 ""
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m run_case "+" 5
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m run_case "-" 5
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m run_case 5 "-"
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m run_case "  12" 3
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m run_case "12abc" 3
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m run_case "3" " 4xyz"
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m run_case "0x10" 4
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m run_case " " 3
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m run_case "	9" 3
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m run_case $'\n7' 3
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m run_case "--5" 3
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m run_case "+8" 4
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m run_case "-0" 3
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m # overflow / truncation
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m run_case 2147483647 4
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m run_case -2147483648 4
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m run_case 2147483648 4
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m run_case 4294967296 4
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m run_case 99999999999999999999 4
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m run_case -99999999999999999999 4
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m run_case 9223372036854775807 4
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m run_case 9223372036854775808 4
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m run_case -9223372036854775808 4
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m run_case -9223372036854775809 4
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m run_case 5 2147483648
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m run_case 5 99999999999999999999
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m run_case 5 4294967296
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m run_case 3 40
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m run_case 1000000000 40
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m run_case -2147483648 40
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m echo "cases=$total mismatches=$fail"
+[0m[K
+Creating: [38;5;141m/tmp/cref/cmp.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/cref/cmp.sh[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential comparison
+
+cases=125 mismatches=0
+[38;5;244m - Completed in 0.617s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-YGYpGQ
+echo "=== artifacts ==="; ls -l translation translation/src translation/target/release/driver
+echo "=== spot check: 3 12 ==="; /tmp/cref/driver 3 12; echo "--- rust ---"; translation/target/release/driver 3 12
+echo "=== spot check: -5 6 ==="; /tmp/cref/driver -5 6; echo "--- rust ---"; translation/target/release/driver -5 6
+echo "=== c_src untouched (md5) ==="; md5sum c_src/src/main.c c_src/CMakeLists.txt; find c_src -newer c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify artifacts and confirm c_src unmodified
+
+=== artifacts ===
+-rwxr-xr-x. 2 scheschb amazon 451456 Sep  1 07:02 translation/target/release/driver
+
+translation:
+total 8
+-rw-r--r--. 1 scheschb amazon 150 Sep  1 07:02 Cargo.lock
+-rw-r--r--. 1 scheschb amazon 107 Sep  1 07:02 Cargo.toml
+drwxr-xr-x. 2 scheschb amazon  21 Sep  1 07:02 src
+drwxr-xr-x. 3 scheschb amazon  65 Sep  1 07:02 target
+
+translation/src:
+total 8
+-rw-r--r--. 1 scheschb amazon 7407 Sep  1 07:02 main.rs
+=== spot check: 3 12 ===
+4
+8
+16
+32
+64
+128
+256
+512
+1024
+2048
+4096
+8192
+--- rust ---
+4
+8
+16
+32
+64
+128
+256
+512
+1024
+2048
+4096
+8192
+=== spot check: -5 6 ===
+-4
+-3
+-2
+-1
+0
+1
+--- rust ---
+-4
+-3
+-2
+-1
+0
+1
+=== c_src untouched (md5) ===
+bc307974bca17e9618bdc55bf57c50fe  c_src/src/main.c
+88b0836e1b60d97bef2e41ef476e5044  c_src/CMakeLists.txt
+[38;5;244m - Completed in 0.15s[0m
+
+[?25l[0m[38;5;141m> [0mDone and verified.[0m[0m
+[0m[0m
+[1mWhat was translated:[22m [38;5;10mc_src/src/main.c[0m is a 3-function program that maintains a running sum through a raw [38;5;10mint*[0m that aliases either [38;5;10mmain[0m's local [38;5;10minitial_value[0m or the [38;5;10mstatic int inner[0m inside [38;5;10mstatic_alias[0m. Once the pointer starts designating [38;5;10minner[0m, the comparison [38;5;10m*outer >= inner[0m is trivially true forever, so the value doubles each iteration — that quirk is preserved.[0m[0m
+[0m[0m
+[1mFiles written[22m ([38;5;10mtranslation/[0m):[0m[0m
+- [38;5;10mCargo.toml[0m — binary named [38;5;10mdriver[0m, edition 2021, no dependencies[0m[0m
+- [38;5;10msrc/main.rs[0m — 7.4 KB, safe Rust throughout[0m[0m
+[0m[0m
+[1mApproach for the aliasing:[22m instead of raw pointers, the pointee identity is modeled as a [38;5;10mTarget[0m enum ([38;5;10mInner[0m / [38;5;10mInitial[0m) over a [38;5;10mVars[0m struct holding both [38;5;10mi32[0ms. Loads and stores go through the enum, so the observable aliasing effects are identical without [38;5;10munsafe[0m.[0m[0m
+[0m[0m
+[1mBehaviors deliberately reproduced rather than fixed:[22m[0m[0m
+- [38;5;10mstrtol[0m is reimplemented (whitespace skip, optional sign, base-10 digits, saturation to [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m) and its [38;5;10mlong[0m result is truncated to [38;5;10mi32[0m, matching the C's implicit narrowing — e.g. [38;5;10m4294967296[0m becomes [38;5;10m0[0m, [38;5;10m99999999999999999999[0m becomes [38;5;10m-1[0m.[0m[0m
+- Trailing garbage is still accepted ([38;5;10m12abc[0m parses as 12), since the C only checks [38;5;10mend == argv[1][0m.[0m[0m
+- Error-check order preserved: argc, then argv[1], then argv[2]; each prints to stdout (not stderr) and returns 1.[0m[0m
+- Signed overflow uses [38;5;10mwrapping_add[0m to match gcc's actual behavior.[0m[0m
+- Arguments are read as raw OS bytes so non-UTF-8 input behaves like [38;5;10mchar **argv[0m.[0m[0m
+[0m[0m
+[1mVerification I ran myself:[22m [38;5;10mcargo build --release[0m succeeds with no warnings. I compiled the C reference with gcc into [38;5;10m/tmp[0m (nothing written under [38;5;10mc_src/[0m) and diffed stdout, stderr, and exit codes across 125 cases — argument-count errors, malformed integers, sign-only and whitespace-prefixed inputs, [38;5;10mLONG_MAX[0m/[38;5;10mLONG_MIN[0m boundaries and beyond, negative iteration counts, and overflow-inducing runs. Zero mismatches. [38;5;10mmd5sum[0m and a [38;5;10mfind -newer[0m check confirm [38;5;10mc_src/[0m is unmodified.[0m[0m
+[0m[0m
+One caveat worth naming: the C's [38;5;10minner += *outer[0m is signed-overflow UB, so for inputs large enough to overflow (e.g. [38;5;10m1000000000 40[0m) the C reference's output is only guaranteed to match this specific gcc build. It agreed on every such case I tested.[0m[0m
+[38;5;8m
+ ▸ Credits: 4.37 • Time: 2m 18s
+
+[0m[1G[0m[0m[?25h

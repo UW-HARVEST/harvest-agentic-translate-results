@@ -23,83 +23,112 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// The crate/library name intentionally mirrors the C target name
-// (`libStaticAlias.so`) rather than Rust naming conventions.
+// The cdylib is named `StaticAlias` to match the C build's `libStaticAlias.so`.
 #![allow(non_snake_case)]
 
-use std::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int};
 
+// The C source prints via `printf` from <stdio.h>. Bind directly to libc's
+// `printf` so that stdout buffering, ordering and flushing-at-exit semantics
+// are bit-for-bit identical to the C library (Rust's own `std::io::stdout`
+// uses a separate buffer and would interleave differently).
 unsafe extern "C" {
-    /// C `printf` from the platform libc. Used instead of Rust's own `stdout`
-    /// so that the emitted bytes and the stream buffering behaviour match the
-    /// original C library exactly (important when a C caller also writes to
-    /// stdout in the same process).
-    fn printf(format: *const c_char, ...) -> c_int;
+    fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// `static int inner = 1;` from `static_alias`.
+/// `"%d\n"` format string used by `driver`, NUL terminated.
+const FMT_D_NL: &[u8; 4] = b"%d\n\0";
+
+/// Function-local `static int inner = 1;` from `static_alias`.
 ///
-/// Function-local `static` storage in C has the lifetime of the whole program,
-/// so the value persists across every call to `static_alias` — including calls
-/// made from separate `driver` invocations.
+/// In C this has static storage duration, so its value persists across every
+/// call to `static_alias` (including calls made through `driver`) for the whole
+/// lifetime of the process. A module-level `static mut` reproduces that exactly,
+/// including the fact that it is not thread safe.
 static mut INNER: c_int = 1;
 
-/// Translation of:
-///
 /// ```c
-/// int *static_alias(int *outer) {
+/// int *
+/// static_alias(int *outer) {
 ///   static int inner = 1;
-///   if (*outer >= inner) { inner += *outer; return &inner; }
-///   else                 { *outer += inner; return outer;  }
+///   if (*outer >= inner) {
+///     inner += *outer;
+///     return &inner;
+///   } else {
+///     *outer += inner;
+///     return outer;
+///   }
 /// }
 /// ```
 ///
-/// The returned pointer aliases either the static `inner` or the caller's own
-/// object, which is the behaviour the original code intentionally exercises.
-/// Additions use wrapping arithmetic to mirror the two's-complement wraparound
-/// produced by mainstream C compilers (signed overflow is UB in C, so no
-/// behaviour is being "fixed" here).
+/// Note that `outer` may itself alias `inner` (that happens on every call after
+/// the first time the `then` branch is taken, because `driver` feeds the
+/// returned pointer straight back in). The reads below are therefore ordered so
+/// that the aliasing case computes `inner + inner`, matching C.
+///
+/// # Safety
+///
+/// `outer` must be a valid, aligned, dereferenceable and writable pointer to an
+/// `int`, exactly as required by the C original.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn static_alias(outer: *mut c_int) -> *mut c_int {
-    unsafe {
-        let inner: *mut c_int = &raw mut INNER;
+    let inner: *mut c_int = &raw mut INNER;
 
+    unsafe {
         if *outer >= *inner {
-            *inner = (*inner).wrapping_add(*outer);
+            // `inner += *outer;` — read the addend first so that the
+            // `outer == inner` aliasing case doubles `inner`, as C does.
+            let addend = *outer;
+            // wrapping_add reproduces the two's-complement wraparound that the
+            // C signed-overflow (UB) case exhibits in practice; it is not a
+            // behaviour change for any non-overflowing input.
+            *inner = (*inner).wrapping_add(addend);
             inner
         } else {
-            *outer = (*outer).wrapping_add(*inner);
+            // `*outer += inner;`
+            let addend = *inner;
+            *outer = (*outer).wrapping_add(addend);
             outer
         }
     }
 }
 
-/// Translation of:
-///
 /// ```c
-/// void driver(int initial_value, int iterations) {
+/// /*
+///   Maintain a sum leveraging multiple references to a static variable
+///  */
+/// void
+/// driver(int initial_value, int iterations) {
 ///   int *running_sum = &initial_value;
 ///   for (int i = 0; i < iterations; i++) {
 ///     running_sum = static_alias(running_sum);
 ///     printf("%d\n", *running_sum);
 ///   }
+///   return;
 /// }
 /// ```
 ///
-/// `initial_value` is a by-value parameter in C, so `&initial_value` points at
-/// the function's own mutable copy; `running_sum` starts out aliasing that copy
-/// and may later be redirected at the static `inner`.
+/// `initial_value` is a by-value parameter whose address is taken, so the
+/// pointer initially refers to `driver`'s own copy; `static_alias` is free to
+/// mutate it or to hand back a pointer to its own static instead.
+///
+/// # Safety
+///
+/// Safe to call with any argument values, but shares `static_alias`'s global
+/// mutable state, so concurrent calls are a data race just as in C.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(initial_value: c_int, iterations: c_int) {
-    unsafe {
-        let mut initial_value: c_int = initial_value;
-        let mut running_sum: *mut c_int = &raw mut initial_value;
+    // Local, mutable copy of the parameter — this is the object `&initial_value`
+    // designates in C.
+    let mut initial_value: c_int = initial_value;
+    let mut running_sum: *mut c_int = &raw mut initial_value;
 
-        let mut i: c_int = 0;
-        while i < iterations {
+    let mut i: c_int = 0;
+    while i < iterations {
+        unsafe {
             running_sum = static_alias(running_sum);
-            printf(c"%d\n".as_ptr(), *running_sum);
-            i = i.wrapping_add(1);
+            printf(FMT_D_NL.as_ptr() as *const c_char, *running_sum);
         }
+        i = i.wrapping_add(1);
     }
 }
