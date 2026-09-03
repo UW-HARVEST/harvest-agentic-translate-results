@@ -6,7 +6,6 @@ use crate::utils::u32_to_bytes;
 pub const SPX_BLAKE256_OUTPUT_BYTES: usize = 32;
 
 #[derive(Clone)]
-#[repr(C)]
 pub struct BlakeState256 {
     pub h: [u32; 8],
     pub s: [u32; 4],

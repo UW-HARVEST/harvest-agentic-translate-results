@@ -1,0 +1,3 @@
+#ifndef TEST_OPENSSL_CONF_H
+#define TEST_OPENSSL_CONF_H
+#endif

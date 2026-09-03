@@ -1,4 +1,4 @@
-use crate::{ params::*, utils::*, offsets::* };
+use crate::{ params::*, utils::* };
 
 // This could probably be better represented as an enum with associated constants 
 pub const SPX_ADDR_TYPE_WOTS: u32 = 0;

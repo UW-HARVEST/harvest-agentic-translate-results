@@ -1,0 +1,9 @@
+# The differential tests capture fd 1 to compare the bytes `printf` (C `.so`) and
+# `std::io::stdout()` (Rust `.so`) emit. fd 1 is process-global, so libtest's own
+# progress output would otherwise interleave into the capture. Running the test
+# threads serially keeps libtest's writes strictly outside each capture window.
+#
+# libtest honours RUST_TEST_THREADS, and Cargo's `[env]` applies it to every
+# process Cargo launches, so a bare `cargo test` is correct without extra flags.
+[env]
+RUST_TEST_THREADS = "1"

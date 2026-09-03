@@ -26,12 +26,6 @@ const CST: [u64; 16] = [
     0x636920D871574E69,
 ];
 
-/// `blake512.c` declares its round constants as `const u64 cst[16]` *without*
-/// `static` (unlike `blake256.c`, where the same name is file-local), so the C
-/// shared library exports `cst` as a read-only data symbol.  Mirror that export.
-#[unsafe(no_mangle)]
-pub static cst: [u64; 16] = CST;
-
 #[allow(non_upper_case_globals, dead_code)]
 const PADDING: [u8; 129] = {
     let mut p = [0u8; 129];

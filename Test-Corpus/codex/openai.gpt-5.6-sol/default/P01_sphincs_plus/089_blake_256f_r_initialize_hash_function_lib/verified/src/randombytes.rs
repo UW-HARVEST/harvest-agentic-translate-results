@@ -1,6 +1,6 @@
 use aes::Aes256;
 use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const RNG_SUCCESS: i32 = 0;
 pub const RNG_BAD_MAXLEN: i32 = -1;
@@ -19,7 +19,7 @@ pub struct AesXof {
 type libc_ulong = std::ffi::c_ulong;
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Aes256CtrDrbg {
     pub key: [u8; 32],
     pub v: [u8; 16],
@@ -39,7 +39,7 @@ pub static mut DRBG_ctx: Aes256CtrDrbg = Aes256CtrDrbg {
     reseed_counter: 0,
 };
 
-static DRBG_LOCK: Mutex<bool> = Mutex::new(false);
+static DRBG_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 fn increment_be(value: &mut [u8]) {
     for byte in value.iter_mut().rev() {
@@ -85,45 +85,41 @@ pub fn randombytes_init(entropy_input: &[u8; 48], personalization: Option<&[u8; 
             *seed ^= *personal;
         }
     }
-    let mut initialized = DRBG_LOCK.lock().unwrap();
-    let mut key = [0u8; 32];
-    let mut v = [0u8; 16];
+    let mut key = [0; 32];
+    let mut v = [0; 16];
     aes256_ctr_drbg_update(Some(&seed_material), &mut key, &mut v);
     unsafe {
-        std::ptr::write(
-            std::ptr::addr_of_mut!(DRBG_ctx),
-            Aes256CtrDrbg { key, v, reseed_counter: 1 },
-        );
+        let state = &raw mut DRBG_ctx;
+        (*state).key = key;
+        (*state).v = v;
+        (*state).reseed_counter = 1;
     }
-    *initialized = true;
+    DRBG_INITIALIZED.store(true, Ordering::Release);
 }
 
 pub fn randombytes(x: &mut [u8], len: usize) {
-    let initialized = DRBG_LOCK.lock().unwrap();
-    if !*initialized {
-        drop(initialized);
+    if !DRBG_INITIALIZED.load(Ordering::Acquire) {
         getrandom::fill(&mut x[..len]).expect("failed to read operating-system randomness");
         return;
     }
 
-    let mut state = unsafe { std::ptr::read(std::ptr::addr_of!(DRBG_ctx)) };
-    let mut offset = 0;
-    while offset < len {
-        increment_be(&mut state.v);
-        let mut block = [0u8; 16];
-        aes256_ecb(&state.key, &state.v, &mut block);
-        let take = (len - offset).min(16);
-        x[offset..offset + take].copy_from_slice(&block[..take]);
-        offset += take;
-    }
-    let mut key = state.key;
-    let mut v = state.v;
-    aes256_ctr_drbg_update(None, &mut key, &mut v);
-    state.key = key;
-    state.v = v;
-    state.reseed_counter += 1;
     unsafe {
-        std::ptr::write(std::ptr::addr_of_mut!(DRBG_ctx), state);
+        let state = &raw mut DRBG_ctx;
+        let mut offset = 0;
+        while offset < len {
+            increment_be(&mut (*state).v);
+            let mut block = [0u8; 16];
+            aes256_ecb(&(*state).key, &(*state).v, &mut block);
+            let take = (len - offset).min(16);
+            x[offset..offset + take].copy_from_slice(&block[..take]);
+            offset += take;
+        }
+        let mut key = (*state).key;
+        let mut v = (*state).v;
+        aes256_ctr_drbg_update(None, &mut key, &mut v);
+        (*state).key = key;
+        (*state).v = v;
+        (*state).reseed_counter += 1;
     }
 }
 

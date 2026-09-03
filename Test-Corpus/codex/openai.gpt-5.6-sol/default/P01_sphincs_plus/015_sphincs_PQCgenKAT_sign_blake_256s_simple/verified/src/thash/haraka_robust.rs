@@ -9,11 +9,9 @@ use crate::{
 /// Takes an array of inblocks concatenated arrays of SPX_N bytes.
 pub fn thash<const N: usize>(
   out: &mut[u8], input: Option<&[u8]>,  ctx: &SpxCtx, addr: &[u32]
-)
-  where [(); SPX_ADDR_BYTES + N * SPX_N]: Sized
-{
-  let mut buf = [0u8; SPX_ADDR_BYTES + N * SPX_N];
-  let mut bitmask = [0u8; N * SPX_N];
+) {
+  let mut buf = vec![0u8; SPX_ADDR_BYTES + N * SPX_N];
+  let mut bitmask = vec![0u8; N * SPX_N];
   let mut outbuf = [0u8; 32];
   let mut buf_tmp = [0u8; 64];
 

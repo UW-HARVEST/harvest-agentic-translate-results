@@ -1,22 +1,23 @@
-# Error Surface
+# Error surface
 
-The table was derived by grepping all files under `c_src/src/` for returns,
-assertions, null checks, range checks, conditionals, switch statements, and
-min/max constants.
+Mechanically searched `mdcore.c` and `mdmacros.h` for error returns, null
+checks, assertions, explicit range rejection, error enums, and min/max checks.
+The shared-library API has no rejection or error paths.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|----------------------------------------------|-------------------|--------|
-| 1 | `main` | `argc < 3` | writes `usage: %s A B\n` to `stderr`, using `argv[0]` for `%s`, and returns `2` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | |
+|---|----------|----------------------------------------------|-------------------|-|
 
-Audit notes:
+The `use_generated` switch does not reject out-of-range `n`: every value other
+than `0` through `6` takes `default` and returns the selected operation's
+initial accumulator. Those inputs are valid and are covered in `CONFIGS.md`.
 
-- `mdcore.c` contains no rejection/error branches, assertions, null checks, or
-  range checks.
-- `use_generated` does not reject out-of-range `n`: values outside `0..=6`
-  take the `default` switch branch and return the selected operation's initial
-  accumulator. Those are valid configurations covered in `CONFIGS.md`.
-- The C source defines no public enum inputs and no length-taking APIs.
-- Generic FFI pointer boundaries for `main` are tested separately: null
-  `argv`, null argument entries, zero `argc`, and oversized/extra `argc`.
-- Row 1 and all generic boundaries pass for every one of the 24 valid feature
-  combinations.
+The only rejection in the complete C source tree is in the separate executable
+entry point `main`: `argc < 3` prints usage and returns `2`. `main` is not part
+of `libmdcore.so` or its FFI surface, so it is outside the shared-library
+differential table.
+
+Generic FFI boundary audit: the exported functions take only by-value C
+`int`s. There are no pointer, length, or enum parameters, so null pointers,
+zero/oversized lengths, and invalid enum discriminants are not applicable.
+
+Phase C status: complete; there are no shared-library rejection rows.

@@ -98,4 +98,6 @@ pub fn wots_gen_leafx1(
 
   // Do the final thash to generate the public keys
   thash::<SPX_WOTS_LEN>(dest, Some(&pk_buffer), ctx, &pk_addr);
+  v_info.leaf_addr = leaf_addr;
+  v_info.pk_addr = pk_addr;
 }

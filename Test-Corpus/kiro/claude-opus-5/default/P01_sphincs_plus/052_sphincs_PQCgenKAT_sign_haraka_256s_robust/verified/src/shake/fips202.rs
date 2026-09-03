@@ -1,101 +1,208 @@
-//! Translation of `lib/shake/src/fips202.c` and `lib/shake/include/fips202.h`.
-//!
-//! Based on the public domain implementation in
-//! `crypto_hash/keccakc512/simple/` from <http://bench.cr.yp.to/supercop.html>
-//! by Ronny Van Keer and the public domain "TweetFips202" implementation by
-//! Gilles Van Assche, Daniel J. Bernstein and Peter Schwabe.
+/* Based on the public domain implementation in
+ * crypto_hash/keccakc512/simple/ from http://bench.cr.yp.to/supercop.html
+ * by Ronny Van Keer
+ * and the public domain "TweetFips202" implementation
+ * from https://twitter.com/tweetfips202
+ * by Gilles Van Assche, Daniel J. Bernstein, and Peter Schwabe */
 
-pub const SHAKE128_RATE: usize = 168;
-pub const SHAKE256_RATE: usize = 136;
-pub const SHA3_256_RATE: usize = 136;
-pub const SHA3_512_RATE: usize = 72;
+// Translation of c_src/lib/shake/src/fips202.c
+//
+// NOTE: fips202.h declares shake128*, sha3_256*, sha3_512* and one-shot
+// shake128/shake256, but this particular fips202.c only *defines* the SHAKE256
+// family plus the shared Keccak core. Only the functions actually implemented
+// in the C source are translated here; fabricating the others would violate the
+// byte-identical requirement of the translation contract.
+
+#![allow(non_upper_case_globals)]
 
 const NROUNDS: usize = 24;
 
+// #define SHAKE128_RATE 168
+pub const SHAKE128_RATE: usize = 168;
+// #define SHAKE256_RATE 136
+pub const SHAKE256_RATE: usize = 136;
+// #define SHA3_256_RATE 136
+pub const SHA3_256_RATE: usize = 136;
+// #define SHA3_512_RATE 72
+pub const SHA3_512_RATE: usize = 72;
+
+/// #define ROL(a, offset) (((a) << (offset)) ^ ((a) >> (64 - (offset))))
 #[inline(always)]
 fn rol(a: u64, offset: u32) -> u64 {
-    (a << offset) ^ (a >> (64 - offset))
+    a.rotate_left(offset)
 }
 
-/// Load 8 bytes into `u64` in little-endian order.
-#[inline(always)]
-fn load64(x: &[u8]) -> u64 {
+/*************************************************
+ * Name:        load64
+ *
+ * Description: Load 8 bytes into uint64_t in little-endian order
+ **************************************************/
+#[inline]
+unsafe fn load64(x: *const u8) -> u64 {
     let mut r: u64 = 0;
-    for i in 0..8 {
-        r |= (x[i] as u64) << (8 * i);
+    let mut i: usize = 0;
+    while i < 8 {
+        r |= (*x.add(i) as u64) << (8 * i);
+        i += 1;
     }
     r
 }
 
-/// Store a 64-bit integer to a byte array in little-endian order.
-#[inline(always)]
-fn store64(x: &mut [u8], u: u64) {
-    for i in 0..8 {
-        x[i] = (u >> (8 * i)) as u8;
+/*************************************************
+ * Name:        store64
+ *
+ * Description: Store a 64-bit integer to a byte array in little-endian order
+ **************************************************/
+#[inline]
+unsafe fn store64(x: *mut u8, u: u64) {
+    let mut i: usize = 0;
+    while i < 8 {
+        *x.add(i) = (u >> (8 * i)) as u8;
+        i += 1;
     }
 }
 
-/// Keccak round constants.
-#[rustfmt::skip]
-static KECCAK_F_ROUND_CONSTANTS: [u64; NROUNDS] = [
-    0x0000000000000001, 0x0000000000008082,
-    0x800000000000808a, 0x8000000080008000,
-    0x000000000000808b, 0x0000000080000001,
-    0x8000000080008081, 0x8000000000008009,
-    0x000000000000008a, 0x0000000000000088,
-    0x0000000080008009, 0x000000008000000a,
-    0x000000008000808b, 0x800000000000008b,
-    0x8000000000008089, 0x8000000000008003,
-    0x8000000000008002, 0x8000000000000080,
-    0x000000000000800a, 0x800000008000000a,
-    0x8000000080008081, 0x8000000000008080,
-    0x0000000080000001, 0x8000000080008008,
+/* Keccak round constants */
+static KeccakF_RoundConstants: [u64; NROUNDS] = [
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808a,
+    0x8000000080008000,
+    0x000000000000808b,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008a,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000a,
+    0x000000008000808b,
+    0x800000000000008b,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800a,
+    0x800000008000000a,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
 ];
 
-/// The Keccak F1600 permutation.
-fn keccak_f1600_state_permute(state: &mut [u64]) {
+/*************************************************
+ * Name:        KeccakF1600_StatePermute
+ *
+ * Description: The Keccak F1600 Permutation
+ *
+ * Arguments:   - uint64_t *state: pointer to input/output Keccak state
+ **************************************************/
+unsafe fn KeccakF1600_StatePermute(state: *mut u64) {
+    let mut round: usize;
+
+    let mut aba: u64;
+    let mut abe: u64;
+    let mut abi: u64;
+    let mut abo: u64;
+    let mut abu: u64;
+    let mut aga: u64;
+    let mut age: u64;
+    let mut agi: u64;
+    let mut ago: u64;
+    let mut agu: u64;
+    let mut aka: u64;
+    let mut ake: u64;
+    let mut aki: u64;
+    let mut ako: u64;
+    let mut aku: u64;
+    let mut ama: u64;
+    let mut ame: u64;
+    let mut ami: u64;
+    let mut amo: u64;
+    let mut amu: u64;
+    let mut asa: u64;
+    let mut ase: u64;
+    let mut asi: u64;
+    let mut aso: u64;
+    let mut asu: u64;
+    let mut bca: u64;
+    let mut bce: u64;
+    let mut bci: u64;
+    let mut bco: u64;
+    let mut bcu: u64;
+    let mut da: u64;
+    let mut de: u64;
+    let mut di: u64;
+    let mut do_: u64;
+    let mut du: u64;
+    let mut eba: u64;
+    let mut ebe: u64;
+    let mut ebi: u64;
+    let mut ebo: u64;
+    let mut ebu: u64;
+    let mut ega: u64;
+    let mut ege: u64;
+    let mut egi: u64;
+    let mut ego: u64;
+    let mut egu: u64;
+    let mut eka: u64;
+    let mut eke: u64;
+    let mut eki: u64;
+    let mut eko: u64;
+    let mut eku: u64;
+    let mut ema: u64;
+    let mut eme: u64;
+    let mut emi: u64;
+    let mut emo: u64;
+    let mut emu: u64;
+    let mut esa: u64;
+    let mut ese: u64;
+    let mut esi: u64;
+    let mut eso: u64;
+    let mut esu: u64;
+
     // copyFromState(A, state)
-    let mut aba = state[0];
-    let mut abe = state[1];
-    let mut abi = state[2];
-    let mut abo = state[3];
-    let mut abu = state[4];
-    let mut aga = state[5];
-    let mut age = state[6];
-    let mut agi = state[7];
-    let mut ago = state[8];
-    let mut agu = state[9];
-    let mut aka = state[10];
-    let mut ake = state[11];
-    let mut aki = state[12];
-    let mut ako = state[13];
-    let mut aku = state[14];
-    let mut ama = state[15];
-    let mut ame = state[16];
-    let mut ami = state[17];
-    let mut amo = state[18];
-    let mut amu = state[19];
-    let mut asa = state[20];
-    let mut ase = state[21];
-    let mut asi = state[22];
-    let mut aso = state[23];
-    let mut asu = state[24];
+    aba = *state.add(0);
+    abe = *state.add(1);
+    abi = *state.add(2);
+    abo = *state.add(3);
+    abu = *state.add(4);
+    aga = *state.add(5);
+    age = *state.add(6);
+    agi = *state.add(7);
+    ago = *state.add(8);
+    agu = *state.add(9);
+    aka = *state.add(10);
+    ake = *state.add(11);
+    aki = *state.add(12);
+    ako = *state.add(13);
+    aku = *state.add(14);
+    ama = *state.add(15);
+    ame = *state.add(16);
+    ami = *state.add(17);
+    amo = *state.add(18);
+    amu = *state.add(19);
+    asa = *state.add(20);
+    ase = *state.add(21);
+    asi = *state.add(22);
+    aso = *state.add(23);
+    asu = *state.add(24);
 
-    let mut round = 0;
+    round = 0;
     while round < NROUNDS {
-        // prepareTheta
-        let mut bca = aba ^ aga ^ aka ^ ama ^ asa;
-        let mut bce = abe ^ age ^ ake ^ ame ^ ase;
-        let mut bci = abi ^ agi ^ aki ^ ami ^ asi;
-        let mut bco = abo ^ ago ^ ako ^ amo ^ aso;
-        let mut bcu = abu ^ agu ^ aku ^ amu ^ asu;
+        //    prepareTheta
+        bca = aba ^ aga ^ aka ^ ama ^ asa;
+        bce = abe ^ age ^ ake ^ ame ^ ase;
+        bci = abi ^ agi ^ aki ^ ami ^ asi;
+        bco = abo ^ ago ^ ako ^ amo ^ aso;
+        bcu = abu ^ agu ^ aku ^ amu ^ asu;
 
-        // thetaRhoPiChiIotaPrepareTheta(round, A, E)
-        let mut da = bcu ^ rol(bce, 1);
-        let mut de = bca ^ rol(bci, 1);
-        let mut di = bce ^ rol(bco, 1);
-        let mut dobj = bci ^ rol(bcu, 1);
-        let mut du = bco ^ rol(bca, 1);
+        // thetaRhoPiChiIotaPrepareTheta(round  , A, E)
+        da = bcu ^ rol(bce, 1);
+        de = bca ^ rol(bci, 1);
+        di = bce ^ rol(bco, 1);
+        do_ = bci ^ rol(bcu, 1);
+        du = bco ^ rol(bca, 1);
 
         aba ^= da;
         bca = aba;
@@ -103,18 +210,18 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         bce = rol(age, 44);
         aki ^= di;
         bci = rol(aki, 43);
-        amo ^= dobj;
+        amo ^= do_;
         bco = rol(amo, 21);
         asu ^= du;
         bcu = rol(asu, 14);
-        let mut eba = bca ^ ((!bce) & bci);
-        eba ^= KECCAK_F_ROUND_CONSTANTS[round];
-        let ebe = bce ^ ((!bci) & bco);
-        let ebi = bci ^ ((!bco) & bcu);
-        let ebo = bco ^ ((!bcu) & bca);
-        let ebu = bcu ^ ((!bca) & bce);
+        eba = bca ^ ((!bce) & bci);
+        eba ^= KeccakF_RoundConstants[round];
+        ebe = bce ^ ((!bci) & bco);
+        ebi = bci ^ ((!bco) & bcu);
+        ebo = bco ^ ((!bcu) & bca);
+        ebu = bcu ^ ((!bca) & bce);
 
-        abo ^= dobj;
+        abo ^= do_;
         bca = rol(abo, 28);
         agu ^= du;
         bce = rol(agu, 20);
@@ -124,27 +231,27 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         bco = rol(ame, 45);
         asi ^= di;
         bcu = rol(asi, 61);
-        let ega = bca ^ ((!bce) & bci);
-        let ege = bce ^ ((!bci) & bco);
-        let egi = bci ^ ((!bco) & bcu);
-        let ego = bco ^ ((!bcu) & bca);
-        let egu = bcu ^ ((!bca) & bce);
+        ega = bca ^ ((!bce) & bci);
+        ege = bce ^ ((!bci) & bco);
+        egi = bci ^ ((!bco) & bcu);
+        ego = bco ^ ((!bcu) & bca);
+        egu = bcu ^ ((!bca) & bce);
 
         abe ^= de;
         bca = rol(abe, 1);
         agi ^= di;
         bce = rol(agi, 6);
-        ako ^= dobj;
+        ako ^= do_;
         bci = rol(ako, 25);
         amu ^= du;
         bco = rol(amu, 8);
         asa ^= da;
         bcu = rol(asa, 18);
-        let eka = bca ^ ((!bce) & bci);
-        let eke = bce ^ ((!bci) & bco);
-        let eki = bci ^ ((!bco) & bcu);
-        let eko = bco ^ ((!bcu) & bca);
-        let eku = bcu ^ ((!bca) & bce);
+        eka = bca ^ ((!bce) & bci);
+        eke = bce ^ ((!bci) & bco);
+        eki = bci ^ ((!bco) & bcu);
+        eko = bco ^ ((!bcu) & bca);
+        eku = bcu ^ ((!bca) & bce);
 
         abu ^= du;
         bca = rol(abu, 27);
@@ -154,17 +261,17 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         bci = rol(ake, 10);
         ami ^= di;
         bco = rol(ami, 15);
-        aso ^= dobj;
+        aso ^= do_;
         bcu = rol(aso, 56);
-        let ema = bca ^ ((!bce) & bci);
-        let eme = bce ^ ((!bci) & bco);
-        let emi = bci ^ ((!bco) & bcu);
-        let emo = bco ^ ((!bcu) & bca);
-        let emu = bcu ^ ((!bca) & bce);
+        ema = bca ^ ((!bce) & bci);
+        eme = bce ^ ((!bci) & bco);
+        emi = bci ^ ((!bco) & bcu);
+        emo = bco ^ ((!bcu) & bca);
+        emu = bcu ^ ((!bca) & bce);
 
         abi ^= di;
         bca = rol(abi, 62);
-        ago ^= dobj;
+        ago ^= do_;
         bce = rol(ago, 55);
         aku ^= du;
         bci = rol(aku, 39);
@@ -172,13 +279,13 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         bco = rol(ama, 41);
         ase ^= de;
         bcu = rol(ase, 2);
-        let esa = bca ^ ((!bce) & bci);
-        let ese = bce ^ ((!bci) & bco);
-        let esi = bci ^ ((!bco) & bcu);
-        let eso = bco ^ ((!bcu) & bca);
-        let esu = bcu ^ ((!bca) & bce);
+        esa = bca ^ ((!bce) & bci);
+        ese = bce ^ ((!bci) & bco);
+        esi = bci ^ ((!bco) & bcu);
+        eso = bco ^ ((!bcu) & bca);
+        esu = bcu ^ ((!bca) & bce);
 
-        // prepareTheta
+        //    prepareTheta
         bca = eba ^ ega ^ eka ^ ema ^ esa;
         bce = ebe ^ ege ^ eke ^ eme ^ ese;
         bci = ebi ^ egi ^ eki ^ emi ^ esi;
@@ -189,44 +296,34 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         da = bcu ^ rol(bce, 1);
         de = bca ^ rol(bci, 1);
         di = bce ^ rol(bco, 1);
-        dobj = bci ^ rol(bcu, 1);
+        do_ = bci ^ rol(bcu, 1);
         du = bco ^ rol(bca, 1);
 
-        let mut eba = eba;
         eba ^= da;
         bca = eba;
-        let mut ege = ege;
         ege ^= de;
         bce = rol(ege, 44);
-        let mut eki = eki;
         eki ^= di;
         bci = rol(eki, 43);
-        let mut emo = emo;
-        emo ^= dobj;
+        emo ^= do_;
         bco = rol(emo, 21);
-        let mut esu = esu;
         esu ^= du;
         bcu = rol(esu, 14);
         aba = bca ^ ((!bce) & bci);
-        aba ^= KECCAK_F_ROUND_CONSTANTS[round + 1];
+        aba ^= KeccakF_RoundConstants[round + 1];
         abe = bce ^ ((!bci) & bco);
         abi = bci ^ ((!bco) & bcu);
         abo = bco ^ ((!bcu) & bca);
         abu = bcu ^ ((!bca) & bce);
 
-        let mut ebo = ebo;
-        ebo ^= dobj;
+        ebo ^= do_;
         bca = rol(ebo, 28);
-        let mut egu = egu;
         egu ^= du;
         bce = rol(egu, 20);
-        let mut eka = eka;
         eka ^= da;
         bci = rol(eka, 3);
-        let mut eme = eme;
         eme ^= de;
         bco = rol(eme, 45);
-        let mut esi = esi;
         esi ^= di;
         bcu = rol(esi, 61);
         aga = bca ^ ((!bce) & bci);
@@ -235,19 +332,14 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         ago = bco ^ ((!bcu) & bca);
         agu = bcu ^ ((!bca) & bce);
 
-        let mut ebe = ebe;
         ebe ^= de;
         bca = rol(ebe, 1);
-        let mut egi = egi;
         egi ^= di;
         bce = rol(egi, 6);
-        let mut eko = eko;
-        eko ^= dobj;
+        eko ^= do_;
         bci = rol(eko, 25);
-        let mut emu = emu;
         emu ^= du;
         bco = rol(emu, 8);
-        let mut esa = esa;
         esa ^= da;
         bcu = rol(esa, 18);
         aka = bca ^ ((!bce) & bci);
@@ -256,20 +348,15 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         ako = bco ^ ((!bcu) & bca);
         aku = bcu ^ ((!bca) & bce);
 
-        let mut ebu = ebu;
         ebu ^= du;
         bca = rol(ebu, 27);
-        let mut ega = ega;
         ega ^= da;
         bce = rol(ega, 36);
-        let mut eke = eke;
         eke ^= de;
         bci = rol(eke, 10);
-        let mut emi = emi;
         emi ^= di;
         bco = rol(emi, 15);
-        let mut eso = eso;
-        eso ^= dobj;
+        eso ^= do_;
         bcu = rol(eso, 56);
         ama = bca ^ ((!bce) & bci);
         ame = bce ^ ((!bci) & bco);
@@ -277,19 +364,14 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
         amo = bco ^ ((!bcu) & bca);
         amu = bcu ^ ((!bca) & bce);
 
-        let mut ebi = ebi;
         ebi ^= di;
         bca = rol(ebi, 62);
-        let mut ego = ego;
-        ego ^= dobj;
+        ego ^= do_;
         bce = rol(ego, 55);
-        let mut eku = eku;
         eku ^= du;
         bci = rol(eku, 39);
-        let mut ema = ema;
         ema ^= da;
         bco = rol(ema, 41);
-        let mut ese = ese;
         ese ^= de;
         bcu = rol(ese, 2);
         asa = bca ^ ((!bce) & bci);
@@ -302,299 +384,279 @@ fn keccak_f1600_state_permute(state: &mut [u64]) {
     }
 
     // copyToState(state, A)
-    state[0] = aba;
-    state[1] = abe;
-    state[2] = abi;
-    state[3] = abo;
-    state[4] = abu;
-    state[5] = aga;
-    state[6] = age;
-    state[7] = agi;
-    state[8] = ago;
-    state[9] = agu;
-    state[10] = aka;
-    state[11] = ake;
-    state[12] = aki;
-    state[13] = ako;
-    state[14] = aku;
-    state[15] = ama;
-    state[16] = ame;
-    state[17] = ami;
-    state[18] = amo;
-    state[19] = amu;
-    state[20] = asa;
-    state[21] = ase;
-    state[22] = asi;
-    state[23] = aso;
-    state[24] = asu;
+    *state.add(0) = aba;
+    *state.add(1) = abe;
+    *state.add(2) = abi;
+    *state.add(3) = abo;
+    *state.add(4) = abu;
+    *state.add(5) = aga;
+    *state.add(6) = age;
+    *state.add(7) = agi;
+    *state.add(8) = ago;
+    *state.add(9) = agu;
+    *state.add(10) = aka;
+    *state.add(11) = ake;
+    *state.add(12) = aki;
+    *state.add(13) = ako;
+    *state.add(14) = aku;
+    *state.add(15) = ama;
+    *state.add(16) = ame;
+    *state.add(17) = ami;
+    *state.add(18) = amo;
+    *state.add(19) = amu;
+    *state.add(20) = asa;
+    *state.add(21) = ase;
+    *state.add(22) = asi;
+    *state.add(23) = aso;
+    *state.add(24) = asu;
 }
 
-/// Absorb step of Keccak; non-incremental, starts by zeroing the state.
-fn keccak_absorb(s: &mut [u64; 25], r: usize, m: &[u8], mlen: usize, p: u8) {
-    let mut t = [0u8; 200];
-    let mut mlen = mlen;
-    let mut off = 0usize;
+/*************************************************
+ * Name:        keccak_absorb
+ *
+ * Description: Absorb step of Keccak;
+ *              non-incremental, starts by zeroeing the state.
+ **************************************************/
+unsafe fn keccak_absorb(s: *mut u64, r: u32, mut m: *const u8, mut mlen: usize, p: u8) {
+    let mut i: usize;
+    let mut t: [u8; 200] = [0u8; 200];
+
+    let r_us = r as usize;
 
     /* Zero state */
-    for i in 0..25 {
-        s[i] = 0;
+    i = 0;
+    while i < 25 {
+        *s.add(i) = 0;
+        i += 1;
     }
 
-    while mlen >= r {
-        for i in 0..r / 8 {
-            s[i] ^= load64(&m[off + 8 * i..]);
+    while mlen >= r_us {
+        i = 0;
+        while i < r_us / 8 {
+            *s.add(i) ^= load64(m.add(8 * i));
+            i += 1;
         }
 
-        keccak_f1600_state_permute(s);
-        mlen -= r;
-        off += r;
+        KeccakF1600_StatePermute(s);
+        mlen -= r_us;
+        m = m.add(r_us);
     }
 
-    for i in 0..r {
+    i = 0;
+    while i < r_us {
         t[i] = 0;
+        i += 1;
     }
-    for i in 0..mlen {
-        t[i] = m[off + i];
+    i = 0;
+    while i < mlen {
+        t[i] = *m.add(i);
+        i += 1;
     }
-    t[mlen] = p;
-    t[r - 1] |= 128;
-    for i in 0..r / 8 {
-        s[i] ^= load64(&t[8 * i..]);
+    t[i] = p;
+    t[r_us - 1] |= 128;
+    i = 0;
+    while i < r_us / 8 {
+        *s.add(i) ^= load64(t.as_ptr().add(8 * i));
+        i += 1;
     }
 }
 
-/// Squeeze step of Keccak; squeezes full blocks of `r` bytes each.
-fn keccak_squeezeblocks(h: &mut [u8], nblocks: usize, s: &mut [u64; 25], r: usize) {
-    let mut nblocks = nblocks;
-    let mut off = 0usize;
+/*************************************************
+ * Name:        keccak_squeezeblocks
+ *
+ * Description: Squeeze step of Keccak. Squeezes full blocks of r bytes each.
+ *              Modifies the state. Can be called multiple times to keep
+ *              squeezing, i.e., is incremental.
+ **************************************************/
+unsafe fn keccak_squeezeblocks(mut h: *mut u8, mut nblocks: usize, s: *mut u64, r: u32) {
+    let r_us = r as usize;
     while nblocks > 0 {
-        keccak_f1600_state_permute(s);
-        for i in 0..(r >> 3) {
-            store64(&mut h[off + 8 * i..], s[i]);
+        KeccakF1600_StatePermute(s);
+        let mut i: usize = 0;
+        while i < (r_us >> 3) {
+            store64(h.add(8 * i), *s.add(i));
+            i += 1;
         }
-        off += r;
+        h = h.add(r_us);
         nblocks -= 1;
     }
 }
 
-/// Initializes the incremental Keccak state to zero.
-fn keccak_inc_init(s_inc: &mut [u64; 26]) {
-    for i in 0..25 {
-        s_inc[i] = 0;
-    }
-    s_inc[25] = 0;
-}
+/*************************************************
+ * Name:        keccak_inc_init
+ *
+ * Description: Initializes the incremental Keccak state to zero.
+ **************************************************/
+unsafe fn keccak_inc_init(s_inc: *mut u64) {
+    let mut i: usize;
 
-/// Incremental Keccak absorb.
-fn keccak_inc_absorb(s_inc: &mut [u64; 26], r: usize, m: &[u8], mlen: usize) {
-    let mut mlen = mlen;
-    let mut off = 0usize;
-
-    /* Recall that s_inc[25] is the non-absorbed bytes xored into the state */
-    while mlen as u64 + s_inc[25] >= r as u64 {
-        let taken = r - s_inc[25] as usize;
-        for i in 0..taken {
-            /* Take the i'th byte from message, xor with the s_inc[25] + i'th
-               byte of the state; little-endian */
-            let pos = s_inc[25] as usize + i;
-            s_inc[pos >> 3] ^= (m[off + i] as u64) << (8 * (pos & 0x07));
-        }
-        mlen -= taken;
-        off += taken;
-        s_inc[25] = 0;
-
-        let mut state: [u64; 25] = s_inc[..25].try_into().unwrap();
-        keccak_f1600_state_permute(&mut state);
-        s_inc[..25].copy_from_slice(&state);
-    }
-
-    for i in 0..mlen {
-        let pos = s_inc[25] as usize + i;
-        s_inc[pos >> 3] ^= (m[off + i] as u64) << (8 * (pos & 0x07));
-    }
-    s_inc[25] += mlen as u64;
-}
-
-/// Finalizes the Keccak absorb phase, prepares for squeezing.
-fn keccak_inc_finalize(s_inc: &mut [u64; 26], r: usize, p: u8) {
-    /* After keccak_inc_absorb, we are guaranteed that s_inc[25] < r, so we can
-       always use one more byte for p in the current state. */
-    let pos = s_inc[25] as usize;
-    s_inc[pos >> 3] ^= (p as u64) << (8 * (pos & 0x07));
-    s_inc[(r - 1) >> 3] ^= 128u64 << (8 * ((r - 1) & 0x07));
-    s_inc[25] = 0;
-}
-
-/// Incremental Keccak squeeze; can be called on byte level.
-fn keccak_inc_squeeze(h: &mut [u8], outlen: usize, s_inc: &mut [u64; 26], r: usize) {
-    let mut outlen = outlen;
-    let mut off = 0usize;
-
-    /* First consume any bytes we still have sitting around */
-    let mut i = 0usize;
-    while i < outlen && (i as u64) < s_inc[25] {
-        /* There are s_inc[25] bytes left, so r - s_inc[25] is the first
-           available byte. We consume from there, i.e., up to r. */
-        let pos = r - s_inc[25] as usize + i;
-        h[off + i] = (s_inc[pos >> 3] >> (8 * (pos & 0x07))) as u8;
+    i = 0;
+    while i < 25 {
+        *s_inc.add(i) = 0;
         i += 1;
     }
-    off += i;
+    *s_inc.add(25) = 0;
+}
+
+/*************************************************
+ * Name:        keccak_inc_absorb
+ *
+ * Description: Incremental keccak absorb
+ *              Preceded by keccak_inc_init, succeeded by keccak_inc_finalize
+ **************************************************/
+unsafe fn keccak_inc_absorb(s_inc: *mut u64, r: u32, mut m: *const u8, mut mlen: usize) {
+    let mut i: usize;
+    let r64: u64 = r as u64;
+
+    /* Recall that s_inc[25] is the non-absorbed bytes xored into the state */
+    while (mlen as u64) + *s_inc.add(25) >= r64 {
+        i = 0;
+        while (i as u64) < r64 - *s_inc.add(25) {
+            /* Take the i'th byte from message
+               xor with the s_inc[25] + i'th byte of the state; little-endian */
+            let off = *s_inc.add(25) + i as u64;
+            *s_inc.add((off >> 3) as usize) ^= (*m.add(i) as u64) << (8 * (off & 0x07));
+            i += 1;
+        }
+        mlen -= (r64 - *s_inc.add(25)) as usize;
+        m = m.add((r64 - *s_inc.add(25)) as usize);
+        *s_inc.add(25) = 0;
+
+        KeccakF1600_StatePermute(s_inc);
+    }
+
+    i = 0;
+    while i < mlen {
+        let off = *s_inc.add(25) + i as u64;
+        *s_inc.add((off >> 3) as usize) ^= (*m.add(i) as u64) << (8 * (off & 0x07));
+        i += 1;
+    }
+    *s_inc.add(25) += mlen as u64;
+}
+
+/*************************************************
+ * Name:        keccak_inc_finalize
+ *
+ * Description: Finalizes Keccak absorb phase, prepares for squeezing
+ **************************************************/
+unsafe fn keccak_inc_finalize(s_inc: *mut u64, r: u32, p: u8) {
+    /* After keccak_inc_absorb, we are guaranteed that s_inc[25] < r,
+       so we can always use one more byte for p in the current state. */
+    let r64: u64 = r as u64;
+    let s25 = *s_inc.add(25);
+    *s_inc.add((s25 >> 3) as usize) ^= (p as u64) << (8 * (s25 & 0x07));
+    *s_inc.add(((r64 - 1) >> 3) as usize) ^= 128u64 << (8 * ((r64 - 1) & 0x07));
+    *s_inc.add(25) = 0;
+}
+
+/*************************************************
+ * Name:        keccak_inc_squeeze
+ *
+ * Description: Incremental Keccak squeeze; can be called on byte-level
+ **************************************************/
+unsafe fn keccak_inc_squeeze(mut h: *mut u8, mut outlen: usize, s_inc: *mut u64, r: u32) {
+    let mut i: usize;
+    let r64: u64 = r as u64;
+
+    /* First consume any bytes we still have sitting around */
+    i = 0;
+    while i < outlen && (i as u64) < *s_inc.add(25) {
+        /* There are s_inc[25] bytes left, so r - s_inc[25] is the first
+           available byte. We consume from there, i.e., up to r. */
+        let off = r64 - *s_inc.add(25) + i as u64;
+        *h.add(i) = (*s_inc.add((off >> 3) as usize) >> (8 * (off & 0x07))) as u8;
+        i += 1;
+    }
+    h = h.add(i);
     outlen -= i;
-    s_inc[25] -= i as u64;
+    *s_inc.add(25) -= i as u64;
 
     /* Then squeeze the remaining necessary blocks */
     while outlen > 0 {
-        let mut state: [u64; 25] = s_inc[..25].try_into().unwrap();
-        keccak_f1600_state_permute(&mut state);
-        s_inc[..25].copy_from_slice(&state);
+        KeccakF1600_StatePermute(s_inc);
 
-        let mut i = 0usize;
-        while i < outlen && i < r {
-            h[off + i] = (s_inc[i >> 3] >> (8 * (i & 0x07))) as u8;
+        i = 0;
+        while i < outlen && (i as u64) < r64 {
+            *h.add(i) = (*s_inc.add(i >> 3) >> (8 * (i & 0x07))) as u8;
             i += 1;
         }
-        off += i;
+        h = h.add(i);
         outlen -= i;
-        s_inc[25] = (r - i) as u64;
+        *s_inc.add(25) = r64 - i as u64;
     }
 }
 
-pub fn shake256_inc_init(s_inc: &mut [u64; 26]) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256_inc_init(s_inc: *mut u64) {
     keccak_inc_init(s_inc);
 }
 
-pub fn shake256_inc_absorb(s_inc: &mut [u64; 26], input: &[u8], inlen: usize) {
-    keccak_inc_absorb(s_inc, SHAKE256_RATE, input, inlen);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256_inc_absorb(s_inc: *mut u64, input: *const u8, inlen: usize) {
+    keccak_inc_absorb(s_inc, SHAKE256_RATE as u32, input, inlen);
 }
 
-pub fn shake256_inc_finalize(s_inc: &mut [u64; 26]) {
-    keccak_inc_finalize(s_inc, SHAKE256_RATE, 0x1F);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256_inc_finalize(s_inc: *mut u64) {
+    keccak_inc_finalize(s_inc, SHAKE256_RATE as u32, 0x1F);
 }
 
-pub fn shake256_inc_squeeze(output: &mut [u8], outlen: usize, s_inc: &mut [u64; 26]) {
-    keccak_inc_squeeze(output, outlen, s_inc, SHAKE256_RATE);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256_inc_squeeze(output: *mut u8, outlen: usize, s_inc: *mut u64) {
+    keccak_inc_squeeze(output, outlen, s_inc, SHAKE256_RATE as u32);
 }
 
-/// Absorb step of the SHAKE256 XOF; non-incremental, starts by zeroing the
-/// state.
-pub fn shake256_absorb(s: &mut [u64; 25], input: &[u8], inlen: usize) {
-    keccak_absorb(s, SHAKE256_RATE, input, inlen, 0x1F);
+/*************************************************
+ * Name:        shake256_absorb
+ *
+ * Description: Absorb step of the SHAKE256 XOF.
+ *              non-incremental, starts by zeroeing the state.
+ **************************************************/
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256_absorb(s: *mut u64, input: *const u8, inlen: usize) {
+    keccak_absorb(s, SHAKE256_RATE as u32, input, inlen, 0x1F);
 }
 
-/// Squeeze step of the SHAKE256 XOF.
-pub fn shake256_squeezeblocks(output: &mut [u8], nblocks: usize, s: &mut [u64; 25]) {
-    keccak_squeezeblocks(output, nblocks, s, SHAKE256_RATE);
+/*************************************************
+ * Name:        shake256_squeezeblocks
+ *
+ * Description: Squeeze step of SHAKE256 XOF. Squeezes full blocks of
+ *              SHAKE256_RATE bytes each. Modifies the state. Can be called
+ *              multiple times to keep squeezing, i.e., is incremental.
+ **************************************************/
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256_squeezeblocks(output: *mut u8, nblocks: usize, s: *mut u64) {
+    keccak_squeezeblocks(output, nblocks, s, SHAKE256_RATE as u32);
 }
 
-/// SHAKE256 XOF with non-incremental API.
-pub fn shake256(output: &mut [u8], outlen: usize, input: &[u8], inlen: usize) {
-    let nblocks = outlen / SHAKE256_RATE;
-    let mut t = [0u8; SHAKE256_RATE];
-    let mut s = [0u64; 25];
-    let mut outlen = outlen;
+/*************************************************
+ * Name:        shake256
+ *
+ * Description: SHAKE256 XOF with non-incremental API
+ **************************************************/
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shake256(
+    mut output: *mut u8,
+    mut outlen: usize,
+    input: *const u8,
+    inlen: usize,
+) {
+    let nblocks: usize = outlen / SHAKE256_RATE;
+    let mut t: [u8; SHAKE256_RATE] = [0u8; SHAKE256_RATE];
+    let mut s: [u64; 25] = [0u64; 25];
 
-    shake256_absorb(&mut s, input, inlen);
-    shake256_squeezeblocks(output, nblocks, &mut s);
+    shake256_absorb(s.as_mut_ptr(), input, inlen);
+    shake256_squeezeblocks(output, nblocks, s.as_mut_ptr());
 
-    let off = nblocks * SHAKE256_RATE;
+    output = output.add(nblocks * SHAKE256_RATE);
     outlen -= nblocks * SHAKE256_RATE;
 
     if outlen != 0 {
-        shake256_squeezeblocks(&mut t, 1, &mut s);
-        output[off..off + outlen].copy_from_slice(&t[..outlen]);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// C ABI.  `fips202.h` does not rename anything, so the exported wrappers keep
-// the plain C names; they live in their own module so that they can share the
-// names of the safe Rust functions above.
-// ---------------------------------------------------------------------------
-
-pub mod abi {
-    use super::*;
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256_inc_init(s_inc: *mut u64) {
-        unsafe { super::shake256_inc_init(&mut *(s_inc as *mut [u64; 26])) }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256_inc_absorb(
-        s_inc: *mut u64,
-        input: *const u8,
-        inlen: usize,
-    ) {
-        unsafe {
-            super::shake256_inc_absorb(
-                &mut *(s_inc as *mut [u64; 26]),
-                core::slice::from_raw_parts(input, inlen),
-                inlen,
-            )
-        }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256_inc_finalize(s_inc: *mut u64) {
-        unsafe { super::shake256_inc_finalize(&mut *(s_inc as *mut [u64; 26])) }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256_inc_squeeze(
-        output: *mut u8,
-        outlen: usize,
-        s_inc: *mut u64,
-    ) {
-        unsafe {
-            super::shake256_inc_squeeze(
-                core::slice::from_raw_parts_mut(output, outlen),
-                outlen,
-                &mut *(s_inc as *mut [u64; 26]),
-            )
-        }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256_absorb(s: *mut u64, input: *const u8, inlen: usize) {
-        unsafe {
-            super::shake256_absorb(
-                &mut *(s as *mut [u64; 25]),
-                core::slice::from_raw_parts(input, inlen),
-                inlen,
-            )
-        }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256_squeezeblocks(
-        output: *mut u8,
-        nblocks: usize,
-        s: *mut u64,
-    ) {
-        unsafe {
-            super::shake256_squeezeblocks(
-                core::slice::from_raw_parts_mut(output, nblocks * SHAKE256_RATE),
-                nblocks,
-                &mut *(s as *mut [u64; 25]),
-            )
-        }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn shake256(
-        output: *mut u8,
-        outlen: usize,
-        input: *const u8,
-        inlen: usize,
-    ) {
-        unsafe {
-            super::shake256(
-                core::slice::from_raw_parts_mut(output, outlen),
-                outlen,
-                core::slice::from_raw_parts(input, inlen),
-                inlen,
-            )
+        shake256_squeezeblocks(t.as_mut_ptr(), 1, s.as_mut_ptr());
+        let mut i: usize = 0;
+        while i < outlen {
+            *output.add(i) = t[i];
+            i += 1;
         }
     }
 }

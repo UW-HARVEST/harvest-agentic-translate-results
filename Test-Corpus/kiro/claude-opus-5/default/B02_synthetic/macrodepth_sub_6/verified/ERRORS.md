@@ -1,96 +1,75 @@
-# ERRORS.md — the error-surface table (Phase A / Phase C)
+# ERRORS.md — error / rejection surface of the C source
 
-Derived mechanically from `c_src/src/{mdcore.c,mdmacros.h,mdmain.c}`.
-
-## What the grep actually found
+Derived mechanically from `c_src/src/{mdcore.c,mdmain.c,mdmacros.h}`. The grep for
+every rejection construct
 
 ```
-$ grep -niE 'assert|NULL|errno|error|EINVAL|exit|abort' c_src/src/*.c c_src/src/*.h
-(no matches)
-
-$ grep -n 'return' c_src/src/*.c c_src/src/*.h
-mdcore.c:28: int op_add(...){ return a + b; }
-mdcore.c:29: int op_sub(...){ return a - b; }
-mdcore.c:30: int op_mul(...){ return a * b; }
-mdcore.c:44:     return r + acc;
-mdcore.c:51:     return r;
-mdcore.c:57:     return r;
-mdmain.c:31:         return 2;      <-- the ONLY error return in the codebase
-mdmain.c:47:     return 0;
-mdmacros.h:99:   return acc;
-
-$ grep -nE 'if *\(|switch|case |default|#ifndef' c_src/src/*.c c_src/src/*.h
-mdmain.c:29:     if (argc < 3) {           <-- the only runtime `if`
-mdmacros.h:27:   #ifndef OP                <-- build-time fallback
-mdmacros.h:30:   #ifndef REPEAT            <-- build-time fallback
-mdmacros.h:83:   switch (n) {              <-- DISPATCH_REP
-mdmacros.h:84-90:  case 0: .. case 6:
-mdmacros.h:91:   default: break;           <-- out-of-range dispatch
+grep -nE 'return|assert|NULL|errno|error|exit|abort|if *\(|switch|default' c_src/src/*.c c_src/src/*.h
 ```
 
-So the library has **no** `assert`, **no** `RETURN_ERROR`-style macro, **no**
-error enum, **no** `errno` use, **no** `-1`/`NULL` sentinel and **no** pointer
-parameter to null-check. Every function in the `.so` takes and returns `int`
-only and is total over its domain. The rejection surface is therefore
-exclusively: the `argc` check, the `switch` `default:` arm, `atoi`'s silent
-rejections, signed-overflow wrap-around, and the build-time macro range limits.
-`MIN`/`MAX`/`LIMIT`/`<limits.h>` do not appear at all (only in the licence
-comment) — the implicit constants are `INT_MIN`/`INT_MAX` and the
-`REP0..REP7` / `case 0..6` ranges.
+finds **exactly one** explicit runtime rejection (`mdmain.c:29`), **one** silent
+runtime fallthrough (`mdmacros.h:91`), and **two** build-time token-paste failures
+(`mdmacros.h:45`/`59`/`52` and `mdmacros.h:73`). There is no `assert`, no
+`RETURN_ERROR`-style macro, no error enum, no null check, no length check, and no
+range validation anywhere in the library. That absence is itself the contract: the
+library is total on its input domain, and any "invalid" value must produce the same
+defined-by-implementation result on both sides rather than an error code.
 
-## Table
+## Rejection table
 
-| # | function (source) | trigger (exact invalid input/condition) | expected C result | test |
-|---|-------------------|------------------------------------------|-------------------|------|
-| E-01 | `main` — `mdmain.c:29-32` | `argc < 3` (invoked with 0 or 1 operand) | `fprintf(stderr, "usage: %s A B\n", argv[0])`, **nothing** on stdout, `return 2` | `error_paths.rs::e01_usage_error_for_too_few_arguments`, `driver_parity.rs::m_driver_usage_path` |
-| E-02 | `use_generated` → `accum_<OP>` `DISPATCH_REP` `default:` — `mdmacros.h:91` | `n == 7` — one past the last `case 6:` (note `REP7` *exists* but `case 7:` does **not**) | no step runs; prints `gen.acc=<INIT_FOR(OP)>`, returns `INIT_FOR(OP)` (0 for add/sub, 1 for mul) | `e02_to_e07_dispatch_default_arm`, `e02_e04_one_past_each_end_of_switch_range`, `u_use_generated_at_repeat` |
-| E-03 | same | `n == 8`, `9`, `100` — further above the range | same as E-02 | `e02_to_e07_dispatch_default_arm` |
-| E-04 | same | `n == -1` — one below `case 0:` | same as E-02 | `e02_e04_one_past_each_end_of_switch_range` |
-| E-05 | same | `n == INT_MIN`, `INT_MIN + 1` | same as E-02 | `e05_e06_extreme_dispatch_values` |
-| E-06 | same | `n == INT_MAX`, `INT_MAX - 1` | same as E-02 | `e05_e06_extreme_dispatch_values` |
-| E-07 | same | arbitrary `int` outside `0..=6` (2048 randomized values, fixed seed) — the C `switch` accepts *any* `int`, so an out-of-domain value is a real FFI input, exactly the out-of-range-enum class | same as E-02 | `e05_e06_extreme_dispatch_values`, `u_use_generated_randomized` |
-| E-08 | `atoi` — `mdmain.c:33-34` | operand with no digits at all (`"abc"`, `""`, `"+"`, `"-"`, `"   "`, `"0x10"`, `"1e3"` past the `1`) | returns `0`, **no diagnostic**, exit status still 0 | `e08_e10_atoi_rejections_are_silent_and_identical` |
-| E-09 | `atoi` | numeric prefix followed by garbage (`"12x"`, `"  -12abc"`, `"1.5"`, `"010"`) | parses the prefix, silently discards the rest | same |
-| E-10 | `atoi` | magnitude beyond `long` (`"99999999999999999999"`, `"9223372036854775808"`, `"-9223372036854775809"`) | glibc `atoi` is `(int)strtol`, which saturates to `LONG_MAX`/`LONG_MIN` and is then truncated to `int` → `-1` / `0`. Also `"2147483648"` → `-2147483648`, `"4294967296"` → `0` | same |
-| E-11 | `G_OP`, `G_OP_NAME` objects — `mdcore.c:36-37` | an external consumer **stores** into the global (both are mutable objects: `const` in `const char *G_OP_NAME` binds to the pointee, not to the pointer) | the store succeeds and is observable — the objects sit in writable `.data`, *outside* `PT_GNU_RELRO` | `e11_g_op_is_writable_data`, `g_op_slot_is_writable_and_helpers_ignore_it` |
-| E-12 | `op_add` — `mdcore.c:28` | signed overflow: `INT_MAX + 1`, `INT_MAX + INT_MAX`, `INT_MIN + -1`, `INT_MIN + INT_MIN` | UB in ISO C; `gcc -O2` emits `add` → two's-complement wrap | `e12_op_add_overflow_wraps` |
-| E-13 | `op_sub` — `mdcore.c:29` | `INT_MIN - 1`, `INT_MAX - INT_MIN`, `0 - INT_MIN` | wraps (`sub`) | `e13_op_sub_overflow_wraps` |
-| E-14 | `op_mul` — `mdcore.c:30` | `INT_MIN * -1`, `INT_MAX * INT_MAX`, `46341 * 46341` (first overflowing square), `65536 * 65536` | wraps (low 32 bits of `imul`) | `e14_op_mul_overflow_wraps` |
-| E-15 | `helper_call` — `mdcore.c:44` | `return r + acc;` overflows after `r` already wrapped (`a = b = INT_MAX` with `OP=add`) | wraps; the printed `helper.call=` / `helper.acc=` fields show the wrapped values | `e15_helper_call_return_overflow_wraps` |
-| E-16 | `CHOOSE_REP(n)` — `mdmacros.h:73-74`, used by `RUN_LOOP` at `mdcore.c:42` and `mdmain.c:38` | build-time: `-DREPEAT=8` (or any value ∉ `0..7`) pastes `REP8`, which is not defined | **compile error** — `REP8` undeclared. Valid range is exactly `REP0..REP7` | `e16_e17_out_of_range_build_configurations_do_not_exist` (the crate offers no `repeat_8`/`"8"` feature, so `cargo` rejects it the same way) |
-| E-17 | `#ifndef OP` — `mdmacros.h:27-29`, `INIT_FOR`/`STEP_OP`/`OP_FN` | build-time: `-DOP=div` — no `INIT_div`, `STEP_div` or `op_div` exists | **compile error**. `OP` undefined instead falls back to `add` (not an error) | `e16_e17_out_of_range_build_configurations_do_not_exist`; the `add` fallback is exercised by the `<no OP>` combinations in `run_all.sh` |
-| E-18 | whole `.so` surface | null pointer / oversized length arguments | **not reachable**: no function in `mdcore.c` has a pointer or length parameter, so there is no null-check or bounds path to diverge on. Recorded so the absence is explicit. The pointer-shaped part of the surface — the two exported data objects — must be non-null and dereferenceable in both libraries | `e18_no_pointer_parameters_but_data_objects_are_valid` |
+| # | function | trigger (exact invalid input/condition) | expected C result | test |
+|---|----------|------------------------------------------|-------------------|------|
+| 1 | `main` (`mdmain.c:29-32`) | `argc < 3`, i.e. the program is invoked with 0 or 1 operand | `fprintf(stderr, "usage: %s A B\n", argv[0])` then `return 2`; **nothing** on stdout | `err_01_argc_1_usage_exit2`, `err_02_argc_2_usage_exit2`, `err_03b_argv0_shapes_in_usage_line` (incl. `argc == 0` via `execv` with an empty `argv`) |
+| 2 | `main` (`mdmain.c:29`) | `argc == 1` (bare program name) | same as #1: usage line naming `argv[0]`, exit status 2 | `err_01_argc_1_usage_exit2` |
+| 3 | `main` (`mdmain.c:29`) | `argc == 2` (one operand) | same as #1, exit status 2 | `err_02_argc_2_usage_exit2`; accepted boundary `argc == 3` in `err_03_argc_boundary_3_is_accepted` |
+| 4 | `main` (`mdmain.c:33-34`) via `atoi` | `argv[1]`/`argv[2]` contain no digits at all (`""`, `"abc"`, `"+"`, `"-"`, `"  "`) | no rejection — `atoi` returns `0`; run proceeds with that operand `= 0`, exit status 0 | `err_04_atoi_no_digits` |
+| 5 | `main` via `atoi` | operand has trailing garbage (`"12x"`, `"-12abc"`) | no rejection — `atoi` stops at the first non-digit and returns the prefix value | `err_05_atoi_trailing_garbage` |
+| 6 | `main` via `atoi` | operand magnitude exceeds `LONG_MAX` while positive (`"99999999999999999999"`) | `strtol` clamps to `LONG_MAX`; `(int)LONG_MAX == -1` | `err_06_atoi_pos_overflow` |
+| 7 | `main` via `atoi` | operand magnitude exceeds `-(unsigned long)LONG_MIN` while negative (`"-99999999999999999999"`) | `strtol` clamps to `LONG_MIN`; `(int)LONG_MIN == 0` — **not** `1`; the negative clamp reaches one further out than the positive one | `err_07_atoi_neg_overflow` |
+| 8 | `use_generated` → `DISPATCH_REP` (`mdmacros.h:91`) | `n < 0` (any negative selector, incl. `INT_MIN`) | `default: break;` — accumulator untouched, returns `INIT_FOR(OP)` (`0` for add/sub, `1` for mul) and prints `gen.acc=<INIT>` | `err_08_use_generated_negative` |
+| 9 | `use_generated` → `DISPATCH_REP` (`mdmacros.h:91`) | `n == 7` — `REP7` exists but the `switch` has no `case 7:` | `default: break;` — returns `INIT_FOR(OP)`, **not** the 7-step result. A genuine asymmetry in the header, reproduced verbatim | `err_09_use_generated_7_falls_to_default` |
+| 10 | `use_generated` → `DISPATCH_REP` (`mdmacros.h:91`) | `n > 7` (`8`, `100`, `INT_MAX`) | `default: break;` — returns `INIT_FOR(OP)` | `err_10_use_generated_above_range` |
+| 11 | `use_generated` → `DISPATCH_REP` | `n == 6` (last accepted case) and `n == 0` (first accepted case) — the in-range boundaries either side of the rejections | accepted: `REP6`/`REP0` applied normally | `err_11_use_generated_boundaries` |
+| 12 | `op_add` (`mdcore.c:28`) | `a + b` overflows `int` (`INT_MAX + 1`, `INT_MIN + (-1)`) — signed overflow, UB in C, **no check** | gcc/clang two's-complement wrap on this target | `err_12_op_add_overflow` |
+| 13 | `op_sub` (`mdcore.c:29`) | `a - b` overflows `int` (`INT_MIN - 1`, `INT_MAX - (-1)`) — UB, no check | two's-complement wrap | `err_13_op_sub_overflow` |
+| 14 | `op_mul` (`mdcore.c:30`) | `a * b` overflows `int` (`INT_MIN * -1`, `65536 * 65536`) — UB, no check | two's-complement wrap | `err_14_op_mul_overflow` |
+| 15 | `helper_call` (`mdcore.c:44`) | `r + acc` overflows `int` — UB, no check | two's-complement wrap | `err_15_helper_call_sum_overflow` |
+| 16 | `STEP_mul` inside `REP<n>` (`mdmacros.h:50`) | `acc *= (i+1)` overflows — only reachable with `OP=mul`; unreachable for add/sub since `|acc| <= 21` | two's-complement wrap (not reachable from `INIT_mul = 1` with `REPEAT <= 7`: `7! = 5040`) | `err_16_step_mul_overflow_reachable_range` |
+| 17 | `G_OP` (`mdcore.c:36`) | caller overwrites the non-`const` global with an arbitrary pointer and calls through it | no validation — dispatches to whatever was stored; a null store faults identically on both sides (not exercised: it is a crash, not a rejection) | `cfg_23_g_op_writable` (in `tests/phase_b_valid.rs`) |
+| 18 | build time — `OP_FN`/`INIT_FOR`/`STEP_OP` (`mdmacros.h:45,59,52`) | `-DOP=div` (any token outside `add`/`sub`/`mul`) | **compile error**: `'INIT_div' undeclared`, implicit `op_div`, no `STEP_div`. Rust side: no such feature exists, so `cargo` rejects `--features div` | `err_18_build_time_bad_op` |
+| 19 | build time — `CHOOSE_REP` (`mdmacros.h:73-74`) | `-DREPEAT=8` (only `REP0`..`REP7` defined) | **compile/link error**: implicit declaration of `REP8`, then `undefined reference to REP8` | `err_19_build_time_repeat_8` |
+| 20 | build time — `CHOOSE_REP` (`mdmacros.h:73-74`) | `-DREPEAT=-1` (negative token) | **compile error**: `pasting "REP" and "-" does not give a valid preprocessing token` | `err_20_build_time_repeat_negative` |
+| 21 | `FOR_EACH`/`DO_LOOP` (`mdmacros.h:77-78`) | `n <= 0` in the runtime-bounded loop | `i < (n)` false on entry — zero iterations, `acc` unchanged. Never instantiated by `mdcore.c`/`mdmain.c`, so it contributes no symbol; translated as `do_loop` for surface parity | `err_21_do_loop_nonpositive` — builds a fixture `.so` from the unmodified header that *does* instantiate `DO_LOOP`, and compares its runtime loop against the unrolled `REP<n>` both real libraries expose |
+| 22 | every exported function | a NULL `const char *`/pointer argument | **not applicable** — no exported function takes a pointer argument. `G_OP_NAME` is the only pointer in the ABI and it is an *out*-facing data slot. Recorded so the absence is explicit rather than an oversight | `err_22_no_pointer_params` |
+| 23 | `use_generated` | out-of-range "enum" value across the FFI boundary: `DISPATCH_REP`'s `switch (n)` is the only enum-shaped selector in the API, and C accepts any `int` for it | rows #8–#11 cover the full partition: `n < 0`, `0..=6`, `7`, `> 7` | `err_08_use_generated_negative`, `err_09_use_generated_7_falls_to_default`, `err_10_use_generated_above_range`, `err_11_use_generated_boundaries` |
+
+## Notes on what is *not* an error here
+
+- No function returns a sentinel error code. `op_*` return the arithmetic result;
+  `helper_call`/`helper_ptr`/`use_generated` return computed ints. `0` and `-1` are
+  ordinary results, so "same error code" for this library means "same returned int
+  **and** same bytes on stdout".
+- `printf`'s return value is discarded at `mdcore.c:43,50,56`, so a failing write is
+  silently ignored. `src/stdio.rs` discards its `io::Result` for the same reason.
+- Rows #18–#20 are build-time rejections and are asserted by invoking the compilers,
+  not by calling into a `.so`.
 
 ## Status
 
-All 18 rows have a passing differential test, under **every** feature
-combination (`./run_all.sh` → 49 combinations × 31 tests).
+All 23 rows have a passing differential test. Rows 1–17 and 21–23 run in
+`tests/phase_c_errors.rs` (row 17 in `tests/phase_b_valid.rs`); rows 18–20 assert
+the build-time rejections by invoking `gcc` on the unmodified `c_src/` and by
+checking `Cargo.toml` declares no feature the C cannot build.
 
-- [x] E-01  - [x] E-02  - [x] E-03  - [x] E-04  - [x] E-05  - [x] E-06
-- [x] E-07  - [x] E-08  - [x] E-09  - [x] E-10  - [x] E-11  - [x] E-12
-- [x] E-13  - [x] E-14  - [x] E-15  - [x] E-16  - [x] E-17  - [x] E-18
+Every row is re-run for all 26 configurations by `./sweep_so.sh`.
 
-## Divergence found and fixed
+### Divergence found and fixed
 
-**E-11.** The original translation declared
-
-```rust
-pub static G_OP: OpFn = mdmacros::OP_FN;
-pub static G_OP_NAME: CStrPtr = CStrPtr(...);
-```
-
-An immutable Rust `static` whose initialiser needs a relocation is emitted into
-`.data.rel.ro`, which the loader `mprotect`s **read-only** once relocations are
-applied:
-
-```
-Rust (before): G_OP @ 0x4cd08 in [19] .data.rel.ro, GNU_RELRO = 0x4cce0 +0x2320  -> INSIDE
-C:             G_OP @ 0x4020  in [23] .data,        GNU_RELRO = 0x3df0  +0x210   -> outside
-```
-
-The C globals are mutable objects, so a consumer store is legal and works;
-against the Rust `.so` the identical store `SIGSEGV`s. Changing both to
-`static mut` reproduces the C storage class and moves them back into writable
-`.data` outside `PT_GNU_RELRO`. Confirmed by mutation testing: reverting to the
-plain `static` makes `e11_g_op_is_writable_data` die with
-`signal: 11, SIGSEGV: invalid memory reference`.
+Row 7 was a **real bug** in the translation. `src/cstdlib.rs` clamped the parsed
+magnitude in `i64` and then negated it, giving `-LONG_MAX` for a negative overflow;
+glibc's `strtol` clamps to `LONG_MIN`, one further out. `atoi("-99999999999999999999")`
+was therefore `1` in Rust versus `0` in C, which propagated into every line
+`mdmain.c` prints. The magnitude is now accumulated in `u64` against a
+sign-dependent limit (`LONG_MAX` when positive, `2^63` when negative). Regression
+covered by `err_07_atoi_neg_overflow`, and `mutation_check.sh` confirms reverting
+the fix is caught.

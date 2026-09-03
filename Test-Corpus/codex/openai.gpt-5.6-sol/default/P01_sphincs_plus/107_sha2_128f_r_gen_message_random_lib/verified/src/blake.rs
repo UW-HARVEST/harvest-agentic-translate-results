@@ -29,6 +29,9 @@ const C64: [u64; 16] = [
     0x0801f2e2858efc16, 0x636920d871574e69,
 ];
 
+#[unsafe(no_mangle)]
+pub static cst: [u64; 16] = C64;
+
 #[repr(C)]
 #[derive(Clone)]
 pub struct Blake256State {

@@ -1,0 +1,29 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pinflate_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+# This crate is a deliberately literal translation of C that relies on
+# wrap-around arithmetic and reproduces the original's out-of-bounds accesses
+# (see the comments in src/lib.rs).  The C reference has no such checks, so
+# Rust's debug-only UB/overflow assertions would make the dev profile diverge
+# from it -- a null dereference would abort instead of faulting, for instance.
+# They are disabled so both profiles are byte-identical to the C.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

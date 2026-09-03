@@ -1,423 +1,602 @@
-//! Phase B — valid-path differential tests, gated on `CONFIGS.md`.
+//! Phase B — valid-path differential tests.
 //!
-//! Every test loads **both** shared objects via `libloading` and drives the
-//! exported symbols directly; no Rust function is ever called in-process. The
-//! row of `CONFIGS.md` a test discharges is named in its doc comment. Which row
-//! of the 24 `(OP, REPEAT)` rows is active is decided by the Cargo feature set,
-//! so the whole file is re-run once per configuration by
-//! `run_all_configs.sh` (see `CONFIGS.md`).
+//! One test per row of `CONFIGS.md`. Every call goes through `dlopen`/`dlsym` on
+//! both the C `.so` and the Rust `.so`; the Rust crate is never invoked
+//! directly, so the `#[no_mangle]` wrappers are exercised too.
 
 mod common;
 
+use common::{capture_stdout, pair, Rng, EDGE_I32, INIT, OP, REPEAT};
 use std::ffi::c_int;
 
-use common::{load_pair, same, Api, Rng, CORNERS, INIT_FOR, N_SHAPES, OP_NAME, REPEAT, SEED};
+/* =============================== rows 1-6 =============================== */
+/* The three unconditional operation primitives.                            */
 
-/// Number of randomised inputs per entry point per row. Property-style: a single
-/// hand-picked scalar hits one code path and misses value-dependent bugs.
-const ITERS: usize = 1000;
+fn diff_bin2(sym: &str, seed: u64, iters: usize) {
+    let p = pair();
+    let c = p.c.bin2(sym);
+    let r = p.r.bin2(sym);
 
-// ---------------------------------------------------------------------------
-// Axis 5, level 1: the leaf operations `op_add` / `op_sub` / `op_mul`
-// ---------------------------------------------------------------------------
-
-/// `CONFIGS.md` rows 1–24, entry points `op_add`/`op_sub`/`op_mul`.
-///
-/// All three are exported from *every* build regardless of which one `OP`
-/// selected, so all three are driven in every configuration.
-#[test]
-fn op_leaves_match_on_corners_and_random() {
-    let (c, r) = load_pair();
-
-    // Full cross-product of the corner values: 20 x 20 = 400 pairs, covering
-    // INT_MAX/INT_MIN overflow for add, sub and mul alike.
-    for &a in CORNERS {
-        for &b in CORNERS {
-            check_leaves(&c, &r, a, b);
-        }
-    }
-
-    let mut rng = Rng::new(SEED);
-    for _ in 0..ITERS {
-        let a = rng.next_i32_biased();
-        let b = rng.next_i32_biased();
-        check_leaves(&c, &r, a, b);
-    }
-    // A second sweep with pure-uniform full-range values, which is where the
-    // multiply wraps essentially every time.
-    let mut rng = Rng::new(SEED ^ 0xA5A5_A5A5);
-    for _ in 0..ITERS {
-        let a = rng.next_i32();
-        let b = rng.next_i32();
-        check_leaves(&c, &r, a, b);
-    }
-}
-
-fn check_leaves(c: &Api, r: &Api, a: c_int, b: c_int) {
-    let args = format!("{a}, {b}");
-    // SAFETY: signatures match the C prototypes; no pointers involved.
-    unsafe {
-        same("op_add", &args, (c.op_add)(a, b), (r.op_add)(a, b));
-        same("op_sub", &args, (c.op_sub)(a, b), (r.op_sub)(a, b));
-        same("op_mul", &args, (c.op_mul)(a, b), (r.op_mul)(a, b));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Axis 5, level 2/3: the exported globals `G_OP` and `G_OP_NAME`
-// ---------------------------------------------------------------------------
-
-/// `CONFIGS.md` rows 1–24, entry point `G_OP` (data symbol).
-///
-/// Checks three things an external consumer relies on:
-/// 1. `G_OP` is non-null and points at this library's own selected `op_*`
-///    export (`int (*G_OP)(int,int) = OP_FN(OP);`),
-/// 2. calling *through* the global gives the same answer in both libraries,
-/// 3. the object is 8 bytes of writable `.data` (see `errors.rs` for the store).
-#[test]
-fn g_op_global_matches() {
-    let (c, r) = load_pair();
-
-    let cv = c.g_op_value().expect("C: G_OP must be non-null");
-    let rv = r.g_op_value().expect("Rust: G_OP must be non-null");
-
-    // `G_OP` must be the address of the *same* library's selected op export.
-    assert_eq!(
-        cv as usize, c.selected_op() as usize,
-        "C: G_OP should be &op_{OP_NAME}"
-    );
-    assert_eq!(
-        rv as usize, r.selected_op() as usize,
-        "Rust: G_OP should be &op_{OP_NAME} (got a different exported function)"
-    );
-
-    for &a in CORNERS {
-        for &b in CORNERS {
-            same(
-                "G_OP",
-                &format!("{a}, {b}"),
-                c.call_g_op(a, b),
-                r.call_g_op(a, b),
+    // Boundary operands: full cross-product of the edge set.
+    for &a in EDGE_I32 {
+        for &b in EDGE_I32 {
+            let cv = unsafe { c(a, b) };
+            let rv = unsafe { r(a, b) };
+            assert_eq!(
+                cv, rv,
+                "{}({}, {}) mismatch [OP={} REPEAT={}]",
+                sym, a, b, OP, REPEAT
             );
         }
     }
-    let mut rng = Rng::new(SEED ^ 0x1111);
-    for _ in 0..ITERS {
-        let (a, b) = (rng.next_i32_biased(), rng.next_i32_biased());
-        same(
-            "G_OP",
-            &format!("{a}, {b}"),
-            c.call_g_op(a, b),
-            r.call_g_op(a, b),
+
+    // Randomized full-range operands.
+    let mut rng = Rng::new(seed);
+    for _ in 0..iters {
+        let a = rng.next_i32();
+        let b = rng.next_i32();
+        let cv = unsafe { c(a, b) };
+        let rv = unsafe { r(a, b) };
+        assert_eq!(
+            cv, rv,
+            "{}({}, {}) mismatch [OP={} REPEAT={}]",
+            sym, a, b, OP, REPEAT
         );
     }
 }
 
-/// `CONFIGS.md` rows 1–24, entry point `G_OP_NAME` (data symbol).
-///
-/// `const char *G_OP_NAME = STR(OP);` must stringify to exactly the `OP` token.
 #[test]
-fn g_op_name_global_matches() {
-    let (c, r) = load_pair();
-    let cn = c.g_op_name_bytes();
-    let rn = r.g_op_name_bytes();
-    assert_eq!(
-        cn, rn,
-        "G_OP_NAME differs: C={:?} Rust={:?}",
-        String::from_utf8_lossy(&cn),
-        String::from_utf8_lossy(&rn)
-    );
-    assert_eq!(
-        cn,
-        OP_NAME.as_bytes(),
-        "G_OP_NAME should be STR(OP) == {OP_NAME:?}"
-    );
-    assert!(!c.g_op_name_ptr().is_null());
-    assert!(!r.g_op_name_ptr().is_null());
+fn row01_row02_op_add() {
+    diff_bin2("op_add", 0x0D15_EA5E_0000_0001, 512);
 }
 
-// ---------------------------------------------------------------------------
-// Axis 5, level 4: `helper_ptr`
-// ---------------------------------------------------------------------------
-
-/// `CONFIGS.md` rows 1–24, entry point `helper_ptr`.
 #[test]
-fn helper_ptr_matches() {
-    let (c, r) = load_pair();
-    for &a in CORNERS {
-        for &b in CORNERS {
-            // SAFETY: `int helper_ptr(int, int)`.
-            unsafe {
-                same(
-                    "helper_ptr",
-                    &format!("{a}, {b}"),
-                    (c.helper_ptr)(a, b),
-                    (r.helper_ptr)(a, b),
+fn row03_row04_op_sub() {
+    diff_bin2("op_sub", 0x0D15_EA5E_0000_0002, 512);
+}
+
+#[test]
+fn row05_row06_op_mul() {
+    diff_bin2("op_mul", 0x0D15_EA5E_0000_0003, 512);
+}
+
+/* ============================== rows 7-9 ================================ */
+/* The `G_OP` data slot: identity *and* behaviour.                          */
+
+#[test]
+fn row07_row09_g_op_slot_points_at_selected_op() {
+    let p = pair();
+    let expected_sym = format!("op_{}", OP);
+
+    // Pointer identity: the slot must hold the address of `op_<OP>` in the very
+    // same object, for both implementations.
+    for imp in [&p.c, &p.r] {
+        let slot_addr = imp.g_op() as usize;
+        let sym_addr = imp.addr(&expected_sym);
+        assert_eq!(
+            slot_addr, sym_addr,
+            "{}: G_OP does not point at {} [OP={} REPEAT={}]",
+            imp.name, expected_sym, OP, REPEAT
+        );
+        // and must *not* point at either of the other two.
+        for other in ["add", "sub", "mul"] {
+            if other == OP {
+                continue;
+            }
+            assert_ne!(
+                slot_addr,
+                imp.addr(&format!("op_{}", other)),
+                "{}: G_OP wrongly points at op_{}",
+                imp.name,
+                other
+            );
+        }
+    }
+
+    // Behavioural parity when called through the slot.
+    let cg = p.c.g_op();
+    let rg = p.r.g_op();
+    let cref = p.c.bin2(&expected_sym);
+    let mut rng = Rng::new(0x0D15_EA5E_0000_0007);
+    for i in 0..512 {
+        let (a, b) = if i < EDGE_I32.len() * EDGE_I32.len() {
+            (EDGE_I32[i / EDGE_I32.len()], EDGE_I32[i % EDGE_I32.len()])
+        } else {
+            (rng.next_i32(), rng.next_i32())
+        };
+        let cv = unsafe { cg(a, b) };
+        let rv = unsafe { rg(a, b) };
+        let expect = unsafe { cref(a, b) };
+        assert_eq!(cv, rv, "G_OP({}, {}) mismatch [OP={}]", a, b, OP);
+        assert_eq!(cv, expect, "C: G_OP != op_{} for ({}, {})", OP, a, b);
+    }
+}
+
+/* ============================= rows 10-12 =============================== */
+/* The `G_OP_NAME` data slot: `STR(OP)` byte-for-byte.                      */
+
+#[test]
+fn row10_row12_g_op_name_string() {
+    let p = pair();
+    let cn = p.c.g_op_name();
+    let rn = p.r.g_op_name();
+    assert_eq!(
+        cn, rn,
+        "G_OP_NAME bytes differ (C={:?} Rust={:?}) [OP={}]",
+        cn, rn, OP
+    );
+    let mut want = OP.as_bytes().to_vec();
+    want.push(0);
+    assert_eq!(cn, want, "C: G_OP_NAME != STR(OP) for OP={}", OP);
+}
+
+/* ============================= rows 13-14 =============================== */
+/* helper_ptr: return value and printed bytes.                              */
+
+#[test]
+fn row13_helper_ptr_return_value() {
+    // Silence the helpers' printf while checking only return values.
+    let ((), _bytes) = capture_stdout(|| {
+        let p = pair();
+        let c = p.c.bin2("helper_ptr");
+        let r = p.r.bin2("helper_ptr");
+        let mut rng = Rng::new(0x0D15_EA5E_0000_0013);
+        for &a in EDGE_I32 {
+            for &b in EDGE_I32 {
+                assert_eq!(
+                    unsafe { c(a, b) },
+                    unsafe { r(a, b) },
+                    "helper_ptr({}, {}) [OP={} REPEAT={}]",
+                    a,
+                    b,
+                    OP,
+                    REPEAT
                 );
             }
         }
-    }
-    let mut rng = Rng::new(SEED ^ 0x2222);
-    for _ in 0..ITERS {
-        let (a, b) = (rng.next_i32_biased(), rng.next_i32_biased());
-        // SAFETY: as above.
-        unsafe {
-            same(
-                "helper_ptr",
-                &format!("{a}, {b}"),
-                (c.helper_ptr)(a, b),
-                (r.helper_ptr)(a, b),
+        for _ in 0..256 {
+            let (a, b) = (rng.next_i32(), rng.next_i32());
+            assert_eq!(
+                unsafe { c(a, b) },
+                unsafe { r(a, b) },
+                "helper_ptr({}, {}) [OP={} REPEAT={}]",
+                a,
+                b,
+                OP,
+                REPEAT
             );
         }
-    }
+    });
 }
 
-// ---------------------------------------------------------------------------
-// Axis 5, level 5: `use_generated` — the only door to `static accum_<OP>`
-// ---------------------------------------------------------------------------
-
-/// `CONFIGS.md` rows 1–24, entry point `use_generated`, axis 3 (all `switch`
-/// arms).
-///
-/// This is the important low-level row: `mdmain.c` only ever calls
-/// `use_generated(REPEAT)`, so driving it directly is the only way to reach the
-/// other six `case` arms of `DISPATCH_REP`. `n` is independent of the build-time
-/// `REPEAT`.
 #[test]
-fn use_generated_matches_all_switch_arms() {
-    let (c, r) = load_pair();
-    for &n in N_SHAPES {
-        // SAFETY: `int use_generated(int)`.
-        unsafe {
-            same(
-                "use_generated",
-                &format!("{n}"),
-                (c.use_generated)(n),
-                (r.use_generated)(n),
-            );
-        }
+fn row14_helper_ptr_stdout() {
+    let p = pair();
+    let c = p.c.bin2("helper_ptr");
+    let r = p.r.bin2("helper_ptr");
+    let mut rng = Rng::new(0x0D15_EA5E_0000_0014);
+    let mut cases: Vec<(c_int, c_int)> = EDGE_I32
+        .iter()
+        .flat_map(|&a| EDGE_I32.iter().map(move |&b| (a, b)))
+        .collect();
+    for _ in 0..128 {
+        cases.push((rng.next_i32(), rng.next_i32()));
     }
-
-    // Randomised: full-range `int`, plus a dense sweep of the in-range window
-    // and its immediate neighbourhood.
-    let mut rng = Rng::new(SEED ^ 0x3333);
-    for _ in 0..ITERS {
-        let n = rng.next_i32();
-        // SAFETY: as above.
-        unsafe {
-            same(
-                "use_generated",
-                &format!("{n}"),
-                (c.use_generated)(n),
-                (r.use_generated)(n),
-            );
-        }
-    }
-    for n in -20..=20 {
-        // SAFETY: as above.
-        unsafe {
-            same(
-                "use_generated",
-                &format!("{n}"),
-                (c.use_generated)(n),
-                (r.use_generated)(n),
-            );
-        }
+    for (a, b) in cases {
+        let (cv, cout) = capture_stdout(|| unsafe { c(a, b) });
+        let (rv, rout) = capture_stdout(|| unsafe { r(a, b) });
+        assert_eq!(cv, rv, "helper_ptr({}, {}) return", a, b);
+        assert_eq!(
+            String::from_utf8_lossy(&cout),
+            String::from_utf8_lossy(&rout),
+            "helper_ptr({}, {}) stdout [OP={} REPEAT={}]",
+            a,
+            b,
+            OP,
+            REPEAT
+        );
     }
 }
 
-/// Harness sanity check: the C `.so` must agree with the accumulator semantics
-/// read straight off `mdmacros.h`, so that a *mutual* bug in the harness cannot
-/// let a real divergence slip through.
-///
-/// `DISPATCH_REP` maps `case k` (`k` in `0..=6`) to `REPk`, which applies
-/// `STEP_OP` at indices `0..k`. Hence, starting from `INIT_FOR(OP)`:
-/// `add` ⇒ `0+1+..+(k-1)`, `sub` ⇒ `-(0+1+..+(k-1))`, `mul` ⇒ `k!`.
-/// Every other `n` takes `default:` and yields `INIT_FOR(OP)`.
+/* ============================= rows 15-18 =============================== */
+/* helper_call: OP *and* REPEAT dependent, plus printed bytes.              */
+
 #[test]
-fn c_accumulator_matches_macro_semantics() {
-    let (c, r) = load_pair();
-    for &n in N_SHAPES {
-        let expected = model_accum(n);
-        // SAFETY: `int use_generated(int)`.
-        let (cv, rv) = unsafe { ((c.use_generated)(n), (r.use_generated)(n)) };
-        assert_eq!(cv, expected, "C use_generated({n}) vs macro model");
-        assert_eq!(rv, expected, "Rust use_generated({n}) vs macro model");
+fn row15_row17_helper_call_return_value() {
+    let ((), _bytes) = capture_stdout(|| {
+        let p = pair();
+        let c = p.c.bin2("helper_call");
+        let r = p.r.bin2("helper_call");
+
+        // Independently derived expectation for the REPEAT-driven accumulator.
+        let expected_acc: c_int = match OP {
+            "add" => (0..REPEAT).sum(),
+            "sub" => -(0..REPEAT).sum::<c_int>(),
+            _ => (1..=REPEAT).product(),
+        };
+        let op_ref = p.c.bin2(&format!("op_{}", OP));
+
+        let mut rng = Rng::new(0x0D15_EA5E_0000_0015);
+        let mut cases: Vec<(c_int, c_int)> = EDGE_I32
+            .iter()
+            .flat_map(|&a| EDGE_I32.iter().map(move |&b| (a, b)))
+            .collect();
+        for _ in 0..256 {
+            cases.push((rng.next_i32(), rng.next_i32()));
+        }
+        for (a, b) in cases {
+            let cv = unsafe { c(a, b) };
+            let rv = unsafe { r(a, b) };
+            assert_eq!(
+                cv, rv,
+                "helper_call({}, {}) [OP={} REPEAT={}]",
+                a, b, OP, REPEAT
+            );
+            let want = unsafe { op_ref(a, b) }.wrapping_add(expected_acc);
+            assert_eq!(
+                cv, want,
+                "C: helper_call({}, {}) != op_{}(a,b) + {} [REPEAT={}]",
+                a, b, OP, expected_acc, REPEAT
+            );
+        }
+    });
+}
+
+#[test]
+fn row18_helper_call_stdout() {
+    let p = pair();
+    let c = p.c.bin2("helper_call");
+    let r = p.r.bin2("helper_call");
+    let mut rng = Rng::new(0x0D15_EA5E_0000_0018);
+    let mut cases: Vec<(c_int, c_int)> = EDGE_I32
+        .iter()
+        .flat_map(|&a| EDGE_I32.iter().map(move |&b| (a, b)))
+        .collect();
+    for _ in 0..128 {
+        cases.push((rng.next_i32(), rng.next_i32()));
+    }
+    for (a, b) in cases {
+        let (cv, cout) = capture_stdout(|| unsafe { c(a, b) });
+        let (rv, rout) = capture_stdout(|| unsafe { r(a, b) });
+        assert_eq!(cv, rv, "helper_call({}, {}) return", a, b);
+        assert_eq!(
+            String::from_utf8_lossy(&cout),
+            String::from_utf8_lossy(&rout),
+            "helper_call({}, {}) stdout [OP={} REPEAT={}]",
+            a,
+            b,
+            OP,
+            REPEAT
+        );
     }
 }
 
-/// The `DISPATCH_REP` semantics, transcribed from `mdmacros.h`.
+/* ============================= rows 19-23 =============================== */
+/* use_generated: every `DISPATCH_REP` switch case, plus a full sweep.      */
+
+fn diff_use_generated(n: c_int) {
+    let p = pair();
+    let c = p.c.un1("use_generated");
+    let r = p.r.un1("use_generated");
+    let (cv, cout) = capture_stdout(|| unsafe { c(n) });
+    let (rv, rout) = capture_stdout(|| unsafe { r(n) });
+    assert_eq!(
+        cv, rv,
+        "use_generated({}) return [OP={} REPEAT={}]",
+        n, OP, REPEAT
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&cout),
+        String::from_utf8_lossy(&rout),
+        "use_generated({}) stdout [OP={} REPEAT={}]",
+        n,
+        OP,
+        REPEAT
+    );
+}
+
+/// Independent model of `accum_<OP>(n)` straight from `mdmacros.h`.
 fn model_accum(n: c_int) -> c_int {
     if !(0..=6).contains(&n) {
-        return INIT_FOR; // `default: break;`
+        return INIT; // `default: break;`
     }
-    let mut acc = INIT_FOR;
+    let mut acc = INIT;
     for i in 0..n {
-        acc = step_model(acc, i);
+        acc = match OP {
+            "add" => acc.wrapping_add(i),
+            "sub" => acc.wrapping_sub(i),
+            _ => acc.wrapping_mul(i.wrapping_add(1)),
+        };
     }
     acc
 }
 
-/// `STEP_OP(OP, acc, i)`, transcribed from `mdmacros.h`.
-fn step_model(acc: c_int, i: c_int) -> c_int {
-    match OP_NAME {
-        "mul" => acc.wrapping_mul(i.wrapping_add(1)),
-        "sub" => acc.wrapping_sub(i),
-        _ => acc.wrapping_add(i),
+#[test]
+fn row19_use_generated_n0() {
+    diff_use_generated(0);
+    let p = pair();
+    let c = p.c.un1("use_generated");
+    let (cv, _) = capture_stdout(|| unsafe { c(0) });
+    assert_eq!(cv, INIT, "C: use_generated(0) should be INIT_FOR({})", OP);
+}
+
+#[test]
+fn row20_use_generated_n1_to_n5() {
+    for n in 1..=5 {
+        diff_use_generated(n);
+        let p = pair();
+        let c = p.c.un1("use_generated");
+        let (cv, _) = capture_stdout(|| unsafe { c(n) });
+        assert_eq!(cv, model_accum(n), "C model mismatch for n={} OP={}", n, OP);
     }
 }
 
-// ---------------------------------------------------------------------------
-// Axis 5, level 6: `helper_call` — the composed pipeline
-// ---------------------------------------------------------------------------
-
-/// `CONFIGS.md` rows 1–24, entry point `helper_call`.
-///
-/// `helper_call` composes three separately-configured things — the selected op,
-/// the statically unrolled `RUN_LOOP(OP, acc, REPEAT)`, and the `r + acc` sum —
-/// so it is where a `REPEAT`-dependent bug shows up. Bugs in the composed
-/// pipeline are invisible to the per-leaf tests above.
 #[test]
-fn helper_call_matches() {
-    let (c, r) = load_pair();
-    for &a in CORNERS {
-        for &b in CORNERS {
-            // SAFETY: `int helper_call(int, int)`.
-            unsafe {
-                same(
-                    "helper_call",
-                    &format!("{a}, {b}"),
-                    (c.helper_call)(a, b),
-                    (r.helper_call)(a, b),
-                );
-            }
-        }
-    }
-    let mut rng = Rng::new(SEED ^ 0x4444);
-    for _ in 0..ITERS {
-        let (a, b) = (rng.next_i32_biased(), rng.next_i32_biased());
-        // SAFETY: as above.
-        unsafe {
-            same(
-                "helper_call",
-                &format!("{a}, {b}"),
-                (c.helper_call)(a, b),
-                (r.helper_call)(a, b),
-            );
-        }
-    }
+fn row21_use_generated_n6() {
+    diff_use_generated(6);
+    let p = pair();
+    let c = p.c.un1("use_generated");
+    let (cv, _) = capture_stdout(|| unsafe { c(6) });
+    assert_eq!(cv, model_accum(6), "C model mismatch for n=6 OP={}", OP);
+    // Sanity: the documented values for the highest in-range case.
+    let want = match OP {
+        "add" => 15,
+        "sub" => -15,
+        _ => 720,
+    };
+    assert_eq!(cv, want);
 }
 
-/// Harness sanity check for `helper_call`, pinning the `RUN_LOOP`/`REPEAT`
-/// unroll (which no other test can observe in isolation, since `RUN_LOOP` is
-/// inlined into `helper_call` and never exported).
-///
-/// `RUN_LOOP(op, acc, REPEAT)` = `REP<REPEAT>` = `STEP_OP` at indices
-/// `0..REPEAT`. Note this uses `REPEAT` (build-time), *not* the `switch` in
-/// `DISPATCH_REP`, so `REPEAT == 7` is fine here even though
-/// `use_generated(7)` takes `default:`.
 #[test]
-fn helper_call_run_loop_unroll_is_repeat_steps() {
-    let (c, r) = load_pair();
-    let mut acc = INIT_FOR;
-    for i in 0..REPEAT {
-        acc = step_model(acc, i);
+fn row22_row23_use_generated_full_sweep() {
+    // Contiguous window across the switch boundary in both directions.
+    for n in -8..=16 {
+        diff_use_generated(n);
     }
-    for &a in CORNERS {
-        for &b in CORNERS {
-            let op = match OP_NAME {
-                "mul" => a.wrapping_mul(b),
-                "sub" => a.wrapping_sub(b),
-                _ => a.wrapping_add(b),
-            };
-            let expected = op.wrapping_add(acc);
-            // SAFETY: `int helper_call(int, int)`.
-            let (cv, rv) = unsafe { ((c.helper_call)(a, b), (r.helper_call)(a, b)) };
-            assert_eq!(cv, expected, "C helper_call({a},{b}) vs macro model");
-            assert_eq!(rv, expected, "Rust helper_call({a},{b}) vs macro model");
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Cross-entry-point consistency (axis 1: the four things `OP` selects at once)
-// ---------------------------------------------------------------------------
-
-/// `CONFIGS.md` rows 25–28: the four selections `OP` drives must stay mutually
-/// consistent in the Rust build — `G_OP_NAME` (`STR(OP)`), `G_OP`/`OP_FN(OP)`,
-/// `INIT_FOR(OP)` and `STEP_OP(OP, ...)`. A feature-resolution mistake that
-/// picked, say, `mul` for `INIT_FOR` but `add` for `op_fn` would still pass the
-/// per-symbol tests, but shows up here.
-#[test]
-fn op_selection_is_self_consistent() {
-    let (c, r) = load_pair();
-
-    // (a) STR(OP) agrees with which op_* `G_OP` points at.
-    let name = String::from_utf8(r.g_op_name_bytes()).unwrap();
-    let gv = r.g_op_value().unwrap() as usize;
-    let expected_fn = match name.as_str() {
-        "add" => r.op_add,
-        "sub" => r.op_sub,
-        "mul" => r.op_mul,
-        other => panic!("Rust G_OP_NAME is {other:?}, not one of add/sub/mul"),
-    } as usize;
-    assert_eq!(gv, expected_fn, "Rust: G_OP disagrees with G_OP_NAME");
-
-    // (b) INIT_FOR(OP) is observable as `use_generated(0)` (REP0 is empty).
-    // SAFETY: `int use_generated(int)`.
-    let (c0, r0) = unsafe { ((c.use_generated)(0), (r.use_generated)(0)) };
-    same("use_generated", "0 (== INIT_FOR)", c0, r0);
-    assert_eq!(c0, INIT_FOR, "INIT_FOR({OP_NAME}) should be {INIT_FOR}");
-
-    // (c) STEP_OP(OP, ...) is observable as use_generated(1)..use_generated(6).
-    for n in 1..=6 {
-        // SAFETY: as above.
-        let (cv, rv) = unsafe { ((c.use_generated)(n), (r.use_generated)(n)) };
-        same("use_generated", &format!("{n}"), cv, rv);
-        assert_eq!(cv, model_accum(n));
-    }
-
-    // (d) The same op reached three different ways must agree, for both libs.
-    let mut rng = Rng::new(SEED ^ 0x5555);
-    for _ in 0..ITERS {
-        let (a, b) = (rng.next_i32_biased(), rng.next_i32_biased());
-        for api in [&c, &r] {
-            // SAFETY: signatures match the C prototypes.
-            let via_helper_ptr = unsafe { (api.helper_ptr)(a, b) };
-            let via_global = api.call_g_op(a, b);
-            // SAFETY: as above.
-            let via_named = unsafe { (api.selected_op())(a, b) };
+    // Randomized full-range `n`.
+    let mut rng = Rng::new(0x0D15_EA5E_0000_0022);
+    let p = pair();
+    let c = p.c.un1("use_generated");
+    let r = p.r.un1("use_generated");
+    let ((), _) = capture_stdout(|| {
+        for _ in 0..256 {
+            let n = rng.next_i32();
             assert_eq!(
-                via_helper_ptr, via_global,
-                "{}: helper_ptr vs G_OP disagree at ({a},{b})",
-                api.tag
-            );
-            assert_eq!(
-                via_global, via_named,
-                "{}: G_OP vs op_{OP_NAME} disagree at ({a},{b})",
-                api.tag
+                unsafe { c(n) },
+                unsafe { r(n) },
+                "use_generated({}) [OP={} REPEAT={}]",
+                n,
+                OP,
+                REPEAT
             );
         }
+        for &n in EDGE_I32 {
+            assert_eq!(
+                unsafe { c(n) },
+                unsafe { r(n) },
+                "use_generated({}) [OP={} REPEAT={}]",
+                n,
+                OP,
+                REPEAT
+            );
+        }
+    });
+}
+
+/* ============================= rows 24-25 =============================== */
+/* The composed pipeline, driven exactly the way `mdmain.c` drives it.      */
+
+#[test]
+fn row24_row25_composed_pipeline() {
+    let p = pair();
+
+    let mut rng = Rng::new(0x0D15_EA5E_0000_0024);
+    let mut cases: Vec<(c_int, c_int)> = vec![
+        (3, 4),
+        (0, 0),
+        (-5, 9),
+        (i32::MAX, 1),
+        (i32::MIN, -1),
+        (i32::MAX, i32::MAX),
+        (i32::MIN, i32::MIN),
+    ];
+    for _ in 0..128 {
+        cases.push((rng.next_i32(), rng.next_i32()));
+    }
+
+    for (a, b) in cases {
+        // Reproduce mdmain.c lines 36-46 through the .so, in order.
+        let run = |imp: &common::Impl| {
+            let hc = imp.bin2("helper_call");
+            let hp = imp.bin2("helper_ptr");
+            let ug = imp.un1("use_generated");
+            let op = imp.bin2(&format!("op_{}", OP));
+            let g = imp.g_op();
+            capture_stdout(|| unsafe {
+                let r_call = op(a, b);
+                let x1 = hc(a, b);
+                let x2 = hp(a, b);
+                let x3 = ug(REPEAT);
+                let gv = g(a, b);
+                [r_call, x1, x2, x3, gv]
+            })
+        };
+
+        let (cvals, cout) = run(&p.c);
+        let (rvals, rout) = run(&p.r);
+
+        assert_eq!(
+            cvals, rvals,
+            "pipeline values for ({}, {}) [OP={} REPEAT={}]",
+            a, b, OP, REPEAT
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&cout),
+            String::from_utf8_lossy(&rout),
+            "pipeline stdout for ({}, {}) [OP={} REPEAT={}]",
+            a,
+            b,
+            OP,
+            REPEAT
+        );
+        // Four printf lines, in mdmain's order.
+        assert_eq!(
+            cout.iter().filter(|&&x| x == b'\n').count(),
+            3,
+            "expected 3 lines from the helper sequence, got {:?}",
+            String::from_utf8_lossy(&cout)
+        );
+
+        // And the summary arithmetic from mdmain.c:46.
+        let csum = cvals.iter().fold(0i32, |acc, &v| acc.wrapping_add(v));
+        let rsum = rvals.iter().fold(0i32, |acc, &v| acc.wrapping_add(v));
+        assert_eq!(csum, rsum, "summary for ({}, {})", a, b);
     }
 }
 
-/// `CONFIGS.md` axis 2 boundary: `REPEAT == 0` must produce an *empty* unroll
-/// (`REP0` expands to nothing), leaving `acc == INIT_FOR`; and `REPEAT == 7`
-/// must produce seven steps. Asserted only in the configurations where it
-/// applies, so the test is meaningful rather than vacuous.
+/* =============================== row 26 ================================= */
+/* Whole program: `driver` executable, stdout + stderr + exit status.        */
+
 #[test]
-fn repeat_boundaries() {
-    let (c, r) = load_pair();
-    let mut acc = INIT_FOR;
-    for i in 0..REPEAT {
-        acc = step_model(acc, i);
+fn row26_whole_program() {
+    use std::process::Command;
+    let cexe = common::c_exe_path();
+    let rexe = common::rust_exe_path();
+
+    let mut rng = Rng::new(0x0D15_EA5E_0000_0026);
+    let mut argsets: Vec<Vec<String>> = vec![
+        vec!["3".into(), "4".into()],
+        vec!["0".into(), "0".into()],
+        vec!["-5".into(), "9".into()],
+        vec!["2147483647".into(), "1".into()],
+        vec!["-2147483648".into(), "-1".into()],
+        vec!["2147483647".into(), "2147483647".into()],
+        vec!["-2147483648".into(), "-2147483648".into()],
+        vec!["+8".into(), "-8".into()],
+        vec!["5".into(), "6".into(), "7".into()],
+    ];
+    for _ in 0..48 {
+        argsets.push(vec![
+            rng.next_i32().to_string(),
+            rng.next_i32().to_string(),
+        ]);
     }
-    if REPEAT == 0 {
-        assert_eq!(acc, INIT_FOR, "REP0 must be an empty expansion");
+
+    for args in argsets {
+        let co = Command::new(&cexe).args(&args).output().expect("run C driver");
+        let ro = Command::new(&rexe)
+            .args(&args)
+            .output()
+            .expect("run Rust driver");
+        assert_eq!(
+            co.status.code(),
+            ro.status.code(),
+            "exit status for {:?} [OP={} REPEAT={}]",
+            args,
+            OP,
+            REPEAT
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&co.stdout),
+            String::from_utf8_lossy(&ro.stdout),
+            "stdout for {:?} [OP={} REPEAT={}]",
+            args,
+            OP,
+            REPEAT
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&co.stderr),
+            String::from_utf8_lossy(&ro.stderr),
+            "stderr for {:?} [OP={} REPEAT={}]",
+            args,
+            OP,
+            REPEAT
+        );
     }
-    // helper_call(0, 0) isolates `acc`, because op(0,0) is 0 for add/sub/mul.
-    // SAFETY: `int helper_call(int, int)`.
-    let (cv, rv) = unsafe { ((c.helper_call)(0, 0), (r.helper_call)(0, 0)) };
-    same("helper_call", "0, 0", cv, rv);
-    assert_eq!(cv, acc, "helper_call(0,0) should expose acc for REPEAT={REPEAT}");
+}
+
+/* =============================== row 27 ================================= */
+/* The implicit default configuration (no -DOP / -DREPEAT at all).          */
+
+#[test]
+fn row27_implicit_default_matches_add_5() {
+    // Only meaningful when this test run *is* the default configuration.
+    if !(OP == "add" && REPEAT == 5) {
+        return;
+    }
+    use std::process::Command;
+
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let c_src = root.parent().unwrap().join("c_src").join("src");
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("cdiff_default");
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let exe = dir.join("cdriver_implicit");
+
+    // Note: NO -DOP / -DREPEAT — exercises the `#ifndef` fallbacks.
+    let st = Command::new(std::env::var("CC").unwrap_or_else(|_| "cc".into()))
+        .arg("-O2")
+        .arg("-o")
+        .arg(&exe)
+        .arg(c_src.join("mdcore.c"))
+        .arg(c_src.join("mdmain.c"))
+        .status()
+        .expect("spawn cc");
+    assert!(st.success(), "implicit-default C build failed");
+
+    let rexe = common::rust_exe_path();
+    for args in [["3", "4"], ["-7", "11"], ["2147483647", "1"]] {
+        let co = Command::new(&exe).args(args).output().expect("run");
+        let ro = Command::new(&rexe).args(args).output().expect("run");
+        assert_eq!(co.status.code(), ro.status.code());
+        assert_eq!(
+            String::from_utf8_lossy(&co.stdout),
+            String::from_utf8_lossy(&ro.stdout),
+            "implicit C default (OP=add REPEAT=5) vs Rust default for {:?}",
+            args
+        );
+    }
+}
+
+/* =============================== row 28 ================================= */
+/* Degenerate / conflicting Rust feature sets resolve as documented.        */
+
+#[test]
+fn row28_feature_priority_is_self_consistent() {
+    // The harness resolves OP/REPEAT with the documented priority; the library
+    // must agree with it. This catches a drift between `mdconfig.rs` and the
+    // documented resolution order under conflicting feature sets.
+    let p = pair();
+    let mut want = OP.as_bytes().to_vec();
+    want.push(0);
+    assert_eq!(
+        p.r.g_op_name(),
+        want,
+        "Rust .so resolved a different OP than the documented priority \
+         (add > sub > mul); enabled features: add={} sub={} mul={}",
+        cfg!(feature = "add"),
+        cfg!(feature = "sub"),
+        cfg!(feature = "mul")
+    );
+
+    let expected_acc: c_int = match OP {
+        "add" => (0..REPEAT).sum(),
+        "sub" => -(0..REPEAT).sum::<c_int>(),
+        _ => (1..=REPEAT).product(),
+    };
+    let ((cv, rv), _) = capture_stdout(|| {
+        let hc_c = p.c.bin2("helper_call");
+        let hc_r = p.r.bin2("helper_call");
+        (unsafe { hc_c(0, 0) }, unsafe { hc_r(0, 0) })
+    });
+    // op_<OP>(0, 0) == 0 for all three operations.
+    let base: c_int = 0;
+    assert_eq!(cv, rv);
+    assert_eq!(
+        rv,
+        base.wrapping_add(expected_acc),
+        "Rust .so resolved a different REPEAT than the documented priority \
+         (lowest selected wins)"
+    );
 }

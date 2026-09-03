@@ -8,9 +8,7 @@ pub fn thash<const BLOCKS: usize>(
     input: Option<&[u8]>,
     ctx: &SpxCtx,
     addr: &[u32],
-) where
-    [(); SPX_N + SPX_ADDR_BYTES + BLOCKS * SPX_N]: Sized,
-{
+) {
     let input = input.unwrap_or(out);
     let mut buf = vec![0u8; SPX_N + SPX_ADDR_BYTES + BLOCKS * SPX_N];
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);
@@ -22,4 +20,3 @@ pub fn thash<const BLOCKS: usize>(
         out[..SPX_N].copy_from_slice(&blake256(&buf)[..SPX_N]);
     }
 }
-

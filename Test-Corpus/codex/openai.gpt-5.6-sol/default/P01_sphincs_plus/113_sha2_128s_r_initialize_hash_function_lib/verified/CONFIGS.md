@@ -1,97 +1,109 @@
-# Configuration surface
+# Configuration-surface table
 
-The build-time matrix is the full cross-product accepted by both
-`Cargo.toml` and CMake: exactly one hash backend, one thash mode, and one
-parameter set.
+The build matrix is the exact Cartesian product accepted by
+`Cargo.toml [features]` and `c_src/CMakeLists.txt`: exactly one hash backend,
+one thash variant, and one parameter set. Multiple selections on one axis are
+not valid configurations because both implementations select a single source
+or parameter header.
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|--------------------------------------------|-|
-| 1 | all | `haraka,robust,128f` | [ ] |
-| 2 | all | `haraka,robust,128s` | [ ] |
-| 3 | all | `haraka,robust,192f` | [ ] |
-| 4 | all | `haraka,robust,192s` | [ ] |
-| 5 | all | `haraka,robust,256f` | [ ] |
-| 6 | all | `haraka,robust,256s` | [ ] |
-| 7 | all | `haraka,simple,128f` | [ ] |
-| 8 | all | `haraka,simple,128s` | [ ] |
-| 9 | all | `haraka,simple,192f` | [ ] |
-| 10 | all | `haraka,simple,192s` | [ ] |
-| 11 | all | `haraka,simple,256f` | [ ] |
-| 12 | all | `haraka,simple,256s` | [ ] |
-| 13 | all | `sha2,robust,128f` (SHA-256 thash path) | [ ] |
-| 14 | all | `sha2,robust,128s` (SHA-256 thash path) | [ ] |
-| 15 | all | `sha2,robust,192f` (SHA-256 for one block, SHA-512 for multiple blocks) | [ ] |
-| 16 | all | `sha2,robust,192s` (SHA-256 for one block, SHA-512 for multiple blocks) | [ ] |
-| 17 | all | `sha2,robust,256f` (SHA-256 for one block, SHA-512 for multiple blocks) | [ ] |
-| 18 | all | `sha2,robust,256s` (SHA-256 for one block, SHA-512 for multiple blocks) | [ ] |
-| 19 | all | `sha2,simple,128f` | [ ] |
-| 20 | all | `sha2,simple,128s` | [ ] |
-| 21 | all | `sha2,simple,192f` | [ ] |
-| 22 | all | `sha2,simple,192s` | [ ] |
-| 23 | all | `sha2,simple,256f` | [ ] |
-| 24 | all | `sha2,simple,256s` | [ ] |
-| 25 | all | `shake,robust,128f` | [ ] |
-| 26 | all | `shake,robust,128s` | [ ] |
-| 27 | all | `shake,robust,192f` | [ ] |
-| 28 | all | `shake,robust,192s` | [ ] |
-| 29 | all | `shake,robust,256f` | [ ] |
-| 30 | all | `shake,robust,256s` | [ ] |
-| 31 | all | `shake,simple,128f` | [ ] |
-| 32 | all | `shake,simple,128s` | [ ] |
-| 33 | all | `shake,simple,192f` | [ ] |
-| 34 | all | `shake,simple,192s` | [ ] |
-| 35 | all | `shake,simple,256f` | [ ] |
-| 36 | all | `shake,simple,256s` | [ ] |
-| 37 | all | `blake,robust,128f` (BLAKE-256) | [ ] |
-| 38 | all | `blake,robust,128s` (BLAKE-256) | [ ] |
-| 39 | all | `blake,robust,192f` (BLAKE-256 for one block, BLAKE-512 for multiple blocks) | [ ] |
-| 40 | all | `blake,robust,192s` (BLAKE-256 for one block, BLAKE-512 for multiple blocks) | [ ] |
-| 41 | all | `blake,robust,256f` (BLAKE-256 for one block, BLAKE-512 for multiple blocks) | [ ] |
-| 42 | all | `blake,robust,256s` (BLAKE-256 for one block, BLAKE-512 for multiple blocks) | [ ] |
-| 43 | all | `blake,simple,128f` (default) | [ ] |
-| 44 | all | `blake,simple,128s` | [ ] |
-| 45 | all | `blake,simple,192f` | [ ] |
-| 46 | all | `blake,simple,192s` | [ ] |
-| 47 | all | `blake,simple,256f` | [ ] |
-| 48 | all | `blake,simple,256s` | [ ] |
+## Build-time combinations
 
-The following runtime rows apply under every build row above. They are the
-branch-distinct public entry points and input shapes found in the headers and
-source.
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---:|---|---|:---:|
+| 1 | all | `haraka, robust, 128s` | [x] |
+| 2 | all | `haraka, robust, 128f` | [x] |
+| 3 | all | `haraka, robust, 192s` | [x] |
+| 4 | all | `haraka, robust, 192f` | [x] |
+| 5 | all | `haraka, robust, 256s` | [x] |
+| 6 | all | `haraka, robust, 256f` | [x] |
+| 7 | all | `haraka, simple, 128s` | [x] |
+| 8 | all | `haraka, simple, 128f` | [x] |
+| 9 | all | `haraka, simple, 192s` | [x] |
+| 10 | all | `haraka, simple, 192f` | [x] |
+| 11 | all | `haraka, simple, 256s` | [x] |
+| 12 | all | `haraka, simple, 256f` | [x] |
+| 13 | all | `sha2, robust, 128s` (SHA-256 thash path) | [x] |
+| 14 | all | `sha2, robust, 128f` (SHA-256 thash path) | [x] |
+| 15 | all | `sha2, robust, 192s` (SHA-512 for multi-block thash) | [x] |
+| 16 | all | `sha2, robust, 192f` (SHA-512 for multi-block thash) | [x] |
+| 17 | all | `sha2, robust, 256s` (SHA-512 for multi-block thash) | [x] |
+| 18 | all | `sha2, robust, 256f` (SHA-512 for multi-block thash) | [x] |
+| 19 | all | `sha2, simple, 128s` (SHA-256 thash path) | [x] |
+| 20 | all | `sha2, simple, 128f` (SHA-256 thash path) | [x] |
+| 21 | all | `sha2, simple, 192s` (SHA-512 for multi-block thash) | [x] |
+| 22 | all | `sha2, simple, 192f` (SHA-512 for multi-block thash) | [x] |
+| 23 | all | `sha2, simple, 256s` (SHA-512 for multi-block thash) | [x] |
+| 24 | all | `sha2, simple, 256f` (SHA-512 for multi-block thash) | [x] |
+| 25 | all | `shake, robust, 128s` | [x] |
+| 26 | all | `shake, robust, 128f` | [x] |
+| 27 | all | `shake, robust, 192s` | [x] |
+| 28 | all | `shake, robust, 192f` | [x] |
+| 29 | all | `shake, robust, 256s` | [x] |
+| 30 | all | `shake, robust, 256f` | [x] |
+| 31 | all | `shake, simple, 128s` | [x] |
+| 32 | all | `shake, simple, 128f` | [x] |
+| 33 | all | `shake, simple, 192s` | [x] |
+| 34 | all | `shake, simple, 192f` | [x] |
+| 35 | all | `shake, simple, 256s` | [x] |
+| 36 | all | `shake, simple, 256f` | [x] |
+| 37 | all | `blake, robust, 128s` (BLAKE-256 thash path) | [x] |
+| 38 | all | `blake, robust, 128f` (BLAKE-256 thash path) | [x] |
+| 39 | all | `blake, robust, 192s` (BLAKE-512 for multi-block thash) | [x] |
+| 40 | all | `blake, robust, 192f` (BLAKE-512 for multi-block thash) | [x] |
+| 41 | all | `blake, robust, 256s` (BLAKE-512 for multi-block thash) | [x] |
+| 42 | all | `blake, robust, 256f` (BLAKE-512 for multi-block thash) | [x] |
+| 43 | all | `blake, simple, 128s` (BLAKE-256 thash path) | [x] |
+| 44 | all | `blake, simple, 128f` (BLAKE-256 thash path) | [x] |
+| 45 | all | `blake, simple, 192s` (BLAKE-512 for multi-block thash) | [x] |
+| 46 | all | `blake, simple, 192f` (BLAKE-512 for multi-block thash) | [x] |
+| 47 | all | `blake, simple, 256s` (BLAKE-512 for multi-block thash) | [x] |
+| 48 | all | `blake, simple, 256f` (BLAKE-512 for multi-block thash) | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|--------------------------------------------|-|
-| 49 | `crypto_sign_*bytes` | four constant-size queries | [ ] |
-| 50 | `SPX_ull_to_bytes`, `SPX_bytes_to_ull` | lengths `0,1,4,8`; values `0,1,2^32-1,2^64-1` | [ ] |
-| 51 | `SPX_u32_to_bytes` | values `0,1,2^32-1` | [ ] |
-| 52 | address setters/copies | zero, boundary, and all-ones values; named types `0..=6` and accepted unnamed types `7,255,256,u32::MAX` | [ ] |
-| 53 | `SPX_initialize_hash_function` | zero and randomized seeds; backend-specific context state | [ ] |
-| 54 | `SPX_prf_addr` | randomized public/secret seeds and addresses | [ ] |
-| 55 | `SPX_gen_message_random` | message lengths `0,1,block-1,block,block+1,many` | [ ] |
-| 56 | `SPX_hash_message` | message lengths `0,1,block-1,block,block+1,many`; tree/leaf masks | [ ] |
-| 57 | `SPX_thash` | `inblocks=1` special path | [ ] |
-| 58 | `SPX_thash` | `inblocks=2` internal-node path | [ ] |
-| 59 | `SPX_thash` | `inblocks=SPX_WOTS_LEN` horizontal WOTS path | [ ] |
-| 60 | `SPX_thash` | `inblocks=SPX_FORS_TREES` horizontal FORS path | [ ] |
-| 61 | `SPX_chain_lengths` | all-zero, all-ones, alternating, randomized `SPX_N`-byte messages | [ ] |
-| 62 | `SPX_wots_pk_from_sig` | randomized signatures/messages/contexts/addresses | [ ] |
-| 63 | `SPX_compute_root` | even and odd leaf indices; zero and nonzero offsets; heights `1` and configured tree height | [ ] |
-| 64 | `SPX_fors_gen_leafx1` | address indices `0,1,last`; randomized context/address | [ ] |
-| 65 | `SPX_fors_sign`, `SPX_fors_pk_from_sig` | all-zero, all-ones, alternating, randomized FORS messages; round-trip public key | [ ] |
-| 66 | `SPX_wots_gen_leafx1` | signing leaf selected versus not selected | [ ] |
-| 67 | `SPX_wots_treehashx1` | even/odd/last leaf; zero/nonzero offset; configured tree height | [ ] |
-| 68 | `SPX_fors_treehashx1` | even/odd/last leaf; per-tree nonzero offset; configured FORS height | [ ] |
-| 69 | `SPX_treehash` | callback-driven height `1`, `2`, configured height; even/odd leaf and offset | [ ] |
-| 70 | `SPX_merkle_sign` | even/odd/last leaf and randomized root/context/address | [ ] |
-| 71 | `SPX_merkle_gen_root` | randomized context | [ ] |
-| 72 | `crypto_sign_seed_keypair` | all-zero, all-ones, alternating, randomized `3*SPX_N` seeds | [ ] |
-| 73 | `crypto_sign_signature`, `crypto_sign_verify` | empty, one-byte, boundary, and multi-block messages; valid detached signatures | [ ] |
-| 74 | `crypto_sign`, `crypto_sign_open` | empty, one-byte, boundary, and multi-block messages; valid signed-message round trip | [ ] |
-| 75 | `crypto_sign_keypair` | deterministic RNG initialized with zero, personalized, and randomized 48-byte entropy | [ ] |
-| 76 | `seedexpander_init`, `seedexpander` | request `0`, partial buffer, exact block, multiple blocks, sequential requests | [ ] |
-| 77 | `AES256_ECB`, `AES256_CTR_DRBG_Update`, `randombytes_init`, deterministic `randombytes` | zero, all-ones, alternating, randomized keys/seeds; lengths `0,1,15,16,17,many` | [ ] |
-| 78 | BLAKE public API | one-shot and incremental; byte lengths `0,1,55/56,63/64,111/112,127/128,many`; MGF output `0,1,digest-1,digest,digest+1,many` | [ ] |
-| 79 | SHA-2 public API | one-shot and incremental; finalization below/at/above 56 and 112 bytes; MGF partial/full blocks; seeded state | [ ] |
-| 80 | SHAKE public API | one-shot, absorb/squeezeblocks, incremental absorb/finalize/squeeze; empty, rate boundaries, partial final output | [ ] |
-| 81 | Haraka public API | tweak constants; 256/512 permutations; sponge one-shot and incremental; output multiple of 32 and remainder | [ ] |
+Parameter shapes are: `128s=(N=16,D=7,tree_height=9,FORS=12x14)`,
+`128f=(16,22,3,6x33)`, `192s=(24,7,9,14x17)`,
+`192f=(24,22,3,8x33)`, `256s=(32,8,8,14x22)`, and
+`256f=(32,17,4,9x35)`.
 
+## Runtime/data-shape combinations
+
+These rows are run under every build-time combination when the named backend
+entry point exists.
+
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---:|---|---|:---:|
+| 49 | four `crypto_sign_*bytes` queries | no input; compare all parameter-derived sizes | [x] |
+| 50 | `SPX_ull_to_bytes`, `SPX_bytes_to_ull` | widths 0, 1, 2, 4, and 8; randomized values; big-endian truncation | [x] |
+| 51 | `SPX_u32_to_bytes` | randomized 32-bit values including 0 and `UINT32_MAX` | [x] |
+| 52 | all eight address setters | zero, in-range, and high-bit values; byte-truncating and full-width fields | [x] |
+| 53 | both address copy functions | randomized source/destination bytes, including overlap-preserved fields | [x] |
+| 54 | backend initialize/PRF | randomized public/secret seeds and all seven address types | [x] |
+| 55 | backend message-random function | message lengths 0, 1, block-1, block, block+1, and multi-block | [x] |
+| 56 | backend message hash | same message shapes; verify digest, masked tree index, and masked leaf index | [x] |
+| 57 | `SPX_thash` | `inblocks=1` (F function) | [x] |
+| 58 | `SPX_thash` | `inblocks=2` (Merkle/FORS internal node; wide hash when `N>=24`) | [x] |
+| 59 | `SPX_thash` | `inblocks=SPX_WOTS_LEN` | [x] |
+| 60 | `SPX_thash` | `inblocks=SPX_FORS_TREES` | [x] |
+| 61 | `SPX_chain_lengths` | randomized `SPX_N`-byte messages, including all-zero/all-`0xff` | [x] |
+| 62 | `SPX_wots_pk_from_sig` | randomized WOTS signature/message/context/address | [x] |
+| 63 | `SPX_compute_root` | even leaf, nonzero offset, parameter-set tree height | [x] |
+| 64 | `SPX_compute_root` | odd leaf, nonzero offset, parameter-set tree height | [x] |
+| 65 | `SPX_treehash` | direct callback API, leaf indices at first/middle/last and nonzero offsets | [x] |
+| 66 | `SPX_wots_gen_leafx1` | generated leaf is not the signing leaf | [x] |
+| 67 | `SPX_wots_gen_leafx1` | generated leaf is the signing leaf; capture WOTS signature steps | [x] |
+| 68 | `SPX_wots_treehashx1` | direct signing leaf and authentication path with nonzero offset | [x] |
+| 69 | `SPX_fors_gen_leafx1` | randomized FORS address and nonzero index | [x] |
+| 70 | `SPX_fors_treehashx1` | first/middle/last FORS leaf and nonzero tree offset | [x] |
+| 71 | `SPX_fors_sign`, `SPX_fors_pk_from_sig` | randomized message digest/context/address; compare signature and recovered PK | [x] |
+| 72 | `SPX_merkle_sign` | middle leaf; compare WOTS signature, auth path, and root | [x] |
+| 73 | `SPX_merkle_gen_root` | randomized context seeds | [x] |
+| 74 | `crypto_sign_seed_keypair` | randomized fixed-size seeds | [x] |
+| 75 | `crypto_sign_signature`, `crypto_sign_verify` | deterministic RNG initialized identically; multi-block message | [x] |
+| 76 | `crypto_sign`, `crypto_sign_open` | deterministic RNG initialized identically; overlapping message/output allocation | [x] |
+| 77 | BLAKE one-shot functions | lengths 0, 1, 55/56, 63/64/65 and 111/112, 127/128/129 | [x] |
+| 78 | BLAKE incremental functions | partial and multi-block updates crossing 64- and 128-byte compression boundaries; direct compression | [x] |
+| 79 | BLAKE MGF1 functions | output lengths 0, 1, digest-1, digest, digest+1, and multiple digests | [x] |
+| 80 | SHA-2 one-shot/incremental functions | empty, padding boundaries, one/many full blocks, and remainder finalization | [x] |
+| 81 | SHA-2 MGF1/state seeding | short/exact/long outputs and both `N<24`/`N>=24` branches | [x] |
+| 82 | SHAKE one-shot/incremental functions | empty, rate-1, rate, rate+1, and multi-rate absorb/squeeze | [x] |
+| 83 | Haraka permutation/hash functions | 32-byte, 64-byte, incremental sponge, and partial squeeze shapes | [x] |
+| 84 | deterministic RNG/AES functions | personalization absent/present; partial and many-block requests; direct AES/update; range/null boundaries | [x] |
