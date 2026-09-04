@@ -1,0 +1,30 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "load_png_mem_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+flate2 = "1.0"
+
+[profile.release]
+panic = "abort"
+
+# The C library is compiled with no NDEBUG (so its own `assert()`s are live) but
+# with no checked arithmetic and no pointer sanitising. rustc's debug assertions
+# add a raw-pointer null check and arithmetic overflow checks, which turn the
+# C's undefined behaviour into Rust panics -- e.g. `cp_inflate(NULL, ...)` must
+# SIGSEGV like the C does, not abort with "null pointer dereference occurred".
+# Disabling them keeps the translation's observable behaviour identical in every
+# build profile, not just in release.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

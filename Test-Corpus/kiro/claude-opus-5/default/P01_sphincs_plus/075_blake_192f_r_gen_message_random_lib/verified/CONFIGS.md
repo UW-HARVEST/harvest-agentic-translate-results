@@ -1,176 +1,194 @@
-# CONFIGS.md — configuration-surface table
+# CONFIGS.md — configuration-surface table (valid inputs)
 
-The mirror of `ERRORS.md` for **valid** inputs. Rows were derived from the axes
-the C code actually branches on, found by reading the public headers and
-grepping the `if` / `switch` / `#if` / `#ifdef` conditions in `c_src`.
+The mirror of `ERRORS.md`.  Axes were read off the branches the C actually
+takes, not guessed: the CMake cache variables, the `#if` / `#ifdef` tests those
+variables drive, and every run-time `if` / `switch` in `c_src/app/src/*.c` and
+`c_src/lib/*/src/*.c` that depends on an argument.
 
-## Axis 1 — build-time configuration (the CMake cache variables)
+## Build-time axes (the outer product; 96 configurations)
 
-`c_src/CMakeLists.txt` exposes three cache variables; `c_src/lib/CMakeLists.txt`
-does `add_subdirectory(${HASH_BACKEND})`, so exactly one backend is ever
-compiled, and `app/CMakeLists.txt` turns `SECPAR` into
-`-DPARAMS=sphincs-<backend>-<secpar>`.
-
-| variable | values | count |
+| axis | source | values |
 |---|---|---|
-| `HASH_BACKEND` | `blake`, `sha2`, `shake`, `haraka` | 4 |
-| `THASH` | `robust`, `simple` | 2 |
-| `SECPAR` | `128s`, `128f`, `192s`, `192f`, `256s`, `256f` | 6 |
+| `HASH_BACKEND` | `c_src/CMakeLists.txt`, `lib/CMakeLists.txt` `add_subdirectory(${HASH_BACKEND})` | `blake`, `haraka`, `sha2`, `shake` |
+| `THASH` | `lib/<b>/CMakeLists.txt` `src/thash_<b>_${THASH}.c` | `robust`, `simple` |
+| `SECPAR` | `app/CMakeLists.txt` `PARAMS=sphincs-${HASH_BACKEND}-${SECPAR}` | `128s`, `128f`, `192s`, `192f`, `256s`, `256f` |
+| `randombytes` provider | `app/CMakeLists.txt` targets `sphincs_core` (`randombytes.c`) vs `sphincs_core_det` (`rng.c`) | urandom, NIST DRBG |
 
-**48 combinations.** The Cargo features have the same names
-(`shake256` is an accepted alias for `shake`, per the CMake cache docstring, so
-`cargo check` covers 60 spellings of the same 48 configurations). Every row in
-this table is executed under all 48.
+Derived compile-time branches these switch on, all covered by the product
+above: `SPX_BLAKE512` / `SPX_SHA512` (0 for `128*`, 1 for `192*`/`256*`, which
+is exactly `SPX_N >= 24`), `SPX_N` in {16, 24, 32}, `SPX_D` in {7, 8, 17, 22},
+`SPX_TREE_HEIGHT` in {3, 8, 9}, `SPX_FORS_HEIGHT` in {6, 8, 9, 12, 14},
+`SPX_FORS_TREES` in {14, 17, 22, 33, 35}, `SPX_WOTS_LEN` in {35, 51, 67}, and
+the per-backend `SPX_OFFSET_*` address layout (`sha2` differs from the other
+three).  `if (SPX_D == 1)` in every `hash_message` is dead in all 24 parameter
+sets (min `SPX_D` is 7) and is recorded as such rather than tested.
 
-### Derived build-time branches (not free axes — implied by the above)
+## Run-time axes
 
-| derived flag | condition | what it switches |
-|---|---|---|
-| `SPX_N` | 16 / 24 / 32 | every buffer size |
-| `X512` (`SPX_SHA512`, `SPX_BLAKE512`) | `1` iff `SPX_N >= 24` **and** backend ∈ {`sha2`, `blake`} | `thash`'s `if (inblocks > 1) thash_512(...)` early-out, and the `shaX`/`blakeX` alias used by `gen_message_random` + `hash_message` |
-| address layout | `sha2` → 22-byte compressed (`SPX_OFFSET_LAYER=0`, `TREE=1`, `TYPE=9`, …); others → 32-byte full (`LAYER=3`, `TREE=8`, `TYPE=19`, …) | every `set_*_addr` byte position |
-| `spx_ctx` size | `blake`/`shake`: `2N`; `sha2`: `2N+40` (`+72` if `X512`); `haraka`: `2N+960` | the context the tests pass across FFI (`sizeof_spx_ctx` from `harness/dump_params.c`) |
-| `SPX_D == 1` | never in any shipped parameter set (`D` ∈ 7…22) | `hash_message`'s `if (SPX_D == 1) *tree = 0;` — the `else` branch is always taken; recorded here so the dead branch is not mistaken for untested coverage |
-| `SPX_WOTS_W` | `16` in every shipped set (`SPX_WOTS_LOGW = 4`) | `base_w`; the `#if SPX_WOTS_W == 256` arm is unreachable |
-
-## Axis 2 — public entry points
-
-The full exported API, lowest level first. Convenience wrappers are marked; the
-table below drives the low-level ones **directly**, not only through the
-wrappers.
-
-| group | entry points | level |
-|---|---|---|
-| address | `SPX_set_layer_addr`, `SPX_set_tree_addr`, `SPX_set_type`, `SPX_set_keypair_addr`, `SPX_set_chain_addr`, `SPX_set_hash_addr`, `SPX_set_tree_height`, `SPX_set_tree_index`, `SPX_copy_subtree_addr`, `SPX_copy_keypair_addr` | leaf |
-| utils | `SPX_ull_to_bytes`, `SPX_u32_to_bytes`, `SPX_bytes_to_ull` | leaf |
-| backend primitives | blake: `blake256{,_init,_update,_final,_compress}`, `blake512{…}`, `SPX_blake256_mgf1`, `SPX_blake512_mgf1`, `cst`; sha2: `sha256{,_inc_init,_inc_blocks,_inc_finalize}`, `sha512{…}`, `SPX_mgf1_256`, `SPX_mgf1_512`, `SPX_seed_state`; shake: `shake256`, `shake256_absorb`, `shake256_squeezeblocks`, `shake256_inc_{init,absorb,finalize,squeeze}`; haraka: `SPX_tweak_constants`, `SPX_haraka256`, `SPX_haraka512`, `SPX_haraka512_perm`, `SPX_haraka_S`, `SPX_haraka_S_inc_{init,absorb,finalize,squeeze}` | leaf |
-| DRBG | `AES256_ECB`, `AES256_CTR_DRBG_Update`, `DRBG_ctx`, `randombytes_init`, `randombytes`, `seedexpander_init`, `seedexpander` | leaf |
-| hash hooks | `SPX_initialize_hash_function`, `SPX_prf_addr`, `SPX_thash`, `SPX_gen_message_random`, `SPX_hash_message` | mid |
-| tree | `SPX_compute_root`, `SPX_treehash` (takes a `gen_leaf` **function pointer**), `SPX_wots_treehashx1`, `SPX_fors_treehashx1` | mid |
-| WOTS / FORS | `SPX_chain_lengths`, `SPX_wots_pk_from_sig`, `SPX_wots_gen_leafx1`, `SPX_fors_sign`, `SPX_fors_pk_from_sig`, `SPX_fors_gen_leafx1` | mid |
-| Merkle | `SPX_merkle_sign`, `SPX_merkle_gen_root` | high |
-| API | `crypto_sign_{secretkeybytes,publickeybytes,bytes,seedbytes}`, `crypto_sign_seed_keypair`, `crypto_sign_keypair`, `crypto_sign_signature`, `crypto_sign_verify` | high |
-| API (convenience wrappers over the above) | `crypto_sign`, `crypto_sign_open` | wrapper |
-
-## Axis 3 — runtime options / input shapes the C special-cases
-
-| axis | values the C distinguishes | where |
-|---|---|---|
-| `inblocks` (thash) | `0`, `1`, `2` (+`>1` → 512-bit path), `SPX_WOTS_LEN`, `SPX_FORS_TREES` | `thash_*.c` |
-| `mlen` | `0`; `< BLOCK-N`; `== BLOCK-N` (branch flip); `> BLOCK-N`; multi-block | `hash_sha2.c:91`, `:154` |
-| `leaf_idx` parity | even → left child, odd → right child | `utils.c:57`, `:74` |
-| `idx_offset` | `0` vs non-zero vs odd (it is `>>= 1` in lockstep) | `utils.c:69` |
-| `leaf_idx == ~0u` | "don't generate an auth path" sentinel from `merkle_gen_root` | `merkle.c:57` |
-| `wots_sign_leaf == leaf_idx` | `wots_k_mask = 0` (emit signature) vs `~0` (public key only) | `wotsx1.c:27` |
-| `idx == max_idx` | keep climbing past a left child at the right edge | `utilsx1.c:76` |
-| `start + steps` vs `SPX_WOTS_W` | chain clamped at `W` | `wots.c:35` |
-| `buflen` (BLAKE) | `< 440`, `== 440`, `> 440` bits; `== 0` → `nullt = 1` | `blake256.c:346` |
-| `outlen % OUTPUT_BYTES` | `0` → tail branch skipped; `!= 0` → partial tail | `blake256.c:388`, `sha2.c` `mgf1_*` |
-| `personalization_string` | `NULL` vs non-`NULL` | `rng.c:150` |
-| `provided_data` | `NULL` vs non-`NULL` | `rng.c:186` |
-| `V` / `ctr` carry | byte `0xff` → propagate to the next-higher byte | `rng.c:{83,157,172}` |
-| `buffer_pos` | `16` (empty) vs partial vs exactly consumed | `rng.c:71` |
-| `siglen` / `smlen` | see `ERRORS.md` rows 1, 3 | `sign.c:180`, `:272` |
+* **`mlen` sweep** (used by every row that takes a message).  The block-fill
+  branches are `SPX_N + mlen < SPX_SHAX_BLOCK_BYTES` in `hash_sha2.c`'s
+  `gen_message_random`, `SPX_N + SPX_PK_BYTES + mlen < SPX_INBLOCKS *
+  SPX_SHAX_BLOCK_BYTES` in its `hash_message`, `left && ((datalen>>3) & 0x3F)
+  >= fill` in `blake256_update` / `blake512_update`, the `buflen == 440` /
+  `< 440` / `else` three-way split in `blake256_final` (`888` in
+  `blake512_final`), and the rate-crossing tests in `keccak_inc_absorb`
+  (rate 136) and `haraka_S_inc_absorb` (rate 32).  The sweep
+  `{0, 1, 2, 15, 16, 17, 31, 32, 33, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71,
+  72, 73, 95, 96, 97, 103, 104, 105, 127, 128, 129, 135, 136, 137, 167, 168,
+  169, 191, 192, 193, 255, 256, 257, 1000, 4096}` hits every one of those
+  thresholds and its neighbours in all 24 parameter sets.
+* **`inblocks`** for `thash`: `1` (the `F` function; the only value for which
+  `thash_haraka_*` takes its first branch and for which `thash_blake_*` /
+  `thash_sha2_*` stay on the narrow primitive when `SPX_N >= 24`), `2` (Merkle
+  node), `SPX_WOTS_LEN` (WOTS public key compression), `SPX_FORS_TREES` (FORS
+  root compression), `0`, and `max(SPX_WOTS_LEN, SPX_FORS_TREES) + k` for the
+  `SPX_VLA` sizes no internal caller ever reaches.
+* **`leaf_idx` parity and `idx_offset`** in `compute_root` (`if (leaf_idx & 1)`)
+  and in `wots_treehashx1` / `fors_treehashx1`
+  (`(internal_idx & 1) == 0 && idx < max_idx`).
+* **`info->wots_sign_leaf`** in `wots_gen_leafx1`: equal to `leaf_idx`
+  (`wots_k_mask = 0`, the WOTS signature is emitted) or not (`wots_k_mask = ~0`,
+  public keys only).  `merkle_gen_root` drives the second case with the
+  sentinel `(uint32_t)~0`.
+* **message digits** for `chain_lengths` / `wots_pk_from_sig`: all-zero and
+  all-`0xFF` messages put the base-`w` digits and the WOTS checksum at both
+  extremes, which is where `gen_chain`'s `i < SPX_WOTS_W` clamp and
+  `wots_checksum`'s shift matter.
+* **address `type`** values `0..6` (`SPX_ADDR_TYPE_WOTS` .. `FORSPRF`).
+* **`xlen` / `outlen` shapes** for the DRBG and the MGF1/XOF helpers: `0`,
+  `< block`, `== block`, `block + 1`, several blocks, non-multiples, and the
+  `0xFF` carry chains in `randombytes`' `V` and `seedexpander`'s `ctr[12..16]`.
+* **incremental vs one-shot** hashing of the backend primitives.
 
 ## The table
 
-One row per meaningful combination. Each row is exercised with **many
-randomized inputs** (fixed seeds, so failures reproduce) rather than one
-hand-picked value. `[x]` = passing in all 48 configurations.
+One row per combination the C treats differently.  `[ ]` is checked off only
+after the row passes across its randomised inputs (fixed seed) in **all** 96
+build configurations.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
-|---|----------------|-------------------------------------------|------|-----|
-| 0 | *(harness)* | Rust `.so` opened `RTLD_NOW\|RTLD_LOCAL` before the C libraries go global — assert no symbol interposition, i.e. the Rust outputs are unchanged whether or not the C `.so`s are loaded | `cfg00_no_symbol_interposition` | [x] |
-| 1 | `crypto_sign_secretkeybytes`, `crypto_sign_publickeybytes`, `crypto_sign_bytes`, `crypto_sign_seedbytes` | no input; also cross-checked against the C-preprocessor dump | `cfg01_size_getters` | [x] |
-| 2 | `SPX_set_layer_addr` | addr = zeros / random / all-`0xFF`; `layer` ∈ {0, 1, `D-1`, 255, 256, `0xFFFFFFFF`, 256 random `u32`}; assert the other 31 bytes are untouched | `cfg02_set_layer_addr` | [x] |
-| 3 | `SPX_set_tree_addr` | addr = zeros / random; `tree` ∈ {0, 1, `2^(TREE_HEIGHT*(D-1))-1`, `u64::MAX`, 256 random `u64`} | `cfg03_set_tree_addr` | [x] |
-| 4 | `SPX_set_type` | `type` ∈ {0…6 (all valid variants), 7, 255, 256, 259, `0xFFFFFFFF`, 256 random} × addr {zeros, random} | `cfg04_set_type_all_variants_and_beyond` | [x] |
-| 5 | `SPX_set_keypair_addr`, `SPX_set_chain_addr`, `SPX_set_hash_addr`, `SPX_set_tree_height`, `SPX_set_tree_index` | each with boundary + 256 random `u32`, addr random; byte-field vs 4-byte-field layouts differ between `sha2` and the rest | `cfg05_other_addr_setters` | [x] |
-| 6 | `SPX_copy_subtree_addr`, `SPX_copy_keypair_addr` | random `in`, random pre-filled `out`; verifies exactly `SPX_OFFSET_TREE+8` bytes (and, for `copy_keypair_addr`, the extra 4 at `SPX_OFFSET_KP_ADDR`) are copied and nothing else | `cfg06_addr_copiers` | [x] |
-| 7 | `SPX_ull_to_bytes` | `outlen` ∈ {0,1,2,3,4,7,8,9,16,32} × `in` ∈ {0, 1, `u64::MAX`, 64 random}; guard bytes after the buffer | `cfg07_ull_to_bytes` | [x] |
-| 8 | `SPX_u32_to_bytes` | `in` ∈ {0, 1, `0xFFFFFFFF`, 256 random} | `cfg08_u32_to_bytes` | [x] |
-| 9 | `SPX_bytes_to_ull` | `inlen` ∈ {0…8} × 64 random inputs (per `ERRORS.md` row 31, `inlen > 8` is C UB and is excluded from byte-equality) | `cfg09_bytes_to_ull` | [x] |
-| 10 | `SPX_initialize_hash_function` | random `pub_seed`/`sk_seed`; full `sizeof(spx_ctx)` byte compare. This is the row that covers `sha2`'s `seed_state` midstate precomputation and `haraka`'s `tweak_constants`; for `blake`/`shake` it is a no-op and the row asserts the context is unmodified | `cfg10_initialize_hash_function` | [x] |
-| 11 | `SPX_prf_addr` | 200 random (ctx, addr) pairs, ctx built through `initialize_hash_function` | `cfg11_prf_addr` | [x] |
-| 12 | `SPX_thash` | `inblocks` ∈ {0, 1, 2, 3, 4, 16, `SPX_WOTS_LEN`, `SPX_FORS_TREES`, 64} × random in/ctx/addr, 24 random inputs each. Covers both `THASH` variants and, for `X512=1`, both sides of `if (inblocks > 1)` and haraka's `inblocks == 1` F-function vs sponge split | `cfg12_thash_all_inblocks` | [x] |
-| 13 | `SPX_gen_message_random` | `mlen` ∈ {0, 1, `N-1`, `N`, `N+1`, `BLOCK-N-1`, `BLOCK-N`, `BLOCK-N+1`, `BLOCK`, `BLOCK+1`, `2*BLOCK`, 1000, 5000} for `BLOCK` ∈ {64, 128} × random `sk_prf`/`optrand`/ctx. The output buffer is sized for the largest possible write and compared in full, because the BLAKE backend writes the whole digest into `R` rather than `SPX_N` bytes | `cfg13_gen_message_random` | [x] |
-| 14 | `SPX_hash_message` | same `mlen` set, plus the `sha2`-specific boundary `INBLOCKS*BLOCK - N - PK_BYTES`; asserts `digest`, `*tree` **and** `*leaf_idx` (the masking at the end of `hash_message` is easy to get wrong) | `cfg14_hash_message` | [x] |
-| 15 | `SPX_compute_root` | `tree_height` ∈ {1, 2, 3, `FORS_HEIGHT`, `TREE_HEIGHT`} × `leaf_idx` ∈ {even, odd, `2^h-1`, random} × `idx_offset` ∈ {0, 1, `0xFFFFFFFE`, random} × random leaf/auth_path/ctx/addr; also asserts `addr` is left in the same state by both | `cfg15_compute_root_shapes` | [x] |
-| 16 | `SPX_treehash` | driven through a **neutral `extern "C"` `gen_leaf` callback defined in the test** (so both libraries generate identical leaves and only their own `thash`/traversal differs); `tree_height` ∈ {1, 2, 3, `FORS_HEIGHT` capped at 10} × `leaf_idx` ∈ {0, mid, last, `~0u`} × `idx_offset` ∈ {0, `k*2^h`, random}; asserts root, the whole auth path, and the final `tree_addr` | `cfg16_treehash_shapes` | [x] |
-| 17 | `SPX_wots_treehashx1` | `tree_height = TREE_HEIGHT` × `leaf_idx` ∈ {0, 1, mid, `2^h-1`, `~0u`} × `idx_offset` ∈ {0, random} × `leaf_info_x1.wots_sign_leaf` = `leaf_idx` (signature path, `wots_k_mask = 0`) **and** `~0u` (pk-only path); asserts root, auth path, the emitted `wots_sig`, and the mutated `leaf_info_x1` | `cfg17_wots_treehashx1` | [x] |
-| 18 | `SPX_fors_treehashx1` | `tree_height = FORS_HEIGHT` (capped) × `leaf_idx` ∈ {0, 1, mid, `2^h-1`} × `idx_offset` = `i*2^FORS_HEIGHT` for several `i`; asserts root, auth path and the mutated `fors_gen_leaf_info` | `cfg18_fors_treehashx1` | [x] |
-| 19 | `SPX_chain_lengths` | 200 random `SPX_N`-byte messages; asserts all `SPX_WOTS_LEN` `unsigned int` outputs, incl. the `LEN2` checksum digits | `cfg19_chain_lengths` | [x] |
-| 20 | `SPX_wots_pk_from_sig` | 40 random (sig, msg, addr, ctx); `msg` chosen to hit both `lengths[i] == 0` and `lengths[i] == W-1` (chain length 0 → `gen_chain` copies only) | `cfg20_wots_pk_from_sig` | [x] |
-| 21 | `SPX_wots_gen_leafx1` | `leaf_idx == info.wots_sign_leaf` (emits `wots_sig`) and `leaf_idx != info.wots_sign_leaf` (`wots_k_mask = ~0`, no signature); `wots_steps` ∈ {all 0, all `W-1`, random}; asserts `dest`, `wots_sig` and the mutated `leaf_addr`/`pk_addr` | `cfg21_wots_gen_leafx1` | [x] |
-| 22 | `SPX_fors_gen_leafx1` | random `addr_idx` incl. `0`, `2^FORS_HEIGHT-1`, `0xFFFFFFFF`; asserts leaf and the mutated `fors_gen_leaf_info.leaf_addrx` | `cfg22_fors_gen_leafx1` | [x] |
-| 23 | `SPX_fors_sign` | 20 random (`m` of `SPX_FORS_MSG_BYTES`, ctx, `fors_addr`); asserts the full `SPX_FORS_BYTES` signature **and** the FORS pk | `cfg23_fors_sign` | [x] |
-| 24 | `SPX_fors_pk_from_sig` | 20 random (sig, m, ctx, addr) — deliberately *not* only well-formed signatures, since the function has no validity check | `cfg24_fors_pk_from_sig` | [x] |
-| 25 | `SPX_fors_sign` → `SPX_fors_pk_from_sig` | composed: sign then recover, assert both libraries agree on the recovered pk and that it equals the pk from `fors_sign` (catches pipeline bugs invisible per-wrapper) | `cfg25_fors_sign_then_recover` | [x] |
-| 26 | `SPX_merkle_sign` | `idx_leaf` ∈ {0, 1, mid, `2^TREE_HEIGHT-1`, `~0u`} × random root/ctx/`wots_addr`/`tree_addr`; asserts `sig` (`WOTS_BYTES + TREE_HEIGHT*N`), the updated `root`, and both mutated addresses | `cfg26_merkle_sign` | [x] |
-| 27 | `SPX_merkle_gen_root` | random ctx (built via `initialize_hash_function`) | `cfg27_merkle_gen_root` | [x] |
-| 28 | `crypto_sign_seed_keypair` | 8 random `CRYPTO_SEEDBYTES` seeds + all-zero + all-`0xFF`; asserts `pk` and `sk` | `cfg28_seed_keypair` | [x] |
-| 29 | `crypto_sign_keypair` | both DRBGs seeded identically via `randombytes_init`; asserts `pk`, `sk` **and** the resulting `DRBG_ctx` state | `cfg29_keypair_from_drbg` | [x] |
-| 30 | `crypto_sign_signature` + `crypto_sign_verify` | `mlen` ∈ {0, 1, 2, 31, 32, 33, 63, 64, 65, 127, 128, 129, 1000, 5000} with the DRBG re-seeded identically before each signature (it draws `optrand`); asserts signature bytes, `*siglen`, and `verify == 0` | `cfg30_signature_and_verify` | [x] |
-| 31 | `crypto_sign` + `crypto_sign_open` | same `mlen` set; asserts `sm`, `*smlen`, recovered `m`, `*mlen` | `cfg31_sign_and_open` | [x] |
-| 32 | cross-library verify | C-generated signature checked by Rust's `crypto_sign_verify`, and vice versa; likewise `crypto_sign_open` | `cfg30_signature_and_verify + cfg25_fors_sign_then_recover` | [x] |
-| 33 | `SPX_ull_to_bytes` / `SPX_bytes_to_ull` | round-trip: `bytes_to_ull(ull_to_bytes(v, len), len)` for `len` ∈ 1…8 | `cfg33_ull_bytes_roundtrip` | [x] |
-| 34 | *blake* `blake256` | one-shot, `inlen` ∈ {0, 1, 54, 55, 56, 57, 63, 64, 65, 110, 111, 112, 127, 128, 129, 1000} + 32 random lengths ≤ 4096 | `cfg34_37_blake_one_shot` | [x] |
-| 35 | *blake* `blake256_init` + `blake256_update`×k + `blake256_final` | incremental, split into 1…6 random chunks (`datalen` is in **bits**), covering all three `final` padding branches and `nullt` | `cfg35_37_blake_incremental` | [x] |
-| 36 | *blake* `blake256_compress` | random 128-byte `blakestate256` + random 64-byte block, incl. `t[0]` near `2^32` to exercise the `t[1]++` carry | `cfg36_37_blake_compress` | [x] |
-| 37 | *blake* `blake512` / `blake512_init`/`_update`/`_final`/`_compress` | same shapes with the 128-byte block and the 110/111/112-byte padding boundaries | `cfg34_37_blake_one_shot / cfg35_37 / cfg36_37` | [x] |
-| 38 | *blake* `SPX_blake256_mgf1`, `SPX_blake512_mgf1` | `outlen` ∈ {0, 1, 31, 32, 33, 63, 64, 65, 100, 256} × `inlen` ∈ {0, 1, 32, 64, random} | `cfg38_blake_mgf1` | [x] |
-| 39 | *blake* `cst` | read all 16 `u64` from the exported read-only symbol and compare byte-for-byte with the C `.so`'s | `cfg39_blake_cst_global` | [x] |
-| 40 | *sha2* `sha256`, `sha512` | one-shot, `inlen` ∈ {0, 1, 55, 56, 57, 63, 64, 65, 111, 112, 113, 127, 128, 129, 1000} + random | `cfg40_sha_one_shot` | [x] |
-| 41 | *sha2* `sha256_inc_init`/`_inc_blocks`/`_inc_finalize` (and 512) | `inblocks` ∈ {0, 1, 2, 5} then `inc_finalize` with `inlen` ∈ {0, 1, `BLOCK-9`, `BLOCK-8`, `BLOCK-1`, `BLOCK`, `BLOCK+1`}; asserts the 40-/72-byte state after every step | `cfg41_sha_incremental` | [x] |
-| 42 | *sha2* `SPX_mgf1_256`, `SPX_mgf1_512` | `outlen`/`inlen` boundary grid as row 38 | `cfg42_sha_mgf1` | [x] |
-| 43 | *sha2* `SPX_seed_state` | random `pub_seed`; asserts the whole `spx_ctx` including both midstates when `X512=1` | `cfg43_seed_state` | [x] |
-| 44 | *shake* `shake256` | `outlen` ∈ {0, 1, 32, 135, 136, 137, 271, 272, 273} × `inlen` ∈ {0, 1, 135, 136, 137, 272, random} | `cfg44_shake256_one_shot` | [x] |
-| 45 | *shake* `shake256_inc_init`/`_absorb`×k/`_finalize`/`_squeeze`×k | absorb split into 1…6 random chunks; squeeze split into 1…6 chunks crossing the 136-byte rate boundary; asserts the 200-byte state after each step | `cfg45_shake256_incremental` | [x] |
-| 46 | *shake* `shake256_absorb` + `shake256_squeezeblocks` | `nblocks` ∈ {0, 1, 2, 5}; the non-incremental API, used by nothing in the library but exported | `cfg46_shake256_absorb_squeezeblocks` | [x] |
-| 47 | *haraka* `SPX_tweak_constants` | random `pub_seed`/`sk_seed`; asserts all 1024 (or `2N+960`) context bytes, i.e. both `tweaked512_rc64` and `tweaked256_rc32` | `cfg47_tweak_constants` | [x] |
-| 48 | *haraka* `SPX_haraka512`, `SPX_haraka512_perm`, `SPX_haraka256` | random 64-/32-byte inputs under a tweaked context | `cfg48_haraka_permutations` | [x] |
-| 49 | *haraka* `SPX_haraka_S` | `outlen` ∈ {0, 1, 31, 32, 33, 64, 65, 200} × `inlen` ∈ {0, 1, 31, 32, 33, 64, random} | `cfg49_haraka_s_one_shot` | [x] |
-| 50 | *haraka* `SPX_haraka_S_inc_init`/`_absorb`×k/`_finalize`/`_squeeze`×k | chunked absorb and squeeze across the 32-byte rate; asserts the 65-byte state after each step | `cfg50_haraka_s_incremental` | [x] |
-| 51 | `AES256_ECB` | 64 random (key, ctr) pairs | `cfg51_aes256_ecb` | [x] |
-| 52 | `AES256_CTR_DRBG_Update` | `provided_data` = `NULL` **and** non-`NULL`; `V` ∈ {zeros, `0xFF…FF` (full carry), `…FF` in the low bytes only, random}; asserts the updated `Key` and `V` | `cfg52_drbg_update` | [x] |
-| 53 | `randombytes_init` | `personalization_string` = `NULL` and non-`NULL`; `entropy_input` random; asserts the whole `DRBG_ctx` (`Key`, `V`, `reseed_counter`) | `cfg53_randombytes_init` | [x] |
-| 54 | `randombytes` | after identical `randombytes_init`: `xlen` ∈ {0, 1, 15, 16, 17, 31, 32, 48, 64, 1000} and a chain of 10 successive calls (state carries over); asserts output **and** `DRBG_ctx` after each call | `cfg54_randombytes_stream` | [x] |
-| 55 | `seedexpander_init` + `seedexpander` | `maxlen` ∈ {1, 16, 17, 4096, `0xFFFFFFFF`}; then a sequence of `xlen` ∈ {0, 1, 15, 16, 17, 100} draws that crosses the 16-byte internal buffer boundary and the `ctr[12..16]` carry; asserts output and the whole 72-byte `AES_XOF_struct` after each call | `cfg55_seedexpander_stream` | [x] |
-| 56 | end-to-end KAT | the C and Rust `driver` binaries (`app/src/PQCgenKAT_sign.c` vs `src/main.rs`) — 100 keygen/sign/verify rounds hashed into a SHAKE-256 transcript digest; compared per configuration | `run_tests.sh (c_driver vs rs_driver)` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `SPX_set_layer_addr`, `SPX_set_type`, `SPX_set_chain_addr`, `SPX_set_hash_addr`, `SPX_set_tree_height` | single-byte setters; random 32-byte start address, value sweep `0..=255` plus `0x100`, `0xDEADBEEF`, `0xFFFFFFFF` (truncation) | [x] `tests/b_lowlevel.rs::row01_single_byte_setters` |
+| 2 | `SPX_set_tree_addr` | 8-byte big-endian field; `tree` = 0, 1, `2^k` for k in 0..63, `0xFFFF_FFFF_FFFF_FFFF`, random | [x] `tests/b_lowlevel.rs::row02_set_tree_addr` |
+| 3 | `SPX_set_keypair_addr`, `SPX_set_tree_index` | 4-byte big-endian field; 0, 1, `0x7FFFFFFF`, `0xFFFFFFFF`, random | [x] `tests/b_lowlevel.rs::row03_four_byte_setters` |
+| 4 | `SPX_copy_subtree_addr`, `SPX_copy_keypair_addr` | random `in`, random pre-filled `out`; verifies the backend-specific `SPX_OFFSET_TREE + 8` / `+ KP_ADDR` copy windows and that the remaining bytes of `out` survive | [x] `tests/b_lowlevel.rs::row04_copiers` |
+| 5 | `SPX_ull_to_bytes` | `outlen` 0, 1, 2, 4, 7, 8, 9, 16, 32 x `in` = 0, 1, `0xFF`, `0x0102030405060708`, `u64::MAX`, random (covers `outlen > 8`, where the top bytes must be zero) | [x] `tests/b_lowlevel.rs::row05_ull_to_bytes` |
+| 6 | `SPX_u32_to_bytes` | `in` = 0, 1, `0xFFFFFFFF`, random | [x] `tests/b_lowlevel.rs::row06_u32_to_bytes` |
+| 7 | `SPX_bytes_to_ull` | `inlen` 0, 1, 4, 7, 8 x random input (round-trips against row 5) | [x] `tests/b_lowlevel.rs::row07_bytes_to_ull` |
+| 8 | `SPX_initialize_hash_function` | random `pub_seed`/`sk_seed`; compares the **whole** `spx_ctx` byte image, which is where `sha2`'s `state_seeded`/`state_seeded_512` and `haraka`'s `tweaked512_rc64`/`tweaked256_rc32` are produced (no-op for `blake`/`shake`) | [x] `tests/b_hash.rs::row08_initialize_hash_function` |
+| 9 | `SPX_prf_addr` | initialised ctx x random address x random seeds | [x] `tests/b_hash.rs::row09_prf_addr` |
+| 10 | `SPX_gen_message_random` | random `sk_prf`, `optrand`, initialised ctx x full `mlen` sweep | [x] `tests/b_hash.rs::row10_gen_message_random` |
+| 11 | `SPX_hash_message` | random `R`, `pk` x full `mlen` sweep; compares `digest`, `*tree` and `*leaf_idx` | [x] `tests/b_hash.rs::row11_hash_message` |
+| 12 | `SPX_thash`, `THASH=simple` | `inblocks` = 1 | [x] `tests/b_thash.rs::row12_inblocks_1` |
+| 13 | `SPX_thash`, `THASH=simple` | `inblocks` = 2 (the `> 1` wide-primitive branch when `SPX_N >= 24`) | [x] `tests/b_thash.rs::row13_inblocks_2` |
+| 14 | `SPX_thash`, `THASH=simple` | `inblocks` = `SPX_WOTS_LEN` | [x] `tests/b_thash.rs::row14_inblocks_wots_len` |
+| 15 | `SPX_thash`, `THASH=simple` | `inblocks` = `SPX_FORS_TREES` | [x] `tests/b_thash.rs::row15_inblocks_fors_trees` |
+| 16 | `SPX_thash`, `THASH=simple` | `inblocks` = 0 | [x] `tests/b_thash.rs::row16_inblocks_zero` |
+| 17 | `SPX_thash`, `THASH=simple` | `inblocks` = `max(SPX_WOTS_LEN, SPX_FORS_TREES) + 1`, `+ 17`, `+ 96` (past every internal use) | [x] `tests/b_thash.rs::row17_inblocks_past_internal_max` |
+| 18 | `SPX_thash`, `THASH=robust` | rows 12-17 repeated; the robust variant additionally derives a bitmask of `inblocks * SPX_N` bytes with MGF1/XOF, so `inblocks` also drives the mask length | [x] `tests/b_thash.rs::row18_inblocks_dense_sweep` |
+| 19 | `SPX_compute_root` | `tree_height` = 1 x `leaf_idx` even/odd x `idx_offset` = 0 | [x] `tests/b_tree.rs::row19_compute_root_height1_parity` |
+| 20 | `SPX_compute_root` | `tree_height` = `SPX_TREE_HEIGHT` x random `leaf_idx` in `0..2^h` x `idx_offset` = 0 | [x] `tests/b_tree.rs::row20_compute_root_tree_height` |
+| 21 | `SPX_compute_root` | `tree_height` = `SPX_FORS_HEIGHT` x random `leaf_idx` x `idx_offset` = `i * 2^h` for random `i` (the FORS cross-tree index offset) | [x] `tests/b_tree.rs::row21_compute_root_fors_height_with_offset` |
+| 22 | `SPX_compute_root` | `tree_height` = 2..`SPX_TREE_HEIGHT` sweep, `leaf_idx` = 0, `2^h - 1` (both extremes) and random | [x] `tests/b_tree.rs::row22_compute_root_height_sweep` |
+| 23 | `SPX_treehash` + `SPX_fors_gen_leafx1` as the `gen_leaf` callback | `tree_height` = 1 and 2, `leaf_idx` = 0 and 1, `idx_offset` = 0; exercises the exported function-pointer signature across FFI | [x] `tests/b_tree.rs::row23_treehash_small` |
+| 24 | `SPX_treehash` + `SPX_fors_gen_leafx1` | `tree_height` = `SPX_FORS_HEIGHT` x random `leaf_idx` x `idx_offset` = `i * 2^h`; compares `root` **and** the full `auth_path` | [x] `tests/b_tree.rs::row24_treehash_fors_height` |
+| 25 | `SPX_fors_treehashx1` | `tree_height` = `SPX_FORS_HEIGHT`, random `leaf_idx` in range, `idx_offset` = `i * 2^h`; compares `root`, `auth_path` and the mutated `tree_addr` and `leaf_addrx` | [x] `tests/b_tree.rs::row25_fors_treehashx1_fors_height` |
+| 26 | `SPX_fors_treehashx1` | `tree_height` = 1, 2, 3 (small trees, where `idx == max_idx` forces the extra combining iterations) | [x] `tests/b_tree.rs::row26_fors_treehashx1_small_trees` |
+| 27 | `SPX_wots_gen_leafx1` | `leaf_idx != info.wots_sign_leaf` (`wots_k_mask = ~0`, no signature written); random `wots_steps` | [x] `tests/b_tree.rs::row27_wots_gen_leafx1_not_signing` |
+| 28 | `SPX_wots_gen_leafx1` | `leaf_idx == info.wots_sign_leaf` (`wots_k_mask = 0`); `wots_steps[i]` = 0, `SPX_WOTS_W - 1` and random in `0..w`, so `k == wots_k` is hit at the first, last and middle chain positions; compares `dest`, `wots_sig`, `leaf_addr`, `pk_addr` | [x] `tests/b_tree.rs::row28_wots_gen_leafx1_signing` |
+| 29 | `SPX_wots_treehashx1` | `tree_height` = `SPX_TREE_HEIGHT`, `leaf_idx` random in range, `info.wots_sign_leaf = leaf_idx` (signing) | [x] `tests/b_tree.rs::row29_wots_treehashx1_signing` |
+| 30 | `SPX_wots_treehashx1` | `tree_height` = `SPX_TREE_HEIGHT`, `info.wots_sign_leaf = (uint32_t)~0` (the `merkle_gen_root` sentinel: no leaf ever matches) | [x] `tests/b_tree.rs::row30_wots_treehashx1_sentinel` |
+| 31 | `SPX_wots_treehashx1` | `tree_height` = 1 and 2 | [x] `tests/b_tree.rs::row31_wots_treehashx1_small` |
+| 32 | `SPX_chain_lengths` | `msg` = all zero, all `0xFF`, random; checks both `SPX_WOTS_LEN1` base-`w` digits and the `SPX_WOTS_LEN2` checksum digits at their extremes | [x] `tests/b_wots_fors.rs::row32_chain_lengths` |
+| 33 | `SPX_wots_pk_from_sig` | random `sig`, `msg` = all zero / all `0xFF` / random (drives `gen_chain` `start`/`steps` from 0 to `w-1`) | [x] `tests/b_wots_fors.rs::row33_wots_pk_from_sig` |
+| 34 | `SPX_fors_gen_leafx1` | random `addr_idx` including 0 and `0xFFFFFFFF`, random `leaf_addrx`; compares `leaf` and the mutated `leaf_addrx` | [x] `tests/b_wots_fors.rs::row34_fors_gen_leafx1` |
+| 35 | `SPX_fors_sign` | random `m` (`SPX_FORS_MSG_BYTES`), random `fors_addr`, initialised ctx; compares the whole `SPX_FORS_BYTES` signature and the `pk` | [x] `tests/b_wots_fors.rs::row35_fors_sign_random` |
+| 36 | `SPX_fors_sign` | `m` = all zero and all `0xFF` (`message_to_indices` at both index extremes: every index 0 vs every index `2^SPX_FORS_HEIGHT - 1`) | [x] `tests/b_wots_fors.rs::row36_fors_sign_index_extremes` |
+| 37 | `SPX_fors_pk_from_sig` | the signature produced by row 35 (round-trip: derived `pk` must equal `fors_sign`'s `pk`) and independent random signatures | [x] `tests/b_wots_fors.rs::row37_fors_pk_from_sig` |
+| 38 | `SPX_merkle_sign` | random `wots_addr`/`tree_addr`, `idx_leaf` random in `0..2^SPX_TREE_HEIGHT`; compares `sig` (`SPX_WOTS_BYTES + SPX_TREE_HEIGHT*SPX_N`), `root`, and both mutated addresses | [x] `tests/b_wots_fors.rs::row38_merkle_sign_random` |
+| 39 | `SPX_merkle_sign` | `idx_leaf` = 0, `2^SPX_TREE_HEIGHT - 1`, and `(uint32_t)~0` (the `merkle_gen_root` sentinel) | [x] `tests/b_wots_fors.rs::row39_merkle_sign_extremes` |
+| 40 | `SPX_merkle_gen_root` | random ctx; the top-layer root, i.e. `merkle_sign` composed with layer `SPX_D - 1` and the `~0` sentinel | [x] `tests/b_wots_fors.rs::row40_merkle_gen_root` |
+| 41 | `crypto_sign_secretkeybytes`, `crypto_sign_publickeybytes`, `crypto_sign_bytes`, `crypto_sign_seedbytes` | no arguments; the four size constants must agree, and are used to size every other row's buffers | [x] `tests/b_api.rs::row41_size_functions` |
+| 42 | `crypto_sign_seed_keypair` | random `CRYPTO_SEEDBYTES` seed x many seeds; compares `pk` and `sk` | [x] `tests/b_api.rs::row42_seed_keypair` |
+| 43 | `crypto_sign_keypair` | DRBG seeded identically on both sides via `randombytes_init`; compares `pk`, `sk` and the resulting `DRBG_ctx` state | [x] `tests/b_api.rs::row43_keypair_from_drbg` |
+| 44 | `crypto_sign_signature` | key from row 42, DRBG re-seeded identically before each call, full `mlen` sweep; compares `sig` and `*siglen` | [x] `tests/b_api.rs::row44_45_46_signature_verify_open` |
+| 45 | `crypto_sign_verify` | valid `(sig, m, pk)` from row 44 x full `mlen` sweep; both must return 0 | [x] `tests/b_api.rs::row44_45_46_signature_verify_open` |
+| 46 | `crypto_sign` / `crypto_sign_open` | one-shot combined form, full `mlen` sweep; compares `sm`, `*smlen`, then the recovered `m` and `*mlen` | [x] `tests/b_api.rs::row44_45_46_signature_verify_open` |
+| 47 | cross-library round trip | C signs, Rust verifies, and Rust signs, C verifies (the only comparison available under the `urandom` feature, where `optrand` is non-deterministic) | [x] `tests/b_api.rs::row47_cross_library_round_trip` |
+| 48 | `blake256` / `blake512` one-shot | `inlen` sweep `0..=200` plus 255, 256, 257, 440/8, 511, 512, 513, 888/8, 1000, 4096 (the `blake*_final` `buflen` three-way split lives at 440 and 888 **bits**) | [x] `tests/b_backend.rs::blake::row48_blake_one_shot + row48b_cst_data_symbol` |
+| 49 | `blake256_init` + `blake256_update` x k + `blake256_final` (and the 512 pair) | random chunking of the same input into 1..6 `update` calls, chunk sizes chosen to straddle the 64-byte (128-byte) block fill; result must equal the one-shot of row 48. Note `update` takes its length in **bits** | [x] `tests/b_backend.rs::blake::row49_blake_incremental` |
+| 50 | `blake256_compress` / `blake512_compress` | random state x random 64-byte (128-byte) block, `nullt` = 0 and 1 | [x] `tests/b_backend.rs::blake::row50_blake_compress` |
+| 51 | `SPX_blake256_mgf1` / `SPX_blake512_mgf1` | `outlen` = 0, 1, 31, 32, 33, 63, 64, 65, 200 x `inlen` = 0, 1, 32, 48, `SPX_N + SPX_ADDR_BYTES` (covers the `(i+1)*OUT <= outlen` loop and the partial tail) | [x] `tests/b_backend.rs::blake::row51_blake_mgf1` |
+| 52 | `sha256` / `sha512` one-shot | `inlen` sweep as row 48 (the padding split in `sha*_inc_finalize` is at 56 / 112 bytes of the final block) | [x] `tests/b_backend.rs::sha2::row52_sha_one_shot` |
+| 53 | `sha256_inc_init` + `sha256_inc_blocks` x k + `sha256_inc_finalize` (and the 512 pair) | `inblocks` = 0, 1, 2, 5 followed by a tail of 0..130 bytes; compares the 40-byte (72-byte) state after every step as well as the digest | [x] `tests/b_backend.rs::sha2::row53_sha_incremental` |
+| 54 | `SPX_mgf1_256` / `SPX_mgf1_512` | as row 51 with 32/64-byte output blocks | [x] `tests/b_backend.rs::sha2::row54_mgf1` |
+| 55 | `SPX_seed_state` | random `pub_seed`; compares the resulting `state_seeded` and, for `SPX_N >= 24`, `state_seeded_512` | [x] `tests/b_backend.rs::sha2::row55_seed_state` |
+| 56 | `shake256` one-shot | `outlen` = 0, 1, 32, 135, 136, 137, 272, 300 x `inlen` sweep (rate 136) | [x] `tests/b_backend.rs::shake::row56_shake256_one_shot` |
+| 57 | `shake256_absorb` + `shake256_squeezeblocks` | the non-incremental API: `inlen` sweep x `nblocks` = 0, 1, 2, 3; compares the squeezed output and the 25-word state | [x] `tests/b_backend.rs::shake::row57_shake256_absorb_squeezeblocks` |
+| 58 | `shake256_inc_init` + `shake256_inc_absorb` x k + `shake256_inc_finalize` + `shake256_inc_squeeze` x k | absorb split into 1..4 chunks straddling the 136-byte rate, squeeze split into 1..4 chunks; compares the 26-word state after every step | [x] `tests/b_backend.rs::shake::row58_shake256_incremental` |
+| 59 | `SPX_tweak_constants` | random `pub_seed`; compares `tweaked512_rc64` (640 B) and `tweaked256_rc32` (320 B) | [x] `tests/b_backend.rs::haraka::row59_tweak_constants` |
+| 60 | `SPX_haraka512_perm`, `SPX_haraka512`, `SPX_haraka256` | tweaked ctx x random 64/32-byte inputs | [x] `tests/b_backend.rs::haraka::row60_haraka_perm_and_blocks` |
+| 61 | `SPX_haraka_S` one-shot | `outlen` = 0, 1, 31, 32, 33, 64, 100 x `inlen` sweep (rate 32) | [x] `tests/b_backend.rs::haraka::row61_haraka_s_one_shot` |
+| 62 | `SPX_haraka_S_inc_init` + `_inc_absorb` x k + `_inc_finalize` + `_inc_squeeze` x k | absorb and squeeze split into 1..4 chunks straddling the 32-byte rate; compares the 65-byte `s_inc` after every step | [x] `tests/b_backend.rs::haraka::row62_haraka_s_incremental` |
+| 63 | `randombytes_init` + `randombytes` | `personalization_string` = NULL and random; `xlen` = 0, 1, 15, 16, 17, 31, 32, 48, 100, 1000 in sequence so `V` advances across an AES block boundary; compares output and `DRBG_ctx` (`Key`, `V`, `reseed_counter`) after every call | [x] `tests/b_rng.rs::row63_randombytes_init_and_draw` |
+| 64 | `randombytes_init` + `randombytes` | `V` forced to `FF..FF` by seeding then draining, so the `if (V[j] == 0xff)` carry chain in both `randombytes` and `AES256_CTR_DRBG_Update` propagates | [x] `tests/b_rng.rs::row64_randombytes_carry_chain` |
+| 65 | `AES256_ECB` | random 32-byte key x random 16-byte counter, plus all-zero and all-`0xFF` | [x] `tests/b_rng.rs::row65_aes256_ecb` |
+| 66 | `AES256_CTR_DRBG_Update` | `provided_data` = NULL and random 48 bytes; `V` = zero, random, `FF..FF` | [x] `tests/b_rng.rs::row66_drbg_update` |
+| 67 | `seedexpander_init` + `seedexpander` | `maxlen` = 1, 2, 16, 17, 4096, `0xFFFFFFFF`; `xlen` = 1, 15, 16, 17, 32, 100 issued repeatedly so `buffer_pos` walks 16 -> 0 -> partial and `ctr[12..16]` increments; compares output and the whole `AES_XOF_struct` after every call | [x] `tests/b_rng.rs::row67_seedexpander` |
+| 68 | `seedexpander` | `ctr[12..16]` pre-set to `FF FF FF FF` so the counter carry chain in the `for (i=15; i>=12; i--)` loop rolls over | [x] `tests/b_rng.rs::row68_seedexpander_counter_carry` |
 
-## Two C behaviours the rows had to be shaped around
+## Result
 
-`lib/blake/src/hash_blake.c` passes **byte** counts to `blake*_update`, whose
-length argument is in **bits**, so the BLAKE backend absorbs only `SPX_N/8`
-bytes of `R`, `SPX_PK_BYTES/8` bytes of `pk` and `mlen/8` bytes of the message
-into the message hash. And `gen_message_random` for BLAKE finishes with
-`blakeX_final(&S, R)`, writing the *whole* 32- or 64-byte digest into `R` rather
-than `SPX_N` bytes (harmless in `sign.c`, which passes the `SPX_BYTES`-long
-`sig`). Both are C behaviour, so both are required Rust behaviour; see the
-corresponding note at the end of `ERRORS.md` for how rows 13 and 14 and the
-error-path rows account for them.
-
-## How to reproduce
+Every row above is checked off, meaning its differential test passed against
+both `.so` objects across its randomised inputs (fixed seeds, one per row) in
+**all 96 build configurations**.  Reproduce with:
 
 ```
-./build_matrix.sh    # C .so's + Rust .so's + drivers + params.txt, all 48 combos
-./symdiff.sh         # SYMBOLS.md gate: nm -D parity, all 48
-./run_tests.sh       # Phases B + C + the KAT drivers, all 48
+./build_c_all.sh              # 48 C configurations into cbuild/
+translation/run_all_tests.sh  # 96 build+test runs, verdicts in test_results.txt
 ```
 
-`run_tests.sh` runs `cargo test --release --no-default-features --features
-"<backend>,<thash>,<secpar>"` for each combination and additionally asserts the
-per-binary test counts (33 + 21 + 25 = 79), so a filtered-out or crashed test
-binary cannot be mistaken for a pass.
+`translation/test_results.txt` holds 96 `PASS` lines and no `FAIL`; the raw
+per-configuration output is in `/tmp/testlogs/<tag>.log`.
 
-## Gate
+Rows 48-62 are backend specific by construction — `lib/CMakeLists.txt` compiles
+exactly one backend, so `blake256`/`cst` exist only in the 24 blake
+configurations, `sha256`/`SPX_mgf1_*`/`SPX_seed_state` only in the 24 sha2 ones,
+`shake256*` only in the 24 shake ones and `SPX_haraka*` only in the 24 haraka
+ones.  The tests are `cfg`-gated to match, which is why the suite reports 74
+tests for blake, 73 for sha2 and haraka, and 72 for shake.
 
-- [x] Every row above passes across its randomized inputs, in **all 48**
-      configurations: `run_tests.sh` reports `combos passed: 48   failed: 0`,
-      79 tests per combination, and an identical KAT transcript digest from the
-      C and Rust drivers in every one.
-- Rows 34–39 apply only to `HASH_BACKEND=blake`, 40–43 only to `sha2`, 44–46
-  only to `shake`, 47–50 only to `haraka`. Each of those tests reads the active
-  backend from `params.txt` (which comes from the C preprocessor) and returns
-  early elsewhere rather than asserting anything vacuously; the remaining rows
-  run in all 48.
+Rows 43, 44 and 46 compare `randombytes`-driven output only when the
+deterministic `rng.c` provider is selected; under the `urandom` feature
+`optrand` is genuinely non-deterministic, and row 47's cross-library round trip
+is what covers those entry points there.  Row 64 likewise applies only to the
+deterministic provider.
+
+## Divergences found and fixed
+
+| where | symptom | cause | fix |
+|---|---|---|---|
+| all eight `thash_*_{robust,simple}.rs` | `SPX_thash` panicked (slice index out of range) for any `inblocks` above `max(SPX_WOTS_LEN, SPX_FORS_TREES)`, where the C sized its `SPX_VLA` at run time and returned a digest — rows 17, 18, 29 | the scratch buffers were fixed-size arrays dimensioned by `SPX_THASH_MAX_INBLOCKS`, an internal-use bound the exported API does not enforce | added `src/vla.rs` (`Vla<N>`: stack-allocated while the length fits, heap beyond) and switched every `thash` scratch buffer to it |
+
+## C behaviour deliberately preserved
+
+Recorded here because these look like bugs and a future reader may be tempted to
+"fix" the Rust:
+
+* `hash_blake.c` passes **byte** counts to `blake256_update` / `blake512_update`,
+  which interpret their length argument as **bits**.  Only the first `mlen/8`
+  bytes of a message therefore reach `gen_message_random` and `hash_message`
+  under the blake backend, so flipping a later message byte still verifies.
+  The message-corruption cases of `ERRORS.md` rows 8/25/26 account for this
+  rather than asserting a rejection the C does not make.
+* `hash_blake.c`'s `gen_message_random` ends in `blakeX_final(&S, R)`, writing
+  `SPX_BLAKE{256,512}_OUTPUT_BYTES` (32 or 64) rather than `SPX_N` bytes into
+  `R`.  `sign.c` gets away with it because `R` is the head of an `SPX_BYTES`
+  buffer.  The Rust wrapper slices `R` to the same width, and row 10 compares a
+  256-byte sentinel-filled buffer so the write width is part of the comparison.
+* `if (SPX_D == 1)` in every `hash_message` is unreachable: the smallest `SPX_D`
+  across the 24 parameter sets is 7.
+* None of `set_type`, `set_layer_addr`, `set_chain_addr`, `set_hash_addr`,
+  `set_tree_height`, `set_keypair_addr` or `set_tree_index` validates its
+  argument; they truncate and store.  Rows 1, 3 and `ERRORS.md` rows 27-28 pin
+  that down.

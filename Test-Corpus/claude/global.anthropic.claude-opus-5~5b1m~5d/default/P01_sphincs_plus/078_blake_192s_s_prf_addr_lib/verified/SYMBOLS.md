@@ -1,309 +1,203 @@
-# SYMBOLS.md — C `nm -D` surface vs. Rust cdylib exports
+# SYMBOLS.md — dynamic-symbol parity between the C and the Rust shared objects
 
-Generated mechanically by `gen_symbols.sh` from
-`nm -D --defined-only` on the C `libsphincs_core_det.so` + `lib<backend>.so`
-pair produced by CMake, compared against the Rust `libsphincs_core_det.so`.
+Generated mechanically from `nm -D --defined-only` on the C shared objects and
+on the Rust `cdylib`, for **every one of the 48 build configurations**
+(4 hash backends × 2 `thash` variants × 6 security parameters).
 
-## Per-configuration parity (all 48 CMake configurations)
+Reproduce with:
 
-| config (backend-thash-secpar) | # C symbols | missing from Rust `.so` |
+```sh
+./verif/build_c_all.sh      # builds c_src/build-<backend>-<secpar>-<thash>/…
+./verif/symbols_all.sh      # builds each Rust cdylib and diffs nm -D
+```
+
+`verif/symbols/<tag>.c.txt` / `verif/symbols/<tag>.rust.txt` hold the raw lists.
+
+## What the C build produces
+
+`c_src/CMakeLists.txt` splits the library in two pieces that are *not* linked
+against each other, so the C surface is the **union** of three `.so` files:
+
+| C artifact | sources |
+|---|---|
+| `app/libsphincs_core.so` | `address.c fors.c merkle.c sign.c utils.c utilsx1.c wots.c wotsx1.c` + `randombytes.c` (`/dev/urandom`) |
+| `app/libsphincs_core_det.so` | the same objects + `rng.c` (NIST AES-256-CTR-DRBG) — this is what `driver` links |
+| `lib/<backend>/lib<backend>.so` | the backend's `hash_*.c`, `thash_*_<thash>.c`, its primitive (`blake256.c`/`sha2.c`/`fips202.c`/`haraka.c`) and, for `sha2`/`blake`, a second copy of `utils.c` |
+
+`rng.c` needs OpenSSL headers, which are absent from `/usr/include` on this
+host; `verif/build_c_all.sh` locates a nix-store OpenSSL and injects it through
+the CMake flag variables, so **all four targets (both cores, the backend, and
+`driver`) build for all 48 configurations**. `c_src` is never modified.
+
+## Result
+
+**0 missing symbols in every one of the 48 configurations.** The symbol count
+per backend (union of the three C `.so` files):
+
+| backend | C symbols | missing from Rust |
 |---|---|---|
-| `haraka-robust-128s` | 56 | *(none)* |
-| `haraka-robust-128f` | 56 | *(none)* |
-| `haraka-robust-192s` | 56 | *(none)* |
-| `haraka-robust-192f` | 56 | *(none)* |
-| `haraka-robust-256s` | 56 | *(none)* |
-| `haraka-robust-256f` | 56 | *(none)* |
-| `haraka-simple-128s` | 56 | *(none)* |
-| `haraka-simple-128f` | 56 | *(none)* |
-| `haraka-simple-192s` | 56 | *(none)* |
-| `haraka-simple-192f` | 56 | *(none)* |
-| `haraka-simple-256s` | 56 | *(none)* |
-| `haraka-simple-256f` | 56 | *(none)* |
-| `sha2-robust-128s` | 58 | *(none)* |
-| `sha2-robust-128f` | 58 | *(none)* |
-| `sha2-robust-192s` | 58 | *(none)* |
-| `sha2-robust-192f` | 58 | *(none)* |
-| `sha2-robust-256s` | 58 | *(none)* |
-| `sha2-robust-256f` | 58 | *(none)* |
-| `sha2-simple-128s` | 58 | *(none)* |
-| `sha2-simple-128f` | 58 | *(none)* |
-| `sha2-simple-192s` | 58 | *(none)* |
-| `sha2-simple-192f` | 58 | *(none)* |
-| `sha2-simple-256s` | 58 | *(none)* |
-| `sha2-simple-256f` | 58 | *(none)* |
-| `shake-robust-128s` | 54 | *(none)* |
-| `shake-robust-128f` | 54 | *(none)* |
-| `shake-robust-192s` | 54 | *(none)* |
-| `shake-robust-192f` | 54 | *(none)* |
-| `shake-robust-256s` | 54 | *(none)* |
-| `shake-robust-256f` | 54 | *(none)* |
-| `shake-simple-128s` | 54 | *(none)* |
-| `shake-simple-128f` | 54 | *(none)* |
-| `shake-simple-192s` | 54 | *(none)* |
-| `shake-simple-192f` | 54 | *(none)* |
-| `shake-simple-256s` | 54 | *(none)* |
-| `shake-simple-256f` | 54 | *(none)* |
-| `blake-robust-128s` | 60 | *(none)* |
-| `blake-robust-128f` | 60 | *(none)* |
-| `blake-robust-192s` | 60 | *(none)* |
-| `blake-robust-192f` | 60 | *(none)* |
-| `blake-robust-256s` | 60 | *(none)* |
-| `blake-robust-256f` | 60 | *(none)* |
-| `blake-simple-128s` | 60 | *(none)* |
-| `blake-simple-128f` | 60 | *(none)* |
-| `blake-simple-192s` | 60 | *(none)* |
-| `blake-simple-192f` | 60 | *(none)* |
-| `blake-simple-256s` | 60 | *(none)* |
-| `blake-simple-256f` | 60 | *(none)* |
+| `haraka` | 56 | 0 |
+| `sha2`   | 58 | 0 |
+| `shake`  | 54 | 0 |
+| `blake`  | 60 | 0 |
 
-**Configurations with missing symbols: 0 / 48**
+### Symbols shared by every configuration (48)
 
-## Backend `haraka` — every C-exported symbol
+From `app/src/sign.c` (plain names — `api.h` does *not* namespace them):
 
-| symbol | nm type | C translation unit (best-effort grep) | in Rust `.so` |
-|---|---|---|---|
-| `AES256_CTR_DRBG_Update` | T | `app/src/rng.c` | yes |
-| `AES256_ECB` | T | `app/src/rng.c` | yes |
-| `DRBG_ctx` | B | `(macro-generated / data)` | yes |
-| `SPX_bytes_to_ull` | T | `app/src/utils.c` | yes |
-| `SPX_chain_lengths` | T | `app/src/merkle.c` | yes |
-| `SPX_compute_root` | T | `app/src/fors.c` | yes |
-| `SPX_copy_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_copy_subtree_addr` | T | `app/src/address.c` | yes |
-| `SPX_fors_gen_leafx1` | T | `app/src/fors.c` | yes |
-| `SPX_fors_pk_from_sig` | T | `app/src/fors.c` | yes |
-| `SPX_fors_sign` | T | `app/src/fors.c` | yes |
-| `SPX_fors_treehashx1` | T | `app/src/fors.c` | yes |
-| `SPX_gen_message_random` | T | `app/src/sign.c` | yes |
-| `SPX_haraka256` | T | `lib/haraka/src/haraka.c` | yes |
-| `SPX_haraka512` | T | `lib/haraka/src/haraka.c` | yes |
-| `SPX_haraka512_perm` | T | `lib/haraka/src/haraka.c` | yes |
-| `SPX_haraka_S` | T | `lib/haraka/src/haraka.c` | yes |
-| `SPX_haraka_S_inc_absorb` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `SPX_haraka_S_inc_finalize` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `SPX_haraka_S_inc_init` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `SPX_haraka_S_inc_squeeze` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `SPX_hash_message` | T | `app/src/sign.c` | yes |
-| `SPX_initialize_hash_function` | T | `app/src/sign.c` | yes |
-| `SPX_merkle_gen_root` | T | `app/src/merkle.c` | yes |
-| `SPX_merkle_sign` | T | `app/src/merkle.c` | yes |
-| `SPX_prf_addr` | T | `app/src/fors.c` | yes |
-| `SPX_set_chain_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_hash_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_layer_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_height` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_index` | T | `app/src/address.c` | yes |
-| `SPX_set_type` | T | `app/src/address.c` | yes |
-| `SPX_thash` | T | `app/src/fors.c` | yes |
-| `SPX_treehash` | T | `app/src/utils.c` | yes |
-| `SPX_tweak_constants` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `SPX_u32_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_ull_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_wots_gen_leafx1` | T | `app/src/utilsx1.c` | yes |
-| `SPX_wots_pk_from_sig` | T | `app/src/sign.c` | yes |
-| `SPX_wots_treehashx1` | T | `app/src/merkle.c` | yes |
-| `crypto_sign` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_bytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_keypair` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_open` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_publickeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_secretkeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seed_keypair` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seedbytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_signature` | T | `app/src/sign.c` | yes |
-| `crypto_sign_verify` | T | `app/src/sign.c` | yes |
-| `randombytes` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `randombytes_init` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `seedexpander` | T | `app/src/rng.c` | yes |
-| `seedexpander_init` | T | `app/src/rng.c` | yes |
+| symbol | Rust definition |
+|---|---|
+| `crypto_sign_secretkeybytes` | `src/sign.rs` |
+| `crypto_sign_publickeybytes` | `src/sign.rs` |
+| `crypto_sign_bytes` | `src/sign.rs` |
+| `crypto_sign_seedbytes` | `src/sign.rs` |
+| `crypto_sign_seed_keypair` | `src/sign.rs` |
+| `crypto_sign_keypair` | `src/sign.rs` |
+| `crypto_sign_signature` | `src/sign.rs` |
+| `crypto_sign_verify` | `src/sign.rs` |
+| `crypto_sign` | `src/sign.rs` |
+| `crypto_sign_open` | `src/sign.rs` |
 
-## Backend `sha2` — every C-exported symbol
+From `app/src/address.c` (namespaced `SPX_*` by `SPX_NAMESPACE`):
 
-| symbol | nm type | C translation unit (best-effort grep) | in Rust `.so` |
-|---|---|---|---|
-| `AES256_CTR_DRBG_Update` | T | `app/src/rng.c` | yes |
-| `AES256_ECB` | T | `app/src/rng.c` | yes |
-| `DRBG_ctx` | B | `(macro-generated / data)` | yes |
-| `SPX_bytes_to_ull` | T | `app/src/utils.c` | yes |
-| `SPX_chain_lengths` | T | `app/src/merkle.c` | yes |
-| `SPX_compute_root` | T | `app/src/fors.c` | yes |
-| `SPX_copy_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_copy_subtree_addr` | T | `app/src/address.c` | yes |
-| `SPX_fors_gen_leafx1` | T | `app/src/fors.c` | yes |
-| `SPX_fors_pk_from_sig` | T | `app/src/fors.c` | yes |
-| `SPX_fors_sign` | T | `app/src/fors.c` | yes |
-| `SPX_fors_treehashx1` | T | `app/src/fors.c` | yes |
-| `SPX_gen_message_random` | T | `app/src/sign.c` | yes |
-| `SPX_hash_message` | T | `app/src/sign.c` | yes |
-| `SPX_initialize_hash_function` | T | `app/src/sign.c` | yes |
-| `SPX_merkle_gen_root` | T | `app/src/merkle.c` | yes |
-| `SPX_merkle_sign` | T | `app/src/merkle.c` | yes |
-| `SPX_mgf1_256` | T | `lib/sha2/src/sha2.c` | yes |
-| `SPX_mgf1_512` | T | `lib/sha2/src/sha2.c` | yes |
-| `SPX_prf_addr` | T | `app/src/fors.c` | yes |
-| `SPX_seed_state` | T | `lib/sha2/src/hash_sha2.c` | yes |
-| `SPX_set_chain_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_hash_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_layer_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_height` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_index` | T | `app/src/address.c` | yes |
-| `SPX_set_type` | T | `app/src/address.c` | yes |
-| `SPX_thash` | T | `app/src/fors.c` | yes |
-| `SPX_treehash` | T | `app/src/utils.c` | yes |
-| `SPX_u32_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_ull_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_wots_gen_leafx1` | T | `app/src/utilsx1.c` | yes |
-| `SPX_wots_pk_from_sig` | T | `app/src/sign.c` | yes |
-| `SPX_wots_treehashx1` | T | `app/src/merkle.c` | yes |
-| `crypto_sign` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_bytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_keypair` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_open` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_publickeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_secretkeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seed_keypair` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seedbytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_signature` | T | `app/src/sign.c` | yes |
-| `crypto_sign_verify` | T | `app/src/sign.c` | yes |
-| `randombytes` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `randombytes_init` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `seedexpander` | T | `app/src/rng.c` | yes |
-| `seedexpander_init` | T | `app/src/rng.c` | yes |
-| `sha256` | T | `lib/sha2/src/sha2.c` | yes |
-| `sha256_inc_blocks` | T | `lib/sha2/src/sha2.c` | yes |
-| `sha256_inc_finalize` | T | `lib/sha2/src/hash_sha2.c` | yes |
-| `sha256_inc_init` | T | `lib/sha2/src/sha2.c` | yes |
-| `sha512` | T | `lib/sha2/src/sha2.c` | yes |
-| `sha512_inc_blocks` | T | `lib/sha2/src/sha2.c` | yes |
-| `sha512_inc_finalize` | T | `lib/sha2/src/sha2.c` | yes |
-| `sha512_inc_init` | T | `lib/sha2/src/sha2.c` | yes |
+| symbol | Rust definition |
+|---|---|
+| `SPX_set_layer_addr` | `src/address.rs` |
+| `SPX_set_tree_addr` | `src/address.rs` |
+| `SPX_set_type` | `src/address.rs` |
+| `SPX_copy_subtree_addr` | `src/address.rs` |
+| `SPX_set_keypair_addr` | `src/address.rs` |
+| `SPX_copy_keypair_addr` | `src/address.rs` |
+| `SPX_set_chain_addr` | `src/address.rs` |
+| `SPX_set_hash_addr` | `src/address.rs` |
+| `SPX_set_tree_height` | `src/address.rs` |
+| `SPX_set_tree_index` | `src/address.rs` |
 
-## Backend `shake` — every C-exported symbol
+From `app/src/utils.c`, `utilsx1.c`, `wots.c`, `wotsx1.c`, `fors.c`, `merkle.c`:
 
-| symbol | nm type | C translation unit (best-effort grep) | in Rust `.so` |
-|---|---|---|---|
-| `AES256_CTR_DRBG_Update` | T | `app/src/rng.c` | yes |
-| `AES256_ECB` | T | `app/src/rng.c` | yes |
-| `DRBG_ctx` | B | `(macro-generated / data)` | yes |
-| `SPX_bytes_to_ull` | T | `app/src/utils.c` | yes |
-| `SPX_chain_lengths` | T | `app/src/merkle.c` | yes |
-| `SPX_compute_root` | T | `app/src/fors.c` | yes |
-| `SPX_copy_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_copy_subtree_addr` | T | `app/src/address.c` | yes |
-| `SPX_fors_gen_leafx1` | T | `app/src/fors.c` | yes |
-| `SPX_fors_pk_from_sig` | T | `app/src/fors.c` | yes |
-| `SPX_fors_sign` | T | `app/src/fors.c` | yes |
-| `SPX_fors_treehashx1` | T | `app/src/fors.c` | yes |
-| `SPX_gen_message_random` | T | `app/src/sign.c` | yes |
-| `SPX_hash_message` | T | `app/src/sign.c` | yes |
-| `SPX_initialize_hash_function` | T | `app/src/sign.c` | yes |
-| `SPX_merkle_gen_root` | T | `app/src/merkle.c` | yes |
-| `SPX_merkle_sign` | T | `app/src/merkle.c` | yes |
-| `SPX_prf_addr` | T | `app/src/fors.c` | yes |
-| `SPX_set_chain_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_hash_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_layer_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_height` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_index` | T | `app/src/address.c` | yes |
-| `SPX_set_type` | T | `app/src/address.c` | yes |
-| `SPX_thash` | T | `app/src/fors.c` | yes |
-| `SPX_treehash` | T | `app/src/utils.c` | yes |
-| `SPX_u32_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_ull_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_wots_gen_leafx1` | T | `app/src/utilsx1.c` | yes |
-| `SPX_wots_pk_from_sig` | T | `app/src/sign.c` | yes |
-| `SPX_wots_treehashx1` | T | `app/src/merkle.c` | yes |
-| `crypto_sign` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_bytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_keypair` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_open` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_publickeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_secretkeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seed_keypair` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seedbytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_signature` | T | `app/src/sign.c` | yes |
-| `crypto_sign_verify` | T | `app/src/sign.c` | yes |
-| `randombytes` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `randombytes_init` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `seedexpander` | T | `app/src/rng.c` | yes |
-| `seedexpander_init` | T | `app/src/rng.c` | yes |
-| `shake256` | T | `lib/shake/src/fips202.c` | yes |
-| `shake256_absorb` | T | `lib/shake/src/fips202.c` | yes |
-| `shake256_inc_absorb` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `shake256_inc_finalize` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `shake256_inc_init` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `shake256_inc_squeeze` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `shake256_squeezeblocks` | T | `lib/shake/src/fips202.c` | yes |
+| symbol | Rust definition |
+|---|---|
+| `SPX_ull_to_bytes` | `src/utils.rs` |
+| `SPX_u32_to_bytes` | `src/utils.rs` |
+| `SPX_bytes_to_ull` | `src/utils.rs` |
+| `SPX_compute_root` | `src/utils.rs` |
+| `SPX_treehash` | `src/utils.rs` |
+| `SPX_wots_treehashx1` | `src/utilsx1.rs` |
+| `SPX_fors_treehashx1` | `src/utilsx1.rs` |
+| `SPX_chain_lengths` | `src/wots.rs` |
+| `SPX_wots_pk_from_sig` | `src/wots.rs` |
+| `SPX_wots_gen_leafx1` | `src/wotsx1.rs` |
+| `SPX_fors_gen_leafx1` | `src/fors.rs` |
+| `SPX_fors_sign` | `src/fors.rs` |
+| `SPX_fors_pk_from_sig` | `src/fors.rs` |
+| `SPX_merkle_sign` | `src/merkle.rs` |
+| `SPX_merkle_gen_root` | `src/merkle.rs` |
 
-## Backend `blake` — every C-exported symbol
+From `app/src/rng.c` (in `libsphincs_core_det.so`):
 
-| symbol | nm type | C translation unit (best-effort grep) | in Rust `.so` |
-|---|---|---|---|
-| `AES256_CTR_DRBG_Update` | T | `app/src/rng.c` | yes |
-| `AES256_ECB` | T | `app/src/rng.c` | yes |
-| `DRBG_ctx` | B | `(macro-generated / data)` | yes |
-| `SPX_blake256_mgf1` | T | `lib/blake/src/blake256.c` | yes |
-| `SPX_blake512_mgf1` | T | `lib/blake/src/blake512.c` | yes |
-| `SPX_bytes_to_ull` | T | `app/src/utils.c` | yes |
-| `SPX_chain_lengths` | T | `app/src/merkle.c` | yes |
-| `SPX_compute_root` | T | `app/src/fors.c` | yes |
-| `SPX_copy_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_copy_subtree_addr` | T | `app/src/address.c` | yes |
-| `SPX_fors_gen_leafx1` | T | `app/src/fors.c` | yes |
-| `SPX_fors_pk_from_sig` | T | `app/src/fors.c` | yes |
-| `SPX_fors_sign` | T | `app/src/fors.c` | yes |
-| `SPX_fors_treehashx1` | T | `app/src/fors.c` | yes |
-| `SPX_gen_message_random` | T | `app/src/sign.c` | yes |
-| `SPX_hash_message` | T | `app/src/sign.c` | yes |
-| `SPX_initialize_hash_function` | T | `app/src/sign.c` | yes |
-| `SPX_merkle_gen_root` | T | `app/src/merkle.c` | yes |
-| `SPX_merkle_sign` | T | `app/src/merkle.c` | yes |
-| `SPX_prf_addr` | T | `app/src/fors.c` | yes |
-| `SPX_set_chain_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_hash_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_keypair_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_layer_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_addr` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_height` | T | `app/src/address.c` | yes |
-| `SPX_set_tree_index` | T | `app/src/address.c` | yes |
-| `SPX_set_type` | T | `app/src/address.c` | yes |
-| `SPX_thash` | T | `app/src/fors.c` | yes |
-| `SPX_treehash` | T | `app/src/utils.c` | yes |
-| `SPX_u32_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_ull_to_bytes` | T | `app/src/address.c` | yes |
-| `SPX_wots_gen_leafx1` | T | `app/src/utilsx1.c` | yes |
-| `SPX_wots_pk_from_sig` | T | `app/src/sign.c` | yes |
-| `SPX_wots_treehashx1` | T | `app/src/merkle.c` | yes |
-| `blake256` | T | `lib/blake/src/blake256.c` | yes |
-| `blake256_compress` | T | `lib/blake/src/blake256.c` | yes |
-| `blake256_final` | T | `lib/blake/src/blake256.c` | yes |
-| `blake256_init` | T | `lib/blake/src/blake256.c` | yes |
-| `blake256_update` | T | `lib/blake/src/blake256.c` | yes |
-| `blake512` | T | `lib/blake/src/blake512.c` | yes |
-| `blake512_compress` | T | `lib/blake/src/blake512.c` | yes |
-| `blake512_final` | T | `lib/blake/src/blake512.c` | yes |
-| `blake512_init` | T | `lib/blake/src/blake512.c` | yes |
-| `blake512_update` | T | `lib/blake/src/blake512.c` | yes |
-| `crypto_sign` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_bytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_keypair` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_open` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `crypto_sign_publickeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_secretkeybytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seed_keypair` | T | `app/src/sign.c` | yes |
-| `crypto_sign_seedbytes` | T | `app/src/sign.c` | yes |
-| `crypto_sign_signature` | T | `app/src/sign.c` | yes |
-| `crypto_sign_verify` | T | `app/src/sign.c` | yes |
-| `cst` | R | `(macro-generated / data)` | yes |
-| `randombytes` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `randombytes_init` | T | `app/src/PQCgenKAT_sign.c` | yes |
-| `seedexpander` | T | `app/src/rng.c` | yes |
-| `seedexpander_init` | T | `app/src/rng.c` | yes |
+| symbol | Rust definition |
+|---|---|
+| `randombytes` | `src/rng.rs` |
+| `randombytes_init` | `src/rng.rs` |
+| `AES256_ECB` | `src/rng.rs` |
+| `AES256_CTR_DRBG_Update` | `src/rng.rs` |
+| `seedexpander_init` | `src/rng.rs` |
+| `seedexpander` | `src/rng.rs` |
+| `DRBG_ctx` (**data**) | `src/rng.rs`, `#[no_mangle] pub static mut DRBG_ctx` |
 
+Backend-agnostic facade, provided by whichever `lib<backend>.so` is linked:
+
+| symbol | Rust definition |
+|---|---|
+| `SPX_initialize_hash_function` | `src/{blake,sha2,shake,haraka}_hash.rs` |
+| `SPX_prf_addr` | `src/{blake,sha2,shake,haraka}_hash.rs` |
+| `SPX_gen_message_random` | `src/{blake,sha2,shake,haraka}_hash.rs` |
+| `SPX_hash_message` | `src/{blake,sha2,shake,haraka}_hash.rs` |
+| `SPX_thash` | `src/{blake,sha2,shake,haraka}_thash.rs` |
+
+### Backend-specific symbols
+
+`blake` (`lib/blake/src/blake256.c`, `blake512.c`):
+
+`blake256`, `blake256_init`, `blake256_update`, `blake256_compress`,
+`blake256_final`, `blake512`, `blake512_init`, `blake512_update`,
+`blake512_compress`, `blake512_final`, `SPX_blake256_mgf1`,
+`SPX_blake512_mgf1`, and the **data** symbol `cst`
+(`blake512.c` declares its round-constant table as a *non-static*
+`const u64 cst[16]`, so it lands in `.dynsym`). All in `src/blake256.rs` /
+`src/blake512.rs`; `cst` is `#[no_mangle] pub static cst: [u64; 16]`.
+
+`sha2` (`lib/sha2/src/sha2.c`):
+
+`sha256`, `sha256_inc_init`, `sha256_inc_blocks`, `sha256_inc_finalize`,
+`sha512`, `sha512_inc_init`, `sha512_inc_blocks`, `sha512_inc_finalize`,
+`SPX_mgf1_256`, `SPX_mgf1_512`, `SPX_seed_state` — all in `src/sha2.rs`.
+
+`shake` (`lib/shake/src/fips202.c`):
+
+`shake256`, `shake256_absorb`, `shake256_squeezeblocks`, `shake256_inc_init`,
+`shake256_inc_absorb`, `shake256_inc_finalize`, `shake256_inc_squeeze` — all in
+`src/fips202.rs`.
+
+`haraka` (`lib/haraka/src/haraka.c`):
+
+`SPX_tweak_constants`, `SPX_haraka_S_inc_init`, `SPX_haraka_S_inc_absorb`,
+`SPX_haraka_S_inc_finalize`, `SPX_haraka_S_inc_squeeze`, `SPX_haraka_S`,
+`SPX_haraka512_perm`, `SPX_haraka512`, `SPX_haraka256` — all in
+`src/haraka.rs`.
+
+## Fixes made during this phase
+
+1. **`cst` was missing** from the Rust `.so` for the `blake` backend. The
+   implementation existed (`C512` in `src/blake512.rs`) but was `const` and
+   therefore not a linker symbol; a `#[no_mangle] pub static cst: [u64; 16]`
+   alias was added. Verified byte-for-byte against the C table by
+   `tests/diff_backend.rs::blake::cst_data_symbol_matches`.
+2. **All of `rng.c` was effectively untranslated at the export level.** Only
+   `randombytes` / `randombytes_init` were exported, and the DRBG state lived in
+   a private `Mutex<Drbg>` with no `DRBG_ctx` symbol; `seedexpander`,
+   `seedexpander_init`, `AES256_ECB` and `AES256_CTR_DRBG_Update` had no
+   `extern "C"` wrappers at all (and `seedexpander` could not express the
+   `x == NULL` rejection because it took a Rust slice). `src/rng.rs` was
+   restructured so the DRBG lives in a `#[repr(C)] #[no_mangle] pub static mut
+   DRBG_ctx` with exactly the C layout (`Key[32] ‖ V[16] ‖ int`), and all six
+   functions plus the data symbol are exported with the C signatures. Covered by
+   `tests/diff_rng.rs`.
+3. **No FFI struct was `#[repr(C)]`.** `spx_ctx`, `blakestate256`,
+   `blakestate512`, `leaf_info_x1`, `fors_gen_leaf_info` and `AES_XOF_struct`
+   all cross the FFI boundary, and Rust's default layout is not the C one — this
+   was a live miscompare (`blake256_compress` wrote `h` at offset 64 instead of
+   0, and `leaf_info_x1` had `wots_sign_leaf` in the wrong place because rustc
+   groups the two pointers first). `#[repr(C)]` was added to all six.
+
+## Undefined symbols in the Rust `.so`
+
+`nm -D --undefined-only` on the Rust cdylib lists only libc / libgcc entries
+(`memcpy@GLIBC_*`, `malloc`, `free`, `_Unwind_*`, `__tls_get_addr`, …).
+**0 undefined non-libc symbols.**
+
+## Symbols the Rust `.so` exports in addition to the C `.so`
+
+Only for the `shake` backend, and only because `lib/shake/include/fips202.h`
+*declares* the following but `lib/shake/src/fips202.c` never *defines* them (so
+they are missing from `libshake.so` and any C consumer using them would fail to
+link):
+
+`shake128`, `shake128_absorb`, `shake128_squeezeblocks`, `shake128_inc_init`,
+`shake128_inc_absorb`, `shake128_inc_finalize`, `shake128_inc_squeeze`,
+`sha3_256`, `sha3_256_inc_init`, `sha3_256_inc_absorb`,
+`sha3_256_inc_finalize`, `sha3_512`, `sha3_512_inc_init`,
+`sha3_512_inc_absorb`, `sha3_512_inc_finalize`.
+
+They are real implementations of the declared interface, not stubs. Every other
+configuration is an exact match in both directions.
+
+## `randombytes` — the one name the two C cores disagree on
+
+`randombytes.c` (`void`, `/dev/urandom`) and `rng.c` (`int`, AES-256-CTR-DRBG)
+both define `randombytes`, and the C keeps them apart by linking them into two
+separate `.so` files. A single Rust artifact can export the name once, so it
+exports the **deterministic `rng.c` version** — the one `driver`, i.e. the
+project's own entry point, links. The `/dev/urandom` translation is retained in
+`src/randombytes.rs` as `randombytes_urandom`. Because the name is present
+either way, `nm -D` parity holds against both C cores.

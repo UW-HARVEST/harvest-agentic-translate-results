@@ -4,6 +4,7 @@ use super::fips202::shake256_rs;
 use crate::address::{addr_ref, Addr};
 use crate::context::SpxCtx;
 use crate::params::*;
+use crate::vla::Vla;
 use core::ffi::c_uint;
 
 const BUF_MAX: usize = SPX_N + SPX_ADDR_BYTES + SPX_THASH_MAX_INBLOCKS * SPX_N;
@@ -11,7 +12,8 @@ const BUF_MAX: usize = SPX_N + SPX_ADDR_BYTES + SPX_THASH_MAX_INBLOCKS * SPX_N;
 /// Takes an array of `inblocks` concatenated arrays of `SPX_N` bytes.
 pub fn thash(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Addr) {
     let ib = inblocks as usize;
-    let mut buf = [0u8; BUF_MAX];
+    let mut buf_v = Vla::<BUF_MAX>::new(SPX_N + SPX_ADDR_BYTES + ib * SPX_N);
+    let buf = buf_v.as_mut();
 
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);
     buf[SPX_N..SPX_N + SPX_ADDR_BYTES].copy_from_slice(addr);

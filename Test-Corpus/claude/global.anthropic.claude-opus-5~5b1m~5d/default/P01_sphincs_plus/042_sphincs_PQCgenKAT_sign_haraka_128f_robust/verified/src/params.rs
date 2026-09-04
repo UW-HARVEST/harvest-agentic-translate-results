@@ -1,124 +1,109 @@
-//! Translation of app/include/params.h + app/params/params-sphincs-<backend>-<secpar>.h
-//! plus the backend-specific *_offsets.h headers.
+//! Compile-time parameters, mirroring `app/params/params-sphincs-*.h`.
+//!
+//! The active security level is chosen by the `spx_secpar` cfg emitted from
+//! `build.rs`, and the address-field offsets depend on the active backend
+//! (`spx_backend`).
 
-// ---------------------------------------------------------------------------
-// Per-security-parameter values (identical across backends)
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------
+// Base parameters per security level (from the params-*.h headers).
+// ------------------------------------------------------------------
 
-#[cfg(feature = "256f")]
-mod secpar {
-    pub const SPX_N: usize = 32;
-    pub const SPX_FULL_HEIGHT: usize = 68;
-    pub const SPX_D: usize = 17;
-    pub const SPX_FORS_HEIGHT: usize = 9;
-    pub const SPX_FORS_TREES: usize = 35;
-    pub const SPX_BIG_HASH: u32 = 1;
-}
-
-#[cfg(all(feature = "256s", not(any(feature = "256f"))))]
-mod secpar {
-    pub const SPX_N: usize = 32;
-    pub const SPX_FULL_HEIGHT: usize = 64;
-    pub const SPX_D: usize = 8;
-    pub const SPX_FORS_HEIGHT: usize = 14;
-    pub const SPX_FORS_TREES: usize = 22;
-    pub const SPX_BIG_HASH: u32 = 1;
-}
-
-#[cfg(all(feature = "192f", not(any(feature = "256f", feature = "256s"))))]
-mod secpar {
-    pub const SPX_N: usize = 24;
-    pub const SPX_FULL_HEIGHT: usize = 66;
-    pub const SPX_D: usize = 22;
-    pub const SPX_FORS_HEIGHT: usize = 8;
-    pub const SPX_FORS_TREES: usize = 33;
-    pub const SPX_BIG_HASH: u32 = 1;
-}
-
-#[cfg(all(feature = "192s", not(any(feature = "256f", feature = "256s", feature = "192f"))))]
-mod secpar {
-    pub const SPX_N: usize = 24;
+#[cfg(spx_secpar = "128s")]
+mod base {
+    pub const SPX_N: usize = 16;
     pub const SPX_FULL_HEIGHT: usize = 63;
     pub const SPX_D: usize = 7;
-    pub const SPX_FORS_HEIGHT: usize = 14;
-    pub const SPX_FORS_TREES: usize = 17;
-    pub const SPX_BIG_HASH: u32 = 1;
+    pub const SPX_FORS_HEIGHT: usize = 12;
+    pub const SPX_FORS_TREES: usize = 14;
 }
-
-#[cfg(all(feature = "128f", not(any(feature = "256f", feature = "256s", feature = "192f", feature = "192s"))))]
-mod secpar {
+#[cfg(spx_secpar = "128f")]
+mod base {
     pub const SPX_N: usize = 16;
     pub const SPX_FULL_HEIGHT: usize = 66;
     pub const SPX_D: usize = 22;
     pub const SPX_FORS_HEIGHT: usize = 6;
     pub const SPX_FORS_TREES: usize = 33;
-    pub const SPX_BIG_HASH: u32 = 0;
 }
-
-#[cfg(all(feature = "128s", not(any(feature = "256f", feature = "256s", feature = "192f", feature = "192s", feature = "128f"))))]
-mod secpar {
-    pub const SPX_N: usize = 16;
+#[cfg(spx_secpar = "192s")]
+mod base {
+    pub const SPX_N: usize = 24;
     pub const SPX_FULL_HEIGHT: usize = 63;
     pub const SPX_D: usize = 7;
-    pub const SPX_FORS_HEIGHT: usize = 12;
-    pub const SPX_FORS_TREES: usize = 14;
-    pub const SPX_BIG_HASH: u32 = 0;
+    pub const SPX_FORS_HEIGHT: usize = 14;
+    pub const SPX_FORS_TREES: usize = 17;
+}
+#[cfg(spx_secpar = "192f")]
+mod base {
+    pub const SPX_N: usize = 24;
+    pub const SPX_FULL_HEIGHT: usize = 66;
+    pub const SPX_D: usize = 22;
+    pub const SPX_FORS_HEIGHT: usize = 8;
+    pub const SPX_FORS_TREES: usize = 33;
+}
+#[cfg(spx_secpar = "256s")]
+mod base {
+    pub const SPX_N: usize = 32;
+    pub const SPX_FULL_HEIGHT: usize = 64;
+    pub const SPX_D: usize = 8;
+    pub const SPX_FORS_HEIGHT: usize = 14;
+    pub const SPX_FORS_TREES: usize = 22;
+}
+#[cfg(spx_secpar = "256f")]
+mod base {
+    pub const SPX_N: usize = 32;
+    pub const SPX_FULL_HEIGHT: usize = 68;
+    pub const SPX_D: usize = 17;
+    pub const SPX_FORS_HEIGHT: usize = 9;
+    pub const SPX_FORS_TREES: usize = 35;
 }
 
-// Fallback (no secpar feature selected): CMake default is 128s.
-#[cfg(not(any(feature = "256f", feature = "256s", feature = "192f", feature = "192s", feature = "128f", feature = "128s")))]
-mod secpar {
-    pub const SPX_N: usize = 16;
-    pub const SPX_FULL_HEIGHT: usize = 63;
-    pub const SPX_D: usize = 7;
-    pub const SPX_FORS_HEIGHT: usize = 12;
-    pub const SPX_FORS_TREES: usize = 14;
-    pub const SPX_BIG_HASH: u32 = 0;
-}
-
-pub use secpar::{SPX_D, SPX_FORS_HEIGHT, SPX_FORS_TREES, SPX_FULL_HEIGHT, SPX_N};
-
-/// `SPX_SHA512` from the sha2 parameter sets (1 for 192/256, 0 for 128).
-pub const SPX_SHA512: u32 = secpar::SPX_BIG_HASH;
-/// `SPX_BLAKE512` from the blake parameter sets (1 for 192/256, 0 for 128).
-pub const SPX_BLAKE512: u32 = secpar::SPX_BIG_HASH;
+pub use base::*;
 
 pub const SPX_WOTS_W: usize = 16;
 
-/* For clarity */
+/// Whether the SHA2 backend uses SHA-512 (only for the 192/256 bit levels).
+pub const SPX_SHA512: bool = cfg!(spx_sha512);
+
+// ------------------------------------------------------------------
+// Derived parameters (identical formulae to the C headers).
+// ------------------------------------------------------------------
+
 pub const SPX_ADDR_BYTES: usize = 32;
 
-/* WOTS parameters. */
-pub const SPX_WOTS_LOGW: usize = 4;
+pub const SPX_WOTS_LOGW: usize = 4; // SPX_WOTS_W == 16
+
 pub const SPX_WOTS_LEN1: usize = 8 * SPX_N / SPX_WOTS_LOGW;
-pub const SPX_WOTS_LEN2: usize = if SPX_N <= 8 {
-    2
-} else if SPX_N <= 136 {
-    3
-} else {
-    4
-};
+
+const fn wots_len2() -> usize {
+    // Matches the precomputed table for SPX_WOTS_W == 16.
+    if SPX_N <= 8 {
+        2
+    } else if SPX_N <= 136 {
+        3
+    } else {
+        4
+    }
+}
+pub const SPX_WOTS_LEN2: usize = wots_len2();
+
 pub const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
 pub const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
 pub const SPX_WOTS_PK_BYTES: usize = SPX_WOTS_BYTES;
 
-/* Subtree size. */
 pub const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
 
-/* FORS parameters. */
 pub const SPX_FORS_MSG_BYTES: usize = (SPX_FORS_HEIGHT * SPX_FORS_TREES + 7) / 8;
 pub const SPX_FORS_BYTES: usize = (SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES * SPX_N;
 pub const SPX_FORS_PK_BYTES: usize = SPX_N;
 
-/* Resulting SPX sizes. */
 pub const SPX_BYTES: usize =
     SPX_N + SPX_FORS_BYTES + SPX_D * SPX_WOTS_BYTES + SPX_FULL_HEIGHT * SPX_N;
 pub const SPX_PK_BYTES: usize = 2 * SPX_N;
 pub const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
 
-// ---------------------------------------------------------------------------
-// api.h
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------
+// API-level sizes (from api.h).
+// ------------------------------------------------------------------
 
 pub const CRYPTO_SECRETKEYBYTES: usize = SPX_SK_BYTES;
 pub const CRYPTO_PUBLICKEYBYTES: usize = SPX_PK_BYTES;
@@ -126,11 +111,12 @@ pub const CRYPTO_BYTES: usize = SPX_BYTES;
 pub const CRYPTO_SEEDBYTES: usize = 3 * SPX_N;
 pub const CRYPTO_ALGNAME: &str = "SPHINCS+";
 
-// ---------------------------------------------------------------------------
-// Address field offsets (backend specific)
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------
+// Address field offsets (depend on the hash backend).
+// SHA2 uses a compressed 22-byte address layout; the others use 32 bytes.
+// ------------------------------------------------------------------
 
-#[cfg(feature = "sha2")]
+#[cfg(spx_backend = "sha2")]
 mod offsets {
     pub const SPX_OFFSET_LAYER: usize = 0;
     pub const SPX_OFFSET_TREE: usize = 1;
@@ -141,8 +127,7 @@ mod offsets {
     pub const SPX_OFFSET_TREE_HGT: usize = 17;
     pub const SPX_OFFSET_TREE_INDEX: usize = 18;
 }
-
-#[cfg(not(feature = "sha2"))]
+#[cfg(not(spx_backend = "sha2"))]
 mod offsets {
     pub const SPX_OFFSET_LAYER: usize = 3;
     pub const SPX_OFFSET_TREE: usize = 8;
@@ -155,3 +140,19 @@ mod offsets {
 }
 
 pub use offsets::*;
+
+// Address type constants (from address.h).
+pub const SPX_ADDR_TYPE_WOTS: u32 = 0;
+pub const SPX_ADDR_TYPE_WOTSPK: u32 = 1;
+pub const SPX_ADDR_TYPE_HASHTREE: u32 = 2;
+pub const SPX_ADDR_TYPE_FORSTREE: u32 = 3;
+pub const SPX_ADDR_TYPE_FORSPK: u32 = 4;
+pub const SPX_ADDR_TYPE_WOTSPRF: u32 = 5;
+pub const SPX_ADDR_TYPE_FORSPRF: u32 = 6;
+
+// Derived message-hash split sizes (used by hash_message in every backend).
+pub const SPX_TREE_BITS: usize = SPX_TREE_HEIGHT * (SPX_D - 1);
+pub const SPX_TREE_BYTES: usize = (SPX_TREE_BITS + 7) / 8;
+pub const SPX_LEAF_BITS: usize = SPX_TREE_HEIGHT;
+pub const SPX_LEAF_BYTES: usize = (SPX_LEAF_BITS + 7) / 8;
+pub const SPX_DGST_BYTES: usize = SPX_FORS_MSG_BYTES + SPX_TREE_BYTES + SPX_LEAF_BYTES;

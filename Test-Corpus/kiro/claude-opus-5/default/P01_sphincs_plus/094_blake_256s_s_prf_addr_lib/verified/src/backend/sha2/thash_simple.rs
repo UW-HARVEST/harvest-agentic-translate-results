@@ -4,6 +4,7 @@ use super::sha2::*;
 use crate::address::{addr_ref, Addr};
 use crate::context::SpxCtx;
 use crate::params::*;
+use crate::vla::Vla;
 use core::ffi::c_uint;
 
 const BUF_MAX: usize = SPX_SHA256_ADDR_BYTES + SPX_THASH_MAX_INBLOCKS * SPX_N;
@@ -21,7 +22,8 @@ pub fn thash(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Add
     let ib = inblocks as usize;
     let mut outbuf = [0u8; SPX_SHA256_OUTPUT_BYTES];
     let mut sha2_state = [0u8; 40];
-    let mut buf = [0u8; BUF_MAX];
+    let mut buf_v = Vla::<BUF_MAX>::new(SPX_SHA256_ADDR_BYTES + ib * SPX_N);
+    let buf = buf_v.as_mut();
 
     /* Retrieve precomputed state containing pub_seed */
     sha2_state.copy_from_slice(&ctx.state_seeded);
@@ -43,7 +45,8 @@ fn thash_512(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Add
     let ib = inblocks as usize;
     let mut outbuf = [0u8; SPX_SHA512_OUTPUT_BYTES];
     let mut sha2_state = [0u8; 72];
-    let mut buf = [0u8; BUF_MAX];
+    let mut buf_v = Vla::<BUF_MAX>::new(SPX_SHA256_ADDR_BYTES + ib * SPX_N);
+    let buf = buf_v.as_mut();
 
     /* Retrieve precomputed state containing pub_seed */
     sha2_state.copy_from_slice(&ctx.state_seeded_512);

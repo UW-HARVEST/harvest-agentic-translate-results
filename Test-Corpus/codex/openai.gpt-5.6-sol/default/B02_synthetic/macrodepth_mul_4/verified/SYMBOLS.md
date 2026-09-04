@@ -1,30 +1,38 @@
-# Dynamic symbol surface
+# Dynamic Symbol Surface
 
-Derived from:
+Reference library:
 
 ```text
-nm -D --defined-only --format=posix ../c_src/build/libmdcore.so
+c_src/build/libdriver.so
 ```
 
-Default C configuration: `OP=add`, `REPEAT=5`.
+Mechanical source:
 
-| C symbol | kind | Rust export |
-|----------|------|-------------|
-| `G_OP` | global function pointer | [x] |
-| `G_OP_NAME` | global C-string pointer | [x] |
-| `helper_call` | function | [x] |
-| `helper_ptr` | function | [x] |
-| `op_add` | function | [x] |
-| `op_mul` | function | [x] |
-| `op_sub` | function | [x] |
-| `use_generated` | function | [x] |
+```text
+nm -D --defined-only c_src/build/libdriver.so
+```
 
-The C object also has the following undefined dynamic runtime symbols:
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`, and `printf`. These are libc/toolchain imports, not library
-exports.
+| # | symbol | C type | Rust status |
+|---|--------|--------|-------------|
+| 1 | `G_OP` | `D` | present |
+| 2 | `G_OP_NAME` | `D` | present |
+| 3 | `helper_call` | `T` | present |
+| 4 | `helper_ptr` | `T` | present |
+| 5 | `main` | `T` | present |
+| 6 | `op_add` | `T` | present |
+| 7 | `op_mul` | `T` | present |
+| 8 | `op_sub` | `T` | present |
+| 9 | `use_generated` | `T` | present |
 
-Phase A default symbol diff: empty.
+`main` was initially missing because the translated behavior existed only as
+the Rust executable entry point. It is now implemented as a real `extern "C"`
+library export with the C argument contract and return values.
 
-Phase D symbol diff: empty for all 24 semantic operation/repeat configurations
-under all 36 valid Cargo feature combinations.
+Undefined C-library dependencies (`atoi`, `fprintf`, `printf`, `stderr`, and
+toolchain weak symbols) are not implementation symbols and are tracked only
+when checking for unresolved non-libc dependencies.
+
+Completion:
+
+- [x] All 9 C implementation symbols are present in the Rust shared library.
+- [x] The symbol difference is empty for all 24 valid feature combinations.

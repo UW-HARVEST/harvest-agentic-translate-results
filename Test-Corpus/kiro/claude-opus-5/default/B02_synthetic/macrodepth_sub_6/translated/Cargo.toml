@@ -2,9 +2,10 @@
 name = "driver"
 version = "0.1.0"
 edition = "2021"
-description = "Rust translation of the MIT LL macro-dispatch C driver (mdcore/mdmain)"
-license = "MIT"
 
+# The C project builds an executable from src/mdcore.c + src/mdmain.c.
+# Here we additionally expose the mdcore.c public functions/globals as a
+# shared library, as required.
 [lib]
 name = "driver"
 path = "src/lib.rs"
@@ -14,33 +15,43 @@ crate-type = ["cdylib"]
 name = "driver"
 path = "src/main.rs"
 
-# CMake cache variables become Cargo features, named after the *value* of the
-# variable, lowercased:
+# CMake cache variables become Cargo features, one feature per value:
 #
-#   -DOP=add|sub|mul        ->  --features add | sub | mul
-#   -DREPEAT=0..7           ->  --features 0 | 1 | ... | 7
+#   set(OP     "add" CACHE STRING "operation leveraged")  -> add | sub | mul
+#   set(REPEAT "5"   CACHE STRING "iterations tested")    -> 0 .. 7
 #
-# CMake defaults are OP=add, REPEAT=5, which is the `default` feature set.
+# The REPEAT values are exposed both under their bare CMake value ("0".."7")
+# and under a readable `repeat_N` alias; enabling either one is equivalent.
 #
-# Every combination compiles. When several values of the same variable are
-# enabled at once (which happens when default features are left on), the
-# non-default value wins, so `--features sub` behaves like -DOP=sub.
+# Valid REPEAT values are 0..7 because mdmacros.h only defines REP0..REP7,
+# so CHOOSE_REP(REPEAT) would not compile for anything else.
 [features]
-default = ["add", "5"]
+default = ["add", "repeat_5"]
 
-# OP
+# ---- OP ----
 add = []
 sub = []
 mul = []
 
-# REPEAT
-"0" = []
-"1" = []
-"2" = []
-"3" = []
-"4" = []
-"5" = []
-"6" = []
-"7" = []
+# ---- REPEAT ----
+repeat_0 = []
+repeat_1 = []
+repeat_2 = []
+repeat_3 = []
+repeat_4 = []
+repeat_5 = []
+repeat_6 = []
+repeat_7 = []
 
-[workspace]
+# Bare CMake values, kept as aliases of the above.
+"0" = ["repeat_0"]
+"1" = ["repeat_1"]
+"2" = ["repeat_2"]
+"3" = ["repeat_3"]
+"4" = ["repeat_4"]
+"5" = ["repeat_5"]
+"6" = ["repeat_6"]
+"7" = ["repeat_7"]
+
+[profile.release]
+panic = "abort"

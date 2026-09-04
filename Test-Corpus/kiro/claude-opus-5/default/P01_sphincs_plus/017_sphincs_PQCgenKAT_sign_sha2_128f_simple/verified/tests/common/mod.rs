@@ -1,339 +1,351 @@
-//! Shared differential-test harness.
+//! Differential-test harness.
 //!
-//! Both the C reference and the Rust translation are loaded as **shared
-//! objects** through `libloading`; no Rust function is ever called directly, so
-//! every test also exercises the `#[no_mangle]`/`extern "C"` export wrappers.
+//! Both implementations are reached **only** through `dlopen`/`dlsym`, so the
+//! `#[no_mangle] extern "C"` export wrappers of the Rust crate are part of what
+//! is under test.  Nothing in these tests links the Rust library directly.
 //!
-//! ## Load order matters
-//!
-//! `libsphincs_core_det.so` has *undefined* references to the backend hooks
-//! (`SPX_thash`, `SPX_prf_addr`, …) and to OpenSSL's `EVP_*`, so those have to
-//! be in the global namespace before it is opened.  But the Rust `cdylib`
-//! exports the *same* names, so if it were opened after the C libraries went
-//! global, the dynamic linker could bind the Rust library's internal calls to
-//! the C implementations and silently turn every test into "C vs C".
-//!
-//! To make that impossible the Rust library is opened **first**, with
-//! `RTLD_NOW | RTLD_LOCAL`: `RTLD_NOW` forces all of its relocations to be
-//! resolved immediately, at a point where nothing else is loaded that could
-//! provide them, and `RTLD_LOCAL` keeps its exports out of the global scope.
-//! `tests/configs.rs::cfg00_no_symbol_interposition` re-checks this
-//! empirically.
-//!
-//! Paths and the ground-truth parameter dump come from `$SPX_DIF_DIR`, which
-//! `run_tests.sh` points at `/tmp/dif/<backend>_<thash>_<secpar>/`.
+//! * C side: `cbuild/<backend>_<thash>_<secpar>/app/libsphincs_core_det.so`
+//!   together with `.../lib/<backend>/lib<backend>.so`.  The two objects
+//!   reference each other's symbols (`libsphincs_core_det.so` has no
+//!   `thash`/`prf_addr`, the backend has no `treehash` unless it happens to
+//!   compile `utils.c`), so both are opened `RTLD_GLOBAL | RTLD_LAZY` and let
+//!   the loader tie them together exactly as the `driver` link line does.
+//! * Rust side: the `cdylib` cargo just built next to the test executable,
+//!   opened `RTLD_LOCAL | RTLD_NOW` so that it can neither interpose on nor be
+//!   interposed by the C objects.
 
 #![allow(dead_code)]
+#![allow(non_snake_case)]
 
-use libloading::os::unix::{Library, Symbol, RTLD_GLOBAL, RTLD_LAZY, RTLD_LOCAL, RTLD_NOW};
-use std::collections::HashMap;
-use std::ffi::{c_int, c_uint, c_ulong, c_ulonglong, c_void};
-use std::sync::{Mutex, OnceLock};
+use libloading::os::unix::{Library, Symbol};
+use std::path::PathBuf;
 
-/* ------------------------------------------------------------------ */
-/* ground-truth parameters (dumped by harness/dump_params.c)           */
-/* ------------------------------------------------------------------ */
+const RTLD_LAZY: i32 = 0x1;
+const RTLD_NOW: i32 = 0x2;
+const RTLD_GLOBAL: i32 = 0x100;
+const RTLD_LOCAL: i32 = 0x0;
 
-pub struct Params {
-    ints: HashMap<String, u64>,
-    strs: HashMap<String, String>,
-}
+// ---------------------------------------------------------------------------
+// Build configuration, mirrored from c_src/app/params/params-*.h.
+// ---------------------------------------------------------------------------
 
-impl Params {
-    fn parse(text: &str) -> Self {
-        let mut ints = HashMap::new();
-        let mut strs = HashMap::new();
-        for line in text.lines() {
-            let Some((k, v)) = line.split_once('=') else { continue };
-            match v.trim().parse::<u64>() {
-                Ok(n) => {
-                    ints.insert(k.to_string(), n);
-                }
-                Err(_) => {
-                    strs.insert(k.to_string(), v.trim().to_string());
-                }
-            }
+pub mod params {
+    #[cfg(backend_blake)]
+    pub const BACKEND: &str = "blake";
+    #[cfg(backend_haraka)]
+    pub const BACKEND: &str = "haraka";
+    #[cfg(backend_sha2)]
+    pub const BACKEND: &str = "sha2";
+    #[cfg(backend_shake)]
+    pub const BACKEND: &str = "shake";
+
+    #[cfg(thash_robust)]
+    pub const THASH: &str = "robust";
+    #[cfg(thash_simple)]
+    pub const THASH: &str = "simple";
+
+    #[cfg(secpar_128s)]
+    pub const SECPAR: &str = "128s";
+    #[cfg(secpar_128f)]
+    pub const SECPAR: &str = "128f";
+    #[cfg(secpar_192s)]
+    pub const SECPAR: &str = "192s";
+    #[cfg(secpar_192f)]
+    pub const SECPAR: &str = "192f";
+    #[cfg(secpar_256s)]
+    pub const SECPAR: &str = "256s";
+    #[cfg(secpar_256f)]
+    pub const SECPAR: &str = "256f";
+
+    #[cfg(secpar_128s)]
+    pub const SPX_N: usize = 16;
+    #[cfg(secpar_128s)]
+    pub const SPX_FULL_HEIGHT: usize = 63;
+    #[cfg(secpar_128s)]
+    pub const SPX_D: usize = 7;
+    #[cfg(secpar_128s)]
+    pub const SPX_FORS_HEIGHT: usize = 12;
+    #[cfg(secpar_128s)]
+    pub const SPX_FORS_TREES: usize = 14;
+
+    #[cfg(secpar_128f)]
+    pub const SPX_N: usize = 16;
+    #[cfg(secpar_128f)]
+    pub const SPX_FULL_HEIGHT: usize = 66;
+    #[cfg(secpar_128f)]
+    pub const SPX_D: usize = 22;
+    #[cfg(secpar_128f)]
+    pub const SPX_FORS_HEIGHT: usize = 6;
+    #[cfg(secpar_128f)]
+    pub const SPX_FORS_TREES: usize = 33;
+
+    #[cfg(secpar_192s)]
+    pub const SPX_N: usize = 24;
+    #[cfg(secpar_192s)]
+    pub const SPX_FULL_HEIGHT: usize = 63;
+    #[cfg(secpar_192s)]
+    pub const SPX_D: usize = 7;
+    #[cfg(secpar_192s)]
+    pub const SPX_FORS_HEIGHT: usize = 14;
+    #[cfg(secpar_192s)]
+    pub const SPX_FORS_TREES: usize = 17;
+
+    #[cfg(secpar_192f)]
+    pub const SPX_N: usize = 24;
+    #[cfg(secpar_192f)]
+    pub const SPX_FULL_HEIGHT: usize = 66;
+    #[cfg(secpar_192f)]
+    pub const SPX_D: usize = 22;
+    #[cfg(secpar_192f)]
+    pub const SPX_FORS_HEIGHT: usize = 8;
+    #[cfg(secpar_192f)]
+    pub const SPX_FORS_TREES: usize = 33;
+
+    #[cfg(secpar_256s)]
+    pub const SPX_N: usize = 32;
+    #[cfg(secpar_256s)]
+    pub const SPX_FULL_HEIGHT: usize = 64;
+    #[cfg(secpar_256s)]
+    pub const SPX_D: usize = 8;
+    #[cfg(secpar_256s)]
+    pub const SPX_FORS_HEIGHT: usize = 14;
+    #[cfg(secpar_256s)]
+    pub const SPX_FORS_TREES: usize = 22;
+
+    #[cfg(secpar_256f)]
+    pub const SPX_N: usize = 32;
+    #[cfg(secpar_256f)]
+    pub const SPX_FULL_HEIGHT: usize = 68;
+    #[cfg(secpar_256f)]
+    pub const SPX_D: usize = 17;
+    #[cfg(secpar_256f)]
+    pub const SPX_FORS_HEIGHT: usize = 9;
+    #[cfg(secpar_256f)]
+    pub const SPX_FORS_TREES: usize = 35;
+
+    pub const SPX_ADDR_BYTES: usize = 32;
+    pub const SPX_WOTS_W: usize = 16;
+    pub const SPX_WOTS_LOGW: usize = 4;
+    pub const SPX_WOTS_LEN1: usize = 8 * SPX_N / SPX_WOTS_LOGW;
+    pub const SPX_WOTS_LEN2: usize = if SPX_N <= 8 {
+        2
+    } else if SPX_N <= 136 {
+        3
+    } else {
+        4
+    };
+    pub const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
+    pub const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
+    pub const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
+    pub const SPX_FORS_MSG_BYTES: usize = (SPX_FORS_HEIGHT * SPX_FORS_TREES + 7) / 8;
+    pub const SPX_FORS_BYTES: usize = (SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES * SPX_N;
+    pub const SPX_BYTES: usize =
+        SPX_N + SPX_FORS_BYTES + SPX_D * SPX_WOTS_BYTES + SPX_FULL_HEIGHT * SPX_N;
+    pub const SPX_PK_BYTES: usize = 2 * SPX_N;
+    pub const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
+    pub const CRYPTO_SEEDBYTES: usize = 3 * SPX_N;
+
+    /// `SPX_BLAKE512` / `SPX_SHA512`; 0 for the 128-bit sets, 1 otherwise,
+    /// which is exactly `SPX_N >= 24`.
+    pub const WIDE: bool = SPX_N >= 24;
+
+    /// `sizeof(spx_ctx)` for the selected backend (`app/include/context.h`).
+    pub const CTX_SIZE: usize = 2 * SPX_N
+        + if cfg!(backend_sha2) {
+            40 + if WIDE { 72 } else { 0 }
+        } else {
+            0
         }
-        Params { ints, strs }
-    }
+        + if cfg!(backend_haraka) { 10 * 8 * 8 + 10 * 8 * 4 } else { 0 };
 
-    /// A numeric parameter.  Panics if absent: a missing parameter means the
-    /// dump and the test disagree about the configuration, which must never be
-    /// silently tolerated.
-    pub fn n(&self, key: &str) -> usize {
-        *self
-            .ints
-            .get(key)
-            .unwrap_or_else(|| panic!("params.txt has no `{key}`")) as usize
-    }
-    pub fn opt(&self, key: &str) -> Option<usize> {
-        self.ints.get(key).map(|v| *v as usize)
-    }
-    pub fn s(&self, key: &str) -> &str {
-        self.strs
-            .get(key)
-            .unwrap_or_else(|| panic!("params.txt has no `{key}`"))
-    }
+    /// Largest `inblocks` the library itself ever passes to `thash`.
+    pub const THASH_MAX_INTERNAL: usize = if SPX_WOTS_LEN > SPX_FORS_TREES {
+        SPX_WOTS_LEN
+    } else {
+        SPX_FORS_TREES
+    };
 
-    pub fn backend(&self) -> &str {
-        self.s("BACKEND")
-    }
-    pub fn thash(&self) -> &str {
-        self.s("THASH")
-    }
-    pub fn combo(&self) -> &str {
-        self.s("COMBO")
-    }
-    /// `SPX_SHA512` / `SPX_BLAKE512`: selects the 512-bit variant for
-    /// `inblocks > 1` in `thash` and for `blakeX`/`shaX` in `hash_<b>.c`.
-    pub fn x512(&self) -> bool {
-        self.n("X512") == 1
-    }
-
-    // frequently used shorthands
-    pub fn n_(&self) -> usize {
-        self.n("SPX_N")
-    }
-    pub fn addr_bytes(&self) -> usize {
-        self.n("SPX_ADDR_BYTES")
-    }
-    pub fn wots_len(&self) -> usize {
-        self.n("SPX_WOTS_LEN")
-    }
-    pub fn wots_bytes(&self) -> usize {
-        self.n("SPX_WOTS_BYTES")
-    }
-    pub fn wots_w(&self) -> usize {
-        self.n("SPX_WOTS_W")
-    }
-    pub fn fors_trees(&self) -> usize {
-        self.n("SPX_FORS_TREES")
-    }
-    pub fn fors_height(&self) -> usize {
-        self.n("SPX_FORS_HEIGHT")
-    }
-    pub fn fors_bytes(&self) -> usize {
-        self.n("SPX_FORS_BYTES")
-    }
-    pub fn fors_msg_bytes(&self) -> usize {
-        self.n("SPX_FORS_MSG_BYTES")
-    }
-    pub fn tree_height(&self) -> usize {
-        self.n("SPX_TREE_HEIGHT")
-    }
-    pub fn d(&self) -> usize {
-        self.n("SPX_D")
-    }
-    pub fn spx_bytes(&self) -> usize {
-        self.n("SPX_BYTES")
-    }
-    pub fn pk_bytes(&self) -> usize {
-        self.n("SPX_PK_BYTES")
-    }
-    pub fn sk_bytes(&self) -> usize {
-        self.n("SPX_SK_BYTES")
-    }
-    pub fn seed_bytes(&self) -> usize {
-        self.n("CRYPTO_SEEDBYTES")
-    }
-    pub fn ctx_size(&self) -> usize {
-        self.n("sizeof_spx_ctx")
-    }
-    pub fn leaf_info_size(&self) -> usize {
-        self.n("sizeof_leaf_info_x1")
-    }
+    pub const SPX_SHA256_ADDR_BYTES: usize = 22;
 }
 
-/* ------------------------------------------------------------------ */
-/* the two libraries under comparison                                 */
-/* ------------------------------------------------------------------ */
+pub fn tag() -> String {
+    format!(
+        "{}_{}_{}",
+        params::BACKEND,
+        params::THASH,
+        params::SECPAR
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Library loading
+// ---------------------------------------------------------------------------
 
 pub struct Libs {
-    /// Rust `cdylib` — opened first, `RTLD_NOW | RTLD_LOCAL`.
-    pub rs: Library,
-    /// `libsphincs_core_det.so` (app/src/* + rng.c).
     pub c_core: Library,
-    /// `lib<backend>.so`.
-    pub c_backend: Library,
-    _crypto: Option<Library>,
+    pub c_back: Library,
+    pub rs: Library,
+    pub rs_path: PathBuf,
+    pub c_core_path: PathBuf,
+    pub c_back_path: PathBuf,
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+pub fn rust_so_path() -> PathBuf {
+    // target/<profile>/deps/<test-exe>  ->  target/<profile>/libsphincsplus.so
+    let exe = std::env::current_exe().expect("current_exe");
+    exe.parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("libsphincsplus.so")
+}
+
+pub fn c_core_path() -> PathBuf {
+    workspace_root()
+        .join("cbuild")
+        .join(tag())
+        .join("app/libsphincs_core_det.so")
+}
+
+pub fn c_back_path() -> PathBuf {
+    workspace_root()
+        .join("cbuild")
+        .join(tag())
+        .join(format!("lib/{0}/lib{0}.so", params::BACKEND))
+}
+
+pub fn load() -> Libs {
+    let rs_path = rust_so_path();
+    let c_core_path = c_core_path();
+    let c_back_path = c_back_path();
+    assert!(rs_path.exists(), "missing Rust cdylib at {rs_path:?}");
+    assert!(
+        c_core_path.exists(),
+        "missing C core at {c_core_path:?}; run ./build_c_all.sh"
+    );
+    assert!(c_back_path.exists(), "missing C backend at {c_back_path:?}");
+
+    unsafe {
+        // Rust first, private and fully bound, so the C objects that follow
+        // cannot interpose on it.
+        let rs = Library::open(Some(&rs_path), RTLD_LOCAL | RTLD_NOW)
+            .unwrap_or_else(|e| panic!("dlopen {rs_path:?}: {e}"));
+        // The two C objects have mutually undefined symbols; lazy binding lets
+        // both be mapped before anything is resolved.
+        let c_back = Library::open(Some(&c_back_path), RTLD_GLOBAL | RTLD_LAZY)
+            .unwrap_or_else(|e| panic!("dlopen {c_back_path:?}: {e}"));
+        let c_core = Library::open(Some(&c_core_path), RTLD_GLOBAL | RTLD_LAZY)
+            .unwrap_or_else(|e| panic!("dlopen {c_core_path:?}: {e}"));
+        let libs = Libs {
+            c_core,
+            c_back,
+            rs,
+            rs_path,
+            c_core_path,
+            c_back_path,
+        };
+        libs.assert_configuration();
+        libs
+    }
+}
+
+type SizeFn = unsafe extern "C" fn() -> u64;
+
+impl Libs {
+    /// Guards against a stale `libsphincsplus.so` left behind by a build with
+    /// different features: the loaded object must agree with the compile-time
+    /// parameters of this test binary on both the backend and the key sizes.
+    fn assert_configuration(&self) {
+        // A symbol only the selected backend defines.
+        let probe = match params::BACKEND {
+            "blake" => "blake256",
+            "haraka" => "SPX_haraka512",
+            "sha2" => "sha256",
+            _ => "shake256",
+        };
+        let mut n = probe.as_bytes().to_vec();
+        n.push(0);
+        unsafe {
+            assert!(
+                self.rs.get::<*const ()>(&n).is_ok(),
+                "the Rust .so at {:?} does not export {probe}: it was built for a different \
+                 HASH_BACKEND than this test binary. Run `cargo build --release --features ...` \
+                 with the same features before `cargo test`.",
+                self.rs_path
+            );
+        }
+        for (name, expect) in [
+            ("crypto_sign_secretkeybytes", params::SPX_SK_BYTES as u64),
+            ("crypto_sign_publickeybytes", params::SPX_PK_BYTES as u64),
+            ("crypto_sign_bytes", params::SPX_BYTES as u64),
+            ("crypto_sign_seedbytes", params::CRYPTO_SEEDBYTES as u64),
+        ] {
+            let (fc, fr) = self.pair::<SizeFn>(name);
+            unsafe {
+                assert_eq!(fc(), expect, "C {name} disagrees with the test's params");
+                assert_eq!(
+                    fr(),
+                    expect,
+                    "Rust {name} disagrees with the test's params: stale .so at {:?}?",
+                    self.rs_path
+                );
+            }
+        }
+    }
 }
 
 impl Libs {
-    /// Look a symbol up in the Rust `.so`.
-    pub unsafe fn r<T>(&self, name: &str) -> Symbol<T> {
-        self.rs
-            .get(name.as_bytes())
-            .unwrap_or_else(|e| panic!("rust .so is missing `{name}`: {e}"))
-    }
-    /// Look a symbol up in the C `.so`s (core first, then the backend).
-    pub unsafe fn c<T>(&self, name: &str) -> Symbol<T> {
-        if let Ok(s) = self.c_core.get::<T>(name.as_bytes()) {
-            return s;
+    /// A symbol from the C pair (core first, then the backend object).
+    pub fn c<T>(&self, name: &str) -> Symbol<T> {
+        let mut n = name.as_bytes().to_vec();
+        n.push(0);
+        unsafe {
+            match self.c_core.get::<T>(&n) {
+                Ok(s) => s,
+                Err(_) => self
+                    .c_back
+                    .get::<T>(&n)
+                    .unwrap_or_else(|e| panic!("C symbol {name} not found: {e}")),
+            }
         }
-        self.c_backend
-            .get(name.as_bytes())
-            .unwrap_or_else(|e| panic!("C .so is missing `{name}`: {e}"))
     }
-    /// Raw address of a **data** symbol (e.g. `DRBG_ctx`, `cst`).
-    pub unsafe fn r_data(&self, name: &str) -> *mut u8 {
-        let s: Symbol<*mut u8> = self.r(name);
-        s.into_raw() as *mut u8
+
+    /// A symbol from the Rust `cdylib`.
+    pub fn r<T>(&self, name: &str) -> Symbol<T> {
+        let mut n = name.as_bytes().to_vec();
+        n.push(0);
+        unsafe {
+            self.rs
+                .get::<T>(&n)
+                .unwrap_or_else(|e| panic!("Rust symbol {name} not found: {e}"))
+        }
     }
-    pub unsafe fn c_data(&self, name: &str) -> *mut u8 {
-        let s: Symbol<*mut u8> = self.c(name);
-        s.into_raw() as *mut u8
+
+    /// Both sides of the same symbol.
+    pub fn pair<T>(&self, name: &str) -> (Symbol<T>, Symbol<T>) {
+        (self.c(name), self.r(name))
     }
 }
 
-static CTX: OnceLock<(Libs, Params)> = OnceLock::new();
-
-pub fn env() -> &'static (Libs, Params) {
-    CTX.get_or_init(|| {
-        let dir = std::env::var("SPX_DIF_DIR").expect(
-            "set SPX_DIF_DIR to /tmp/dif/<backend>_<thash>_<secpar> \
-             (see run_tests.sh); build it with ./build_matrix.sh",
-        );
-        let params = Params::parse(
-            &std::fs::read_to_string(format!("{dir}/params.txt"))
-                .expect("params.txt missing -- run ./build_matrix.sh"),
-        );
-
-        // 1. Rust FIRST, fully bound, private namespace.  See module docs.
-        let rs = unsafe { Library::open(Some(format!("{dir}/librs.so")), RTLD_NOW | RTLD_LOCAL) }
-            .expect("cannot open librs.so");
-
-        // 2. libcrypto (rng.c's AES256_ECB uses EVP_*; only the C side needs it).
-        let _crypto = ["/tmp/osslib/libcrypto.so", "/usr/lib64/libcrypto.so.3"]
-            .iter()
-            .find_map(|p| unsafe { Library::open(Some(p), RTLD_NOW | RTLD_GLOBAL) }.ok());
-
-        // 3./4. The two C libraries reference each other: `lib<backend>.so`
-        // compiles `app/src/utils.c`, whose `compute_root` calls
-        // `SPX_set_tree_index` from `libsphincs_core_det.so`, while the core
-        // calls `SPX_thash` from the backend.  In the CMake build the `driver`
-        // links both at once, so the cycle is fine; when dlopen'ing them one at
-        // a time the resolution has to be deferred, hence RTLD_LAZY.  They go in
-        // the GLOBAL scope so they find each other -- and only each other, since
-        // the Rust library above was opened RTLD_LOCAL and fully bound already.
-        let c_backend = unsafe {
-            Library::open(Some(format!("{dir}/libc_backend.so")), RTLD_LAZY | RTLD_GLOBAL)
-        }
-        .expect("cannot open libc_backend.so");
-
-        let c_core = unsafe {
-            Library::open(Some(format!("{dir}/libc_core_det.so")), RTLD_LAZY | RTLD_GLOBAL)
-        }
-        .expect("cannot open libc_core_det.so");
-
-        (
-            Libs {
-                rs,
-                c_core,
-                c_backend,
-                _crypto,
-            },
-            params,
-        )
-    })
-}
-
-/// `DRBG_ctx` is a process-global in both libraries, so any test that calls
-/// `randombytes`, `randombytes_init`, `crypto_sign_keypair` or
-/// `crypto_sign_signature` (which draws `optrand`) must hold this.
-pub static DRBG: Mutex<()> = Mutex::new(());
-
-/// Opens **only** the Rust `.so`, with no C library anywhere in the process.
-/// Used by `cfg00_no_symbol_interposition` from a child process.
-pub fn rs_only() -> (Library, Params) {
-    let dir = std::env::var("SPX_DIF_DIR").expect("SPX_DIF_DIR");
-    let params = Params::parse(&std::fs::read_to_string(format!("{dir}/params.txt")).unwrap());
-    let lib = unsafe { Library::open(Some(format!("{dir}/librs.so")), RTLD_NOW | RTLD_LOCAL) }
-        .expect("cannot open librs.so");
-    (lib, params)
-}
-
-/// A deterministic digest over a broad slice of the Rust library's behaviour,
-/// computed using *only* that library.  Comparing the value obtained with the C
-/// libraries loaded against the value obtained in a clean process proves that no
-/// symbol interposition is happening.
-pub unsafe fn rs_fingerprint(rs: &Library, p: &Params) -> String {
-    let mut acc = 0xcbf2_9ce4_8422_2325u64;
-    let mut absorb = |b: &[u8]| {
-        for x in b {
-            acc = (acc ^ *x as u64).wrapping_mul(0x100_0000_01b3);
-        }
-    };
-
-    let n = p.n_();
-    let mut rng = Rng::new(0xF1_9E_00);
-
-    // initialize_hash_function + prf_addr + thash at several inblocks
-    let init: Symbol<FnInitHash> = rs.get(b"SPX_initialize_hash_function").unwrap();
-    let prf: Symbol<FnPrfAddr> = rs.get(b"SPX_prf_addr").unwrap();
-    let thash: Symbol<FnThash> = rs.get(b"SPX_thash").unwrap();
-    let mut ctx = vec![0u8; p.ctx_size()];
-    let seeds = rng.bytes(2 * n);
-    ctx[..2 * n].copy_from_slice(&seeds);
-    (*init)(ctx.as_mut_ptr());
-    absorb(&ctx);
-    for _ in 0..8 {
-        let addr = rng.addr();
-        let mut out = vec![0u8; n];
-        (*prf)(out.as_mut_ptr(), ctx.as_ptr(), addr.as_ptr());
-        absorb(&out);
-    }
-    for nb in [1usize, 2, 3, p.wots_len(), p.fors_trees()] {
-        let mut a = rng.addr();
-        let input = rng.bytes(nb * n);
-        let mut out = vec![0u8; n];
-        (*thash)(
-            out.as_mut_ptr(),
-            input.as_ptr(),
-            nb as c_uint,
-            ctx.as_ptr(),
-            a.as_mut_ptr(),
-        );
-        absorb(&out);
-    }
-
-    // full keygen / sign / verify pipeline
-    let kp: Symbol<FnSeedKeypair> = rs.get(b"crypto_sign_seed_keypair").unwrap();
-    let rbi: Symbol<FnRandombytesInit> = rs.get(b"randombytes_init").unwrap();
-    let sig: Symbol<FnSignature> = rs.get(b"crypto_sign_signature").unwrap();
-    let ver: Symbol<FnVerify> = rs.get(b"crypto_sign_verify").unwrap();
-    let seed = rng.bytes(p.seed_bytes());
-    let mut pk = vec![0u8; p.pk_bytes()];
-    let mut sk = vec![0u8; p.sk_bytes()];
-    (*kp)(pk.as_mut_ptr(), sk.as_mut_ptr(), seed.as_ptr());
-    absorb(&pk);
-    absorb(&sk);
-    let mut ent: Vec<u8> = (0..48u8).collect();
-    (*rbi)(ent.as_mut_ptr(), std::ptr::null_mut());
-    for mlen in [0usize, 1, 33, 200] {
-        let m = rng.bytes(mlen);
-        let mut s = vec![0u8; p.spx_bytes()];
-        let mut sl = 0usize;
-        (*sig)(s.as_mut_ptr(), &mut sl, m.as_ptr(), mlen, sk.as_ptr());
-        absorb(&s);
-        absorb(&sl.to_le_bytes());
-        let v = (*ver)(s.as_ptr(), sl, m.as_ptr(), mlen, pk.as_ptr());
-        absorb(&v.to_le_bytes());
-    }
-    format!("{acc:016x}")
-}
-
-/* ------------------------------------------------------------------ */
-/* deterministic PRNG (fixed seed => reproducible property tests)      */
-/* ------------------------------------------------------------------ */
+// ---------------------------------------------------------------------------
+// Deterministic randomness for the property-style sweeps
+// ---------------------------------------------------------------------------
 
 pub struct Rng(u64);
 
 impl Rng {
     pub fn new(seed: u64) -> Self {
-        // splitmix64, so even seed 0 produces a good stream
-        Rng(seed.wrapping_add(0x9E37_79B9_7F4A_7C15))
+        Rng(seed ^ 0x9E37_79B9_7F4A_7C15)
     }
     pub fn next_u64(&mut self) -> u64 {
+        // splitmix64
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -343,11 +355,11 @@ impl Rng {
     pub fn next_u32(&mut self) -> u32 {
         self.next_u64() as u32
     }
-    pub fn below(&mut self, n: usize) -> usize {
+    pub fn below(&mut self, n: u32) -> u32 {
         if n == 0 {
             0
         } else {
-            (self.next_u64() % n as u64) as usize
+            self.next_u32() % n
         }
     }
     pub fn bytes(&mut self, n: usize) -> Vec<u8> {
@@ -358,179 +370,275 @@ impl Rng {
         v.truncate(n);
         v
     }
-    pub fn fill(&mut self, dst: &mut [u8]) {
-        let n = dst.len();
-        dst.copy_from_slice(&self.bytes(n));
+    pub fn fill(&mut self, out: &mut [u8]) {
+        let b = self.bytes(out.len());
+        out.copy_from_slice(&b);
     }
-    /// A random 8-word SPHINCS+ address.
     pub fn addr(&mut self) -> [u32; 8] {
         let mut a = [0u32; 8];
-        for w in a.iter_mut() {
-            *w = self.next_u32();
+        for x in a.iter_mut() {
+            *x = self.next_u32();
         }
         a
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* comparison helpers                                                 */
-/* ------------------------------------------------------------------ */
+/// The message lengths that straddle every block/rate boundary any backend
+/// branches on.  See CONFIGS.md.
+pub const MLEN_SWEEP: &[usize] = &[
+    0, 1, 2, 15, 16, 17, 31, 32, 33, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71, 72, 73, 95, 96, 97,
+    103, 104, 105, 127, 128, 129, 135, 136, 137, 167, 168, 169, 191, 192, 193, 255, 256, 257, 1000,
+    4096,
+];
 
-pub fn same(what: &str, c: &[u8], r: &[u8]) {
+/// Reduced sweep for the rows whose cost is a full SPHINCS+ operation.  The
+/// message-length branches themselves are swept densely and cheaply by rows 10
+/// and 11 (`gen_message_random` / `hash_message`), which are the only places
+/// `mlen` is branched on; these values exist to confirm the composition.
+pub const MLEN_SWEEP_SMALL: &[usize] = &[0, 1, 33, 137];
+
+// ---------------------------------------------------------------------------
+// spx_ctx
+// ---------------------------------------------------------------------------
+
+/// An 8-byte aligned `spx_ctx` sized buffer (`haraka`'s members are `uint64_t`).
+pub struct Ctx {
+    buf: Vec<u64>,
+}
+
+impl Ctx {
+    pub fn new() -> Self {
+        Ctx {
+            buf: vec![0u64; (params::CTX_SIZE + 7) / 8],
+        }
+    }
+    pub fn bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(self.buf.as_ptr() as *const u8, params::CTX_SIZE)
+        }
+    }
+    pub fn bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(self.buf.as_mut_ptr() as *mut u8, params::CTX_SIZE)
+        }
+    }
+    pub fn ptr(&self) -> *const u8 {
+        self.buf.as_ptr() as *const u8
+    }
+    pub fn ptr_mut(&mut self) -> *mut u8 {
+        self.buf.as_mut_ptr() as *mut u8
+    }
+    pub fn set_seeds(&mut self, pub_seed: &[u8], sk_seed: &[u8]) {
+        let n = params::SPX_N;
+        self.bytes_mut()[..n].copy_from_slice(&pub_seed[..n]);
+        self.bytes_mut()[n..2 * n].copy_from_slice(&sk_seed[..n]);
+    }
+}
+
+pub type InitHashFn = unsafe extern "C" fn(*mut u8);
+
+/// Builds one `spx_ctx` per side by calling that side's own
+/// `SPX_initialize_hash_function`, and asserts the two byte images agree.
+pub fn make_ctx_pair(libs: &Libs, pub_seed: &[u8], sk_seed: &[u8]) -> (Ctx, Ctx) {
+    let (ic, ir) = libs.pair::<InitHashFn>("SPX_initialize_hash_function");
+    let mut cc = Ctx::new();
+    let mut cr = Ctx::new();
+    cc.set_seeds(pub_seed, sk_seed);
+    cr.set_seeds(pub_seed, sk_seed);
+    unsafe {
+        ic(cc.ptr_mut());
+        ir(cr.ptr_mut());
+    }
+    assert_eq!(
+        cc.bytes(),
+        cr.bytes(),
+        "SPX_initialize_hash_function produced different spx_ctx images"
+    );
+    (cc, cr)
+}
+
+// ---------------------------------------------------------------------------
+// C struct mirrors
+// ---------------------------------------------------------------------------
+
+/// `app/include/wotsx1.h` `leaf_info_x1`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LeafInfoX1 {
+    pub wots_sig: *mut u8,
+    pub wots_sign_leaf: u32,
+    pub wots_steps: *mut u32,
+    pub leaf_addr: [u32; 8],
+    pub pk_addr: [u32; 8],
+}
+
+impl LeafInfoX1 {
+    pub fn zeroed() -> Self {
+        LeafInfoX1 {
+            wots_sig: core::ptr::null_mut(),
+            wots_sign_leaf: 0,
+            wots_steps: core::ptr::null_mut(),
+            leaf_addr: [0; 8],
+            pk_addr: [0; 8],
+        }
+    }
+}
+
+/// `app/include/fors.h` `fors_gen_leaf_info`
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct ForsGenLeafInfo {
+    pub leaf_addrx: [u32; 8],
+}
+
+/// `app/include/rng.h` `AES_XOF_struct`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AesXofStruct {
+    pub buffer: [u8; 16],
+    pub buffer_pos: u64,
+    pub length_remaining: u64,
+    pub key: [u8; 32],
+    pub ctr: [u8; 16],
+}
+
+impl AesXofStruct {
+    pub fn zeroed() -> Self {
+        AesXofStruct {
+            buffer: [0; 16],
+            buffer_pos: 0,
+            length_remaining: 0,
+            key: [0; 32],
+            ctr: [0; 16],
+        }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                core::mem::size_of::<AesXofStruct>(),
+            )
+        }
+    }
+}
+
+/// `app/include/rng.h` `AES256_CTR_DRBG_struct`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Aes256CtrDrbgStruct {
+    pub Key: [u8; 32],
+    pub V: [u8; 16],
+    pub reseed_counter: i32,
+}
+
+impl Aes256CtrDrbgStruct {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                core::mem::size_of::<Aes256CtrDrbgStruct>(),
+            )
+        }
+    }
+}
+
+/// `lib/blake/include/blake.h` `blakestate256`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct BlakeState256 {
+    pub h: [u32; 8],
+    pub s: [u32; 4],
+    pub t: [u32; 2],
+    pub buflen: i32,
+    pub nullt: i32,
+    pub buf: [u8; 64],
+}
+
+impl BlakeState256 {
+    pub fn zeroed() -> Self {
+        BlakeState256 {
+            h: [0; 8],
+            s: [0; 4],
+            t: [0; 2],
+            buflen: 0,
+            nullt: 0,
+            buf: [0; 64],
+        }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                core::mem::size_of::<BlakeState256>(),
+            )
+        }
+    }
+}
+
+/// `lib/blake/include/blake.h` `blakestate512`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct BlakeState512 {
+    pub h: [u64; 8],
+    pub s: [u64; 4],
+    pub t: [u64; 2],
+    pub buflen: i32,
+    pub nullt: i32,
+    pub buf: [u8; 128],
+}
+
+impl BlakeState512 {
+    pub fn zeroed() -> Self {
+        BlakeState512 {
+            h: [0; 8],
+            s: [0; 4],
+            t: [0; 2],
+            buflen: 0,
+            nullt: 0,
+            buf: [0; 128],
+        }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                core::mem::size_of::<BlakeState512>(),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Comparison helper
+// ---------------------------------------------------------------------------
+
+#[track_caller]
+pub fn eq(what: &str, c: &[u8], r: &[u8]) {
     if c != r {
-        let at = c
+        let first = c
             .iter()
             .zip(r.iter())
             .position(|(a, b)| a != b)
-            .unwrap_or_else(|| c.len().min(r.len()));
+            .unwrap_or(c.len().min(r.len()));
         panic!(
-            "{what}: C != Rust (len {} vs {}, first difference at byte {at})\n  C   : {}\n  Rust: {}",
+            "{what}: C and Rust differ (len {} vs {}) at byte {}\n  C  = {}\n  RS = {}",
             c.len(),
             r.len(),
-            hex_around(c, at),
-            hex_around(r, at)
+            first,
+            hex(&c[first.saturating_sub(4)..(first + 12).min(c.len())]),
+            hex(&r[first.saturating_sub(4)..(first + 12).min(r.len())]),
         );
     }
 }
 
-pub fn same_i(what: &str, c: c_int, r: c_int) {
-    assert_eq!(c, r, "{what}: C returned {c}, Rust returned {r}");
+pub fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-pub fn same_u(what: &str, c: u64, r: u64) {
-    assert_eq!(c, r, "{what}: C returned {c}, Rust returned {r}");
-}
-
-fn hex_around(b: &[u8], at: usize) -> String {
-    let lo = at.saturating_sub(8);
-    let hi = (at + 8).min(b.len());
-    let mut s = String::new();
-    if lo > 0 {
-        s.push_str("..");
+pub fn u32s_as_bytes(a: &[u32]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(a.len() * 4);
+    for x in a {
+        v.extend_from_slice(&x.to_ne_bytes());
     }
-    for x in &b[lo..hi] {
-        s.push_str(&format!("{x:02x}"));
-    }
-    if hi < b.len() {
-        s.push_str("..");
-    }
-    s
-}
-
-/// A "sponge" buffer padded with a guard pattern, so that a translation that
-/// writes too many bytes is caught rather than silently tolerated.
-pub fn guarded(len: usize, guard: usize) -> Vec<u8> {
-    let mut v = vec![0xA5u8; len + guard];
-    v[..len].fill(0);
     v
-}
-
-/* ------------------------------------------------------------------ */
-/* C function-pointer type aliases                                    */
-/* ------------------------------------------------------------------ */
-
-pub type FnAddrU32 = unsafe extern "C" fn(*mut u32, u32);
-pub type FnAddrU64 = unsafe extern "C" fn(*mut u32, u64);
-pub type FnAddrCopy = unsafe extern "C" fn(*mut u32, *const u32);
-
-pub type FnUllToBytes = unsafe extern "C" fn(*mut u8, c_uint, c_ulonglong);
-pub type FnU32ToBytes = unsafe extern "C" fn(*mut u8, u32);
-pub type FnBytesToUll = unsafe extern "C" fn(*const u8, c_uint) -> c_ulonglong;
-
-pub type FnThash = unsafe extern "C" fn(*mut u8, *const u8, c_uint, *const u8, *mut u32);
-pub type FnPrfAddr = unsafe extern "C" fn(*mut u8, *const u8, *const u32);
-pub type FnInitHash = unsafe extern "C" fn(*mut u8);
-pub type FnGenMsgRandom =
-    unsafe extern "C" fn(*mut u8, *const u8, *const u8, *const u8, c_ulonglong, *const u8);
-pub type FnHashMessage = unsafe extern "C" fn(
-    *mut u8,
-    *mut u64,
-    *mut u32,
-    *const u8,
-    *const u8,
-    *const u8,
-    c_ulonglong,
-    *const u8,
-);
-
-pub type FnComputeRoot =
-    unsafe extern "C" fn(*mut u8, *const u8, u32, u32, *const u8, u32, *const u8, *mut u32);
-pub type GenLeaf = unsafe extern "C" fn(*mut u8, *const u8, u32, *const u32);
-pub type FnTreehash =
-    unsafe extern "C" fn(*mut u8, *mut u8, *const u8, u32, u32, u32, GenLeaf, *mut u32);
-pub type FnTreehashX1 =
-    unsafe extern "C" fn(*mut u8, *mut u8, *const u8, u32, u32, u32, *mut u32, *mut u8);
-
-pub type FnChainLengths = unsafe extern "C" fn(*mut c_uint, *const u8);
-pub type FnWotsPkFromSig =
-    unsafe extern "C" fn(*mut u8, *const u8, *const u8, *const u8, *mut u32);
-pub type FnWotsGenLeafX1 = unsafe extern "C" fn(*mut u8, *const u8, u32, *mut u8);
-pub type FnForsGenLeafX1 = unsafe extern "C" fn(*mut u8, *const u8, u32, *mut u8);
-pub type FnForsSign = unsafe extern "C" fn(*mut u8, *mut u8, *const u8, *const u8, *const u32);
-pub type FnForsPkFromSig =
-    unsafe extern "C" fn(*mut u8, *const u8, *const u8, *const u8, *const u32);
-pub type FnMerkleSign =
-    unsafe extern "C" fn(*mut u8, *mut u8, *const u8, *mut u32, *mut u32, u32);
-pub type FnMerkleGenRoot = unsafe extern "C" fn(*mut u8, *const u8);
-
-pub type FnSizes = unsafe extern "C" fn() -> c_ulonglong;
-pub type FnSeedKeypair = unsafe extern "C" fn(*mut u8, *mut u8, *const u8) -> c_int;
-pub type FnKeypair = unsafe extern "C" fn(*mut u8, *mut u8) -> c_int;
-pub type FnSignature =
-    unsafe extern "C" fn(*mut u8, *mut usize, *const u8, usize, *const u8) -> c_int;
-pub type FnVerify = unsafe extern "C" fn(*const u8, usize, *const u8, usize, *const u8) -> c_int;
-pub type FnSign =
-    unsafe extern "C" fn(*mut u8, *mut c_ulonglong, *const u8, c_ulonglong, *const u8) -> c_int;
-pub type FnOpen =
-    unsafe extern "C" fn(*mut u8, *mut c_ulonglong, *const u8, c_ulonglong, *const u8) -> c_int;
-
-pub type FnRandombytes = unsafe extern "C" fn(*mut u8, c_ulonglong) -> c_int;
-pub type FnRandombytesInit = unsafe extern "C" fn(*mut u8, *mut u8);
-pub type FnAes256Ecb = unsafe extern "C" fn(*mut u8, *mut u8, *mut u8);
-pub type FnDrbgUpdate = unsafe extern "C" fn(*mut u8, *mut u8, *mut u8);
-pub type FnSeedexpanderInit =
-    unsafe extern "C" fn(*mut u8, *mut u8, *mut u8, c_ulong) -> c_int;
-pub type FnSeedexpander = unsafe extern "C" fn(*mut u8, *mut u8, c_ulong) -> c_int;
-
-/* blake */
-pub type FnBlakeOneShot = unsafe extern "C" fn(*mut u8, *const u8, c_ulonglong) -> c_int;
-pub type FnBlakeInit = unsafe extern "C" fn(*mut u8);
-pub type FnBlakeUpdate = unsafe extern "C" fn(*mut u8, *const u8, c_ulonglong);
-pub type FnBlakeFinal = unsafe extern "C" fn(*mut u8, *mut u8);
-pub type FnBlakeCompress = unsafe extern "C" fn(*mut u8, *const u8);
-pub type FnMgf1 = unsafe extern "C" fn(*mut u8, c_ulong, *const u8, c_ulong);
-
-/* sha2 */
-pub type FnShaOneShot = unsafe extern "C" fn(*mut u8, *const u8, usize);
-pub type FnShaIncInit = unsafe extern "C" fn(*mut u8);
-pub type FnShaIncBlocks = unsafe extern "C" fn(*mut u8, *const u8, usize);
-pub type FnShaIncFinalize = unsafe extern "C" fn(*mut u8, *mut u8, *const u8, usize);
-pub type FnSeedState = unsafe extern "C" fn(*mut u8);
-
-/* shake */
-pub type FnShake = unsafe extern "C" fn(*mut u8, usize, *const u8, usize);
-pub type FnShakeIncInit = unsafe extern "C" fn(*mut u64);
-pub type FnShakeIncAbsorb = unsafe extern "C" fn(*mut u64, *const u8, usize);
-pub type FnShakeIncFinalize = unsafe extern "C" fn(*mut u64);
-pub type FnShakeIncSqueeze = unsafe extern "C" fn(*mut u8, usize, *mut u64);
-pub type FnShakeAbsorb = unsafe extern "C" fn(*mut u64, *const u8, usize);
-pub type FnShakeSqueezeBlocks = unsafe extern "C" fn(*mut u8, usize, *mut u64);
-
-/* haraka */
-pub type FnTweakConstants = unsafe extern "C" fn(*mut u8);
-pub type FnHaraka512 = unsafe extern "C" fn(*mut u8, *const u8, *const u8);
-pub type FnHarakaS =
-    unsafe extern "C" fn(*mut u8, c_ulonglong, *const u8, c_ulonglong, *const u8);
-pub type FnHarakaSIncInit = unsafe extern "C" fn(*mut u8);
-pub type FnHarakaSIncAbsorb = unsafe extern "C" fn(*mut u8, *const u8, usize, *const u8);
-pub type FnHarakaSIncFinalize = unsafe extern "C" fn(*mut u8);
-pub type FnHarakaSIncSqueeze = unsafe extern "C" fn(*mut u8, usize, *mut u8, *const u8);
-
-/// Suppress "unused import" for `c_void` on configurations that do not need it.
-pub fn _keep(_: *mut c_void) {}
-
-/// A poison-tolerant `DRBG` lock: one failing test must not cascade into
-/// `PoisonError` failures that hide the real cause.
-pub fn drbg_lock() -> std::sync::MutexGuard<'static, ()> {
-    DRBG.lock().unwrap_or_else(|e| e.into_inner())
 }

@@ -1,28 +1,59 @@
-//! Pure-Rust translation of the SPHINCS+ reference implementation found in `c_src/`.
+//! Pure-Rust translation of the SPHINCS+ reference project.
 //!
-//! Build-time configurability mirrors the CMake cache variables:
-//!   * `HASH_BACKEND` -> features `haraka`, `sha2`, `shake` (alias `shake256`), `blake`
-//!   * `THASH`        -> features `robust`, `simple`
-//!   * `SECPAR`       -> features `128s`, `128f`, `192s`, `192f`, `256s`, `256f`
+//! Build-time configurability mirrors the CMake cache variables via Cargo
+//! features (resolved into `spx_backend` / `spx_thash` / `spx_secpar` cfgs by
+//! `build.rs`).
 
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::missing_safety_doc)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-#![allow(dead_code)]
-#![allow(clippy::too_many_arguments)]
+
+pub mod params;
+pub mod context;
 
 pub mod address;
-pub mod backend;
-pub mod context;
-pub mod fors;
-pub mod merkle;
-pub mod params;
-pub mod randombytes;
-pub mod rng;
-pub mod sign;
 pub mod utils;
 pub mod utilsx1;
 pub mod wots;
 pub mod wotsx1;
+pub mod fors;
+pub mod merkle;
+pub mod sign;
+pub mod rng;
+pub mod randombytes;
 
-pub use backend::{gen_message_random, hash_message, initialize_hash_function, prf_addr, thash};
-pub use context::SpxCtx;
+// -------- Hash backends (exactly one is active at a time) --------
+#[cfg(spx_backend = "sha2")]
+pub mod sha2;
+#[cfg(spx_backend = "sha2")]
+pub mod sha2_hash;
+#[cfg(spx_backend = "sha2")]
+pub mod sha2_thash;
+
+#[cfg(spx_backend = "shake")]
+pub mod fips202;
+#[cfg(spx_backend = "shake")]
+pub mod shake_hash;
+#[cfg(spx_backend = "shake")]
+pub mod shake_thash;
+
+#[cfg(spx_backend = "haraka")]
+pub mod haraka;
+#[cfg(spx_backend = "haraka")]
+pub mod haraka_hash;
+#[cfg(spx_backend = "haraka")]
+pub mod haraka_thash;
+
+#[cfg(spx_backend = "blake")]
+pub mod blake256;
+#[cfg(spx_backend = "blake")]
+pub mod blake512;
+#[cfg(spx_backend = "blake")]
+pub mod blake_hash;
+#[cfg(spx_backend = "blake")]
+pub mod blake_thash;
+
+// Backend-agnostic facades used by the core code.
+pub mod hash;
+pub mod thash;

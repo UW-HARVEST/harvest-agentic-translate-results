@@ -26,16 +26,11 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(spx_secpar, values(\"128s\", \"128f\", \"192s\", \"192f\", \"256s\", \"256f\"))");
     println!("cargo:rustc-check-cfg=cfg(spx_sha512)");
     println!("cargo:rustc-check-cfg=cfg(spx_blake512)");
-    println!("cargo:rustc-check-cfg=cfg(spx_big_hash)");
 
-    // IMPORTANT: the precedence rules below must match, exactly, the
-    // `#[cfg(feature = ...)]` precedence hard-coded in `src/params.rs`,
-    // `src/context.rs` and `src/backend/mod.rs`, otherwise a combination that
-    // enables more than one backend / thash / secpar feature would select
-    // inconsistent constants and struct layouts.
-
-    // Backend priority, matching src/backend/mod.rs (CMake default: haraka).
-    let backend = if feature("sha2") {
+    // Backend priority (default: haraka).
+    let backend = if feature("haraka") {
+        "haraka"
+    } else if feature("sha2") {
         "sha2"
     } else if feature("shake") {
         "shake"
@@ -45,22 +40,28 @@ fn main() {
         "haraka"
     };
 
-    // thash variant priority, matching src/backend/thash_*.rs, which key off
-    // `feature = "simple"` / `not(feature = "simple")` (CMake default: robust).
-    let thash = if feature("simple") { "simple" } else { "robust" };
+    // thash variant priority (default: robust).
+    let thash = if feature("robust") {
+        "robust"
+    } else if feature("simple") {
+        "simple"
+    } else {
+        "robust"
+    };
 
-    // Security parameter priority, matching the `mod secpar` cascade in
-    // src/params.rs (CMake default: 128s).
-    let secpar = if feature("256f") {
-        "256f"
-    } else if feature("256s") {
-        "256s"
-    } else if feature("192f") {
-        "192f"
-    } else if feature("192s") {
-        "192s"
+    // Security parameter priority (default: 128s).
+    let secpar = if feature("128s") {
+        "128s"
     } else if feature("128f") {
         "128f"
+    } else if feature("192s") {
+        "192s"
+    } else if feature("192f") {
+        "192f"
+    } else if feature("256s") {
+        "256s"
+    } else if feature("256f") {
+        "256f"
     } else {
         "128s"
     };
@@ -68,15 +69,6 @@ fn main() {
     println!("cargo:rustc-cfg=spx_backend=\"{}\"", backend);
     println!("cargo:rustc-cfg=spx_thash=\"{}\"", thash);
     println!("cargo:rustc-cfg=spx_secpar=\"{}\"", secpar);
-
-    // `SPX_BIG_HASH` / `SPX_SHA512` / `SPX_BLAKE512` is 1 exactly for the
-    // 192- and 256-bit security levels, independently of the backend.  This is
-    // what guards the `state_seeded_512` field of `spx_ctx` in `context.h`
-    // (`# if SPX_SHA512`) and the `thash_512` code paths in `thash_*.c`
-    // (`#if SPX_BLAKE512` / `#if SPX_SHA512`).
-    if secpar.starts_with("192") || secpar.starts_with("256") {
-        println!("cargo:rustc-cfg=spx_big_hash");
-    }
 
     // SPX_SHA512 is only defined by the SHA2 parameter sets, and only for the
     // 192/256-bit security levels.

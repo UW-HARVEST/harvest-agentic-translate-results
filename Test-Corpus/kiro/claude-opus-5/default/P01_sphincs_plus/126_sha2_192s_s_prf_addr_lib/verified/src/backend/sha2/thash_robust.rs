@@ -4,6 +4,7 @@ use super::sha2::*;
 use crate::address::{addr_ref, Addr};
 use crate::context::SpxCtx;
 use crate::params::*;
+use crate::vla::Vla;
 use core::ffi::c_uint;
 
 const MASK_MAX: usize = SPX_THASH_MAX_INBLOCKS * SPX_N;
@@ -23,8 +24,10 @@ pub fn thash(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Add
 
     let ib = inblocks as usize;
     let mut outbuf = [0u8; SPX_SHA256_OUTPUT_BYTES];
-    let mut bitmask = [0u8; MASK_MAX];
-    let mut buf = [0u8; BUF256_MAX];
+    let mut bitmask_v = Vla::<MASK_MAX>::new(ib * SPX_N);
+    let bitmask = bitmask_v.as_mut();
+    let mut buf_v = Vla::<BUF256_MAX>::new(SPX_N + SPX_SHA256_OUTPUT_BYTES + ib * SPX_N);
+    let buf = buf_v.as_mut();
     let mut sha2_state = [0u8; 40];
 
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);
@@ -54,8 +57,10 @@ pub fn thash(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Add
 fn thash_512(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Addr) {
     let ib = inblocks as usize;
     let mut outbuf = [0u8; SPX_SHA512_OUTPUT_BYTES];
-    let mut bitmask = [0u8; MASK_MAX];
-    let mut buf = [0u8; BUF512_MAX];
+    let mut bitmask_v = Vla::<MASK_MAX>::new(ib * SPX_N);
+    let bitmask = bitmask_v.as_mut();
+    let mut buf_v = Vla::<BUF512_MAX>::new(SPX_N + SPX_SHA256_ADDR_BYTES + ib * SPX_N);
+    let buf = buf_v.as_mut();
     let mut sha2_state = [0u8; 72];
 
     buf[..SPX_N].copy_from_slice(&ctx.pub_seed);

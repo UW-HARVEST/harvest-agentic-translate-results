@@ -1,84 +1,128 @@
-# CONFIGS.md — Configuration surface (valid inputs)
+# CONFIGS.md — configuration-surface table (Phase B)
 
-## Axes the C code actually branches on
+## Derivation
 
-Derived from `c_src/CMakeLists.txt`, `c_src/src/mdmacros.h` and the `#ifdef` /
-`switch` / token-paste sites in `c_src/src/mdcore.c`:
-
-### Build-time axes (the *only* "options" this API has — there is no runtime setter)
-
-| axis | source | domain | what it toggles |
-|------|--------|--------|-----------------|
-| `OP` | `CMakeLists.txt:26` `set(OP "add" …)`; `mdmacros.h:27` fallback `add` | `add`, `sub`, `mul` | `OP_FN(OP)` → which `op_*` is called; `STEP_<OP>` (`+=i` / `-=i` / `*=(i+1)`); `INIT_<OP>` (`0`/`0`/`1`); `STR(OP)` → `G_OP_NAME`; the name of the generated `accum_<OP>` |
-| `REPEAT` | `CMakeLists.txt:27` `set(REPEAT "5" …)`; `mdmacros.h:30` fallback `5` | `0`..`7` (`REP0`..`REP7` are the only ones defined) | `RUN_LOOP` → the unrolled `REP<REPEAT>` body used by `helper_call` and by `main`; also the argument `main` passes to `use_generated(REPEAT)` |
-
-Cross-product: **3 × 8 = 24** build configurations. In the Rust crate these are
-the Cargo features `add`/`sub`/`mul` × `"0"`..`"7"`.
-
-### Input-shape axes (per entry point)
-
-| entry point | signature | shapes the code distinguishes |
-|-------------|-----------|-------------------------------|
-| `op_add` / `op_sub` / `op_mul` | `int(int,int)` | zero, positive, negative, `INT_MIN`, `INT_MAX`, overflowing pairs, randomized full-range |
-| `helper_call` | `int(int,int)` | same as above; additionally the *return* composes `OP_FN(a,b) + REP<REPEAT>` so it depends on `REPEAT` too, **and it prints two values** |
-| `helper_ptr` | `int(int,int)` | same as above, dispatched through a local function pointer; **prints one value** |
-| `use_generated` | `int(int)` | `n` ∈ `switch` domain `0..=6` (7 distinct in-range shapes) **and** the `default` shape (`n<0`, `n>6`) — see ERRORS.md |
-| `G_OP` (data slot) | `int(*)(int,int)` | dereferenced and called; must equal the `op_<OP>` address for the selected `OP` |
-| `G_OP_NAME` (data slot) | `const char *` | dereferenced as a NUL-terminated string; must equal `STR(OP)` |
-| `main` (whole program) | `argv` | `argc` = 1/2/3/4; operands: decimal, signed, leading blanks, trailing garbage, empty, `INT_MIN`/`INT_MAX`, out-of-`long` values |
-
-## Configuration table
-
-One row per meaningful combination the C treats differently. `<op>` ranges over
-`add`, `sub`, `mul`; `<r>` over `0..7`. Every row is exercised for **all 24**
-`(OP, REPEAT)` builds by the differential tests, with many randomized inputs per
-row (fixed seed, SplitMix64) — not a single hand-picked value.
-
-| #  | entry point(s) | configuration (options set + input shape) | ✔ |
-|----|----------------|--------------------------------------------|---|
-| 1  | `op_add` | any `(OP,REPEAT)` build — `op_add` is defined unconditionally; 512 randomized full-range `(a,b)` pairs | [x] |
-| 2  | `op_add` | boundary operands: `(0,0)`, `(0,±1)`, `(INT_MAX,1)`, `(INT_MIN,-1)`, `(INT_MAX,INT_MAX)`, `(INT_MIN,INT_MIN)` | [x] |
-| 3  | `op_sub` | any build; 512 randomized full-range `(a,b)` pairs | [x] |
-| 4  | `op_sub` | boundary operands incl. `(INT_MIN,1)`, `(INT_MAX,-1)`, `(INT_MIN,INT_MAX)` | [x] |
-| 5  | `op_mul` | any build; 512 randomized full-range `(a,b)` pairs | [x] |
-| 6  | `op_mul` | boundary operands incl. `(INT_MIN,-1)`, `(INT_MAX,INT_MAX)`, `(INT_MIN,INT_MIN)`, `(x,0)`, `(x,1)` | [x] |
-| 7  | `G_OP` data slot | `OP=add` build → slot must equal `dlsym("op_add")`, and calling through it must match `op_add` on randomized inputs | [x] |
-| 8  | `G_OP` data slot | `OP=sub` build → slot must equal `dlsym("op_sub")`; call parity on randomized inputs | [x] |
-| 9  | `G_OP` data slot | `OP=mul` build → slot must equal `dlsym("op_mul")`; call parity on randomized inputs | [x] |
-| 10 | `G_OP_NAME` data slot | `OP=add` → C string `"add"` (byte-for-byte incl. NUL) | [x] |
-| 11 | `G_OP_NAME` data slot | `OP=sub` → C string `"sub"` | [x] |
-| 12 | `G_OP_NAME` data slot | `OP=mul` → C string `"mul"` | [x] |
-| 13 | `helper_ptr` | every `(OP,REPEAT)`; 256 randomized `(a,b)` — return value parity | [x] |
-| 14 | `helper_ptr` | every `(OP,REPEAT)`; **captured stdout** must be byte-identical (`helper.ptr=<r>\n`), incl. negative and `INT_MIN` results | [x] |
-| 15 | `helper_call` | `OP=add`, `REPEAT` = 0,1,2,3,4,5,6,7 (each build) — return `= a+b + (0+1+…+r-1)`; 256 randomized `(a,b)` | [x] |
-| 16 | `helper_call` | `OP=sub`, `REPEAT` = 0..7 — return `= a-b − (0+1+…+r-1)`; 256 randomized `(a,b)` | [x] |
-| 17 | `helper_call` | `OP=mul`, `REPEAT` = 0..7 — return `= a*b + r!` (acc starts at `INIT_mul=1`); 256 randomized `(a,b)` | [x] |
-| 18 | `helper_call` | every build; **captured stdout** byte-identical (`helper.call=<r> helper.acc=<acc>\n`) | [x] |
-| 19 | `use_generated` | every build; `n` = 0 (`REP0`, empty body → returns `INIT`) | [x] |
-| 20 | `use_generated` | every build; `n` = 1,2,3,4,5 (each `switch` case, i.e. each `REPn` unroll depth) | [x] |
-| 21 | `use_generated` | every build; `n` = 6 (highest in-range case) | [x] |
-| 22 | `use_generated` | every build; `n` swept over the full `-8..=16` window plus 256 randomized `i32` values — covers in-range, boundary and `default:` shapes in one property test | [x] |
-| 23 | `use_generated` | every build; **captured stdout** byte-identical (`gen.acc=<r>\n`) for all `n` in row 22 | [x] |
-| 24 | composed pipeline (low-level, driven like `main`) | every build: `G_OP(a,b)` → `helper_call(a,b)` → `helper_ptr(a,b)` → `use_generated(REPEAT)`, all four calls in `main`'s order on the *same* library handle, summing the results exactly as `mdmain.c:46` does; 128 randomized `(a,b)`. Verifies call-order-dependent state and the interleaved stdout of the whole sequence | [x] |
-| 25 | composed pipeline, stdout | every build; the concatenated stdout of the row-24 sequence must be byte-identical — exactly 3 lines (`helper.call=…`, `helper.ptr=…`, `gen.acc=…`) in that order | [x] |
-| 26 | whole program (`driver` binary) | every build × argument vectors: `3 4`, `0 0`, `-5 9`, `INT_MAX 1`, `INT_MIN -1`, `INT_MAX INT_MAX`, `+8 -8`, extra 4th arg — stdout + stderr + exit status byte-identical | [x] |
-| 27 | default configuration | no `-DOP` / `-DREPEAT` at all (C `#ifndef` fallbacks) vs `cargo` `--features add,5`, i.e. Cargo `default` — must equal the explicit `OP=add REPEAT=5` build | [x] |
-| 28 | Rust-only degenerate feature sets | no OP feature / no REPEAT feature / conflicting OP features / conflicting REPEAT features — must still compile and must resolve to the documented priority (`add > sub > mul`, lowest `REPEAT` wins) | [x] |
-
-## Where each row is tested
-
-`tests/valid_paths.rs`, test names carry the row numbers
-(`row01_row02_op_add`, `row07_row09_g_op_slot_points_at_selected_op`, …).
-Every call is made through `dlopen`/`dlsym` on the C `.so` *and* the Rust `.so`;
-the Rust crate is never invoked directly, so the `#[no_mangle]` export wrappers
-are part of what is compared.
-
-Run the whole table over every configuration with:
+Axes were extracted mechanically from the C source, not guessed:
 
 ```sh
-bash scripts/test_all_features.sh             # the 24 canonical (OP, REPEAT) builds
-bash scripts/test_all_features.sh degenerate  # + empty / conflicting feature sets
+grep -nE '#ifn?def|#define|switch|case |if *\(|OP_FN|STEP_|INIT_|REP[0-7]|REPEAT|CHOOSE_REP' \
+     c_src/src/mdmacros.h c_src/src/mdcore.c c_src/src/mdmain.c
+grep -n 'set(' c_src/CMakeLists.txt      # -> OP (default add), REPEAT (default 5)
 ```
 
-Result: **28/28 rows pass, for all 24 canonical configurations and all 14
-degenerate feature sets.**
+### Axis 1 — build-time `OP` (CMake `-DOP=`, Cargo feature `add`/`sub`/`mul`)
+
+`OP` is token-pasted into four *independent* macro families, so it toggles four
+distinct pieces of state:
+
+| macro | `add` | `sub` | `mul` |
+|-------|-------|-------|-------|
+| `OP_FN(OP)`   (`CAT(op_, op)`) | calls `op_add` | calls `op_sub` | calls `op_mul` |
+| `STEP_OP`     (`CAT(STEP_, op)`) | `acc += i` | `acc -= i` | `acc *= (i+1)` |
+| `INIT_FOR(OP)`(`CAT(INIT_, op)`) | `0` | `0` | **`1`** |
+| `STR(OP)` → `G_OP_NAME`, `OP_FN(OP)` → `G_OP` | `"add"`, `&op_add` | `"sub"`, `&op_sub` | `"mul"`, `&op_mul` |
+
+`OP` **unset** is a 4th distinct configuration (`#ifndef OP → add`), reached in
+Rust with `--no-default-features` and no OP feature.
+
+### Axis 2 — build-time `REPEAT` (CMake `-DREPEAT=`, Cargo feature `0`..`7`)
+
+`REPEAT` selects `CHOOSE_REP(REPEAT)` → `REP<REPEAT>`, the *statically unrolled*
+step chain used by `helper_call` and by `main`. Distinct branches: `REP0`
+(expands to **nothing** — accumulator stays at `INIT`), `REP1` … `REP7`.
+`REPEAT` **unset** is a 9th configuration (`#ifndef REPEAT → 5`).
+`REPEAT` also feeds `use_generated(REPEAT)` from `main`, where `REPEAT == 7`
+crosses `DISPATCH_REP`'s `case 6` boundary into `default:` — an interaction
+between the two axes that only shows up at `REPEAT=7`.
+
+### Axis 3 — public entry points (from `mdmacros.h`'s `extern` declarations)
+
+Lowest level first: `op_add`, `op_sub`, `op_mul` (leaf ops) → `G_OP` /
+`G_OP_NAME` (globals initialised by macro expansion at load time) →
+`helper_ptr` (indirect call) → `helper_call` (op + unrolled `RUN_LOOP`) →
+`use_generated` (the `static`, macro-generated `accum_<OP>` behind
+`DISPATCH_REP`) → `main` (composes all five plus `atoi`).
+Every one of these is exercised **directly** through `dlsym`, not only through
+the `main`/one-shot path.
+
+### Axis 4 — input shape
+
+* `int a, b`: `0`, `±1`, small randoms, large randoms, `INT_MIN`, `INT_MAX`,
+  `INT_MIN+1`, `INT_MAX-1`, and sign combinations (`+/+`, `+/-`, `-/+`, `-/-`).
+* `int n` for `use_generated`: `0` (empty unroll), `1` (single step), `2..5`
+  (many), `6` (last `case`), `7` (first `default`), `>7`, negatives.
+* `main` argv shape: `argc<3`, `argc==3`, `argc>3`; decimal / signed /
+  whitespace-padded / non-numeric / overflowing numeric text.
+* Observable outputs compared byte-for-byte: the returned `int` **and** the
+  exact bytes each function `printf`s to stdout.
+
+### Build configurations (cross product of axes 1 × 2 — all 36 are checked)
+
+`../run_all.sh` builds a C `.so` + C executable for each and runs the whole
+Phase B/C suite against the matching Rust feature combination.
+
+| | REPEAT unset | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|--|--|--|--|--|--|--|--|--|--|
+| **OP unset** | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] |
+| **add** | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] |
+| **sub** | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] |
+| **mul** | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] | [x] |
+
+## Configuration-surface table
+
+Each row is run under **every one of the 36 build configurations above**, with
+many randomized inputs (fixed seed `0x5DEECE66D`, SplitMix64 PRNG, 512
+iterations per randomized row) unless the row is exhaustive by construction.
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `op_add` | leaf op, independent of `OP`/`REPEAT`; `a,b` = exhaustive small grid `[-4..4]²` (81 pairs) | [x] |
+| 2 | `op_add` | `a,b` = 512 randomized full-range `int`s (all four sign combinations) | [x] |
+| 3 | `op_add` | `a,b` ∈ boundary set {`0`,`1`,`-1`,`INT_MIN`,`INT_MIN+1`,`INT_MAX`,`INT_MAX-1`}² (49 pairs, incl. overflow) | [x] |
+| 4 | `op_sub` | exhaustive small grid `[-4..4]²` | [x] |
+| 5 | `op_sub` | 512 randomized full-range `int`s | [x] |
+| 6 | `op_sub` | boundary-set cross product (49 pairs, incl. `INT_MIN - 1`) | [x] |
+| 7 | `op_mul` | exhaustive small grid `[-4..4]²` | [x] |
+| 8 | `op_mul` | 512 randomized full-range `int`s | [x] |
+| 9 | `op_mul` | boundary-set cross product (49 pairs, incl. `INT_MIN * -1`, `INT_MAX * INT_MAX`) | [x] |
+| 10 | `G_OP_NAME` | read the exported `const char *` and compare the NUL-terminated bytes; must be `"add"`/`"sub"`/`"mul"` per the `OP` axis | [x] |
+| 11 | `G_OP` | read the exported function pointer; assert it is identical to that `.so`'s own `op_<OP>` symbol address (checks `OP_FN(OP)` expanded to the right identifier in both) | [x] |
+| 12 | `G_OP` | invoke through the pointer: exhaustive small grid `[-4..4]²` | [x] |
+| 13 | `G_OP` | invoke through the pointer: 512 randomized full-range `int`s + boundary set | [x] |
+| 14 | `helper_ptr` | indirect call via a local `int(*fp)(int,int)`; exhaustive small grid `[-4..4]²`; compares return value **and** the `helper.ptr=%d\n` stdout bytes | [x] |
+| 15 | `helper_ptr` | 512 randomized full-range `int`s; return value + stdout bytes | [x] |
+| 16 | `helper_ptr` | boundary set (49 pairs), incl. overflowing ops; return value + stdout bytes | [x] |
+| 17 | `helper_call` | `OP_FN` result + `RUN_LOOP(OP, acc, REPEAT)` unrolled accumulator; exhaustive small grid `[-4..4]²`; compares return **and** `helper.call=%d helper.acc=%d\n` bytes (the `acc` half is the `REPEAT` axis, incl. `REPEAT=0` where `REP0` is empty) | [x] |
+| 18 | `helper_call` | 512 randomized full-range `int`s; return + stdout bytes | [x] |
+| 19 | `helper_call` | boundary set (49 pairs) — `r + acc` overflows for `INT_MAX`-ish `r`; return + stdout bytes | [x] |
+| 20 | `use_generated` | `DISPATCH_REP` in-range: exhaustive `n ∈ {0,1,2,3,4,5,6}` (every `case`), incl. `n=0` empty `REP0`; return + `gen.acc=%d\n` bytes | [x] |
+| 21 | `use_generated` | `n` = `REPEAT` itself (the value `main` passes) — the axis-1×axis-2 interaction, and the `REPEAT=7 → default:` case | [x] |
+| 22 | `use_generated` | `n` ∈ {`7`,`8`,`9`,`100`,`-1`,`-2`,`INT_MIN`,`INT_MAX`} → `default:` arm; return + stdout bytes | [x] |
+| 23 | `use_generated` | 512 randomized full-range `int` `n` (mostly `default:`, biased to include the `0..8` window); return + stdout bytes | [x] |
+| 24 | ordered composition `helper_call` → `helper_ptr` → `use_generated` → `G_OP` on the *same* loaded handle | replicates `main`'s call sequence directly on the low-level API, capturing **all** stdout in order, so interleaving/buffering of the composed pipeline is compared too; 128 randomized `(a,b)` | [x] |
+| 25 | repeated invocation | each entry point called 64× in a row with different inputs on one handle — checks there is no hidden per-call state (C has none: `acc` is a local, `G_OP`/`G_OP_NAME` are never written) | [x] |
+| 26 | `main` (`driver` executable) | `argc == 3`, small decimal args; compares stdout bytes, stderr bytes and exit status | [x] |
+| 27 | `main` (`driver` executable) | `argc == 3`, 128 randomized full-range decimal args (incl. negatives / `INT_MIN` / `INT_MAX`), so `summary=` overflow-wrapping is compared | [x] |
+| 28 | `main` (`driver` executable) | `argc == 3` with `atoi`-edge argument text: `""`, `"abc"`, `"12abc"`, `" 7 "`, `"+5"`, `"-0"`, `"0x10"`, `"007"`, `"2147483648"`, `"-2147483649"`, `"99999999999999999999"` | [x] |
+| 29 | `main` (`driver` executable) | `argc > 3` (extra args ignored) and `argc < 3` (usage + status 2) | [x] |
+| 30 | symbol surface | `nm -D` C-vs-Rust parity re-checked in this configuration | [x] |
+
+## Status
+
+All 30 rows pass, across randomized inputs, under **all 36 build configurations**
+(`../run_all.sh` → 36/36 PASS; 53 tests per configuration = 1908 test executions).
+
+Per-configuration test counts: `tests/configs.rs` 26, `tests/errors.rs` 20,
+`tests/valid_main.rs` 4, `tests/symbols.rs` 3.
+
+### Divergences found by this phase
+
+* Row 11/14 + `ERRORS.md` row 13 exposed that `helper_ptr` in Rust read the
+  global `G_OP` where the C token-pastes `op_<OP>` directly — fixed.
+* The same row exposed that Rust's `G_OP`/`G_OP_NAME` were emitted read-only
+  (`.data.rel.ro`) while C's are writable (`.data`) — fixed with `static mut`.
+
+### Negative control
+
+Running the Rust `mul,7` build against the C `sub/3` `.so` produces 34 failing
+assertions, confirming the rows actually discriminate between configurations.

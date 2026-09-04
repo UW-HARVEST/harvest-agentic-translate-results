@@ -8,7 +8,9 @@ use crate::{
 /// Takes an array of inblocks concatenated arrays of SPX_N bytes.
 pub fn thash<const N: usize>(
   out: &mut[u8], input: Option<&[u8]>, ctx: &SpxCtx, addr: &[u32]
-) {
+)
+  where [(); SPX_N + SPX_SHA256_ADDR_BYTES + N * SPX_N]: Sized
+{
   #[cfg(all(feature="sha2", not(any(feature="128f", feature="128s"))))]
   {
     if N > 1 {
@@ -19,7 +21,7 @@ pub fn thash<const N: usize>(
 
   let mut outbuf = [0u8; SPX_SHA256_OUTPUT_BYTES];
   let mut sha2_state = [0u8; 40];
-  let mut buf = vec![0u8; SPX_SHA256_ADDR_BYTES + N * SPX_N];
+  let mut buf = [0u8; SPX_N + SPX_SHA256_ADDR_BYTES + N * SPX_N];
 
   // Retrieve precomputed state containing pub_seed
   sha2_state.copy_from_slice(&ctx.state_seeded);
@@ -38,10 +40,12 @@ pub fn thash<const N: usize>(
 #[cfg(all(feature="sha2", not(any(feature="128f", feature="128s"))))]
 pub fn thash_512<const N: usize>(
   out: &mut[u8], input: Option<&[u8]>, ctx: &SpxCtx, addr: &[u32]
-) {
+)
+  where [(); SPX_N + SPX_SHA256_ADDR_BYTES + N * SPX_N]: Sized
+{
   let mut outbuf = [0u8; SPX_SHA512_OUTPUT_BYTES];
   let mut sha2_state = [0u8; 72];
-  let mut buf = vec![0u8; SPX_SHA256_ADDR_BYTES + N * SPX_N];
+  let mut buf = [0u8; SPX_N + SPX_SHA256_ADDR_BYTES + N * SPX_N];
 
   // Retrieve precomputed state containing pub_seed
   sha2_state[..72].copy_from_slice(&ctx.state_seeded_512);

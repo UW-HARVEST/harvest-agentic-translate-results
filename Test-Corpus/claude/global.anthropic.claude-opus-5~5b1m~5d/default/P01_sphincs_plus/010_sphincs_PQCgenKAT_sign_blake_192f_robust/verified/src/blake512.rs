@@ -5,6 +5,7 @@ use crate::utils::u32_to_bytes;
 pub const SPX_BLAKE512_OUTPUT_BYTES: usize = 64;
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct BlakeState512 {
     pub h: [u64; 8],
     pub s: [u64; 4],
@@ -32,6 +33,12 @@ impl Default for BlakeState512 {
         Self::new()
     }
 }
+
+/// The C `blake512.c` declares its round-constant table as a *non-static*
+/// `const u64 cst[16]`, so it appears in the shared library's dynamic symbol
+/// table. Exported here under the same name for symbol parity.
+#[no_mangle]
+pub static cst: [u64; 16] = C512;
 
 const C512: [u64; 16] = [
     0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0, 0x082EFA98EC4E6C89,

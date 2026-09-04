@@ -3,7 +3,9 @@
 
 use crate::address::addr_bytes;
 use crate::context::SpxCtx;
-use crate::haraka::{haraka256, haraka512, haraka_s};
+#[cfg(spx_thash = "robust")]
+use crate::haraka::haraka256;
+use crate::haraka::{haraka512, haraka_s};
 use crate::params::*;
 
 #[cfg(spx_thash = "robust")]

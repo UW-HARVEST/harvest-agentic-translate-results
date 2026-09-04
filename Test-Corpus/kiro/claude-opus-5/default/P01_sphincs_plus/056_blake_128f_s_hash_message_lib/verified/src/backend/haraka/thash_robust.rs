@@ -4,6 +4,7 @@ use super::haraka::*;
 use crate::address::{addr_ref, Addr};
 use crate::context::SpxCtx;
 use crate::params::*;
+use crate::vla::Vla;
 use core::ffi::c_uint;
 
 const BUF_MAX: usize = SPX_ADDR_BYTES + SPX_THASH_MAX_INBLOCKS * SPX_N;
@@ -12,8 +13,10 @@ const MASK_MAX: usize = SPX_THASH_MAX_INBLOCKS * SPX_N;
 /// Takes an array of `inblocks` concatenated arrays of `SPX_N` bytes.
 pub fn thash(out: &mut [u8], inp: &[u8], inblocks: u32, ctx: &SpxCtx, addr: &Addr) {
     let ib = inblocks as usize;
-    let mut buf = [0u8; BUF_MAX];
-    let mut bitmask = [0u8; MASK_MAX];
+    let mut buf_v = Vla::<BUF_MAX>::new(SPX_ADDR_BYTES + ib * SPX_N);
+    let buf = buf_v.as_mut();
+    let mut bitmask_v = Vla::<MASK_MAX>::new(ib * SPX_N);
+    let bitmask = bitmask_v.as_mut();
     let mut outbuf = [0u8; 32];
     let mut buf_tmp = [0u8; 64];
 

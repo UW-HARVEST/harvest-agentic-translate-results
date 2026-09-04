@@ -195,4 +195,3 @@ pub fn hash_message(
   *leaf_idx = bytes_to_ull(&buf[buf_idx..], SPX_LEAF_BYTES) as u32;
   *leaf_idx &= !0u32 >> (32 - SPX_LEAF_BITS);
 }
-

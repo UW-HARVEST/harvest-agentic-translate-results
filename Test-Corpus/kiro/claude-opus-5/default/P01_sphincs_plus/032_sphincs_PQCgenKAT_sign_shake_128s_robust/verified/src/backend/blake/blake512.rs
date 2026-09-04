@@ -26,6 +26,13 @@ const CST: [u64; 16] = [
     0x636920D871574E69,
 ];
 
+/// `blake512.c` declares `const u64 cst[16]` **without** `static`, so the
+/// reference `libblake.so` exports it as a read-only data symbol named `cst`
+/// (unlike `blake256.c`'s `static const u32 cst[16]`, which stays internal).
+/// Mirror that export so the dynamic symbol tables match.
+#[unsafe(no_mangle)]
+pub static cst: [u64; 16] = CST;
+
 #[allow(non_upper_case_globals, dead_code)]
 const PADDING: [u8; 129] = {
     let mut p = [0u8; 129];

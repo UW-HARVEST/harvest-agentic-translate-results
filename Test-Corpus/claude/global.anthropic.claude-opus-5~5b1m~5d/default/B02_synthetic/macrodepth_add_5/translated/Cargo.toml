@@ -1,3 +1,17 @@
+# Translation of the C `driver` project (c_src/) to Rust.
+#
+# Build-time configurability mirrors the CMake cache variables `OP` and
+# `REPEAT` (see c_src/CMakeLists.txt, which compiles with
+# `-DOP=${OP} -DREPEAT=${REPEAT}`). Each possible cache-variable *value*
+# becomes a Cargo feature with the exact same name in lowercase:
+#
+#   OP     -> features `add`, `sub`, `mul`   (default: add)
+#   REPEAT -> features `0`..`7`              (default: 5)
+#
+# When no OP/REPEAT feature is selected the defaults (add, 5) are used, exactly
+# matching the CMake defaults. All feature combinations compile; when several
+# conflicting values are enabled a deterministic priority is applied
+# (OP: mul > sub > add; REPEAT: highest number wins).
 [package]
 name = "driver"
 version = "0.1.0"
@@ -5,22 +19,19 @@ edition = "2021"
 
 [lib]
 name = "driver"
-path = "src/lib.rs"
 crate-type = ["cdylib"]
+path = "src/lib.rs"
 
 [[bin]]
 name = "driver"
 path = "src/main.rs"
 
 [features]
-default = ["add", "5"]
-
-# CMake cache variable OP=<value>
+# OP selection (CMake `OP` values)
 add = []
 sub = []
 mul = []
-
-# CMake cache variable REPEAT=<value>
+# REPEAT selection (CMake `REPEAT` values)
 "0" = []
 "1" = []
 "2" = []
@@ -29,8 +40,5 @@ mul = []
 "5" = []
 "6" = []
 "7" = []
-
-[profile.release]
-panic = "abort"
 
 [workspace]

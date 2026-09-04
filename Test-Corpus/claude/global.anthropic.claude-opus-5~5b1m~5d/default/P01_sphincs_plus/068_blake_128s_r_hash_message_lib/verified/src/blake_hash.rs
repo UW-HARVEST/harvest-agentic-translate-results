@@ -31,8 +31,11 @@ pub fn prf_addr(out: &mut [u8], ctx: &SpxCtx, addr: &[u32; 8]) {
     out[..SPX_N].copy_from_slice(&outbuf[..SPX_N]);
 }
 
+/// NOTE: the C code finalises the BLAKE state *directly into* `R`
+/// (`blakeX_final(&S, R)`), so it writes the full `SPX_BLAKEX_OUTPUT_BYTES`
+/// digest — 32 bytes for BLAKE-256, 64 for BLAKE-512 — not just `SPX_N`.
+/// `r` must therefore be at least `BLAKEX_OUTPUT` bytes long.
 pub fn gen_message_random(r: &mut [u8], sk_prf: &[u8], optrand: &[u8], m: &[u8], _ctx: &SpxCtx) {
-    let mut scratch = [0u8; BLAKEX_OUTPUT];
     let mlen = m.len();
     if SPX_N >= 24 {
         let mut s = BlakeState512::new();
@@ -40,16 +43,15 @@ pub fn gen_message_random(r: &mut [u8], sk_prf: &[u8], optrand: &[u8], m: &[u8],
         blake512_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
         blake512_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
         blake512_update(&mut s, m, mlen as u64);
-        blake512_final(&mut s, &mut scratch);
+        blake512_final(&mut s, &mut r[..BLAKEX_OUTPUT]);
     } else {
         let mut s = BlakeState256::new();
         blake256_init(&mut s);
         blake256_update(&mut s, &sk_prf[..SPX_N], SPX_N as u64);
         blake256_update(&mut s, &optrand[..SPX_N], SPX_N as u64);
         blake256_update(&mut s, m, mlen as u64);
-        blake256_final(&mut s, &mut scratch);
+        blake256_final(&mut s, &mut r[..BLAKEX_OUTPUT]);
     }
-    r[..SPX_N].copy_from_slice(&scratch[..SPX_N]);
 }
 
 pub fn hash_message(
@@ -127,7 +129,7 @@ pub unsafe extern "C" fn SPX_gen_message_random(
     ctx: *const SpxCtx,
 ) {
     gen_message_random(
-        core::slice::from_raw_parts_mut(r, SPX_N),
+        core::slice::from_raw_parts_mut(r, BLAKEX_OUTPUT),
         core::slice::from_raw_parts(sk_prf, SPX_N),
         core::slice::from_raw_parts(optrand, SPX_N),
         core::slice::from_raw_parts(m, mlen as usize),

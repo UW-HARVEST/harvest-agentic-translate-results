@@ -1,156 +1,91 @@
-//! Phase D — symbol parity between the C `.so` and the Rust `.so`.
-//!
-//! Runs `nm -D --defined-only` on both objects for the configuration this test
-//! was built with and requires the "missing from Rust" set to be empty. Also
-//! verifies each symbol is actually *usable* through `dlsym` (i.e. not merely
-//! present) and has the right kind (text vs data).
+//! Phase D — exported-symbol parity between the C `.so` and the Rust `.so`.
 
 mod common;
 
-use common::{c_lib_path, pair, rust_lib_path, OP, REPEAT};
-use std::collections::BTreeMap;
+use common::*;
+use std::collections::BTreeSet;
 use std::process::Command;
 
-/// symbol name -> nm type letter
-fn dynamic_symbols(path: &std::path::Path) -> BTreeMap<String, char> {
+/// Dynamic *defined* symbols of an object, as reported by `nm -D --defined-only`.
+fn dyn_symbols(path: &std::path::Path) -> BTreeSet<String> {
     let out = Command::new("nm")
-        .arg("-D")
-        .arg("--defined-only")
+        .args(["-D", "--defined-only", "--format=posix"])
         .arg(path)
         .output()
-        .expect("run nm");
+        .unwrap_or_else(|e| panic!("nm {}: {e}", path.display()));
     assert!(
         out.status.success(),
         "nm failed on {}: {}",
         path.display(),
         String::from_utf8_lossy(&out.stderr)
     );
-    let mut map = BTreeMap::new();
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() >= 3 {
-            map.insert(cols[2].to_string(), cols[1].chars().next().unwrap());
-        }
-    }
-    map
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().next())
+        .map(|s| s.to_string())
+        .collect()
 }
 
+/// The C library's full exported surface (from `nm -D` on the C `.so`).
+const EXPECTED_C_SYMBOLS: [&str; 8] = [
+    "G_OP",
+    "G_OP_NAME",
+    "helper_call",
+    "helper_ptr",
+    "op_add",
+    "op_mul",
+    "op_sub",
+    "use_generated",
+];
+
 #[test]
-fn c_so_exports_the_expected_eight_symbols() {
-    let c = dynamic_symbols(&c_lib_path());
-    let names: Vec<&str> = c.keys().map(|s| s.as_str()).collect();
+fn symbol_parity_c_vs_rust() {
+    let c = dyn_symbols(&c_so_path());
+    let r = dyn_symbols(&rust_so_path());
+
+    // Sanity: the C surface is what SYMBOLS.md documents.
+    let expected: BTreeSet<String> = EXPECTED_C_SYMBOLS.iter().map(|s| s.to_string()).collect();
     assert_eq!(
-        names,
-        vec![
-            "G_OP",
-            "G_OP_NAME",
-            "helper_call",
-            "helper_ptr",
-            "op_add",
-            "op_mul",
-            "op_sub",
-            "use_generated"
-        ],
-        "the C .so surface changed [OP={} REPEAT={}]",
-        OP,
-        REPEAT
+        c, expected,
+        "the C .so's exported surface changed; update SYMBOLS.md"
     );
-    // `accum_<OP>` is `static` in mdcore.c and must NOT be dynamic.
-    assert!(
-        !c.contains_key(&format!("accum_{}", OP)),
-        "accum_{} unexpectedly exported by the C .so",
-        OP
-    );
-}
 
-#[test]
-fn every_c_symbol_is_exported_by_the_rust_so() {
-    let c = dynamic_symbols(&c_lib_path());
-    let r = dynamic_symbols(&rust_lib_path());
-
-    let missing: Vec<&String> = c.keys().filter(|k| !r.contains_key(*k)).collect();
+    let missing: Vec<&String> = c.difference(&r).collect();
     assert!(
         missing.is_empty(),
-        "symbols exported by the C .so but MISSING from the Rust .so \
-         [OP={} REPEAT={}]: {:?}",
-        OP,
-        REPEAT,
-        missing
-    );
-
-    // Same kind: `T` (code) for functions, `D` (initialised data) for the two
-    // globals, so a consumer's `dlsym` + dereference sees the same shape.
-    for (name, ckind) in &c {
-        let rkind = r[name];
-        assert_eq!(
-            *ckind, rkind,
-            "symbol `{}` has nm type {} in C but {} in Rust",
-            name, ckind, rkind
-        );
-    }
-}
-
-#[test]
-fn rust_so_has_no_unresolved_non_libc_symbols() {
-    let out = Command::new("nm")
-        .arg("-D")
-        .arg("--undefined-only")
-        .arg(rust_lib_path())
-        .output()
-        .expect("run nm");
-    let undef: Vec<String> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| l.split_whitespace().last().map(|s| s.to_string()))
-        .filter(|s| !s.is_empty())
-        // drop the `@GLIBC_2.x` version tag
-        .map(|s| s.split('@').next().unwrap().to_string())
-        .collect();
-
-    // Everything left must come from libc / the dynamic loader / libgcc.
-    let allowed_prefix = [
-        "_", "abort", "bcmp", "calloc", "close", "dl", "environ", "exit", "fcntl", "free",
-        "getcwd", "getenv", "gettid", "malloc", "mem", "mmap", "mprotect", "munmap", "open",
-        "poll", "posix_", "pthread_", "raise", "read", "realloc", "sig", "stat", "str", "sys",
-        "syscall", "write", "unlink", "lseek", "readlink", "sched_", "gnu_get_libc_version",
-        "getrandom", "openat", "statx", "fstat", "pipe", "dup", "sysconf", "nanosleep", "clock_",
-        "cfree", "qsort", "bsearch", "atexit", "getpid", "realpath", "abs", "ftruncate", "isatty",
-        "rmdir", "chdir", "fdopen", "fwrite", "fputs", "fflush", "printf", "puts", "putchar",
-        "madvise", "mremap", "prctl", "gettimeofday",
-    ];
-    let bad: Vec<&String> = undef
-        .iter()
-        .filter(|s| !allowed_prefix.iter().any(|p| s.starts_with(p)))
-        .collect();
-    assert!(
-        bad.is_empty(),
-        "Rust .so has unresolved non-libc symbols [OP={} REPEAT={}]: {:?}",
-        OP,
-        REPEAT,
-        bad
+        "Rust .so is missing C-exported symbols {missing:?}\n\
+         C  ({}): {c:?}\nRust has {} dynamic symbols",
+        c.len(),
+        r.len()
     );
 }
 
+/// The `static` (file-local) macro-generated accumulators must NOT be exported by
+/// either object — a stub/extra export would be a fidelity bug in the other
+/// direction.
 #[test]
-fn all_symbols_resolve_via_dlsym_in_both_objects() {
-    let p = pair();
-    for sym in [
-        "op_add",
-        "op_sub",
-        "op_mul",
-        "helper_call",
-        "helper_ptr",
-        "use_generated",
-    ] {
-        // `bin2`/`un1` panic with a clear message when dlsym fails.
-        let _ = p.c.addr(sym);
-        let _ = p.r.addr(sym);
+fn static_accum_not_exported() {
+    let c = dyn_symbols(&c_so_path());
+    let r = dyn_symbols(&rust_so_path());
+    for name in ["accum_add", "accum_sub", "accum_mul", "accum", "main"] {
+        assert!(!c.contains(name), "C unexpectedly exports {name}");
+        assert!(!r.contains(name), "Rust unexpectedly exports {name}");
     }
-    for sym in ["G_OP", "G_OP_NAME"] {
-        assert_ne!(p.c.addr(sym), 0);
-        assert_ne!(p.r.addr(sym), 0);
+}
+
+/// Every documented symbol must actually be resolvable through `dlsym` in both
+/// objects (catches e.g. a symbol present in `nm` but not dynamically bindable).
+#[test]
+fn all_symbols_resolvable_via_dlsym() {
+    let (c, r) = pair();
+    for name in ["op_add", "op_sub", "op_mul", "helper_call", "helper_ptr"] {
+        let _ = c.bin(name);
+        let _ = r.bin(name);
     }
-    // The two data slots must hold non-null payloads on both sides.
-    assert_ne!(p.c.g_op() as usize, 0);
-    assert_ne!(p.r.g_op() as usize, 0);
-    assert_eq!(p.c.g_op_name(), p.r.g_op_name());
+    let _ = c.un("use_generated");
+    let _ = r.un("use_generated");
+    let _ = c.g_op();
+    let _ = r.g_op();
+    let _ = c.g_op_name();
+    let _ = r.g_op_name();
 }

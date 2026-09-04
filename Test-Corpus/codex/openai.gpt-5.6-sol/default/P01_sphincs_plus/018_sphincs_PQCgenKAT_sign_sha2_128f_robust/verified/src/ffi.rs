@@ -3,6 +3,27 @@ use crate::sign;
 use crate::context::SpxCtx;
 use std::ffi::{c_int, c_ulong, c_void};
 
+#[cfg(feature = "blake")]
+#[unsafe(no_mangle)]
+pub static cst: [u64; 16] = [
+    0x243F6A8885A308D3,
+    0x13198A2E03707344,
+    0xA4093822299F31D0,
+    0x082EFA98EC4E6C89,
+    0x452821E638D01377,
+    0xBE5466CF34E90C6C,
+    0xC0AC29B7C97C50DD,
+    0x3F84D5B5B5470917,
+    0x9216D5D98979FB1B,
+    0xD1310BA698DFB5AC,
+    0x2FFD72DBD01ADFB7,
+    0xB8E1AFED6A267E96,
+    0xBA7C9045F12C7F99,
+    0x24A19947B3916CF7,
+    0x0801F2E2858EFC16,
+    0x636920D871574E69,
+];
+
 #[unsafe(no_mangle)]
 pub extern "C" fn crypto_sign_secretkeybytes() -> u64 {
     CRYPTO_SECRETKEYBYTES as u64
@@ -311,10 +332,11 @@ pub unsafe extern "C" fn SPX_gen_message_random(
     mlen: u64,
     ctx: *const SpxCtx,
 ) {
-    #[cfg(feature = "blake")]
-    let output_len = if SPX_N >= 24 { 64 } else { 32 };
-    #[cfg(not(feature = "blake"))]
-    let output_len = SPX_N;
+    let output_len = if cfg!(feature = "blake") {
+        if SPX_N >= 24 { 64 } else { 32 }
+    } else {
+        SPX_N
+    };
     crate::hash::gen_message_random(
         unsafe { std::slice::from_raw_parts_mut(out, output_len) },
         unsafe { std::slice::from_raw_parts(sk_prf, SPX_N) },
@@ -715,8 +737,6 @@ pub unsafe extern "C" fn SPX_wots_gen_leafx1(
         &mut rust_info,
     );
     export_wots_signature(c_info, &rust_info);
-    c_info.leaf_addr = rust_info.leaf_addr;
-    c_info.pk_addr = rust_info.pk_addr;
 }
 
 #[unsafe(no_mangle)]
@@ -879,8 +899,6 @@ pub unsafe extern "C" fn SPX_wots_treehashx1(
         |leaf, idx| crate::wotsx1::wots_gen_leafx1(leaf, ctx_ref, idx, &mut rust_info),
     );
     export_wots_signature(c_info, &rust_info);
-    c_info.leaf_addr = rust_info.leaf_addr;
-    c_info.pk_addr = rust_info.pk_addr;
 }
 
 #[unsafe(no_mangle)]

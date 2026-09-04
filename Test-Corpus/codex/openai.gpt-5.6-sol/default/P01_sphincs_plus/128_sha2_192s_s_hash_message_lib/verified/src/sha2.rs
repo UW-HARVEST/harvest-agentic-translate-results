@@ -2,7 +2,7 @@ use core::convert::TryInto;
 use crate::context::SpxCtx;
 use crate::params::*;
 use crate::utils::*;
-use sha256::digest::generic_array::GenericArray;
+use ::sha2::digest::generic_array::GenericArray;
 
 #[cfg(any(feature="128f", feature="128s"))]
 pub const SPX_SHA256_BLOCK_BYTES: usize = 64;
@@ -69,7 +69,7 @@ fn crypto_hashblocks_sha256(
 
   while inlen >= 64 {
     let arr = GenericArray::from_slice(&input[idx..idx+64]);
-    sha256::compress256(&mut state, &[*arr]);
+    ::sha2::compress256(&mut state, &[*arr]);
     idx += 64;
     inlen -= 64;
   }
@@ -92,7 +92,7 @@ fn crypto_hashblocks_sha512(statebytes: &mut[u8],input: &[u8], mut inlen: usize)
 
   while inlen >= 128 {
     let arr = GenericArray::from_slice(&input[idx..idx+128]);
-    sha256::compress512(&mut state, &[*arr]);
+    ::sha2::compress512(&mut state, &[*arr]);
     idx += 128;
     inlen -= 128;
   }

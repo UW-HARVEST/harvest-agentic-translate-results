@@ -1,491 +1,237 @@
-//! Shared harness for the differential tests.
+//! Shared differential-test harness.
 //!
-//! Both sides are always reached through `dlopen` + `dlsym` (`libloading`): the C
-//! reference `.so` built from `c_src/src/mdcore.c`, and the Rust `cdylib` built
-//! from this crate. Nothing here calls a Rust function from the translation
-//! directly — every comparison goes through the `#[no_mangle] extern "C"` exports,
-//! so the wrappers themselves are under test.
+//! Both libraries are loaded as shared objects through `libloading` and driven
+//! only through their exported symbols; the Rust implementation is never called
+//! directly, so the `#[unsafe(no_mangle)] extern "C"` wrappers are under test
+//! too.
+//!
+//! * C   `.so`: `cbuild/libcmd_<op>_<repeat>.so` (built by `cbuild/build_c.sh`)
+//! * Rust `.so`: `translation/target/<profile>/libdriver.so`
+//!
+//! Which C `.so` to load is decided from the Cargo features of *this* test
+//! target (features are per-package, so the tests are compiled with the same
+//! feature set as the library). The mapping used here is the direct one
+//! (`repeat_N` -> `N`, `add|sub|mul` -> that op); it deliberately does **not**
+//! reuse `src/mdmacros.rs`'s cfg-priority chain, so a bug in that chain shows up
+//! as a C/Rust divergence instead of cancelling out.
 
 #![allow(dead_code)]
 
-use std::ffi::{c_char, c_int, c_void};
-use std::io::Read;
-use std::os::unix::io::AsRawFd;
+use std::ffi::{c_char, c_int};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use libloading::{Library, Symbol};
 
-// ---------------------------------------------------------------------------
-// Build configuration, mirroring src/mdmacros.rs's feature precedence exactly.
-// ---------------------------------------------------------------------------
+/// `int (*)(int, int)`
+pub type BinOp = unsafe extern "C" fn(c_int, c_int) -> c_int;
+/// `int (*)(int)`
+pub type UnOp = unsafe extern "C" fn(c_int) -> c_int;
 
-/// `-DOP=` value this test binary was compiled for.
-pub const OP_TAG: &str = if cfg!(feature = "mul") {
-    "mul"
-} else if cfg!(feature = "sub") {
+/* ------------------------------------------------------------------ *
+ * Build configuration of this test binary.
+ * ------------------------------------------------------------------ */
+
+/// The `OP` cache variable this test binary was compiled for.
+pub const OP: &str = if cfg!(feature = "sub") {
     "sub"
+} else if cfg!(feature = "mul") {
+    "mul"
 } else {
+    // `add`, and the `#ifndef OP / #define OP add` fallback.
     "add"
 };
 
-/// `-DREPEAT=` value this test binary was compiled for.
-pub const REPEAT: c_int = if cfg!(feature = "0") {
+/// The `REPEAT` cache variable this test binary was compiled for.
+pub const REPEAT: c_int = if cfg!(feature = "repeat_0") {
     0
-} else if cfg!(feature = "1") {
+} else if cfg!(feature = "repeat_1") {
     1
-} else if cfg!(feature = "2") {
+} else if cfg!(feature = "repeat_2") {
     2
-} else if cfg!(feature = "3") {
+} else if cfg!(feature = "repeat_3") {
     3
-} else if cfg!(feature = "4") {
+} else if cfg!(feature = "repeat_4") {
     4
-} else if cfg!(feature = "6") {
+} else if cfg!(feature = "repeat_6") {
     6
-} else if cfg!(feature = "7") {
+} else if cfg!(feature = "repeat_7") {
     7
 } else {
+    // `repeat_5`, and the `#ifndef REPEAT / #define REPEAT 5` fallback.
     5
 };
 
-/// `INIT_FOR(OP)`.
-pub const INIT: c_int = if cfg!(feature = "mul") { 1 } else { 0 };
+/// `INIT_<OP>` from `mdmacros.h:56-58`, used only to document expectations in
+/// assertion messages. Never used as the oracle -- the C `.so` is the oracle.
+pub const INIT: c_int = if OP.as_bytes()[0] == b'm' { 1 } else { 0 };
 
-pub fn config_tag() -> String {
-    format!("{}_{}", OP_TAG, REPEAT)
+pub fn config_label() -> String {
+    format!("OP={OP} REPEAT={REPEAT}")
 }
 
-// ---------------------------------------------------------------------------
-// Locating / building the two shared objects
-// ---------------------------------------------------------------------------
+/* ------------------------------------------------------------------ *
+ * Locating the artifacts.
+ * ------------------------------------------------------------------ */
 
-/// Repository root (the directory holding `c_src/` and `translation/`).
-pub fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("translation/ has a parent")
+/// `translation/`
+pub fn manifest_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// The working directory that holds `c_src/`, `translation/` and `cbuild/`.
+pub fn work_root() -> PathBuf {
+    manifest_dir().parent().expect("translation/ has a parent").to_path_buf()
+}
+
+/// `target/<profile>/` -- derived from the running test executable
+/// (`target/<profile>/deps/<test>-<hash>`).
+pub fn target_profile_dir() -> PathBuf {
+    let exe = std::env::current_exe().expect("current_exe");
+    exe.parent()
+        .and_then(Path::parent)
+        .expect("test exe lives in target/<profile>/deps/")
         .to_path_buf()
 }
 
-/// The C reference `.so` for this build configuration, compiling it on demand.
-///
-/// `c_src/CMakeLists.txt` only declares `add_executable`, so the shared-library
-/// form is produced here from `mdcore.c` (the half without `main`) using the same
-/// `-D` flags cmake would pass. `c_src/` is only ever read.
-pub fn c_lib_path() -> PathBuf {
-    let root = repo_root();
-    let out_dir = root.join("cbuild");
-    let so = out_dir.join(format!("libcdriver_{}.so", config_tag()));
-    if !so.exists() {
-        std::fs::create_dir_all(&out_dir).expect("create cbuild/");
-        let status = Command::new("gcc")
-            .args([
-                "-O2",
-                "-fPIC",
-                "-shared",
-                &format!("-DOP={}", OP_TAG),
-                &format!("-DREPEAT={}", REPEAT),
-            ])
-            .arg(format!("-I{}", root.join("c_src/src").display()))
-            .arg("-o")
-            .arg(&so)
-            .arg(root.join("c_src/src/mdcore.c"))
-            .status()
-            .expect("run gcc");
-        assert!(status.success(), "gcc failed for config {}", config_tag());
-    }
-    so
+fn require(path: PathBuf, what: &str, hint: &str) -> PathBuf {
+    assert!(path.is_file(), "missing {what}: {} ({hint})", path.display());
+    path
 }
 
-/// The Rust `cdylib` for this build configuration.
-///
-/// `cargo test` builds the crate's rlib and the test harness but *not* the
-/// `cdylib` (adding `rlib` to `crate-type` does not change that), so the `.so` has
-/// to be built separately. `build_so.sh` does it and stamps a per-configuration
-/// copy, and both `sweep_so.sh` and `mutation_check.sh` point the tests straight at
-/// that copy via `MD_RUST_SO`. Resolution order:
-///
-/// 1. `$MD_RUST_SO` — an explicit path, which is what the scripts always pass.
-/// 2. `target/<profile>/libdriver_<op>_<repeat>.so` — the stamped copy.
-/// 3. `target/<profile>/libdriver.so` — a bare `cargo build`. This path is shared
-///    by every feature set, so it is probed for the expected configuration; a
-///    mismatch is reported as such rather than as a mysterious divergence.
-pub fn rust_lib_path() -> PathBuf {
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(|| {
-        if let Some(explicit) = std::env::var_os("MD_RUST_SO") {
-            let p = PathBuf::from(explicit);
-            assert!(p.exists(), "MD_RUST_SO points at a missing file: {}", p.display());
-            return p;
+/// Path of the C shared library matching this test binary's configuration.
+pub fn c_so_path() -> PathBuf {
+    if let Ok(p) = std::env::var("C_SO") {
+        return require(PathBuf::from(p), "C .so from $C_SO", "check cbuild/build_c.sh");
+    }
+    require(
+        work_root().join("cbuild").join(format!("libcmd_{OP}_{REPEAT}.so")),
+        "C .so",
+        "run cbuild/build_c.sh",
+    )
+}
+
+/// Path of the Rust `cdylib`.
+pub fn rust_so_path() -> PathBuf {
+    if let Ok(p) = std::env::var("RUST_SO") {
+        return require(PathBuf::from(p), "Rust .so from $RUST_SO", "cargo build");
+    }
+    let dir = target_profile_dir();
+    for name in ["libdriver.so", "driver.so"] {
+        let cand = dir.join(name);
+        if cand.is_file() {
+            return cand;
         }
-
-        let exe = std::env::current_exe().expect("current_exe");
-        // target/<profile>/deps/<test>-<hash>  ->  target/<profile>
-        let profile_dir = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("test exe lives in target/<profile>/deps");
-
-        let stamped = profile_dir.join(format!("libdriver_{}.so", config_tag()));
-        if stamped.exists() {
-            return stamped;
-        }
-
-        let bare = profile_dir.join("libdriver.so");
-        assert!(
-            bare.exists(),
-            "no Rust cdylib for the {}/{} configuration.\n\
-             `cargo test` does not build a cdylib; build it first, e.g.\n\
-             \n    ./build_so.sh --no-default-features --features {},{}\n\n\
-             or just run ./verify.sh, which does the whole sweep.",
-            OP_TAG,
-            REPEAT,
-            OP_TAG,
-            REPEAT
-        );
-        assert!(
-            built_for_this_config(&bare),
-            "{} does not behave like the {}/{} configuration this test binary was \
-             compiled for.\nEither it is a stale artifact from a different feature set \
-             (target/<profile>/libdriver.so is shared by all of them) or the \
-             translation genuinely diverges. Re-run ./verify.sh, which builds and \
-             stamps a per-configuration copy, to tell the two apart.",
-            bare.display(),
-            OP_TAG,
-            REPEAT
-        );
-        bare
-    })
-    .clone()
-}
-
-/// `RUN_LOOP(OP, acc, REPEAT)` starting from `INIT_FOR(OP)` — what
-/// `helper_call(0, 0)` returns, since `OP_FN(0, 0)` is 0 for all three ops.
-pub fn expected_run_loop_acc() -> c_int {
-    match OP_TAG {
-        "add" => (0..REPEAT).sum(),
-        "sub" => -(0..REPEAT).sum::<c_int>(),
-        "mul" => (0..REPEAT).fold(1, |acc, i| acc.wrapping_mul(i + 1)),
-        other => panic!("unexpected OP {other}"),
     }
+    panic!("no libdriver.so in {} (cargo build --lib)", dir.display());
 }
 
-/// Best-effort probe for the `OP`/`REPEAT` a `.so` was compiled with, used only on
-/// the shared unstamped path.
-///
-/// `REPEAT` 0 and 1 are indistinguishable by construction (`REP0` expands to
-/// nothing and `REP1` applies the identity step `+0` / `-0` / `*1`), which is a
-/// property of the C header, not a gap in the probe.
-fn built_for_this_config(so: &Path) -> bool {
-    let probe = Impl::open("probe", so);
-    if probe.g_op_name() != OP_TAG.as_bytes() {
-        return false;
+/// Path of the C `driver` executable matching this configuration.
+pub fn c_driver_path() -> PathBuf {
+    if let Ok(p) = std::env::var("C_DRIVER") {
+        return require(PathBuf::from(p), "C driver from $C_DRIVER", "check cbuild/build_c.sh");
     }
-    let (acc, _) = capture_stdout(|| probe.helper_call(0, 0));
-    acc == expected_run_loop_acc()
+    require(
+        work_root().join("cbuild").join(format!("driver_{OP}_{REPEAT}")),
+        "C driver",
+        "run cbuild/build_c.sh",
+    )
 }
 
-/// The C reference `driver` executable for this configuration, built on demand.
-pub fn c_exe_path() -> PathBuf {
-    let root = repo_root();
-    let dir = root.join("cbuild").join(format!("exe_{}", config_tag()));
-    let exe = dir.join("driver");
-    if !exe.exists() {
-        std::fs::create_dir_all(&dir).expect("create exe dir");
-        let status = Command::new("gcc")
-            .args([
-                "-O2",
-                &format!("-DOP={}", OP_TAG),
-                &format!("-DREPEAT={}", REPEAT),
-            ])
-            .arg(format!("-I{}", root.join("c_src/src").display()))
-            .arg("-o")
-            .arg(&exe)
-            .arg(root.join("c_src/src/mdcore.c"))
-            .arg(root.join("c_src/src/mdmain.c"))
-            .status()
-            .expect("run gcc");
-        assert!(status.success(), "gcc failed for exe {}", config_tag());
+/// Path of the Rust `driver` executable.
+pub fn rust_driver_path() -> PathBuf {
+    if let Ok(p) = std::env::var("RUST_DRIVER") {
+        return require(PathBuf::from(p), "Rust driver from $RUST_DRIVER", "cargo build");
     }
-    exe
+    let cand = target_profile_dir().join("driver");
+    if cand.is_file() {
+        return cand;
+    }
+    panic!("no driver executable in {} (cargo build --bin driver)", target_profile_dir().display());
 }
 
-/// The Rust `driver` executable for this configuration.
-///
-/// `cargo test` does build the `[[bin]]` target with the current feature set, so
-/// this path is current; it is still probed for the expected `op=` name so a stale
-/// binary cannot quietly stand in.
-pub fn rust_exe_path() -> PathBuf {
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(|| {
-        let exe = std::env::current_exe().expect("current_exe");
-        let profile_dir = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("test exe lives in target/<profile>/deps");
-        let driver = profile_dir.join("driver");
-        assert!(driver.exists(), "driver binary missing at {}", driver.display());
-        let out = Command::new(&driver)
-            .args(["0", "0"])
-            .output()
-            .expect("run driver probe");
-        let text = String::from_utf8_lossy(&out.stdout).into_owned();
-        assert!(
-            text.contains(&format!("op={} ", OP_TAG))
-                && text.contains(&format!("acc={} ", expected_run_loop_acc())),
-            "driver at {} was built for a different configuration than {}/{}: {:?}",
-            driver.display(),
-            OP_TAG,
-            REPEAT,
-            text
-        );
-        driver
-    })
-    .clone()
-}
+/* ------------------------------------------------------------------ *
+ * Loading.
+ * ------------------------------------------------------------------ */
 
-// ---------------------------------------------------------------------------
-// Symbol signatures
-// ---------------------------------------------------------------------------
-
-pub type OpFn = unsafe extern "C" fn(c_int, c_int) -> c_int;
-pub type AccumFn = unsafe extern "C" fn(c_int) -> c_int;
-
-/// One loaded implementation, C or Rust, reached only through `dlsym`.
+/// A loaded implementation, reached exclusively through its dynamic symbols.
 pub struct Impl {
     pub name: &'static str,
-    lib: Library,
+    pub lib: Library,
 }
 
 impl Impl {
-    pub fn open(name: &'static str, path: &Path) -> Impl {
-        // SAFETY: both objects are plain C-ABI libraries with no initializers
-        // beyond the constant data slots `G_OP` / `G_OP_NAME`.
+    fn open(name: &'static str, path: &Path) -> Impl {
+        // Safety: the libraries are the artifacts built by this repo; loading
+        // them runs their (trivial) initialisers.
         let lib = unsafe { Library::new(path) }
-            .unwrap_or_else(|e| panic!("dlopen {} ({}): {e}", path.display(), name));
+            .unwrap_or_else(|e| panic!("dlopen {}: {e}", path.display()));
         Impl { name, lib }
     }
 
-    fn func(&self, sym: &[u8]) -> Symbol<'_, OpFn> {
-        unsafe { self.lib.get::<OpFn>(sym) }.unwrap_or_else(|e| {
-            panic!(
-                "{}: missing exported symbol {}: {e}",
-                self.name,
-                String::from_utf8_lossy(sym)
-            )
-        })
+    pub fn binop(&self, sym: &str) -> Symbol<'_, BinOp> {
+        let mut n = sym.as_bytes().to_vec();
+        n.push(0);
+        unsafe { self.lib.get(&n) }.unwrap_or_else(|e| panic!("{}: dlsym {sym}: {e}", self.name))
     }
 
-    pub fn op_add(&self, a: c_int, b: c_int) -> c_int {
-        unsafe { (self.func(b"op_add\0"))(a, b) }
-    }
-    pub fn op_sub(&self, a: c_int, b: c_int) -> c_int {
-        unsafe { (self.func(b"op_sub\0"))(a, b) }
-    }
-    pub fn op_mul(&self, a: c_int, b: c_int) -> c_int {
-        unsafe { (self.func(b"op_mul\0"))(a, b) }
-    }
-    pub fn helper_call(&self, a: c_int, b: c_int) -> c_int {
-        unsafe { (self.func(b"helper_call\0"))(a, b) }
-    }
-    pub fn helper_ptr(&self, a: c_int, b: c_int) -> c_int {
-        unsafe { (self.func(b"helper_ptr\0"))(a, b) }
-    }
-    pub fn use_generated(&self, n: c_int) -> c_int {
-        let f: Symbol<'_, AccumFn> = unsafe { self.lib.get::<AccumFn>(b"use_generated\0") }
-            .unwrap_or_else(|e| panic!("{}: missing use_generated: {e}", self.name));
-        unsafe { f(n) }
+    pub fn unop(&self, sym: &str) -> Symbol<'_, UnOp> {
+        let mut n = sym.as_bytes().to_vec();
+        n.push(0);
+        unsafe { self.lib.get(&n) }.unwrap_or_else(|e| panic!("{}: dlsym {sym}: {e}", self.name))
     }
 
-    /// Address of an exported `op_*`, for comparing against `G_OP`'s contents.
-    pub fn op_addr(&self, which: &str) -> usize {
-        let sym: &[u8] = match which {
-            "add" => b"op_add\0",
-            "sub" => b"op_sub\0",
-            "mul" => b"op_mul\0",
-            other => panic!("no op_{other}"),
-        };
-        *self.func(sym) as usize
+    /// Address of the exported `int (*G_OP)(int,int)` object.
+    pub fn g_op(&self) -> *mut BinOp {
+        let sym: Symbol<'_, *mut BinOp> =
+            unsafe { self.lib.get(b"G_OP\0") }.unwrap_or_else(|e| panic!("{}: dlsym G_OP: {e}", self.name));
+        *sym
     }
 
-    /// Reads the `G_OP` data slot (`int (*G_OP)(int,int)`).
-    pub fn g_op(&self) -> OpFn {
-        let sym: Symbol<'_, *mut OpFn> = unsafe { self.lib.get::<*mut OpFn>(b"G_OP\0") }
-            .unwrap_or_else(|e| panic!("{}: missing G_OP: {e}", self.name));
-        unsafe { **sym }
+    /// Address of the exported `const char *G_OP_NAME` object.
+    pub fn g_op_name(&self) -> *mut *const c_char {
+        let sym: Symbol<'_, *mut *const c_char> = unsafe { self.lib.get(b"G_OP_NAME\0") }
+            .unwrap_or_else(|e| panic!("{}: dlsym G_OP_NAME: {e}", self.name));
+        *sym
     }
 
-    /// Overwrites `G_OP`; the C global is not `const`, so this is legal for a
-    /// caller and both sides must dispatch through the stored pointer.
-    pub fn set_g_op(&self, f: OpFn) {
-        let sym: Symbol<'_, *mut OpFn> = unsafe { self.lib.get::<*mut OpFn>(b"G_OP\0") }
-            .unwrap_or_else(|e| panic!("{}: missing G_OP: {e}", self.name));
-        unsafe { **sym = f };
-    }
-
-    /// Reads `G_OP_NAME` and copies the NUL-terminated bytes it points at.
-    pub fn g_op_name(&self) -> Vec<u8> {
-        let sym: Symbol<'_, *mut *const c_char> =
-            unsafe { self.lib.get::<*mut *const c_char>(b"G_OP_NAME\0") }
-                .unwrap_or_else(|e| panic!("{}: missing G_OP_NAME: {e}", self.name));
-        let p = unsafe { **sym };
-        assert!(!p.is_null(), "{}: G_OP_NAME is NULL", self.name);
-        let mut out = Vec::new();
-        let mut i = 0isize;
-        loop {
-            let byte = unsafe { *p.offset(i) } as u8;
-            if byte == 0 {
-                break;
-            }
-            out.push(byte);
-            i += 1;
-            assert!(i < 64, "{}: G_OP_NAME not NUL-terminated", self.name);
+    /// The current NUL-terminated value of `G_OP_NAME`, as bytes.
+    pub fn g_op_name_bytes(&self) -> Vec<u8> {
+        let slot = self.g_op_name();
+        unsafe {
+            let p = *slot;
+            assert!(!p.is_null(), "{}: G_OP_NAME is NULL", self.name);
+            std::ffi::CStr::from_ptr(p).to_bytes().to_vec()
         }
-        out
     }
 }
 
-/// The two implementations, opened once per test process.
-pub struct Pair {
-    pub c: Impl,
-    pub rust: Impl,
+/// The C implementation.
+pub fn c_impl() -> &'static Impl {
+    static C: OnceLock<Impl> = OnceLock::new();
+    C.get_or_init(|| Impl::open("C", &c_so_path()))
 }
 
-pub fn pair() -> &'static Pair {
-    static PAIR: OnceLock<Pair> = OnceLock::new();
-    PAIR.get_or_init(|| Pair {
-        c: Impl::open("C", &c_lib_path()),
-        rust: Impl::open("Rust", &rust_lib_path()),
-    })
+/// The Rust implementation (loaded as a `.so`, exactly like the C one).
+pub fn rust_impl() -> &'static Impl {
+    static R: OnceLock<Impl> = OnceLock::new();
+    R.get_or_init(|| Impl::open("Rust", &rust_so_path()))
 }
 
-// ---------------------------------------------------------------------------
-// stdout capture (the helpers print, so return-value parity is not enough)
-// ---------------------------------------------------------------------------
+/* ------------------------------------------------------------------ *
+ * Deterministic input generation (no external rand crate).
+ * ------------------------------------------------------------------ */
 
-extern "C" {
-    fn dup(oldfd: c_int) -> c_int;
-    fn dup2(oldfd: c_int, newfd: c_int) -> c_int;
-    fn close(fd: c_int) -> c_int;
-    /// `fflush(NULL)` flushes every libc output stream, which is how the C
-    /// `.so`'s fully-buffered `printf` output is forced out before fd 1 is
-    /// restored. The Rust `.so` uses a `LineWriter` and self-flushes on `\n`.
-    fn fflush(stream: *mut c_void) -> c_int;
-}
-
-fn capture_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-/// fd 1 is process-global and libtest writes its own progress lines to it, so
-/// capture is only sound when the test threads run serially. `.cargo/config.toml`
-/// sets `RUST_TEST_THREADS = "1"` for every Cargo-launched process; this check
-/// turns a lost setting into an explicit failure instead of a mysterious
-/// "stdout differs" containing `test cfg_... ok`.
-fn require_serial() {
-    static CHECKED: OnceLock<()> = OnceLock::new();
-    CHECKED.get_or_init(|| {
-        let flagged = std::env::args().any(|a| a == "--test-threads=1")
-            || std::env::args()
-                .zip(std::env::args().skip(1))
-                .any(|(a, b)| a == "--test-threads" && b == "1");
-        let env_serial = std::env::var("RUST_TEST_THREADS").ok().as_deref() == Some("1");
-        let single_cpu = std::thread::available_parallelism()
-            .map(|n| n.get() == 1)
-            .unwrap_or(false);
-        assert!(
-            flagged || env_serial || single_cpu,
-            "these tests capture fd 1 and must run serially; \
-             re-run with `RUST_TEST_THREADS=1` (set by translation/.cargo/config.toml) \
-             or `cargo test ... -- --test-threads=1`"
-        );
-    });
-}
-
-/// Runs `body` with fd 1 pointed at a temporary file and returns both the
-/// closure's value and the bytes written to stdout.
-///
-/// Serialised through a mutex because fd 1 is process-global.
-pub fn capture_stdout<T>(body: impl FnOnce() -> T) -> (T, Vec<u8>) {
-    require_serial();
-    let _guard = capture_lock().lock().unwrap_or_else(|e| e.into_inner());
-
-    let dir = std::env::temp_dir();
-    let path = dir.join(format!(
-        "mdcap_{}_{}_{:?}.bin",
-        std::process::id(),
-        config_tag(),
-        std::thread::current().id()
-    ));
-    let file = std::fs::File::create(&path).expect("create capture file");
-
-    unsafe {
-        fflush(std::ptr::null_mut());
-    }
-    let saved = unsafe { dup(1) };
-    assert!(saved >= 0, "dup(1) failed");
-    assert!(unsafe { dup2(file.as_raw_fd(), 1) } >= 0, "dup2 failed");
-
-    let value = body();
-
-    unsafe {
-        fflush(std::ptr::null_mut());
-        assert!(dup2(saved, 1) >= 0, "dup2 restore failed");
-        close(saved);
-    }
-    drop(file);
-
-    let mut bytes = Vec::new();
-    std::fs::File::open(&path)
-        .expect("reopen capture file")
-        .read_to_end(&mut bytes)
-        .expect("read capture file");
-    let _ = std::fs::remove_file(&path);
-
-    (value, bytes)
-}
-
-/// Calls the same operation on both implementations and asserts the return value
-/// and the stdout bytes match exactly.
-pub fn assert_same<F>(what: &str, mut call: F)
-where
-    F: FnMut(&Impl) -> c_int,
-{
-    let p = pair();
-    let (cv, cout) = capture_stdout(|| call(&p.c));
-    let (rv, rout) = capture_stdout(|| call(&p.rust));
-    assert_eq!(
-        cv,
-        rv,
-        "[{}/{}] {}: return value C={} Rust={}",
-        OP_TAG,
-        REPEAT,
-        what,
-        cv,
-        rv
-    );
-    assert_eq!(
-        String::from_utf8_lossy(&cout),
-        String::from_utf8_lossy(&rout),
-        "[{}/{}] {}: stdout differs",
-        OP_TAG,
-        REPEAT,
-        what
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Deterministic RNG (SplitMix64) — property-style inputs, fixed seed
-// ---------------------------------------------------------------------------
+/// `splitmix64`, seeded for reproducibility.
+pub struct Rng(u64);
 
 pub const SEED: u64 = 0x5EED_1234_ABCD_9876;
 
-pub struct Rng(u64);
-
 impl Rng {
-    pub fn new(seed: u64) -> Rng {
+    pub fn new() -> Rng {
+        Rng(SEED)
+    }
+    pub fn with_seed(seed: u64) -> Rng {
         Rng(seed)
     }
     pub fn next_u64(&mut self) -> u64 {
@@ -495,48 +241,177 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         z ^ (z >> 31)
     }
+    /// Full-range `i32`, biased towards small magnitudes a third of the time so
+    /// both the "interesting small integer" and the "wide bit pattern" spaces
+    /// are covered.
     pub fn next_i32(&mut self) -> c_int {
-        self.next_u64() as u32 as i32
-    }
-    /// A mix of full-range values and small values, so both wrapping arithmetic
-    /// and the ordinary small-integer paths get hit.
-    pub fn next_operand(&mut self) -> c_int {
         let r = self.next_u64();
-        match r % 4 {
-            0 => (r >> 8) as u32 as i32,
-            1 => ((r >> 8) % 65) as i64 as i32 - 32,
-            2 => ((r >> 8) % 131_073) as i64 as i32 - 65_536,
-            _ => (r >> 32) as u32 as i32,
+        match r % 3 {
+            0 => ((r >> 8) as i16) as c_int,
+            1 => (((r >> 8) as u32) % 64) as c_int - 32,
+            _ => (r >> 32) as u32 as c_int,
         }
+    }
+    pub fn next_pair(&mut self) -> (c_int, c_int) {
+        (self.next_i32(), self.next_i32())
     }
 }
 
-/// Boundary `(a, b)` pairs every `op_*` row is driven with.
-pub const BOUNDARY_PAIRS: &[(c_int, c_int)] = &[
+impl Default for Rng {
+    fn default() -> Self {
+        Rng::new()
+    }
+}
+
+pub const RANDOM_CASES: usize = 256;
+
+/// `(a, b)` shapes that are identities / tiny values.
+pub const SMALL_PAIRS: &[(c_int, c_int)] = &[
     (0, 0),
     (0, 1),
     (1, 0),
     (1, 1),
-    (-1, 1),
     (1, -1),
+    (-1, 1),
     (-1, -1),
-    (i32::MAX, 0),
-    (0, i32::MAX),
-    (i32::MAX, 1),
-    (1, i32::MAX),
-    (i32::MAX, -1),
-    (i32::MIN, 0),
-    (0, i32::MIN),
-    (i32::MIN, 1),
-    (i32::MIN, -1),
-    (-1, i32::MIN),
-    (i32::MAX, i32::MAX),
-    (i32::MIN, i32::MIN),
-    (i32::MAX, i32::MIN),
-    (i32::MIN, i32::MAX),
-    (65_536, 65_536),
-    (-65_536, 65_536),
-    (46_341, 46_341),
-    (2, i32::MAX),
-    (i32::MAX / 2, 3),
+    (7, 3),
+    (3, 7),
+    (-5, 9),
+    (9, -5),
+    (2, -2),
+    (0, -1),
+    (-1, 0),
+    (10, 0),
+    (0, 10),
 ];
+
+/// `(a, b)` shapes at / past the `int` boundaries (overflow in at least one op).
+pub const BOUNDARY_PAIRS: &[(c_int, c_int)] = &[
+    (c_int::MAX, 0),
+    (0, c_int::MAX),
+    (c_int::MIN, 0),
+    (0, c_int::MIN),
+    (c_int::MAX, 1),
+    (1, c_int::MAX),
+    (c_int::MIN, -1),
+    (-1, c_int::MIN),
+    (c_int::MIN, 1),
+    (c_int::MAX, -1),
+    (c_int::MAX, c_int::MAX),
+    (c_int::MIN, c_int::MIN),
+    (c_int::MAX, c_int::MIN),
+    (c_int::MIN, c_int::MAX),
+    (c_int::MAX, 2),
+    (2, c_int::MAX),
+    (65536, 65536),
+    (-65536, 65536),
+    (46341, 46341),
+    (c_int::MAX / 2, 3),
+];
+
+/// Values of `n` that hit a distinct `DISPATCH_REP` `case`.
+pub const IN_RANGE_N: &[c_int] = &[0, 1, 2, 3, 4, 5, 6];
+
+/// Values of `n` that fall through to `default: break;`.
+pub const OUT_OF_RANGE_N: &[c_int] =
+    &[7, 8, 9, 10, 100, 1 << 20, 65536, -1, -2, -7, -100, c_int::MIN, c_int::MAX, c_int::MIN + 1, c_int::MAX - 1];
+
+/* ------------------------------------------------------------------ *
+ * Assertion helpers.
+ * ------------------------------------------------------------------ */
+
+/// Compare a one-argument export.
+pub fn diff_unop(sym: &str, inputs: impl IntoIterator<Item = c_int>) {
+    let (c, r) = (c_impl(), rust_impl());
+    let (cf, rf) = (c.unop(sym), r.unop(sym));
+    for n in inputs {
+        let (cv, rv) = unsafe { (cf(n), rf(n)) };
+        assert_eq!(
+            cv, rv,
+            "[{}] {sym}({n}): C returned {cv}, Rust returned {rv}",
+            config_label()
+        );
+    }
+}
+
+/// Compare a two-argument export.
+pub fn diff_binop(sym: &str, inputs: impl IntoIterator<Item = (c_int, c_int)>) {
+    let (c, r) = (c_impl(), rust_impl());
+    let (cf, rf) = (c.binop(sym), r.binop(sym));
+    for (a, b) in inputs {
+        let (cv, rv) = unsafe { (cf(a, b), rf(a, b)) };
+        assert_eq!(
+            cv, rv,
+            "[{}] {sym}({a}, {b}): C returned {cv}, Rust returned {rv}",
+            config_label()
+        );
+    }
+}
+
+/// `SMALL_PAIRS + BOUNDARY_PAIRS + RANDOM_CASES` seeded-random pairs.
+pub fn all_pairs() -> Vec<(c_int, c_int)> {
+    let mut v: Vec<(c_int, c_int)> = SMALL_PAIRS.iter().copied().collect();
+    v.extend(BOUNDARY_PAIRS.iter().copied());
+    let mut rng = Rng::new();
+    for _ in 0..RANDOM_CASES {
+        v.push(rng.next_pair());
+    }
+    v
+}
+
+pub fn random_pairs(seed: u64, n: usize) -> Vec<(c_int, c_int)> {
+    let mut rng = Rng::with_seed(seed);
+    (0..n).map(|_| rng.next_pair()).collect()
+}
+
+pub fn random_ints(seed: u64, n: usize) -> Vec<c_int> {
+    let mut rng = Rng::with_seed(seed);
+    (0..n).map(|_| rng.next_i32()).collect()
+}
+
+/* ------------------------------------------------------------------ *
+ * Driver-executable differential runner (covers mdmain.c).
+ * ------------------------------------------------------------------ */
+
+/// Result of one process run.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Run {
+    pub status: Option<i32>,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+fn run_one(exe: &Path, arg0: &str, args: &[&str]) -> Run {
+    use std::os::unix::process::CommandExt;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg0(arg0);
+    cmd.args(args);
+    // Keep the environment from perturbing formatting/locale.
+    cmd.env_remove("LC_ALL").env_remove("LANG").env("LC_ALL", "C");
+    let out = cmd.output().unwrap_or_else(|e| panic!("spawn {}: {e}", exe.display()));
+    Run { status: out.status.code(), stdout: out.stdout, stderr: out.stderr }
+}
+
+/// Run the C `driver` and the Rust `driver` with an identical `argv` (including
+/// `argv[0]`, set with `arg0` so the `usage:` line is byte-comparable) and
+/// assert stdout, stderr and exit status all match exactly.
+pub fn diff_driver(arg0: &str, args: &[&str]) {
+    let c = run_one(&c_driver_path(), arg0, args);
+    let r = run_one(&rust_driver_path(), arg0, args);
+    let ctx = format!("[{}] argv0={arg0:?} args={args:?}", config_label());
+    assert_eq!(
+        c.stdout,
+        r.stdout,
+        "{ctx}: stdout differs\n  C   : {:?}\n  Rust: {:?}",
+        String::from_utf8_lossy(&c.stdout),
+        String::from_utf8_lossy(&r.stdout)
+    );
+    assert_eq!(
+        c.stderr,
+        r.stderr,
+        "{ctx}: stderr differs\n  C   : {:?}\n  Rust: {:?}",
+        String::from_utf8_lossy(&c.stderr),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(c.status, r.status, "{ctx}: exit status differs (C={:?} Rust={:?})", c.status, r.status);
+}
